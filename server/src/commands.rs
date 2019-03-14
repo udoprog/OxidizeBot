@@ -1,6 +1,5 @@
-use crate::db;
-use failure::format_err;
-use failure::ResultExt;
+use crate::{db, template};
+use failure::{format_err, ResultExt as _};
 use hashbrown::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -42,7 +41,7 @@ where
         let mut inner = self.inner.write().expect("lock poisoned");
 
         for command in self.backend.list()? {
-            let template = mustache::compile_str(command.text.as_str()).with_context(|_| {
+            let template = template::Template::compile(&command.text).with_context(|_| {
                 format_err!("failed to compile command `{:?}` from backend", command)
             })?;
 
@@ -58,7 +57,7 @@ where
     pub fn edit(&self, channel: &str, name: &str, command: &str) -> Result<(), failure::Error> {
         let key = Key::new(channel, name);
 
-        let template = mustache::compile_str(command)?;
+        let template = template::Template::compile(command)?;
         self.backend
             .edit(key.channel.as_str(), key.name.as_str(), command)?;
 
@@ -133,7 +132,7 @@ impl Key {
 #[derive(Debug)]
 pub struct Command {
     pub key: Key,
-    pub template: mustache::Template,
+    pub template: template::Template,
 }
 
 impl Command {

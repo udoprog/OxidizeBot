@@ -1358,7 +1358,6 @@ impl<'a> MessageHandler<'a> {
 
         if let Some(more) = has_more {
             user.respond(format!("{} ... and {} more.", lines.join("; "), more));
-
             return;
         }
 

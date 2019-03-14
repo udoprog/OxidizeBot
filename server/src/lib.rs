@@ -14,6 +14,7 @@ pub mod oauth2;
 pub mod player;
 pub mod secrets;
 pub mod spotify;
+mod template;
 pub mod twitch;
 mod utils;
 pub mod web;

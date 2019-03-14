@@ -201,6 +201,60 @@ pub fn human_time(seconds: i64) -> String {
     parts.join(", ")
 }
 
+/// Format the given number of seconds as a human time.
+pub fn compact_time(seconds: u64) -> String {
+    let mut time = String::new();
+
+    let rest = seconds as u64;
+    let hours = rest / 3600;
+    let rest = rest % 3600;
+    let minutes = rest / 60;
+    let seconds = rest % 60;
+
+    time.extend(match hours {
+        0 => None,
+        n => Some(format!("{}h", n)),
+    });
+
+    time.extend(match minutes {
+        0 => None,
+        n => Some(format!("{}m", n)),
+    });
+
+    time.extend(match seconds {
+        0 => None,
+        n => Some(format!("{}s", n)),
+    });
+
+    time
+}
+
+/// Render artists in a human readable form INCLUDING an oxford comma.
+pub fn human_artists(artists: &[String]) -> Option<String> {
+    if artists.is_empty() {
+        return None;
+    }
+
+    let mut it = artists.iter();
+    let mut artists = String::new();
+
+    if let Some(artist) = it.next() {
+        artists.push_str(artist);
+    }
+
+    for artist in (&mut it).take(artists.len().saturating_sub(2)) {
+        artists.push_str(", ");
+        artists.push_str(artist);
+    }
+
+    if let Some(artist) = it.next() {
+        artists.push_str(", and ");
+        artists.push_str(artist);
+    }
+
+    Some(artists)
+}
+
 /// Test if character is a URL character.
 fn is_url_character(c: char) -> bool {
     match c {

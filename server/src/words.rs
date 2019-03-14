@@ -1,4 +1,4 @@
-use crate::db;
+use crate::{db, template};
 use hashbrown::HashMap;
 use std::{
     fs::File,
@@ -23,7 +23,7 @@ impl Inner {
     fn insert(&mut self, word: &str, why: Option<&str>) -> Result<(), failure::Error> {
         let word = Word {
             word: tokenize(word),
-            why: why.map(mustache::compile_str).transpose()?,
+            why: why.map(template::Template::compile).transpose()?,
         };
 
         let word = Arc::new(word);
@@ -166,5 +166,5 @@ pub struct WordConfig {
 #[derive(Debug)]
 pub struct Word {
     pub word: String,
-    pub why: Option<mustache::Template>,
+    pub why: Option<template::Template>,
 }

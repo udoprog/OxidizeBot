@@ -52,6 +52,13 @@ irc:
       player:
         speaker: "Speakers (Realtek High Definiti"
         volume: 50
+        # Optional: Write information on the current song to the given path for use with e.g. OBS.
+        current_song:
+          path: "E:\\temp\\current_song.txt"
+          not_playing: "No Song Playing"
+          template:
+            - "Song: \"{{name}}\"{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})"
+            - "{{#if user~}}Request by: @{{user~}}{{/if}}"
       # Aliases, only single-word command aliases are currently available.
       aliases:
       - match: "!sr"

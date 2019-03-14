@@ -1,6 +1,6 @@
 use tokio_core::reactor::Core;
 
-use crate::{db, irc, secrets, spotify};
+use crate::{db, irc, secrets, spotify, template, utils};
 use chrono::Utc;
 use failure::format_err;
 use futures::{
@@ -11,7 +11,8 @@ use futures::{
 use hashbrown::HashMap;
 use std::{
     collections::VecDeque,
-    path::Path,
+    fs::File,
+    path::{Path, PathBuf},
     sync::{Arc, RwLock},
     time::Duration,
 };
@@ -70,6 +71,17 @@ pub struct Config {
     /// Whether or not to use the connect player.
     #[serde(default)]
     connect: bool,
+    /// Write the current song to the specified path.
+    #[serde(default)]
+    current_song: Option<CurrentSong>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct CurrentSong {
+    path: PathBuf,
+    template: template::Template,
+    #[serde(default)]
+    not_playing: Option<String>,
 }
 
 fn default_max_queue_length() -> u32 {
@@ -78,6 +90,35 @@ fn default_max_queue_length() -> u32 {
 
 fn default_max_songs_per_user() -> u32 {
     2
+}
+
+impl CurrentSong {
+    /// Either creates or truncates the current song file.
+    fn create_or_truncate(&self) -> Result<File, failure::Error> {
+        File::create(&self.path).map_err(Into::into)
+    }
+
+    /// Blank the current file.
+    pub fn blank(&self) -> Result<(), failure::Error> {
+        use std::io::Write as _;
+        let mut f = self.create_or_truncate()?;
+
+        if let Some(not_playing) = self.not_playing.as_ref() {
+            write!(f, "{}", not_playing)?;
+        } else {
+            write!(f, "Not Playing")?;
+        }
+
+        Ok(())
+    }
+
+    /// Write the current song to a path.
+    pub fn write(&self, item: &Item, paused: bool) -> Result<(), failure::Error> {
+        let mut f = self.create_or_truncate()?;
+        let data = item.data(paused)?;
+        self.template.render(&mut f, &data)?;
+        Ok(())
+    }
 }
 
 impl Config {
@@ -152,6 +193,15 @@ where
     }
 }
 
+impl serde::Serialize for TrackId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.to_base62().serialize(serializer)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Item {
     pub track_id: TrackId,
@@ -161,10 +211,43 @@ pub struct Item {
     pub duration: Duration,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ItemData<'a> {
+    paused: bool,
+    track_id: &'a TrackId,
+    name: String,
+    artists: Option<String>,
+    user: Option<&'a str>,
+    duration: String,
+}
+
 impl Item {
     /// Human readable version of playback item.
     pub fn what(&self) -> String {
-        format!("\"{}\" by {}", self.name, self.artists.join(", "))
+        if let Some(artists) = utils::human_artists(&self.artists) {
+            format!("\"{}\" by {}", self.name, artists)
+        } else {
+            format!("\"{}\"", self.name.to_string())
+        }
+    }
+
+    /// Get serializable data for this item.
+    pub fn data(&self, paused: bool) -> Result<ItemData<'_>, failure::Error> {
+        let artists = utils::human_artists(&self.artists);
+
+        let name = htmlescape::decode_html(&self.name)
+            .map_err(|_| format_err!("failed to decode song name: {}", self.name))?;
+
+        log::info!("NAME: {:?}", name);
+
+        Ok(ItemData {
+            paused,
+            track_id: &self.track_id,
+            name,
+            artists,
+            user: self.user.as_ref().map(|s| s.as_str()),
+            duration: utils::compact_time(self.duration.as_secs()),
+        })
     }
 }
 
@@ -233,6 +316,17 @@ pub fn run(
         queue.push_back_queue(channel.name.as_str(), item);
     }
 
+    // Blank current song file if specified.
+    if let Some(current_song) = config.current_song.as_ref() {
+        if let Err(e) = current_song.blank() {
+            log::warn!(
+                "failed to blank current songs: {}: {}",
+                current_song.path.display(),
+                e
+            );
+        }
+    }
+
     let volume = Arc::new(RwLock::new(u32::min(
         100u32,
         config.volume.unwrap_or(100u32),
@@ -253,6 +347,7 @@ pub fn run(
         volume: Arc::clone(&volume),
         channel: Arc::clone(&channel.name),
         current: current.clone(),
+        current_song: config.current_song.clone(),
     };
 
     let player = Player {
@@ -903,27 +998,19 @@ pub struct PlaybackFuture {
     channel: Arc<String>,
     /// Current song that is loaded.
     current: Arc<RwLock<Option<Arc<Item>>>>,
+    /// Path to write current song.
+    current_song: Option<CurrentSong>,
 }
 
 impl PlaybackFuture {
     /// Play what is at the front of the queue.
-    fn load_front(&mut self) {
+    fn next_song(&mut self) -> Option<(Origin, Arc<Item>, oneshot::Receiver<()>)> {
         use rand::Rng;
 
         if let Some(item) = self.queue.front(self.channel.as_str()) {
-            let future = self.player.load(&*item);
-            self.loaded = Some((Origin::Queue, item.clone(), future));
-            *self.current.write().expect("poisoned") = Some(item.clone());
-
-            if !self.paused {
-                self.player.play();
-                self.broadcast(Event::Playing(Origin::Queue, Arc::clone(&item)));
-            } else {
-                self.player.pause();
-            }
-
             self.pop_front = Some(self.queue.pop_front(self.channel.as_str()));
-            return;
+            let future = self.player.load(&*item);
+            return Some((Origin::Queue, item, future));
         }
 
         if !self.paused || self.loaded.is_some() {
@@ -934,25 +1021,57 @@ impl PlaybackFuture {
             // Pick a random item to play.
             if let Some(item) = self.fallback_items.get(n) {
                 let future = self.player.load(&*item);
-                self.loaded = Some((Origin::Fallback, item.clone(), future));
-                *self.current.write().expect("poisoned") = Some(item.clone());
+                return Some((Origin::Fallback, item.clone(), future));
+            }
+        }
 
-                if !self.paused {
-                    self.player.play();
-                    self.broadcast(Event::Playing(Origin::Fallback, Arc::clone(item)));
-                } else {
-                    self.player.pause();
-                }
+        self.paused = true;
+        None
+    }
 
-                return;
+    /// Write current song. Log any errors.
+    fn current_song(&self) {
+        let current_song = match self.current_song.as_ref() {
+            Some(current_song) => current_song,
+            None => return,
+        };
+
+        let result = match self.loaded.as_ref() {
+            Some((_, item, _)) => current_song.write(item, self.paused),
+            None => current_song.blank(),
+        };
+
+        if let Err(e) = result {
+            log::warn!(
+                "failed to write current song: {}: {}",
+                current_song.path.display(),
+                e
+            );
+        }
+    }
+
+    /// Load the next song.
+    fn load_front(&mut self) {
+        if let Some((origin, item, future)) = self.next_song() {
+            self.loaded = Some((origin, item.clone(), future));
+            *self.current.write().expect("poisoned") = Some(item.clone());
+
+            if !self.paused {
+                self.player.play();
+                self.broadcast(Event::Playing(origin, item.clone()));
+            } else {
+                self.player.pause();
             }
 
-            self.player.stop();
-            self.loaded = None;
-            *self.current.write().expect("poisoned") = None;
-            self.paused = true;
-            self.broadcast(Event::Empty);
+            self.current_song();
+            return;
         }
+
+        self.loaded = None;
+        *self.current.write().expect("poisoned") = None;
+        self.broadcast(Event::Empty);
+        self.player.stop();
+        self.current_song();
     }
 
     /// Broadcast an event from the player.
@@ -982,6 +1101,7 @@ impl PlaybackFuture {
                 self.paused = true;
                 self.player.pause();
                 self.broadcast(Event::Pausing);
+                self.current_song();
             }
             Command::Play if self.paused => {
                 log::info!("starting player");
@@ -991,6 +1111,7 @@ impl PlaybackFuture {
                     Some((origin, item, _)) => {
                         self.player.play();
                         self.broadcast(Event::Playing(*origin, Arc::clone(item)));
+                        self.current_song();
                     }
                     None => {
                         self.load_front();

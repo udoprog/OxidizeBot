@@ -18,6 +18,12 @@ irc:
         speaker: "Speakers (Realtek High Definiti"
         volume: 50
         # connect: true
+        current_song:
+          path: "E:\\temp\\current_song.txt"
+          not_playing: "No Song Playing"
+          template:
+            - "Song: \"{{name}}\"{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})"
+            - "{{#if user~}}Request by: @{{user~}}{{/if}}"
       aliases:
       - match: "!sr"
         replace: "!song request {{rest}}"

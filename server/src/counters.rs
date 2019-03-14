@@ -1,6 +1,5 @@
-use crate::db;
-use failure::format_err;
-use failure::ResultExt;
+use crate::{db, template};
+use failure::{format_err, ResultExt as _};
 use hashbrown::HashMap;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -66,9 +65,10 @@ where
         for counter in self.backend.list()? {
             let key = Key::new(counter.channel.as_str(), counter.name.as_str());
 
-            let template = mustache::compile_str(counter.text.as_str()).with_context(|_| {
-                format_err!("failed to compile template `{:?}` from backend", key)
-            })?;
+            let template =
+                template::Template::compile(counter.text.as_str()).with_context(|_| {
+                    format_err!("failed to compile template `{:?}` from backend", key)
+                })?;
 
             inner.insert(
                 key.clone(),
@@ -88,7 +88,7 @@ where
     pub fn edit(&self, channel: &str, name: &str, text: &str) -> Result<(), failure::Error> {
         let key = Key::new(channel, name);
 
-        let template = mustache::compile_str(text)?;
+        let template = template::Template::compile(text)?;
         self.backend
             .edit(key.channel.as_str(), key.name.as_str(), text)?;
 
@@ -166,7 +166,7 @@ where
 pub struct Counter {
     pub key: Key,
     count: AtomicUsize,
-    pub template: mustache::Template,
+    pub template: template::Template,
 }
 
 impl Counter {

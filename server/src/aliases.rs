@@ -1,4 +1,4 @@
-use crate::utils;
+use crate::{template, utils};
 
 /// Command aliases.
 #[derive(Debug, Default, serde::Deserialize)]
@@ -70,7 +70,7 @@ impl<'de> serde::Deserialize<'de> for Match {
 /// Replacement.
 #[derive(Debug)]
 enum Replace {
-    Template(mustache::Template),
+    Template(template::Template),
 }
 
 impl Replace {
@@ -101,8 +101,8 @@ impl<'de> serde::Deserialize<'de> for Replace {
     where
         D: serde::Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        let t = mustache::compile_str(&s).map_err(serde::de::Error::custom)?;
-        Ok(Replace::Template(t))
+        let template =
+            template::Template::deserialize(deserializer).map_err(serde::de::Error::custom)?;
+        Ok(Replace::Template(template))
     }
 }
