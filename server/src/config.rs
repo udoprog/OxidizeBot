@@ -1,0 +1,121 @@
+use crate::{irc, secrets, web};
+use relative_path::RelativePathBuf;
+use std::{marker, path::Path, sync::Arc};
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct Config {
+    pub streamer: Option<String>,
+    pub irc: Option<irc::Config>,
+    #[serde(default)]
+    pub twitch: Oauth2Config<TwitchDefaults>,
+    #[serde(default)]
+    pub spotify: Oauth2Config<SpotifyDefaults>,
+    #[serde(default)]
+    pub database_url: Option<String>,
+    #[serde(default)]
+    pub bad_words: Option<RelativePathBuf>,
+    /// Player configuration to load.
+    pub player: Option<RelativePathBuf>,
+    /// Where secrets are stored.
+    #[serde(default = "default_secrets")]
+    pub secrets: RelativePathBuf,
+}
+
+/// Default location for secrets.
+pub fn default_secrets() -> RelativePathBuf {
+    RelativePathBuf::from("secrets.yml")
+}
+
+#[derive(Debug)]
+pub struct SpotifyDefaults;
+
+impl Oauth2Defaults for SpotifyDefaults {
+    const SECRETS_KEY: &'static str = "spotify::oauth2";
+    type TokenResponse = oauth2::basic::BasicTokenResponse;
+
+    fn new_flow_builder(
+        web: web::Server,
+        secrets_config: Arc<crate::oauth2::SecretsConfig>,
+    ) -> Result<crate::oauth2::FlowBuilder<Self::TokenResponse>, failure::Error> {
+        crate::oauth2::spotify(web, secrets_config)
+    }
+}
+
+#[derive(Debug)]
+pub struct TwitchDefaults;
+
+impl Oauth2Defaults for TwitchDefaults {
+    const SECRETS_KEY: &'static str = "twitch::oauth2";
+
+    type TokenResponse = crate::oauth2::TwitchTokenResponse;
+
+    fn new_flow_builder(
+        web: web::Server,
+        secrets_config: Arc<crate::oauth2::SecretsConfig>,
+    ) -> Result<crate::oauth2::FlowBuilder<Self::TokenResponse>, failure::Error> {
+        crate::oauth2::twitch(web, secrets_config)
+    }
+}
+
+/// Define defaults for fields.
+pub trait Oauth2Defaults {
+    const SECRETS_KEY: &'static str;
+    type TokenResponse: oauth2::TokenResponse<oauth2::basic::BasicTokenType>;
+
+    fn new_flow_builder(
+        web: web::Server,
+        secrets_config: Arc<crate::oauth2::SecretsConfig>,
+    ) -> Result<crate::oauth2::FlowBuilder<Self::TokenResponse>, failure::Error>;
+
+    fn default_state_path() -> RelativePathBuf {
+        RelativePathBuf::from(".oauth2")
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct Oauth2Config<T>
+where
+    T: Oauth2Defaults,
+{
+    #[serde(default = "T::default_state_path")]
+    state_path: RelativePathBuf,
+    #[serde(default)]
+    marker: marker::PhantomData<T>,
+}
+
+impl<T> Oauth2Config<T>
+where
+    T: Oauth2Defaults,
+{
+    /// Construct a new flow builder with the given configuration.
+    pub fn new_flow_builder(
+        &self,
+        web: web::Server,
+        name: &str,
+        root: &Path,
+        secrets: &secrets::Secrets,
+    ) -> Result<crate::oauth2::FlowBuilder<T::TokenResponse>, failure::Error> {
+        let secrets = secrets.load(T::SECRETS_KEY)?;
+
+        let state_path = self
+            .state_path
+            .join(format!("{}.oauth2.yml", name))
+            .to_path(root);
+
+        let flow_builder = T::new_flow_builder(web, secrets)?.with_state_path(state_path);
+
+        Ok(flow_builder)
+    }
+}
+
+impl<T> Default for Oauth2Config<T>
+where
+    T: Oauth2Defaults,
+{
+    fn default() -> Oauth2Config<T> {
+        Oauth2Config {
+            state_path: T::default_state_path(),
+            marker: Default::default(),
+        }
+    }
+}

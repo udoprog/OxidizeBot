@@ -1,0 +1,4 @@
+CREATE TABLE bad_words (
+    word VARCHAR NOT NULL PRIMARY KEY,
+    why VARCHAR
+);

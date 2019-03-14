@@ -1,0 +1,7 @@
+[workspace]
+
+members = [
+    "notifier",
+    "server",
+    "gfx",
+]

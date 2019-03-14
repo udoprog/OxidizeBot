@@ -1,0 +1,8 @@
+/target
+**/*.rs.bk
+/*.dll
+/*.sql
+/bad_words.yml
+/secrets.yml
+/.oauth2/
+/*.log

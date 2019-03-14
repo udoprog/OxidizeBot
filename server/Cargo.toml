@@ -1,0 +1,49 @@
+[package]
+name = "setmod-server"
+version = "0.1.0"
+authors = ["John-John Tedro <udoprog@tedro.se>"]
+edition = "2018"
+license = "MIT/Apache-2.0"
+
+[dependencies]
+setmod-notifier = {version = "0.1.0", path = "../notifier"}
+chrono = {version = "0.4.6", features = ["serde"]}
+clap = "2.32"
+diesel = {version = "1.4.1", features = ["sqlite", "r2d2", "chrono"]}
+diesel_migrations = {version = "1.4.0"}
+eudex = "0.1.1"
+failure = "0.1"
+futures = "0.1.25"
+hashbrown = {version = "0.1.8", features = ["serde"]}
+hyper = "0.12.24"
+irc = "0.13"
+log = "0.4.6"
+oauth2 = "2.0.0-alpha.5"
+ratelimit = "0.4.4"
+rayon = "1.0.3"
+relative-path = {version = "0.4.0", features = ["serde"]}
+reqwest = "0.9.10"
+serde = {version = "1.0.88", features = ["rc"]}
+serde_json = "1.0.38"
+serde_yaml = "0.8.8"
+tokio = "0.1.15"
+tokio-core = "0.1.17"
+tokio-threadpool = "0.1.11"
+url = "1.7.2"
+mustache = "0.9.0"
+Inflector = "0.11.4"
+rspotify = "0.2.5"
+tokio-bus = "0.1.1"
+base64 = "0.10.1"
+rand = "0.6.5"
+fixed-map = "0.6.1"
+log4rs = "0.8.1"
+handlebars = "1.1.0"
+
+[dependencies.librespot]
+version = "0.1.0"
+# path = "../../librespot"
+git = "https://github.com/udoprog/librespot"
+
+[build-dependencies]
+failure = "0.1"

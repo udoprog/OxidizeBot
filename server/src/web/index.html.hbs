@@ -1,0 +1,15 @@
+<html>
+<body>
+    <h1>Setmod Admin Page</h1>
+
+    <h2>Required Authentication</h2>
+
+    <ul>
+        {{#each auth}}
+        <li><a href="{{url}}">{{title}}</a></li>
+        {{else}}
+        <li>Nothing to authenticate!</li>
+        {{/each}}
+    </ul>
+</body>
+</html>

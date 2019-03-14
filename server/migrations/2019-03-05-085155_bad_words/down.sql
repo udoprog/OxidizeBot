@@ -1,0 +1,1 @@
+DROP TABLE bad_words;

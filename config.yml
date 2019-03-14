@@ -1,0 +1,36 @@
+streamer: setbac
+
+irc:
+  bot: setmod
+  channels:
+    - name: "#setbac"
+      features:
+        - admin
+        - command
+        - counter
+        - song
+        - afterstream
+        - bad-words
+        - url-whitelist
+      currency:
+        name: ether
+      player:
+        speaker: "Speakers (Realtek High Definiti"
+        volume: 50
+        # connect: true
+      aliases:
+      - match: "!sr"
+        replace: "!song request {{rest}}"
+      - match: "!sl"
+        replace: "!song list {{rest}}"
+      - match: "!volume"
+        replace: "!song volume {{rest}}"
+  moderators:
+    - "setbac"
+    - "setmod"
+  whitelisted_hosts:
+    - "youtube.com"
+    - "youtu.be"
+
+bad_words: bad_words.yml
+database_url: database.sql
