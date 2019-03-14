@@ -74,17 +74,22 @@ pub enum Feature {
 pub struct Channel {
     pub name: Arc<String>,
     /// Per-channel override of streamer.
+    #[serde(default)]
     streamer: Option<String>,
     /// Per-channel currency.
+    #[serde(default)]
     currency: Option<Currency>,
     /// Whether or not to notify on currency rewards.
     #[serde(default)]
     notify_rewards: bool,
     /// Player configuration file.
+    #[serde(default)]
     player: Option<player::Config>,
     /// Features to add.
+    #[serde(default)]
     features: HashSet<Feature>,
     /// Aliases in use for channel.
+    #[serde(default)]
     aliases: aliases::Aliases,
 }
 
@@ -581,7 +586,6 @@ impl<'a> MessageHandler<'a> {
         };
 
         match it.next() {
-            Some("mine") => {}
             Some("list") => {
                 let mut limit = 3usize;
 
@@ -618,6 +622,11 @@ impl<'a> MessageHandler<'a> {
                     user.respond("No song :(");
                 }
             },
+            Some("purge") => {
+                self.check_moderator(&user)?;
+                player.purge()?;
+                user.respond("Song queue purged.");
+            }
             Some("delete") => {
                 let removed = match it.next() {
                     Some("last") => match it.next() {
@@ -804,7 +813,11 @@ impl<'a> MessageHandler<'a> {
                 }
             }
             None | Some(..) => {
-                user.respond("Expected: skip, request, or toggle.");
+                if self.is_moderator(user) {
+                    user.respond("Expected: request, skip, play, pause, toggle, delete.");
+                } else {
+                    user.respond("Expected: !song request <request>, !song list, !song length, or !song delete mine.");
+                }
             }
         }
 

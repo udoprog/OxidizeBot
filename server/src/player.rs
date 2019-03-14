@@ -613,6 +613,10 @@ impl PlayerClient {
         Ok(None)
     }
 
+    pub fn purge(&self) -> Result<Vec<Arc<Item>>, failure::Error> {
+        self.queue.purge(self.channel.as_str())
+    }
+
     /// Remove the first track in the queue.
     pub fn remove_last(&self) -> Result<Option<Arc<Item>>, failure::Error> {
         self.queue.remove_last(self.channel.as_str())
@@ -692,6 +696,20 @@ pub trait Backend: Clone + Send + Sync {
 
     /// Remove the song with the given ID.
     fn remove_song(&self, channel: &str, track_id: &TrackId) -> Result<bool, failure::Error>;
+
+    /// Purge the songs database, but only log on issues.
+    fn song_purge_log(&self, channel: &str) -> Option<usize> {
+        match self.song_purge(channel) {
+            Err(e) => {
+                log::warn!("{}:{}: failed to purge songs from database", channel, e);
+                None
+            }
+            Ok(n) => Some(n),
+        }
+    }
+
+    /// Purge the songs database and return the number of items removed.
+    fn song_purge(&self, channel: &str) -> Result<usize, failure::Error>;
 }
 
 /// The playback queue.
@@ -760,6 +778,24 @@ impl Queue {
             inner.entry(channel).or_default().push_back(item);
             Ok(())
         })))
+    }
+
+    /// Purge the song queue.
+    pub fn purge(&self, channel: &str) -> Result<Vec<Arc<Item>>, failure::Error> {
+        let mut queues = self.queues.write().expect("lock poisoned");
+
+        let q = match queues.get_mut(channel) {
+            Some(q) => q,
+            None => return Ok(vec![]),
+        };
+
+        if q.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let purged = std::mem::replace(q, VecDeque::new()).into_iter().collect();
+        self.db.song_purge_log(channel);
+        Ok(purged)
     }
 
     /// Remove the last element.

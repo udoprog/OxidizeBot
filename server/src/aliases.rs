@@ -1,7 +1,7 @@
 use crate::utils;
 
 /// Command aliases.
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Default, serde::Deserialize)]
 #[serde(transparent)]
 pub struct Aliases {
     aliases: Vec<MatchReplace>,

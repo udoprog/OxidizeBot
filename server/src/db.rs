@@ -284,6 +284,13 @@ impl player::Backend for Database {
         Ok(())
     }
 
+    /// Purge the given channel from songs.
+    fn song_purge(&self, channel: &str) -> Result<usize, failure::Error> {
+        use self::schema::songs::dsl;
+        let c = self.pool.get()?;
+        Ok(diesel::delete(dsl::songs.filter(dsl::channel.eq(channel))).execute(&c)?)
+    }
+
     /// Remove the song at the given location.
     fn remove_song(
         &self,
