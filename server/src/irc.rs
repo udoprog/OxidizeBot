@@ -586,6 +586,50 @@ impl<'a> MessageHandler<'a> {
         };
 
         match it.next() {
+            Some("theme") => {
+                self.check_moderator(user)?;
+
+                let name = match it.next() {
+                    Some(name) => name,
+                    None => {
+                        user.respond("Expected: !song theme <name>");
+                        failure::bail!("bad command");
+                    }
+                };
+
+                let future = player.play_theme(name).then({
+                    let user = user.clone();
+
+                    move |r| {
+                        match r {
+                            Ok(()) => {}
+                            Err(player::PlayThemeError::NoSuchTheme) => {
+                                user.respond("No such theme :(");
+                            }
+                            Err(player::PlayThemeError::Error(e)) => {
+                                user.respond("There was a problem adding your song :(");
+                                log::error!("failed to add song: {}", e);
+                            }
+                        }
+
+                        Ok(())
+                    }
+                });
+
+                self.thread_pool.spawn(future);
+            }
+            Some("close") => {
+                self.check_moderator(user)?;
+
+                player.close(match it.rest() {
+                    "" => None,
+                    other => Some(other.to_string()),
+                });
+            }
+            Some("open") => {
+                self.check_moderator(user)?;
+                player.open();
+            }
             Some("list") => {
                 let mut limit = 3usize;
 
@@ -610,12 +654,17 @@ impl<'a> MessageHandler<'a> {
                 Some(item) => {
                     if let Some(name) = item.user.as_ref() {
                         user.respond(format!(
-                            "Current song: {}, requested by {}.",
+                            "Current song: {}, requested by {} ({duration}).",
                             item.what(),
-                            name
+                            name,
+                            duration = item.duration(),
                         ));
                     } else {
-                        user.respond(format!("Current song: {}", item.what()));
+                        user.respond(format!(
+                            "Current song: {} ({duration})",
+                            item.what(),
+                            duration = item.duration()
+                        ));
                     }
                 }
                 None => {
@@ -741,6 +790,16 @@ impl<'a> MessageHandler<'a> {
                                             what = item.what(),
                                             pos = pos + 1
                                         ));
+                                    }
+                                    Err(player::AddTrackError::PlayerClosed(reason)) => {
+                                        match reason {
+                                            Some(reason) => {
+                                                user.respond(reason.as_str());
+                                            },
+                                            None => {
+                                                user.respond("Player is closed from further requests, sorry :(");
+                                            }
+                                        }
                                     }
                                     Err(player::AddTrackError::QueueContainsTrack(pos)) => {
                                         user.respond(format!(
@@ -955,15 +1014,20 @@ impl<'a> MessageHandler<'a> {
                 .and_then(|s| s.started_at.clone())
         });
 
+        let now = Utc::now();
+
         match started_at {
-            Some(started_at) => {
-                let now = Utc::now();
-                let uptime = utils::human_time((now - started_at).num_seconds());
+            // NB: very important to check that _now_ is after started at.
+            Some(ref started_at) if now > *started_at => {
+                let uptime = utils::human_time((now - *started_at).num_seconds());
 
                 user.respond(format!(
                     "Stream has been live for {uptime}.",
                     uptime = uptime
                 ));
+            }
+            Some(_) => {
+                user.respond("Stream is live, but start time is weird!");
             }
             None => {
                 user.respond("Stream is not live right now, try again later!");

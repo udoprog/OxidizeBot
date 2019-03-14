@@ -15,6 +15,8 @@ pub mod player;
 pub mod secrets;
 pub mod spotify;
 mod template;
+mod themes;
+mod track_id;
 pub mod twitch;
 mod utils;
 pub mod web;

@@ -67,6 +67,16 @@ irc:
         replace: "!song list {{rest}}"
       - match: "!volume"
         replace: "!song volume {{rest}}"
+      # Theme songs, that can be invoked with `!song theme <name>`.
+      # This will be played instead of the current song.
+      # The current song will be paused and start playing after this
+      # song has been skipped.
+      themes:
+      - name: blimp
+        track: spotify:track:7JczDg05i29N5C3VMZKIVA
+      - name: setup
+        track: spotify:track:2fZpKgrcAlWzWYwQeFG43O
+        offset: "00:14"
   # List of moderators allowed to perform moderator actions.
   moderators:
     - "setbac"
@@ -237,6 +247,9 @@ Enabled commands:
 * `!song delete mine` - A user is allowed to delete the last song that _they_ added.
 * `!song list` - Get the next three songs.
 * `!song list <n>` - Get the next `<n>` songs (**moderator**).
+* `!song theme <name>` - Play the specified theme song (**moderator**).
+* `!song close [reason]` - Close the song queue with an optional `[reason]` (**moderator**).
+* `!song open` - Open the song queue (**moderator**).
 
 ## Aliases
 

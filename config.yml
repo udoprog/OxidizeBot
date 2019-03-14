@@ -24,6 +24,12 @@ irc:
           template:
             - "Song: \"{{name}}\"{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})"
             - "{{#if user~}}Request by: @{{user~}}{{/if}}"
+        themes:
+        - name: blimp
+          track: spotify:track:7JczDg05i29N5C3VMZKIVA
+        - name: setup
+          track: spotify:track:2fZpKgrcAlWzWYwQeFG43O
+          offset: "00:14"
       aliases:
       - match: "!sr"
         replace: "!song request {{rest}}"

@@ -151,7 +151,7 @@ impl super::PlayerInterface for ConnectPlayer {
             }));
     }
 
-    fn load(&mut self, item: &super::Item) -> oneshot::Receiver<()> {
+    fn load(&mut self, item: &super::Item, _: u32) -> oneshot::Receiver<()> {
         let track_uri = format!("spotify:track:{}", item.track_id.0.to_base62());
 
         self.runtime.spawn(

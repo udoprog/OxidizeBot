@@ -1,4 +1,4 @@
-use std::mem;
+use std::{mem, time::Duration};
 use url::percent_encoding::PercentDecode;
 
 pub struct Urls<'a> {
@@ -242,12 +242,14 @@ pub fn human_artists(artists: &[String]) -> Option<String> {
         artists.push_str(artist);
     }
 
-    for artist in (&mut it).take(artists.len().saturating_sub(2)) {
+    let back = it.next_back();
+
+    while let Some(artist) = it.next() {
         artists.push_str(", ");
         artists.push_str(artist);
     }
 
-    if let Some(artist) = it.next() {
+    if let Some(artist) = back {
         artists.push_str(", and ");
         artists.push_str(artist);
     }
@@ -268,9 +270,56 @@ fn is_url_character(c: char) -> bool {
     }
 }
 
+/// Offset.
+///
+/// Stored field is in milliseconds.
+#[derive(Debug, Clone, Default)]
+pub struct Offset(u32);
+
+impl std::str::FromStr for Offset {
+    type Err = failure::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut it = s.split(':').rev();
+
+        let seconds: Option<u32> = it.next().map(str::parse).transpose()?;
+        let minutes: Option<u32> = it.next().map(str::parse).transpose()?;
+
+        let seconds = match seconds {
+            Some(seconds) => seconds.checked_mul(1000),
+            None => None,
+        }
+        .unwrap_or_default();
+
+        let minutes = match minutes {
+            Some(minutes) => minutes.checked_mul(1000 * 60),
+            None => None,
+        }
+        .unwrap_or_default();
+
+        Ok(Offset(seconds.checked_add(minutes).unwrap_or_default()))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Offset {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        str::parse(&String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Offset {
+    /// Treat offset as duration.
+    pub fn as_duration(&self) -> Duration {
+        Duration::from_millis(self.0 as u64)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{TrimmedWords, Urls, Words};
+    use super::{human_artists, TrimmedWords, Urls, Words};
 
     #[test]
     pub fn test_trimmed_words() {
@@ -295,6 +344,22 @@ mod tests {
                 str::parse("https://google.se/test+this").unwrap(),
                 str::parse("http://example.com").unwrap()
             ],
+        );
+    }
+
+    #[test]
+    pub fn test_human_artists() {
+        let artists = vec![String::from("foo"), String::from("bar")];
+        assert_eq!("foo, and bar", human_artists(&artists).expect("artists"));
+
+        let artists = vec![
+            String::from("foo"),
+            String::from("bar"),
+            String::from("baz"),
+        ];
+        assert_eq!(
+            "foo, bar, and baz",
+            human_artists(&artists).expect("artists")
         );
     }
 }

@@ -66,8 +66,8 @@ impl super::PlayerInterface for player::Player {
         player::Player::pause(self);
     }
 
-    fn load(&mut self, item: &super::Item) -> oneshot::Receiver<()> {
-        player::Player::load(self, item.track_id.0, false, 0)
+    fn load(&mut self, item: &super::Item, offset_ms: u32) -> oneshot::Receiver<()> {
+        player::Player::load(self, item.track_id.0, false, offset_ms)
     }
 
     fn volume(&mut self, volume: Option<f32>) {

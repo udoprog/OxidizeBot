@@ -1,6 +1,8 @@
 use tokio_core::reactor::Core;
 
-use crate::{db, irc, secrets, spotify, template, utils};
+pub use crate::track_id::TrackId;
+use crate::{db, irc, secrets, spotify, template, themes::Themes, utils};
+
 use chrono::Utc;
 use failure::format_err;
 use futures::{
@@ -14,7 +16,7 @@ use std::{
     fs::File,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio_bus::{Bus, BusReader};
 use tokio_threadpool::{SpawnHandle, ThreadPool};
@@ -37,7 +39,7 @@ pub trait PlayerInterface: Send {
     /// Load the given track.
     ///
     /// The oneshot is triggered when the track has completed.
-    fn load(&mut self, item: &Item) -> oneshot::Receiver<()>;
+    fn load(&mut self, item: &Item, offset_ms: u32) -> oneshot::Receiver<()>;
 
     /// Adjust the volume of the player.
     fn volume(&mut self, volume: Option<f32>);
@@ -73,7 +75,10 @@ pub struct Config {
     connect: bool,
     /// Write the current song to the specified path.
     #[serde(default)]
-    current_song: Option<CurrentSong>,
+    current_song: Option<Arc<CurrentSong>>,
+    /// Theme songs that can be triggered on command.
+    #[serde(default)]
+    themes: Arc<Themes>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -129,79 +134,6 @@ impl Config {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, diesel::FromSqlRow, diesel::AsExpression)]
-#[sql_type = "diesel::sql_types::Text"]
-pub struct TrackId(pub SpotifyId);
-
-impl TrackId {
-    /// Convert to a base 62 ID.
-    pub fn to_base62(&self) -> String {
-        self.0.to_base62()
-    }
-
-    /// Parse a track id from a URL or URI.
-    pub fn from_url_or_uri(s: &str) -> Result<TrackId, failure::Error> {
-        if let Ok(url) = str::parse::<url::Url>(s) {
-            match url.host() {
-                Some(host) => {
-                    if host != url::Host::Domain("open.spotify.com") {
-                        failure::bail!("bad host: {}", host);
-                    }
-
-                    let parts = url.path().split("/").collect::<Vec<_>>();
-
-                    match parts.as_slice() {
-                        &["", "track", id] => return str::parse(id),
-                        _ => failure::bail!("bad path in url"),
-                    }
-                }
-                None => {
-                    println!("{:?}", url);
-                }
-            }
-        }
-
-        if s.starts_with("spotify:track:") {
-            return str::parse(s.trim_start_matches("spotify:track:"));
-        }
-
-        failure::bail!("bad track id");
-    }
-}
-
-impl<DB> diesel::serialize::ToSql<diesel::sql_types::Text, DB> for TrackId
-where
-    DB: diesel::backend::Backend,
-    String: diesel::serialize::ToSql<diesel::sql_types::Text, DB>,
-{
-    fn to_sql<W>(&self, out: &mut diesel::serialize::Output<W, DB>) -> diesel::serialize::Result
-    where
-        W: std::io::Write,
-    {
-        self.0.to_base62().to_sql(out)
-    }
-}
-
-impl<DB> diesel::deserialize::FromSql<diesel::sql_types::Text, DB> for TrackId
-where
-    DB: diesel::backend::Backend,
-    String: diesel::deserialize::FromSql<diesel::sql_types::Text, DB>,
-{
-    fn from_sql(bytes: Option<&DB::RawValue>) -> diesel::deserialize::Result<Self> {
-        let s = String::from_sql(bytes)?;
-        Ok(str::parse(&s)?)
-    }
-}
-
-impl serde::Serialize for TrackId {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.0.to_base62().serialize(serializer)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Item {
     pub track_id: TrackId,
@@ -231,6 +163,13 @@ impl Item {
         }
     }
 
+    /// Display the short form duration of this track.
+    ///
+    /// e.g. 4m32s
+    pub fn duration(&self) -> String {
+        utils::compact_time(self.duration.as_secs())
+    }
+
     /// Get serializable data for this item.
     pub fn data(&self, paused: bool) -> Result<ItemData<'_>, failure::Error> {
         let artists = utils::human_artists(&self.artists);
@@ -238,15 +177,13 @@ impl Item {
         let name = htmlescape::decode_html(&self.name)
             .map_err(|_| format_err!("failed to decode song name: {}", self.name))?;
 
-        log::info!("NAME: {:?}", name);
-
         Ok(ItemData {
             paused,
             track_id: &self.track_id,
             name,
             artists,
             user: self.user.as_ref().map(|s| s.as_str()),
-            duration: utils::compact_time(self.duration.as_secs()),
+            duration: self.duration(),
         })
     }
 }
@@ -265,6 +202,8 @@ pub enum Command {
     Added,
     // Set the gain of the player.
     Volume(u32),
+    // Play the given item as a theme at the given offset.
+    Inject(Arc<Item>, Duration),
 }
 
 impl std::str::FromStr for TrackId {
@@ -333,6 +272,7 @@ pub fn run(
     )));
 
     let current = Arc::new(RwLock::new(None));
+    let closed = Arc::new(RwLock::new(None));
 
     let future = PlaybackFuture {
         player,
@@ -343,6 +283,8 @@ pub fn run(
         pop_front: None,
         paused,
         loaded: None,
+        inject: None,
+        sidelined: Default::default(),
         fallback_items,
         volume: Arc::clone(&volume),
         channel: Arc::clone(&channel.name),
@@ -360,6 +302,8 @@ pub fn run(
         volume: Arc::clone(&volume),
         channel: Arc::clone(&channel.name),
         current: current.clone(),
+        themes: config.themes.clone(),
+        closed: closed.clone(),
     };
 
     if config.connect {
@@ -474,6 +418,7 @@ fn convert_item(
 /// The origin of a song being played.
 #[derive(Debug, Clone, Copy)]
 pub enum Origin {
+    Injected,
     Fallback,
     Queue,
 }
@@ -499,6 +444,10 @@ pub struct Player {
     channel: Arc<String>,
     /// Current song that is loaded.
     current: Arc<RwLock<Option<Arc<Item>>>>,
+    /// Theme songs.
+    themes: Arc<Themes>,
+    /// Player is closed for more requests.
+    closed: Arc<RwLock<Option<Option<Arc<String>>>>>,
 }
 
 impl Player {
@@ -514,6 +463,8 @@ impl Player {
             commands_tx: self.commands_tx.clone(),
             volume: Arc::clone(&self.volume),
             current: self.current.clone(),
+            themes: self.themes.clone(),
+            closed: self.closed.clone(),
         }
     }
 
@@ -537,6 +488,10 @@ pub struct PlayerClient {
     volume: Arc<RwLock<u32>>,
     /// Current song that is loaded.
     current: Arc<RwLock<Option<Arc<Item>>>>,
+    /// Theme songs.
+    themes: Arc<Themes>,
+    /// Player is closed for more requests.
+    closed: Arc<RwLock<Option<Option<Arc<String>>>>>,
 }
 
 impl PlayerClient {
@@ -594,6 +549,16 @@ impl PlayerClient {
         *self.volume.read().expect("lock poisoned")
     }
 
+    /// Close the player from more requests.
+    pub fn close(&self, reason: Option<String>) {
+        *self.closed.write().expect("poisoned") = Some(reason.map(Arc::new));
+    }
+
+    /// Open the player.
+    pub fn open(&self) {
+        *self.closed.write().expect("poisoned") = None;
+    }
+
     /// Search for a track.
     pub fn search_track(
         &self,
@@ -608,6 +573,42 @@ impl PlayerClient {
                 },
                 None => Ok(None),
             })
+    }
+
+    /// Play a theme track.
+    pub fn play_theme(&self, name: &str) -> impl Future<Item = (), Error = PlayThemeError> {
+        let fut = future::lazy({
+            let themes = self.themes.clone();
+            let name = name.to_string();
+
+            move || match themes.lookup(&name) {
+                Some(theme) => Ok(theme),
+                None => Err(PlayThemeError::NoSuchTheme),
+            }
+        });
+
+        let fut = fut.and_then({
+            let thread_pool = Arc::clone(&self.thread_pool);
+            let spotify = Arc::clone(&self.spotify);
+
+            move |theme| {
+                convert_item(&thread_pool, spotify, None, theme.track.clone())
+                    .map(move |item| (item, theme))
+                    .map_err(|e| PlayThemeError::Error(e.into()))
+            }
+        });
+
+        fut.and_then({
+            let commands_tx = self.commands_tx.clone();
+
+            move |(item, theme)| {
+                let duration = theme.offset.as_duration();
+
+                commands_tx
+                    .unbounded_send(Command::Inject(item, duration))
+                    .map_err(|e| PlayThemeError::Error(e.into()))
+            }
+        })
     }
 
     /// Add the given track to the queue.
@@ -625,6 +626,7 @@ impl PlayerClient {
             let queues = self.queue.queues.clone();
             let max_queue_length = self.max_queue_length;
             let max_songs_per_user = self.max_songs_per_user;
+            let closed = self.closed.clone();
             let user = user.to_string();
             let track_id = track_id.clone();
 
@@ -640,6 +642,12 @@ impl PlayerClient {
                 };
 
                 let len = q.len();
+
+                if !is_moderator {
+                    if let Some(reason) = closed.read().expect("poisoned").as_ref() {
+                        return Err(AddTrackError::PlayerClosed(reason.clone()));
+                    }
+                }
 
                 // NB: moderator is allowed to violate max queue length.
                 if !is_moderator && len > max_queue_length as usize {
@@ -751,6 +759,14 @@ impl PlayerClient {
     }
 }
 
+/// Error raised when failing to play a theme song.
+pub enum PlayThemeError {
+    /// No such theme song.
+    NoSuchTheme,
+    /// Other generic error happened.
+    Error(failure::Error),
+}
+
 /// Error raised when trying to add track.
 pub enum AddTrackError {
     /// Queue is full.
@@ -759,6 +775,8 @@ pub enum AddTrackError {
     QueueContainsTrack(usize),
     /// Too many user tracks.
     TooManyUserTracks(u32),
+    /// Player has been closed from adding more tracks to the queue with an optional reason.
+    PlayerClosed(Option<Arc<String>>),
     /// Other generic error happened.
     Error(failure::Error),
 }
@@ -977,6 +995,32 @@ impl Future for PushBackFuture {
     }
 }
 
+struct Loaded {
+    origin: Origin,
+    item: Arc<Item>,
+    future: oneshot::Receiver<()>,
+    started_at: Instant,
+    offset: Duration,
+}
+
+impl Loaded {
+    /// Create a new loaded entry recording the time at which it was started.
+    pub fn new(origin: Origin, item: Arc<Item>, future: oneshot::Receiver<()>) -> Self {
+        Self {
+            origin,
+            item,
+            future,
+            started_at: Instant::now(),
+            offset: Default::default(),
+        }
+    }
+
+    /// Song was loaded with the specified offset.
+    pub fn with_offset(self, offset: Duration) -> Self {
+        Self { offset, ..self }
+    }
+}
+
 /// Future associated with driving audio playback.
 pub struct PlaybackFuture {
     player: Box<dyn PlayerInterface + 'static>,
@@ -989,7 +1033,11 @@ pub struct PlaybackFuture {
     /// Playback is paused.
     paused: bool,
     /// There is a song loaded into the player.
-    loaded: Option<(Origin, Arc<Item>, oneshot::Receiver<()>)>,
+    loaded: Option<Loaded>,
+    /// A song to inject to play _right now_.
+    inject: Option<(Arc<Item>, Duration)>,
+    /// A song that has been sidelined by another song.
+    sidelined: VecDeque<(Loaded, Instant)>,
     /// Items to fall back to when there are no more songs in queue.
     fallback_items: Vec<Arc<Item>>,
     /// Current volume.
@@ -999,18 +1047,40 @@ pub struct PlaybackFuture {
     /// Current song that is loaded.
     current: Arc<RwLock<Option<Arc<Item>>>>,
     /// Path to write current song.
-    current_song: Option<CurrentSong>,
+    current_song: Option<Arc<CurrentSong>>,
 }
 
 impl PlaybackFuture {
     /// Play what is at the front of the queue.
-    fn next_song(&mut self) -> Option<(Origin, Arc<Item>, oneshot::Receiver<()>)> {
+    fn next_song(&mut self) -> Option<Loaded> {
         use rand::Rng;
+
+        if let Some((item, offset)) = self.inject.take() {
+            // store the currently playing song in the sidelined slot.
+            if let Some(loaded) = self.loaded.take() {
+                self.sidelined.push_back((loaded, Instant::now()));
+            }
+
+            let future = self.player.load(&*item, offset.as_millis() as u32);
+            return Some(Loaded::new(Origin::Injected, item, future).with_offset(offset));
+        }
+
+        if let Some((loaded, paused_at)) = self.sidelined.pop_front() {
+            let offset = if paused_at > loaded.started_at {
+                // calculate offset to start playing at
+                (paused_at - loaded.started_at) + loaded.offset
+            } else {
+                Default::default()
+            };
+
+            let future = self.player.load(&*loaded.item, offset.as_millis() as u32);
+            return Some(Loaded::new(loaded.origin, loaded.item, future).with_offset(offset));
+        }
 
         if let Some(item) = self.queue.front(self.channel.as_str()) {
             self.pop_front = Some(self.queue.pop_front(self.channel.as_str()));
-            let future = self.player.load(&*item);
-            return Some((Origin::Queue, item, future));
+            let future = self.player.load(&*item, 0);
+            return Some(Loaded::new(Origin::Queue, item, future));
         }
 
         if !self.paused || self.loaded.is_some() {
@@ -1020,8 +1090,8 @@ impl PlaybackFuture {
 
             // Pick a random item to play.
             if let Some(item) = self.fallback_items.get(n) {
-                let future = self.player.load(&*item);
-                return Some((Origin::Fallback, item.clone(), future));
+                let future = self.player.load(&*item, 0);
+                return Some(Loaded::new(Origin::Fallback, item.clone(), future));
             }
         }
 
@@ -1037,7 +1107,7 @@ impl PlaybackFuture {
         };
 
         let result = match self.loaded.as_ref() {
-            Some((_, item, _)) => current_song.write(item, self.paused),
+            Some(loaded) => current_song.write(&loaded.item, self.paused),
             None => current_song.blank(),
         };
 
@@ -1052,17 +1122,17 @@ impl PlaybackFuture {
 
     /// Load the next song.
     fn load_front(&mut self) {
-        if let Some((origin, item, future)) = self.next_song() {
-            self.loaded = Some((origin, item.clone(), future));
-            *self.current.write().expect("poisoned") = Some(item.clone());
+        if let Some(loaded) = self.next_song() {
+            *self.current.write().expect("poisoned") = Some(loaded.item.clone());
 
             if !self.paused {
                 self.player.play();
-                self.broadcast(Event::Playing(origin, item.clone()));
+                self.broadcast(Event::Playing(loaded.origin, loaded.item.clone()));
             } else {
                 self.player.pause();
             }
 
+            self.loaded = Some(loaded);
             self.current_song();
             return;
         }
@@ -1108,9 +1178,9 @@ impl PlaybackFuture {
                 self.paused = false;
 
                 match self.loaded.as_ref() {
-                    Some((origin, item, _)) => {
+                    Some(loaded) => {
                         self.player.play();
-                        self.broadcast(Event::Playing(*origin, Arc::clone(item)));
+                        self.broadcast(Event::Playing(loaded.origin, loaded.item.clone()));
                         self.current_song();
                     }
                     None => {
@@ -1124,6 +1194,10 @@ impl PlaybackFuture {
             Command::Volume(volume) => {
                 *self.volume.write().expect("lock poisoned") = volume;
                 self.player.volume(Some((volume as f32) / 100f32));
+            }
+            Command::Inject(item, offset) => {
+                self.inject = Some((item, offset));
+                self.load_front();
             }
             _ => {}
         }
@@ -1148,8 +1222,8 @@ impl Future for PlaybackFuture {
                 not_ready = false;
             }
 
-            if let Some((_, _, future)) = self.loaded.as_mut() {
-                match future.poll() {
+            if let Some(loaded) = self.loaded.as_mut() {
+                match loaded.future.poll() {
                     Ok(Async::Ready(())) => {
                         log::info!("Song ended");
                         self.load_front();
