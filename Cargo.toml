@@ -3,5 +3,6 @@
 members = [
     "notifier",
     "server",
+    "public",
 #    "gfx",
 ]

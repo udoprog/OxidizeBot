@@ -104,7 +104,9 @@ fn main() -> Result<(), failure::Error> {
 
     if let Some(path) = config.bad_words.as_ref() {
         let path = path.to_path(root);
-        bad_words.load_from_path(&path)?;
+        bad_words
+            .load_from_path(&path)
+            .with_context(|_| format_err!("failed to load bad words from: {}", path.display()))?;
     };
 
     let notifier = Arc::new(setmod_notifier::Notifier::new());

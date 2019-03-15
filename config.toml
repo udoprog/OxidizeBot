@@ -33,6 +33,7 @@ currency = {name = "ether"}
 speaker = "Speakers (Realtek High Definiti"
 volume = 50
 # connect: true
+playlist:
 
 [current_song]
 path = "E:\\temp\\current_song.txt"
@@ -55,5 +56,21 @@ match = "!sl"
 replace = "!song list {{rest}}"
 
 [[aliases]]
+match = "!resume"
+replace = "!song play"
+
+[[aliases]]
+match = "!pause"
+replace = "!song pause"
+
+[[aliases]]
 match = "!volume"
 replace = "!song volume {{rest}}"
+
+[[aliases]]
+match = "!currentsong"
+replace = "!song current"
+
+[[aliases]]
+match = "!wrongsong"
+replace = "!song delete mine"

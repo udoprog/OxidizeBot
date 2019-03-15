@@ -1,0 +1,13 @@
+<html>
+<body>
+<h1>{{user}}'s queue</h1>
+
+<ul>
+{{#each items}}
+<li><a href="{{url}}">{{title}}</a></li>
+{{else}}
+<li>No songs in queue!</li>
+{{/each}}
+</ul>
+</body>
+</html>
