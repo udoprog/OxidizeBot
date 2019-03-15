@@ -1032,7 +1032,7 @@ impl PlaybackFuture {
             if !self.paused {
                 self.player.play();
 
-                if !self.echo_current_song {
+                if self.echo_current_song {
                     self.broadcast(Event::Playing(loaded.origin, loaded.item.clone()));
                 }
             } else {

@@ -33,7 +33,7 @@ currency = {name = "ether"}
 speaker = "Speakers (Realtek High Definiti"
 volume = 50
 # connect: true
-playlist:
+echo_current_song = false
 
 [current_song]
 path = "E:\\temp\\current_song.txt"
