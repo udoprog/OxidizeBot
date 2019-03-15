@@ -12,7 +12,6 @@ use futures::{
 };
 use std::{
     collections::VecDeque,
-    path::Path,
     sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
@@ -71,6 +70,13 @@ pub struct Config {
     /// Whether or not to use the connect player.
     #[serde(default)]
     connect: bool,
+    /// Whether or not to echo current song.
+    #[serde(default = "default_true")]
+    echo_current_song: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_max_queue_length() -> u32 {
@@ -79,14 +85,6 @@ fn default_max_queue_length() -> u32 {
 
 fn default_max_songs_per_user() -> u32 {
     2
-}
-
-impl Config {
-    /// Load the configuration from a path.
-    pub fn load(path: impl AsRef<Path>) -> Result<Self, failure::Error> {
-        let f = std::fs::File::open(path)?;
-        Ok(serde_yaml::from_reader(f)?)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -242,6 +240,7 @@ pub fn run(
         volume: Arc::clone(&volume),
         current: current.clone(),
         current_song: config.current_song.clone(),
+        echo_current_song: player_config.echo_current_song,
     };
 
     let player = Player {
@@ -951,6 +950,8 @@ pub struct PlaybackFuture {
     current: Arc<RwLock<Option<Arc<Item>>>>,
     /// Path to write current song.
     current_song: Option<Arc<current_song::CurrentSong>>,
+    /// Current config.
+    echo_current_song: bool,
 }
 
 impl PlaybackFuture {
@@ -1030,7 +1031,10 @@ impl PlaybackFuture {
 
             if !self.paused {
                 self.player.play();
-                self.broadcast(Event::Playing(loaded.origin, loaded.item.clone()));
+
+                if !self.echo_current_song {
+                    self.broadcast(Event::Playing(loaded.origin, loaded.item.clone()));
+                }
             } else {
                 self.player.pause();
             }
@@ -1042,6 +1046,7 @@ impl PlaybackFuture {
 
         self.loaded = None;
         *self.current.write().expect("poisoned") = None;
+
         self.broadcast(Event::Empty);
         self.player.stop();
         self.current_song();
@@ -1083,7 +1088,11 @@ impl PlaybackFuture {
                 match self.loaded.as_ref() {
                     Some(loaded) => {
                         self.player.play();
-                        self.broadcast(Event::Playing(loaded.origin, loaded.item.clone()));
+
+                        if self.echo_current_song {
+                            self.broadcast(Event::Playing(loaded.origin, loaded.item.clone()));
+                        }
+
                         self.current_song();
                     }
                     None => {
