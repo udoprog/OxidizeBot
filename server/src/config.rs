@@ -1,4 +1,5 @@
-use crate::{irc, secrets, web};
+use crate::{aliases, features, irc, player, secrets, themes, web};
+use hashbrown::HashSet;
 use relative_path::RelativePathBuf;
 use std::{marker, path::Path, sync::Arc};
 
@@ -14,16 +15,25 @@ pub struct Config {
     pub database_url: Option<String>,
     #[serde(default)]
     pub bad_words: Option<RelativePathBuf>,
-    /// Player configuration to load.
-    pub player: Option<RelativePathBuf>,
     /// Where secrets are stored.
-    #[serde(default = "default_secrets")]
-    pub secrets: RelativePathBuf,
-}
-
-/// Default location for secrets.
-pub fn default_secrets() -> RelativePathBuf {
-    RelativePathBuf::from("secrets.yml")
+    #[serde(default)]
+    pub secrets: Option<RelativePathBuf>,
+    /// Themes that can be played.
+    #[serde(default)]
+    pub themes: Arc<themes::Themes>,
+    /// Player configuration file.
+    #[serde(default)]
+    pub player: Option<player::Config>,
+    /// Aliases in use for channels.
+    #[serde(default)]
+    pub aliases: aliases::Aliases,
+    /// Features enabled for bot.
+    #[serde(default)]
+    pub features: features::Features,
+    #[serde(default)]
+    pub moderators: HashSet<String>,
+    #[serde(default)]
+    pub whitelisted_hosts: HashSet<String>,
 }
 
 #[derive(Debug)]

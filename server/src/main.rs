@@ -1,7 +1,8 @@
 use failure::{format_err, ResultExt};
 use futures::{future, Future};
 use setmod_server::{
-    commands, config::Config, counters, db, irc, secrets, spotify, twitch, web, words,
+    commands, config::Config, counters, db, features::Feature, irc, player, secrets, spotify,
+    twitch, web, words,
 };
 use std::{fs, path::Path, sync::Arc, thread};
 use tokio_core::reactor::Core;
@@ -57,7 +58,7 @@ fn main() -> Result<(), failure::Error> {
     let config = m
         .value_of("config")
         .map(Path::new)
-        .unwrap_or(Path::new("config.yml"));
+        .unwrap_or(Path::new("config.toml"));
 
     let root = config
         .parent()
@@ -68,15 +69,19 @@ fn main() -> Result<(), failure::Error> {
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
 
     let config: Config = if config.is_file() {
-        fs::File::open(config)
+        fs::read_to_string(config)
             .map_err(failure::Error::from)
-            .and_then(|f| serde_yaml::from_reader(f).map_err(Into::into))
+            .and_then(|s| toml::de::from_str(&s).map_err(failure::Error::from))
             .with_context(|_| format_err!("failed to read configuration: {}", config.display()))?
     } else {
         Config::default()
     };
 
-    let secrets_path = config.secrets.to_path(root);
+    let secrets_path = match config.secrets.as_ref() {
+        Some(secrets) => secrets.to_path(root),
+        None => root.join("secrets.yml"),
+    };
+
     let secrets = secrets::Secrets::open(&secrets_path)
         .with_context(|_| format_err!("failed to load secrets: {}", secrets_path.display()))?;
 
@@ -169,7 +174,25 @@ fn main() -> Result<(), failure::Error> {
     let spotify = Arc::new(spotify::Spotify::new(spotify_token.clone())?);
     let twitch = twitch::Twitch::new(streamer_token.clone())?;
 
-    if let Some((irc_config, auth_thread)) = irc {
+    let player = match config.player.as_ref() {
+        // Only setup if the song feature is enabled.
+        Some(player) if config.features.test(Feature::Song) => {
+            let (future, player) = player::run(
+                &mut core,
+                db.clone(),
+                spotify.clone(),
+                &config,
+                player,
+                &secrets,
+            )?;
+
+            futures.push(Box::new(future));
+            Some(player)
+        }
+        _ => None,
+    };
+
+    if let Some((c, auth_thread)) = irc {
         let (bot_token, future) = auth_thread.join().expect("thread panicked")?;
         futures.push(Box::new(future));
 
@@ -177,16 +200,16 @@ fn main() -> Result<(), failure::Error> {
             &mut core,
             db,
             twitch.clone(),
-            spotify.clone(),
-            config.streamer.as_ref().map(|s| s.as_str()),
-            irc_config,
+            &config,
+            c,
             bot_token,
             &commands,
             &counters,
             &bad_words,
             &*notifier,
-            &secrets,
+            player.as_ref(),
         )?;
+
         futures.push(Box::new(future));
     }
 

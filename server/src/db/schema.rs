@@ -40,8 +40,9 @@ table! {
 }
 
 table! {
-    songs (channel, track_id) {
-        channel -> Text,
+    songs (id) {
+        id -> Integer,
+        deleted -> Bool,
         track_id -> Text,
         added_at -> Timestamp,
         user -> Nullable<Text>,

@@ -23,75 +23,86 @@ cargo build --release
 
 Two configuration files are neccessary.
 
-First, `config.yml`:
+First, `config.toml`:
 
-```yaml
-streamer: setbac
-
-irc:
-  bot: setmod
-  channels:
-    - name: "#setbac"
-      # Features enabled for the channel.
-      # Removing features will remove their corresponding commands.
-      features:
-        - song
-        - admin
-        - command
-        - counter
-        - afterstream
-        - bad-words
-        - url-whitelist
-      # Loyalty currency used.
-      # Remove to disable.
-      currency:
-        name: ether
-      # Player configuration.
-      # To find out available speakers, change `speaker` to `"?"` and available speakers will be listed when running the
-      # command.
-      player:
-        speaker: "Speakers (Realtek High Definiti"
-        volume: 50
-        # Optional: Write information on the current song to the given path for use with e.g. OBS.
-        current_song:
-          path: "E:\\temp\\current_song.txt"
-          not_playing: "No Song Playing"
-          template:
-            - "Song: \"{{name}}\"{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})"
-            - "{{#if user~}}Request by: @{{user~}}{{/if}}"
-      # Aliases, only single-word command aliases are currently available.
-      aliases:
-      - match: "!sr"
-        replace: "!song request {{rest}}"
-      - match: "!sl"
-        replace: "!song list {{rest}}"
-      - match: "!volume"
-        replace: "!song volume {{rest}}"
-      # Theme songs, that can be invoked with `!song theme <name>`.
-      # This will be played instead of the current song.
-      # The current song will be paused and start playing after this
-      # song has been skipped.
-      themes:
-      - name: blimp
-        track: spotify:track:7JczDg05i29N5C3VMZKIVA
-      - name: setup
-        track: spotify:track:2fZpKgrcAlWzWYwQeFG43O
-        offset: "00:14"
-  # List of moderators allowed to perform moderator actions.
-  moderators:
-    - "setbac"
-    - "setmod"
-  # Whitelisted hosts (if url-whitelist is enabled).
-  whitelisted_hosts:
-    - "youtube.com"
-    - "youtu.be"
+```toml
+streamer = "setbac"
 
 # Optional bad words list.
 # See "Bad Words" below.
-bad_words: bad_words.yml
+bad_words = "bad_words.yml"
 
 # Path to database (technicaly an connection URL, but only sqlite supported right now).
-database_url: database.sql
+database_url = "database.sql"
+
+# List of moderators allowed to perform moderator actions.
+moderators = [
+  "setbac",
+  "setmod",
+]
+
+# Whitelisted hosts (if the `url-whitelist` feature is enabled).
+whitelisted_hosts = [
+  "youtube.com",
+  "youtu.be",
+]
+
+# Features enabled for the channel.
+# Removing features will remove their corresponding commands.
+features = [
+  "admin",
+  "command",
+  "counter",
+  "song",
+  "afterstream",
+  "bad-words",
+  "url-whitelist",
+]
+
+[irc]
+bot = "setmod"
+
+[[irc.channels]]
+name = "#setbac"
+# Loyalty currency used.
+# Remove to disable.
+currency = {name = "ether"}
+
+[player]
+# Player configuration.
+# To find out available speakers, change `speaker` to `"?"` and available speakers will be listed when running the
+# command.
+speaker = "Speakers (Realtek High Definiti"
+volume = 50
+
+[player.current_song]
+# Optional: Write information on the current song to the given path for use with e.g. OBS.
+path = "E:\\temp\\current_song.txt"
+not_playing = "No Song Playing"
+template = [
+  "Song: \"{{name}}\"{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})",
+  "{{#if user~}}Request by: @{{user~}}{{/if}}",
+]
+
+[themes]
+# Theme songs, that can be invoked with `!song theme <name>`.
+# This will be played instead of the current song.
+# The current song will be paused and start playing after this
+# song has been skipped.
+blimp = {track = "spotify:track:7JczDg05i29N5C3VMZKIVA"}
+setup = {track = "spotify:track:2fZpKgrcAlWzWYwQeFG43O", offset = "00:14"}
+
+[[aliases]]
+match = "!sr"
+replace = "!song request {{rest}}"
+
+[[aliases]]
+match = "!sl"
+replace = "!song list {{rest}}"
+
+[[aliases]]
+match = "!volume"
+replace = "!song volume {{rest}}"
 ```
 
 Second, `secrets.yml`:

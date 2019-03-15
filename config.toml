@@ -1,0 +1,59 @@
+streamer = "setbac"
+bad_words = "bad_words.yml"
+database_url = "database.sql"
+
+moderators = [
+  "setbac",
+  "setmod",
+]
+
+whitelisted_hosts = [
+  "youtube.com",
+  "youtu.be",
+]
+
+features = [
+  "admin",
+  "command",
+  "counter",
+  "song",
+  "afterstream",
+  "bad-words",
+  "url-whitelist",
+]
+
+[irc]
+bot = "setmod"
+
+[[irc.channels]]
+name = "#setbac"
+currency = {name = "ether"}
+
+[player]
+speaker = "Speakers (Realtek High Definiti"
+volume = 50
+# connect: true
+
+[current_song]
+path = "E:\\temp\\current_song.txt"
+not_playing = "No Song Playing"
+template = [
+  "Song: \"{{name}}\"{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})",
+  "{{#if user~}}Request by: @{{user~}}{{/if}}",
+]
+
+[themes]
+blimp = {track = "spotify:track:7JczDg05i29N5C3VMZKIVA"}
+setup = {track = "spotify:track:2fZpKgrcAlWzWYwQeFG43O", offset = "00:14"}
+
+[[aliases]]
+match = "!sr"
+replace = "!song request {{rest}}"
+
+[[aliases]]
+match = "!sl"
+replace = "!song list {{rest}}"
+
+[[aliases]]
+match = "!volume"
+replace = "!song volume {{rest}}"

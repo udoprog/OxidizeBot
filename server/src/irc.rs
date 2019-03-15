@@ -1,6 +1,9 @@
 use crate::{
-    aliases, commands, counters, currency::Currency, db, oauth2, player, secrets, spotify, twitch,
-    utils, words,
+    aliases, commands, config, counters,
+    currency::Currency,
+    db,
+    features::{Feature, Features},
+    oauth2, player, twitch, utils, words,
 };
 use chrono::{DateTime, Utc};
 use failure::format_err;
@@ -10,7 +13,7 @@ use futures::{
 };
 use hashbrown::{HashMap, HashSet};
 use irc::{
-    client::{data::config, ext::ClientExt, Client, IrcClient, PackedIrcClient},
+    client::{self, ext::ClientExt, Client, IrcClient, PackedIrcClient},
     proto::{
         command::{CapSubCommand, Command},
         message::{Message, Tag},
@@ -38,35 +41,6 @@ const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
 pub struct Config {
     bot: String,
     channels: Vec<Channel>,
-    #[serde(default)]
-    moderators: HashSet<String>,
-    #[serde(default)]
-    whitelisted_hosts: HashSet<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, fixed_map::Key)]
-pub enum Feature {
-    /// Song features.
-    #[serde(rename = "song")]
-    Song,
-    /// Custom commands.
-    #[serde(rename = "command")]
-    Command,
-    /// Counter commands.
-    #[serde(rename = "counter")]
-    Counter,
-    /// Add afterstream notifications.
-    #[serde(rename = "afterstream")]
-    AfterStream,
-    /// Feature to remove messages which matches a bad words filter.
-    #[serde(rename = "bad-words")]
-    BadWords,
-    /// If URL-whitelisting is enabled.
-    #[serde(rename = "url-whitelist")]
-    UrlWhitelist,
-    /// Admin features.
-    #[serde(rename = "admin")]
-    Admin,
 }
 
 /// Configuration for a twitch channel.
@@ -82,30 +56,20 @@ pub struct Channel {
     /// Whether or not to notify on currency rewards.
     #[serde(default)]
     notify_rewards: bool,
-    /// Player configuration file.
-    #[serde(default)]
-    player: Option<player::Config>,
-    /// Features to add.
-    #[serde(default)]
-    features: HashSet<Feature>,
-    /// Aliases in use for channel.
-    #[serde(default)]
-    aliases: aliases::Aliases,
 }
 
 pub fn run<'a>(
     core: &mut Core,
     db: db::Database,
     twitch: twitch::Twitch,
-    spotify: Arc<spotify::Spotify>,
-    streamer: Option<&'a str>,
-    config: &'a Config,
+    config: &'a config::Config,
+    irc_config: &'a Config,
     token: Arc<RwLock<oauth2::TwitchToken>>,
     commands: &'a commands::Commands<db::Database>,
     counters: &'a counters::Counters<db::Database>,
     bad_words: &'a words::Words<db::Database>,
     notifier: &'a Notifier,
-    secrets: &'a secrets::Secrets,
+    player: Option<&player::Player>,
 ) -> Result<impl Future<Item = (), Error = failure::Error> + 'a, failure::Error> {
     let access_token = token
         .read()
@@ -113,17 +77,23 @@ pub fn run<'a>(
         .access_token()
         .to_string();
 
-    let irc_config = config::Config {
-        nickname: Some(config.bot.clone()),
-        channels: Some(config.channels.iter().map(|c| c.name.to_string()).collect()),
+    let irc_client_config = client::data::config::Config {
+        nickname: Some(irc_config.bot.clone()),
+        channels: Some(
+            irc_config
+                .channels
+                .iter()
+                .map(|c| c.name.to_string())
+                .collect(),
+        ),
         password: Some(format!("oauth:{}", access_token)),
         server: Some(String::from(SERVER)),
         port: Some(6697),
         use_ssl: Some(true),
-        ..config::Config::default()
+        ..client::data::config::Config::default()
     };
 
-    let client = IrcClient::new_future(core.handle(), &irc_config)?;
+    let client = IrcClient::new_future(core.handle(), &irc_client_config)?;
 
     let PackedIrcClient(client, send_future) = core.run(client)?;
     client.identify()?;
@@ -137,16 +107,8 @@ pub fn run<'a>(
     let mut currencies = HashMap::new();
     let mut stream_infos = HashMap::new();
     let mut players = HashMap::new();
-    let mut channel_features = Features::default();
-    let mut configs = HashMap::new();
 
-    for channel in &config.channels {
-        let mut features = FeatureSet::new();
-
-        for feature in channel.features.iter().cloned() {
-            features.insert(feature);
-        }
-
+    for channel in &irc_config.channels {
         if let Some(currency) = channel.currency.as_ref() {
             let reward = 10;
             let interval = 60 * 10;
@@ -167,7 +129,11 @@ pub fn run<'a>(
 
         let interval = 60 * 5;
         let stream_info = Arc::new(RwLock::new(None));
-        let streamer = channel.streamer.as_ref().map(|s| s.as_str()).or(streamer);
+        let streamer = channel
+            .streamer
+            .as_ref()
+            .map(|s| s.as_str())
+            .or(config.streamer.as_ref().map(|s| s.as_str()));
 
         if let Some(streamer) = streamer {
             let future =
@@ -176,29 +142,17 @@ pub fn run<'a>(
             stream_infos.insert(channel.name.to_string(), stream_info);
         }
 
-        // Only setup if the song feature is enabled.
-        if features.contains(Feature::Song) {
-            // Setup a player if configured.
-            if let Some(player_config) = channel.player.as_ref() {
-                let (future, player) = player::run(
-                    core,
-                    db.clone(),
-                    channel,
-                    spotify.clone(),
-                    player_config,
-                    secrets,
-                )?;
+        if let Some(player) = player {
+            players.insert(channel.name.to_string(), player.client());
 
-                players.insert(channel.name.to_string(), player.client());
+            futures.push(Box::new(
+                player
+                    .add_rx()
+                    .map_err(|e| format_err!("failed to receive player update: {}", e))
+                    .for_each({
+                        let sender = sender.clone();
 
-                let sender = sender.clone();
-
-                futures.push(Box::new(future));
-                futures.push(Box::new(
-                    player
-                        .add_rx()
-                        .map_err(|e| format_err!("failed to receive player update: {}", e))
-                        .for_each(move |e| {
+                        move |e| {
                             match e {
                                 player::Event::Playing(_, item) => {
                                     let message = match item.user.as_ref() {
@@ -234,13 +188,10 @@ pub fn run<'a>(
                             }
 
                             Ok(())
-                        }),
-                ));
-            }
+                        }
+                    }),
+            ));
         }
-
-        channel_features.insert(channel.name.to_string(), features);
-        configs.insert(channel.name.to_string(), channel);
     }
 
     futures.push(Box::new(send_future.map_err(failure::Error::from)));
@@ -258,8 +209,8 @@ pub fn run<'a>(
         bad_words,
         notifier,
         players,
-        channel_features,
-        configs,
+        &config.aliases,
+        &config.features,
     );
 
     futures.push(Box::new(
@@ -446,10 +397,10 @@ struct MessageHandler<'a> {
     notifier: &'a Notifier,
     /// Music player.
     players: HashMap<String, player::PlayerClient>,
-    /// Per-channel features.
-    features: Features,
-    /// Per-channel configurations.
-    configs: HashMap<String, &'a Channel>,
+    /// Aliases.
+    aliases: &'a aliases::Aliases,
+    /// Enabled features.
+    features: &'a Features,
     /// Thread pool used for driving futures.
     thread_pool: Arc<ThreadPool>,
 }
@@ -469,8 +420,8 @@ impl<'a> MessageHandler<'a> {
         bad_words: &'a words::Words<db::Database>,
         notifier: &'a Notifier,
         players: HashMap<String, player::PlayerClient>,
-        features: Features,
-        configs: HashMap<String, &'a Channel>,
+        aliases: &'a aliases::Aliases,
+        features: &'a Features,
     ) -> Self {
         Self {
             twitch,
@@ -485,8 +436,8 @@ impl<'a> MessageHandler<'a> {
             bad_words,
             notifier,
             players,
+            aliases,
             features,
-            configs,
             thread_pool: Arc::new(ThreadPool::new()),
         }
     }
@@ -1130,7 +1081,6 @@ impl<'a> MessageHandler<'a> {
     /// Handle a command.
     pub fn process_command<'local>(
         &mut self,
-        features: &FeatureSet,
         command: &str,
         m: &'local Message,
         it: &mut utils::Words<'local>,
@@ -1142,26 +1092,26 @@ impl<'a> MessageHandler<'a> {
                 user.respond("What do you want?");
                 self.notifier.send(Notification::Ping)?;
             }
-            "song" if features.contains(Feature::Song) => {
+            "song" if self.features.test(Feature::Song) => {
                 self.handle_song(&user, it)?;
             }
-            "command" if features.contains(Feature::Command) => {
+            "command" if self.features.test(Feature::Command) => {
                 self.handle_command(&user, it)?;
             }
             "counter" => {
                 self.handle_counter(&user, it)?;
             }
-            "afterstream" if features.contains(Feature::AfterStream) => {
+            "afterstream" if self.features.test(Feature::AfterStream) => {
                 self.db.insert_afterstream(&user.name, it.rest())?;
                 user.respond("Reminder added.");
             }
-            "badword" if features.contains(Feature::BadWords) => {
+            "badword" if self.features.test(Feature::BadWords) => {
                 self.handle_bad_word(&user, it)?;
             }
-            "uptime" if features.contains(Feature::Admin) => {
+            "uptime" if self.features.test(Feature::Admin) => {
                 self.handle_uptime(&user);
             }
-            "title" if features.contains(Feature::Admin) => {
+            "title" if self.features.test(Feature::Admin) => {
                 let rest = it.rest();
 
                 if rest.is_empty() {
@@ -1171,7 +1121,7 @@ impl<'a> MessageHandler<'a> {
                     self.handle_update_title(&user, rest)?;
                 }
             }
-            "game" if features.contains(Feature::Admin) => {
+            "game" if self.features.test(Feature::Admin) => {
                 let rest = it.rest();
 
                 if rest.is_empty() {
@@ -1193,7 +1143,7 @@ impl<'a> MessageHandler<'a> {
                     }
                 }
 
-                if features.contains(Feature::Command) {
+                if self.features.test(Feature::Command) {
                     if let Some(command) = self.commands.get(user.target.as_str(), other) {
                         let vars = TemplateVars {
                             name: &user.name,
@@ -1204,7 +1154,7 @@ impl<'a> MessageHandler<'a> {
                     }
                 }
 
-                if features.contains(Feature::Counter) {
+                if self.features.test(Feature::Counter) {
                     if let Some(counter) = self.counters.get(user.target.as_str(), other) {
                         self.counters.increment(&*counter)?;
 
@@ -1261,7 +1211,7 @@ impl<'a> MessageHandler<'a> {
     }
 
     /// Test if the message should be deleted.
-    fn should_be_deleted(&mut self, features: &FeatureSet, m: &Message, message: &str) -> bool {
+    fn should_be_deleted(&mut self, m: &Message, message: &str) -> bool {
         let user = m.source_nickname();
 
         // Moderators can say whatever they want.
@@ -1269,7 +1219,7 @@ impl<'a> MessageHandler<'a> {
             return false;
         }
 
-        if features.contains(Feature::BadWords) {
+        if self.features.test(Feature::BadWords) {
             if let Some(word) = self.test_bad_words(message) {
                 if let (Some(why), Some(user), Some(target)) =
                     (word.why.as_ref(), user, m.response_target())
@@ -1293,7 +1243,7 @@ impl<'a> MessageHandler<'a> {
             }
         }
 
-        if features.contains(Feature::UrlWhitelist) {
+        if self.features.test(Feature::UrlWhitelist) {
             if self.has_bad_link(message) {
                 return true;
             }
@@ -1330,41 +1280,30 @@ impl<'a> MessageHandler<'a> {
 
     /// Handle the given command.
     pub fn handle<'local>(&mut self, m: &'local Message) -> Result<(), failure::Error> {
-        let (features, config) = match m.response_target() {
-            Some(target) => (
-                self.features.features(target),
-                self.configs.get(target).cloned(),
-            ),
-            None => (Default::default(), None),
-        };
-
         match m.command {
             Command::PRIVMSG(ref source, ref message) => {
                 let tags = Self::tags(&m);
 
-                let alias;
                 let mut it = utils::Words::new(message);
 
-                if let Some(aliases) = config.map(|c| &c.aliases) {
-                    // NB: needs to store locally to maintain a reference to it.
-                    alias = aliases.lookup(it.clone());
+                // NB: needs to store locally to maintain a reference to it.
+                let alias = self.aliases.lookup(it.clone());
 
-                    if let Some(alias) = alias.as_ref() {
-                        it = utils::Words::new(alias.as_str());
-                    }
+                if let Some(alias) = alias.as_ref() {
+                    it = utils::Words::new(alias.as_str());
                 }
 
                 if let Some(command) = it.next() {
                     if command.starts_with('!') {
                         let command = &command[1..];
 
-                        if let Err(e) = self.process_command(&features, command, m, &mut it) {
+                        if let Err(e) = self.process_command(command, m, &mut it) {
                             log::error!("failed to process command: {}", e);
                         }
                     }
                 }
 
-                if self.should_be_deleted(&features, m, message) {
+                if self.should_be_deleted(m, message) {
                     self.delete_message(source, tags)?;
                 }
             }
@@ -1474,27 +1413,4 @@ pub struct CounterVars<'a> {
     name: &'a str,
     target: &'a str,
     count: i32,
-}
-
-/// By-channel features that are enabled.
-#[derive(Default)]
-pub struct Features {
-    features: HashMap<String, FeatureSet>,
-}
-
-type FeatureSet = fixed_map::Set<Feature>;
-
-impl Features {
-    /// Insert the given feature for the channel
-    pub fn insert(&mut self, channel: String, features: FeatureSet) {
-        self.features.insert(channel, features);
-    }
-
-    /// Get the feature set for the given channel.
-    pub fn features(&self, channel: &str) -> FeatureSet {
-        self.features
-            .get(channel)
-            .cloned()
-            .unwrap_or_else(Default::default)
-    }
 }

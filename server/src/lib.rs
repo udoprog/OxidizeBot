@@ -9,6 +9,7 @@ pub mod config;
 pub mod counters;
 pub mod currency;
 pub mod db;
+pub mod features;
 pub mod irc;
 pub mod oauth2;
 pub mod player;

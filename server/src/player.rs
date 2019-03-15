@@ -1,7 +1,7 @@
 use tokio_core::reactor::Core;
 
 pub use crate::track_id::TrackId;
-use crate::{db, irc, secrets, spotify, template, themes::Themes, utils};
+use crate::{config, db, secrets, spotify, template, themes::Themes, utils};
 
 use chrono::Utc;
 use failure::format_err;
@@ -10,7 +10,6 @@ use futures::{
     sync::{mpsc, oneshot},
     Async, Future, Poll, Stream,
 };
-use hashbrown::HashMap;
 use std::{
     collections::VecDeque,
     fs::File,
@@ -76,9 +75,6 @@ pub struct Config {
     /// Write the current song to the specified path.
     #[serde(default)]
     current_song: Option<Arc<CurrentSong>>,
-    /// Theme songs that can be triggered on command.
-    #[serde(default)]
-    themes: Arc<Themes>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -220,17 +216,17 @@ impl std::str::FromStr for TrackId {
 pub fn run(
     core: &mut Core,
     db: db::Database,
-    channel: &irc::Channel,
     spotify: Arc<spotify::Spotify>,
-    config: &Config,
+    config: &config::Config,
+    player_config: &Config,
     secrets: &secrets::Secrets,
 ) -> Result<(PlaybackFuture, Player), failure::Error> {
     let (commands_tx, commands) = mpsc::unbounded();
 
-    let ((player, events), paused) = if config.connect {
-        (connect::setup(core, config, spotify.clone())?, false)
+    let ((player, events), paused) = if player_config.connect {
+        (connect::setup(core, player_config, spotify.clone())?, false)
     } else {
-        (native::setup(core, config, secrets)?, true)
+        (native::setup(core, player_config, secrets)?, true)
     };
 
     let bus = Arc::new(RwLock::new(Bus::new(1024)));
@@ -238,25 +234,23 @@ pub fn run(
     let thread_pool = Arc::new(ThreadPool::new());
     let queue = Queue::new(db.clone());
 
-    let fallback_items = match config.playlist.as_ref() {
+    let fallback_items = match player_config.playlist.as_ref() {
         Some(playlist) => playlist_to_items(core, spotify.clone(), playlist)?,
         None => songs_to_items(core, spotify.clone())?,
     };
 
     // Add tracks from database.
     for song in db.list()? {
-        let item = core.run(convert_item(
+        queue.push_back_queue(core.run(convert_item(
             &thread_pool,
             spotify.clone(),
             song.user.clone(),
             song.track_id,
-        ))?;
-
-        queue.push_back_queue(channel.name.as_str(), item);
+        ))?);
     }
 
     // Blank current song file if specified.
-    if let Some(current_song) = config.current_song.as_ref() {
+    if let Some(current_song) = player_config.current_song.as_ref() {
         if let Err(e) = current_song.blank() {
             log::warn!(
                 "failed to blank current songs: {}: {}",
@@ -268,7 +262,7 @@ pub fn run(
 
     let volume = Arc::new(RwLock::new(u32::min(
         100u32,
-        config.volume.unwrap_or(100u32),
+        player_config.volume.unwrap_or(100u32),
     )));
 
     let current = Arc::new(RwLock::new(None));
@@ -287,31 +281,28 @@ pub fn run(
         sidelined: Default::default(),
         fallback_items,
         volume: Arc::clone(&volume),
-        channel: Arc::clone(&channel.name),
         current: current.clone(),
-        current_song: config.current_song.clone(),
+        current_song: player_config.current_song.clone(),
     };
 
     let player = Player {
         queue,
-        max_queue_length: config.max_queue_length,
-        max_songs_per_user: config.max_songs_per_user,
+        max_queue_length: player_config.max_queue_length,
+        max_songs_per_user: player_config.max_songs_per_user,
         spotify,
         commands_tx,
         bus,
         volume: Arc::clone(&volume),
-        channel: Arc::clone(&channel.name),
         current: current.clone(),
         themes: config.themes.clone(),
         closed: closed.clone(),
     };
 
-    if config.connect {
-        let client = player.client();
-        client.pause()?;
+    if player_config.connect {
+        player.pause()?;
 
-        if let Some(volume) = config.volume {
-            client.volume(volume)?;
+        if let Some(volume) = player_config.volume {
+            player.volume(volume)?;
         }
     }
 
@@ -441,7 +432,6 @@ pub struct Player {
     commands_tx: mpsc::UnboundedSender<Command>,
     bus: Arc<RwLock<Bus<Event>>>,
     volume: Arc<RwLock<u32>>,
-    channel: Arc<String>,
     /// Current song that is loaded.
     current: Arc<RwLock<Option<Arc<Item>>>>,
     /// Theme songs.
@@ -455,7 +445,6 @@ impl Player {
     pub fn client(&self) -> PlayerClient {
         PlayerClient {
             queue: self.queue.clone(),
-            channel: Arc::clone(&self.channel),
             thread_pool: Arc::new(ThreadPool::new()),
             max_queue_length: self.max_queue_length,
             max_songs_per_user: self.max_songs_per_user,
@@ -470,7 +459,24 @@ impl Player {
 
     /// Get a receiver for player events.
     pub fn add_rx(&self) -> BusReader<Event> {
-        self.bus.write().expect("lock poisoned").add_rx()
+        self.bus.write().expect("poisoned").add_rx()
+    }
+
+    /// Pause playback.
+    pub fn pause(&self) -> Result<(), failure::Error> {
+        self.send(Command::Pause)
+    }
+
+    /// Update volume of the player.
+    pub fn volume(&self, volume: u32) -> Result<(), failure::Error> {
+        self.send(Command::Volume(u32::min(100u32, volume)))
+    }
+
+    /// Send the given command.
+    fn send(&self, command: Command) -> Result<(), failure::Error> {
+        self.commands_tx
+            .unbounded_send(command)
+            .map_err(|_| format_err!("failed to send command"))
     }
 }
 
@@ -478,7 +484,6 @@ impl Player {
 #[derive(Clone)]
 pub struct PlayerClient {
     queue: Queue,
-    channel: Arc<String>,
     thread_pool: Arc<ThreadPool>,
     max_queue_length: u32,
     max_songs_per_user: u32,
@@ -505,12 +510,7 @@ impl PlayerClient {
     /// Get the next N songs in queue.
     pub fn list(&self, n: usize) -> Vec<Arc<Item>> {
         let current = self.current.read().expect("poisoned");
-        let inner = self.queue.queues.read().expect("lock poisoned");
-
-        let queue = match inner.get(self.channel.as_str()) {
-            Some(queue) => queue,
-            None => return vec![],
-        };
+        let queue = self.queue.queue.read().expect("poisoned");
 
         current
             .iter()
@@ -546,7 +546,7 @@ impl PlayerClient {
 
     /// Get the current volume.
     pub fn current_volume(&self) -> u32 {
-        *self.volume.read().expect("lock poisoned")
+        *self.volume.read().expect("poisoned")
     }
 
     /// Close the player from more requests.
@@ -622,8 +622,7 @@ impl PlayerClient {
     ) -> impl Future<Item = (usize, Arc<Item>), Error = AddTrackError> {
         // invariant checks
         let fut = future::lazy({
-            let channel = self.channel.clone();
-            let queues = self.queue.queues.clone();
+            let queue = self.queue.queue.clone();
             let max_queue_length = self.max_queue_length;
             let max_songs_per_user = self.max_songs_per_user;
             let closed = self.closed.clone();
@@ -631,15 +630,7 @@ impl PlayerClient {
             let track_id = track_id.clone();
 
             move || {
-                let inner = queues.read().expect("lock poisoned");
-
-                // store queue in case there is no queue for channel yet.
-                let mut local_queue = None;
-
-                let q = match inner.get(channel.as_str()) {
-                    Some(q) => q,
-                    None => local_queue.get_or_insert_with(Default::default),
-                };
+                let q = queue.read().expect("poisoned");
 
                 let len = q.len();
 
@@ -688,12 +679,11 @@ impl PlayerClient {
         });
 
         let fut = fut.and_then({
-            let channel = self.channel.clone();
             let queue = self.queue.clone();
 
             move |(len, item)| {
                 queue
-                    .push_back(channel.as_str(), Arc::clone(&item))
+                    .push_back(item.clone())
                     .map(move |_| (len, item))
                     .map_err(|e| AddTrackError::Error(e.into()))
             }
@@ -717,17 +707,17 @@ impl PlayerClient {
     }
 
     pub fn purge(&self) -> Result<Vec<Arc<Item>>, failure::Error> {
-        self.queue.purge(self.channel.as_str())
+        self.queue.purge()
     }
 
     /// Remove the first track in the queue.
     pub fn remove_last(&self) -> Result<Option<Arc<Item>>, failure::Error> {
-        self.queue.remove_last(self.channel.as_str())
+        self.queue.remove_last()
     }
 
     /// Remove the last track by the given user.
     pub fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, failure::Error> {
-        self.queue.remove_last_by_user(self.channel.as_str(), user)
+        self.queue.remove_last_by_user(user)
     }
 
     /// Get the length in number of items and total number of seconds in queue.
@@ -740,16 +730,13 @@ impl PlayerClient {
             count += 1;
         }
 
-        let queues = self.queue.queues.read().expect("poisoned");
+        let queue = self.queue.queue.read().expect("poisoned");
 
-        if let Some(queue) = queues.get(self.channel.as_str()) {
-            for item in &*queue {
-                duration += item.duration;
-            }
-
-            count += queue.len();
+        for item in &*queue {
+            duration += item.duration;
         }
 
+        count += queue.len();
         (count, duration.as_secs())
     }
 
@@ -787,34 +774,29 @@ pub trait Backend: Clone + Send + Sync {
     fn list(&self) -> Result<Vec<db::Song>, failure::Error>;
 
     /// Insert the given song into the backend.
-    fn push_back(&self, song: &db::Song) -> Result<(), failure::Error>;
+    fn push_back(&self, song: &db::AddSong) -> Result<(), failure::Error>;
 
     /// Remove the song, but only log on issues.
-    fn remove_song_log(&self, channel: &str, track_id: &TrackId) {
-        match self.remove_song(channel, track_id) {
+    fn remove_song_log(&self, track_id: &TrackId) {
+        match self.remove_song(track_id) {
             Err(e) => log::warn!(
-                "{}:{}: failed to remove song from database: {}",
-                channel,
+                "{}: failed to remove song from database: {}",
                 track_id.to_base62(),
                 e
             ),
-            Ok(false) => log::warn!(
-                "{}:{}: no songs removed from database",
-                channel,
-                track_id.to_base62()
-            ),
+            Ok(false) => log::warn!("{}: no songs removed from database", track_id.to_base62()),
             Ok(true) => {}
         }
     }
 
     /// Remove the song with the given ID.
-    fn remove_song(&self, channel: &str, track_id: &TrackId) -> Result<bool, failure::Error>;
+    fn remove_song(&self, track_id: &TrackId) -> Result<bool, failure::Error>;
 
     /// Purge the songs database, but only log on issues.
-    fn song_purge_log(&self, channel: &str) -> Option<usize> {
-        match self.song_purge(channel) {
+    fn song_purge_log(&self) -> Option<usize> {
+        match self.song_purge() {
             Err(e) => {
-                log::warn!("{}:{}: failed to purge songs from database", channel, e);
+                log::warn!("failed to purge songs from database: {}", e);
                 None
             }
             Ok(n) => Some(n),
@@ -822,14 +804,14 @@ pub trait Backend: Clone + Send + Sync {
     }
 
     /// Purge the songs database and return the number of items removed.
-    fn song_purge(&self, channel: &str) -> Result<usize, failure::Error>;
+    fn song_purge(&self) -> Result<usize, failure::Error>;
 }
 
 /// The playback queue.
 #[derive(Clone)]
 struct Queue {
     db: db::Database,
-    queues: Arc<RwLock<HashMap<String, VecDeque<Arc<Item>>>>>,
+    queue: Arc<RwLock<VecDeque<Arc<Item>>>>,
     thread_pool: Arc<ThreadPool>,
 }
 
@@ -838,35 +820,24 @@ impl Queue {
     pub fn new(db: db::Database) -> Self {
         Self {
             db,
-            queues: Arc::new(RwLock::new(Default::default())),
+            queue: Arc::new(RwLock::new(Default::default())),
             thread_pool: Arc::new(ThreadPool::new()),
         }
     }
 
     /// Get the front of the queue.
-    pub fn front(&self, channel: &str) -> Option<Arc<Item>> {
-        let inner = self.queues.read().expect("lock poisoned");
-
-        if let Some(queue) = inner.get(channel) {
-            return queue.front().cloned();
-        }
-
-        None
+    pub fn front(&self) -> Option<Arc<Item>> {
+        self.queue.read().expect("poisoned").front().cloned()
     }
 
     /// Pop the front of the queue.
-    pub fn pop_front(&self, channel: &str) -> PopFrontFuture {
-        let channel = channel.to_string();
+    pub fn pop_front(&self) -> PopFrontFuture {
         let db = self.db.clone();
-        let queues = self.queues.clone();
+        let queue = self.queue.clone();
 
         PopFrontFuture(self.thread_pool.spawn_handle(future::lazy(move || {
-            let mut queues = queues.write().expect("lock poisoned");
-
-            if let Some(queue) = queues.get_mut(&channel) {
-                if let Some(item) = queue.pop_front() {
-                    db.remove_song_log(&channel, &item.track_id);
-                }
+            if let Some(item) = queue.write().expect("poisoned").pop_front() {
+                db.remove_song_log(&item.track_id);
             }
 
             Ok(None)
@@ -874,58 +845,47 @@ impl Queue {
     }
 
     /// Push item to back of queue.
-    pub fn push_back(&self, channel: &str, item: Arc<Item>) -> PushBackFuture {
-        let channel = channel.to_string();
+    pub fn push_back(&self, item: Arc<Item>) -> PushBackFuture {
         let db = self.db.clone();
-        let queues = self.queues.clone();
+        let queue = self.queue.clone();
 
         PushBackFuture(self.thread_pool.spawn_handle(future::lazy(move || {
-            db.push_back(&db::Song {
-                channel: channel.to_string(),
+            db.push_back(&db::AddSong {
                 track_id: item.track_id.clone(),
                 added_at: Utc::now().naive_utc(),
                 user: item.user.clone(),
             })?;
 
-            let mut inner = queues.write().expect("lock poisoned");
-            inner.entry(channel).or_default().push_back(item);
+            queue.write().expect("poisoned").push_back(item);
             Ok(())
         })))
     }
 
     /// Purge the song queue.
-    pub fn purge(&self, channel: &str) -> Result<Vec<Arc<Item>>, failure::Error> {
-        let mut queues = self.queues.write().expect("lock poisoned");
-
-        let q = match queues.get_mut(channel) {
-            Some(q) => q,
-            None => return Ok(vec![]),
-        };
+    pub fn purge(&self) -> Result<Vec<Arc<Item>>, failure::Error> {
+        let mut q = self.queue.write().expect("poisoned");
 
         if q.is_empty() {
             return Ok(vec![]);
         }
 
-        let purged = std::mem::replace(q, VecDeque::new()).into_iter().collect();
-        self.db.song_purge_log(channel);
+        let purged = std::mem::replace(&mut *q, VecDeque::new())
+            .into_iter()
+            .collect();
+        self.db.song_purge_log();
         Ok(purged)
     }
 
     /// Remove the last element.
-    pub fn remove_last(&self, channel: &str) -> Result<Option<Arc<Item>>, failure::Error> {
-        let mut queues = self.queues.write().expect("lock poisoned");
-
-        let q = match queues.get_mut(channel) {
-            Some(q) => q,
-            None => return Ok(None),
-        };
+    pub fn remove_last(&self) -> Result<Option<Arc<Item>>, failure::Error> {
+        let mut q = self.queue.write().expect("poisoned");
 
         if q.is_empty() {
             return Ok(None);
         }
 
         if let Some(item) = q.pop_back() {
-            self.db.remove_song_log(channel, &item.track_id);
+            self.db.remove_song_log(&item.track_id);
             return Ok(Some(item));
         }
 
@@ -933,17 +893,8 @@ impl Queue {
     }
 
     /// Remove the last element by user.
-    pub fn remove_last_by_user(
-        &self,
-        channel: &str,
-        user: &str,
-    ) -> Result<Option<Arc<Item>>, failure::Error> {
-        let mut queues = self.queues.write().expect("lock poisoned");
-
-        let q = match queues.get_mut(channel) {
-            Some(q) => q,
-            None => return Ok(None),
-        };
+    pub fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, failure::Error> {
+        let mut q = self.queue.write().expect("poisoned");
 
         if q.is_empty() {
             return Ok(None);
@@ -954,7 +905,7 @@ impl Queue {
             .rposition(|i| i.user.as_ref().map(|u| u == user).unwrap_or_default())
         {
             if let Some(item) = q.remove(position) {
-                self.db.remove_song_log(channel, &item.track_id);
+                self.db.remove_song_log(&item.track_id);
                 return Ok(Some(item));
             }
         }
@@ -963,13 +914,8 @@ impl Queue {
     }
 
     /// Push item to back of queue without going through the database.
-    pub fn push_back_queue(&self, channel: &str, item: Arc<Item>) {
-        let mut inner = self.queues.write().expect("lock poisoned");
-
-        inner
-            .entry(channel.to_string())
-            .or_default()
-            .push_back(item);
+    pub fn push_back_queue(&self, item: Arc<Item>) {
+        self.queue.write().expect("poisoned").push_back(item);
     }
 }
 
@@ -1042,8 +988,6 @@ pub struct PlaybackFuture {
     fallback_items: Vec<Arc<Item>>,
     /// Current volume.
     volume: Arc<RwLock<u32>>,
-    /// Channel playback is associated with.
-    channel: Arc<String>,
     /// Current song that is loaded.
     current: Arc<RwLock<Option<Arc<Item>>>>,
     /// Path to write current song.
@@ -1077,8 +1021,8 @@ impl PlaybackFuture {
             return Some(Loaded::new(loaded.origin, loaded.item, future).with_offset(offset));
         }
 
-        if let Some(item) = self.queue.front(self.channel.as_str()) {
-            self.pop_front = Some(self.queue.pop_front(self.channel.as_str()));
+        if let Some(item) = self.queue.front() {
+            self.pop_front = Some(self.queue.pop_front());
             let future = self.player.load(&*item, 0);
             return Some(Loaded::new(Origin::Queue, item, future));
         }
@@ -1146,7 +1090,7 @@ impl PlaybackFuture {
 
     /// Broadcast an event from the player.
     fn broadcast(&self, event: Event) {
-        let mut b = self.bus.write().expect("lock poisoned");
+        let mut b = self.bus.write().expect("poisoned");
 
         if let Err(e) = b.try_broadcast(event) {
             log::error!("failed to broadcast player event: {:?}", e);
@@ -1192,7 +1136,7 @@ impl PlaybackFuture {
                 self.load_front();
             }
             Command::Volume(volume) => {
-                *self.volume.write().expect("lock poisoned") = volume;
+                *self.volume.write().expect("poisoned") = volume;
                 self.player.volume(Some((volume as f32) / 100f32));
             }
             Command::Inject(item, offset) => {

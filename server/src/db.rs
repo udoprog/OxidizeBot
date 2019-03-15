@@ -273,11 +273,14 @@ impl player::Backend for Database {
     fn list(&self) -> Result<Vec<Song>, failure::Error> {
         use self::schema::songs::dsl;
         let c = self.pool.get()?;
-        let songs = dsl::songs.order(dsl::added_at.asc()).load::<Song>(&c)?;
+        let songs = dsl::songs
+            .filter(dsl::deleted.eq(false))
+            .order(dsl::added_at.asc())
+            .load::<Song>(&c)?;
         Ok(songs)
     }
 
-    fn push_back(&self, song: &Song) -> Result<(), failure::Error> {
+    fn push_back(&self, song: &AddSong) -> Result<(), failure::Error> {
         use self::schema::songs::dsl;
         let c = self.pool.get()?;
         diesel::insert_into(dsl::songs).values(song).execute(&c)?;
@@ -285,37 +288,33 @@ impl player::Backend for Database {
     }
 
     /// Purge the given channel from songs.
-    fn song_purge(&self, channel: &str) -> Result<usize, failure::Error> {
+    fn song_purge(&self) -> Result<usize, failure::Error> {
         use self::schema::songs::dsl;
         let c = self.pool.get()?;
-        Ok(diesel::delete(dsl::songs.filter(dsl::channel.eq(channel))).execute(&c)?)
+        Ok(diesel::update(dsl::songs.filter(dsl::deleted.eq(false)))
+            .set(dsl::deleted.eq(true))
+            .execute(&c)?)
     }
 
     /// Remove the song at the given location.
-    fn remove_song(
-        &self,
-        channel: &str,
-        track_id: &player::TrackId,
-    ) -> Result<bool, failure::Error> {
+    fn remove_song(&self, track_id: &player::TrackId) -> Result<bool, failure::Error> {
         use self::schema::songs::dsl;
         let c = self.pool.get()?;
 
         let track_id = track_id.to_base62();
 
-        let track_ids = dsl::songs
-            .filter(dsl::channel.eq(channel).and(dsl::track_id.eq(&track_id)))
-            .select(dsl::track_id)
+        let ids: Vec<i32> = dsl::songs
+            .select(dsl::id)
+            .filter(dsl::deleted.eq(false).and(dsl::track_id.eq(&track_id)))
             .order(dsl::added_at.desc())
             .limit(1)
-            .load::<String>(&c)?;
+            .load(&c)?;
 
-        let mut count = 0;
+        let target = dsl::songs.filter(dsl::id.eq_any(ids));
 
-        for track_id in track_ids {
-            let filter =
-                dsl::songs.filter(dsl::track_id.eq(track_id).and(dsl::channel.eq(channel)));
-            count += diesel::delete(filter).execute(&c)?;
-        }
+        let count = diesel::update(target)
+            .set(dsl::deleted.eq(true))
+            .execute(&c)?;
 
         Ok(count == 1)
     }

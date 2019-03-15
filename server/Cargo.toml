@@ -26,6 +26,7 @@ reqwest = "0.9.10"
 serde = {version = "1.0.88", features = ["rc"]}
 serde_json = "1.0.38"
 serde_yaml = "0.8.8"
+toml = "0.4"
 tokio = "0.1.15"
 tokio-core = "0.1.17"
 tokio-threadpool = "0.1.11"

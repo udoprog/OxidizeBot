@@ -44,11 +44,23 @@ pub struct Counter {
     pub text: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, diesel::Insertable, diesel::Queryable)]
-#[table_name = "songs"]
+#[derive(Debug, Clone, PartialEq, Eq, diesel::Queryable)]
 pub struct Song {
-    /// Channel that the song was requested in.
-    pub channel: String,
+    /// ID of the song request.
+    pub id: i32,
+    /// If the request is deleted or not.
+    pub deleted: bool,
+    /// The track id of the song.
+    pub track_id: TrackId,
+    /// When the song was added.
+    pub added_at: NaiveDateTime,
+    /// The user that requested the song.
+    pub user: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, diesel::Insertable)]
+#[table_name = "songs"]
+pub struct AddSong {
     /// The track id of the song.
     pub track_id: TrackId,
     /// When the song was added.
