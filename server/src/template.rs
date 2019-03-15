@@ -22,8 +22,16 @@ impl<'de> serde::Deserialize<'de> for Template {
             TemplateData::List(list) => {
                 let mut s = String::new();
 
-                for line in list {
+                let mut it = list.iter();
+
+                let back = it.next_back();
+
+                for line in it {
                     writeln!(&mut s, "{}", line).map_err(serde::de::Error::custom)?;
+                }
+
+                if let Some(line) = back {
+                    write!(&mut s, "{}", line).map_err(serde::de::Error::custom)?;
                 }
 
                 s

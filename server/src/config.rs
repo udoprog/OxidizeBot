@@ -1,4 +1,4 @@
-use crate::{aliases, features, irc, player, secrets, themes, web};
+use crate::{aliases, current_song, features, irc, player, secrets, themes, web};
 use hashbrown::HashSet;
 use relative_path::RelativePathBuf;
 use std::{marker, path::Path, sync::Arc};
@@ -34,6 +34,9 @@ pub struct Config {
     pub moderators: HashSet<String>,
     #[serde(default)]
     pub whitelisted_hosts: HashSet<String>,
+    /// Write the current song to the specified path.
+    #[serde(default)]
+    pub current_song: Option<Arc<current_song::CurrentSong>>,
 }
 
 #[derive(Debug)]

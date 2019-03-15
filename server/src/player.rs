@@ -1,7 +1,7 @@
 use tokio_core::reactor::Core;
 
 pub use crate::track_id::TrackId;
-use crate::{config, db, secrets, spotify, template, themes::Themes, utils};
+use crate::{config, current_song, db, secrets, spotify, themes::Themes, utils};
 
 use chrono::Utc;
 use failure::format_err;
@@ -12,8 +12,7 @@ use futures::{
 };
 use std::{
     collections::VecDeque,
-    fs::File,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
@@ -72,17 +71,6 @@ pub struct Config {
     /// Whether or not to use the connect player.
     #[serde(default)]
     connect: bool,
-    /// Write the current song to the specified path.
-    #[serde(default)]
-    current_song: Option<Arc<CurrentSong>>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-struct CurrentSong {
-    path: PathBuf,
-    template: template::Template,
-    #[serde(default)]
-    not_playing: Option<String>,
 }
 
 fn default_max_queue_length() -> u32 {
@@ -91,35 +79,6 @@ fn default_max_queue_length() -> u32 {
 
 fn default_max_songs_per_user() -> u32 {
     2
-}
-
-impl CurrentSong {
-    /// Either creates or truncates the current song file.
-    fn create_or_truncate(&self) -> Result<File, failure::Error> {
-        File::create(&self.path).map_err(Into::into)
-    }
-
-    /// Blank the current file.
-    pub fn blank(&self) -> Result<(), failure::Error> {
-        use std::io::Write as _;
-        let mut f = self.create_or_truncate()?;
-
-        if let Some(not_playing) = self.not_playing.as_ref() {
-            write!(f, "{}", not_playing)?;
-        } else {
-            write!(f, "Not Playing")?;
-        }
-
-        Ok(())
-    }
-
-    /// Write the current song to a path.
-    pub fn write(&self, item: &Item, paused: bool) -> Result<(), failure::Error> {
-        let mut f = self.create_or_truncate()?;
-        let data = item.data(paused)?;
-        self.template.render(&mut f, &data)?;
-        Ok(())
-    }
 }
 
 impl Config {
@@ -250,7 +209,7 @@ pub fn run(
     }
 
     // Blank current song file if specified.
-    if let Some(current_song) = player_config.current_song.as_ref() {
+    if let Some(current_song) = config.current_song.as_ref() {
         if let Err(e) = current_song.blank() {
             log::warn!(
                 "failed to blank current songs: {}: {}",
@@ -282,7 +241,7 @@ pub fn run(
         fallback_items,
         volume: Arc::clone(&volume),
         current: current.clone(),
-        current_song: player_config.current_song.clone(),
+        current_song: config.current_song.clone(),
     };
 
     let player = Player {
@@ -991,7 +950,7 @@ pub struct PlaybackFuture {
     /// Current song that is loaded.
     current: Arc<RwLock<Option<Arc<Item>>>>,
     /// Path to write current song.
-    current_song: Option<Arc<CurrentSong>>,
+    current_song: Option<Arc<current_song::CurrentSong>>,
 }
 
 impl PlaybackFuture {

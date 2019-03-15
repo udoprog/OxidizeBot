@@ -8,6 +8,7 @@ pub mod commands;
 pub mod config;
 pub mod counters;
 pub mod currency;
+mod current_song;
 pub mod db;
 pub mod features;
 pub mod irc;
