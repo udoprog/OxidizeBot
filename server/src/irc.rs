@@ -64,7 +64,7 @@ pub fn run<'a>(
     twitch: twitch::Twitch,
     config: &'a config::Config,
     irc_config: &'a Config,
-    token: Arc<RwLock<oauth2::TwitchToken>>,
+    token: Arc<RwLock<oauth2::Token>>,
     commands: &'a commands::Commands<db::Database>,
     counters: &'a counters::Counters<db::Database>,
     bad_words: &'a words::Words<db::Database>,

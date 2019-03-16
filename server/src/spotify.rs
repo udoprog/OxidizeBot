@@ -27,12 +27,12 @@ const API_URL: &'static str = "https://api.spotify.com/v1";
 pub struct Spotify {
     client: Client,
     api_url: Url,
-    pub token: Arc<RwLock<oauth2::SpotifyToken>>,
+    pub token: Arc<RwLock<oauth2::Token>>,
 }
 
 impl Spotify {
     /// Create a new API integration.
-    pub fn new(token: Arc<RwLock<oauth2::SpotifyToken>>) -> Result<Spotify, failure::Error> {
+    pub fn new(token: Arc<RwLock<oauth2::Token>>) -> Result<Spotify, failure::Error> {
         Ok(Spotify {
             client: Client::new(),
             api_url: str::parse::<Url>(API_URL)?,
@@ -255,7 +255,7 @@ where
 }
 
 struct RequestBuilder {
-    token: Arc<RwLock<oauth2::SpotifyToken>>,
+    token: Arc<RwLock<oauth2::Token>>,
     client: Client,
     url: Url,
     method: Method,

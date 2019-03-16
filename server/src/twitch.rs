@@ -21,12 +21,12 @@ const API_TWITCH_URL: &'static str = "https://api.twitch.tv";
 pub struct Twitch {
     client: Client,
     api_url: Url,
-    token: Arc<RwLock<oauth2::TwitchToken>>,
+    token: Arc<RwLock<oauth2::Token>>,
 }
 
 impl Twitch {
     /// Create a new API integration.
-    pub fn new(token: Arc<RwLock<oauth2::TwitchToken>>) -> Result<Twitch, failure::Error> {
+    pub fn new(token: Arc<RwLock<oauth2::Token>>) -> Result<Twitch, failure::Error> {
         Ok(Twitch {
             client: Client::new(),
             api_url: str::parse::<Url>(API_TWITCH_URL)?,
@@ -140,7 +140,7 @@ impl Twitch {
 }
 
 struct RequestBuilder {
-    token: Arc<RwLock<oauth2::TwitchToken>>,
+    token: Arc<RwLock<oauth2::Token>>,
     client: Client,
     url: Url,
     method: Method,

@@ -44,12 +44,11 @@ pub struct SpotifyDefaults;
 
 impl Oauth2Defaults for SpotifyDefaults {
     const SECRETS_KEY: &'static str = "spotify::oauth2";
-    type TokenResponse = oauth2::basic::BasicTokenResponse;
 
     fn new_flow_builder(
         web: web::Server,
         secrets_config: Arc<crate::oauth2::SecretsConfig>,
-    ) -> Result<crate::oauth2::FlowBuilder<Self::TokenResponse>, failure::Error> {
+    ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
         crate::oauth2::spotify(web, secrets_config)
     }
 }
@@ -60,12 +59,10 @@ pub struct TwitchDefaults;
 impl Oauth2Defaults for TwitchDefaults {
     const SECRETS_KEY: &'static str = "twitch::oauth2";
 
-    type TokenResponse = crate::oauth2::TwitchTokenResponse;
-
     fn new_flow_builder(
         web: web::Server,
         secrets_config: Arc<crate::oauth2::SecretsConfig>,
-    ) -> Result<crate::oauth2::FlowBuilder<Self::TokenResponse>, failure::Error> {
+    ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
         crate::oauth2::twitch(web, secrets_config)
     }
 }
@@ -73,12 +70,11 @@ impl Oauth2Defaults for TwitchDefaults {
 /// Define defaults for fields.
 pub trait Oauth2Defaults {
     const SECRETS_KEY: &'static str;
-    type TokenResponse: oauth2::TokenResponse<oauth2::basic::BasicTokenType>;
 
     fn new_flow_builder(
         web: web::Server,
         secrets_config: Arc<crate::oauth2::SecretsConfig>,
-    ) -> Result<crate::oauth2::FlowBuilder<Self::TokenResponse>, failure::Error>;
+    ) -> Result<crate::oauth2::FlowBuilder, failure::Error>;
 
     fn default_state_path() -> RelativePathBuf {
         RelativePathBuf::from(".oauth2")
@@ -107,7 +103,7 @@ where
         name: &str,
         root: &Path,
         secrets: &secrets::Secrets,
-    ) -> Result<crate::oauth2::FlowBuilder<T::TokenResponse>, failure::Error> {
+    ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
         let secrets = secrets.load(T::SECRETS_KEY)?;
 
         let state_path = self
