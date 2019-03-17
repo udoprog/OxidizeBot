@@ -37,12 +37,12 @@ impl Key {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Counters<B>
 where
     B: Backend,
 {
-    inner: RwLock<HashMap<Key, Arc<Counter>>>,
+    inner: Arc<RwLock<HashMap<Key, Arc<Counter>>>>,
     backend: B,
 }
 
@@ -53,7 +53,7 @@ where
     /// Construct a new counters store with a backend.
     pub fn new(backend: B) -> Counters<B> {
         Counters {
-            inner: RwLock::new(Default::default()),
+            inner: Arc::new(RwLock::new(Default::default())),
             backend,
         }
     }

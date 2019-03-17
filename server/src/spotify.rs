@@ -1,6 +1,6 @@
 //! Spotify API helpers.
 
-use crate::oauth2;
+use crate::{oauth2, utils::BoxFuture};
 use futures::{future, Async, Future, Poll, Stream};
 use reqwest::{
     header,
@@ -179,7 +179,7 @@ impl Spotify {
         page: Page<T>,
     ) -> impl Stream<Item = Vec<T>, Error = failure::Error>
     where
-        T: 'static + serde::de::DeserializeOwned,
+        T: 'static + Send + serde::de::DeserializeOwned,
     {
         PageStream {
             client: Arc::clone(&self),
@@ -225,12 +225,12 @@ impl Spotify {
 
 struct PageStream<T> {
     client: Arc<Spotify>,
-    next: Option<Box<dyn Future<Item = Page<T>, Error = failure::Error>>>,
+    next: Option<BoxFuture<Page<T>, failure::Error>>,
 }
 
 impl<T> Stream for PageStream<T>
 where
-    T: 'static + serde::de::DeserializeOwned,
+    T: 'static + Send + serde::de::DeserializeOwned,
 {
     type Item = Vec<T>;
     type Error = failure::Error;

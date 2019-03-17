@@ -16,7 +16,7 @@ failure = "0.1"
 futures = "0.1.25"
 hashbrown = {version = "0.1.8", features = ["serde"]}
 hyper = "0.12.24"
-irc = "0.13"
+irc = {version = "0.13", git = "https://github.com/udoprog/irc", branch = "send-static"}
 log = "0.4.6"
 oauth2 = {version = "2.0.0-alpha.5", git = "https://github.com/udoprog/oauth2-rs", branch = "async"}
 ratelimit = "0.4.4"

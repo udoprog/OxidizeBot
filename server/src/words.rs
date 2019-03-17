@@ -55,12 +55,12 @@ pub trait Backend: Clone + Send + Sync {
     fn delete(&self, word: &str) -> Result<bool, failure::Error>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Words<B>
 where
     B: Backend,
 {
-    inner: RwLock<Inner>,
+    inner: Arc<RwLock<Inner>>,
     backend: B,
 }
 
@@ -71,7 +71,7 @@ where
     /// Construct a new words store with a backend.
     pub fn new(backend: B) -> Words<B> {
         Words {
-            inner: RwLock::new(Default::default()),
+            inner: Arc::new(RwLock::new(Default::default())),
             backend,
         }
     }

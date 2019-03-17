@@ -1,17 +1,18 @@
 use crate::{template, utils};
+use std::sync::Arc;
 
 /// Command aliases.
-#[derive(Debug, Default, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize)]
 #[serde(transparent)]
 pub struct Aliases {
-    aliases: Vec<MatchReplace>,
+    aliases: Arc<Vec<MatchReplace>>,
 }
 
 impl Aliases {
     pub fn lookup<'a>(&self, it: utils::Words<'a>) -> Option<String> {
         let it = it.into_iter();
 
-        for alias in &self.aliases {
+        for alias in self.aliases.iter() {
             if let Some(out) = alias.matches(it.clone()) {
                 return Some(out);
             }

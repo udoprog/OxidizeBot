@@ -15,12 +15,12 @@ pub trait Backend: Clone + Send + Sync {
     fn delete(&self, channel: &str, word: &str) -> Result<bool, failure::Error>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Commands<B>
 where
     B: Backend,
 {
-    inner: RwLock<HashMap<Key, Arc<Command>>>,
+    inner: Arc<RwLock<HashMap<Key, Arc<Command>>>>,
     backend: B,
 }
 
@@ -31,7 +31,7 @@ where
     /// Construct a new commands store with a backend.
     pub fn new(backend: B) -> Commands<B> {
         Commands {
-            inner: RwLock::new(Default::default()),
+            inner: Arc::new(RwLock::new(Default::default())),
             backend,
         }
     }

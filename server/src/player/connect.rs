@@ -1,4 +1,4 @@
-use crate::spotify;
+use crate::{spotify, utils::BoxFuture};
 use failure::format_err;
 use futures::{
     future::{self, Future},
@@ -10,8 +10,6 @@ use std::{
 };
 use tokio::{runtime, timer};
 use tokio_core::reactor::Core;
-
-type BoxFuture<T> = Box<dyn Future<Item = T, Error = failure::Error> + Send + 'static>;
 
 /// Setup a player.
 pub fn setup(
@@ -87,7 +85,7 @@ impl super::PlayerInterface for ConnectPlayer {
         let future = self
             .spotify
             .me_player()
-            .and_then::<_, BoxFuture<()>>({
+            .and_then::<_, BoxFuture<(), failure::Error>>({
                 let device_id = self.device.id.clone();
                 let spotify = self.spotify.clone();
                 let loaded = self.loaded.clone();

@@ -3,7 +3,9 @@ use crate::{
     currency::Currency,
     db,
     features::{Feature, Features},
-    oauth2, player, twitch, utils, words,
+    oauth2, player, twitch, utils,
+    utils::BoxFuture,
+    words,
 };
 use chrono::{DateTime, Utc};
 use failure::format_err;
@@ -28,9 +30,6 @@ use std::{
 use tokio::timer;
 use tokio_core::reactor::Core;
 use tokio_threadpool::ThreadPool;
-
-type BoxFuture =
-    Box<dyn Future<Item = Option<player::TrackId>, Error = failure::Error> + Send + 'static>;
 
 const SERVER: &'static str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &'static str = "twitch.tv/tags";
@@ -65,12 +64,12 @@ pub fn run<'a>(
     config: &'a config::Config,
     irc_config: &'a Config,
     token: Arc<RwLock<oauth2::Token>>,
-    commands: &'a commands::Commands<db::Database>,
-    counters: &'a counters::Counters<db::Database>,
-    bad_words: &'a words::Words<db::Database>,
+    commands: commands::Commands<db::Database>,
+    counters: counters::Counters<db::Database>,
+    bad_words: words::Words<db::Database>,
     notifier: &'a Notifier,
     player: Option<&player::Player>,
-) -> Result<impl Future<Item = (), Error = failure::Error> + 'a, failure::Error> {
+) -> Result<impl Future<Item = (), Error = failure::Error> + Send + 'a, failure::Error> {
     let access_token = token
         .read()
         .expect("poisoned lock")
@@ -102,7 +101,7 @@ pub fn run<'a>(
     sender.cap_req(TWITCH_TAGS_CAP);
     sender.cap_req(TWITCH_COMMANDS_CAP);
 
-    let mut futures = Vec::<Box<dyn Future<Item = (), Error = failure::Error>>>::new();
+    let mut futures = Vec::<BoxFuture<(), failure::Error>>::new();
 
     let mut currencies = HashMap::new();
     let mut stream_infos = HashMap::new();
@@ -196,12 +195,12 @@ pub fn run<'a>(
 
     futures.push(Box::new(send_future.map_err(failure::Error::from)));
 
-    let mut handler = MessageHandler::new(
-        twitch.clone(),
+    let mut handler = MessageHandler {
+        twitch: twitch.clone(),
         db,
-        sender.clone(),
-        &config.moderators,
-        &config.whitelisted_hosts,
+        sender: sender.clone(),
+        moderators: &config.moderators,
+        whitelisted_hosts: &config.whitelisted_hosts,
         currencies,
         stream_infos,
         commands,
@@ -209,9 +208,10 @@ pub fn run<'a>(
         bad_words,
         notifier,
         players,
-        &config.aliases,
-        &config.features,
-    );
+        aliases: config.aliases.clone(),
+        features: &config.features,
+        thread_pool: Arc::new(ThreadPool::new()),
+    };
 
     futures.push(Box::new(
         client
@@ -388,17 +388,17 @@ struct MessageHandler<'a> {
     /// Per-channel stream_infos.
     stream_infos: HashMap<String, Arc<RwLock<Option<StreamInfo>>>>,
     /// All registered commands.
-    commands: &'a commands::Commands<db::Database>,
+    commands: commands::Commands<db::Database>,
     /// All registered counters.
-    counters: &'a counters::Counters<db::Database>,
+    counters: counters::Counters<db::Database>,
     /// Bad words.
-    bad_words: &'a words::Words<db::Database>,
+    bad_words: words::Words<db::Database>,
     /// For sending notifications.
     notifier: &'a Notifier,
     /// Music player.
     players: HashMap<String, player::PlayerClient>,
     /// Aliases.
-    aliases: &'a aliases::Aliases,
+    aliases: aliases::Aliases,
     /// Enabled features.
     features: &'a Features,
     /// Thread pool used for driving futures.
@@ -406,42 +406,6 @@ struct MessageHandler<'a> {
 }
 
 impl<'a> MessageHandler<'a> {
-    /// Build a new handler.
-    pub fn new(
-        twitch: twitch::Twitch,
-        db: db::Database,
-        sender: Sender,
-        moderators: &'a HashSet<String>,
-        whitelisted_hosts: &'a HashSet<String>,
-        currencies: HashMap<String, &'a Currency>,
-        stream_infos: HashMap<String, Arc<RwLock<Option<StreamInfo>>>>,
-        commands: &'a commands::Commands<db::Database>,
-        counters: &'a counters::Counters<db::Database>,
-        bad_words: &'a words::Words<db::Database>,
-        notifier: &'a Notifier,
-        players: HashMap<String, player::PlayerClient>,
-        aliases: &'a aliases::Aliases,
-        features: &'a Features,
-    ) -> Self {
-        Self {
-            twitch,
-            db,
-            sender,
-            moderators,
-            whitelisted_hosts,
-            currencies,
-            stream_infos,
-            commands,
-            counters,
-            bad_words,
-            notifier,
-            players,
-            aliases,
-            features,
-            thread_pool: Arc::new(ThreadPool::new()),
-        }
-    }
-
     /// Run as user.
     fn as_user<'sender, 'm>(&self, m: &Message) -> Result<User, failure::Error> {
         let name = m
@@ -701,13 +665,14 @@ impl<'a> MessageHandler<'a> {
                     failure::bail!("bad command");
                 }
 
-                let track_id_future: BoxFuture = match player::TrackId::from_url_or_uri(q) {
-                    Ok(track_id) => Box::new(future::ok(Some(track_id))),
-                    Err(e) => {
-                        log::info!("Failed to parse as URL/URI: {}: {}", q, e);
-                        Box::new(player.search_track(q))
-                    }
-                };
+                let track_id_future: BoxFuture<Option<player::TrackId>, failure::Error> =
+                    match player::TrackId::from_url_or_uri(q) {
+                        Ok(track_id) => Box::new(future::ok(Some(track_id))),
+                        Err(e) => {
+                            log::info!("Failed to parse as URL/URI: {}: {}", q, e);
+                            Box::new(player.search_track(q))
+                        }
+                    };
 
                 let future = track_id_future
                     .and_then({

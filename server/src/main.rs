@@ -4,7 +4,7 @@ use setmod_server::{
     commands, config::Config, counters, db, features::Feature, irc, player, secrets, spotify,
     twitch, web, words,
 };
-use std::{fs, path::Path, sync::Arc, thread};
+use std::{fs, path::Path, sync::Arc};
 use tokio_core::reactor::Core;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -112,15 +112,13 @@ fn main() -> Result<(), failure::Error> {
     let notifier = Arc::new(setmod_notifier::Notifier::new());
 
     let mut core = Core::new()?;
+    let mut runtime = tokio::runtime::Runtime::new()?;
 
     let mut futures = Vec::<Box<dyn Future<Item = (), Error = failure::Error>>>::new();
 
     let (web, future) = web::setup()?;
 
     // NB: spawn the web server on a separate thread because it's needed for the synchronous authentication flow below.
-    // TODO: Make everything async (oauth2 currently is not).
-    // TODO: Get rid of using threads below. Right now that is necessary to ensure all oauth2 requests are initiated in // the web server.
-    let mut runtime = tokio::runtime::Runtime::new()?;
     runtime.spawn(future.map_err(|e| {
         log::error!("Error in web server: {}", e);
         ()
@@ -128,47 +126,47 @@ fn main() -> Result<(), failure::Error> {
 
     log::info!("Listening on: {}", web::URL);
 
-    let spotify_auth_thread = thread::spawn({
+    let mut tokens = vec![];
+
+    tokens.push({
         let flow = config
             .spotify
             .new_flow_builder(web.clone(), "spotify", &root, &secrets)?
             .build()?;
 
-        let thread_pool = Arc::clone(&thread_pool);
-        move || flow.execute("Authorize Spotify", thread_pool)
+        flow.execute("Authorize Spotify")
     });
 
-    let streamer_auth_thread = thread::spawn({
+    tokens.push({
         let flow = config
             .twitch
             .new_flow_builder(web.clone(), "twitch-streamer", &root, &secrets)?
             .build()?;
 
-        let thread_pool = Arc::clone(&thread_pool);
-        move || flow.execute("Authorize as Streamer", thread_pool)
+        flow.execute("Authorize as Streamer")
     });
 
-    let irc = match config.irc.as_ref() {
-        Some(irc_config) => {
-            let auth_thread = thread::spawn({
-                let flow = config
-                    .twitch
-                    .new_flow_builder(web.clone(), "twitch-bot", &root, &secrets)?
-                    .build()?;
+    if config.irc.is_some() {
+        let flow = config
+            .twitch
+            .new_flow_builder(web.clone(), "twitch-bot", &root, &secrets)?
+            .build()?;
 
-                let thread_pool = Arc::clone(&thread_pool);
-                move || flow.execute("Authorize as Bot", thread_pool)
-            });
-
-            Some((irc_config, auth_thread))
-        }
-        None => None,
+        tokens.push(flow.execute("Authorize as Bot"));
     };
 
-    let (spotify_token, future) = spotify_auth_thread.join().expect("thread panicked")?;
+    let results = core.run(future::join_all(tokens))?;
+
+    let mut it = results.into_iter();
+
+    let (spotify_token, future) = it
+        .next()
+        .ok_or_else(|| format_err!("expected spotify token"))?;
     futures.push(Box::new(future));
 
-    let (streamer_token, future) = streamer_auth_thread.join().expect("thread panicked")?;
+    let (streamer_token, future) = it
+        .next()
+        .ok_or_else(|| format_err!("expected streamer token"))?;
     futures.push(Box::new(future));
 
     futures.push(Box::new(notifier.clone().listen()?));
@@ -194,8 +192,11 @@ fn main() -> Result<(), failure::Error> {
         _ => None,
     };
 
-    if let Some((c, auth_thread)) = irc {
-        let (bot_token, future) = auth_thread.join().expect("thread panicked")?;
+    if let Some(c) = config.irc.as_ref() {
+        let (bot_token, future) = it
+            .next()
+            .ok_or_else(|| format_err!("expected streamer token"))?;
+
         futures.push(Box::new(future));
 
         let future = irc::run(
@@ -205,9 +206,9 @@ fn main() -> Result<(), failure::Error> {
             &config,
             c,
             bot_token,
-            &commands,
-            &counters,
-            &bad_words,
+            commands,
+            counters,
+            bad_words,
             &*notifier,
             player.as_ref(),
         )?;
