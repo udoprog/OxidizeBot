@@ -4,7 +4,6 @@ use failure::{format_err, ResultExt};
 use futures::{future, sync::oneshot, Async, Future, Poll, Stream as _};
 use oauth2::{
     basic::{BasicErrorField, BasicTokenResponse, BasicTokenType},
-    prelude::{NewType, SecretNewType},
     AccessToken, AuthUrl, AuthorizationCode, Client, ClientId, ClientSecret, CsrfToken,
     RedirectUrl, RefreshToken, RequestTokenError, Scope, TokenResponse, TokenUrl,
 };
