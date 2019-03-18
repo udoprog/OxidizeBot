@@ -1,8 +1,8 @@
 use failure::{format_err, ResultExt};
 use futures::{future, Future};
-use setmod_server::{
-    commands, config::Config, counters, db, features::Feature, irc, player, secrets, spotify,
-    twitch, web, words,
+use setmod_bot::{
+    commands, config::Config, counters, db, features::Feature, irc, player, secrets, setbac,
+    spotify, twitch, web, words,
 };
 use std::{fs, path::Path, sync::Arc};
 use tokio_core::reactor::Core;
@@ -10,10 +10,10 @@ use tokio_core::reactor::Core;
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 fn opts() -> clap::App<'static, 'static> {
-    clap::App::new("Batch Censor")
+    clap::App::new("SetMod Bot")
         .version(VERSION)
         .author("John-John Tedro <udoprog@tedro.se>")
-        .about("Batch censors a bunch of audio files.")
+        .about("Bot component of SetMod.")
         .arg(
             clap::Arg::with_name("config")
                 .short("c")
@@ -187,6 +187,15 @@ fn main() -> Result<(), failure::Error> {
             )?;
 
             futures.push(Box::new(future));
+
+            if let Some(api_url) = config.api_url.as_ref() {
+                futures.push(Box::new(setbac::run_update(
+                    api_url,
+                    &player,
+                    streamer_token.clone(),
+                )?));
+            }
+
             Some(player)
         }
         _ => None,

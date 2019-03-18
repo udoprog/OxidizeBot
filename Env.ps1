@@ -1,2 +1,2 @@
 $root = (Get-Item -Path ".").FullName
-$env:SQLITE3_LIB_DIR="$root\server\lib"
+$env:SQLITE3_LIB_DIR="$root\bot\lib"

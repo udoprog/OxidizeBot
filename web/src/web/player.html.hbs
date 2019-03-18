@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+
+    <title>{{login}}'s queue</title>
+
+    <style>
+      .powered-by {
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>{{login}}'s queue</h1>
+
+      <table class="table">
+        <thead>
+          <tr>
+            <th scope="col">Song</th>
+            <th scope="col">Artist</th>
+            <th scope="col">Length</th>
+            <th scope="col">Requested By</th>
+          </tr>
+        </thead>
+        <tbody>
+        {{#each player.items}}
+          <tr class="{{#if @first}}current{{/if}}">
+            <td>
+              {{#if @first}}<span title="Current Song">&#9654;</span>{{/if}}
+              <a href="https://open.spotify.com/track/{{track_id}}">{{name}}</a>
+            </td>
+            <td>{{artists}}</td>
+            <td>{{duration}}</td>
+            {{#if user}}
+              <td><a href="https://twitch.tv/{{user}}">@{{user}}</a></td>
+            {{else}}
+              <td><a href="https://awoiaf.westeros.org/index.php/Faceless_Men"><em>No One</em></a></td>
+            {{/if}}
+          </tr>
+        {{/each}}
+        </tbody>
+      </table>
+
+      <p class="powered-by">Powered by <a href="https://github.com/udoprog/setmod">setmod</a></p>
+    </div>
+  </body>
+</html>

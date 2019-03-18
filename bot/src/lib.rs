@@ -15,6 +15,7 @@ pub mod irc;
 pub mod oauth2;
 pub mod player;
 pub mod secrets;
+pub mod setbac;
 pub mod spotify;
 mod template;
 mod themes;

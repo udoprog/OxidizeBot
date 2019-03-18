@@ -2,7 +2,7 @@
 
 members = [
     "notifier",
-    "server",
-    "public",
+    "bot",
+    "web",
 #    "gfx",
 ]

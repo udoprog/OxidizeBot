@@ -22,6 +22,9 @@ features = [
   "url-whitelist",
 ]
 
+# API to push updates based on Twitch credentials.
+api_url = "https://setbac.tv"
+
 [irc]
 bot = "setmod"
 
@@ -33,7 +36,6 @@ currency = {name = "ether"}
 speaker = "Speakers (Realtek High Definiti"
 volume = 50
 # connect: true
-echo_current_song = false
 
 [current_song]
 path = "E:\\temp\\current_song.txt"

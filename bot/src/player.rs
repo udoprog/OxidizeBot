@@ -376,8 +376,10 @@ pub enum Origin {
 #[derive(Debug, Clone)]
 pub enum Event {
     Empty,
-    Playing(Origin, Arc<Item>),
+    Playing(bool, Origin, Arc<Item>),
     Pausing,
+    /// song added to queue.
+    SongAdded,
 }
 
 /// A handler for the player.
@@ -1031,10 +1033,11 @@ impl PlaybackFuture {
 
             if !self.paused {
                 self.player.play();
-
-                if self.echo_current_song {
-                    self.broadcast(Event::Playing(loaded.origin, loaded.item.clone()));
-                }
+                self.broadcast(Event::Playing(
+                    self.echo_current_song,
+                    loaded.origin,
+                    loaded.item.clone(),
+                ));
             } else {
                 self.player.pause();
             }
@@ -1088,11 +1091,11 @@ impl PlaybackFuture {
                 match self.loaded.as_ref() {
                     Some(loaded) => {
                         self.player.play();
-
-                        if self.echo_current_song {
-                            self.broadcast(Event::Playing(loaded.origin, loaded.item.clone()));
-                        }
-
+                        self.broadcast(Event::Playing(
+                            self.echo_current_song,
+                            loaded.origin,
+                            loaded.item.clone(),
+                        ));
                         self.current_song();
                     }
                     None => {
@@ -1100,8 +1103,12 @@ impl PlaybackFuture {
                     }
                 }
             }
-            Command::Added if !self.paused && self.loaded.is_none() => {
-                self.load_front();
+            Command::Added => {
+                if !self.paused && self.loaded.is_none() {
+                    self.load_front();
+                }
+
+                self.broadcast(Event::SongAdded);
             }
             Command::Volume(volume) => {
                 *self.volume.write().expect("poisoned") = volume;

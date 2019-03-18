@@ -37,6 +37,9 @@ pub struct Config {
     /// Write the current song to the specified path.
     #[serde(default)]
     pub current_song: Option<Arc<current_song::CurrentSong>>,
+    /// API URL to use for pushing updates.
+    #[serde(default)]
+    pub api_url: Option<String>,
 }
 
 #[derive(Debug)]

@@ -106,6 +106,7 @@ pub fn run<'a>(
     let mut currencies = HashMap::new();
     let mut stream_infos = HashMap::new();
     let mut players = HashMap::new();
+    let mut streamers = HashMap::new();
 
     for channel in &irc_config.channels {
         if let Some(currency) = channel.currency.as_ref() {
@@ -139,6 +140,7 @@ pub fn run<'a>(
                 stream_info_loop(interval, twitch.clone(), streamer, Arc::clone(&stream_info));
             futures.push(Box::new(future));
             stream_infos.insert(channel.name.to_string(), stream_info);
+            streamers.insert(channel.name.to_string(), streamer.to_string());
         }
 
         if let Some(player) = player {
@@ -153,7 +155,11 @@ pub fn run<'a>(
 
                         move |e| {
                             match e {
-                                player::Event::Playing(_, item) => {
+                                player::Event::Playing(echo, _, item) => {
+                                    if !echo {
+                                        return Ok(())
+                                    }
+
                                     let message = match item.user.as_ref() {
                                         Some(user) => {
                                             format!(
@@ -184,6 +190,8 @@ pub fn run<'a>(
                                         ),
                                     );
                                 },
+                                // other event we don't care about
+                                _ => {}
                             }
 
                             Ok(())
@@ -203,6 +211,7 @@ pub fn run<'a>(
         whitelisted_hosts: &config.whitelisted_hosts,
         currencies,
         stream_infos,
+        streamers,
         commands,
         counters,
         bad_words,
@@ -210,6 +219,7 @@ pub fn run<'a>(
         players,
         aliases: config.aliases.clone(),
         features: &config.features,
+        api_url: config.api_url.as_ref(),
         thread_pool: Arc::new(ThreadPool::new()),
     };
 
@@ -387,6 +397,8 @@ struct MessageHandler<'a> {
     currencies: HashMap<String, &'a Currency>,
     /// Per-channel stream_infos.
     stream_infos: HashMap<String, Arc<RwLock<Option<StreamInfo>>>>,
+    /// Per-channel streamer.
+    streamers: HashMap<String, String>,
     /// All registered commands.
     commands: commands::Commands<db::Database>,
     /// All registered counters.
@@ -401,6 +413,8 @@ struct MessageHandler<'a> {
     aliases: aliases::Aliases,
     /// Enabled features.
     features: &'a Features,
+    /// Configured API URL.
+    api_url: Option<&'a String>,
     /// Thread pool used for driving futures.
     thread_pool: Arc<ThreadPool>,
 }
@@ -546,6 +560,16 @@ impl<'a> MessageHandler<'a> {
                 player.open();
             }
             Some("list") => {
+                let streamer = self.streamers.get(&user.target);
+
+                if let (Some(api_url), Some(streamer)) = (self.api_url, streamer) {
+                    user.respond(format!(
+                        "You can find the queue at {}/player/{}",
+                        api_url, streamer
+                    ));
+                    return Ok(());
+                }
+
                 let mut limit = 3usize;
 
                 if let Some(n) = it.next() {
