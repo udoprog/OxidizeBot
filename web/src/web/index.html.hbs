@@ -1,5 +1,28 @@
-{{#> layout }}
+{{#> layout title="SetMod" }}
 <div class="container">
+  <h1>setmod overview</h1>
+
+  <p>setmod is a high performance Twitch Bot written in Rust.</p>
+  <p>It is Free Software, and you can find its source <a href="{{github_url}}">on Github</a>.</p>
+
+  <h2>Players</h2>
+
+  {{#each players}}
+  <table class="table">
+  <thead>
+    <tr>
+      <th>Player Name</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><a href="/player/{{name}}">{{name}}</a></td>
+    </tr>
+  </tbody>
+  </table>
+  {{else}}
+  <p>No active players right now!</p>
+  {{/each}}
 <h1></h1>
 </div>
 {{/layout}}

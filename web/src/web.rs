@@ -9,11 +9,13 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+static GITHUB_URL: &'static str = "https://github.com/udoprog/setmod";
+
 pub fn setup(
     no_auth: bool,
 ) -> Result<impl Future<Item = (), Error = error::Error>, failure::Error> {
     let mut reg = handlebars::Handlebars::new();
-    reg.register_partial("layout", include_str!("web/index.html.hbs"))?;
+    reg.register_partial("layout", include_str!("web/layout.html.hbs"))?;
     reg.register_template_string("index", include_str!("web/index.html.hbs"))?;
     reg.register_template_string("player", include_str!("web/player.html.hbs"))?;
 
@@ -83,9 +85,11 @@ impl service::Service for Server {
         let mut it = uri.path().split("/");
         it.next();
 
+        let route = (req.method(), (it.next(), it.next()));
+
         let future: Box<dyn Future<Item = Response<Self::ResBody>, Error = Error> + Send> =
-            match (req.method(), (it.next(), it.next())) {
-                (&Method::GET, (None, None)) => Box::new(self.handle_index()),
+            match route {
+                (&Method::GET, (Some(""), None)) => Box::new(self.handle_index()),
                 (&Method::GET, (Some("player"), Some(login))) => {
                     Box::new(self.handle_player_show(login))
                 }
@@ -142,7 +146,24 @@ impl Server {
 
     /// Handles Oauth 2.0 authentication redirect.
     pub fn handle_index(&mut self) -> impl Future<Item = Response<Body>, Error = Error> {
-        let data = Data {};
+        let players = self.players.read().expect("poisoned");
+
+        let players = {
+            let mut out = Vec::new();
+
+            for name in players.keys() {
+                out.push(Player {
+                    name: name.as_str(),
+                })
+            }
+
+            out
+        };
+
+        let data = Data {
+            github_url: GITHUB_URL,
+            players: players,
+        };
 
         let body = match self.reg.render("index", &data) {
             Ok(body) => body,
@@ -152,7 +173,15 @@ impl Server {
         return future::result(html(body));
 
         #[derive(serde::Serialize)]
-        struct Data {}
+        struct Data<'a> {
+            github_url: &'static str,
+            players: Vec<Player<'a>>,
+        }
+
+        #[derive(serde::Serialize)]
+        struct Player<'a> {
+            name: &'a str,
+        }
     }
 
     /// Handle listing players.
