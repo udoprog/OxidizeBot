@@ -680,7 +680,15 @@ impl PlayerClient {
     }
 
     pub fn purge(&self) -> Result<Vec<Arc<Item>>, failure::Error> {
-        self.queue.purge()
+        let purged = self.queue.purge()?;
+
+        if !purged.is_empty() {
+            if let Err(e) = self.commands_tx.unbounded_send(Command::Modified) {
+                log::error!("failed to send queue modified notification: {}", e);
+            }
+        }
+
+        Ok(purged)
     }
 
     /// Remove the first track in the queue.
