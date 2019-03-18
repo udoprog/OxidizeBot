@@ -45,6 +45,8 @@ table! {
         deleted -> Bool,
         track_id -> Text,
         added_at -> Timestamp,
+        promoted_at -> Nullable<Timestamp>,
+        promoted_by -> Nullable<Text>,
         user -> Nullable<Text>,
     }
 }

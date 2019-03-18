@@ -261,6 +261,7 @@ Enabled commands:
 * `!song theme <name>` - Play the specified theme song (**moderator**).
 * `!song close [reason]` - Close the song queue with an optional `[reason]` (**moderator**).
 * `!song open` - Open the song queue (**moderator**).
+* `!song promote <number>` - Promote the song at the given position `<number>` in the queue (**moderator**).
 
 ## Aliases
 

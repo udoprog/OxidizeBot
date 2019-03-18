@@ -547,6 +547,30 @@ impl<'a> MessageHandler<'a> {
 
                 self.thread_pool.spawn(future);
             }
+            Some("promote") => {
+                self.check_moderator(user)?;
+
+                let index = match it.next() {
+                    Some(index) => match str::parse::<usize>(index) {
+                        Ok(0) => {
+                            user.respond("Expected non-zero index :(");
+                            failure::bail!("bad command");
+                        }
+                        Ok(index) => index.saturating_sub(1),
+                        Err(_) => {
+                            user.respond("Expected whole number argument");
+                            failure::bail!("bad command");
+                        }
+                    },
+                    None => failure::bail!("bad command"),
+                };
+
+                if let Some(item) = player.promote_song(&user.name, index) {
+                    user.respond(format!("Promoted song to head of queue: {}", item.what()));
+                } else {
+                    user.respond("No such song to promote");
+                }
+            }
             Some("close") => {
                 self.check_moderator(user)?;
 
@@ -653,10 +677,9 @@ impl<'a> MessageHandler<'a> {
                         };
 
                         let argument = match str::parse::<u32>(argument) {
-                            // clamp the volume
                             Ok(argument) => argument,
                             Err(_) => {
-                                user.respond("expected numeric argument");
+                                user.respond("expected whole number argument");
                                 failure::bail!("bad command");
                             }
                         };
@@ -667,6 +690,7 @@ impl<'a> MessageHandler<'a> {
                             None => argument,
                         };
 
+                        // clamp the volume.
                         let argument = u32::min(100, argument);
                         user.respond(format!("Volume set to {}.", argument));
                         player.volume(argument)?;

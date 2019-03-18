@@ -4,6 +4,7 @@ mod schema;
 pub use self::models::*;
 use crate::{commands, counters, player, words};
 
+use chrono::Utc;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use futures::{future, Future};
@@ -275,7 +276,7 @@ impl player::Backend for Database {
         let c = self.pool.get()?;
         let songs = dsl::songs
             .filter(dsl::deleted.eq(false))
-            .order(dsl::added_at.asc())
+            .order((dsl::promoted_at.desc(), dsl::added_at.asc()))
             .load::<Song>(&c)?;
         Ok(songs)
     }
@@ -310,10 +311,32 @@ impl player::Backend for Database {
             .limit(1)
             .load(&c)?;
 
-        let target = dsl::songs.filter(dsl::id.eq_any(ids));
-
-        let count = diesel::update(target)
+        let count = diesel::update(dsl::songs.filter(dsl::id.eq_any(ids)))
             .set(dsl::deleted.eq(true))
+            .execute(&c)?;
+
+        Ok(count == 1)
+    }
+
+    /// Promote the song with the given ID.
+    fn promote_song(&self, user: &str, track_id: &player::TrackId) -> Result<bool, failure::Error> {
+        use self::schema::songs::dsl;
+        let c = self.pool.get()?;
+
+        let track_id = track_id.to_base62();
+
+        let ids: Vec<i32> = dsl::songs
+            .select(dsl::id)
+            .filter(dsl::deleted.eq(false).and(dsl::track_id.eq(&track_id)))
+            .order(dsl::added_at.desc())
+            .limit(1)
+            .load(&c)?;
+
+        let count = diesel::update(dsl::songs.filter(dsl::id.eq_any(ids)))
+            .set((
+                dsl::promoted_at.eq(Utc::now().naive_utc()),
+                dsl::promoted_by.eq(user),
+            ))
             .execute(&c)?;
 
         Ok(count == 1)

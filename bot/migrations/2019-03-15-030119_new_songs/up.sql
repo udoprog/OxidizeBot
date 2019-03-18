@@ -7,5 +7,3 @@ CREATE TABLE songs (
     added_at TIMESTAMP NOT NULL,
     user VARCHAR
 );
-
-CREATE INDEX songs_deleted_added_at ON songs (deleted, added_at);

@@ -54,6 +54,10 @@ pub struct Song {
     pub track_id: TrackId,
     /// When the song was added.
     pub added_at: NaiveDateTime,
+    /// Time at which the song was promoted.
+    pub promoted_at: Option<NaiveDateTime>,
+    /// The user that promoted the song last.
+    pub promoted_by: Option<String>,
     /// The user that requested the song.
     pub user: Option<String>,
 }

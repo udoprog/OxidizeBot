@@ -151,8 +151,8 @@ pub enum Command {
     Pause,
     // Start playback.
     Play,
-    // A song was added to the queue.
-    Added,
+    // The queue was modified.
+    Modified,
     // Set the gain of the player.
     Volume(u32),
     // Play the given item as a theme at the given offset.
@@ -378,8 +378,8 @@ pub enum Event {
     Empty,
     Playing(bool, Origin, Arc<Item>),
     Pausing,
-    /// song added to queue.
-    SongAdded,
+    /// queue was modified in some way.
+    Modified,
 }
 
 /// A handler for the player.
@@ -477,6 +477,19 @@ impl PlayerClient {
             .cloned()
             .chain(queue.iter().take(n).cloned())
             .collect()
+    }
+
+    /// Promote the given song to the head of the queue.
+    pub fn promote_song(&self, user: &str, n: usize) -> Option<Arc<Item>> {
+        let promoted = self.queue.promote_song(user, n);
+
+        if promoted.is_some() {
+            if let Err(e) = self.commands_tx.unbounded_send(Command::Modified) {
+                log::error!("failed to send queue modified notification: {}", e);
+            }
+        }
+
+        promoted
     }
 
     /// Toggle playback.
@@ -654,7 +667,7 @@ impl PlayerClient {
 
             move |(len, item)| {
                 commands_tx
-                    .unbounded_send(Command::Added)
+                    .unbounded_send(Command::Modified)
                     .map(move |_| (len, item))
                     .map_err(|e| AddTrackError::Error(e.into()))
             }
@@ -765,6 +778,24 @@ pub trait Backend: Clone + Send + Sync {
 
     /// Purge the songs database and return the number of items removed.
     fn song_purge(&self) -> Result<usize, failure::Error>;
+
+    /// Purge the songs database, but only log on issues.
+    fn promote_song_log(&self, user: &str, track_id: &TrackId) -> Option<bool> {
+        match self.promote_song(user, track_id) {
+            Err(e) => {
+                log::warn!(
+                    "failed to promote song `{}` in database: {}",
+                    track_id.to_base62(),
+                    e
+                );
+                None
+            }
+            Ok(n) => Some(n),
+        }
+    }
+
+    /// Promote the track with the given ID.
+    fn promote_song(&self, user: &str, track_id: &TrackId) -> Result<bool, failure::Error>;
 }
 
 /// The playback queue.
@@ -873,8 +904,27 @@ impl Queue {
         Ok(None)
     }
 
+    /// Promote the given song.
+    pub fn promote_song(&self, user: &str, n: usize) -> Option<Arc<Item>> {
+        let mut q = self.queue.write().expect("poisoned");
+
+        // OK, but song doesn't exist or index is out of bound.
+        if q.is_empty() || n >= q.len() {
+            return None;
+        }
+
+        q.swap(0, n);
+
+        if let Some(item) = q.get(0).cloned() {
+            self.db.promote_song_log(user, &item.track_id);
+            return Some(item);
+        }
+
+        None
+    }
+
     /// Push item to back of queue without going through the database.
-    pub fn push_back_queue(&self, item: Arc<Item>) {
+    fn push_back_queue(&self, item: Arc<Item>) {
         self.queue.write().expect("poisoned").push_back(item);
     }
 }
@@ -1103,12 +1153,12 @@ impl PlaybackFuture {
                     }
                 }
             }
-            Command::Added => {
+            Command::Modified => {
                 if !self.paused && self.loaded.is_none() {
                     self.load_front();
                 }
 
-                self.broadcast(Event::SongAdded);
+                self.broadcast(Event::Modified);
             }
             Command::Volume(volume) => {
                 *self.volume.write().expect("poisoned") = volume;
