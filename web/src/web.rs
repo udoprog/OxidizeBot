@@ -13,6 +13,7 @@ pub fn setup(
     no_auth: bool,
 ) -> Result<impl Future<Item = (), Error = error::Error>, failure::Error> {
     let mut reg = handlebars::Handlebars::new();
+    reg.register_partial("layout", include_str!("web/index.html.hbs"))?;
     reg.register_template_string("index", include_str!("web/index.html.hbs"))?;
     reg.register_template_string("player", include_str!("web/player.html.hbs"))?;
 
@@ -30,7 +31,11 @@ pub fn setup(
 }
 
 pub enum Error {
+    /// Client performed a bad request.
     BadRequest(failure::Error),
+    /// The resource could not be found.
+    NotFound,
+    /// Generic error.
     Error(failure::Error),
 }
 
@@ -73,6 +78,8 @@ impl service::Service for Server {
     fn call(&mut self, req: Request<Self::ReqBody>) -> Self::Future {
         let uri = req.uri();
 
+        log::info!("{} {}", req.method(), uri.path());
+
         let mut it = uri.path().split("/");
         it.next();
 
@@ -84,11 +91,7 @@ impl service::Service for Server {
                 }
                 (&Method::GET, (Some("api"), Some("players"))) => Box::new(self.player_list()),
                 (&Method::POST, (Some("api"), Some("player"))) => Box::new(self.player_update(req)),
-                _ => {
-                    let mut r = Response::new(Body::from("No such page :("));
-                    *r.status_mut() = StatusCode::NOT_FOUND;
-                    return Box::new(future::ok(r));
-                }
+                _ => Box::new(future::err(Error::NotFound)),
             };
 
         let future = future.then(|result| match result {
@@ -98,6 +101,11 @@ impl service::Service for Server {
                     Error::BadRequest(e) => {
                         log::error!("BAD REQUEST: {}", e);
                         bad_request()
+                    }
+                    Error::NotFound => {
+                        let mut r = Response::new(Body::from("No such page :("));
+                        *r.status_mut() = StatusCode::NOT_FOUND;
+                        return Ok(r);
                     }
                     Error::Error(e) => {
                         log::error!("error: {}", e);
@@ -141,15 +149,7 @@ impl Server {
             Err(e) => return future::err(e.into()),
         };
 
-        let mut r = Response::new(Body::from(body));
-        r.headers_mut().insert(
-            header::CONTENT_TYPE,
-            "text/html; charset=utf-8"
-                .parse()
-                .expect("valid header value"),
-        );
-
-        return future::ok(r);
+        return future::result(html(body));
 
         #[derive(serde::Serialize)]
         struct Data {}
@@ -171,12 +171,7 @@ impl Server {
 
         let player = match players.get(login) {
             Some(items) => items,
-            None => {
-                return future::err(Error::BadRequest(format_err!(
-                    "no queue for login: {}",
-                    login
-                )))
-            }
+            None => return future::err(Error::NotFound),
         };
 
         let data = Data {
@@ -356,7 +351,7 @@ pub fn html(body: String) -> Result<Response<Body>, Error> {
     let mut r = Response::new(Body::from(body));
 
     r.headers_mut()
-        .insert(header::CONTENT_TYPE, "text/html".parse()?);
+        .insert(header::CONTENT_TYPE, "text/html; charset=utf-8".parse()?);
 
     Ok(r)
 }
