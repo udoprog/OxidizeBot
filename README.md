@@ -78,6 +78,9 @@ currency = {name = "ether"}
 speaker = "Speakers (Realtek High Definiti"
 volume = 50
 
+# Set to false and the current song will not be echoed in chat.
+echo_current_song = true
+
 [player.current_song]
 # Optional: Write information on the current song to the given path for use with e.g. OBS.
 path = "E:\\temp\\current_song.txt"

@@ -37,6 +37,9 @@ speaker = "Speakers (Realtek High Definiti"
 volume = 50
 # connect: true
 
+# Set to false and the current song will not be echoed in chat.
+echo_current_song = true
+
 [current_song]
 path = "E:\\temp\\current_song.txt"
 not_playing = "No Song Playing"
