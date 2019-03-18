@@ -1,10 +1,11 @@
-{{#> layout title="Player Overview" }}
+{{#> layout title="Player Queue" }}
 <div class="container">
-  <h1>{{login}}'s player</h1>
+  <h1>{{login}}'s player queue</h1>
 
   <table class="table">
     <thead>
       <tr>
+        <th></th>
         <th scope="col">Song</th>
         <th scope="col">Artist</th>
         <th scope="col">Length</th>
@@ -14,6 +15,7 @@
     <tbody>
     {{#each player.items}}
       <tr class="{{#if @first}}current{{/if}}">
+        <th>#{{@index}}</th>
         <td>
           {{#if @first}}<span title="Current Song">&#9654;</span>{{/if}}
           <a href="https://open.spotify.com/track/{{track_id}}">{{name}}</a>
