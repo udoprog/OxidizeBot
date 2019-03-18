@@ -2,7 +2,9 @@ use std::{io, string};
 
 lazy_static::lazy_static! {
     static ref REGISTRY: handlebars::Handlebars = {
-        handlebars::Handlebars::new()
+        let mut reg = handlebars::Handlebars::new();
+        reg.register_escape_fn(|s| s.to_string());
+        reg
     };
 }
 

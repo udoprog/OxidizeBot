@@ -59,6 +59,9 @@ features = [
   "url-whitelist",
 ]
 
+# API to use for remotely showing playlist information.
+api_url = "https://setbac.tv"
+
 [irc]
 bot = "setmod"
 
@@ -80,7 +83,7 @@ volume = 50
 path = "E:\\temp\\current_song.txt"
 not_playing = "No Song Playing"
 template = [
-  "Song: \"{{name}}\"{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})",
+  "Song: {{name}}{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})",
   "{{#if user~}}Request by: @{{user~}}{{/if}}",
 ]
 
