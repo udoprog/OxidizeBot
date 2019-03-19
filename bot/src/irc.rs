@@ -131,10 +131,11 @@ pub fn run<'a>(
 
     let mut handler = MessageHandler {
         streamer: config.streamer.clone(),
+        channel: irc_config.channel.clone(),
         twitch: twitch.clone(),
         db,
         sender: sender.clone(),
-        moderators: &config.moderators,
+        moderators: HashSet::default(),
         whitelisted_hosts: &config.whitelisted_hosts,
         currency: config.currency.as_ref(),
         stream_info,
@@ -359,6 +360,8 @@ impl Sender {
 struct MessageHandler<'a> {
     /// Current Streamer.
     streamer: String,
+    /// Currench channel.
+    channel: Arc<String>,
     /// API access.
     twitch: twitch::Twitch,
     /// Database.
@@ -366,7 +369,7 @@ struct MessageHandler<'a> {
     /// Queue for sending messages.
     sender: Sender,
     /// Moderators.
-    moderators: &'a HashSet<String>,
+    moderators: HashSet<String>,
     /// Whitelisted hosts for links.
     whitelisted_hosts: &'a HashSet<String>,
     /// Currency in use.
@@ -399,7 +402,7 @@ struct MessageHandler<'a> {
 
 impl<'a> MessageHandler<'a> {
     /// Run as user.
-    fn as_user<'sender, 'm>(&self, m: &Message) -> Result<User, failure::Error> {
+    fn as_user<'m>(&self, tags: Tags<'m>, m: &'m Message) -> Result<User<'m>, failure::Error> {
         let name = m
             .source_nickname()
             .ok_or_else(|| format_err!("expected user info"))?;
@@ -409,20 +412,21 @@ impl<'a> MessageHandler<'a> {
             .ok_or_else(|| format_err!("expected user info"))?;
 
         Ok(User {
+            tags,
             sender: self.sender.clone(),
-            name: name.to_string(),
-            target: target.to_string(),
+            name,
+            target,
         })
     }
 
     /// Test if moderator.
-    fn is_moderator(&self, user: &User) -> bool {
-        self.moderators.contains(&user.name)
+    fn is_moderator(&self, user: &User<'_>) -> bool {
+        self.moderators.contains(user.name)
     }
 
     /// Check that the given user is a moderator.
     fn check_moderator(&self, user: &User) -> Result<(), failure::Error> {
-        // Streamer immune to cooldown.
+        // Streamer immune to cooldown and is always a moderator.
         if user.name == self.streamer {
             return Ok(());
         }
@@ -472,14 +476,14 @@ impl<'a> MessageHandler<'a> {
     }
 
     /// Handle the !badword command.
-    fn handle_bad_word(
+    fn handle_bad_word<'m>(
         &mut self,
-        user: &User,
-        it: &mut utils::Words<'_>,
+        user: User<'m>,
+        it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         match it.next() {
             Some("edit") => {
-                self.check_moderator(user)?;
+                self.check_moderator(&user)?;
 
                 let word = it.next().ok_or_else(|| format_err!("expected word"))?;
                 let why = match it.rest() {
@@ -491,7 +495,7 @@ impl<'a> MessageHandler<'a> {
                 user.respond("Bad word edited");
             }
             Some("delete") => {
-                self.check_moderator(user)?;
+                self.check_moderator(&user)?;
 
                 let word = it.next().ok_or_else(|| format_err!("expected word"))?;
 
@@ -512,11 +516,31 @@ impl<'a> MessageHandler<'a> {
         Ok(())
     }
 
-    /// Handle song command.
-    fn handle_song(
+    /// Handle admin commands.
+    fn handle_admin<'m>(
         &mut self,
-        user: &User,
-        it: &mut utils::Words<'_>,
+        user: User<'m>,
+        it: &mut utils::Words<'m>,
+    ) -> Result<(), failure::Error> {
+        self.check_moderator(&user)?;
+
+        match it.next() {
+            Some("refresh-mods") => {
+                self.sender.privmsg(user.target, "/mods");
+            }
+            None | Some(..) => {
+                user.respond("Expected: refresh-mods.");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handle song command.
+    fn handle_song<'m>(
+        &mut self,
+        user: User<'m>,
+        it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         let player = match self.player.as_ref() {
             Some(player) => player,
@@ -528,7 +552,7 @@ impl<'a> MessageHandler<'a> {
 
         match it.next() {
             Some("theme") => {
-                self.check_moderator(user)?;
+                self.check_moderator(&user)?;
 
                 let name = match it.next() {
                     Some(name) => name,
@@ -539,7 +563,7 @@ impl<'a> MessageHandler<'a> {
                 };
 
                 let future = player.play_theme(name).then({
-                    let user = user.clone();
+                    let user = user.as_owned_user();
 
                     move |r| {
                         match r {
@@ -560,10 +584,10 @@ impl<'a> MessageHandler<'a> {
                 self.thread_pool.spawn(future);
             }
             Some("promote") => {
-                self.check_moderator(user)?;
+                self.check_moderator(&user)?;
 
                 let index = match it.next() {
-                    Some(index) => parse_queue_position(user, index)?,
+                    Some(index) => parse_queue_position(&user, index)?,
                     None => failure::bail!("bad command"),
                 };
 
@@ -574,7 +598,7 @@ impl<'a> MessageHandler<'a> {
                 }
             }
             Some("close") => {
-                self.check_moderator(user)?;
+                self.check_moderator(&user)?;
 
                 player.close(match it.rest() {
                     "" => None,
@@ -582,7 +606,7 @@ impl<'a> MessageHandler<'a> {
                 });
             }
             Some("open") => {
-                self.check_moderator(user)?;
+                self.check_moderator(&user)?;
                 player.open();
             }
             Some("list") => {
@@ -597,7 +621,7 @@ impl<'a> MessageHandler<'a> {
                 let mut limit = 3usize;
 
                 if let Some(n) = it.next() {
-                    self.check_moderator(user)?;
+                    self.check_moderator(&user)?;
 
                     if let Ok(n) = str::parse(n) {
                         limit = n;
@@ -611,7 +635,7 @@ impl<'a> MessageHandler<'a> {
                     false => None,
                 };
 
-                self.display_songs(user, has_more, items.iter().take(limit).cloned());
+                self.display_songs(&user, has_more, items.iter().take(limit).cloned());
             }
             Some("current") => match player.current() {
                 Some(item) => {
@@ -655,7 +679,7 @@ impl<'a> MessageHandler<'a> {
                     Some("mine") => player.remove_last_by_user(&user.name)?,
                     Some(n) => {
                         self.check_moderator(&user)?;
-                        let n = parse_queue_position(user, n)?;
+                        let n = parse_queue_position(&user, n)?;
                         player.remove_at(n)?
                     }
                     None => {
@@ -729,7 +753,7 @@ impl<'a> MessageHandler<'a> {
 
                 let future = track_id_future
                     .and_then({
-                        let user = user.clone();
+                        let user = user.as_owned_user();
 
                         move |track_id| match track_id {
                             None => {
@@ -746,8 +770,8 @@ impl<'a> MessageHandler<'a> {
                         ()
                     })
                     .and_then({
-                        let is_moderator = self.is_moderator(user);
-                        let user = user.clone();
+                        let is_moderator = self.is_moderator(&user);
+                        let user = user.as_owned_user();
                         let player = player.clone();
 
                         move |track_id| {
@@ -841,7 +865,7 @@ impl<'a> MessageHandler<'a> {
                 }
             }
             None | Some(..) => {
-                if self.is_moderator(user) {
+                if self.is_moderator(&user) {
                     user.respond("Expected: request, skip, play, pause, toggle, delete.");
                 } else {
                     user.respond("Expected: !song request <request>, !song list, !song length, or !song delete mine.");
@@ -852,7 +876,7 @@ impl<'a> MessageHandler<'a> {
         return Ok(());
 
         /// Parse a queue position.
-        fn parse_queue_position(user: &User, n: &str) -> Result<usize, failure::Error> {
+        fn parse_queue_position(user: &User<'_>, n: &str) -> Result<usize, failure::Error> {
             match str::parse::<usize>(n) {
                 Ok(0) => {
                     user.respond("Can't remove the current song :(");
@@ -868,16 +892,16 @@ impl<'a> MessageHandler<'a> {
     }
 
     /// Handle command administration.
-    fn handle_command(
+    fn handle_command<'m>(
         &mut self,
-        user: &User,
-        it: &mut utils::Words<'_>,
+        user: User<'m>,
+        it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         match it.next() {
             Some("list") => {
                 let mut names = self
                     .commands
-                    .list(user.target.as_str())
+                    .list(user.target)
                     .into_iter()
                     .map(|c| format!("!{}", c.key.name))
                     .collect::<Vec<_>>();
@@ -900,7 +924,7 @@ impl<'a> MessageHandler<'a> {
                     }
                 };
 
-                self.commands.edit(user.target.as_str(), name, it.rest())?;
+                self.commands.edit(user.target, name, it.rest())?;
                 user.respond("Edited command.");
             }
             Some("delete") => {
@@ -914,7 +938,7 @@ impl<'a> MessageHandler<'a> {
                     }
                 };
 
-                if self.commands.delete(user.target.as_str(), name)? {
+                if self.commands.delete(user.target, name)? {
                     user.respond(format!("Deleted command `{}`.", name));
                 } else {
                     user.respond("No such command.");
@@ -929,16 +953,16 @@ impl<'a> MessageHandler<'a> {
     }
 
     /// Handle counter administration.
-    fn handle_counter(
+    fn handle_counter<'m>(
         &mut self,
-        user: &User,
-        it: &mut utils::Words<'_>,
+        user: User<'m>,
+        it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         match it.next() {
             Some("list") => {
                 let mut names = self
                     .counters
-                    .list(user.target.as_str())
+                    .list(user.target)
                     .into_iter()
                     .map(|c| format!("!{}", c.key.name))
                     .collect::<Vec<_>>();
@@ -961,7 +985,7 @@ impl<'a> MessageHandler<'a> {
                     }
                 };
 
-                self.counters.edit(user.target.as_str(), name, it.rest())?;
+                self.counters.edit(user.target, name, it.rest())?;
                 user.respond("Edited command.");
             }
             Some("delete") => {
@@ -975,7 +999,7 @@ impl<'a> MessageHandler<'a> {
                     }
                 };
 
-                if self.counters.delete(user.target.as_str(), name)? {
+                if self.counters.delete(user.target, name)? {
                     user.respond(format!("Deleted command `{}`.", name));
                 } else {
                     user.respond("No such command.");
@@ -990,7 +1014,7 @@ impl<'a> MessageHandler<'a> {
     }
 
     /// Handle the uptime command.
-    fn handle_uptime(&mut self, user: &User) {
+    fn handle_uptime(&mut self, user: User<'_>) {
         let started_at = self
             .stream_info
             .read()
@@ -1039,11 +1063,11 @@ impl<'a> MessageHandler<'a> {
     }
 
     /// Handle the title update.
-    fn handle_update_title(&mut self, user: &User, title: &str) -> Result<(), failure::Error> {
+    fn handle_update_title(&mut self, user: User<'_>, title: &str) -> Result<(), failure::Error> {
         let channel_id = user.target.trim_start_matches('#');
 
         let twitch = self.twitch.clone();
-        let user = user.to_owned();
+        let user = user.as_owned_user();
         let title = title.to_string();
 
         let mut request = twitch::UpdateChannelRequest::default();
@@ -1066,7 +1090,7 @@ impl<'a> MessageHandler<'a> {
     }
 
     /// Handle the game command.
-    fn handle_game(&mut self, user: &User) {
+    fn handle_game(&mut self, user: User<'_>) {
         let game = self
             .stream_info
             .read()
@@ -1085,11 +1109,11 @@ impl<'a> MessageHandler<'a> {
     }
 
     /// Handle the game update.
-    fn handle_update_game(&mut self, user: &User, game: &str) -> Result<(), failure::Error> {
+    fn handle_update_game(&mut self, user: User<'_>, game: &str) -> Result<(), failure::Error> {
         let channel_id = user.target.trim_start_matches('#');
 
         let twitch = self.twitch.clone();
-        let user = user.to_owned();
+        let user = user.as_owned_user();
         let game = game.to_string();
 
         let mut request = twitch::UpdateChannelRequest::default();
@@ -1112,37 +1136,41 @@ impl<'a> MessageHandler<'a> {
     }
 
     /// Handle a command.
-    pub fn process_command<'local>(
+    pub fn process_command<'m>(
         &mut self,
+        tags: Tags<'m>,
         command: &str,
-        m: &'local Message,
-        it: &mut utils::Words<'local>,
+        m: &'m Message,
+        it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
-        let user = self.as_user(m)?;
+        let user = self.as_user(tags, m)?;
 
         match command {
             "ping" => {
                 user.respond("What do you want?");
                 self.notifier.send(Notification::Ping)?;
             }
+            "admin" => {
+                self.handle_admin(user, it)?;
+            }
             "song" if self.features.test(Feature::Song) => {
-                self.handle_song(&user, it)?;
+                self.handle_song(user, it)?;
             }
             "command" if self.features.test(Feature::Command) => {
-                self.handle_command(&user, it)?;
+                self.handle_command(user, it)?;
             }
             "counter" => {
-                self.handle_counter(&user, it)?;
+                self.handle_counter(user, it)?;
             }
             "afterstream" if self.features.test(Feature::AfterStream) => {
                 self.db.insert_afterstream(&user.name, it.rest())?;
                 user.respond("Reminder added.");
             }
             "badword" if self.features.test(Feature::BadWords) => {
-                self.handle_bad_word(&user, it)?;
+                self.handle_bad_word(user, it)?;
             }
             "uptime" if self.features.test(Feature::Admin) => {
-                self.handle_uptime(&user);
+                self.handle_uptime(user);
             }
             "title" if self.features.test(Feature::Admin) => {
                 let rest = it.rest();
@@ -1151,23 +1179,23 @@ impl<'a> MessageHandler<'a> {
                     self.handle_title(&user);
                 } else {
                     self.check_moderator(&user)?;
-                    self.handle_update_title(&user, rest)?;
+                    self.handle_update_title(user, rest)?;
                 }
             }
             "game" if self.features.test(Feature::Admin) => {
                 let rest = it.rest();
 
                 if rest.is_empty() {
-                    self.handle_game(&user);
+                    self.handle_game(user);
                 } else {
                     self.check_moderator(&user)?;
-                    self.handle_update_game(&user, rest)?;
+                    self.handle_update_game(user, rest)?;
                 }
             }
             other => {
                 if let Some(currency) = self.currency {
                     if currency.name == other {
-                        let balance = self.db.balance_of(&user.name)?.unwrap_or(0);
+                        let balance = self.db.balance_of(user.name)?.unwrap_or(0);
                         user.respond(format!(
                             "You have {balance} {name}.",
                             balance = balance,
@@ -1177,18 +1205,18 @@ impl<'a> MessageHandler<'a> {
                 }
 
                 if self.features.test(Feature::Command) {
-                    if let Some(command) = self.commands.get(user.target.as_str(), other) {
+                    if let Some(command) = self.commands.get(user.target, other) {
                         let vars = TemplateVars {
                             name: &user.name,
                             target: &user.target,
                         };
                         let response = command.render(&vars)?;
-                        self.sender.privmsg(&user.target, response);
+                        self.sender.privmsg(user.target, response);
                     }
                 }
 
                 if self.features.test(Feature::Counter) {
-                    if let Some(counter) = self.counters.get(user.target.as_str(), other) {
+                    if let Some(counter) = self.counters.get(user.target, other) {
                         self.counters.increment(&*counter)?;
 
                         let vars = CounterVars {
@@ -1198,7 +1226,7 @@ impl<'a> MessageHandler<'a> {
                         };
 
                         let response = counter.render(&vars)?;
-                        self.sender.privmsg(&user.target, response);
+                        self.sender.privmsg(user.target, response);
                     }
                 }
             }
@@ -1209,20 +1237,24 @@ impl<'a> MessageHandler<'a> {
 
     /// Extract tags from message.
     fn tags<'local>(m: &'local Message) -> Tags<'local> {
-        let mut message_id = None;
+        let mut id = None;
+        let mut msg_id = None;
 
         if let Some(tags) = m.tags.as_ref() {
             for t in tags {
                 match *t {
                     Tag(ref name, Some(ref value)) if name == "id" => {
-                        message_id = Some(value.as_str());
+                        id = Some(value.as_str());
+                    }
+                    Tag(ref name, Some(ref value)) if name == "msg-id" => {
+                        msg_id = Some(value.as_str());
                     }
                     _ => {}
                 }
             }
         }
 
-        Tags { message_id }
+        Tags { id, msg_id }
     }
 
     /// Delete the given message.
@@ -1231,15 +1263,14 @@ impl<'a> MessageHandler<'a> {
         source: &str,
         tags: Tags<'local>,
     ) -> Result<(), failure::Error> {
-        let message_id = match tags.message_id {
-            Some(message_id) => message_id,
+        let id = match tags.id {
+            Some(id) => id,
             None => return Ok(()),
         };
 
-        log::info!("Attempting to delete message: {}", message_id);
+        log::info!("Attempting to delete message: {}", id);
 
-        self.sender
-            .privmsg(source, format!("/delete {}", message_id));
+        self.sender.privmsg(source, format!("/delete {}", id));
         Ok(())
     }
 
@@ -1330,7 +1361,7 @@ impl<'a> MessageHandler<'a> {
                     if command.starts_with('!') {
                         let command = &command[1..];
 
-                        if let Err(e) = self.process_command(command, m, &mut it) {
+                        if let Err(e) = self.process_command(tags.clone(), command, m, &mut it) {
                             log::error!("failed to process command: {}", e);
                         }
                     }
@@ -1341,6 +1372,16 @@ impl<'a> MessageHandler<'a> {
                 }
             }
             Command::CAP(_, CapSubCommand::ACK, _, ref what) => {
+                match what.as_ref().map(|w| w.as_str()) {
+                    // twitch commands capabilities have been acknowledged.
+                    // do what needs to happen with them (like `/mods`).
+                    Some(TWITCH_COMMANDS_CAP) => {
+                        // request to get a list of moderators.
+                        self.sender.privmsg(self.channel.as_str(), "/mods")
+                    }
+                    _ => {}
+                }
+
                 log::info!(
                     "Capability Acknowledged: {}",
                     what.as_ref().map(|w| w.as_str()).unwrap_or("*")
@@ -1359,6 +1400,20 @@ impl<'a> MessageHandler<'a> {
             Command::Raw(..) => {
                 log::info!("raw command: {:?}", m);
             }
+            Command::NOTICE(_, ref message) => {
+                let tags = Self::tags(&m);
+
+                match tags.msg_id {
+                    // Response to /mods request.
+                    Some("room_mods") => {
+                        self.moderators = parse_room_mods(message);
+                        return Ok(());
+                    }
+                    _ => {
+                        log::info!("unhandled notice: {:?}", m);
+                    }
+                }
+            }
             _ => {
                 log::info!("unhandled: {:?}", m);
             }
@@ -1370,7 +1425,7 @@ impl<'a> MessageHandler<'a> {
     /// Display the collection of songs.
     fn display_songs(
         &mut self,
-        user: &User,
+        user: &User<'_>,
         has_more: Option<usize>,
         it: impl IntoIterator<Item = Arc<player::Item>>,
     ) {
@@ -1402,17 +1457,44 @@ impl<'a> MessageHandler<'a> {
 }
 
 #[derive(Clone)]
-pub struct User {
+pub struct OwnedUser {
+    tags: OwnedTags,
     sender: Sender,
     name: String,
     target: String,
 }
 
-impl User {
+impl OwnedUser {
     /// Respond to the user with a message.
     pub fn respond(&self, m: impl fmt::Display) {
         self.sender
             .privmsg(self.target.as_str(), format!("{} -> {}", self.name, m));
+    }
+}
+
+#[derive(Clone)]
+pub struct User<'m> {
+    tags: Tags<'m>,
+    sender: Sender,
+    name: &'m str,
+    target: &'m str,
+}
+
+impl<'m> User<'m> {
+    /// Respond to the user with a message.
+    pub fn respond(&self, m: impl fmt::Display) {
+        self.sender
+            .privmsg(self.target, format!("{} -> {}", self.name, m));
+    }
+
+    /// Convert into an owned user.
+    pub fn as_owned_user(&self) -> OwnedUser {
+        OwnedUser {
+            tags: self.tags.as_owned_tags(),
+            sender: self.sender.clone(),
+            name: self.name.to_owned(),
+            target: self.target.to_owned(),
+        }
     }
 }
 
@@ -1424,9 +1506,29 @@ pub struct StreamInfo {
 }
 
 /// Struct of tags.
-#[derive(Debug)]
-pub struct Tags<'a> {
-    message_id: Option<&'a str>,
+#[derive(Debug, Clone)]
+pub struct Tags<'m> {
+    /// contents of the id tag if present.
+    id: Option<&'m str>,
+    /// contents of the msg-id tag if present.
+    msg_id: Option<&'m str>,
+}
+
+impl<'m> Tags<'m> {
+    /// Convert into an owned set of tags.
+    fn as_owned_tags(&self) -> OwnedTags {
+        OwnedTags {
+            id: self.id.map(|id| id.to_string()),
+            msg_id: self.msg_id.map(|id| id.to_owned()),
+        }
+    }
+}
+
+/// Struct of tags.
+#[derive(Debug, Clone)]
+pub struct OwnedTags {
+    id: Option<String>,
+    msg_id: Option<String>,
 }
 
 #[derive(Debug)]
@@ -1446,4 +1548,50 @@ pub struct CounterVars<'a> {
     name: &'a str,
     target: &'a str,
     count: i32,
+}
+
+/// Parse the `room_mods` message.
+fn parse_room_mods(message: &str) -> HashSet<String> {
+    let mut out = HashSet::default();
+
+    if let Some(index) = message.find(":") {
+        let message = &message[(index + 1)..];
+        out.extend(
+            message
+                .split(",")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from),
+        );
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_room_mods;
+    use hashbrown::HashSet;
+
+    #[test]
+    fn test_parse_room_mods() {
+        assert_eq!(
+            vec![String::from("foo"), String::from("bar")]
+                .into_iter()
+                .collect::<HashSet<String>>(),
+            parse_room_mods("The moderators of this channel are: foo, bar")
+        );
+
+        assert_eq!(
+            vec![String::from("a")]
+                .into_iter()
+                .collect::<HashSet<String>>(),
+            parse_room_mods("The moderators of this channel are: a")
+        );
+
+        assert_eq!(
+            vec![].into_iter().collect::<HashSet<String>>(),
+            parse_room_mods("The moderators of this channel are:")
+        );
+    }
 }

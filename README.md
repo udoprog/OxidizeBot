@@ -244,6 +244,12 @@ sqlite> select * from after_streams;
 ...
 ```
 
+#### `admin`
+
+All admin commands are restricted to **moderators**.
+
+* `!admin refresh-mods` - Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running.
+
 #### `song`
 
 Enables song playback through Spotify.

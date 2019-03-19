@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show queue position in player view ([#8]).
 - Support deleting a song at the given position ([#7]).
 - Moderator action cooldowns ([#6]).
+- Moderators are automatically picked up through `/mods` command on IRC ([#5]).
 
 ### Changed
 - Changed configuration format to be TOML and flatten it (see [example configuration]).
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#2]: https://github.com/udoprog/setmod/issues/2
 [#3]: https://github.com/udoprog/setmod/issues/3
 [#4]: https://github.com/udoprog/setmod/issues/4
+[#5]: https://github.com/udoprog/setmod/issues/5
 [#6]: https://github.com/udoprog/setmod/issues/6
 [#7]: https://github.com/udoprog/setmod/issues/7
 [#8]: https://github.com/udoprog/setmod/issues/8
