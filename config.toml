@@ -2,11 +2,6 @@ streamer = "setbac"
 bad_words = "bad_words.yml"
 database_url = "database.sql"
 
-moderators = [
-  "setbac",
-  "setmod",
-]
-
 whitelisted_hosts = [
   "youtube.com",
   "youtu.be",

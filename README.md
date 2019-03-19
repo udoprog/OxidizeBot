@@ -35,12 +35,6 @@ bad_words = "bad_words.yml"
 # Path to database (technicaly an connection URL, but only sqlite supported right now).
 database_url = "database.sql"
 
-# List of moderators allowed to perform moderator actions.
-moderators = [
-  "setbac",
-  "setmod",
-]
-
 # Whitelisted hosts (if the `url-whitelist` feature is enabled).
 whitelisted_hosts = [
   "youtube.com",

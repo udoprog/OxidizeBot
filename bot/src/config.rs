@@ -33,8 +33,6 @@ pub struct Config {
     #[serde(default)]
     pub features: features::Features,
     #[serde(default)]
-    pub moderators: HashSet<String>,
-    #[serde(default)]
     pub whitelisted_hosts: HashSet<String>,
     /// Write the current song to the specified path.
     #[serde(default)]
