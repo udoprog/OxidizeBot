@@ -11,7 +11,7 @@ use std::{
     fs::{self, File},
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::timer;
 use url::Url;
@@ -133,7 +133,8 @@ impl Type {
                 None => failure::bail!("did not receive a refresh token from the service"),
             };
 
-            let token = Arc::new(RwLock::new(flow.save_token(refresh_token, token_response)?));
+            let token = flow.save_token(refresh_token, token_response)?;
+            let token = Arc::new(RwLock::new(token));
             Ok((token.clone(), TokenRefreshFuture::new(flow, token)))
         })
     }
@@ -339,6 +340,7 @@ impl Flow {
                 move |token| match token {
                     Some(token) => {
                         let token = Arc::new(RwLock::new(token));
+
                         return Box::new(future::ok((
                             token.clone(),
                             TokenRefreshFuture::new(flow, token),
@@ -397,7 +399,11 @@ impl Flow {
             }
         };
 
-        if token.expires_within(Duration::from_secs(60 * 30))? || !token.has_scopes(&self.scopes) {
+        if token.expires_within(Duration::from_secs(60 * 10))? {
+            return Ok(None);
+        }
+
+        if !token.has_scopes(&self.scopes) {
             return Ok(None);
         }
 
@@ -518,16 +524,17 @@ pub struct TokenRefreshFuture {
 }
 
 impl TokenRefreshFuture {
+    /// Construct a new future for refreshing oauth tokens.
     pub fn new(flow: Arc<Flow>, token: Arc<RwLock<Token>>) -> Self {
         // check for expiration every 10 minutes.
-        let duration = Duration::from_secs(10 * 60);
+        let check_duration = Duration::from_secs(10 * 60);
         // refresh if token expires within 30 minutes.
         let refresh_duration = Duration::from_secs(30 * 60);
 
         Self {
             flow,
             token,
-            interval: timer::Interval::new_interval(duration.clone()),
+            interval: timer::Interval::new(Instant::now(), check_duration),
             refresh_duration,
             refresh_future: None,
         }
