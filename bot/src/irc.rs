@@ -453,6 +453,13 @@ impl<'a> MessageHandler<'a> {
 
     /// Check that the given user is a moderator.
     fn check_moderator(&self, user: &User) -> Result<(), failure::Error> {
+        // Streamer immune to cooldown.
+        if let Some(streamer) = self.streamers.get(&user.target) {
+            if user.name == *streamer {
+                return Ok(());
+            }
+        }
+
         if !self.is_moderator(user) {
             self.sender.privmsg(
                 &user.target,
