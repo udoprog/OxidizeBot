@@ -26,12 +26,14 @@ features = [
 api_url = "https://setbac.tv"
 
 [irc]
+channel = "#setbac"
 bot = "setmod"
 moderator_cooldown = "5s"
+# whether to notify when viewers are rewarded with loyalty currency.
+notify_rewards = false
 
-[[irc.channels]]
-name = "#setbac"
-currency = {name = "ether"}
+[currency]
+name = "ether"
 
 [player]
 speaker = "Speakers (Realtek High Definiti"

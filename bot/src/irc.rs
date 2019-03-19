@@ -13,7 +13,7 @@ use futures::{
     future::{self, Future},
     stream::Stream,
 };
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashSet;
 use irc::{
     client::{self, ext::ClientExt, Client, IrcClient, PackedIrcClient},
     proto::{
@@ -39,22 +39,11 @@ const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
     bot: String,
-    channels: Vec<Channel>,
     /// Cooldown for moderator actions.
     #[serde(default, deserialize_with = "utils::deserialize_optional_duration")]
     moderator_cooldown: Option<time::Duration>,
-}
-
-/// Configuration for a twitch channel.
-#[derive(Debug, serde::Deserialize)]
-pub struct Channel {
-    pub name: Arc<String>,
-    /// Per-channel override of streamer.
-    #[serde(default)]
-    streamer: Option<String>,
-    /// Per-channel currency.
-    #[serde(default)]
-    currency: Option<Currency>,
+    /// Name of the channel to join.
+    pub channel: Arc<String>,
     /// Whether or not to notify on currency rewards.
     #[serde(default)]
     notify_rewards: bool,
@@ -81,13 +70,7 @@ pub fn run<'a>(
 
     let irc_client_config = client::data::config::Config {
         nickname: Some(irc_config.bot.clone()),
-        channels: Some(
-            irc_config
-                .channels
-                .iter()
-                .map(|c| c.name.to_string())
-                .collect(),
-        ),
+        channels: Some(vec![(*irc_config.channel).clone()]),
         password: Some(format!("oauth:{}", access_token)),
         server: Some(String::from(SERVER)),
         port: Some(6697),
@@ -106,120 +89,60 @@ pub fn run<'a>(
 
     let mut futures = Vec::<BoxFuture<(), failure::Error>>::new();
 
-    let mut currencies = HashMap::new();
-    let mut stream_infos = HashMap::new();
-    let mut players = HashMap::new();
-    let mut streamers = HashMap::new();
+    if let Some(currency) = config.currency.as_ref() {
+        let reward = 10;
+        let interval = 60 * 10;
 
-    for channel in &irc_config.channels {
-        if let Some(currency) = channel.currency.as_ref() {
-            let reward = 10;
-            let interval = 60 * 10;
+        let future = reward_loop(
+            irc_config,
+            reward,
+            interval,
+            db.clone(),
+            twitch.clone(),
+            sender.clone(),
+            currency,
+        );
 
-            let future = reward_loop(
-                channel,
-                reward,
-                interval,
-                db.clone(),
-                twitch.clone(),
-                sender.clone(),
-                currency,
-            );
-
-            futures.push(Box::new(future));
-            currencies.insert(channel.name.to_string(), currency);
-        }
-
-        let interval = 60 * 5;
-        let stream_info = Arc::new(RwLock::new(None));
-        let streamer = channel
-            .streamer
-            .as_ref()
-            .map(|s| s.as_str())
-            .or(config.streamer.as_ref().map(|s| s.as_str()));
-
-        if let Some(streamer) = streamer {
-            let future =
-                stream_info_loop(interval, twitch.clone(), streamer, Arc::clone(&stream_info));
-            futures.push(Box::new(future));
-            stream_infos.insert(channel.name.to_string(), stream_info);
-            streamers.insert(channel.name.to_string(), streamer.to_string());
-        }
-
-        if let Some(player) = player {
-            players.insert(channel.name.to_string(), player.client());
-
-            futures.push(Box::new(
-                player
-                    .add_rx()
-                    .map_err(|e| format_err!("failed to receive player update: {}", e))
-                    .for_each({
-                        let sender = sender.clone();
-
-                        move |e| {
-                            match e {
-                                player::Event::Playing(echo, _, item) => {
-                                    if !echo {
-                                        return Ok(())
-                                    }
-
-                                    let message = match item.user.as_ref() {
-                                        Some(user) => {
-                                            format!(
-                                                "Now playing: {}, requested by {}.",
-                                                item.what(),
-                                                user
-                                            )
-                                        },
-                                        None => format!(
-                                            "Now playing: {}.",
-                                            item.what(),
-                                        )
-                                    };
-
-                                    sender.privmsg(channel.name.as_str(), message);
-                                },
-                                player::Event::Pausing => {
-                                    sender.privmsg(
-                                        channel.name.as_str(),
-                                        "Pausing playback."
-                                    );
-                                },
-                                player::Event::Empty => {
-                                    sender.privmsg(
-                                        channel.name.as_str(),
-                                        format!(
-                                            "Song queue is empty (use !song request <spotify-id> to add more).",
-                                        ),
-                                    );
-                                },
-                                // other event we don't care about
-                                _ => {}
-                            }
-
-                            Ok(())
-                        }
-                    }),
-            ));
-        }
+        futures.push(Box::new(future));
     }
+
+    let interval = 60 * 5;
+
+    let stream_info = {
+        let stream_info = Arc::new(RwLock::new(None));
+        let future = stream_info_loop(config, interval, twitch.clone(), stream_info.clone());
+        futures.push(Box::new(future));
+        stream_info
+    };
+
+    let player = match player {
+        Some(player) => {
+            futures.push(Box::new(player_feedback_loop(
+                irc_config,
+                player,
+                sender.clone(),
+            )));
+            Some(player.client())
+        }
+        None => None,
+    };
 
     futures.push(Box::new(send_future.map_err(failure::Error::from)));
 
     let mut handler = MessageHandler {
+        streamer: config.streamer.clone(),
         twitch: twitch.clone(),
         db,
         sender: sender.clone(),
         moderators: &config.moderators,
         whitelisted_hosts: &config.whitelisted_hosts,
-        currencies,
-        stream_infos,
-        streamers,
+        currency: config.currency.as_ref(),
+        stream_info,
         commands,
         counters,
         bad_words,
         notifier,
-        players,
+        player,
         aliases: config.aliases.clone(),
         features: &config.features,
         api_url: config.api_url.as_ref(),
@@ -244,9 +167,55 @@ pub fn run<'a>(
     Ok(future::join_all(futures).map(|_| ()))
 }
 
+/// Notifications from the player.
+fn player_feedback_loop<'a>(
+    config: &'a Config,
+    player: &player::Player,
+    sender: Sender,
+) -> impl Future<Item = (), Error = failure::Error> + 'a {
+    player
+        .add_rx()
+        .map_err(|e| format_err!("failed to receive player update: {}", e))
+        .for_each({
+            move |e| {
+                match e {
+                    player::Event::Playing(echo, _, item) => {
+                        if !echo {
+                            return Ok(());
+                        }
+
+                        let message = match item.user.as_ref() {
+                            Some(user) => {
+                                format!("Now playing: {}, requested by {}.", item.what(), user)
+                            }
+                            None => format!("Now playing: {}.", item.what(),),
+                        };
+
+                        sender.privmsg(config.channel.as_str(), message);
+                    }
+                    player::Event::Pausing => {
+                        sender.privmsg(config.channel.as_str(), "Pausing playback.");
+                    }
+                    player::Event::Empty => {
+                        sender.privmsg(
+                            config.channel.as_str(),
+                            format!(
+                                "Song queue is empty (use !song request <spotify-id> to add more).",
+                            ),
+                        );
+                    }
+                    // other event we don't care about
+                    _ => {}
+                }
+
+                Ok(())
+            }
+        })
+}
+
 /// Set up a reward loop.
 fn reward_loop<'a>(
-    channel: &'a Channel,
+    config: &'a Config,
     reward: i32,
     interval: u64,
     db: db::Database,
@@ -261,25 +230,27 @@ fn reward_loop<'a>(
         .and_then(move |_| {
             log::trace!("running reward loop");
 
-            twitch.chatters(channel.name.as_str()).and_then(|chatters| {
-                let mut u = HashSet::new();
-                u.extend(chatters.viewers);
-                u.extend(chatters.moderators);
-                u.extend(chatters.broadcaster);
+            twitch
+                .chatters(config.channel.as_str())
+                .and_then(|chatters| {
+                    let mut u = HashSet::new();
+                    u.extend(chatters.viewers);
+                    u.extend(chatters.moderators);
+                    u.extend(chatters.broadcaster);
 
-                if u.is_empty() {
-                    Err(format_err!("no chatters to reward"))
-                } else {
-                    Ok(u)
-                }
-            })
+                    if u.is_empty() {
+                        Err(format_err!("no chatters to reward"))
+                    } else {
+                        Ok(u)
+                    }
+                })
         })
         // update database.
-        .and_then(move |u| db.balances_increment(channel.name.as_str(), u, reward))
+        .and_then(move |u| db.balances_increment(config.channel.as_str(), u, reward))
         .map(move |_| {
-            if channel.notify_rewards {
+            if config.notify_rewards {
                 sender.privmsg(
-                    channel.name.as_str(),
+                    config.channel.as_str(),
                     format!("/me has given {} {} to all viewers!", reward, currency.name),
                 );
             }
@@ -294,26 +265,24 @@ fn reward_loop<'a>(
 
 /// Set up a reward loop.
 fn stream_info_loop<'a>(
+    config: &'a config::Config,
     interval: u64,
     twitch: twitch::Twitch,
-    streamer: &'a str,
     stream_info: Arc<RwLock<Option<StreamInfo>>>,
 ) -> impl Future<Item = (), Error = failure::Error> + 'a {
     // Add currency timer.
     timer::Interval::new(time::Instant::now(), time::Duration::from_secs(interval))
         .map_err(failure::Error::from)
         .map(move |_| {
-            log::trace!("refreshing stream info for streamer: {}", streamer);
+            log::trace!("refreshing stream info for streamer: {}", config.streamer);
         })
         .and_then(move |_| {
             twitch
-                .stream_by_id(streamer)
-                .join(twitch.channel_by_id(streamer))
+                .stream_by_id(config.streamer.as_str())
+                .join(twitch.channel_by_id(config.streamer.as_str()))
         })
         .and_then(move |(stream, channel)| {
-            let mut u = stream_info
-                .write()
-                .map_err(|_| format_err!("lock poisoned"))?;
+            let mut u = stream_info.write().map_err(|_| format_err!("poisoned"))?;
 
             *u = Some(StreamInfo {
                 game: channel.game,
@@ -327,7 +296,7 @@ fn stream_info_loop<'a>(
         .or_else(move |e| {
             log::error!(
                 "failed to refresh stream info for streamer: {}: {}",
-                streamer,
+                config.streamer,
                 e
             );
             Ok(())
@@ -360,7 +329,7 @@ impl Sender {
         let limiter = Arc::clone(&self.limiter);
 
         self.thread_pool.spawn(future::lazy(move || {
-            limiter.lock().expect("lock poisoned").wait();
+            limiter.lock().expect("poisoned").wait();
 
             if let Err(e) = client.send(m) {
                 log::error!("failed to send message: {}", e);
@@ -388,6 +357,8 @@ impl Sender {
 
 /// Handler for incoming messages.
 struct MessageHandler<'a> {
+    /// Current Streamer.
+    streamer: String,
     /// API access.
     twitch: twitch::Twitch,
     /// Database.
@@ -399,11 +370,9 @@ struct MessageHandler<'a> {
     /// Whitelisted hosts for links.
     whitelisted_hosts: &'a HashSet<String>,
     /// Currency in use.
-    currencies: HashMap<String, &'a Currency>,
+    currency: Option<&'a Currency>,
     /// Per-channel stream_infos.
-    stream_infos: HashMap<String, Arc<RwLock<Option<StreamInfo>>>>,
-    /// Per-channel streamer.
-    streamers: HashMap<String, String>,
+    stream_info: Arc<RwLock<Option<StreamInfo>>>,
     /// All registered commands.
     commands: commands::Commands<db::Database>,
     /// All registered counters.
@@ -413,7 +382,7 @@ struct MessageHandler<'a> {
     /// For sending notifications.
     notifier: &'a Notifier,
     /// Music player.
-    players: HashMap<String, player::PlayerClient>,
+    player: Option<player::PlayerClient>,
     /// Aliases.
     aliases: aliases::Aliases,
     /// Enabled features.
@@ -454,10 +423,8 @@ impl<'a> MessageHandler<'a> {
     /// Check that the given user is a moderator.
     fn check_moderator(&self, user: &User) -> Result<(), failure::Error> {
         // Streamer immune to cooldown.
-        if let Some(streamer) = self.streamers.get(&user.target) {
-            if user.name == *streamer {
-                return Ok(());
-            }
+        if user.name == self.streamer {
+            return Ok(());
         }
 
         if !self.is_moderator(user) {
@@ -551,7 +518,7 @@ impl<'a> MessageHandler<'a> {
         user: &User,
         it: &mut utils::Words<'_>,
     ) -> Result<(), failure::Error> {
-        let player = match self.players.get(user.target.as_str()) {
+        let player = match self.player.as_ref() {
             Some(player) => player,
             None => {
                 log::warn!("No player configured for channel :(");
@@ -619,12 +586,10 @@ impl<'a> MessageHandler<'a> {
                 player.open();
             }
             Some("list") => {
-                let streamer = self.streamers.get(&user.target);
-
-                if let (Some(api_url), Some(streamer)) = (self.api_url, streamer) {
+                if let Some(api_url) = self.api_url {
                     user.respond(format!(
                         "You can find the queue at {}/player/{}",
-                        api_url, streamer
+                        api_url, self.streamer
                     ));
                     return Ok(());
                 }
@@ -1026,12 +991,12 @@ impl<'a> MessageHandler<'a> {
 
     /// Handle the uptime command.
     fn handle_uptime(&mut self, user: &User) {
-        let started_at = self.stream_infos.get(&user.target).and_then(|s| {
-            s.read()
-                .expect("lock poisoned")
-                .as_ref()
-                .and_then(|s| s.started_at.clone())
-        });
+        let started_at = self
+            .stream_info
+            .read()
+            .expect("poisoned")
+            .as_ref()
+            .and_then(|s| s.started_at.clone());
 
         let now = Utc::now();
 
@@ -1056,12 +1021,12 @@ impl<'a> MessageHandler<'a> {
 
     /// Handle the title command.
     fn handle_title(&mut self, user: &User) {
-        let title = self.stream_infos.get(&user.target).and_then(|s| {
-            s.read()
-                .expect("lock poisoned")
-                .as_ref()
-                .map(|s| s.title.clone())
-        });
+        let title = self
+            .stream_info
+            .read()
+            .expect("poisoned")
+            .as_ref()
+            .map(|s| s.title.clone());
 
         match title {
             Some(title) => {
@@ -1102,12 +1067,12 @@ impl<'a> MessageHandler<'a> {
 
     /// Handle the game command.
     fn handle_game(&mut self, user: &User) {
-        let game = self.stream_infos.get(&user.target).and_then(|s| {
-            s.read()
-                .expect("lock poisoned")
-                .as_ref()
-                .and_then(|s| s.game.clone())
-        });
+        let game = self
+            .stream_info
+            .read()
+            .expect("poisoned")
+            .as_ref()
+            .and_then(|s| s.game.clone());
 
         match game {
             Some(game) => {
@@ -1200,7 +1165,7 @@ impl<'a> MessageHandler<'a> {
                 }
             }
             other => {
-                if let Some(currency) = self.currencies.get(&user.target) {
+                if let Some(currency) = self.currency {
                     if currency.name == other {
                         let balance = self.db.balance_of(&user.name)?.unwrap_or(0);
                         user.respond(format!(

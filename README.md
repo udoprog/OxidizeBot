@@ -63,13 +63,15 @@ features = [
 api_url = "https://setbac.tv"
 
 [irc]
+channel = "#setbac"
 bot = "setmod"
+moderator_cooldown = "5s"
+# whether to notify when viewers are rewarded with loyalty currency.
+notify_rewards = false
 
-[[irc.channels]]
-name = "#setbac"
-# Loyalty currency used.
-# Remove to disable.
-currency = {name = "ether"}
+# Loyalty currency in use.
+#[currency]
+# name = "ether"
 
 [player]
 # Player configuration.
@@ -248,7 +250,7 @@ Enables song playback through Spotify.
 
 Enabled commands:
 
-* `!song request spotif:track:<id>` - Request a song through a Spotify URI.
+* `!song request spotify:track:<id>` - Request a song through a Spotify URI.
 * `!song request https://open.spotify.com/track/<id>` - Request a song by spotify URL.
 * `!song request <search>` - Request a song by searching for it. The first hit will be used.
 * `!song skip` - Skip the current song (**moderator**).

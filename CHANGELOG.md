@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed HTML escapes from `current_song` ([#4]).
 - Fixed `!song purge` not sending update to `setbac.tv` ([#9]).
 - Streamer is immune to cooldown and is always moderator ([#10]).
+- Changed configuration format to flatten it more ([#11]).
 
 [example configuration]: https://github.com/udoprog/setmod/blob/master/config.toml
 [#2]: https://github.com/udoprog/setmod/issues/2
@@ -29,5 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#8]: https://github.com/udoprog/setmod/issues/8
 [#9]: https://github.com/udoprog/setmod/issues/9
 [#10]: https://github.com/udoprog/setmod/issues/10
+[#11]: https://github.com/udoprog/setmod/issues/11
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.0.1...HEAD

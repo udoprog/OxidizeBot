@@ -1,11 +1,13 @@
-use crate::{aliases, current_song, features, irc, player, secrets, themes, web};
+use crate::{aliases, currency, current_song, features, irc, player, secrets, themes, web};
 use hashbrown::HashSet;
 use relative_path::RelativePathBuf;
 use std::{marker, path::Path, sync::Arc};
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Config {
-    pub streamer: Option<String>,
+    /// The username of the streamer.
+    /// TODO: get from twitch token.
+    pub streamer: String,
     pub irc: Option<irc::Config>,
     #[serde(default)]
     pub twitch: Oauth2Config<TwitchDefaults>,
@@ -40,6 +42,9 @@ pub struct Config {
     /// API URL to use for pushing updates.
     #[serde(default)]
     pub api_url: Option<String>,
+    /// Loyalty currency in use.
+    #[serde(default)]
+    pub currency: Option<currency::Currency>,
 }
 
 #[derive(Debug)]
