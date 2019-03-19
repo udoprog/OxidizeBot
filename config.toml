@@ -27,6 +27,7 @@ api_url = "https://setbac.tv"
 
 [irc]
 bot = "setmod"
+moderator_cooldown = "5s"
 
 [[irc.channels]]
 name = "#setbac"

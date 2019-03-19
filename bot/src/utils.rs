@@ -320,9 +320,58 @@ impl Offset {
     }
 }
 
+/// Parse a human-readable duration, like `5m 1s`.
+pub fn parse_duration(s: &str) -> Result<Duration, failure::Error> {
+    let mut ms = 0u64;
+
+    for p in s.split(' ') {
+        let p = p.trim();
+
+        if p.is_empty() {
+            continue;
+        }
+
+        let (s, e) = p.split_at(p.len() - 1);
+
+        match e {
+            "s" => {
+                let n = str::parse::<u64>(s)?;
+                ms += n * 1000;
+            }
+            "m" => {
+                let n = str::parse::<u64>(s)?;
+                ms += n * 1000 * 60;
+            }
+            "h" => {
+                let n = str::parse::<u64>(s)?;
+                ms += n * 1000 * 60 * 60;
+            }
+            o => {
+                failure::bail!("bad unit: {}", o);
+            }
+        }
+    }
+
+    Ok(Duration::from_millis(ms))
+}
+
+/// Deserialize an optional duration.
+pub fn deserialize_optional_duration<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize as _;
+    let s = <Option<String>>::deserialize(deserializer)?;
+
+    match s {
+        Some(s) => Ok(Some(parse_duration(&s).map_err(serde::de::Error::custom)?)),
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{human_artists, TrimmedWords, Urls, Words};
+    use super::{human_artists, parse_duration, TrimmedWords, Urls, Words};
 
     #[test]
     pub fn test_trimmed_words() {
@@ -363,6 +412,24 @@ mod tests {
         assert_eq!(
             "foo, bar, and baz",
             human_artists(&artists).expect("artists")
+        );
+    }
+
+    #[test]
+    pub fn test_parse_duration() {
+        use std::time::Duration;
+
+        assert_eq!(
+            Duration::from_millis(1000),
+            parse_duration("1s").expect("duration")
+        );
+        assert_eq!(
+            Duration::from_millis(2000),
+            parse_duration("2s").expect("duration")
+        );
+        assert_eq!(
+            Duration::from_millis(60 * 1000 + 3000),
+            parse_duration("1m 3s").expect("duration")
         );
     }
 }

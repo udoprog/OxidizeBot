@@ -23,7 +23,7 @@ use irc::{
 };
 use setmod_notifier::{Notification, Notifier};
 use std::{
-    fmt,
+    cell, fmt,
     sync::{Arc, Mutex, RwLock},
     time,
 };
@@ -40,6 +40,9 @@ const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
 pub struct Config {
     bot: String,
     channels: Vec<Channel>,
+    /// Cooldown for moderator actions.
+    #[serde(default, deserialize_with = "utils::deserialize_optional_duration")]
+    moderator_cooldown: Option<time::Duration>,
 }
 
 /// Configuration for a twitch channel.
@@ -221,6 +224,8 @@ pub fn run<'a>(
         features: &config.features,
         api_url: config.api_url.as_ref(),
         thread_pool: Arc::new(ThreadPool::new()),
+        moderator_cooldown: irc_config.moderator_cooldown.clone(),
+        last_moderator_action: Default::default(),
     };
 
     futures.push(Box::new(
@@ -417,6 +422,10 @@ struct MessageHandler<'a> {
     api_url: Option<&'a String>,
     /// Thread pool used for driving futures.
     thread_pool: Arc<ThreadPool>,
+    /// Active moderator cooldown.
+    moderator_cooldown: Option<time::Duration>,
+    /// Timestamp of the last moderator action.
+    last_moderator_action: cell::RefCell<Option<time::Instant>>,
 }
 
 impl<'a> MessageHandler<'a> {
@@ -444,19 +453,48 @@ impl<'a> MessageHandler<'a> {
 
     /// Check that the given user is a moderator.
     fn check_moderator(&self, user: &User) -> Result<(), failure::Error> {
-        if self.is_moderator(user) {
-            return Ok(());
+        if !self.is_moderator(user) {
+            self.sender.privmsg(
+                &user.target,
+                format!(
+                    "Do you think this is a democracy {name}? LUL",
+                    name = user.name
+                ),
+            );
+
+            failure::bail!("moderator access required for action");
         }
 
-        self.sender.privmsg(
-            &user.target,
-            format!(
-                "Do you think this is a democracy {name}? LUL",
-                name = user.name
-            ),
-        );
+        // Test if we have moderator cooldown in effect.
+        let moderator_cooldown = match self.moderator_cooldown.as_ref() {
+            Some(moderator_cooldown) => moderator_cooldown,
+            None => return Ok(()),
+        };
 
-        failure::bail!("moderator access required for action");
+        let now = time::Instant::now();
+
+        // NB: needed since check_moderator only has immutable access.
+        let mut last_moderator_action = self
+            .last_moderator_action
+            .try_borrow_mut()
+            .expect("mutable access already in progress");
+
+        if let Some(last_action) = last_moderator_action.as_ref() {
+            if now - *last_action < *moderator_cooldown {
+                self.sender.privmsg(
+                    &user.target,
+                    format!(
+                        "{name} -> Cooldown in effect since last moderator action.",
+                        name = user.name
+                    ),
+                );
+
+                failure::bail!("moderator action cooldown");
+            }
+        }
+
+        *last_moderator_action = Some(now);
+        Ok(())
     }
 
     /// Handle the !badword command.
