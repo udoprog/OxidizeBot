@@ -15,9 +15,14 @@
     <tbody>
     {{#each player.items}}
       <tr class="{{#if @first}}current{{/if}}">
-        <th>#{{@index}}</th>
+        <th>
+          {{#if @first}}
+            <span title="Current Song">&#9654;</span>
+          {{else}}
+            #{{@index}}
+          {{/if}}
+        </th>
         <td>
-          {{#if @first}}<span title="Current Song">&#9654;</span>{{/if}}
           <a href="https://open.spotify.com/track/{{track_id}}">{{name}}</a>
         </td>
         <td>{{artists}}</td>

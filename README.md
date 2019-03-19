@@ -262,6 +262,7 @@ Enabled commands:
 * `!song delete last` - Delete the last song in the queue (**moderator**).
 * `!song delete last <user>` - Delete the last song in the queue added by the given `<user>` (**moderator**).
 * `!song delete mine` - A user is allowed to delete the last song that _they_ added.
+* `!song delete <position>` - Delete a song at the given position (**moderator**).
 * `!song list` - Get the next three songs.
 * `!song list <n>` - Get the next `<n>` songs (**moderator**).
 * `!song theme <name>` - Play the specified theme song (**moderator**).

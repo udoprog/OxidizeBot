@@ -551,17 +551,7 @@ impl<'a> MessageHandler<'a> {
                 self.check_moderator(user)?;
 
                 let index = match it.next() {
-                    Some(index) => match str::parse::<usize>(index) {
-                        Ok(0) => {
-                            user.respond("Expected non-zero index :(");
-                            failure::bail!("bad command");
-                        }
-                        Ok(index) => index.saturating_sub(1),
-                        Err(_) => {
-                            user.respond("Expected whole number argument");
-                            failure::bail!("bad command");
-                        }
-                    },
+                    Some(index) => parse_queue_position(user, index)?,
                     None => failure::bail!("bad command"),
                 };
 
@@ -653,7 +643,12 @@ impl<'a> MessageHandler<'a> {
                         }
                     },
                     Some("mine") => player.remove_last_by_user(&user.name)?,
-                    Some(_) | None => {
+                    Some(n) => {
+                        self.check_moderator(&user)?;
+                        let n = parse_queue_position(user, n)?;
+                        player.remove_at(n)?
+                    }
+                    None => {
                         user.respond(format!("Expected: last, last <user>, or mine"));
                         failure::bail!("bad command");
                     }
@@ -844,7 +839,22 @@ impl<'a> MessageHandler<'a> {
             }
         }
 
-        Ok(())
+        return Ok(());
+
+        /// Parse a queue position.
+        fn parse_queue_position(user: &User, n: &str) -> Result<usize, failure::Error> {
+            match str::parse::<usize>(n) {
+                Ok(0) => {
+                    user.respond("Can't remove the current song :(");
+                    failure::bail!("bad command");
+                }
+                Ok(n) => Ok(n.saturating_sub(1)),
+                Err(e) => {
+                    user.respond("Expected whole number argument");
+                    failure::bail!("bad whole number argument: {}", e);
+                }
+            }
+        }
     }
 
     /// Handle command administration.

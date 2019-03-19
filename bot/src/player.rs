@@ -484,9 +484,7 @@ impl PlayerClient {
         let promoted = self.queue.promote_song(user, n);
 
         if promoted.is_some() {
-            if let Err(e) = self.commands_tx.unbounded_send(Command::Modified) {
-                log::error!("failed to send queue modified notification: {}", e);
-            }
+            self.modified();
         }
 
         promoted
@@ -683,22 +681,43 @@ impl PlayerClient {
         let purged = self.queue.purge()?;
 
         if !purged.is_empty() {
-            if let Err(e) = self.commands_tx.unbounded_send(Command::Modified) {
-                log::error!("failed to send queue modified notification: {}", e);
-            }
+            self.modified();
         }
 
         Ok(purged)
     }
 
+    /// Remove the item at the given position.
+    pub fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, failure::Error> {
+        let removed = self.queue.remove_at(n)?;
+
+        if removed.is_some() {
+            self.modified();
+        }
+
+        Ok(removed)
+    }
+
     /// Remove the first track in the queue.
     pub fn remove_last(&self) -> Result<Option<Arc<Item>>, failure::Error> {
-        self.queue.remove_last()
+        let removed = self.queue.remove_last()?;
+
+        if removed.is_some() {
+            self.modified();
+        }
+
+        Ok(removed)
     }
 
     /// Remove the last track by the given user.
     pub fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, failure::Error> {
-        self.queue.remove_last_by_user(user)
+        let removed = self.queue.remove_last_by_user(user)?;
+
+        if removed.is_some() {
+            self.modified();
+        }
+
+        Ok(removed)
     }
 
     /// Get the length in number of items and total number of seconds in queue.
@@ -724,6 +743,13 @@ impl PlayerClient {
     /// Get the current song, if it is set.
     pub fn current(&self) -> Option<Arc<Item>> {
         self.current.read().expect("poisoned").clone()
+    }
+
+    /// Indicate that the queue has been modified.
+    fn modified(&self) {
+        if let Err(e) = self.commands_tx.unbounded_send(Command::Modified) {
+            log::error!("failed to send queue modified notification: {}", e);
+        }
     }
 }
 
@@ -873,6 +899,22 @@ impl Queue {
             .collect();
         self.db.song_purge_log();
         Ok(purged)
+    }
+
+    /// Remove the item at the given position.
+    pub fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, failure::Error> {
+        let mut q = self.queue.write().expect("poisoned");
+
+        if q.is_empty() {
+            return Ok(None);
+        }
+
+        if let Some(item) = q.remove(n) {
+            self.db.remove_song_log(&item.track_id);
+            return Ok(Some(item));
+        }
+
+        Ok(None)
     }
 
     /// Remove the last element.
