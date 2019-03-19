@@ -548,9 +548,17 @@ impl Future for TokenRefreshFuture {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             if let Some(future) = self.refresh_future.as_mut() {
-                if let Async::Ready(()) = future.poll()? {
-                    self.refresh_future = None;
-                    continue;
+                match future.poll() {
+                    Ok(Async::NotReady) => {}
+                    Ok(Async::Ready(())) => {
+                        self.refresh_future = None;
+                        continue;
+                    }
+                    Err(e) => {
+                        log::warn!("failed to refresh token: {}", e);
+                        self.refresh_future = None;
+                        continue;
+                    }
                 }
             }
 
