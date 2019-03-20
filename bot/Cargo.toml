@@ -42,17 +42,17 @@ handlebars = "1.1.0"
 htmlescape = "0.3.1"
 lazy_static = "1.3.0"
 
+[build-dependencies]
+failure = "0.1"
+
 [target.'cfg(windows)'.dependencies.librespot]
 version = "0.1.0"
 git = "https://github.com/udoprog/librespot"
 default-features = false
 features = ["portaudio-backend"]
 
-#[target.'cfg(unix)'.dependencies.librespot]
+#[target.'cfg(target_os = "linux")'.dependencies.librespot]
 #version = "0.1.0"
 #git = "https://github.com/udoprog/librespot"
 #default-features = false
 #features = ["pulseaudio-backend"]
-
-[build-dependencies]
-failure = "0.1"
