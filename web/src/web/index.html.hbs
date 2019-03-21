@@ -7,7 +7,6 @@
 
   <h2>Players</h2>
 
-  {{#each players}}
   <table class="table">
   <thead>
     <tr>
@@ -15,14 +14,17 @@
     </tr>
   </thead>
   <tbody>
+  {{#each players}}
     <tr>
       <td><a href="/player/{{name}}">{{name}}</a></td>
     </tr>
+  {{else}}
+    <tr>
+      <td>No active players right now!</td>
+    </tr>
+  {{/each}}
   </tbody>
   </table>
-  {{else}}
-  <p>No active players right now!</p>
-  {{/each}}
 <h1></h1>
 </div>
 {{/layout}}
