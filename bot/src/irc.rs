@@ -543,6 +543,47 @@ impl<'a> MessageHandler<'a> {
         Ok(())
     }
 
+    /// Handle !8ball command.
+    fn handle_8ball<'m>(
+        &mut self,
+        user: User<'m>,
+        _it: &mut utils::Words<'m>,
+    ) -> Result<(), failure::Error> {
+        use rand::Rng as _;
+
+        static MAGIC_8BALL_ANSWER: &[&'static str] = &[
+            "It is certain.",
+            "It is decidedly so.",
+            "Without a doubt.",
+            "Yes - definitely.",
+            "You may rely on it.",
+            "As I see it, yes.",
+            "Most likely.",
+            "Outlook good.",
+            "Yes.",
+            "Signs point to yes.",
+            "Reply hazy, try again.",
+            "Ask again later.",
+            "Better not tell you now.",
+            "Cannot predict now.",
+            "Concentrate and ask again.",
+            "Don't count on it.",
+            "My reply is no.",
+            "My sources say no.",
+            "Outlook not so good.",
+            "Very doubtful.",
+        ];
+
+        let mut rng = rand::thread_rng();
+        let index = rng.gen_range(0, MAGIC_8BALL_ANSWER.len() - 1);
+
+        if let Some(answer) = MAGIC_8BALL_ANSWER.get(index) {
+            user.respond(answer);
+        }
+
+        Ok(())
+    }
+
     /// Handle !clip command.
     fn handle_clip<'m>(
         &mut self,
@@ -1205,6 +1246,9 @@ impl<'a> MessageHandler<'a> {
             }
             "admin" => {
                 self.handle_admin(user, it)?;
+            }
+            "8ball" if self.features.test(Feature::EightBall) => {
+                self.handle_8ball(user, it)?;
             }
             "clip" if self.features.test(Feature::Clip) => {
                 self.handle_clip(user, it)?;

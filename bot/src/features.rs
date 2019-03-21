@@ -24,6 +24,9 @@ pub enum Feature {
     /// Clip feature.
     #[serde(rename = "clip")]
     Clip,
+    /// !8ball feature.
+    #[serde(rename = "8ball")]
+    EightBall,
 }
 
 /// By-channel features that are enabled.

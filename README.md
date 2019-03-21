@@ -54,6 +54,7 @@ features = [
   "bad-words",
   "url-whitelist",
   "clip",
+  "8ball",
 ]
 
 # API to use for remotely showing playlist information.
@@ -284,6 +285,10 @@ Enabled commands:
 The `clip` feature enables the `!clip` command.
 
 This command has a cooldown determined by the `[irc] clip_cooldown` configuration key (see above).
+
+#### `8ball`
+
+Enables the Magic `!8ball` command. Cause it's MAGIC.
 
 ## Aliases
 

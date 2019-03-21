@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moderator action cooldowns ([#6]).
 - Moderators are automatically picked up through `/mods` command on IRC ([#5]).
 - Support for `!clip` command ([#13])
+- Support for `!8ball` command ([#14])
 
 ### Changed
 - Changed configuration format to be TOML and flatten it (see [example configuration]).
@@ -35,5 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#10]: https://github.com/udoprog/setmod/issues/10
 [#11]: https://github.com/udoprog/setmod/issues/11
 [#13]: https://github.com/udoprog/setmod/issues/13
+[#14]: https://github.com/udoprog/setmod/issues/14
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.0.1...HEAD
