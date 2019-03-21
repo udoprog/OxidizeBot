@@ -16,12 +16,14 @@ use std::{
 pub const CLIPS_URL: &'static str = "http://clips.twitch.tv";
 const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";
 const API_TWITCH_URL: &'static str = "https://api.twitch.tv";
+const GQL_TWITCH_URL: &'static str = "https://gql.twitch.tv/gql";
 
 /// API integration.
 #[derive(Clone, Debug)]
 pub struct Twitch {
     client: Client,
     api_url: Url,
+    gql_url: Url,
     token: Arc<RwLock<oauth2::Token>>,
 }
 
@@ -31,6 +33,7 @@ impl Twitch {
         Ok(Twitch {
             client: Client::new(),
             api_url: str::parse::<Url>(API_TWITCH_URL)?,
+            gql_url: str::parse::<Url>(GQL_TWITCH_URL)?,
             token,
         })
     }
@@ -65,6 +68,22 @@ impl Twitch {
             url_path.push("kraken");
             url_path.extend(path);
         }
+
+        RequestBuilder {
+            token: Arc::clone(&self.token),
+            client: self.client.clone(),
+            url,
+            method,
+            headers: Vec::new(),
+            body: None,
+            use_bearer: false,
+        }
+    }
+
+    /// Build request against GQL api.
+    fn gql(&self, method: Method) -> RequestBuilder {
+        let mut url = self.gql_url.clone();
+        url.path_segments_mut().expect("bad base").push("gql");
 
         RequestBuilder {
             token: Arc::clone(&self.token),
@@ -125,6 +144,49 @@ impl Twitch {
             .query_param("broadcaster_id", broadcaster_id)
             .execute::<Data<Clip>>()
             .map(|data| data.data.into_iter().next());
+    }
+
+    /// Update the title of a clip.
+    pub fn update_clip_title(
+        &self,
+        clip_id: &str,
+        title: &str,
+    ) -> impl Future<Item = (), Error = failure::Error> {
+        let body = vec![Request {
+            operation_name: "ClipsTitleEdit_UpdateClip",
+            variables: Variables {
+                input: Input {
+                    title: title.to_string(),
+                    slug: clip_id.to_string(),
+                },
+            },
+        }];
+
+        let future = Self::serialize(&body);
+
+        let req = self.gql(Method::POST);
+
+        return future
+            .and_then(move |body| req.body(body).execute::<serde_json::Value>())
+            .map(|_| ());
+
+        #[derive(serde::Serialize)]
+        struct Request {
+            #[serde(rename = "operationName")]
+            operation_name: &'static str,
+            variables: Variables,
+        }
+
+        #[derive(serde::Serialize)]
+        struct Variables {
+            input: Input,
+        }
+
+        #[derive(serde::Serialize)]
+        struct Input {
+            title: String,
+            slug: String,
+        }
     }
 
     /// Get the channela associated with the current authentication.
@@ -223,8 +285,6 @@ impl RequestBuilder {
                     let status = res.status();
 
                     if !status.is_success() {
-                        log::info!("headers: {:?}", res.headers());
-
                         failure::bail!(
                             "bad response: {}: {}",
                             status,

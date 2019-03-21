@@ -168,7 +168,7 @@ pub fn run<'a>(
             .and_then(move |m| handler.handle(&m))
             // handle any errors.
             .or_else(|e| {
-                log::error!("failed to process message: {}", e);
+                utils::log_err("failed to process message", e);
                 Ok(())
             })
             .for_each(|_| Ok(())),
@@ -267,7 +267,7 @@ fn reward_loop<'a>(
         })
         // handle any errors.
         .or_else(|e| {
-            log::error!("failed to reward users: {}", e);
+            utils::log_err("failed to reward users", e);
             Ok(())
         })
         .for_each(|_| Ok(()))
@@ -346,7 +346,7 @@ impl Sender {
             limiter.lock().expect("poisoned").wait();
 
             if let Err(e) = client.send(m) {
-                log::error!("failed to send message: {}", e);
+                utils::log_err("failed to send message", e.into());
             }
 
             Ok(())
@@ -595,7 +595,7 @@ impl<'a> MessageHandler<'a> {
     fn handle_clip<'m>(
         &mut self,
         user: User<'m>,
-        _it: &mut utils::Words<'m>,
+        it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         if !self.clip_cooldown.is_open() {
             user.respond("A clip was already created recently");
@@ -613,26 +613,52 @@ impl<'a> MessageHandler<'a> {
             }
         };
 
+        let title = match it.rest().trim() {
+            "" => None,
+            other => Some(other.to_string()),
+        };
+
         let user = user.as_owned_user();
 
-        self.thread_pool
-            .spawn(self.twitch.create_clip(user_id).then(move |result| {
-                match result {
-                    Ok(Some(clip)) => {
-                        user.respond(format!("Created clip at {}/{}", twitch::CLIPS_URL, clip.id));
-                        return Ok(());
-                    }
-                    Ok(None) => {
-                        log::error!("created clip, but API returned nothing");
-                    }
-                    Err(e) => {
-                        log::error!("failed to create clip: {}", e);
-                    }
-                }
+        let future = self
+            .twitch
+            .create_clip(user_id)
+            .then::<_, BoxFuture<(), failure::Error>>({
+                let _twitch = self.twitch.clone();
 
-                user.respond("Failed to create clip, sorry :(");
-                Ok(())
-            }));
+                move |result| {
+                    let result = match result {
+                        Ok(Some(clip)) => {
+                            user.respond(format!(
+                                "Created clip at {}/{}",
+                                twitch::CLIPS_URL,
+                                clip.id
+                            ));
+
+                            if let Some(_title) = title {
+                                log::warn!("can't update title right now :(")
+                            }
+
+                            Ok(())
+                        }
+                        Ok(None) => {
+                            user.respond("Failed to create clip, sorry :(");
+                            Err(format_err!("created clip, but API returned nothing"))
+                        }
+                        Err(e) => {
+                            user.respond("Failed to create clip, sorry :(");
+                            Err(format_err!("failed to create clip: {}", e))
+                        }
+                    };
+
+                    Box::new(future::result(result))
+                }
+            });
+
+        self.thread_pool.spawn(future.map_err(|e| {
+            utils::log_err("error when posting clip", e);
+            ()
+        }));
 
         Ok(())
     }
@@ -674,7 +700,7 @@ impl<'a> MessageHandler<'a> {
                             }
                             Err(player::PlayThemeError::Error(e)) => {
                                 user.respond("There was a problem adding your song :(");
-                                log::error!("failed to add song: {}", e);
+                                utils::log_err("failed to add song", e);
                             }
                         }
 
@@ -867,7 +893,7 @@ impl<'a> MessageHandler<'a> {
                         }
                     })
                     .map_err(|e| {
-                        log::error!("failed to add track: {}", e);
+                        utils::log_err("failed to add track", e);
                         ()
                     })
                     .and_then({
@@ -924,7 +950,7 @@ impl<'a> MessageHandler<'a> {
                                     }
                                     Err(player::AddTrackError::Error(e)) => {
                                         user.respond("There was a problem adding your song :(");
-                                        log::error!("failed to add song: {}", e);
+                                        utils::log_err("failed to add song", e);
                                     }
                                 }
 
@@ -1182,7 +1208,7 @@ impl<'a> MessageHandler<'a> {
                     Ok(())
                 })
                 .or_else(|e| {
-                    log::error!("failed to update title: {}", e);
+                    utils::log_err("failed to update title", e);
                     Ok(())
                 }),
         );
@@ -1228,7 +1254,7 @@ impl<'a> MessageHandler<'a> {
                     Ok(())
                 })
                 .or_else(|e| {
-                    log::error!("failed to update game: {}", e);
+                    utils::log_err("failed to update game", e);
                     Ok(())
                 }),
         );
@@ -1405,7 +1431,7 @@ impl<'a> MessageHandler<'a> {
                             self.sender.privmsg(target, &why);
                         }
                         Err(e) => {
-                            log::error!("failed to render response: {}", e);
+                            utils::log_err("failed to render response", e);
                         }
                     }
                 }
@@ -1469,7 +1495,7 @@ impl<'a> MessageHandler<'a> {
                         let command = &command[1..];
 
                         if let Err(e) = self.process_command(tags.clone(), command, m, &mut it) {
-                            log::error!("failed to process command: {}", e);
+                            utils::log_err("failed to process command", e);
                         }
                     }
                 }

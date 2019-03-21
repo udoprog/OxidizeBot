@@ -1,4 +1,4 @@
-use std::{mem, time};
+use std::{fmt, mem, time};
 use url::percent_encoding::PercentDecode;
 
 /// Helper type for futures.
@@ -395,6 +395,15 @@ impl<'de> serde::Deserialize<'de> for Cooldown {
         let duration = parse_duration(&duration).map_err(serde::de::Error::custom)?;
 
         Ok(Cooldown::from_duration(duration))
+    }
+}
+
+/// Helper to log an error and all it's causes.
+pub fn log_err(what: impl fmt::Display, e: failure::Error) {
+    log::error!("{}: {}", what, e);
+
+    for cause in e.iter_causes() {
+        log::error!("caused by: {}", cause);
     }
 }
 
