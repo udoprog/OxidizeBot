@@ -55,126 +55,156 @@ fn default_clip_cooldown() -> utils::Cooldown {
     utils::Cooldown::from_duration(time::Duration::from_secs(15))
 }
 
-pub fn run<'a>(
-    core: &mut Core,
-    db: db::Database,
-    twitch: twitch::Twitch,
-    config: &'a config::Config,
-    irc_config: &'a Config,
-    token: Arc<RwLock<oauth2::Token>>,
-    commands: commands::Commands<db::Database>,
-    counters: counters::Counters<db::Database>,
-    bad_words: words::Words<db::Database>,
-    notifier: &'a Notifier,
-    player: Option<&player::Player>,
-) -> Result<impl Future<Item = (), Error = failure::Error> + Send + 'a, failure::Error> {
-    let access_token = token
-        .read()
-        .expect("poisoned lock")
-        .access_token()
-        .to_string();
+/// Helper struct to construct IRC integration.
+pub struct Irc<'a, 'b> {
+    pub core: &'b mut Core,
+    pub db: db::Database,
+    pub streamer_twitch: twitch::Twitch,
+    pub bot_twitch: twitch::Twitch,
+    pub config: &'a config::Config,
+    pub irc_config: &'a Config,
+    pub token: Arc<RwLock<oauth2::Token>>,
+    pub commands: commands::Commands<db::Database>,
+    pub counters: counters::Counters<db::Database>,
+    pub bad_words: words::Words<db::Database>,
+    pub notifier: &'a Notifier,
+    pub player: Option<&'b player::Player>,
+}
 
-    let irc_client_config = client::data::config::Config {
-        nickname: Some(irc_config.bot.clone()),
-        channels: Some(vec![(*irc_config.channel).clone()]),
-        password: Some(format!("oauth:{}", access_token)),
-        server: Some(String::from(SERVER)),
-        port: Some(6697),
-        use_ssl: Some(true),
-        ..client::data::config::Config::default()
-    };
-
-    let client = IrcClient::new_future(core.handle(), &irc_client_config)?;
-
-    let PackedIrcClient(client, send_future) = core.run(client)?;
-    client.identify()?;
-
-    let sender = Sender::new(client.clone());
-    sender.cap_req(TWITCH_TAGS_CAP);
-    sender.cap_req(TWITCH_COMMANDS_CAP);
-
-    let mut futures = Vec::<BoxFuture<(), failure::Error>>::new();
-
-    if let Some(currency) = config.currency.as_ref() {
-        let reward = 10;
-        let interval = 60 * 10;
-
-        let future = reward_loop(
+impl<'a> Irc<'a, '_> {
+    pub fn run(
+        self,
+    ) -> Result<impl Future<Item = (), Error = failure::Error> + Send + 'a, failure::Error> {
+        let Irc {
+            core,
+            db,
+            streamer_twitch,
+            bot_twitch,
+            config,
             irc_config,
-            reward,
-            interval,
-            db.clone(),
-            twitch.clone(),
-            sender.clone(),
-            currency,
-        );
+            token,
+            commands,
+            counters,
+            bad_words,
+            notifier,
+            player,
+            ..
+        } = self;
 
-        futures.push(Box::new(future));
-    }
+        let access_token = token
+            .read()
+            .expect("poisoned lock")
+            .access_token()
+            .to_string();
 
-    let interval = 60 * 5;
+        let irc_client_config = client::data::config::Config {
+            nickname: Some(irc_config.bot.clone()),
+            channels: Some(vec![(*irc_config.channel).clone()]),
+            password: Some(format!("oauth:{}", access_token)),
+            server: Some(String::from(SERVER)),
+            port: Some(6697),
+            use_ssl: Some(true),
+            ..client::data::config::Config::default()
+        };
 
-    let stream_info = {
-        let stream_info = Arc::new(RwLock::new(None));
-        let future = stream_info_loop(config, interval, twitch.clone(), stream_info.clone());
-        futures.push(Box::new(future));
-        stream_info
-    };
+        let client = IrcClient::new_future(core.handle(), &irc_client_config)?;
 
-    let player = match player {
-        Some(player) => {
-            futures.push(Box::new(player_feedback_loop(
+        let PackedIrcClient(client, send_future) = core.run(client)?;
+        client.identify()?;
+
+        let sender = Sender::new(client.clone());
+        sender.cap_req(TWITCH_TAGS_CAP);
+        sender.cap_req(TWITCH_COMMANDS_CAP);
+
+        let mut futures = Vec::<BoxFuture<(), failure::Error>>::new();
+
+        if let Some(currency) = config.currency.as_ref() {
+            let reward = 10;
+            let interval = 60 * 10;
+
+            let future = reward_loop(
                 irc_config,
-                player,
+                reward,
+                interval,
+                db.clone(),
+                streamer_twitch.clone(),
                 sender.clone(),
-            )));
-            Some(player.client())
+                currency,
+            );
+
+            futures.push(Box::new(future));
         }
-        None => None,
-    };
 
-    futures.push(Box::new(send_future.map_err(failure::Error::from)));
+        let interval = 60 * 5;
 
-    let mut handler = MessageHandler {
-        streamer: config.streamer.clone(),
-        channel: irc_config.channel.clone(),
-        twitch: twitch.clone(),
-        db,
-        sender: sender.clone(),
-        moderators: HashSet::default(),
-        whitelisted_hosts: &config.whitelisted_hosts,
-        currency: config.currency.as_ref(),
-        stream_info,
-        commands,
-        counters,
-        bad_words,
-        notifier,
-        player,
-        aliases: config.aliases.clone(),
-        features: &config.features,
-        api_url: config.api_url.as_ref(),
-        thread_pool: Arc::new(ThreadPool::new()),
-        moderator_cooldown: irc_config
-            .moderator_cooldown
-            .clone()
-            .map(cell::RefCell::new),
-        clip_cooldown: irc_config.clip_cooldown.clone(),
-    };
+        let stream_info = {
+            let stream_info = Arc::new(RwLock::new(None));
+            let future = stream_info_loop(
+                config,
+                interval,
+                streamer_twitch.clone(),
+                stream_info.clone(),
+            );
+            futures.push(Box::new(future));
+            stream_info
+        };
 
-    futures.push(Box::new(
-        client
-            .stream()
-            .map_err(failure::Error::from)
-            .and_then(move |m| handler.handle(&m))
-            // handle any errors.
-            .or_else(|e| {
-                utils::log_err("failed to process message", e);
-                Ok(())
-            })
-            .for_each(|_| Ok(())),
-    ));
+        let player = match player {
+            Some(player) => {
+                futures.push(Box::new(player_feedback_loop(
+                    irc_config,
+                    player,
+                    sender.clone(),
+                )));
+                Some(player.client())
+            }
+            None => None,
+        };
 
-    Ok(future::join_all(futures).map(|_| ()))
+        futures.push(Box::new(send_future.map_err(failure::Error::from)));
+
+        let mut handler = MessageHandler {
+            streamer: config.streamer.clone(),
+            channel: irc_config.channel.clone(),
+            streamer_twitch: streamer_twitch.clone(),
+            bot_twitch: bot_twitch.clone(),
+            db,
+            sender: sender.clone(),
+            moderators: HashSet::default(),
+            whitelisted_hosts: &config.whitelisted_hosts,
+            currency: config.currency.as_ref(),
+            stream_info,
+            commands,
+            counters,
+            bad_words,
+            notifier,
+            player,
+            aliases: config.aliases.clone(),
+            features: &config.features,
+            api_url: config.api_url.as_ref(),
+            thread_pool: Arc::new(ThreadPool::new()),
+            moderator_cooldown: irc_config
+                .moderator_cooldown
+                .clone()
+                .map(cell::RefCell::new),
+            clip_cooldown: irc_config.clip_cooldown.clone(),
+        };
+
+        futures.push(Box::new(
+            client
+                .stream()
+                .map_err(failure::Error::from)
+                .and_then(move |m| handler.handle(&m))
+                // handle any errors.
+                .or_else(|e| {
+                    utils::log_err("failed to process message", e);
+                    Ok(())
+                })
+                .for_each(|_| Ok(())),
+        ));
+
+        Ok(future::join_all(futures).map(|_| ()))
+    }
 }
 
 /// Notifications from the player.
@@ -375,8 +405,10 @@ struct MessageHandler<'a> {
     streamer: String,
     /// Currench channel.
     channel: Arc<String>,
-    /// API access.
-    twitch: twitch::Twitch,
+    /// Streamer API Access.
+    streamer_twitch: twitch::Twitch,
+    /// Bot API Access.
+    bot_twitch: twitch::Twitch,
     /// Database.
     db: db::Database,
     /// Queue for sending messages.
@@ -620,40 +652,35 @@ impl<'a> MessageHandler<'a> {
 
         let user = user.as_owned_user();
 
-        let future = self
-            .twitch
-            .create_clip(user_id)
-            .then::<_, BoxFuture<(), failure::Error>>({
-                let _twitch = self.twitch.clone();
+        let future = self.bot_twitch.create_clip(user_id);
 
-                move |result| {
-                    let result = match result {
-                        Ok(Some(clip)) => {
-                            user.respond(format!(
-                                "Created clip at {}/{}",
-                                twitch::CLIPS_URL,
-                                clip.id
-                            ));
+        let future = future.then::<_, BoxFuture<(), failure::Error>>({
+            let _twitch = self.streamer_twitch.clone();
 
-                            if let Some(_title) = title {
-                                log::warn!("can't update title right now :(")
-                            }
+            move |result| {
+                let result = match result {
+                    Ok(Some(clip)) => {
+                        user.respond(format!("Created clip at {}/{}", twitch::CLIPS_URL, clip.id));
 
-                            Ok(())
+                        if let Some(_title) = title {
+                            log::warn!("can't update title right now :(")
                         }
-                        Ok(None) => {
-                            user.respond("Failed to create clip, sorry :(");
-                            Err(format_err!("created clip, but API returned nothing"))
-                        }
-                        Err(e) => {
-                            user.respond("Failed to create clip, sorry :(");
-                            Err(format_err!("failed to create clip: {}", e))
-                        }
-                    };
 
-                    Box::new(future::result(result))
-                }
-            });
+                        Ok(())
+                    }
+                    Ok(None) => {
+                        user.respond("Failed to create clip, sorry :(");
+                        Err(format_err!("created clip, but API returned nothing"))
+                    }
+                    Err(e) => {
+                        user.respond("Failed to create clip, sorry :(");
+                        Err(format_err!("failed to create clip: {}", e))
+                    }
+                };
+
+                Box::new(future::result(result))
+            }
+        });
 
         self.thread_pool.spawn(future.map_err(|e| {
             utils::log_err("error when posting clip", e);
@@ -1193,7 +1220,7 @@ impl<'a> MessageHandler<'a> {
     fn handle_update_title(&mut self, user: User<'_>, title: &str) -> Result<(), failure::Error> {
         let channel_id = user.target.trim_start_matches('#');
 
-        let twitch = self.twitch.clone();
+        let twitch = self.streamer_twitch.clone();
         let user = user.as_owned_user();
         let title = title.to_string();
 
@@ -1239,7 +1266,7 @@ impl<'a> MessageHandler<'a> {
     fn handle_update_game(&mut self, user: User<'_>, game: &str) -> Result<(), failure::Error> {
         let channel_id = user.target.trim_start_matches('#');
 
-        let twitch = self.twitch.clone();
+        let twitch = self.streamer_twitch.clone();
         let user = user.as_owned_user();
         let game = game.to_string();
 

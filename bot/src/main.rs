@@ -201,26 +201,28 @@ fn main() -> Result<(), failure::Error> {
         _ => None,
     };
 
-    if let Some(c) = config.irc.as_ref() {
+    if let Some(irc_config) = config.irc.as_ref() {
         let (bot_token, future) = it
             .next()
             .ok_or_else(|| format_err!("expected streamer token"))?;
 
         futures.push(Box::new(future));
 
-        let future = irc::run(
-            &mut core,
-            db,
-            twitch.clone(),
-            &config,
-            c,
-            bot_token,
+        let future = irc::Irc {
+            core: &mut core,
+            db: db,
+            streamer_twitch: twitch.clone(),
+            bot_twitch: twitch::Twitch::new(bot_token.clone())?,
+            config: &config,
+            irc_config,
+            token: bot_token,
             commands,
             counters,
             bad_words,
-            &*notifier,
-            player.as_ref(),
-        )?;
+            notifier: &*notifier,
+            player: player.as_ref(),
+        }
+        .run()?;
 
         futures.push(Box::new(future));
     }
