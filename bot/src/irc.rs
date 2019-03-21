@@ -1549,16 +1549,16 @@ impl<'a> MessageHandler<'a> {
             }
             Command::JOIN(ref channel, _, _) => {
                 let user = m.source_nickname().unwrap_or("?");
-                log::info!("{} joined {}", user, channel);
+                log::trace!("{} joined {}", user, channel);
             }
             Command::Response(..) => {
-                log::info!("Response: {}", m);
+                log::trace!("Response: {}", m);
             }
             Command::PING(..) | Command::PONG(..) => {
                 // ignore
             }
             Command::Raw(..) => {
-                log::trace!("raw command: {:?}", m);
+                log::trace!("Raw: {:?}", m);
             }
             Command::NOTICE(_, ref message) => {
                 let tags = Self::tags(&m);

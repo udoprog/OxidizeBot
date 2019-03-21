@@ -156,14 +156,7 @@ pub fn twitch(
         token_url: Some(TokenUrl::new(Url::parse(
             "https://id.twitch.tv/oauth2/token",
         )?)),
-        scopes: vec![
-            String::from("channel:moderate"),
-            String::from("chat:read"),
-            String::from("chat:edit"),
-            String::from("clips:edit"),
-            String::from("channel_read"),
-            String::from("channel_editor"),
-        ],
+        scopes: vec![],
         state_path: None,
     })
 }
@@ -184,22 +177,8 @@ pub fn spotify(
         token_url: Some(TokenUrl::new(Url::parse(
             "https://accounts.spotify.com/api/token",
         )?)),
-        scopes: vec![
-            String::from("user-read-private"),
-            String::from("playlist-read-private"),
-            String::from("playlist-read-collaborative"),
-            String::from("playlist-modify-public"),
-            String::from("playlist-modify-private"),
-            String::from("user-follow-modify"),
-            String::from("user-follow-read"),
-            String::from("user-library-read"),
-            String::from("user-library-modify"),
-            String::from("user-top-read"),
-            String::from("user-read-recently-played"),
-            String::from("user-read-playback-state"),
-            String::from("user-modify-playback-state"),
-        ],
-        state_path: None,
+        scopes: Default::default(),
+        state_path: Default::default(),
     })
 }
 
@@ -280,6 +259,11 @@ pub struct FlowBuilder {
 }
 
 impl FlowBuilder {
+    /// Configure scopes for flow builder.
+    pub fn with_scopes(self, scopes: Vec<String>) -> Self {
+        Self { scopes, ..self }
+    }
+
     /// Configure a local cache file for token.
     pub fn with_state_path(self, state_path: PathBuf) -> FlowBuilder {
         FlowBuilder {

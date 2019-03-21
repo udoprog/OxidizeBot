@@ -117,9 +117,7 @@ where
             .join(format!("{}.oauth2.yml", name))
             .to_path(root);
 
-        let flow_builder = T::new_flow_builder(web, secrets)?.with_state_path(state_path);
-
-        Ok(flow_builder)
+        Ok(T::new_flow_builder(web, secrets)?.with_state_path(state_path))
     }
 }
 

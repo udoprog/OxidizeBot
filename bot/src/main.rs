@@ -132,6 +132,13 @@ fn main() -> Result<(), failure::Error> {
         let flow = config
             .spotify
             .new_flow_builder(web.clone(), "spotify", &root, &secrets)?
+            .with_scopes(vec![
+                String::from("playlist-read-collaborative"),
+                String::from("playlist-read-private"),
+                String::from("user-library-read"),
+                String::from("user-modify-playback-state"),
+                String::from("user-read-playback-state"),
+            ])
             .build()?;
 
         flow.execute("Authorize Spotify")
@@ -141,6 +148,10 @@ fn main() -> Result<(), failure::Error> {
         let flow = config
             .twitch
             .new_flow_builder(web.clone(), "twitch-streamer", &root, &secrets)?
+            .with_scopes(vec![
+                String::from("channel_editor"),
+                String::from("channel_read"),
+            ])
             .build()?;
 
         flow.execute("Authorize as Streamer")
@@ -150,6 +161,12 @@ fn main() -> Result<(), failure::Error> {
         let flow = config
             .twitch
             .new_flow_builder(web.clone(), "twitch-bot", &root, &secrets)?
+            .with_scopes(vec![
+                String::from("channel:moderate"),
+                String::from("chat:edit"),
+                String::from("chat:read"),
+                String::from("clips:edit"),
+            ])
             .build()?;
 
         tokens.push(flow.execute("Authorize as Bot"));
