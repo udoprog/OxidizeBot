@@ -7,7 +7,7 @@ use crate::{
     utils::BoxFuture,
     words,
 };
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use failure::format_err;
 use futures::{
     future::{self, Future},
@@ -40,13 +40,19 @@ const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
 pub struct Config {
     bot: String,
     /// Cooldown for moderator actions.
-    #[serde(default, deserialize_with = "utils::deserialize_optional_duration")]
-    moderator_cooldown: Option<time::Duration>,
+    moderator_cooldown: Option<utils::Cooldown>,
+    /// Cooldown for creating clips.
+    #[serde(default = "default_clip_cooldown")]
+    clip_cooldown: utils::Cooldown,
     /// Name of the channel to join.
     pub channel: Arc<String>,
     /// Whether or not to notify on currency rewards.
     #[serde(default)]
     notify_rewards: bool,
+}
+
+fn default_clip_cooldown() -> utils::Cooldown {
+    utils::Cooldown::from_duration(time::Duration::from_secs(15))
 }
 
 pub fn run<'a>(
@@ -148,8 +154,11 @@ pub fn run<'a>(
         features: &config.features,
         api_url: config.api_url.as_ref(),
         thread_pool: Arc::new(ThreadPool::new()),
-        moderator_cooldown: irc_config.moderator_cooldown.clone(),
-        last_moderator_action: Default::default(),
+        moderator_cooldown: irc_config
+            .moderator_cooldown
+            .clone()
+            .map(cell::RefCell::new),
+        clip_cooldown: irc_config.clip_cooldown.clone(),
     };
 
     futures.push(Box::new(
@@ -278,17 +287,21 @@ fn stream_info_loop<'a>(
             log::trace!("refreshing stream info for streamer: {}", config.streamer);
         })
         .and_then(move |_| {
-            twitch
-                .stream_by_id(config.streamer.as_str())
-                .join(twitch.channel_by_id(config.streamer.as_str()))
+            let user = twitch.user_by_login(config.streamer.as_str());
+            let stream = twitch.stream_by_login(config.streamer.as_str());
+            let channel = twitch.channel_by_login(config.streamer.as_str());
+            user.join3(stream, channel)
         })
-        .and_then(move |(stream, channel)| {
-            let mut u = stream_info.write().map_err(|_| format_err!("poisoned"))?;
+        .and_then(move |(user, stream, channel)| {
+            let mut stream_info = stream_info.write().map_err(|_| format_err!("poisoned"))?;
+            // NB: user old user information in case new one is not available yet.
+            let old_user = stream_info.as_mut().and_then(|s| s.user.take());
 
-            *u = Some(StreamInfo {
+            *stream_info = Some(StreamInfo {
+                user: user.or(old_user),
                 game: channel.game,
                 title: channel.status,
-                started_at: stream.map(|s| s.created_at),
+                stream: stream,
             });
 
             Ok(())
@@ -395,9 +408,9 @@ struct MessageHandler<'a> {
     /// Thread pool used for driving futures.
     thread_pool: Arc<ThreadPool>,
     /// Active moderator cooldown.
-    moderator_cooldown: Option<time::Duration>,
-    /// Timestamp of the last moderator action.
-    last_moderator_action: cell::RefCell<Option<time::Instant>>,
+    moderator_cooldown: Option<cell::RefCell<utils::Cooldown>>,
+    /// Active clip cooldown.
+    clip_cooldown: utils::Cooldown,
 }
 
 impl<'a> MessageHandler<'a> {
@@ -449,30 +462,24 @@ impl<'a> MessageHandler<'a> {
             None => return Ok(()),
         };
 
-        let now = time::Instant::now();
-
         // NB: needed since check_moderator only has immutable access.
-        let mut last_moderator_action = self
-            .last_moderator_action
+        let mut moderator_cooldown = moderator_cooldown
             .try_borrow_mut()
             .expect("mutable access already in progress");
 
-        if let Some(last_action) = last_moderator_action.as_ref() {
-            if now - *last_action < *moderator_cooldown {
-                self.sender.privmsg(
-                    &user.target,
-                    format!(
-                        "{name} -> Cooldown in effect since last moderator action.",
-                        name = user.name
-                    ),
-                );
-
-                failure::bail!("moderator action cooldown");
-            }
+        if moderator_cooldown.is_open() {
+            return Ok(());
         }
 
-        *last_moderator_action = Some(now);
-        Ok(())
+        self.sender.privmsg(
+            &user.target,
+            format!(
+                "{name} -> Cooldown in effect since last moderator action.",
+                name = user.name
+            ),
+        );
+
+        failure::bail!("moderator action cooldown");
     }
 
     /// Handle the !badword command.
@@ -532,6 +539,52 @@ impl<'a> MessageHandler<'a> {
                 user.respond("Expected: refresh-mods.");
             }
         }
+
+        Ok(())
+    }
+
+    /// Handle !clip command.
+    fn handle_clip<'m>(
+        &mut self,
+        user: User<'m>,
+        _it: &mut utils::Words<'m>,
+    ) -> Result<(), failure::Error> {
+        if !self.clip_cooldown.is_open() {
+            user.respond("A clip was already created recently");
+            return Ok(());
+        }
+
+        let stream_info = self.stream_info.read().expect("poisoned");
+
+        let user_id = match stream_info.as_ref().and_then(|s| s.user.as_ref()) {
+            Some(user) => user.id.as_str(),
+            None => {
+                log::error!("No information available on the current stream");
+                user.respond("Cannot clip right now, stream is not live.");
+                return Ok(());
+            }
+        };
+
+        let user = user.as_owned_user();
+
+        self.thread_pool
+            .spawn(self.twitch.create_clip(user_id).then(move |result| {
+                match result {
+                    Ok(Some(clip)) => {
+                        user.respond(format!("Created clip at {}/{}", twitch::CLIPS_URL, clip.id));
+                        return Ok(());
+                    }
+                    Ok(None) => {
+                        log::error!("created clip, but API returned nothing");
+                    }
+                    Err(e) => {
+                        log::error!("failed to create clip: {}", e);
+                    }
+                }
+
+                user.respond("Failed to create clip, sorry :(");
+                Ok(())
+            }));
 
         Ok(())
     }
@@ -1020,7 +1073,7 @@ impl<'a> MessageHandler<'a> {
             .read()
             .expect("poisoned")
             .as_ref()
-            .and_then(|s| s.started_at.clone());
+            .and_then(|s| s.stream.as_ref().map(|s| s.started_at.clone()));
 
         let now = Utc::now();
 
@@ -1152,6 +1205,9 @@ impl<'a> MessageHandler<'a> {
             }
             "admin" => {
                 self.handle_admin(user, it)?;
+            }
+            "clip" if self.features.test(Feature::Clip) => {
+                self.handle_clip(user, it)?;
             }
             "song" if self.features.test(Feature::Song) => {
                 self.handle_song(user, it)?;
@@ -1398,7 +1454,7 @@ impl<'a> MessageHandler<'a> {
                 // ignore
             }
             Command::Raw(..) => {
-                log::info!("raw command: {:?}", m);
+                log::trace!("raw command: {:?}", m);
             }
             Command::NOTICE(_, ref message) => {
                 let tags = Self::tags(&m);
@@ -1500,9 +1556,10 @@ impl<'m> User<'m> {
 
 #[derive(Debug)]
 pub struct StreamInfo {
+    stream: Option<twitch::Stream>,
+    user: Option<twitch::User>,
     title: String,
     game: Option<String>,
-    started_at: Option<DateTime<Utc>>,
 }
 
 /// Struct of tags.

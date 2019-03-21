@@ -160,6 +160,7 @@ pub fn twitch(
             String::from("channel:moderate"),
             String::from("chat:read"),
             String::from("chat:edit"),
+            String::from("clips:edit"),
             String::from("channel_read"),
             String::from("channel_editor"),
         ],

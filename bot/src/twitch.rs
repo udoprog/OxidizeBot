@@ -13,6 +13,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+pub const CLIPS_URL: &'static str = "http://clips.twitch.tv";
 const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";
 const API_TWITCH_URL: &'static str = "https://api.twitch.tv";
 
@@ -35,9 +36,14 @@ impl Twitch {
     }
 
     /// Get request against API.
-    fn request(&self, method: Method, path: &[&str]) -> RequestBuilder {
+    fn new_api(&self, method: Method, path: &[&str]) -> RequestBuilder {
         let mut url = self.api_url.clone();
-        url.path_segments_mut().expect("bad base").extend(path);
+
+        {
+            let mut url_path = url.path_segments_mut().expect("bad base");
+            url_path.push("helix");
+            url_path.extend(path);
+        }
 
         RequestBuilder {
             token: Arc::clone(&self.token),
@@ -46,6 +52,28 @@ impl Twitch {
             method,
             headers: Vec::new(),
             body: None,
+            use_bearer: true,
+        }
+    }
+
+    /// Get request against API.
+    fn v5(&self, method: Method, path: &[&str]) -> RequestBuilder {
+        let mut url = self.api_url.clone();
+
+        {
+            let mut url_path = url.path_segments_mut().expect("bad base");
+            url_path.push("kraken");
+            url_path.extend(path);
+        }
+
+        RequestBuilder {
+            token: Arc::clone(&self.token),
+            client: self.client.clone(),
+            url,
+            method,
+            headers: Vec::new(),
+            body: None,
+            use_bearer: false,
         }
     }
 
@@ -66,7 +94,7 @@ impl Twitch {
         request: &UpdateChannelRequest,
     ) -> impl Future<Item = (), Error = failure::Error> {
         let req = self
-            .request(Method::PUT, &["kraken", "channels", channel_id])
+            .v5(Method::PUT, &["channels", channel_id])
             .header(header::CONTENT_TYPE, "application/json");
 
         Self::serialize(request)
@@ -81,38 +109,48 @@ impl Twitch {
     ) -> impl Future<Item = Option<User>, Error = failure::Error> {
         let login = login.to_string();
 
-        self.request(Method::GET, &["helix", "users"])
+        self.new_api(Method::GET, &["users"])
             .query_param("login", login.as_str())
             .execute::<Data<User>>()
             .map(|data| data.data.into_iter().next())
     }
 
-    /// Get the channela associated with the current authentication.
-    pub fn channel(&self) -> impl Future<Item = Channel, Error = failure::Error> {
-        self.request(Method::GET, &["kraken", "channel"])
-            .execute::<Channel>()
+    /// Create a clip for the given broadcaster.
+    pub fn create_clip(
+        &self,
+        broadcaster_id: &str,
+    ) -> impl Future<Item = Option<Clip>, Error = failure::Error> {
+        return self
+            .new_api(Method::POST, &["clips"])
+            .query_param("broadcaster_id", broadcaster_id)
+            .execute::<Data<Clip>>()
+            .map(|data| data.data.into_iter().next());
     }
 
     /// Get the channela associated with the current authentication.
-    pub fn channel_by_id(&self, id: &str) -> impl Future<Item = Channel, Error = failure::Error> {
-        self.request(Method::GET, &["kraken", "channels", id])
+    pub fn channel(&self) -> impl Future<Item = Channel, Error = failure::Error> {
+        self.v5(Method::GET, &["channel"]).execute::<Channel>()
+    }
+
+    /// Get the channela associated with the current authentication.
+    pub fn channel_by_login(
+        &self,
+        login: &str,
+    ) -> impl Future<Item = Channel, Error = failure::Error> {
+        self.v5(Method::GET, &["channels", login])
             .execute::<Channel>()
     }
 
     /// Get stream information.
-    pub fn stream_by_id(
+    pub fn stream_by_login(
         &self,
-        id: &str,
+        login: &str,
     ) -> impl Future<Item = Option<Stream>, Error = failure::Error> {
         return self
-            .request(Method::GET, &["kraken", "streams", id])
-            .execute::<Response>()
-            .map(|data| data.stream);
-
-        #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-        pub struct Response {
-            stream: Option<Stream>,
-        }
+            .new_api(Method::GET, &["streams"])
+            .query_param("user_login", login)
+            .execute::<Page<Stream>>()
+            .map(|data| data.data.into_iter().next());
     }
 
     /// Get chatters for the given channel using TMI.
@@ -146,6 +184,8 @@ struct RequestBuilder {
     method: Method,
     headers: Vec<(header::HeaderName, String)>,
     body: Option<Body>,
+    /// Use Bearer header instead of OAuth for access tokens.
+    use_bearer: bool,
 }
 
 impl RequestBuilder {
@@ -167,8 +207,13 @@ impl RequestBuilder {
             r = r.header(key, value);
         }
 
-        r.header(header::AUTHORIZATION, format!("OAuth {}", access_token))
-            .header("Client-ID", token.client_id())
+        if self.use_bearer {
+            r = r.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
+        } else {
+            r = r.header(header::AUTHORIZATION, format!("OAuth {}", access_token));
+        }
+
+        r.header("Client-ID", token.client_id())
             .send()
             .map_err(Into::into)
             .and_then(|mut res| {
@@ -178,6 +223,8 @@ impl RequestBuilder {
                     let status = res.status();
 
                     if !status.is_success() {
+                        log::info!("headers: {:?}", res.headers());
+
                         failure::bail!(
                             "bad response: {}: {}",
                             status,
@@ -230,6 +277,17 @@ pub struct UpdateChannel {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct User {
     pub id: String,
+    pub login: String,
+    pub display_name: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+    pub broadcaster_type: String,
+    pub description: String,
+    pub profile_image_url: String,
+    pub offline_image_url: String,
+    pub view_count: u64,
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -240,17 +298,18 @@ pub struct StreamInfo {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Stream {
-    #[serde(rename = "_id")]
-    pub id: u64,
-    pub viewers: u32,
-    pub game: Option<String>,
-    pub video_height: u32,
-    pub average_fps: u32,
-    pub delay: u32,
-    pub created_at: DateTime<Utc>,
-    pub is_playlist: bool,
-    pub stream_type: String,
-    pub channel: Channel,
+    pub id: String,
+    pub user_id: String,
+    pub user_name: String,
+    pub game_id: Option<String>,
+    pub community_ids: Vec<String>,
+    #[serde(rename = "type")]
+    pub ty: String,
+    pub title: String,
+    pub viewer_count: u64,
+    pub started_at: DateTime<Utc>,
+    pub language: String,
+    pub thumbnail_url: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -288,6 +347,23 @@ pub struct Chatters {
     pub admins: Vec<String>,
     pub global_mods: Vec<String>,
     pub viewers: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct Clip {
+    pub id: String,
+    pub edit_url: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct Pagination {
+    cursor: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct Page<T> {
+    data: Vec<T>,
+    pagination: Option<Pagination>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

@@ -21,6 +21,9 @@ pub enum Feature {
     /// Admin features.
     #[serde(rename = "admin")]
     Admin,
+    /// Clip feature.
+    #[serde(rename = "clip")]
+    Clip,
 }
 
 /// By-channel features that are enabled.

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support deleting a song at the given position ([#7]).
 - Moderator action cooldowns ([#6]).
 - Moderators are automatically picked up through `/mods` command on IRC ([#5]).
+- Support for `!clip` command ([#13])
 
 ### Changed
 - Changed configuration format to be TOML and flatten it (see [example configuration]).
@@ -33,5 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#9]: https://github.com/udoprog/setmod/issues/9
 [#10]: https://github.com/udoprog/setmod/issues/10
 [#11]: https://github.com/udoprog/setmod/issues/11
+[#13]: https://github.com/udoprog/setmod/issues/13
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.0.1...HEAD

@@ -1,4 +1,4 @@
-use std::{mem, time::Duration};
+use std::{mem, time};
 use url::percent_encoding::PercentDecode;
 
 /// Helper type for futures.
@@ -315,13 +315,13 @@ impl<'de> serde::Deserialize<'de> for Offset {
 
 impl Offset {
     /// Treat offset as duration.
-    pub fn as_duration(&self) -> Duration {
-        Duration::from_millis(self.0 as u64)
+    pub fn as_duration(&self) -> time::Duration {
+        time::Duration::from_millis(self.0 as u64)
     }
 }
 
 /// Parse a human-readable duration, like `5m 1s`.
-pub fn parse_duration(s: &str) -> Result<Duration, failure::Error> {
+pub fn parse_duration(s: &str) -> Result<time::Duration, failure::Error> {
     let mut ms = 0u64;
 
     for p in s.split(' ') {
@@ -352,23 +352,53 @@ pub fn parse_duration(s: &str) -> Result<Duration, failure::Error> {
         }
     }
 
-    Ok(Duration::from_millis(ms))
+    Ok(time::Duration::from_millis(ms))
 }
 
-/// Deserialize an optional duration.
-pub fn deserialize_optional_duration<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::Deserialize as _;
-    let s = <Option<String>>::deserialize(deserializer)?;
+/// A cooldown implementation that prevents an action from being executed too frequently.
+#[derive(Debug, Clone)]
+pub struct Cooldown {
+    last_action_at: Option<time::Instant>,
+    cooldown: time::Duration,
+}
 
-    match s {
-        Some(s) => Ok(Some(parse_duration(&s).map_err(serde::de::Error::custom)?)),
-        None => Ok(None),
+impl Cooldown {
+    /// Create a cooldown from the given duration.
+    pub fn from_duration(duration: time::Duration) -> Self {
+        Self {
+            last_action_at: None,
+            cooldown: duration,
+        }
+    }
+
+    /// Test if we are allowed to perform the action based on the cooldown in effect.
+    pub fn is_open(&mut self) -> bool {
+        let now = time::Instant::now();
+
+        if let Some(last_action_at) = self.last_action_at.as_ref() {
+            if now - *last_action_at < self.cooldown {
+                return false;
+            }
+        }
+
+        self.last_action_at = Some(now);
+        return true;
     }
 }
 
+impl<'de> serde::Deserialize<'de> for Cooldown {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let duration = String::deserialize(deserializer)?;
+        let duration = parse_duration(&duration).map_err(serde::de::Error::custom)?;
+
+        Ok(Cooldown::from_duration(duration))
+    }
+}
+
+#[serde(default, deserialize_with = "utils::deserialize_optional_duration")]
 #[cfg(test)]
 mod tests {
     use super::{human_artists, parse_duration, TrimmedWords, Urls, Words};

@@ -10,7 +10,7 @@ Building requires setting the necessary environment variables to point out libra
 You can set them in PowerShell by running:
 
 ```
-. ./Env.ps1
+. ./tools/env.ps1
 ```
 
 After this, build using cargo:
@@ -38,7 +38,9 @@ database_url = "database.sql"
 # Whitelisted hosts (if the `url-whitelist` feature is enabled).
 whitelisted_hosts = [
   "youtube.com",
+  "www.youtube.com",
   "youtu.be",
+  "clips.twitch.tv",
 ]
 
 # Features enabled for the channel.
@@ -51,6 +53,7 @@ features = [
   "afterstream",
   "bad-words",
   "url-whitelist",
+  "clip",
 ]
 
 # API to use for remotely showing playlist information.
@@ -62,6 +65,10 @@ bot = "setmod"
 moderator_cooldown = "5s"
 # whether to notify when viewers are rewarded with loyalty currency.
 notify_rewards = false
+
+# cooldown required between each `!clip` invocation.
+# Default: 15s
+clip_cooldown = "15s"
 
 # Loyalty currency in use.
 #[currency]
@@ -271,6 +278,12 @@ Enabled commands:
 * `!song close [reason]` - Close the song queue with an optional `[reason]` (**moderator**).
 * `!song open` - Open the song queue (**moderator**).
 * `!song promote <number>` - Promote the song at the given position `<number>` in the queue (**moderator**).
+
+#### `clip`
+
+The `clip` feature enables the `!clip` command.
+
+This command has a cooldown determined by the `[irc] clip_cooldown` configuration key (see above).
 
 ## Aliases
 
