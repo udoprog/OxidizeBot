@@ -1,8 +1,8 @@
-use crate::{commands, db, utils};
+use crate::{db, utils};
 
 /// Handler for the !command command.
 pub struct Command {
-    pub commands: commands::Commands<db::Database>,
+    pub commands: db::Commands<db::Database>,
 }
 
 impl super::CommandHandler for Command {

@@ -46,7 +46,7 @@ impl Inner {
 /// The backend of a words store.
 pub trait Backend: Clone + Send + Sync {
     /// List all words in backend.
-    fn list(&self) -> Result<Vec<db::BadWord>, failure::Error>;
+    fn list(&self) -> Result<Vec<db::models::BadWord>, failure::Error>;
 
     /// Insert or update an existing word.
     fn edit(&self, word: &str, why: Option<&str>) -> Result<(), failure::Error>;

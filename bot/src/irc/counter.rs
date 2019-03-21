@@ -1,8 +1,8 @@
-use crate::{counters, db, utils};
+use crate::{db, utils};
 
 /// Handler for the !badword command.
 pub struct Counter {
-    pub counters: counters::Counters<db::Database>,
+    pub counters: db::Counters<db::Database>,
 }
 
 impl super::CommandHandler for Counter {

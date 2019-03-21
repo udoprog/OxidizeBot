@@ -778,10 +778,10 @@ pub enum AddTrackError {
 /// The backend of a words store.
 pub trait Backend: Clone + Send + Sync {
     /// List all counters in backend.
-    fn list(&self) -> Result<Vec<db::Song>, failure::Error>;
+    fn list(&self) -> Result<Vec<db::models::Song>, failure::Error>;
 
     /// Insert the given song into the backend.
-    fn push_back(&self, song: &db::AddSong) -> Result<(), failure::Error>;
+    fn push_back(&self, song: &db::models::AddSong) -> Result<(), failure::Error>;
 
     /// Remove the song, but only log on issues.
     fn remove_song_log(&self, track_id: &TrackId) {
@@ -875,7 +875,7 @@ impl Queue {
         let queue = self.queue.clone();
 
         PushBackFuture(self.thread_pool.spawn_handle(future::lazy(move || {
-            db.push_back(&db::AddSong {
+            db.push_back(&db::models::AddSong {
                 track_id: item.track_id.clone(),
                 added_at: Utc::now().naive_utc(),
                 user: item.user.clone(),

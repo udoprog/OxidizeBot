@@ -1,8 +1,7 @@
 use failure::{format_err, ResultExt};
 use futures::{future, Future};
 use setmod_bot::{
-    commands, config::Config, counters, db, features::Feature, irc, player, secrets, setbac,
-    spotify, twitch, web, words,
+    config::Config, db, features::Feature, irc, player, secrets, setbac, spotify, twitch, web,
 };
 use std::{fs, path::Path, sync::Arc};
 use tokio_core::reactor::Core;
@@ -93,13 +92,13 @@ fn main() -> Result<(), failure::Error> {
 
     let db = db::Database::open(database_url, Arc::clone(&thread_pool))?;
 
-    let mut commands = commands::Commands::new(db.clone());
+    let mut commands = db::Commands::new(db.clone());
     commands.load_from_backend()?;
 
-    let mut counters = counters::Counters::new(db.clone());
+    let mut counters = db::Counters::new(db.clone());
     counters.load_from_backend()?;
 
-    let mut bad_words = words::Words::new(db.clone());
+    let mut bad_words = db::Words::new(db.clone());
     bad_words.load_from_backend()?;
 
     if let Some(path) = config.bad_words.as_ref() {

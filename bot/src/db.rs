@@ -1,8 +1,16 @@
-mod models;
+mod commands;
+mod counters;
+pub mod models;
 mod schema;
+mod words;
 
-pub use self::models::*;
-use crate::{commands, counters, player, words};
+use crate::player;
+
+pub use self::{
+    commands::{Command, Commands},
+    counters::{Counter, Counters},
+    words::{Word, Words},
+};
 
 use chrono::Utc;
 use diesel::prelude::*;
@@ -41,7 +49,7 @@ impl Database {
 
         let c = self.pool.get()?;
 
-        let after_stream = AfterStream {
+        let after_stream = models::AfterStream {
             user: String::from(user),
             text: String::from(text),
         };
@@ -61,7 +69,7 @@ impl Database {
 
         let b = balances
             .filter(user.eq(name))
-            .first::<Balance>(&c)
+            .first::<models::Balance>(&c)
             .optional()?;
 
         Ok(b.map(|b| b.amount))
@@ -86,11 +94,11 @@ impl Database {
                 let filter = dsl::balances
                     .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&user)));
 
-                let b = filter.clone().first::<Balance>(&c).optional()?;
+                let b = filter.clone().first::<models::Balance>(&c).optional()?;
 
                 match b {
                     None => {
-                        let balance = Balance {
+                        let balance = models::Balance {
                             channel: channel.to_string(),
                             user: user.clone(),
                             amount: amount_to_add,
@@ -123,11 +131,11 @@ impl commands::Backend for Database {
 
         let c = self.pool.get()?;
         let filter = dsl::commands.filter(dsl::channel.eq(channel).and(dsl::name.eq(&name)));
-        let b = filter.clone().first::<Command>(&c).optional()?;
+        let b = filter.clone().first::<models::Command>(&c).optional()?;
 
         match b {
             None => {
-                let command = Command {
+                let command = models::Command {
                     channel: channel.to_string(),
                     name,
                     text: text.to_string(),
@@ -158,19 +166,19 @@ impl commands::Backend for Database {
     }
 
     /// List all available commands.
-    fn list(&self) -> Result<Vec<Command>, failure::Error> {
+    fn list(&self) -> Result<Vec<models::Command>, failure::Error> {
         use self::schema::commands::dsl;
         let c = self.pool.get()?;
-        Ok(dsl::commands.load::<Command>(&c)?)
+        Ok(dsl::commands.load::<models::Command>(&c)?)
     }
 }
 
 impl words::Backend for Database {
     /// List all bad words.
-    fn list(&self) -> Result<Vec<BadWord>, failure::Error> {
+    fn list(&self) -> Result<Vec<models::BadWord>, failure::Error> {
         use self::schema::bad_words::dsl;
         let c = self.pool.get()?;
-        Ok(dsl::bad_words.load::<BadWord>(&c)?)
+        Ok(dsl::bad_words.load::<models::BadWord>(&c)?)
     }
 
     /// Insert a bad word into the database.
@@ -180,11 +188,11 @@ impl words::Backend for Database {
         let c = self.pool.get()?;
 
         let filter = dsl::bad_words.filter(dsl::word.eq(word));
-        let b = filter.clone().first::<BadWord>(&c).optional()?;
+        let b = filter.clone().first::<models::BadWord>(&c).optional()?;
 
         match b {
             None => {
-                let bad_word = BadWord {
+                let bad_word = models::BadWord {
                     word: word.to_string(),
                     why: why.map(|s| s.to_string()),
                 };
@@ -214,10 +222,10 @@ impl words::Backend for Database {
 }
 
 impl counters::Backend for Database {
-    fn list(&self) -> Result<Vec<Counter>, failure::Error> {
+    fn list(&self) -> Result<Vec<models::Counter>, failure::Error> {
         use self::schema::counters::dsl;
         let c = self.pool.get()?;
-        Ok(dsl::counters.load::<Counter>(&c)?)
+        Ok(dsl::counters.load::<models::Counter>(&c)?)
     }
 
     fn edit(&self, channel: &str, name: &str, text: &str) -> Result<(), failure::Error> {
@@ -225,11 +233,11 @@ impl counters::Backend for Database {
 
         let c = self.pool.get()?;
         let filter = dsl::counters.filter(dsl::name.eq(&name));
-        let b = filter.clone().first::<Counter>(&c).optional()?;
+        let b = filter.clone().first::<models::Counter>(&c).optional()?;
 
         match b {
             None => {
-                let command = Counter {
+                let command = models::Counter {
                     channel: channel.to_string(),
                     name: name.to_string(),
                     count: 0,
@@ -271,17 +279,17 @@ impl counters::Backend for Database {
 }
 
 impl player::Backend for Database {
-    fn list(&self) -> Result<Vec<Song>, failure::Error> {
+    fn list(&self) -> Result<Vec<models::Song>, failure::Error> {
         use self::schema::songs::dsl;
         let c = self.pool.get()?;
         let songs = dsl::songs
             .filter(dsl::deleted.eq(false))
             .order((dsl::promoted_at.desc(), dsl::added_at.asc()))
-            .load::<Song>(&c)?;
+            .load::<models::Song>(&c)?;
         Ok(songs)
     }
 
-    fn push_back(&self, song: &AddSong) -> Result<(), failure::Error> {
+    fn push_back(&self, song: &models::AddSong) -> Result<(), failure::Error> {
         use self::schema::songs::dsl;
         let c = self.pool.get()?;
         diesel::insert_into(dsl::songs).values(song).execute(&c)?;

@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 /// The backend of a words store.
 pub trait Backend: Clone + Send + Sync {
     /// List all commands in backend.
-    fn list(&self) -> Result<Vec<db::Command>, failure::Error>;
+    fn list(&self) -> Result<Vec<db::models::Command>, failure::Error>;
 
     /// Insert or update an existing command.
     fn edit(&self, channel: &str, word: &str, text: &str) -> Result<(), failure::Error>;

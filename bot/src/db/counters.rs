@@ -9,7 +9,7 @@ use std::sync::{
 /// The backend of a words store.
 pub trait Backend: Clone + Send + Sync {
     /// List all counters in backend.
-    fn list(&self) -> Result<Vec<db::Counter>, failure::Error>;
+    fn list(&self) -> Result<Vec<db::models::Counter>, failure::Error>;
 
     /// Insert or update an existing counter.
     fn edit(&self, channel: &str, name: &str, text: &str) -> Result<(), failure::Error>;

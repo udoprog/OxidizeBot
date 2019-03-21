@@ -4,9 +4,7 @@ extern crate diesel;
 extern crate diesel_migrations;
 
 pub mod aliases;
-pub mod commands;
 pub mod config;
-pub mod counters;
 pub mod currency;
 mod current_song;
 pub mod db;
@@ -23,4 +21,3 @@ mod track_id;
 pub mod twitch;
 mod utils;
 pub mod web;
-pub mod words;

@@ -1,9 +1,9 @@
-use crate::{db, utils, words};
+use crate::{db, utils};
 use failure::format_err;
 
 /// Handler for the !badword command.
 pub struct BadWord {
-    pub bad_words: words::Words<db::Database>,
+    pub bad_words: db::Words<db::Database>,
 }
 
 impl super::CommandHandler for BadWord {
@@ -22,7 +22,7 @@ impl super::CommandHandler for BadWord {
                     "" => None,
                     other => Some(other),
                 };
-;
+
                 self.bad_words.edit(word, why)?;
                 user.respond("Bad word edited");
             }

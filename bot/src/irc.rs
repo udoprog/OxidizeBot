@@ -1,11 +1,10 @@
 use crate::{
-    aliases, commands, config, counters,
+    aliases, config,
     currency::Currency,
     db,
     features::{Feature, Features},
     oauth2, player, twitch, utils,
     utils::BoxFuture,
-    words,
 };
 use failure::format_err;
 use futures::{
@@ -154,9 +153,9 @@ pub struct Irc<'a, 'b> {
     pub config: &'a config::Config,
     pub irc_config: &'a Config,
     pub token: Arc<RwLock<oauth2::Token>>,
-    pub commands: commands::Commands<db::Database>,
-    pub counters: counters::Counters<db::Database>,
-    pub bad_words: words::Words<db::Database>,
+    pub commands: db::Commands<db::Database>,
+    pub counters: db::Counters<db::Database>,
+    pub bad_words: db::Words<db::Database>,
     pub notifier: &'a Notifier,
     pub player: Option<&'b player::Player>,
 }
@@ -584,11 +583,11 @@ struct Handler<'a> {
     /// Currency in use.
     currency: Option<&'a Currency>,
     /// All registered commands.
-    commands: commands::Commands<db::Database>,
+    commands: db::Commands<db::Database>,
     /// All registered counters.
-    counters: counters::Counters<db::Database>,
+    counters: db::Counters<db::Database>,
     /// Bad words.
-    bad_words: words::Words<db::Database>,
+    bad_words: db::Words<db::Database>,
     /// For sending notifications.
     notifier: &'a Notifier,
     /// Aliases.
@@ -778,7 +777,7 @@ impl<'a> Handler<'a> {
     }
 
     /// Test the message for bad words.
-    fn test_bad_words(&self, message: &str) -> Option<Arc<words::Word>> {
+    fn test_bad_words(&self, message: &str) -> Option<Arc<db::Word>> {
         let tester = self.bad_words.tester();
 
         for word in utils::TrimmedWords::new(message) {

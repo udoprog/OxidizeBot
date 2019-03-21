@@ -3,7 +3,6 @@ use crate::player::TrackId;
 use chrono::NaiveDateTime;
 
 #[derive(diesel::Queryable, diesel::Insertable)]
-#[table_name = "balances"]
 pub struct Balance {
     pub channel: String,
     pub user: String,
@@ -11,7 +10,6 @@ pub struct Balance {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
-#[table_name = "commands"]
 pub struct Command {
     pub channel: String,
     pub name: String,
@@ -19,21 +17,18 @@ pub struct Command {
 }
 
 #[derive(diesel::Insertable)]
-#[table_name = "after_streams"]
 pub struct AfterStream {
     pub user: String,
     pub text: String,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
-#[table_name = "bad_words"]
 pub struct BadWord {
     pub word: String,
     pub why: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
-#[table_name = "counters"]
 pub struct Counter {
     pub channel: String,
     /// The name of the counter.
