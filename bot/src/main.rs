@@ -92,6 +92,8 @@ fn main() -> Result<(), failure::Error> {
 
     let db = db::Database::open(database_url, Arc::clone(&thread_pool))?;
 
+    let domain_whitelist = db::PersistedSet::<_, String>::load(db.clone(), "whitelisted-domain")?;
+
     let mut commands = db::Commands::new(db.clone());
     commands.load_from_backend()?;
 

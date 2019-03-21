@@ -50,3 +50,11 @@ table! {
         user -> Nullable<Text>,
     }
 }
+
+table! {
+    set_values (channel, kind, value) {
+        channel -> Text,
+        kind -> Text,
+        value -> Text,
+    }
+}

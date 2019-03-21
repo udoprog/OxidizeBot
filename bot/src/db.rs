@@ -1,6 +1,7 @@
 mod commands;
 mod counters;
 pub mod models;
+mod persisted_set;
 mod schema;
 mod words;
 
@@ -9,6 +10,7 @@ use crate::player;
 pub use self::{
     commands::{Command, Commands},
     counters::{Counter, Counters},
+    persisted_set::PersistedSet,
     words::{Word, Words},
 };
 
@@ -347,6 +349,47 @@ impl player::Backend for Database {
             ))
             .execute(&c)?;
 
+        Ok(count == 1)
+    }
+}
+
+impl persisted_set::Backend for Database {
+    fn list(&self, kind: &str) -> Result<Vec<models::SetValue>, failure::Error> {
+        use self::schema::set_values::dsl;
+        let c = self.pool.get()?;
+        Ok(dsl::set_values
+            .filter(dsl::kind.eq(kind))
+            .load::<models::SetValue>(&c)?)
+    }
+
+    fn insert(&self, channel: &str, kind: &str, value: String) -> Result<(), failure::Error> {
+        use self::schema::set_values::dsl;
+        let c = self.pool.get()?;
+
+        let value = models::SetValue {
+            channel: channel.to_string(),
+            kind: kind.to_string(),
+            value,
+        };
+
+        diesel::insert_into(dsl::set_values)
+            .values(value)
+            .execute(&c)?;
+        Ok(())
+    }
+
+    fn remove(&self, channel: &str, kind: &str, value: String) -> Result<bool, failure::Error> {
+        use self::schema::set_values::dsl;
+        let c = self.pool.get()?;
+
+        let filter = dsl::set_values.filter(
+            dsl::channel
+                .eq(channel)
+                .and(dsl::kind.eq(kind))
+                .and(dsl::value.eq(value)),
+        );
+
+        let count = diesel::delete(filter).execute(&c)?;
         Ok(count == 1)
     }
 }

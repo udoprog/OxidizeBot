@@ -1,4 +1,4 @@
-use super::schema::{after_streams, bad_words, balances, commands, counters, songs};
+use super::schema::{after_streams, bad_words, balances, commands, counters, set_values, songs};
 use crate::player::TrackId;
 use chrono::NaiveDateTime;
 
@@ -66,4 +66,12 @@ pub struct AddSong {
     pub added_at: NaiveDateTime,
     /// The user that requested the song.
     pub user: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, diesel::Queryable, diesel::Insertable)]
+pub struct SetValue {
+    pub channel: String,
+    /// The kind of the value.
+    pub kind: String,
+    pub value: String,
 }
