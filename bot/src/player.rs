@@ -468,14 +468,14 @@ impl PlayerClient {
     }
 
     /// Get the next N songs in queue.
-    pub fn list(&self, n: usize) -> Vec<Arc<Item>> {
+    pub fn list(&self) -> Vec<Arc<Item>> {
         let current = self.current.read().expect("poisoned");
         let queue = self.queue.queue.read().expect("poisoned");
 
         current
             .iter()
             .cloned()
-            .chain(queue.iter().take(n).cloned())
+            .chain(queue.iter().cloned())
             .collect()
     }
 

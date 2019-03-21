@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moderators are automatically picked up through `/mods` command on IRC ([#5]).
 - Support for `!clip` command ([#13])
 - Support for `!8ball` command ([#14])
+- `!afterstream` command now has a cooldown configured through `[irc] afterstream_cooldown`.
 
 ### Changed
 - Changed configuration format to be TOML and flatten it (see [example configuration]).
@@ -23,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `!song purge` not sending update to `setbac.tv` ([#9]).
 - Streamer is immune to cooldown and is always moderator ([#10]).
 - Changed configuration format to flatten it more ([#11]).
+- Reduced the number of scopes requested for tokens to a minimum.
 
 [example configuration]: https://github.com/udoprog/setmod/blob/master/config.toml
 [#2]: https://github.com/udoprog/setmod/issues/2

@@ -34,7 +34,7 @@ pub fn run_update(
 
             update.current = client.current().map(Into::into);
 
-            for i in client.list(30) {
+            for i in client.list() {
                 update.items.push(i.into());
             }
 

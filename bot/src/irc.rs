@@ -7,13 +7,12 @@ use crate::{
     utils::BoxFuture,
     words,
 };
-use chrono::Utc;
 use failure::format_err;
 use futures::{
     future::{self, Future},
     stream::Stream,
 };
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 use irc::{
     client::{self, ext::ClientExt, Client, IrcClient, PackedIrcClient},
     proto::{
@@ -23,7 +22,7 @@ use irc::{
 };
 use setmod_notifier::{Notification, Notifier};
 use std::{
-    cell, fmt,
+    fmt,
     sync::{Arc, Mutex, RwLock},
     time,
 };
@@ -31,9 +30,97 @@ use tokio::timer;
 use tokio_core::reactor::Core;
 use tokio_threadpool::ThreadPool;
 
+mod admin;
+mod after_stream;
+mod bad_word;
+mod clip;
+mod command;
+mod counter;
+mod eight_ball;
+mod misc;
+mod song;
+
 const SERVER: &'static str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &'static str = "twitch.tv/tags";
 const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
+
+/// The handler trait for a given command.
+trait CommandHandler {
+    /// Handle the command.
+    fn handle<'m>(
+        &mut self,
+        ctx: CommandContext<'_>,
+        user: User<'m>,
+        it: &mut utils::Words<'m>,
+    ) -> Result<(), failure::Error>;
+}
+
+struct CommandContext<'a> {
+    api_url: Option<&'a str>,
+    /// The current streamer.
+    streamer: &'a str,
+    /// Sender associated with the command.
+    sender: &'a Sender,
+    /// Moderators.
+    moderators: &'a HashSet<String>,
+    moderator_cooldown: Option<&'a mut utils::Cooldown>,
+    thread_pool: &'a ThreadPool,
+}
+
+impl CommandContext<'_> {
+    /// Spawn the given future on the thread pool associated with the context.
+    pub fn spawn<F>(&self, future: F)
+    where
+        F: Future<Item = (), Error = ()> + Send + 'static,
+    {
+        self.thread_pool.spawn(future);
+    }
+
+    /// Test if moderator.
+    pub fn is_moderator(&self, user: &User<'_>) -> bool {
+        self.moderators.contains(user.name)
+    }
+
+    /// Check that the given user is a moderator.
+    pub fn check_moderator(&mut self, user: &User) -> Result<(), failure::Error> {
+        // Streamer immune to cooldown and is always a moderator.
+        if user.name == self.streamer {
+            return Ok(());
+        }
+
+        if !self.is_moderator(user) {
+            self.sender.privmsg(
+                &user.target,
+                format!(
+                    "Do you think this is a democracy {name}? LUL",
+                    name = user.name
+                ),
+            );
+
+            failure::bail!("moderator access required for action");
+        }
+
+        // Test if we have moderator cooldown in effect.
+        let moderator_cooldown = match self.moderator_cooldown.as_mut() {
+            Some(moderator_cooldown) => moderator_cooldown,
+            None => return Ok(()),
+        };
+
+        if moderator_cooldown.is_open() {
+            return Ok(());
+        }
+
+        self.sender.privmsg(
+            &user.target,
+            format!(
+                "{name} -> Cooldown in effect since last moderator action.",
+                name = user.name
+            ),
+        );
+
+        failure::bail!("moderator action cooldown");
+    }
+}
 
 /// Configuration for twitch integration.
 #[derive(Debug, serde::Deserialize)]
@@ -42,8 +129,11 @@ pub struct Config {
     /// Cooldown for moderator actions.
     moderator_cooldown: Option<utils::Cooldown>,
     /// Cooldown for creating clips.
-    #[serde(default = "default_clip_cooldown")]
+    #[serde(default = "default_cooldown")]
     clip_cooldown: utils::Cooldown,
+    /// Cooldown for creating afterstream reminders.
+    #[serde(default = "default_cooldown")]
+    afterstream_cooldown: utils::Cooldown,
     /// Name of the channel to join.
     pub channel: Arc<String>,
     /// Whether or not to notify on currency rewards.
@@ -51,7 +141,7 @@ pub struct Config {
     notify_rewards: bool,
 }
 
-fn default_clip_cooldown() -> utils::Cooldown {
+fn default_cooldown() -> utils::Cooldown {
     utils::Cooldown::from_duration(time::Duration::from_secs(15))
 }
 
@@ -90,6 +180,9 @@ impl<'a> Irc<'a, '_> {
             player,
             ..
         } = self;
+
+        let mut command_handlers =
+            HashMap::<String, Box<dyn CommandHandler + Send + 'static>>::new();
 
         let access_token = token
             .read()
@@ -149,45 +242,120 @@ impl<'a> Irc<'a, '_> {
             stream_info
         };
 
-        let player = match player {
-            Some(player) => {
-                futures.push(Box::new(player_feedback_loop(
-                    irc_config,
-                    player,
-                    sender.clone(),
-                )));
-                Some(player.client())
-            }
-            None => None,
-        };
+        if let Some(player) = player {
+            futures.push(Box::new(player_feedback_loop(
+                irc_config,
+                player,
+                sender.clone(),
+            )));
+
+            command_handlers.insert(
+                String::from("song"),
+                Box::new(song::Song {
+                    player: player.client(),
+                }),
+            );
+        }
+
+        if config.features.test(Feature::Admin) {
+            command_handlers.insert(
+                String::from("title"),
+                Box::new(misc::Title {
+                    stream_info: stream_info.clone(),
+                    twitch: streamer_twitch.clone(),
+                }),
+            );
+
+            command_handlers.insert(
+                String::from("game"),
+                Box::new(misc::Game {
+                    stream_info: stream_info.clone(),
+                    twitch: streamer_twitch.clone(),
+                }),
+            );
+
+            command_handlers.insert(
+                String::from("uptime"),
+                Box::new(misc::Uptime {
+                    stream_info: stream_info.clone(),
+                }),
+            );
+        }
+
+        if config.features.test(Feature::BadWords) {
+            command_handlers.insert(
+                String::from("badword"),
+                Box::new(bad_word::BadWord {
+                    bad_words: bad_words.clone(),
+                }),
+            );
+        }
+
+        if config.features.test(Feature::Counter) {
+            command_handlers.insert(
+                String::from("counter"),
+                Box::new(counter::Counter {
+                    counters: counters.clone(),
+                }),
+            );
+        }
+
+        if config.features.test(Feature::Command) {
+            command_handlers.insert(
+                String::from("command"),
+                Box::new(command::Command {
+                    commands: commands.clone(),
+                }),
+            );
+        }
+
+        if config.features.test(Feature::EightBall) {
+            command_handlers.insert(String::from("8ball"), Box::new(eight_ball::EightBall {}));
+        }
+
+        if config.features.test(Feature::Clip) {
+            command_handlers.insert(
+                String::from("clip"),
+                Box::new(clip::Clip {
+                    stream_info: stream_info.clone(),
+                    clip_cooldown: irc_config.clip_cooldown.clone(),
+                    twitch: bot_twitch.clone(),
+                }),
+            );
+        }
+
+        if config.features.test(Feature::AfterStream) {
+            command_handlers.insert(
+                String::from("afterstream"),
+                Box::new(after_stream::AfterStream {
+                    cooldown: irc_config.afterstream_cooldown.clone(),
+                    db: db.clone(),
+                }),
+            );
+        }
+
+        command_handlers.insert(String::from("admin"), Box::new(admin::Admin {}));
 
         futures.push(Box::new(send_future.map_err(failure::Error::from)));
 
-        let mut handler = MessageHandler {
+        let mut handler = Handler {
             streamer: config.streamer.clone(),
             channel: irc_config.channel.clone(),
-            streamer_twitch: streamer_twitch.clone(),
-            bot_twitch: bot_twitch.clone(),
             db,
             sender: sender.clone(),
             moderators: HashSet::default(),
             whitelisted_hosts: &config.whitelisted_hosts,
             currency: config.currency.as_ref(),
-            stream_info,
             commands,
             counters,
             bad_words,
             notifier,
-            player,
             aliases: config.aliases.clone(),
             features: &config.features,
-            api_url: config.api_url.as_ref(),
+            api_url: config.api_url.as_ref().map(|s| s.as_str()),
             thread_pool: Arc::new(ThreadPool::new()),
-            moderator_cooldown: irc_config
-                .moderator_cooldown
-                .clone()
-                .map(cell::RefCell::new),
-            clip_cooldown: irc_config.clip_cooldown.clone(),
+            moderator_cooldown: irc_config.moderator_cooldown.clone(),
+            command_handlers,
         };
 
         futures.push(Box::new(
@@ -400,15 +568,11 @@ impl Sender {
 }
 
 /// Handler for incoming messages.
-struct MessageHandler<'a> {
+struct Handler<'a> {
     /// Current Streamer.
     streamer: String,
     /// Currench channel.
     channel: Arc<String>,
-    /// Streamer API Access.
-    streamer_twitch: twitch::Twitch,
-    /// Bot API Access.
-    bot_twitch: twitch::Twitch,
     /// Database.
     db: db::Database,
     /// Queue for sending messages.
@@ -419,8 +583,6 @@ struct MessageHandler<'a> {
     whitelisted_hosts: &'a HashSet<String>,
     /// Currency in use.
     currency: Option<&'a Currency>,
-    /// Per-channel stream_infos.
-    stream_info: Arc<RwLock<Option<StreamInfo>>>,
     /// All registered commands.
     commands: commands::Commands<db::Database>,
     /// All registered counters.
@@ -429,23 +591,21 @@ struct MessageHandler<'a> {
     bad_words: words::Words<db::Database>,
     /// For sending notifications.
     notifier: &'a Notifier,
-    /// Music player.
-    player: Option<player::PlayerClient>,
     /// Aliases.
     aliases: aliases::Aliases,
     /// Enabled features.
     features: &'a Features,
     /// Configured API URL.
-    api_url: Option<&'a String>,
+    api_url: Option<&'a str>,
     /// Thread pool used for driving futures.
     thread_pool: Arc<ThreadPool>,
     /// Active moderator cooldown.
-    moderator_cooldown: Option<cell::RefCell<utils::Cooldown>>,
-    /// Active clip cooldown.
-    clip_cooldown: utils::Cooldown,
+    moderator_cooldown: Option<utils::Cooldown>,
+    /// Handlers for specific commands like `!skip`.
+    command_handlers: HashMap<String, Box<dyn CommandHandler + Send + 'static>>,
 }
 
-impl<'a> MessageHandler<'a> {
+impl<'a> Handler<'a> {
     /// Run as user.
     fn as_user<'m>(&self, tags: Tags<'m>, m: &'m Message) -> Result<User<'m>, failure::Error> {
         let name = m
@@ -464,831 +624,6 @@ impl<'a> MessageHandler<'a> {
         })
     }
 
-    /// Test if moderator.
-    fn is_moderator(&self, user: &User<'_>) -> bool {
-        self.moderators.contains(user.name)
-    }
-
-    /// Check that the given user is a moderator.
-    fn check_moderator(&self, user: &User) -> Result<(), failure::Error> {
-        // Streamer immune to cooldown and is always a moderator.
-        if user.name == self.streamer {
-            return Ok(());
-        }
-
-        if !self.is_moderator(user) {
-            self.sender.privmsg(
-                &user.target,
-                format!(
-                    "Do you think this is a democracy {name}? LUL",
-                    name = user.name
-                ),
-            );
-
-            failure::bail!("moderator access required for action");
-        }
-
-        // Test if we have moderator cooldown in effect.
-        let moderator_cooldown = match self.moderator_cooldown.as_ref() {
-            Some(moderator_cooldown) => moderator_cooldown,
-            None => return Ok(()),
-        };
-
-        // NB: needed since check_moderator only has immutable access.
-        let mut moderator_cooldown = moderator_cooldown
-            .try_borrow_mut()
-            .expect("mutable access already in progress");
-
-        if moderator_cooldown.is_open() {
-            return Ok(());
-        }
-
-        self.sender.privmsg(
-            &user.target,
-            format!(
-                "{name} -> Cooldown in effect since last moderator action.",
-                name = user.name
-            ),
-        );
-
-        failure::bail!("moderator action cooldown");
-    }
-
-    /// Handle the !badword command.
-    fn handle_bad_word<'m>(
-        &mut self,
-        user: User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
-        match it.next() {
-            Some("edit") => {
-                self.check_moderator(&user)?;
-
-                let word = it.next().ok_or_else(|| format_err!("expected word"))?;
-                let why = match it.rest() {
-                    "" => None,
-                    other => Some(other),
-                };
-;
-                self.bad_words.edit(word, why)?;
-                user.respond("Bad word edited");
-            }
-            Some("delete") => {
-                self.check_moderator(&user)?;
-
-                let word = it.next().ok_or_else(|| format_err!("expected word"))?;
-
-                if self.bad_words.delete(word)? {
-                    user.respond("Bad word removed.");
-                } else {
-                    user.respond("Bad word did not exist.");
-                }
-            }
-            None => {
-                user.respond("!badword is a word filter, removing unwanted messages.");
-            }
-            Some(_) => {
-                user.respond("Expected: edit, or delete.");
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Handle admin commands.
-    fn handle_admin<'m>(
-        &mut self,
-        user: User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
-        self.check_moderator(&user)?;
-
-        match it.next() {
-            Some("refresh-mods") => {
-                self.sender.privmsg(user.target, "/mods");
-            }
-            None | Some(..) => {
-                user.respond("Expected: refresh-mods.");
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Handle !8ball command.
-    fn handle_8ball<'m>(
-        &mut self,
-        user: User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
-        use rand::Rng as _;
-
-        static MAGIC_8BALL_ANSWER: &[&'static str] = &[
-            "It is certain.",
-            "It is decidedly so.",
-            "Without a doubt.",
-            "Yes - definitely.",
-            "You may rely on it.",
-            "As I see it, yes.",
-            "Most likely.",
-            "Outlook good.",
-            "Yes.",
-            "Signs point to yes.",
-            "Reply hazy, try again.",
-            "Ask again later.",
-            "Better not tell you now.",
-            "Cannot predict now.",
-            "Concentrate and ask again.",
-            "Don't count on it.",
-            "My reply is no.",
-            "My sources say no.",
-            "Outlook not so good.",
-            "Very doubtful.",
-        ];
-
-        let rest = it.rest();
-
-        if rest.trim().is_empty() {
-            user.respond("Ask a question.");
-            return Ok(());
-        }
-
-        let mut rng = rand::thread_rng();
-        let index = rng.gen_range(0, MAGIC_8BALL_ANSWER.len() - 1);
-
-        if let Some(answer) = MAGIC_8BALL_ANSWER.get(index) {
-            user.respond(answer);
-        }
-
-        Ok(())
-    }
-
-    /// Handle !clip command.
-    fn handle_clip<'m>(
-        &mut self,
-        user: User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
-        if !self.clip_cooldown.is_open() {
-            user.respond("A clip was already created recently");
-            return Ok(());
-        }
-
-        let stream_info = self.stream_info.read().expect("poisoned");
-
-        let user_id = match stream_info.as_ref().and_then(|s| s.user.as_ref()) {
-            Some(user) => user.id.as_str(),
-            None => {
-                log::error!("No information available on the current stream");
-                user.respond("Cannot clip right now, stream is not live.");
-                return Ok(());
-            }
-        };
-
-        let title = match it.rest().trim() {
-            "" => None,
-            other => Some(other.to_string()),
-        };
-
-        let user = user.as_owned_user();
-
-        let future = self.bot_twitch.create_clip(user_id);
-
-        let future = future.then::<_, BoxFuture<(), failure::Error>>({
-            let _twitch = self.streamer_twitch.clone();
-
-            move |result| {
-                let result = match result {
-                    Ok(Some(clip)) => {
-                        user.respond(format!("Created clip at {}/{}", twitch::CLIPS_URL, clip.id));
-
-                        if let Some(_title) = title {
-                            log::warn!("can't update title right now :(")
-                        }
-
-                        Ok(())
-                    }
-                    Ok(None) => {
-                        user.respond("Failed to create clip, sorry :(");
-                        Err(format_err!("created clip, but API returned nothing"))
-                    }
-                    Err(e) => {
-                        user.respond("Failed to create clip, sorry :(");
-                        Err(format_err!("failed to create clip: {}", e))
-                    }
-                };
-
-                Box::new(future::result(result))
-            }
-        });
-
-        self.thread_pool.spawn(future.map_err(|e| {
-            utils::log_err("error when posting clip", e);
-            ()
-        }));
-
-        Ok(())
-    }
-
-    /// Handle song command.
-    fn handle_song<'m>(
-        &mut self,
-        user: User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
-        let player = match self.player.as_ref() {
-            Some(player) => player,
-            None => {
-                log::warn!("No player configured for channel :(");
-                return Ok(());
-            }
-        };
-
-        match it.next() {
-            Some("theme") => {
-                self.check_moderator(&user)?;
-
-                let name = match it.next() {
-                    Some(name) => name,
-                    None => {
-                        user.respond("Expected: !song theme <name>");
-                        failure::bail!("bad command");
-                    }
-                };
-
-                let future = player.play_theme(name).then({
-                    let user = user.as_owned_user();
-
-                    move |r| {
-                        match r {
-                            Ok(()) => {}
-                            Err(player::PlayThemeError::NoSuchTheme) => {
-                                user.respond("No such theme :(");
-                            }
-                            Err(player::PlayThemeError::Error(e)) => {
-                                user.respond("There was a problem adding your song :(");
-                                utils::log_err("failed to add song", e);
-                            }
-                        }
-
-                        Ok(())
-                    }
-                });
-
-                self.thread_pool.spawn(future);
-            }
-            Some("promote") => {
-                self.check_moderator(&user)?;
-
-                let index = match it.next() {
-                    Some(index) => parse_queue_position(&user, index)?,
-                    None => failure::bail!("bad command"),
-                };
-
-                if let Some(item) = player.promote_song(&user.name, index) {
-                    user.respond(format!("Promoted song to head of queue: {}", item.what()));
-                } else {
-                    user.respond("No such song to promote");
-                }
-            }
-            Some("close") => {
-                self.check_moderator(&user)?;
-
-                player.close(match it.rest() {
-                    "" => None,
-                    other => Some(other.to_string()),
-                });
-            }
-            Some("open") => {
-                self.check_moderator(&user)?;
-                player.open();
-            }
-            Some("list") => {
-                if let Some(api_url) = self.api_url {
-                    user.respond(format!(
-                        "You can find the queue at {}/player/{}",
-                        api_url, self.streamer
-                    ));
-                    return Ok(());
-                }
-
-                let mut limit = 3usize;
-
-                if let Some(n) = it.next() {
-                    self.check_moderator(&user)?;
-
-                    if let Ok(n) = str::parse(n) {
-                        limit = n;
-                    }
-                }
-
-                let items = player.list(limit + 1);
-
-                let has_more = match items.len() > limit {
-                    true => Some(items.len() - limit),
-                    false => None,
-                };
-
-                self.display_songs(&user, has_more, items.iter().take(limit).cloned());
-            }
-            Some("current") => match player.current() {
-                Some(item) => {
-                    if let Some(name) = item.user.as_ref() {
-                        user.respond(format!(
-                            "Current song: {}, requested by {} ({duration}).",
-                            item.what(),
-                            name,
-                            duration = item.duration(),
-                        ));
-                    } else {
-                        user.respond(format!(
-                            "Current song: {} ({duration})",
-                            item.what(),
-                            duration = item.duration()
-                        ));
-                    }
-                }
-                None => {
-                    user.respond("No song :(");
-                }
-            },
-            Some("purge") => {
-                self.check_moderator(&user)?;
-                player.purge()?;
-                user.respond("Song queue purged.");
-            }
-            Some("delete") => {
-                let removed = match it.next() {
-                    Some("last") => match it.next() {
-                        Some(last_user) => {
-                            let last_user = last_user.to_lowercase();
-                            self.check_moderator(&user)?;
-                            player.remove_last_by_user(&last_user)?
-                        }
-                        None => {
-                            self.check_moderator(&user)?;
-                            player.remove_last()?
-                        }
-                    },
-                    Some("mine") => player.remove_last_by_user(&user.name)?,
-                    Some(n) => {
-                        self.check_moderator(&user)?;
-                        let n = parse_queue_position(&user, n)?;
-                        player.remove_at(n)?
-                    }
-                    None => {
-                        user.respond(format!("Expected: last, last <user>, or mine"));
-                        failure::bail!("bad command");
-                    }
-                };
-
-                match removed {
-                    None => user.respond("No song removed, sorry :("),
-                    Some(item) => user.respond(format!("Removed: {}!", item.what())),
-                }
-            }
-            Some("volume") => {
-                match it.next() {
-                    // setting volume
-                    Some(other) => {
-                        self.check_moderator(&user)?;
-
-                        let (diff, argument) = match other.chars().next() {
-                            Some('+') => (Some(true), &other[1..]),
-                            Some('-') => (Some(false), &other[1..]),
-                            _ => (None, other),
-                        };
-
-                        let argument = match str::parse::<u32>(argument) {
-                            Ok(argument) => argument,
-                            Err(_) => {
-                                user.respond("expected whole number argument");
-                                failure::bail!("bad command");
-                            }
-                        };
-
-                        let argument = match diff {
-                            Some(true) => player.current_volume().saturating_add(argument),
-                            Some(false) => player.current_volume().saturating_sub(argument),
-                            None => argument,
-                        };
-
-                        // clamp the volume.
-                        let argument = u32::min(100, argument);
-                        user.respond(format!("Volume set to {}.", argument));
-                        player.volume(argument)?;
-                    }
-                    // reading volume
-                    None => {
-                        user.respond(format!("Current volume: {}.", player.current_volume()));
-                    }
-                }
-            }
-            Some("skip") => {
-                self.check_moderator(&user)?;
-                player.skip()?;
-            }
-            Some("request") => {
-                let q = it.rest();
-
-                if !it.next().is_some() {
-                    user.respond("expected: !song request <id>|<text>");
-                    failure::bail!("bad command");
-                }
-
-                let track_id_future: BoxFuture<Option<player::TrackId>, failure::Error> =
-                    match player::TrackId::from_url_or_uri(q) {
-                        Ok(track_id) => Box::new(future::ok(Some(track_id))),
-                        Err(e) => {
-                            log::info!("Failed to parse as URL/URI: {}: {}", q, e);
-                            Box::new(player.search_track(q))
-                        }
-                    };
-
-                let future = track_id_future
-                    .and_then({
-                        let user = user.as_owned_user();
-
-                        move |track_id| match track_id {
-                            None => {
-                                user.respond(
-                                    "Could not find a track matching your request, sorry :(",
-                                );
-                                return Err(failure::format_err!("bad track in request"));
-                            }
-                            Some(track_id) => return Ok(track_id),
-                        }
-                    })
-                    .map_err(|e| {
-                        utils::log_err("failed to add track", e);
-                        ()
-                    })
-                    .and_then({
-                        let is_moderator = self.is_moderator(&user);
-                        let user = user.as_owned_user();
-                        let player = player.clone();
-
-                        move |track_id| {
-                            player.add_track(&user.name, track_id, is_moderator).then(move |result| {
-                                match result {
-                                    Ok((pos, item)) => {
-                                        user.respond(format!(
-                                            "Added {what} at position #{pos}!",
-                                            what = item.what(),
-                                            pos = pos + 1
-                                        ));
-                                    }
-                                    Err(player::AddTrackError::PlayerClosed(reason)) => {
-                                        match reason {
-                                            Some(reason) => {
-                                                user.respond(reason.as_str());
-                                            },
-                                            None => {
-                                                user.respond("Player is closed from further requests, sorry :(");
-                                            }
-                                        }
-                                    }
-                                    Err(player::AddTrackError::QueueContainsTrack(pos)) => {
-                                        user.respond(format!(
-                                            "Player already contains that track (position #{pos}).",
-                                            pos = pos + 1,
-                                        ));
-                                    }
-                                    Err(player::AddTrackError::TooManyUserTracks(count)) => {
-                                        match count {
-                                            0 => {
-                                                user.respond("Unfortunately you are not allowed to add tracks :(");
-                                            }
-                                            1 => {
-                                                user.respond(
-                                                    "<3 your enthusiasm, but you already have a track in the queue.",
-                                                );
-                                            }
-                                            count => {
-                                                user.respond(format!(
-                                                    "<3 your enthusiasm, but you already have {count} tracks in the queue.",
-                                                    count = count,
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    Err(player::AddTrackError::QueueFull) => {
-                                        user.respond("Player is full, try again later!");
-                                    }
-                                    Err(player::AddTrackError::Error(e)) => {
-                                        user.respond("There was a problem adding your song :(");
-                                        utils::log_err("failed to add song", e);
-                                    }
-                                }
-
-                                Ok(())
-                            })
-                        }
-                    });
-
-                self.thread_pool.spawn(future);
-            }
-            Some("toggle") => {
-                self.check_moderator(&user)?;
-                player.toggle()?;
-            }
-            Some("play") => {
-                self.check_moderator(&user)?;
-                player.play()?;
-            }
-            Some("pause") => {
-                self.check_moderator(&user)?;
-                player.pause()?;
-            }
-            Some("length") => {
-                let (count, seconds) = player.length();
-
-                match count {
-                    0 => user.respond("No songs in queue :("),
-                    1 => {
-                        let length = utils::human_time(seconds as i64);
-                        user.respond(format!("One song in queue with {} of play time.", length));
-                    }
-                    count => {
-                        let length = utils::human_time(seconds as i64);
-                        user.respond(format!(
-                            "{} songs in queue with {} of play time.",
-                            count, length
-                        ));
-                    }
-                }
-            }
-            None | Some(..) => {
-                if self.is_moderator(&user) {
-                    user.respond("Expected: request, skip, play, pause, toggle, delete.");
-                } else {
-                    user.respond("Expected: !song request <request>, !song list, !song length, or !song delete mine.");
-                }
-            }
-        }
-
-        return Ok(());
-
-        /// Parse a queue position.
-        fn parse_queue_position(user: &User<'_>, n: &str) -> Result<usize, failure::Error> {
-            match str::parse::<usize>(n) {
-                Ok(0) => {
-                    user.respond("Can't remove the current song :(");
-                    failure::bail!("bad command");
-                }
-                Ok(n) => Ok(n.saturating_sub(1)),
-                Err(e) => {
-                    user.respond("Expected whole number argument");
-                    failure::bail!("bad whole number argument: {}", e);
-                }
-            }
-        }
-    }
-
-    /// Handle command administration.
-    fn handle_command<'m>(
-        &mut self,
-        user: User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
-        match it.next() {
-            Some("list") => {
-                let mut names = self
-                    .commands
-                    .list(user.target)
-                    .into_iter()
-                    .map(|c| format!("!{}", c.key.name))
-                    .collect::<Vec<_>>();
-
-                if names.is_empty() {
-                    user.respond("No custom commands.");
-                } else {
-                    names.sort();
-                    user.respond(format!("Custom commands: {}", names.join(", ")));
-                }
-            }
-            Some("edit") => {
-                self.check_moderator(&user)?;
-
-                let name = match it.next() {
-                    Some(name) => name,
-                    None => {
-                        user.respond("Expected name.");
-                        failure::bail!("bad command");
-                    }
-                };
-
-                self.commands.edit(user.target, name, it.rest())?;
-                user.respond("Edited command.");
-            }
-            Some("delete") => {
-                self.check_moderator(&user)?;
-
-                let name = match it.next() {
-                    Some(name) => name,
-                    None => {
-                        user.respond("Expected name.");
-                        failure::bail!("bad command");
-                    }
-                };
-
-                if self.commands.delete(user.target, name)? {
-                    user.respond(format!("Deleted command `{}`.", name));
-                } else {
-                    user.respond("No such command.");
-                }
-            }
-            None | Some(..) => {
-                user.respond("Expected: list, edit, or delete.");
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Handle counter administration.
-    fn handle_counter<'m>(
-        &mut self,
-        user: User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
-        match it.next() {
-            Some("list") => {
-                let mut names = self
-                    .counters
-                    .list(user.target)
-                    .into_iter()
-                    .map(|c| format!("!{}", c.key.name))
-                    .collect::<Vec<_>>();
-
-                if names.is_empty() {
-                    user.respond("No custom counters.");
-                } else {
-                    names.sort();
-                    user.respond(format!("Custom counters: {}", names.join(", ")));
-                }
-            }
-            Some("edit") => {
-                self.check_moderator(&user)?;
-
-                let name = match it.next() {
-                    Some(name) => name,
-                    None => {
-                        user.respond("Expected name.");
-                        failure::bail!("bad command");
-                    }
-                };
-
-                self.counters.edit(user.target, name, it.rest())?;
-                user.respond("Edited command.");
-            }
-            Some("delete") => {
-                self.check_moderator(&user)?;
-
-                let name = match it.next() {
-                    Some(name) => name,
-                    None => {
-                        user.respond("Expected name.");
-                        failure::bail!("bad command");
-                    }
-                };
-
-                if self.counters.delete(user.target, name)? {
-                    user.respond(format!("Deleted command `{}`.", name));
-                } else {
-                    user.respond("No such command.");
-                }
-            }
-            None | Some(..) => {
-                user.respond("Expected: list, edit, or delete.");
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Handle the uptime command.
-    fn handle_uptime(&mut self, user: User<'_>) {
-        let started_at = self
-            .stream_info
-            .read()
-            .expect("poisoned")
-            .as_ref()
-            .and_then(|s| s.stream.as_ref().map(|s| s.started_at.clone()));
-
-        let now = Utc::now();
-
-        match started_at {
-            // NB: very important to check that _now_ is after started at.
-            Some(ref started_at) if now > *started_at => {
-                let uptime = utils::human_time((now - *started_at).num_seconds());
-
-                user.respond(format!(
-                    "Stream has been live for {uptime}.",
-                    uptime = uptime
-                ));
-            }
-            Some(_) => {
-                user.respond("Stream is live, but start time is weird!");
-            }
-            None => {
-                user.respond("Stream is not live right now, try again later!");
-            }
-        };
-    }
-
-    /// Handle the title command.
-    fn handle_title(&mut self, user: &User) {
-        let title = self
-            .stream_info
-            .read()
-            .expect("poisoned")
-            .as_ref()
-            .map(|s| s.title.clone());
-
-        match title {
-            Some(title) => {
-                user.respond(title);
-            }
-            None => {
-                user.respond("Stream is not live right now, try again later!");
-            }
-        };
-    }
-
-    /// Handle the title update.
-    fn handle_update_title(&mut self, user: User<'_>, title: &str) -> Result<(), failure::Error> {
-        let channel_id = user.target.trim_start_matches('#');
-
-        let twitch = self.streamer_twitch.clone();
-        let user = user.as_owned_user();
-        let title = title.to_string();
-
-        let mut request = twitch::UpdateChannelRequest::default();
-        request.channel.status = Some(title);
-
-        self.thread_pool.spawn(
-            twitch
-                .update_channel(channel_id, &request)
-                .and_then(move |_| {
-                    user.respond("Title updated!");
-                    Ok(())
-                })
-                .or_else(|e| {
-                    utils::log_err("failed to update title", e);
-                    Ok(())
-                }),
-        );
-
-        Ok(())
-    }
-
-    /// Handle the game command.
-    fn handle_game(&mut self, user: User<'_>) {
-        let game = self
-            .stream_info
-            .read()
-            .expect("poisoned")
-            .as_ref()
-            .and_then(|s| s.game.clone());
-
-        match game {
-            Some(game) => {
-                user.respond(game);
-            }
-            None => {
-                user.respond("Unfortunately I don't know the game, sorry!");
-            }
-        };
-    }
-
-    /// Handle the game update.
-    fn handle_update_game(&mut self, user: User<'_>, game: &str) -> Result<(), failure::Error> {
-        let channel_id = user.target.trim_start_matches('#');
-
-        let twitch = self.streamer_twitch.clone();
-        let user = user.as_owned_user();
-        let game = game.to_string();
-
-        let mut request = twitch::UpdateChannelRequest::default();
-        request.channel.game = Some(game);
-
-        self.thread_pool.spawn(
-            twitch
-                .update_channel(channel_id, &request)
-                .and_then(move |_| {
-                    user.respond("Game updated!");
-                    Ok(())
-                })
-                .or_else(|e| {
-                    utils::log_err("failed to update game", e);
-                    Ok(())
-                }),
-        );
-
-        Ok(())
-    }
-
     /// Handle a command.
     pub fn process_command<'m>(
         &mut self,
@@ -1304,55 +639,21 @@ impl<'a> MessageHandler<'a> {
                 user.respond("What do you want?");
                 self.notifier.send(Notification::Ping)?;
             }
-            "admin" => {
-                self.handle_admin(user, it)?;
-            }
-            "8ball" if self.features.test(Feature::EightBall) => {
-                self.handle_8ball(user, it)?;
-            }
-            "clip" if self.features.test(Feature::Clip) => {
-                self.handle_clip(user, it)?;
-            }
-            "song" if self.features.test(Feature::Song) => {
-                self.handle_song(user, it)?;
-            }
-            "command" if self.features.test(Feature::Command) => {
-                self.handle_command(user, it)?;
-            }
-            "counter" if self.features.test(Feature::Counter) => {
-                self.handle_counter(user, it)?;
-            }
-            "afterstream" if self.features.test(Feature::AfterStream) => {
-                self.db.insert_afterstream(&user.name, it.rest())?;
-                user.respond("Reminder added.");
-            }
-            "badword" if self.features.test(Feature::BadWords) => {
-                self.handle_bad_word(user, it)?;
-            }
-            "uptime" if self.features.test(Feature::Admin) => {
-                self.handle_uptime(user);
-            }
-            "title" if self.features.test(Feature::Admin) => {
-                let rest = it.rest();
-
-                if rest.is_empty() {
-                    self.handle_title(&user);
-                } else {
-                    self.check_moderator(&user)?;
-                    self.handle_update_title(user, rest)?;
-                }
-            }
-            "game" if self.features.test(Feature::Admin) => {
-                let rest = it.rest();
-
-                if rest.is_empty() {
-                    self.handle_game(user);
-                } else {
-                    self.check_moderator(&user)?;
-                    self.handle_update_game(user, rest)?;
-                }
-            }
             other => {
+                if let Some(handler) = self.command_handlers.get_mut(other) {
+                    let ctx = CommandContext {
+                        api_url: self.api_url,
+                        streamer: self.streamer.as_str(),
+                        sender: &self.sender,
+                        moderators: &self.moderators,
+                        moderator_cooldown: self.moderator_cooldown.as_mut(),
+                        thread_pool: &self.thread_pool,
+                    };
+
+                    handler.handle(ctx, user, it)?;
+                    return Ok(());
+                }
+
                 if let Some(currency) = self.currency {
                     if currency.name == other {
                         let balance = self.db.balance_of(user.name)?.unwrap_or(0);
@@ -1580,39 +881,6 @@ impl<'a> MessageHandler<'a> {
         }
 
         Ok(())
-    }
-
-    /// Display the collection of songs.
-    fn display_songs(
-        &mut self,
-        user: &User<'_>,
-        has_more: Option<usize>,
-        it: impl IntoIterator<Item = Arc<player::Item>>,
-    ) {
-        let mut lines = Vec::new();
-
-        for (index, item) in it.into_iter().enumerate() {
-            match item.user.as_ref() {
-                Some(user) => {
-                    lines.push(format!("#{}: {} ({user})", index, item.what(), user = user));
-                }
-                None => {
-                    lines.push(format!("#{}: {}", index, item.what()));
-                }
-            }
-        }
-
-        if lines.is_empty() {
-            user.respond("Song queue is empty.");
-            return;
-        }
-
-        if let Some(more) = has_more {
-            user.respond(format!("{} ... and {} more.", lines.join("; "), more));
-            return;
-        }
-
-        user.respond(format!("{}.", lines.join("; ")));
     }
 }
 
