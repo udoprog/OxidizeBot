@@ -547,7 +547,7 @@ impl<'a> MessageHandler<'a> {
     fn handle_8ball<'m>(
         &mut self,
         user: User<'m>,
-        _it: &mut utils::Words<'m>,
+        it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         use rand::Rng as _;
 
@@ -573,6 +573,13 @@ impl<'a> MessageHandler<'a> {
             "Outlook not so good.",
             "Very doubtful.",
         ];
+
+        let rest = it.rest();
+
+        if rest.trim().is_empty() {
+            user.respond("Ask a question.");
+            return Ok(());
+        }
 
         let mut rng = rand::thread_rng();
         let index = rng.gen_range(0, MAGIC_8BALL_ANSWER.len() - 1);
@@ -1259,7 +1266,7 @@ impl<'a> MessageHandler<'a> {
             "command" if self.features.test(Feature::Command) => {
                 self.handle_command(user, it)?;
             }
-            "counter" => {
+            "counter" if self.features.test(Feature::Counter) => {
                 self.handle_counter(user, it)?;
             }
             "afterstream" if self.features.test(Feature::AfterStream) => {
