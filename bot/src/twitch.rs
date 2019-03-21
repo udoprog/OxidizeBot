@@ -417,13 +417,14 @@ pub struct Clip {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Pagination {
-    cursor: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Page<T> {
     data: Vec<T>,
-    pagination: Option<Pagination>,
+    pagination: Pagination,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
