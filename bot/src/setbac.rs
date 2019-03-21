@@ -28,7 +28,7 @@ pub fn run_update(
         .add_rx()
         .map_err(|e| format_err!("setbac.tv update loop received error: {}", e))
         .for_each(move |_| {
-            log::info!("pushing player update");
+            log::trace!("pushing remote player update");
 
             let mut update = PlayerUpdate::default();
 

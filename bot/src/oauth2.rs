@@ -469,7 +469,7 @@ impl Flow {
     /// Write token to path.
     fn token_to_path(&self, path: &Path, data: &TokenData) -> Result<(), failure::Error> {
         let f = File::create(path)?;
-        log::info!("Writing: {}", path.display());
+        log::trace!("Writing: {}", path.display());
         serde_yaml::to_writer(f, data)?;
         Ok(())
     }
