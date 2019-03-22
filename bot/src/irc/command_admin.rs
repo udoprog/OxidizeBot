@@ -1,15 +1,15 @@
-use crate::{db, utils};
+use crate::{command, db, irc, utils};
 
 /// Handler for the !command command.
-pub struct Command {
+pub struct Handler {
     pub commands: db::Commands<db::Database>,
 }
 
-impl super::CommandHandler for Command {
+impl command::Handler for Handler {
     fn handle<'m>(
         &mut self,
-        mut ctx: super::CommandContext<'_>,
-        user: super::User<'m>,
+        mut ctx: command::Context<'_>,
+        user: irc::User<'m>,
         it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         match it.next() {

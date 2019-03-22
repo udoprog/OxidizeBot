@@ -1,4 +1,4 @@
-use crate::{db, utils};
+use crate::{command, db, irc, utils};
 use failure::format_err;
 
 /// Handler for the !badword command.
@@ -6,11 +6,11 @@ pub struct BadWord {
     pub bad_words: db::Words<db::Database>,
 }
 
-impl super::CommandHandler for BadWord {
+impl command::Handler for BadWord {
     fn handle<'m>(
         &mut self,
-        mut ctx: super::CommandContext<'_>,
-        user: super::User<'m>,
+        mut ctx: command::Context<'_>,
+        user: irc::User<'m>,
         it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         match it.next() {

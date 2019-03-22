@@ -1,4 +1,4 @@
-use crate::{player, utils, utils::BoxFuture};
+use crate::{command, irc, player, utils, utils::BoxFuture};
 use futures::future::{self, Future};
 use std::sync::Arc;
 
@@ -7,11 +7,11 @@ pub struct Song {
     pub player: player::PlayerClient,
 }
 
-impl super::CommandHandler for Song {
+impl command::Handler for Song {
     fn handle<'m>(
         &mut self,
-        mut ctx: super::CommandContext<'_>,
-        user: super::User<'m>,
+        mut ctx: command::Context<'_>,
+        user: irc::User<'m>,
         it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         match it.next() {
@@ -296,7 +296,7 @@ impl super::CommandHandler for Song {
                         }
                     });
 
-                ctx.thread_pool.spawn(future);
+                ctx.spawn(future);
             }
             Some("toggle") => {
                 ctx.check_moderator(&user)?;
@@ -342,7 +342,7 @@ impl super::CommandHandler for Song {
 }
 
 /// Parse a queue position.
-fn parse_queue_position(user: &super::User<'_>, n: &str) -> Result<usize, failure::Error> {
+fn parse_queue_position(user: &irc::User<'_>, n: &str) -> Result<usize, failure::Error> {
     match str::parse::<usize>(n) {
         Ok(0) => {
             user.respond("Can't remove the current song :(");
@@ -358,7 +358,7 @@ fn parse_queue_position(user: &super::User<'_>, n: &str) -> Result<usize, failur
 
 /// Display the collection of songs.
 fn display_songs(
-    user: &super::User<'_>,
+    user: &irc::User<'_>,
     has_more: Option<usize>,
     it: impl IntoIterator<Item = Arc<player::Item>>,
 ) {

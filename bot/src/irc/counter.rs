@@ -1,15 +1,15 @@
-use crate::{db, utils};
+use crate::{command, db, irc, utils};
 
 /// Handler for the !badword command.
 pub struct Counter {
     pub counters: db::Counters<db::Database>,
 }
 
-impl super::CommandHandler for Counter {
+impl command::Handler for Counter {
     fn handle<'m>(
         &mut self,
-        mut ctx: super::CommandContext<'_>,
-        user: super::User<'m>,
+        mut ctx: command::Context<'_>,
+        user: irc::User<'m>,
         it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         match it.next() {

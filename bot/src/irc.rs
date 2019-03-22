@@ -1,9 +1,9 @@
 use crate::{
-    aliases, config,
+    aliases, command, config,
     currency::Currency,
     db,
     features::{Feature, Features},
-    oauth2, player, twitch, utils,
+    module, oauth2, player, twitch, utils,
     utils::BoxFuture,
 };
 use failure::format_err;
@@ -33,7 +33,7 @@ mod admin;
 mod after_stream;
 mod bad_word;
 mod clip;
-mod command;
+mod command_admin;
 mod counter;
 mod eight_ball;
 mod misc;
@@ -42,84 +42,6 @@ mod song;
 const SERVER: &'static str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &'static str = "twitch.tv/tags";
 const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
-
-/// The handler trait for a given command.
-trait CommandHandler {
-    /// Handle the command.
-    fn handle<'m>(
-        &mut self,
-        ctx: CommandContext<'_>,
-        user: User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error>;
-}
-
-struct CommandContext<'a> {
-    api_url: Option<&'a str>,
-    /// The current streamer.
-    streamer: &'a str,
-    /// Sender associated with the command.
-    sender: &'a Sender,
-    /// Moderators.
-    moderators: &'a HashSet<String>,
-    moderator_cooldown: Option<&'a mut utils::Cooldown>,
-    thread_pool: &'a ThreadPool,
-}
-
-impl CommandContext<'_> {
-    /// Spawn the given future on the thread pool associated with the context.
-    pub fn spawn<F>(&self, future: F)
-    where
-        F: Future<Item = (), Error = ()> + Send + 'static,
-    {
-        self.thread_pool.spawn(future);
-    }
-
-    /// Test if moderator.
-    pub fn is_moderator(&self, user: &User<'_>) -> bool {
-        self.moderators.contains(user.name)
-    }
-
-    /// Check that the given user is a moderator.
-    pub fn check_moderator(&mut self, user: &User) -> Result<(), failure::Error> {
-        // Streamer immune to cooldown and is always a moderator.
-        if user.name == self.streamer {
-            return Ok(());
-        }
-
-        if !self.is_moderator(user) {
-            self.sender.privmsg(
-                &user.target,
-                format!(
-                    "Do you think this is a democracy {name}? LUL",
-                    name = user.name
-                ),
-            );
-
-            failure::bail!("moderator access required for action");
-        }
-
-        // Test if we have moderator cooldown in effect.
-        let moderator_cooldown = match self.moderator_cooldown.as_mut() {
-            Some(moderator_cooldown) => moderator_cooldown,
-            None => return Ok(()),
-        };
-
-        if moderator_cooldown.is_open() {
-            return Ok(());
-        }
-
-        self.sender.privmsg(
-            &user.target,
-            format!(
-                "{name} -> Cooldown in effect since last moderator action.",
-                name = user.name
-            ),
-        );
-
-        failure::bail!("moderator action cooldown");
-    }
-}
 
 /// Configuration for twitch integration.
 #[derive(Debug, serde::Deserialize)]
@@ -145,8 +67,8 @@ fn default_cooldown() -> utils::Cooldown {
 }
 
 /// Helper struct to construct IRC integration.
-pub struct Irc<'a, 'b> {
-    pub core: &'b mut Core,
+pub struct Irc<'a, 'local> {
+    pub core: &'local mut Core,
     pub db: db::Database,
     pub streamer_twitch: twitch::Twitch,
     pub bot_twitch: twitch::Twitch,
@@ -157,7 +79,8 @@ pub struct Irc<'a, 'b> {
     pub counters: db::Counters<db::Database>,
     pub bad_words: db::Words<db::Database>,
     pub notifier: &'a Notifier,
-    pub player: Option<&'b player::Player>,
+    pub player: Option<&'local player::Player>,
+    pub modules: &'local [Box<dyn module::Module + 'static>],
 }
 
 impl<'a> Irc<'a, '_> {
@@ -177,11 +100,15 @@ impl<'a> Irc<'a, '_> {
             bad_words,
             notifier,
             player,
+            modules,
             ..
         } = self;
 
-        let mut command_handlers =
-            HashMap::<String, Box<dyn CommandHandler + Send + 'static>>::new();
+        let mut command_handlers = module::Handlers::default();
+
+        for module in modules {
+            module.setup_command(&mut command_handlers)?;
+        }
 
         let access_token = token
             .read()
@@ -302,7 +229,7 @@ impl<'a> Irc<'a, '_> {
         if config.features.test(Feature::Command) {
             command_handlers.insert(
                 String::from("command"),
-                Box::new(command::Command {
+                Box::new(command_admin::Handler {
                     commands: commands.clone(),
                 }),
             );
@@ -516,7 +443,7 @@ fn stream_info_loop<'a>(
 }
 
 #[derive(Clone)]
-struct Sender {
+pub struct Sender {
     client: IrcClient,
     thread_pool: Arc<ThreadPool>,
     limiter: Arc<Mutex<ratelimit::Limiter>>,
@@ -601,7 +528,7 @@ struct Handler<'a> {
     /// Active moderator cooldown.
     moderator_cooldown: Option<utils::Cooldown>,
     /// Handlers for specific commands like `!skip`.
-    command_handlers: HashMap<String, Box<dyn CommandHandler + Send + 'static>>,
+    command_handlers: HashMap<String, Box<dyn command::Handler + Send + 'static>>,
 }
 
 impl<'a> Handler<'a> {
@@ -640,7 +567,7 @@ impl<'a> Handler<'a> {
             }
             other => {
                 if let Some(handler) = self.command_handlers.get_mut(other) {
-                    let ctx = CommandContext {
+                    let ctx = command::Context {
                         api_url: self.api_url,
                         streamer: self.streamer.as_str(),
                         sender: &self.sender,
@@ -901,10 +828,10 @@ impl OwnedUser {
 
 #[derive(Clone)]
 pub struct User<'m> {
-    tags: Tags<'m>,
+    pub tags: Tags<'m>,
     sender: Sender,
-    name: &'m str,
-    target: &'m str,
+    pub name: &'m str,
+    pub target: &'m str,
 }
 
 impl<'m> User<'m> {

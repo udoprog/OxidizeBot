@@ -1,20 +1,20 @@
-use crate::{twitch, utils, utils::BoxFuture};
+use crate::{command, irc, twitch, utils, utils::BoxFuture};
 use failure::format_err;
 use futures::{future, Future as _};
 use std::sync::{Arc, RwLock};
 
 /// Handler for the `!clip` command.
 pub struct Clip {
-    pub stream_info: Arc<RwLock<Option<super::StreamInfo>>>,
+    pub stream_info: Arc<RwLock<Option<irc::StreamInfo>>>,
     pub clip_cooldown: utils::Cooldown,
     pub twitch: twitch::Twitch,
 }
 
-impl super::CommandHandler for Clip {
+impl command::Handler for Clip {
     fn handle<'m>(
         &mut self,
-        ctx: super::CommandContext<'_>,
-        user: super::User<'m>,
+        ctx: command::Context<'_>,
+        user: irc::User<'m>,
         it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         if !self.clip_cooldown.is_open() {

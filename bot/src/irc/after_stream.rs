@@ -1,4 +1,4 @@
-use crate::{db, utils};
+use crate::{command, db, irc, utils};
 
 /// Handler for the `!afterstream` command.
 pub struct AfterStream {
@@ -6,11 +6,11 @@ pub struct AfterStream {
     pub db: db::Database,
 }
 
-impl super::CommandHandler for AfterStream {
+impl command::Handler for AfterStream {
     fn handle<'m>(
         &mut self,
-        _: super::CommandContext<'_>,
-        user: super::User<'m>,
+        _: command::Context<'_>,
+        user: irc::User<'m>,
         it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         if !self.cooldown.is_open() {

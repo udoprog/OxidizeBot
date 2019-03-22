@@ -1,20 +1,20 @@
 //! module for misc smaller commands.
 
-use crate::{twitch, utils};
+use crate::{command, irc, twitch, utils};
 use chrono::Utc;
 use futures::Future;
 use std::sync::{Arc, RwLock};
 
 /// Handler for the `!uptime` command.
 pub struct Uptime {
-    pub stream_info: Arc<RwLock<Option<super::StreamInfo>>>,
+    pub stream_info: Arc<RwLock<Option<irc::StreamInfo>>>,
 }
 
-impl super::CommandHandler for Uptime {
+impl command::Handler for Uptime {
     fn handle<'m>(
         &mut self,
-        _: super::CommandContext<'_>,
-        user: super::User<'m>,
+        _: command::Context<'_>,
+        user: irc::User<'m>,
         _: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         let started_at = self
@@ -50,13 +50,13 @@ impl super::CommandHandler for Uptime {
 
 /// Handler for the `!title` command.
 pub struct Title {
-    pub stream_info: Arc<RwLock<Option<super::StreamInfo>>>,
+    pub stream_info: Arc<RwLock<Option<irc::StreamInfo>>>,
     pub twitch: twitch::Twitch,
 }
 
 impl Title {
     /// Handle the title command.
-    fn show(&mut self, user: &super::User<'_>) {
+    fn show(&mut self, user: &irc::User<'_>) {
         let title = self
             .stream_info
             .read()
@@ -75,7 +75,7 @@ impl Title {
     }
 
     /// Handle the title update.
-    fn update(&mut self, user: super::User<'_>, title: &str) -> impl Future<Item = (), Error = ()> {
+    fn update(&mut self, user: irc::User<'_>, title: &str) -> impl Future<Item = (), Error = ()> {
         let channel_id = user.target.trim_start_matches('#');
 
         let twitch = self.twitch.clone();
@@ -98,11 +98,11 @@ impl Title {
     }
 }
 
-impl super::CommandHandler for Title {
+impl command::Handler for Title {
     fn handle<'m>(
         &mut self,
-        mut ctx: super::CommandContext<'_>,
-        user: super::User<'m>,
+        mut ctx: command::Context<'_>,
+        user: irc::User<'m>,
         it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         let rest = it.rest();
@@ -120,13 +120,13 @@ impl super::CommandHandler for Title {
 
 /// Handler for the `!title` command.
 pub struct Game {
-    pub stream_info: Arc<RwLock<Option<super::StreamInfo>>>,
+    pub stream_info: Arc<RwLock<Option<irc::StreamInfo>>>,
     pub twitch: twitch::Twitch,
 }
 
 impl Game {
     /// Handle the game command.
-    fn show(&mut self, user: super::User<'_>) {
+    fn show(&mut self, user: irc::User<'_>) {
         let game = self
             .stream_info
             .read()
@@ -145,7 +145,7 @@ impl Game {
     }
 
     /// Handle the game update.
-    fn update(&mut self, user: super::User<'_>, game: &str) -> impl Future<Item = (), Error = ()> {
+    fn update(&mut self, user: irc::User<'_>, game: &str) -> impl Future<Item = (), Error = ()> {
         let channel_id = user.target.trim_start_matches('#');
 
         let twitch = self.twitch.clone();
@@ -168,11 +168,11 @@ impl Game {
     }
 }
 
-impl super::CommandHandler for Game {
+impl command::Handler for Game {
     fn handle<'m>(
         &mut self,
-        mut ctx: super::CommandContext<'_>,
-        user: super::User<'m>,
+        mut ctx: command::Context<'_>,
+        user: irc::User<'m>,
         it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         let rest = it.rest();

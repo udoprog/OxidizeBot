@@ -1,13 +1,13 @@
-use crate::utils;
+use crate::{command, irc, utils};
 
 /// Handler for the !admin command.
 pub struct Admin {}
 
-impl super::CommandHandler for Admin {
+impl command::Handler for Admin {
     fn handle<'m>(
         &mut self,
-        mut ctx: super::CommandContext<'_>,
-        user: super::User<'m>,
+        mut ctx: command::Context<'_>,
+        user: irc::User<'m>,
         it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         ctx.check_moderator(&user)?;

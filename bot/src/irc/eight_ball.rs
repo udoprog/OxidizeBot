@@ -1,13 +1,13 @@
-use crate::utils;
+use crate::{command, irc, utils};
 
 /// Handler for the !8ball command.
 pub struct EightBall {}
 
-impl super::CommandHandler for EightBall {
+impl command::Handler for EightBall {
     fn handle<'m>(
         &mut self,
-        _: super::CommandContext<'_>,
-        user: super::User<'m>,
+        _: command::Context<'_>,
+        user: irc::User<'m>,
         it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
         use rand::Rng as _;

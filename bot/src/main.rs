@@ -81,6 +81,8 @@ fn main() -> Result<(), failure::Error> {
         None => root.join("secrets.yml"),
     };
 
+    let modules = Vec::new();
+
     let secrets = secrets::Secrets::open(&secrets_path)
         .with_context(|_| format_err!("failed to load secrets: {}", secrets_path.display()))?;
 
@@ -92,7 +94,7 @@ fn main() -> Result<(), failure::Error> {
 
     let db = db::Database::open(database_url, Arc::clone(&thread_pool))?;
 
-    let domain_whitelist = db::PersistedSet::<_, String>::load(db.clone(), "whitelisted-domain")?;
+    let _domain_whitelist = db::PersistedSet::<_, String>::load(db.clone(), "whitelisted-domain")?;
 
     let mut commands = db::Commands::new(db.clone());
     commands.load_from_backend()?;
@@ -239,6 +241,7 @@ fn main() -> Result<(), failure::Error> {
             bad_words,
             notifier: &*notifier,
             player: player.as_ref(),
+            modules: &modules,
         }
         .run()?;
 
