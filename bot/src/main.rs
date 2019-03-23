@@ -96,14 +96,9 @@ fn main() -> Result<(), failure::Error> {
 
     let _domain_whitelist = db::PersistedSet::<_, String>::load(db.clone(), "whitelisted-domain")?;
 
-    let mut commands = db::Commands::new(db.clone());
-    commands.load_from_backend()?;
-
-    let mut counters = db::Counters::new(db.clone());
-    counters.load_from_backend()?;
-
-    let mut bad_words = db::Words::new(db.clone());
-    bad_words.load_from_backend()?;
+    let commands = db::Commands::load(db.clone())?;
+    let counters = db::Counters::load(db.clone())?;
+    let bad_words = db::Words::load(db.clone())?;
 
     if let Some(path) = config.bad_words.as_ref() {
         let path = path.to_path(root);

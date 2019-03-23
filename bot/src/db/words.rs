@@ -68,34 +68,29 @@ impl<B> Words<B>
 where
     B: Backend,
 {
-    /// Construct a new words store with a backend.
-    pub fn new(backend: B) -> Words<B> {
-        Words {
-            inner: Arc::new(RwLock::new(Default::default())),
-            backend,
+    /// Load all words from the backend.
+    pub fn load(backend: B) -> Result<Words<B>, failure::Error> {
+        let mut inner = Inner::default();
+
+        for word in backend.list()? {
+            inner.insert(&word.word, word.why.as_ref().map(|s| s.as_str()))?;
         }
+
+        Ok(Words {
+            inner: Arc::new(RwLock::new(inner)),
+            backend,
+        })
     }
 
     /// Load bad words configuration from a file.
     ///
     /// This will not store them in the database, and will prevent them from being deleted.
-    pub fn load_from_path(&mut self, path: &Path) -> Result<(), failure::Error> {
+    pub fn load_from_path(&self, path: &Path) -> Result<(), failure::Error> {
         let config: Config = serde_yaml::from_reader(File::open(path)?)?;
 
         let mut inner = self.inner.write().expect("lock poisoned");
 
         for word in config.words {
-            inner.insert(&word.word, word.why.as_ref().map(|s| s.as_str()))?;
-        }
-
-        Ok(())
-    }
-
-    /// Load all words from the backend.
-    pub fn load_from_backend(&mut self) -> Result<(), failure::Error> {
-        let mut inner = self.inner.write().expect("lock poisoned");
-
-        for word in self.backend.list()? {
             inner.insert(&word.word, word.why.as_ref().map(|s| s.as_str()))?;
         }
 

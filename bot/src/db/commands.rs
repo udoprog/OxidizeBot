@@ -29,18 +29,10 @@ where
     B: Backend,
 {
     /// Construct a new commands store with a backend.
-    pub fn new(backend: B) -> Commands<B> {
-        Commands {
-            inner: Arc::new(RwLock::new(Default::default())),
-            backend,
-        }
-    }
+    pub fn load(backend: B) -> Result<Commands<B>, failure::Error> {
+        let mut inner = HashMap::new();
 
-    /// Load all commands from the backend.
-    pub fn load_from_backend(&mut self) -> Result<(), failure::Error> {
-        let mut inner = self.inner.write().expect("lock poisoned");
-
-        for command in self.backend.list()? {
+        for command in backend.list()? {
             let template = template::Template::compile(&command.text).with_context(|_| {
                 format_err!("failed to compile command `{:?}` from backend", command)
             })?;
@@ -50,7 +42,10 @@ where
             inner.insert(key.clone(), Arc::new(Command { key, template }));
         }
 
-        Ok(())
+        Ok(Commands {
+            inner: Arc::new(RwLock::new(inner)),
+            backend,
+        })
     }
 
     /// Insert a word into the bad words list.

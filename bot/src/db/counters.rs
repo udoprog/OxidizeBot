@@ -50,19 +50,11 @@ impl<B> Counters<B>
 where
     B: Backend,
 {
-    /// Construct a new counters store with a backend.
-    pub fn new(backend: B) -> Counters<B> {
-        Counters {
-            inner: Arc::new(RwLock::new(Default::default())),
-            backend,
-        }
-    }
+    /// Load counters from the backend.
+    pub fn load(backend: B) -> Result<Counters<B>, failure::Error> {
+        let mut inner = HashMap::new();
 
-    /// Load all counters from the backend.
-    pub fn load_from_backend(&mut self) -> Result<(), failure::Error> {
-        let mut inner = self.inner.write().expect("lock poisoned");
-
-        for counter in self.backend.list()? {
+        for counter in backend.list()? {
             let key = Key::new(counter.channel.as_str(), counter.name.as_str());
 
             let template =
@@ -81,7 +73,10 @@ where
             );
         }
 
-        Ok(())
+        Ok(Counters {
+            inner: Arc::new(RwLock::new(inner)),
+            backend,
+        })
     }
 
     /// Insert a word into the bad words list.
