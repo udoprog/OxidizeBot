@@ -97,19 +97,24 @@ impl command::Handler for Song {
                 display_songs(&ctx.user, has_more, items.iter().take(limit).cloned());
             }
             Some("current") => match self.player.current() {
-                Some(item) => {
-                    if let Some(name) = item.user.as_ref() {
+                Some(current) => {
+                    let elapsed = utils::compact_duration(current.elapsed());
+                    let duration = utils::compact_duration(current.duration());
+
+                    if let Some(name) = current.item.user.as_ref() {
                         ctx.respond(format!(
-                            "Current song: {}, requested by {} ({duration}).",
-                            item.what(),
+                            "Current song: {}, requested by {} - {elapsed} / {duration}.",
+                            current.item.what(),
                             name,
-                            duration = item.duration(),
+                            elapsed = elapsed,
+                            duration = duration,
                         ));
                     } else {
                         ctx.respond(format!(
-                            "Current song: {} ({duration})",
-                            item.what(),
-                            duration = item.duration()
+                            "Current song: {} - {elapsed} / {duration}",
+                            current.item.what(),
+                            elapsed = elapsed,
+                            duration = duration,
                         ));
                     }
                 }
@@ -121,6 +126,54 @@ impl command::Handler for Song {
                 ctx.check_moderator()?;
                 self.player.purge()?;
                 ctx.respond("Song queue purged.");
+            }
+            // print when your next song will play.
+            Some("when") => {
+                let (your, user) = match ctx.next() {
+                    Some(user) => {
+                        ctx.check_moderator()?;
+                        (false, user)
+                    }
+                    None => (true, ctx.user.name),
+                };
+
+                match self
+                    .player
+                    .find(|item| item.user.as_ref().map(|u| u == user).unwrap_or_default())
+                {
+                    Some((when, ref item)) if when.as_secs() == 0 => {
+                        if your {
+                            ctx.respond("Your song is currently playing cmonBruh");
+                        } else {
+                            ctx.respond(format!(
+                                "{}'s song {} is currently playing",
+                                user,
+                                item.what()
+                            ));
+                        }
+                    }
+                    Some((when, item)) => {
+                        let when = utils::compact_duration(when);
+
+                        if your {
+                            ctx.respond(format!("Your song {} will play in {}", item.what(), when));
+                        } else {
+                            ctx.respond(format!(
+                                "{}'s song {} will play in {}",
+                                user,
+                                item.what(),
+                                when
+                            ));
+                        }
+                    }
+                    None => {
+                        if your {
+                            ctx.respond("You don't have any songs in queue :(");
+                        } else {
+                            ctx.respond("{} doesn't have any songs in queue :(");
+                        }
+                    }
+                }
             }
             Some("delete") => {
                 let removed = match ctx.next() {
@@ -306,16 +359,16 @@ impl command::Handler for Song {
                 self.player.pause()?;
             }
             Some("length") => {
-                let (count, seconds) = self.player.length();
+                let (count, duration) = self.player.length();
 
                 match count {
                     0 => ctx.respond("No songs in queue :("),
                     1 => {
-                        let length = utils::human_time(seconds as i64);
+                        let length = utils::compact_duration(duration);
                         ctx.respond(format!("One song in queue with {} of play time.", length));
                     }
                     count => {
-                        let length = utils::human_time(seconds as i64);
+                        let length = utils::compact_duration(duration);
                         ctx.respond(format!(
                             "{} songs in queue with {} of play time.",
                             count, length

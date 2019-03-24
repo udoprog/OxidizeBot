@@ -1,4 +1,4 @@
-use std::{fmt, mem, time};
+use std::{borrow, fmt, mem, time};
 use url::percent_encoding::PercentDecode;
 
 /// Helper type for futures.
@@ -170,13 +170,10 @@ fn is_not_alphanum(c: char) -> bool {
 }
 
 /// Format the given number of seconds as a human time.
-pub fn human_time(seconds: i64) -> String {
+pub fn compact_duration(duration: time::Duration) -> String {
     let mut parts = Vec::new();
 
-    if seconds < 0 {
-        return String::from("negative time?");
-    }
-
+    let seconds = duration.as_secs();
     let rest = seconds as u64;
     let hours = rest / 3600;
     let rest = rest % 3600;
@@ -185,51 +182,43 @@ pub fn human_time(seconds: i64) -> String {
 
     parts.extend(match hours {
         0 => None,
-        1 => Some(format!("1 hour")),
-        n => Some(format!("{} hours", n)),
+        n => Some(format!("{:02}H", n)),
     });
 
     parts.extend(match minutes {
         0 => None,
-        1 => Some(format!("1 minute")),
-        n => Some(format!("{} minutes", n)),
+        n => Some(format!("{:02}m", n)),
     });
 
     parts.extend(match seconds {
         0 => None,
-        1 => Some(format!("1 second")),
-        n => Some(format!("{} seconds", n)),
+        n => Some(format!("{:02}s", n)),
     });
 
-    parts.join(", ")
+    if parts.is_empty() {
+        return String::from("0s");
+    }
+
+    parts.join(" ")
 }
 
-/// Format the given number of seconds as a human time.
-pub fn compact_time(seconds: u64) -> String {
-    let mut time = String::new();
+/// Format the given number as a string according to english conventions.
+#[allow(unused)]
+pub fn english_num(n: u64) -> borrow::Cow<'static, str> {
+    let n = match n {
+        1 => "one",
+        2 => "two",
+        3 => "three",
+        4 => "four",
+        5 => "five",
+        6 => "six",
+        7 => "seven",
+        8 => "eight",
+        9 => "nine",
+        n => return borrow::Cow::from(n.to_string()),
+    };
 
-    let rest = seconds as u64;
-    let hours = rest / 3600;
-    let rest = rest % 3600;
-    let minutes = rest / 60;
-    let seconds = rest % 60;
-
-    time.extend(match hours {
-        0 => None,
-        n => Some(format!("{}h", n)),
-    });
-
-    time.extend(match minutes {
-        0 => None,
-        n => Some(format!("{}m", n)),
-    });
-
-    time.extend(match seconds {
-        0 => None,
-        n => Some(format!("{}s", n)),
-    });
-
-    time
+    borrow::Cow::Borrowed(n)
 }
 
 /// Render artists in a human readable form INCLUDING an oxford comma.

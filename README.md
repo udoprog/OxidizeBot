@@ -279,6 +279,8 @@ Enabled commands:
 * `!song close [reason]` - Close the song queue with an optional `[reason]` (**moderator**).
 * `!song open` - Open the song queue (**moderator**).
 * `!song promote <number>` - Promote the song at the given position `<number>` in the queue (**moderator**).
+* `!song when` - Find out when your song will play.
+* `!song when <user>` - Find out when the song for a specific user will play (**moderator**).
 
 #### `clip`
 

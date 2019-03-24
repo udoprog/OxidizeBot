@@ -116,13 +116,6 @@ impl Item {
         }
     }
 
-    /// Display the short form duration of this track.
-    ///
-    /// e.g. 4m32s
-    pub fn duration(&self) -> String {
-        utils::compact_time(self.duration.as_secs())
-    }
-
     /// Get serializable data for this item.
     pub fn data(&self, paused: bool) -> Result<ItemData<'_>, failure::Error> {
         let artists = utils::human_artists(&self.artists);
@@ -136,7 +129,7 @@ impl Item {
             name,
             artists,
             user: self.user.as_ref().map(|s| s.as_str()),
-            duration: self.duration(),
+            duration: utils::compact_duration(self.duration.clone()),
         })
     }
 }
@@ -382,6 +375,46 @@ pub enum Event {
     Modified,
 }
 
+/// Information on current song.
+#[derive(Clone)]
+pub struct Current {
+    pub item: Arc<Item>,
+    elapsed: Duration,
+    started_at: Instant,
+}
+
+impl Current {
+    /// Create a new current song.
+    pub fn new(item: Arc<Item>, elapsed: Duration) -> Self {
+        Current {
+            item,
+            elapsed,
+            started_at: Instant::now(),
+        }
+    }
+
+    /// Duration of the current song.
+    pub fn duration(&self) -> Duration {
+        self.item.duration.clone()
+    }
+
+    /// Elapsed time on current song.
+    pub fn elapsed(&self) -> Duration {
+        let now = Instant::now();
+
+        let when = if now > self.started_at {
+            now - self.started_at
+        } else {
+            Default::default()
+        };
+
+        self.item
+            .duration
+            .checked_sub(when.checked_add(self.elapsed.clone()).unwrap_or_default())
+            .unwrap_or_default()
+    }
+}
+
 /// A handler for the player.
 #[derive(Clone)]
 pub struct Player {
@@ -393,7 +426,7 @@ pub struct Player {
     bus: Arc<RwLock<Bus<Event>>>,
     volume: Arc<RwLock<u32>>,
     /// Current song that is loaded.
-    current: Arc<RwLock<Option<Arc<Item>>>>,
+    current: Arc<RwLock<Option<Current>>>,
     /// Theme songs.
     themes: Arc<Themes>,
     /// Player is closed for more requests.
@@ -452,7 +485,7 @@ pub struct PlayerClient {
     /// Current volume.
     volume: Arc<RwLock<u32>>,
     /// Current song that is loaded.
-    current: Arc<RwLock<Option<Arc<Item>>>>,
+    current: Arc<RwLock<Option<Current>>>,
     /// Theme songs.
     themes: Arc<Themes>,
     /// Player is closed for more requests.
@@ -473,8 +506,9 @@ impl PlayerClient {
         let queue = self.queue.queue.read().expect("poisoned");
 
         current
-            .iter()
-            .cloned()
+            .as_ref()
+            .map(|c| c.item.clone())
+            .into_iter()
             .chain(queue.iter().cloned())
             .collect()
     }
@@ -720,13 +754,38 @@ impl PlayerClient {
         Ok(removed)
     }
 
+    /// Find the next item that matches the given predicate and how long until it plays.
+    pub fn find(&self, mut predicate: impl FnMut(&Item) -> bool) -> Option<(Duration, Arc<Item>)> {
+        let mut duration = Duration::default();
+
+        if let Some(c) = self.current.read().expect("poisoned").as_ref() {
+            if predicate(&c.item) {
+                return Some((Default::default(), c.item.clone()));
+            }
+
+            duration += c.duration();
+        }
+
+        let queue = self.queue.queue.read().expect("poisoned");
+
+        for item in &*queue {
+            if predicate(item) {
+                return Some((duration, item.clone()));
+            }
+
+            duration += item.duration;
+        }
+
+        None
+    }
+
     /// Get the length in number of items and total number of seconds in queue.
-    pub fn length(&self) -> (usize, u64) {
+    pub fn length(&self) -> (usize, Duration) {
         let mut count = 0;
         let mut duration = Duration::default();
 
         if let Some(item) = self.current.read().expect("poisoned").as_ref() {
-            duration += item.duration;
+            duration += item.duration();
             count += 1;
         }
 
@@ -737,11 +796,11 @@ impl PlayerClient {
         }
 
         count += queue.len();
-        (count, duration.as_secs())
+        (count, duration)
     }
 
     /// Get the current song, if it is set.
-    pub fn current(&self) -> Option<Arc<Item>> {
+    pub fn current(&self) -> Option<Current> {
         self.current.read().expect("poisoned").clone()
     }
 
@@ -1006,7 +1065,7 @@ struct Loaded {
     item: Arc<Item>,
     future: oneshot::Receiver<()>,
     started_at: Instant,
-    offset: Duration,
+    elapsed: Duration,
 }
 
 impl Loaded {
@@ -1017,13 +1076,24 @@ impl Loaded {
             item,
             future,
             started_at: Instant::now(),
-            offset: Default::default(),
+            elapsed: Default::default(),
         }
     }
 
-    /// Song was loaded with the specified offset.
-    pub fn with_offset(self, offset: Duration) -> Self {
-        Self { offset, ..self }
+    /// Create a new loaded entry recording the time at which it was started.
+    pub fn new_with_elapsed(
+        origin: Origin,
+        item: Arc<Item>,
+        future: oneshot::Receiver<()>,
+        elapsed: Duration,
+    ) -> Self {
+        Self {
+            origin,
+            item,
+            future,
+            started_at: Instant::now(),
+            elapsed,
+        }
     }
 }
 
@@ -1049,7 +1119,7 @@ pub struct PlaybackFuture {
     /// Current volume.
     volume: Arc<RwLock<u32>>,
     /// Current song that is loaded.
-    current: Arc<RwLock<Option<Arc<Item>>>>,
+    current: Arc<RwLock<Option<Current>>>,
     /// Path to write current song.
     current_song: Option<Arc<current_song::CurrentSong>>,
     /// Current config.
@@ -1058,7 +1128,7 @@ pub struct PlaybackFuture {
 
 impl PlaybackFuture {
     /// Play what is at the front of the queue.
-    fn next_song(&mut self) -> Option<Loaded> {
+    fn next_song(&mut self) -> Option<(Loaded, Duration)> {
         use rand::Rng;
 
         if let Some((item, offset)) = self.inject.take() {
@@ -1068,25 +1138,29 @@ impl PlaybackFuture {
             }
 
             let future = self.player.load(&*item, offset.as_millis() as u32);
-            return Some(Loaded::new(Origin::Injected, item, future).with_offset(offset));
+            let loaded = Loaded::new_with_elapsed(Origin::Injected, item, future, offset.clone());
+            return Some((loaded, offset));
         }
 
         if let Some((loaded, paused_at)) = self.sidelined.pop_front() {
-            let offset = if paused_at > loaded.started_at {
+            let elapsed = if paused_at > loaded.started_at {
                 // calculate offset to start playing at
-                (paused_at - loaded.started_at) + loaded.offset
+                (paused_at - loaded.started_at) + loaded.elapsed
             } else {
                 Default::default()
             };
 
-            let future = self.player.load(&*loaded.item, offset.as_millis() as u32);
-            return Some(Loaded::new(loaded.origin, loaded.item, future).with_offset(offset));
+            let future = self.player.load(&*loaded.item, elapsed.as_millis() as u32);
+            let loaded =
+                Loaded::new_with_elapsed(loaded.origin, loaded.item, future, elapsed.clone());
+            return Some((loaded, elapsed));
         }
 
         if let Some(item) = self.queue.front() {
             self.pop_front = Some(self.queue.pop_front());
             let future = self.player.load(&*item, 0);
-            return Some(Loaded::new(Origin::Queue, item, future));
+            let loaded = Loaded::new(Origin::Queue, item, future);
+            return Some((loaded, Default::default()));
         }
 
         if !self.paused || self.loaded.is_some() {
@@ -1097,7 +1171,8 @@ impl PlaybackFuture {
             // Pick a random item to play.
             if let Some(item) = self.fallback_items.get(n) {
                 let future = self.player.load(&*item, 0);
-                return Some(Loaded::new(Origin::Fallback, item.clone(), future));
+                let loaded = Loaded::new(Origin::Fallback, item.clone(), future);
+                return Some((loaded, Default::default()));
             }
         }
 
@@ -1128,8 +1203,9 @@ impl PlaybackFuture {
 
     /// Load the next song.
     fn load_front(&mut self) {
-        if let Some(loaded) = self.next_song() {
-            *self.current.write().expect("poisoned") = Some(loaded.item.clone());
+        if let Some((loaded, duration)) = self.next_song() {
+            *self.current.write().expect("poisoned") =
+                Some(Current::new(loaded.item.clone(), duration));
 
             if !self.paused {
                 self.player.play();

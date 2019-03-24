@@ -32,7 +32,7 @@ pub fn run_update(
 
             let mut update = PlayerUpdate::default();
 
-            update.current = client.current().map(Into::into);
+            update.current = client.current().map(|c| c.item.into());
 
             for i in client.list() {
                 update.items.push(i.into());
@@ -201,7 +201,7 @@ impl From<Arc<player::Item>> for Item {
             artists: utils::human_artists(&i.artists),
             track_id: i.track_id.to_base62(),
             user: i.user.clone(),
-            duration: i.duration(),
+            duration: utils::compact_duration(i.duration.clone()),
         }
     }
 }
