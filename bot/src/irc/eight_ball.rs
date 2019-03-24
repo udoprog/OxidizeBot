@@ -1,15 +1,10 @@
-use crate::{command, irc, utils};
+use crate::command;
 
 /// Handler for the !8ball command.
 pub struct EightBall {}
 
 impl command::Handler for EightBall {
-    fn handle<'m>(
-        &mut self,
-        _: command::Context<'_>,
-        user: irc::User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
+    fn handle<'m>(&mut self, ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
         use rand::Rng as _;
 
         static MAGIC_8BALL_ANSWER: &[&'static str] = &[
@@ -35,10 +30,10 @@ impl command::Handler for EightBall {
             "Very doubtful.",
         ];
 
-        let rest = it.rest();
+        let rest = ctx.rest();
 
         if rest.trim().is_empty() {
-            user.respond("Ask a question.");
+            ctx.respond("Ask a question.");
             return Ok(());
         }
 
@@ -46,7 +41,7 @@ impl command::Handler for EightBall {
         let index = rng.gen_range(0, MAGIC_8BALL_ANSWER.len());
 
         if let Some(answer) = MAGIC_8BALL_ANSWER.get(index) {
-            user.respond(answer);
+            ctx.respond(answer);
         }
 
         Ok(())

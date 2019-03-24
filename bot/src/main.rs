@@ -81,7 +81,11 @@ fn main() -> Result<(), failure::Error> {
         None => root.join("secrets.yml"),
     };
 
-    let modules = Vec::new();
+    let mut modules = Vec::new();
+
+    for module in &config.modules {
+        modules.push(module.load(&config)?);
+    }
 
     let secrets = secrets::Secrets::open(&secrets_path)
         .with_context(|_| format_err!("failed to load secrets: {}", secrets_path.display()))?;

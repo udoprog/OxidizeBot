@@ -11,7 +11,7 @@ use futures::{
     future::{self, Future},
     stream::Stream,
 };
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashSet;
 use irc::{
     client::{self, ext::ClientExt, Client, IrcClient, PackedIrcClient},
     proto::{
@@ -107,7 +107,10 @@ impl<'a> Irc<'a, '_> {
         let mut command_handlers = module::Handlers::default();
 
         for module in modules {
-            module.setup_command(&mut command_handlers)?;
+            module.hook(module::HookContext {
+                db: &db,
+                handlers: &mut command_handlers,
+            })?;
         }
 
         let access_token = token
@@ -176,91 +179,91 @@ impl<'a> Irc<'a, '_> {
             )));
 
             command_handlers.insert(
-                String::from("song"),
-                Box::new(song::Song {
+                "song",
+                song::Song {
                     player: player.client(),
-                }),
+                },
             );
         }
 
         if config.features.test(Feature::Admin) {
             command_handlers.insert(
-                String::from("title"),
-                Box::new(misc::Title {
+                "title",
+                misc::Title {
                     stream_info: stream_info.clone(),
                     twitch: streamer_twitch.clone(),
-                }),
+                },
             );
 
             command_handlers.insert(
-                String::from("game"),
-                Box::new(misc::Game {
+                "game",
+                misc::Game {
                     stream_info: stream_info.clone(),
                     twitch: streamer_twitch.clone(),
-                }),
+                },
             );
 
             command_handlers.insert(
-                String::from("uptime"),
-                Box::new(misc::Uptime {
+                "uptime",
+                misc::Uptime {
                     stream_info: stream_info.clone(),
-                }),
+                },
             );
         }
 
         if config.features.test(Feature::BadWords) {
             command_handlers.insert(
-                String::from("badword"),
-                Box::new(bad_word::BadWord {
+                "badword",
+                bad_word::BadWord {
                     bad_words: bad_words.clone(),
-                }),
+                },
             );
         }
 
         if config.features.test(Feature::Counter) {
             command_handlers.insert(
-                String::from("counter"),
-                Box::new(counter::Counter {
+                "counter",
+                counter::Counter {
                     counters: counters.clone(),
-                }),
+                },
             );
         }
 
         if config.features.test(Feature::Command) {
             command_handlers.insert(
-                String::from("command"),
-                Box::new(command_admin::Handler {
+                "command",
+                command_admin::Handler {
                     commands: commands.clone(),
-                }),
+                },
             );
         }
 
         if config.features.test(Feature::EightBall) {
-            command_handlers.insert(String::from("8ball"), Box::new(eight_ball::EightBall {}));
+            command_handlers.insert("8ball", eight_ball::EightBall {});
         }
 
         if config.features.test(Feature::Clip) {
             command_handlers.insert(
-                String::from("clip"),
-                Box::new(clip::Clip {
+                "clip",
+                clip::Clip {
                     stream_info: stream_info.clone(),
                     clip_cooldown: irc_config.clip_cooldown.clone(),
                     twitch: bot_twitch.clone(),
-                }),
+                },
             );
         }
 
         if config.features.test(Feature::AfterStream) {
             command_handlers.insert(
-                String::from("afterstream"),
-                Box::new(after_stream::AfterStream {
+                "afterstream",
+                after_stream::AfterStream {
                     cooldown: irc_config.afterstream_cooldown.clone(),
                     db: db.clone(),
-                }),
+                },
             );
         }
 
-        command_handlers.insert(String::from("admin"), Box::new(admin::Admin {}));
+        command_handlers.insert("admin", admin::Admin {});
 
         futures.push(Box::new(send_future.map_err(failure::Error::from)));
 
@@ -528,7 +531,7 @@ struct Handler<'a> {
     /// Active moderator cooldown.
     moderator_cooldown: Option<utils::Cooldown>,
     /// Handlers for specific commands like `!skip`.
-    command_handlers: HashMap<String, Box<dyn command::Handler + Send + 'static>>,
+    command_handlers: module::Handlers,
 }
 
 impl<'a> Handler<'a> {
@@ -574,9 +577,11 @@ impl<'a> Handler<'a> {
                         moderators: &self.moderators,
                         moderator_cooldown: self.moderator_cooldown.as_mut(),
                         thread_pool: &self.thread_pool,
+                        user,
+                        it,
                     };
 
-                    handler.handle(ctx, user, it)?;
+                    handler.handle(ctx)?;
                     return Ok(());
                 }
 

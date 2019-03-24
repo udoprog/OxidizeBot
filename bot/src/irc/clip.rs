@@ -11,14 +11,9 @@ pub struct Clip {
 }
 
 impl command::Handler for Clip {
-    fn handle<'m>(
-        &mut self,
-        ctx: command::Context<'_>,
-        user: irc::User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
+    fn handle<'m>(&mut self, ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
         if !self.clip_cooldown.is_open() {
-            user.respond("A clip was already created recently");
+            ctx.respond("A clip was already created recently");
             return Ok(());
         }
 
@@ -28,17 +23,17 @@ impl command::Handler for Clip {
             Some(user) => user.id.as_str(),
             None => {
                 log::error!("No information available on the current stream");
-                user.respond("Cannot clip right now, stream is not live.");
+                ctx.respond("Cannot clip right now, stream is not live.");
                 return Ok(());
             }
         };
 
-        let title = match it.rest().trim() {
+        let title = match ctx.rest().trim() {
             "" => None,
             other => Some(other.to_string()),
         };
 
-        let user = user.as_owned_user();
+        let user = ctx.user.as_owned_user();
 
         let future = self.twitch.create_clip(user_id);
 

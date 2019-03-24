@@ -1,4 +1,4 @@
-use crate::{aliases, currency, current_song, features, irc, player, secrets, themes, web};
+use crate::{aliases, currency, current_song, features, irc, module, player, secrets, themes, web};
 use hashbrown::HashSet;
 use relative_path::RelativePathBuf;
 use std::{marker, path::Path, sync::Arc};
@@ -43,6 +43,9 @@ pub struct Config {
     /// Loyalty currency in use.
     #[serde(default)]
     pub currency: Option<currency::Currency>,
+    /// Modules to load.
+    #[serde(default)]
+    pub modules: Vec<module::Config>,
 }
 
 #[derive(Debug)]

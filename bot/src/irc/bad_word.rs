@@ -1,4 +1,4 @@
-use crate::{command, db, irc, utils};
+use crate::{command, db};
 use failure::format_err;
 
 /// Handler for the !badword command.
@@ -7,41 +7,36 @@ pub struct BadWord {
 }
 
 impl command::Handler for BadWord {
-    fn handle<'m>(
-        &mut self,
-        mut ctx: command::Context<'_>,
-        user: irc::User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
-        match it.next() {
+    fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+        match ctx.next() {
             Some("edit") => {
-                ctx.check_moderator(&user)?;
+                ctx.check_moderator()?;
 
-                let word = it.next().ok_or_else(|| format_err!("expected word"))?;
-                let why = match it.rest() {
+                let word = ctx.next().ok_or_else(|| format_err!("expected word"))?;
+                let why = match ctx.rest() {
                     "" => None,
                     other => Some(other),
                 };
 
                 self.bad_words.edit(word, why)?;
-                user.respond("Bad word edited");
+                ctx.respond("Bad word edited");
             }
             Some("delete") => {
-                ctx.check_moderator(&user)?;
+                ctx.check_moderator()?;
 
-                let word = it.next().ok_or_else(|| format_err!("expected word"))?;
+                let word = ctx.next().ok_or_else(|| format_err!("expected word"))?;
 
                 if self.bad_words.delete(word)? {
-                    user.respond("Bad word removed.");
+                    ctx.respond("Bad word removed.");
                 } else {
-                    user.respond("Bad word did not exist.");
+                    ctx.respond("Bad word did not exist.");
                 }
             }
             None => {
-                user.respond("!badword is a word filter, removing unwanted messages.");
+                ctx.respond("!badword is a word filter, removing unwanted messages.");
             }
             Some(_) => {
-                user.respond("Expected: edit, or delete.");
+                ctx.respond("Expected: edit, or delete.");
             }
         }
 

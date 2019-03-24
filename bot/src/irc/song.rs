@@ -8,26 +8,21 @@ pub struct Song {
 }
 
 impl command::Handler for Song {
-    fn handle<'m>(
-        &mut self,
-        mut ctx: command::Context<'_>,
-        user: irc::User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
-        match it.next() {
+    fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+        match ctx.next() {
             Some("theme") => {
-                ctx.check_moderator(&user)?;
+                ctx.check_moderator()?;
 
-                let name = match it.next() {
+                let name = match ctx.next() {
                     Some(name) => name,
                     None => {
-                        user.respond("Expected: !song theme <name>");
+                        ctx.respond("Expected: !song theme <name>");
                         failure::bail!("bad command");
                     }
                 };
 
                 let future = self.player.play_theme(name).then({
-                    let user = user.as_owned_user();
+                    let user = ctx.user.as_owned_user();
 
                     move |r| {
                         match r {
@@ -48,34 +43,34 @@ impl command::Handler for Song {
                 ctx.spawn(future);
             }
             Some("promote") => {
-                ctx.check_moderator(&user)?;
+                ctx.check_moderator()?;
 
-                let index = match it.next() {
-                    Some(index) => parse_queue_position(&user, index)?,
+                let index = match ctx.next() {
+                    Some(index) => parse_queue_position(&ctx.user, index)?,
                     None => failure::bail!("bad command"),
                 };
 
-                if let Some(item) = self.player.promote_song(&user.name, index) {
-                    user.respond(format!("Promoted song to head of queue: {}", item.what()));
+                if let Some(item) = self.player.promote_song(ctx.user.name, index) {
+                    ctx.respond(format!("Promoted song to head of queue: {}", item.what()));
                 } else {
-                    user.respond("No such song to promote");
+                    ctx.respond("No such song to promote");
                 }
             }
             Some("close") => {
-                ctx.check_moderator(&user)?;
+                ctx.check_moderator()?;
 
-                self.player.close(match it.rest() {
+                self.player.close(match ctx.rest() {
                     "" => None,
                     other => Some(other.to_string()),
                 });
             }
             Some("open") => {
-                ctx.check_moderator(&user)?;
+                ctx.check_moderator()?;
                 self.player.open();
             }
             Some("list") => {
                 if let Some(api_url) = ctx.api_url {
-                    user.respond(format!(
+                    ctx.respond(format!(
                         "You can find the queue at {}/player/{}",
                         api_url, ctx.streamer
                     ));
@@ -84,8 +79,8 @@ impl command::Handler for Song {
 
                 let mut limit = 3usize;
 
-                if let Some(n) = it.next() {
-                    ctx.check_moderator(&user)?;
+                if let Some(n) = ctx.next() {
+                    ctx.check_moderator()?;
 
                     if let Ok(n) = str::parse(n) {
                         limit = n;
@@ -99,19 +94,19 @@ impl command::Handler for Song {
                     false => None,
                 };
 
-                display_songs(&user, has_more, items.iter().take(limit).cloned());
+                display_songs(&ctx.user, has_more, items.iter().take(limit).cloned());
             }
             Some("current") => match self.player.current() {
                 Some(item) => {
                     if let Some(name) = item.user.as_ref() {
-                        user.respond(format!(
+                        ctx.respond(format!(
                             "Current song: {}, requested by {} ({duration}).",
                             item.what(),
                             name,
                             duration = item.duration(),
                         ));
                     } else {
-                        user.respond(format!(
+                        ctx.respond(format!(
                             "Current song: {} ({duration})",
                             item.what(),
                             duration = item.duration()
@@ -119,49 +114,49 @@ impl command::Handler for Song {
                     }
                 }
                 None => {
-                    user.respond("No song :(");
+                    ctx.respond("No song :(");
                 }
             },
             Some("purge") => {
-                ctx.check_moderator(&user)?;
+                ctx.check_moderator()?;
                 self.player.purge()?;
-                user.respond("Song queue purged.");
+                ctx.respond("Song queue purged.");
             }
             Some("delete") => {
-                let removed = match it.next() {
-                    Some("last") => match it.next() {
+                let removed = match ctx.next() {
+                    Some("last") => match ctx.next() {
                         Some(last_user) => {
                             let last_user = last_user.to_lowercase();
-                            ctx.check_moderator(&user)?;
+                            ctx.check_moderator()?;
                             self.player.remove_last_by_user(&last_user)?
                         }
                         None => {
-                            ctx.check_moderator(&user)?;
+                            ctx.check_moderator()?;
                             self.player.remove_last()?
                         }
                     },
-                    Some("mine") => self.player.remove_last_by_user(&user.name)?,
+                    Some("mine") => self.player.remove_last_by_user(&ctx.user.name)?,
                     Some(n) => {
-                        ctx.check_moderator(&user)?;
-                        let n = parse_queue_position(&user, n)?;
+                        ctx.check_moderator()?;
+                        let n = parse_queue_position(&ctx.user, n)?;
                         self.player.remove_at(n)?
                     }
                     None => {
-                        user.respond(format!("Expected: last, last <user>, or mine"));
+                        ctx.respond(format!("Expected: last, last <user>, or mine"));
                         failure::bail!("bad command");
                     }
                 };
 
                 match removed {
-                    None => user.respond("No song removed, sorry :("),
-                    Some(item) => user.respond(format!("Removed: {}!", item.what())),
+                    None => ctx.respond("No song removed, sorry :("),
+                    Some(item) => ctx.respond(format!("Removed: {}!", item.what())),
                 }
             }
             Some("volume") => {
-                match it.next() {
+                match ctx.next() {
                     // setting volume
                     Some(other) => {
-                        ctx.check_moderator(&user)?;
+                        ctx.check_moderator()?;
 
                         let (diff, argument) = match other.chars().next() {
                             Some('+') => (Some(true), &other[1..]),
@@ -172,7 +167,7 @@ impl command::Handler for Song {
                         let argument = match str::parse::<u32>(argument) {
                             Ok(argument) => argument,
                             Err(_) => {
-                                user.respond("expected whole number argument");
+                                ctx.respond("expected whole number argument");
                                 failure::bail!("bad command");
                             }
                         };
@@ -185,24 +180,24 @@ impl command::Handler for Song {
 
                         // clamp the volume.
                         let argument = u32::min(100, argument);
-                        user.respond(format!("Volume set to {}.", argument));
+                        ctx.respond(format!("Volume set to {}.", argument));
                         self.player.volume(argument)?;
                     }
                     // reading volume
                     None => {
-                        user.respond(format!("Current volume: {}.", self.player.current_volume()));
+                        ctx.respond(format!("Current volume: {}.", self.player.current_volume()));
                     }
                 }
             }
             Some("skip") => {
-                ctx.check_moderator(&user)?;
+                ctx.check_moderator()?;
                 self.player.skip()?;
             }
             Some("request") => {
-                let q = it.rest();
+                let q = ctx.rest();
 
-                if !it.next().is_some() {
-                    user.respond("expected: !song request <id>|<text>");
+                if !ctx.next().is_some() {
+                    ctx.respond("expected: !song request <id>|<text>");
                     failure::bail!("bad command");
                 }
 
@@ -216,7 +211,7 @@ impl command::Handler for Song {
                     };
 
                 let future = track_id_future.and_then({
-                    let user = user.as_owned_user();
+                    let user = ctx.user.as_owned_user();
 
                     move |track_id| match track_id {
                         None => {
@@ -234,8 +229,8 @@ impl command::Handler for Song {
 
                 let future = future
                     .and_then({
-                        let is_moderator = ctx.is_moderator(&user);
-                        let user = user.as_owned_user();
+                        let is_moderator = ctx.is_moderator();
+                        let user = ctx.user.as_owned_user();
                         let player = self.player.clone();
 
                         move |track_id| {
@@ -299,29 +294,29 @@ impl command::Handler for Song {
                 ctx.spawn(future);
             }
             Some("toggle") => {
-                ctx.check_moderator(&user)?;
+                ctx.check_moderator()?;
                 self.player.toggle()?;
             }
             Some("play") => {
-                ctx.check_moderator(&user)?;
+                ctx.check_moderator()?;
                 self.player.play()?;
             }
             Some("pause") => {
-                ctx.check_moderator(&user)?;
+                ctx.check_moderator()?;
                 self.player.pause()?;
             }
             Some("length") => {
                 let (count, seconds) = self.player.length();
 
                 match count {
-                    0 => user.respond("No songs in queue :("),
+                    0 => ctx.respond("No songs in queue :("),
                     1 => {
                         let length = utils::human_time(seconds as i64);
-                        user.respond(format!("One song in queue with {} of play time.", length));
+                        ctx.respond(format!("One song in queue with {} of play time.", length));
                     }
                     count => {
                         let length = utils::human_time(seconds as i64);
-                        user.respond(format!(
+                        ctx.respond(format!(
                             "{} songs in queue with {} of play time.",
                             count, length
                         ));
@@ -329,10 +324,10 @@ impl command::Handler for Song {
                 }
             }
             None | Some(..) => {
-                if ctx.is_moderator(&user) {
-                    user.respond("Expected: request, skip, play, pause, toggle, delete.");
+                if ctx.is_moderator() {
+                    ctx.respond("Expected: request, skip, play, pause, toggle, delete.");
                 } else {
-                    user.respond("Expected: !song request <request>, !song list, !song length, or !song delete mine.");
+                    ctx.respond("Expected: !song request <request>, !song list, !song length, or !song delete mine.");
                 }
             }
         }

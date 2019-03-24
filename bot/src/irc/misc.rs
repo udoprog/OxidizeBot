@@ -11,12 +11,7 @@ pub struct Uptime {
 }
 
 impl command::Handler for Uptime {
-    fn handle<'m>(
-        &mut self,
-        _: command::Context<'_>,
-        user: irc::User<'m>,
-        _: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
+    fn handle<'m>(&mut self, ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
         let started_at = self
             .stream_info
             .read()
@@ -31,16 +26,16 @@ impl command::Handler for Uptime {
             Some(ref started_at) if now > *started_at => {
                 let uptime = utils::human_time((now - *started_at).num_seconds());
 
-                user.respond(format!(
+                ctx.respond(format!(
                     "Stream has been live for {uptime}.",
                     uptime = uptime
                 ));
             }
             Some(_) => {
-                user.respond("Stream is live, but start time is weird!");
+                ctx.respond("Stream is live, but start time is weird!");
             }
             None => {
-                user.respond("Stream is not live right now, try again later!");
+                ctx.respond("Stream is not live right now, try again later!");
             }
         }
 
@@ -56,7 +51,7 @@ pub struct Title {
 
 impl Title {
     /// Handle the title command.
-    fn show(&mut self, user: &irc::User<'_>) {
+    fn show(&mut self, user: irc::User<'_>) {
         let title = self
             .stream_info
             .read()
@@ -75,11 +70,10 @@ impl Title {
     }
 
     /// Handle the title update.
-    fn update(&mut self, user: irc::User<'_>, title: &str) -> impl Future<Item = (), Error = ()> {
+    fn update(&mut self, user: irc::OwnedUser, title: &str) -> impl Future<Item = (), Error = ()> {
         let channel_id = user.target.trim_start_matches('#');
 
         let twitch = self.twitch.clone();
-        let user = user.as_owned_user();
         let title = title.to_string();
 
         let mut request = twitch::UpdateChannelRequest::default();
@@ -99,19 +93,15 @@ impl Title {
 }
 
 impl command::Handler for Title {
-    fn handle<'m>(
-        &mut self,
-        mut ctx: command::Context<'_>,
-        user: irc::User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
-        let rest = it.rest();
+    fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+        let rest = ctx.rest();
 
         if rest.is_empty() {
-            self.show(&user);
+            self.show(ctx.user);
         } else {
-            ctx.check_moderator(&user)?;
-            ctx.spawn(self.update(user, rest));
+            ctx.check_moderator()?;
+            let future = self.update(ctx.user.as_owned_user(), rest);
+            ctx.spawn(future);
         }
 
         Ok(())
@@ -145,11 +135,10 @@ impl Game {
     }
 
     /// Handle the game update.
-    fn update(&mut self, user: irc::User<'_>, game: &str) -> impl Future<Item = (), Error = ()> {
+    fn update(&mut self, user: irc::OwnedUser, game: &str) -> impl Future<Item = (), Error = ()> {
         let channel_id = user.target.trim_start_matches('#');
 
         let twitch = self.twitch.clone();
-        let user = user.as_owned_user();
         let game = game.to_string();
 
         let mut request = twitch::UpdateChannelRequest::default();
@@ -169,19 +158,15 @@ impl Game {
 }
 
 impl command::Handler for Game {
-    fn handle<'m>(
-        &mut self,
-        mut ctx: command::Context<'_>,
-        user: irc::User<'m>,
-        it: &mut utils::Words<'m>,
-    ) -> Result<(), failure::Error> {
-        let rest = it.rest();
+    fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+        let rest = ctx.rest();
 
         if rest.is_empty() {
-            self.show(user);
+            self.show(ctx.user);
         } else {
-            ctx.check_moderator(&user)?;
-            ctx.spawn(self.update(user, rest));
+            ctx.check_moderator()?;
+            let future = self.update(ctx.user.as_owned_user(), rest);
+            ctx.spawn(future);
         }
 
         Ok(())
