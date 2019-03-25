@@ -23,4 +23,4 @@ Copy-Item bot/lib/portaudio_x64.dll -Destination $target/
 Copy-Item tools/setmod-dist.ps1 -Destination $target/setmod.ps1
 
 Set-Location -Path target
-7z a "setmod-$version.zip" $dest/
+7z a "setmod-$version-windows-x86_64.zip" $dest/

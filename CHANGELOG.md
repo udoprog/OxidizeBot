@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.1...HEAD
+
+## [0.2.1]
+
 ### Added
 - `!song promote <number>` to promote songs to the top of the queue ([#2]).
 - Optional web page (hosted on `setbac.tv`) to display current queue ([#3]) (config: `api_url`).
@@ -45,4 +49,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#13]: https://github.com/udoprog/setmod/issues/13
 [#14]: https://github.com/udoprog/setmod/issues/14
 
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.0.1...HEAD
+[0.2.1]: https://github.com/udoprog/setmod/compare/0.0.1...0.2.1
