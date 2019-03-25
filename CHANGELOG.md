@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `{{elapsed}}` as a variable for `current_song`.
 - `[current_song] update_interval = "5s"` to specify how frequently the current song information will be updated.
   This might be necessary in case `{{elapsed}}` is used as a variable and you want it to update live.
+- `[irc] startup_message = "HeyGuys"` to send a message when the bot starts.
 
 ### Changed
 - Changed configuration format to be TOML and flatten it (see [example configuration]).

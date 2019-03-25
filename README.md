@@ -66,6 +66,7 @@ bot = "setmod"
 moderator_cooldown = "5s"
 # whether to notify when viewers are rewarded with loyalty currency.
 notify_rewards = false
+startup_message = "HeyGuys"
 
 # cooldown required between each `!clip` invocation.
 # Default: 15s
@@ -252,6 +253,7 @@ sqlite> select * from after_streams;
 All admin commands are restricted to **moderators**.
 
 * `!admin refresh-mods` - Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running.
+* `!admin shutdown` - Cause the mod to cleanly shut down, and hopefully being restarted by the management process.
 
 #### `song`
 

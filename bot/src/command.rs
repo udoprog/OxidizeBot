@@ -25,6 +25,7 @@ pub struct Context<'a, 'm> {
     pub thread_pool: &'a ThreadPool,
     pub user: irc::User<'m>,
     pub it: &'a mut utils::Words<'m>,
+    pub shutdown: &'a utils::Shutdown,
 }
 
 impl<'a, 'm> Context<'a, 'm> {

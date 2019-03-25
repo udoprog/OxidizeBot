@@ -1,7 +1,8 @@
 use failure::{format_err, ResultExt};
 use futures::{future, Future};
 use setmod_bot::{
-    config::Config, db, features::Feature, irc, player, secrets, setbac, spotify, twitch, web,
+    config::Config, db, features::Feature, irc, player, secrets, setbac, spotify, twitch, utils,
+    web,
 };
 use std::{fs, path::Path, sync::Arc};
 use tokio_core::reactor::Core;
@@ -190,6 +191,8 @@ fn main() -> Result<(), failure::Error> {
 
     futures.push(Box::new(notifier.clone().listen()?));
 
+    let (shutdown, shutdown_rx) = utils::Shutdown::new();
+
     let spotify = Arc::new(spotify::Spotify::new(spotify_token.clone())?);
     let twitch = twitch::Twitch::new(streamer_token.clone())?;
 
@@ -241,13 +244,27 @@ fn main() -> Result<(), failure::Error> {
             notifier,
             player: player.as_ref(),
             modules: &modules,
+            shutdown,
         }
         .run()?;
 
         futures.push(Box::new(future));
     }
 
-    let result = core.run(future::join_all(futures)).map(|_| ());
+    let stuff = future::join_all(futures).map_err(|e| Some(e));
+    let shutdown_rx = shutdown_rx
+        .map_err(|_| None)
+        .and_then::<_, Result<(), Option<failure::Error>>>(|_| Err(None));
+    let result = core.run(stuff.join(shutdown_rx).map(|_| ()));
     drop(handle);
-    result
+
+    match result {
+        Ok(()) => Ok(()),
+        Err(Some(e)) => Err(e),
+        // Shutting down cleanly.
+        Err(None) => {
+            log::info!("shutting down...");
+            Ok(())
+        }
+    }
 }

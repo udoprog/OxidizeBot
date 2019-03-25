@@ -21,5 +21,5 @@ mod template;
 mod themes;
 mod track_id;
 pub mod twitch;
-mod utils;
+pub mod utils;
 pub mod web;

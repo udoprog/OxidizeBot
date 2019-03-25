@@ -59,6 +59,9 @@ pub struct Config {
     /// Whether or not to notify on currency rewards.
     #[serde(default)]
     notify_rewards: bool,
+    /// Notify when bot starts.
+    #[serde(default)]
+    startup_message: Option<String>,
 }
 
 fn default_cooldown() -> utils::Cooldown {
@@ -80,6 +83,7 @@ pub struct Irc<'a> {
     pub notifier: Arc<Notifier>,
     pub player: Option<&'a player::Player>,
     pub modules: &'a [Box<dyn module::Module + 'static>],
+    pub shutdown: utils::Shutdown,
 }
 
 impl Irc<'_> {
@@ -101,6 +105,7 @@ impl Irc<'_> {
             notifier,
             player,
             modules,
+            shutdown,
             ..
         } = self;
 
@@ -137,6 +142,11 @@ impl Irc<'_> {
         let sender = Sender::new(client.clone());
         sender.cap_req(TWITCH_TAGS_CAP);
         sender.cap_req(TWITCH_COMMANDS_CAP);
+
+        if let Some(startup_message) = irc_config.startup_message.as_ref() {
+            // greeting when bot joins
+            sender.privmsg(irc_config.channel.as_str(), startup_message);
+        }
 
         let mut futures = Vec::<BoxFuture<(), failure::Error>>::new();
 
@@ -285,6 +295,7 @@ impl Irc<'_> {
             thread_pool: Arc::new(ThreadPool::new()),
             moderator_cooldown: irc_config.moderator_cooldown.clone(),
             handlers,
+            shutdown,
         };
 
         futures.push(Box::new(
@@ -558,6 +569,8 @@ struct Handler {
     moderator_cooldown: Option<utils::Cooldown>,
     /// Handlers for specific commands like `!skip`.
     handlers: module::Handlers,
+    /// Handler for shutting down the service.
+    shutdown: utils::Shutdown,
 }
 
 impl Handler {
@@ -605,6 +618,7 @@ impl Handler {
                         thread_pool: &self.thread_pool,
                         user,
                         it,
+                        shutdown: &self.shutdown,
                     };
 
                     handler.handle(ctx)?;

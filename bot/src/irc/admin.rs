@@ -12,6 +12,13 @@ impl command::Handler for Admin {
                 // The response from the /mods command will be received by the Handler.
                 ctx.privmsg("/mods");
             }
+            Some("shutdown") => {
+                if ctx.shutdown.shutdown() {
+                    ctx.respond("Shutting down...");
+                } else {
+                    ctx.respond("Already called shutdown...");
+                }
+            }
             None | Some(..) => {
                 ctx.respond("Expected: refresh-mods.");
             }

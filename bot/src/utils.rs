@@ -1,4 +1,4 @@
-use std::{borrow, fmt, mem, time};
+use std::{borrow, fmt, mem, sync, time};
 use url::percent_encoding::PercentDecode;
 
 /// Helper type for futures.
@@ -467,6 +467,36 @@ pub fn log_err(what: impl fmt::Display, e: failure::Error) {
 
     for cause in e.iter_causes() {
         log::error!("caused by: {}", cause);
+    }
+}
+
+/// Helper to handle shutdowns.
+#[derive(Clone)]
+pub struct Shutdown {
+    sender: sync::Arc<sync::Mutex<Option<futures::sync::oneshot::Sender<()>>>>,
+}
+
+impl Shutdown {
+    /// Construct a new shutdown handler.
+    pub fn new() -> (Self, futures::sync::oneshot::Receiver<()>) {
+        let (tx, rx) = futures::sync::oneshot::channel();
+        (
+            Self {
+                sender: sync::Arc::new(sync::Mutex::new(Some(tx))),
+            },
+            rx,
+        )
+    }
+
+    /// Execute the shutdown handler.
+    pub fn shutdown(&self) -> bool {
+        if let Some(sender) = self.sender.lock().expect("poisoned").take() {
+            sender.send(()).expect("no listener");
+            return true;
+        }
+
+        log::warn!("shutdown already called");
+        false
     }
 }
 
