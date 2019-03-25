@@ -363,18 +363,21 @@ pub enum Event {
 pub struct Current {
     pub item: Arc<Item>,
     /// Since the last time it was unpaused, what was the initial elapsed duration.
-    initial_elapsed: Duration,
+    elapsed: Duration,
     /// When the current song started playing.
-    started_at: Instant,
+    started_at: Option<Instant>,
 }
 
 impl Current {
     /// Create a new current song.
-    pub fn new(item: Arc<Item>, initial_elapsed: Duration) -> Self {
+    pub fn new(item: Arc<Item>, elapsed: Duration, paused: bool) -> Self {
         Current {
             item,
-            initial_elapsed,
-            started_at: Instant::now(),
+            elapsed,
+            started_at: match paused {
+                true => None,
+                false => Some(Instant::now()),
+            },
         }
     }
 
@@ -387,16 +390,21 @@ impl Current {
     ///
     /// Elapsed need to take started at into account.
     pub fn elapsed(&self) -> Duration {
-        let now = Instant::now();
+        let when = self
+            .started_at
+            .as_ref()
+            .and_then(|started_at| {
+                let now = Instant::now();
 
-        let when = if now > self.started_at {
-            now - self.started_at
-        } else {
-            Default::default()
-        };
+                if now > *started_at {
+                    Some(now - *started_at)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
 
-        when.checked_add(self.initial_elapsed.clone())
-            .unwrap_or_default()
+        when.checked_add(self.elapsed.clone()).unwrap_or_default()
     }
 
     /// Remaining time of the current song.
@@ -423,6 +431,36 @@ impl Current {
             duration: utils::digital_duration(self.item.duration.clone()),
             elapsed: utils::digital_duration(self.elapsed()),
         })
+    }
+
+    /// Set the started_at time to now.
+    /// For safety, update the current `elapsed` time based on any prior `started_at`.
+    pub fn play(&mut self) {
+        let duration = self.take_started_at();
+        self.elapsed += duration;
+        self.started_at = Some(Instant::now());
+    }
+
+    /// Update the elapsed time based on when this song was started.
+    pub fn pause(&mut self) {
+        let duration = self.take_started_at();
+        self.elapsed += duration;
+    }
+
+    /// Take the current started_at as a duration and leave it as None.
+    fn take_started_at(&mut self) -> Duration {
+        let started_at = match self.started_at.take() {
+            Some(started_at) => started_at,
+            None => return Default::default(),
+        };
+
+        let now = Instant::now();
+
+        if now < started_at {
+            return Default::default();
+        }
+
+        now - started_at
     }
 }
 
@@ -1231,7 +1269,7 @@ impl PlaybackFuture {
     fn load_front(&mut self) {
         if let Some((loaded, duration)) = self.next_song() {
             *self.current.write().expect("poisoned") =
-                Some(Current::new(loaded.item.clone(), duration));
+                Some(Current::new(loaded.item.clone(), duration, self.paused));
 
             if !self.paused {
                 self.player.play();
@@ -1276,11 +1314,16 @@ impl PlaybackFuture {
 
         match command {
             Command::Skip => {
-                log::info!("Skipping song");
+                log::info!("skipping song");
                 self.load_front();
             }
             Command::Pause if !self.paused => {
                 log::info!("pausing player");
+
+                if let Some(current) = self.current.write().expect("poisoned").as_mut() {
+                    current.pause();
+                }
+
                 self.paused = true;
                 self.player.pause();
                 self.broadcast(Event::Pausing);
@@ -1288,6 +1331,11 @@ impl PlaybackFuture {
             }
             Command::Play if self.paused => {
                 log::info!("starting player");
+
+                if let Some(current) = self.current.write().expect("poisoned").as_mut() {
+                    current.play();
+                }
+
                 self.paused = false;
 
                 match self.loaded.as_ref() {
