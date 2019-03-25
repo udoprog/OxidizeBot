@@ -90,9 +90,10 @@ echo_current_song = true
 path = "E:\\temp\\current_song.txt"
 not_playing = "No Song Playing"
 template = [
-  "Song: {{name}}{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})",
+  "Song: {{name}}{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} - {{elapsed}} / {{duration}}",
   "{{#if user~}}Request by: @{{user~}}{{/if}}",
 ]
+update_interval = "5s"
 
 [themes]
 # Theme songs, that can be invoked with `!song theme <name>`.

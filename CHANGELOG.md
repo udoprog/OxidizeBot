@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for `!clip` command ([#13])
 - Support for `!8ball` command ([#14])
 - `!afterstream` command now has a cooldown configured through `[irc] afterstream_cooldown`.
+- `!song when` to see when your requested song will be playing.
+- Added `{{elapsed}}` as a variable for `current_song`.
+- `[current_song] update_interval = "5s"` to specify how frequently the current song information will be updated.
+  This might be necessary in case `{{elapsed}}` is used as a variable and you want it to update live.
 
 ### Changed
 - Changed configuration format to be TOML and flatten it (see [example configuration]).

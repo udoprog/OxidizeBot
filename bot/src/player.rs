@@ -96,16 +96,6 @@ pub struct Item {
     pub duration: Duration,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ItemData<'a> {
-    paused: bool,
-    track_id: &'a TrackId,
-    name: String,
-    artists: Option<String>,
-    user: Option<&'a str>,
-    duration: String,
-}
-
 impl Item {
     /// Human readable version of playback item.
     pub fn what(&self) -> String {
@@ -114,23 +104,6 @@ impl Item {
         } else {
             format!("\"{}\"", self.name.to_string())
         }
-    }
-
-    /// Get serializable data for this item.
-    pub fn data(&self, paused: bool) -> Result<ItemData<'_>, failure::Error> {
-        let artists = utils::human_artists(&self.artists);
-
-        let name = htmlescape::decode_html(&self.name)
-            .map_err(|_| format_err!("failed to decode song name: {}", self.name))?;
-
-        Ok(ItemData {
-            paused,
-            track_id: &self.track_id,
-            name,
-            artists,
-            user: self.user.as_ref().map(|s| s.as_str()),
-            duration: utils::compact_duration(self.duration.clone()),
-        })
     }
 }
 
@@ -218,6 +191,15 @@ pub fn run(
     let current = Arc::new(RwLock::new(None));
     let closed = Arc::new(RwLock::new(None));
 
+    let current_song_update = match config
+        .current_song
+        .as_ref()
+        .and_then(|c| c.update_interval())
+    {
+        Some(update_interval) => Some(tokio_timer::Interval::new_interval(update_interval.clone())),
+        None => None,
+    };
+
     let future = PlaybackFuture {
         player,
         events,
@@ -234,6 +216,7 @@ pub fn run(
         current: current.clone(),
         current_song: config.current_song.clone(),
         echo_current_song: player_config.echo_current_song,
+        current_song_update,
     };
 
     let player = Player {
@@ -379,16 +362,18 @@ pub enum Event {
 #[derive(Clone)]
 pub struct Current {
     pub item: Arc<Item>,
-    elapsed: Duration,
+    /// Since the last time it was unpaused, what was the initial elapsed duration.
+    initial_elapsed: Duration,
+    /// When the current song started playing.
     started_at: Instant,
 }
 
 impl Current {
     /// Create a new current song.
-    pub fn new(item: Arc<Item>, elapsed: Duration) -> Self {
+    pub fn new(item: Arc<Item>, initial_elapsed: Duration) -> Self {
         Current {
             item,
-            elapsed,
+            initial_elapsed,
             started_at: Instant::now(),
         }
     }
@@ -399,6 +384,8 @@ impl Current {
     }
 
     /// Elapsed time on current song.
+    ///
+    /// Elapsed need to take started at into account.
     pub fn elapsed(&self) -> Duration {
         let now = Instant::now();
 
@@ -408,11 +395,46 @@ impl Current {
             Default::default()
         };
 
-        self.item
-            .duration
-            .checked_sub(when.checked_add(self.elapsed.clone()).unwrap_or_default())
+        when.checked_add(self.initial_elapsed.clone())
             .unwrap_or_default()
     }
+
+    /// Remaining time of the current song.
+    pub fn remaining(&self) -> Duration {
+        self.item
+            .duration
+            .checked_sub(self.elapsed())
+            .unwrap_or_default()
+    }
+
+    /// Get serializable data for this item.
+    pub fn data(&self, paused: bool) -> Result<CurrentData<'_>, failure::Error> {
+        let artists = utils::human_artists(&self.item.artists);
+
+        let name = htmlescape::decode_html(&self.item.name)
+            .map_err(|_| format_err!("failed to decode song name: {}", self.item.name))?;
+
+        Ok(CurrentData {
+            paused,
+            track_id: &self.item.track_id,
+            name,
+            artists,
+            user: self.item.user.as_ref().map(|s| s.as_str()),
+            duration: utils::digital_duration(self.item.duration.clone()),
+            elapsed: utils::digital_duration(self.elapsed()),
+        })
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CurrentData<'a> {
+    paused: bool,
+    track_id: &'a TrackId,
+    name: String,
+    artists: Option<String>,
+    user: Option<&'a str>,
+    duration: String,
+    elapsed: String,
 }
 
 /// A handler for the player.
@@ -763,7 +785,7 @@ impl PlayerClient {
                 return Some((Default::default(), c.item.clone()));
             }
 
-            duration += c.duration();
+            duration += c.remaining();
         }
 
         let queue = self.queue.queue.read().expect("poisoned");
@@ -785,7 +807,7 @@ impl PlayerClient {
         let mut duration = Duration::default();
 
         if let Some(item) = self.current.read().expect("poisoned").as_ref() {
-            duration += item.duration();
+            duration += item.remaining();
             count += 1;
         }
 
@@ -1124,6 +1146,8 @@ pub struct PlaybackFuture {
     current_song: Option<Arc<current_song::CurrentSong>>,
     /// Current config.
     echo_current_song: bool,
+    /// Optional stream indicating when current song should update.
+    current_song_update: Option<tokio_timer::Interval>,
 }
 
 impl PlaybackFuture {
@@ -1187,8 +1211,10 @@ impl PlaybackFuture {
             None => return,
         };
 
-        let result = match self.loaded.as_ref() {
-            Some(loaded) => current_song.write(&loaded.item, self.paused),
+        let current = self.current.read().expect("poisoned");
+
+        let result = match current.as_ref() {
+            Some(current) => current_song.write(current, self.paused),
             None => current_song.blank(),
         };
 
@@ -1306,6 +1332,17 @@ impl Future for PlaybackFuture {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             let mut not_ready = true;
+
+            if let Some(current_song_update) = self.current_song_update.as_mut() {
+                match current_song_update.poll()? {
+                    Async::Ready(Some(_)) => {
+                        self.current_song();
+                        not_ready = false;
+                    }
+                    Async::NotReady => {}
+                    Async::Ready(None) => failure::bail!("current song updates ended"),
+                }
+            }
 
             // pop is in progress, make sure that happens before anything else.
             if let Some(pop_front) = self.pop_front.as_mut() {

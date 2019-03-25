@@ -30,7 +30,7 @@ pub enum Feature {
 }
 
 /// By-channel features that are enabled.
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Features(fixed_map::Set<Feature>);
 
 impl<'de> serde::Deserialize<'de> for Features {

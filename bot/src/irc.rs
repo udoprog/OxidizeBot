@@ -26,7 +26,6 @@ use std::{
     time,
 };
 use tokio::timer;
-use tokio_core::reactor::Core;
 use tokio_threadpool::ThreadPool;
 
 mod admin;
@@ -67,8 +66,8 @@ fn default_cooldown() -> utils::Cooldown {
 }
 
 /// Helper struct to construct IRC integration.
-pub struct Irc<'a, 'local> {
-    pub core: &'local mut Core,
+pub struct Irc<'a> {
+    pub core: &'a mut tokio_core::reactor::Core,
     pub db: db::Database,
     pub streamer_twitch: twitch::Twitch,
     pub bot_twitch: twitch::Twitch,
@@ -78,15 +77,16 @@ pub struct Irc<'a, 'local> {
     pub commands: db::Commands<db::Database>,
     pub counters: db::Counters<db::Database>,
     pub bad_words: db::Words<db::Database>,
-    pub notifier: &'a Notifier,
-    pub player: Option<&'local player::Player>,
-    pub modules: &'local [Box<dyn module::Module + 'static>],
+    pub notifier: Arc<Notifier>,
+    pub player: Option<&'a player::Player>,
+    pub modules: &'a [Box<dyn module::Module + 'static>],
 }
 
-impl<'a> Irc<'a, '_> {
+impl Irc<'_> {
     pub fn run(
         self,
-    ) -> Result<impl Future<Item = (), Error = failure::Error> + Send + 'a, failure::Error> {
+    ) -> Result<impl Future<Item = (), Error = failure::Error> + Send + 'static, failure::Error>
+    {
         let Irc {
             core,
             db,
@@ -104,12 +104,12 @@ impl<'a> Irc<'a, '_> {
             ..
         } = self;
 
-        let mut command_handlers = module::Handlers::default();
+        let mut handlers = module::Handlers::default();
 
         for module in modules {
             module.hook(module::HookContext {
                 db: &db,
-                handlers: &mut command_handlers,
+                handlers: &mut handlers,
             })?;
         }
 
@@ -178,7 +178,7 @@ impl<'a> Irc<'a, '_> {
                 sender.clone(),
             )));
 
-            command_handlers.insert(
+            handlers.insert(
                 "song",
                 song::Song {
                     player: player.client(),
@@ -187,7 +187,7 @@ impl<'a> Irc<'a, '_> {
         }
 
         if config.features.test(Feature::Admin) {
-            command_handlers.insert(
+            handlers.insert(
                 "title",
                 misc::Title {
                     stream_info: stream_info.clone(),
@@ -195,7 +195,7 @@ impl<'a> Irc<'a, '_> {
                 },
             );
 
-            command_handlers.insert(
+            handlers.insert(
                 "game",
                 misc::Game {
                     stream_info: stream_info.clone(),
@@ -203,7 +203,7 @@ impl<'a> Irc<'a, '_> {
                 },
             );
 
-            command_handlers.insert(
+            handlers.insert(
                 "uptime",
                 misc::Uptime {
                     stream_info: stream_info.clone(),
@@ -212,7 +212,7 @@ impl<'a> Irc<'a, '_> {
         }
 
         if config.features.test(Feature::BadWords) {
-            command_handlers.insert(
+            handlers.insert(
                 "badword",
                 bad_word::BadWord {
                     bad_words: bad_words.clone(),
@@ -221,7 +221,7 @@ impl<'a> Irc<'a, '_> {
         }
 
         if config.features.test(Feature::Counter) {
-            command_handlers.insert(
+            handlers.insert(
                 "counter",
                 counter::Counter {
                     counters: counters.clone(),
@@ -230,7 +230,7 @@ impl<'a> Irc<'a, '_> {
         }
 
         if config.features.test(Feature::Command) {
-            command_handlers.insert(
+            handlers.insert(
                 "command",
                 command_admin::Handler {
                     commands: commands.clone(),
@@ -239,11 +239,11 @@ impl<'a> Irc<'a, '_> {
         }
 
         if config.features.test(Feature::EightBall) {
-            command_handlers.insert("8ball", eight_ball::EightBall {});
+            handlers.insert("8ball", eight_ball::EightBall {});
         }
 
         if config.features.test(Feature::Clip) {
-            command_handlers.insert(
+            handlers.insert(
                 "clip",
                 clip::Clip {
                     stream_info: stream_info.clone(),
@@ -254,7 +254,7 @@ impl<'a> Irc<'a, '_> {
         }
 
         if config.features.test(Feature::AfterStream) {
-            command_handlers.insert(
+            handlers.insert(
                 "afterstream",
                 after_stream::AfterStream {
                     cooldown: irc_config.afterstream_cooldown.clone(),
@@ -263,7 +263,7 @@ impl<'a> Irc<'a, '_> {
             );
         }
 
-        command_handlers.insert("admin", admin::Admin {});
+        handlers.insert("admin", admin::Admin {});
 
         futures.push(Box::new(send_future.map_err(failure::Error::from)));
 
@@ -273,18 +273,18 @@ impl<'a> Irc<'a, '_> {
             db,
             sender: sender.clone(),
             moderators: HashSet::default(),
-            whitelisted_hosts: &config.whitelisted_hosts,
-            currency: config.currency.as_ref(),
+            whitelisted_hosts: config.whitelisted_hosts.clone(),
+            currency: config.currency.clone(),
             commands,
             counters,
             bad_words,
             notifier,
             aliases: config.aliases.clone(),
-            features: &config.features,
-            api_url: config.api_url.as_ref().map(|s| s.as_str()),
+            features: config.features.clone(),
+            api_url: config.api_url.clone(),
             thread_pool: Arc::new(ThreadPool::new()),
             moderator_cooldown: irc_config.moderator_cooldown.clone(),
-            command_handlers,
+            handlers,
         };
 
         futures.push(Box::new(
@@ -305,15 +305,17 @@ impl<'a> Irc<'a, '_> {
 }
 
 /// Notifications from the player.
-fn player_feedback_loop<'a>(
-    config: &'a Config,
+fn player_feedback_loop(
+    config: &Config,
     player: &player::Player,
     sender: Sender,
-) -> impl Future<Item = (), Error = failure::Error> + 'a {
+) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
     player
         .add_rx()
         .map_err(|e| format_err!("failed to receive player update: {}", e))
         .for_each({
+            let channel = config.channel.to_string();
+
             move |e| {
                 match e {
                     player::Event::Playing(echo, _, item) => {
@@ -328,14 +330,14 @@ fn player_feedback_loop<'a>(
                             None => format!("Now playing: {}.", item.what(),),
                         };
 
-                        sender.privmsg(config.channel.as_str(), message);
+                        sender.privmsg(channel.as_str(), message);
                     }
                     player::Event::Pausing => {
-                        sender.privmsg(config.channel.as_str(), "Pausing playback.");
+                        sender.privmsg(channel.as_str(), "Pausing playback.");
                     }
                     player::Event::Empty => {
                         sender.privmsg(
-                            config.channel.as_str(),
+                            channel.as_str(),
                             format!(
                                 "Song queue is empty (use !song request <spotify-id> to add more).",
                             ),
@@ -351,25 +353,26 @@ fn player_feedback_loop<'a>(
 }
 
 /// Set up a reward loop.
-fn reward_loop<'a>(
-    config: &'a Config,
+fn reward_loop(
+    config: &Config,
     reward: i32,
     interval: u64,
     db: db::Database,
     twitch: twitch::Twitch,
     sender: Sender,
-    currency: &'a Currency,
-) -> impl Future<Item = (), Error = failure::Error> + 'a {
+    currency: &Currency,
+) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
     // Add currency timer.
     timer::Interval::new_interval(time::Duration::from_secs(interval))
         .map_err(Into::into)
         // fetch all users.
-        .and_then(move |_| {
-            log::trace!("running reward loop");
+        .and_then({
+            let channel = config.channel.to_string();
 
-            twitch
-                .chatters(config.channel.as_str())
-                .and_then(|chatters| {
+            move |_| {
+                log::trace!("running reward loop");
+
+                twitch.chatters(channel.as_str()).and_then(|chatters| {
                     let mut u = HashSet::new();
                     u.extend(chatters.viewers);
                     u.extend(chatters.moderators);
@@ -381,15 +384,26 @@ fn reward_loop<'a>(
                         Ok(u)
                     }
                 })
+            }
         })
         // update database.
-        .and_then(move |u| db.balances_increment(config.channel.as_str(), u, reward))
-        .map(move |_| {
-            if config.notify_rewards {
-                sender.privmsg(
-                    config.channel.as_str(),
-                    format!("/me has given {} {} to all viewers!", reward, currency.name),
-                );
+        .and_then({
+            let channel = config.channel.to_string();
+
+            move |u| db.balances_increment(channel.as_str(), u, reward)
+        })
+        .map({
+            let notify_rewards = config.notify_rewards;
+            let channel = config.channel.to_string();
+            let currency = currency.clone();
+
+            move |_| {
+                if notify_rewards {
+                    sender.privmsg(
+                        channel.as_str(),
+                        format!("/me has given {} {} to all viewers!", reward, currency.name),
+                    );
+                }
             }
         })
         // handle any errors.
@@ -401,23 +415,31 @@ fn reward_loop<'a>(
 }
 
 /// Set up a reward loop.
-fn stream_info_loop<'a>(
-    config: &'a config::Config,
+fn stream_info_loop(
+    config: &config::Config,
     interval: u64,
     twitch: twitch::Twitch,
     stream_info: Arc<RwLock<Option<StreamInfo>>>,
-) -> impl Future<Item = (), Error = failure::Error> + 'a {
+) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
     // Add currency timer.
     timer::Interval::new(time::Instant::now(), time::Duration::from_secs(interval))
         .map_err(failure::Error::from)
-        .map(move |_| {
-            log::trace!("refreshing stream info for streamer: {}", config.streamer);
+        .map({
+            let streamer = config.streamer.to_string();
+
+            move |_| {
+                log::trace!("refreshing stream info for streamer: {}", streamer);
+            }
         })
-        .and_then(move |_| {
-            let user = twitch.user_by_login(config.streamer.as_str());
-            let stream = twitch.stream_by_login(config.streamer.as_str());
-            let channel = twitch.channel_by_login(config.streamer.as_str());
-            user.join3(stream, channel)
+        .and_then({
+            let streamer = config.streamer.to_string();
+
+            move |_| {
+                let user = twitch.user_by_login(streamer.as_str());
+                let stream = twitch.stream_by_login(streamer.as_str());
+                let channel = twitch.channel_by_login(streamer.as_str());
+                user.join3(stream, channel)
+            }
         })
         .and_then(move |(user, stream, channel)| {
             let mut stream_info = stream_info.write().map_err(|_| format_err!("poisoned"))?;
@@ -434,13 +456,17 @@ fn stream_info_loop<'a>(
             Ok(())
         })
         // handle any errors.
-        .or_else(move |e| {
-            log::error!(
-                "failed to refresh stream info for streamer: {}: {}",
-                config.streamer,
-                e
-            );
-            Ok(())
+        .or_else({
+            let streamer = config.streamer.to_string();
+
+            move |e| {
+                log::error!(
+                    "failed to refresh stream info for streamer: {}: {}",
+                    streamer,
+                    e
+                );
+                Ok(())
+            }
         })
         .for_each(|_| Ok(()))
 }
@@ -497,7 +523,7 @@ impl Sender {
 }
 
 /// Handler for incoming messages.
-struct Handler<'a> {
+struct Handler {
     /// Current Streamer.
     streamer: String,
     /// Currench channel.
@@ -509,9 +535,9 @@ struct Handler<'a> {
     /// Moderators.
     moderators: HashSet<String>,
     /// Whitelisted hosts for links.
-    whitelisted_hosts: &'a HashSet<String>,
+    whitelisted_hosts: HashSet<String>,
     /// Currency in use.
-    currency: Option<&'a Currency>,
+    currency: Option<Currency>,
     /// All registered commands.
     commands: db::Commands<db::Database>,
     /// All registered counters.
@@ -519,22 +545,22 @@ struct Handler<'a> {
     /// Bad words.
     bad_words: db::Words<db::Database>,
     /// For sending notifications.
-    notifier: &'a Notifier,
+    notifier: Arc<Notifier>,
     /// Aliases.
     aliases: aliases::Aliases,
     /// Enabled features.
-    features: &'a Features,
+    features: Features,
     /// Configured API URL.
-    api_url: Option<&'a str>,
+    api_url: Option<String>,
     /// Thread pool used for driving futures.
     thread_pool: Arc<ThreadPool>,
     /// Active moderator cooldown.
     moderator_cooldown: Option<utils::Cooldown>,
     /// Handlers for specific commands like `!skip`.
-    command_handlers: module::Handlers,
+    handlers: module::Handlers,
 }
 
-impl<'a> Handler<'a> {
+impl Handler {
     /// Run as user.
     fn as_user<'m>(&self, tags: Tags<'m>, m: &'m Message) -> Result<User<'m>, failure::Error> {
         let name = m
@@ -569,9 +595,9 @@ impl<'a> Handler<'a> {
                 self.notifier.send(Notification::Ping)?;
             }
             other => {
-                if let Some(handler) = self.command_handlers.get_mut(other) {
+                if let Some(handler) = self.handlers.get_mut(other) {
                     let ctx = command::Context {
-                        api_url: self.api_url,
+                        api_url: self.api_url.as_ref().map(|s| s.as_str()),
                         streamer: self.streamer.as_str(),
                         sender: &self.sender,
                         moderators: &self.moderators,
@@ -585,7 +611,7 @@ impl<'a> Handler<'a> {
                     return Ok(());
                 }
 
-                if let Some(currency) = self.currency {
+                if let Some(currency) = self.currency.as_ref() {
                     if currency.name == other {
                         let balance = self.db.balance_of(user.name)?.unwrap_or(0);
                         user.respond(format!(

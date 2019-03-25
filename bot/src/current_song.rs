@@ -1,5 +1,5 @@
-use crate::{player::Item, template};
-use std::{fs::File, path::PathBuf};
+use crate::{player, template, utils};
+use std::{fs::File, path::PathBuf, time};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct CurrentSong {
@@ -10,6 +10,9 @@ pub struct CurrentSong {
     /// Message to show when no song is playing.
     #[serde(default)]
     not_playing: Option<String>,
+    /// Update frequency.
+    #[serde(default, deserialize_with = "utils::deserialize_duration")]
+    update_interval: time::Duration,
 }
 
 impl CurrentSong {
@@ -33,10 +36,19 @@ impl CurrentSong {
     }
 
     /// Write the current song to a path.
-    pub fn write(&self, item: &Item, paused: bool) -> Result<(), failure::Error> {
+    pub fn write(&self, current: &player::Current, paused: bool) -> Result<(), failure::Error> {
         let mut f = self.create_or_truncate()?;
-        let data = item.data(paused)?;
+        let data = current.data(paused)?;
         self.template.render(&mut f, &data)?;
         Ok(())
+    }
+
+    /// Get the current update frequency, if present.
+    pub fn update_interval(&self) -> Option<&time::Duration> {
+        if self.update_interval.as_secs() == 0 {
+            return None;
+        }
+
+        Some(&self.update_interval)
     }
 }

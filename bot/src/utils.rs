@@ -169,10 +169,14 @@ fn is_not_alphanum(c: char) -> bool {
     }
 }
 
-/// Format the given number of seconds as a human time.
-pub fn compact_duration(duration: time::Duration) -> String {
-    let mut parts = Vec::new();
+struct DurationParts {
+    seconds: u64,
+    minutes: u64,
+    hours: u64,
+}
 
+/// Partition the given duration into time components.
+fn partition(duration: time::Duration) -> DurationParts {
     let seconds = duration.as_secs();
     let rest = seconds as u64;
     let hours = rest / 3600;
@@ -180,17 +184,30 @@ pub fn compact_duration(duration: time::Duration) -> String {
     let minutes = rest / 60;
     let seconds = rest % 60;
 
-    parts.extend(match hours {
+    DurationParts {
+        seconds,
+        minutes,
+        hours,
+    }
+}
+
+/// Format the given number of seconds as a compact human time.
+pub fn compact_duration(duration: time::Duration) -> String {
+    let mut parts = Vec::new();
+
+    let p = partition(duration);
+
+    parts.extend(match p.hours {
         0 => None,
         n => Some(format!("{:02}H", n)),
     });
 
-    parts.extend(match minutes {
+    parts.extend(match p.minutes {
         0 => None,
         n => Some(format!("{:02}m", n)),
     });
 
-    parts.extend(match seconds {
+    parts.extend(match p.seconds {
         0 => None,
         n => Some(format!("{:02}s", n)),
     });
@@ -202,8 +219,55 @@ pub fn compact_duration(duration: time::Duration) -> String {
     parts.join(" ")
 }
 
+/// Format the given number of seconds as a long human time.
+pub fn long_duration(duration: time::Duration) -> String {
+    let mut parts = Vec::new();
+
+    let p = partition(duration);
+
+    parts.extend(match p.hours {
+        0 => None,
+        1 => Some(format!("one hour")),
+        n => Some(format!("{} hours", english_num(n))),
+    });
+
+    parts.extend(match p.minutes {
+        0 => None,
+        1 => Some(format!("one minute")),
+        n => Some(format!("{} minutes", english_num(n))),
+    });
+
+    parts.extend(match p.seconds {
+        0 => None,
+        1 => Some(format!("one second")),
+        n => Some(format!("{} seconds", english_num(n))),
+    });
+
+    if parts.is_empty() {
+        return String::from("0 seconds");
+    }
+
+    parts.join(", ")
+}
+
+/// Format the given number of seconds as a digital duration.
+pub fn digital_duration(duration: time::Duration) -> String {
+    let mut parts = Vec::new();
+
+    let p = partition(duration);
+
+    parts.extend(match p.hours {
+        0 => None,
+        n => Some(format!("{:02}", n)),
+    });
+
+    parts.push(format!("{:02}", p.minutes));
+    parts.push(format!("{:02}", p.seconds));
+
+    parts.join(":")
+}
+
 /// Format the given number as a string according to english conventions.
-#[allow(unused)]
 pub fn english_num(n: u64) -> borrow::Cow<'static, str> {
     let n = match n {
         1 => "one",
@@ -344,6 +408,18 @@ pub fn parse_duration(s: &str) -> Result<time::Duration, failure::Error> {
     Ok(time::Duration::from_millis(ms))
 }
 
+/// Deserialize a duration.
+pub fn deserialize_duration<'de, D>(deserializer: D) -> Result<time::Duration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Deserialize;
+
+    let duration = String::deserialize(deserializer)?;
+    let duration = parse_duration(&duration).map_err(serde::de::Error::custom)?;
+    Ok(duration)
+}
+
 /// A cooldown implementation that prevents an action from being executed too frequently.
 #[derive(Debug, Clone)]
 pub struct Cooldown {
@@ -380,9 +456,7 @@ impl<'de> serde::Deserialize<'de> for Cooldown {
     where
         D: serde::Deserializer<'de>,
     {
-        let duration = String::deserialize(deserializer)?;
-        let duration = parse_duration(&duration).map_err(serde::de::Error::custom)?;
-
+        let duration = deserialize_duration(deserializer)?;
         Ok(Cooldown::from_duration(duration))
     }
 }

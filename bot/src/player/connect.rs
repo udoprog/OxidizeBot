@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
-use tokio::{runtime, timer};
+use tokio::timer;
 use tokio_core::reactor::Core;
 
 /// Setup a player.
@@ -38,10 +38,7 @@ pub fn setup(
 
     let (tx, rx) = mpsc::unbounded();
 
-    let runtime = runtime::Runtime::new()?;
-
     let player = ConnectPlayer {
-        runtime,
         spotify,
         tx,
         device,
@@ -53,7 +50,6 @@ pub fn setup(
 }
 
 struct ConnectPlayer {
-    runtime: runtime::Runtime,
     spotify: Arc<spotify::Spotify>,
     #[allow(unused)]
     tx: mpsc::UnboundedSender<super::PlayerEvent>,
@@ -133,7 +129,7 @@ impl super::PlayerInterface for ConnectPlayer {
                 }
             });
 
-        self.runtime.spawn(future);
+        tokio::spawn(future);
     }
 
     fn pause(&mut self) {
@@ -142,17 +138,16 @@ impl super::PlayerInterface for ConnectPlayer {
             let _ = delay_cancel.send(());
         }
 
-        self.runtime
-            .spawn(self.spotify.me_player_pause(&self.device.id).map_err(|e| {
-                log::error!("failed to pause player: {}", e);
-                ()
-            }));
+        tokio::spawn(self.spotify.me_player_pause(&self.device.id).map_err(|e| {
+            log::error!("failed to pause player: {}", e);
+            ()
+        }));
     }
 
     fn load(&mut self, item: &super::Item, _: u32) -> oneshot::Receiver<()> {
         let track_uri = format!("spotify:track:{}", item.track_id.0.to_base62());
 
-        self.runtime.spawn(
+        tokio::spawn(
             self.spotify
                 .me_player_play(&self.device.id, Some(&track_uri))
                 .map_err(|e| {
@@ -173,7 +168,7 @@ impl super::PlayerInterface for ConnectPlayer {
         }
 
         // set a deadline for the end of the track.
-        self.runtime.spawn(
+        tokio::spawn(
             end_track_in(
                 item.duration.clone(),
                 self.loaded.clone(),
@@ -191,7 +186,7 @@ impl super::PlayerInterface for ConnectPlayer {
     fn volume(&mut self, volume: Option<f32>) {
         let volume = volume.unwrap_or(1f32);
 
-        self.runtime.spawn(
+        tokio::spawn(
             self.spotify
                 .me_player_volume(&self.device.id, volume)
                 .map_err(|e| {

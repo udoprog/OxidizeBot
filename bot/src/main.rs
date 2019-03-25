@@ -114,14 +114,14 @@ fn main() -> Result<(), failure::Error> {
     let notifier = Arc::new(setmod_notifier::Notifier::new());
 
     let mut core = Core::new()?;
-    let mut runtime = tokio::runtime::Runtime::new()?;
 
-    let mut futures = Vec::<Box<dyn Future<Item = (), Error = failure::Error>>>::new();
+    let mut futures =
+        Vec::<Box<dyn Future<Item = (), Error = failure::Error> + Send + 'static>>::new();
 
     let (web, future) = web::setup()?;
 
     // NB: spawn the web server on a separate thread because it's needed for the synchronous authentication flow below.
-    runtime.spawn(future.map_err(|e| {
+    core.runtime().executor().spawn(future.map_err(|e| {
         log::error!("Error in web server: {}", e);
         ()
     }));
@@ -238,7 +238,7 @@ fn main() -> Result<(), failure::Error> {
             commands,
             counters,
             bad_words,
-            notifier: &*notifier,
+            notifier,
             player: player.as_ref(),
             modules: &modules,
         }
