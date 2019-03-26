@@ -329,7 +329,7 @@ fn player_feedback_loop(
 
             move |e| {
                 match e {
-                    player::Event::Playing(echo, _, item) => {
+                    player::Event::Playing(echo, item) => {
                         if !echo {
                             return Ok(());
                         }

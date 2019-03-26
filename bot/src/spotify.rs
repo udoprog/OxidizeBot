@@ -111,9 +111,11 @@ impl Spotify {
         &self,
         device_id: &str,
         track_uri: Option<&str>,
+        position_ms: Option<u64>,
     ) -> impl Future<Item = (), Error = failure::Error> {
         let request = Request {
             uris: track_uri.into_iter().map(|s| s.to_string()).collect(),
+            position_ms,
         };
 
         let r = self
@@ -128,6 +130,8 @@ impl Spotify {
         struct Request {
             #[serde(skip_serializing_if = "Vec::is_empty")]
             uris: Vec<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            position_ms: Option<u64>,
         }
     }
 

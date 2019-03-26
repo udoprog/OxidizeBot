@@ -5,11 +5,7 @@ use crate::{config, current_song, db, secrets, spotify, themes::Themes, utils};
 
 use chrono::Utc;
 use failure::format_err;
-use futures::{
-    future,
-    sync::{mpsc, oneshot},
-    Async, Future, Poll, Stream,
-};
+use futures::{future, sync::mpsc, Async, Future, Poll, Stream};
 use std::{
     collections::VecDeque,
     sync::{Arc, RwLock},
@@ -23,12 +19,14 @@ use librespot::core::spotify_id::SpotifyId;
 mod connect;
 mod native;
 
-pub trait PlayerInterface: Send {
+pub trait PlayerInterface:
+    Stream<Item = PlayerEvent, Error = failure::Error> + Send + 'static
+{
     /// Stop playing.
     fn stop(&mut self);
 
     /// Start playing.
-    fn play(&mut self);
+    fn play(&mut self, song: &Song);
 
     /// Pause playback.
     fn pause(&mut self);
@@ -36,7 +34,7 @@ pub trait PlayerInterface: Send {
     /// Load the given track.
     ///
     /// The oneshot is triggered when the track has completed.
-    fn load(&mut self, item: &Item, offset_ms: u32) -> oneshot::Receiver<()>;
+    fn load(&mut self, song: &Song);
 
     /// Adjust the volume of the player.
     fn volume(&mut self, volume: Option<f32>);
@@ -44,35 +42,47 @@ pub trait PlayerInterface: Send {
 
 #[derive(Debug)]
 pub enum PlayerEvent {
+    /// We've reached the end of a track.
+    EndOfTrack,
+    /// We've filtered a player event.
     Filtered,
 }
 
-type PlayerEventStream = Box<dyn Stream<Item = PlayerEvent, Error = ()> + Send + 'static>;
-
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
+    /// The type of player to use.
+    #[serde(default, rename = "type")]
+    ty: Option<String>,
+    /// The max queue length of the player.
     #[serde(default = "default_max_queue_length")]
     max_queue_length: u32,
+    /// The max number of songs per user.
     #[serde(default = "default_max_songs_per_user")]
     max_songs_per_user: u32,
-    /// Device to use with connect player.
-    #[serde(default)]
-    device: Option<String>,
-    /// Speaker to use with native player.
-    #[serde(default)]
-    speaker: Option<String>,
     /// Playlist to fall back on. Will otherwise use the saved songs of the user.
     #[serde(default)]
     playlist: Option<String>,
     /// Volume of player.
     #[serde(default)]
     volume: Option<u32>,
-    /// Whether or not to use the connect player.
-    #[serde(default)]
-    connect: bool,
     /// Whether or not to echo current song.
     #[serde(default = "default_true")]
     echo_current_song: bool,
+    /// Device to use with connect player.
+    #[serde(default)]
+    device: Option<String>,
+    /// Speaker to use with native player.
+    #[serde(default)]
+    speaker: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "type")]
+pub enum PlayerConfig {
+    #[serde(rename = "native")]
+    Native(self::native::Config),
+    #[serde(rename = "connect")]
+    Connect(self::connect::Config),
 }
 
 fn default_true() -> bool {
@@ -140,16 +150,27 @@ pub fn run(
     core: &mut Core,
     db: db::Database,
     spotify: Arc<spotify::Spotify>,
-    config: &config::Config,
-    player_config: &Config,
+    parent_config: &config::Config,
+    config: &Config,
     secrets: &secrets::Secrets,
 ) -> Result<(PlaybackFuture, Player), failure::Error> {
     let (commands_tx, commands) = mpsc::unbounded();
 
-    let ((player, events), paused) = if player_config.connect {
-        (connect::setup(core, player_config, spotify.clone())?, false)
-    } else {
-        (native::setup(core, player_config, secrets)?, true)
+    let player_config = match config.ty.as_ref().map(|ty| ty.as_str()) {
+        Some("connect") | None => PlayerConfig::Connect(self::connect::Config {
+            device: config.device.clone(),
+        }),
+        Some("native") => PlayerConfig::Native(self::native::Config {
+            speaker: config.speaker.clone(),
+        }),
+        Some(other) => failure::bail!("unsupported player type: {}", other),
+    };
+
+    let (player, paused) = match player_config {
+        PlayerConfig::Connect(ref connect) => {
+            (connect::setup(core, connect, spotify.clone())?, false)
+        }
+        PlayerConfig::Native(ref native) => (native::setup(core, config, native, secrets)?, true),
     };
 
     let bus = Arc::new(RwLock::new(Bus::new(1024)));
@@ -157,7 +178,7 @@ pub fn run(
     let thread_pool = Arc::new(ThreadPool::new());
     let queue = Queue::new(db.clone());
 
-    let fallback_items = match player_config.playlist.as_ref() {
+    let fallback_items = match config.playlist.as_ref() {
         Some(playlist) => playlist_to_items(core, spotify.clone(), playlist)?,
         None => songs_to_items(core, spotify.clone())?,
     };
@@ -173,7 +194,7 @@ pub fn run(
     }
 
     // Blank current song file if specified.
-    if let Some(current_song) = config.current_song.as_ref() {
+    if let Some(current_song) = parent_config.current_song.as_ref() {
         if let Err(e) = current_song.blank() {
             log::warn!(
                 "failed to blank current songs: {}: {}",
@@ -185,13 +206,13 @@ pub fn run(
 
     let volume = Arc::new(RwLock::new(u32::min(
         100u32,
-        player_config.volume.unwrap_or(100u32),
+        config.volume.unwrap_or(100u32),
     )));
 
-    let current = Arc::new(RwLock::new(None));
+    let song = Arc::new(RwLock::new(None));
     let closed = Arc::new(RwLock::new(None));
 
-    let current_song_update = match config
+    let current_song_update = match parent_config
         .current_song
         .as_ref()
         .and_then(|c| c.update_interval())
@@ -202,40 +223,38 @@ pub fn run(
 
     let future = PlaybackFuture {
         player,
-        events,
         commands,
         queue: queue.clone(),
         bus: bus.clone(),
         pop_front: None,
         paused,
-        loaded: None,
         inject: None,
         sidelined: Default::default(),
         fallback_items,
         volume: Arc::clone(&volume),
-        current: current.clone(),
-        current_song: config.current_song.clone(),
-        echo_current_song: player_config.echo_current_song,
+        song: song.clone(),
+        current_song: parent_config.current_song.clone(),
+        echo_current_song: config.echo_current_song,
         current_song_update,
     };
 
     let player = Player {
         queue,
-        max_queue_length: player_config.max_queue_length,
-        max_songs_per_user: player_config.max_songs_per_user,
+        max_queue_length: config.max_queue_length,
+        max_songs_per_user: config.max_songs_per_user,
         spotify,
         commands_tx,
         bus,
         volume: Arc::clone(&volume),
-        current: current.clone(),
-        themes: config.themes.clone(),
+        song: song.clone(),
+        themes: parent_config.themes.clone(),
         closed: closed.clone(),
     };
 
-    if player_config.connect {
+    if let PlayerConfig::Connect(..) = player_config {
         player.pause()?;
 
-        if let Some(volume) = player_config.volume {
+        if let Some(volume) = config.volume {
             player.volume(volume)?;
         }
     }
@@ -340,19 +359,11 @@ fn convert_item(
         })
 }
 
-/// The origin of a song being played.
-#[derive(Debug, Clone, Copy)]
-pub enum Origin {
-    Injected,
-    Fallback,
-    Queue,
-}
-
 /// Events emitted by the player.
 #[derive(Debug, Clone)]
 pub enum Event {
     Empty,
-    Playing(bool, Origin, Arc<Item>),
+    Playing(bool, Arc<Item>),
     Pausing,
     /// queue was modified in some way.
     Modified,
@@ -360,7 +371,7 @@ pub enum Event {
 
 /// Information on current song.
 #[derive(Clone)]
-pub struct Current {
+pub struct Song {
     pub item: Arc<Item>,
     /// Since the last time it was unpaused, what was the initial elapsed duration.
     elapsed: Duration,
@@ -368,10 +379,10 @@ pub struct Current {
     started_at: Option<Instant>,
 }
 
-impl Current {
+impl Song {
     /// Create a new current song.
     pub fn new(item: Arc<Item>, elapsed: Duration, paused: bool) -> Self {
-        Current {
+        Song {
             item,
             elapsed,
             started_at: match paused {
@@ -379,6 +390,11 @@ impl Current {
                 false => Some(Instant::now()),
             },
         }
+    }
+
+    /// Get the deadline for when this song will end, assuming it is currently playing.
+    pub fn deadline(&self) -> Instant {
+        Instant::now() + self.remaining()
     }
 
     /// Duration of the current song.
@@ -485,8 +501,8 @@ pub struct Player {
     commands_tx: mpsc::UnboundedSender<Command>,
     bus: Arc<RwLock<Bus<Event>>>,
     volume: Arc<RwLock<u32>>,
-    /// Current song that is loaded.
-    current: Arc<RwLock<Option<Current>>>,
+    /// Song song that is loaded.
+    song: Arc<RwLock<Option<Song>>>,
     /// Theme songs.
     themes: Arc<Themes>,
     /// Player is closed for more requests.
@@ -504,7 +520,7 @@ impl Player {
             spotify: self.spotify.clone(),
             commands_tx: self.commands_tx.clone(),
             volume: Arc::clone(&self.volume),
-            current: self.current.clone(),
+            song: self.song.clone(),
             themes: self.themes.clone(),
             closed: self.closed.clone(),
         }
@@ -542,10 +558,10 @@ pub struct PlayerClient {
     max_songs_per_user: u32,
     spotify: Arc<spotify::Spotify>,
     commands_tx: mpsc::UnboundedSender<Command>,
-    /// Current volume.
+    /// Song volume.
     volume: Arc<RwLock<u32>>,
-    /// Current song that is loaded.
-    current: Arc<RwLock<Option<Current>>>,
+    /// Song song that is loaded.
+    song: Arc<RwLock<Option<Song>>>,
     /// Theme songs.
     themes: Arc<Themes>,
     /// Player is closed for more requests.
@@ -562,11 +578,10 @@ impl PlayerClient {
 
     /// Get the next N songs in queue.
     pub fn list(&self) -> Vec<Arc<Item>> {
-        let current = self.current.read().expect("poisoned");
+        let song = self.song.read().expect("poisoned");
         let queue = self.queue.queue.read().expect("poisoned");
 
-        current
-            .as_ref()
+        song.as_ref()
             .map(|c| c.item.clone())
             .into_iter()
             .chain(queue.iter().cloned())
@@ -818,7 +833,7 @@ impl PlayerClient {
     pub fn find(&self, mut predicate: impl FnMut(&Item) -> bool) -> Option<(Duration, Arc<Item>)> {
         let mut duration = Duration::default();
 
-        if let Some(c) = self.current.read().expect("poisoned").as_ref() {
+        if let Some(c) = self.song.read().expect("poisoned").as_ref() {
             if predicate(&c.item) {
                 return Some((Default::default(), c.item.clone()));
             }
@@ -844,7 +859,7 @@ impl PlayerClient {
         let mut count = 0;
         let mut duration = Duration::default();
 
-        if let Some(item) = self.current.read().expect("poisoned").as_ref() {
+        if let Some(item) = self.song.read().expect("poisoned").as_ref() {
             duration += item.remaining();
             count += 1;
         }
@@ -860,8 +875,8 @@ impl PlayerClient {
     }
 
     /// Get the current song, if it is set.
-    pub fn current(&self) -> Option<Current> {
-        self.current.read().expect("poisoned").clone()
+    pub fn current(&self) -> Option<Song> {
+        self.song.read().expect("poisoned").clone()
     }
 
     /// Indicate that the queue has been modified.
@@ -1120,47 +1135,9 @@ impl Future for PushBackFuture {
     }
 }
 
-struct Loaded {
-    origin: Origin,
-    item: Arc<Item>,
-    future: oneshot::Receiver<()>,
-    started_at: Instant,
-    elapsed: Duration,
-}
-
-impl Loaded {
-    /// Create a new loaded entry recording the time at which it was started.
-    pub fn new(origin: Origin, item: Arc<Item>, future: oneshot::Receiver<()>) -> Self {
-        Self {
-            origin,
-            item,
-            future,
-            started_at: Instant::now(),
-            elapsed: Default::default(),
-        }
-    }
-
-    /// Create a new loaded entry recording the time at which it was started.
-    pub fn new_with_elapsed(
-        origin: Origin,
-        item: Arc<Item>,
-        future: oneshot::Receiver<()>,
-        elapsed: Duration,
-    ) -> Self {
-        Self {
-            origin,
-            item,
-            future,
-            started_at: Instant::now(),
-            elapsed,
-        }
-    }
-}
-
 /// Future associated with driving audio playback.
 pub struct PlaybackFuture {
-    player: Box<dyn PlayerInterface + 'static>,
-    events: PlayerEventStream,
+    player: Box<dyn PlayerInterface>,
     commands: mpsc::UnboundedReceiver<Command>,
     queue: Queue,
     bus: Arc<RwLock<Bus<Event>>>,
@@ -1168,21 +1145,19 @@ pub struct PlaybackFuture {
     pop_front: Option<PopFrontFuture>,
     /// Playback is paused.
     paused: bool,
-    /// There is a song loaded into the player.
-    loaded: Option<Loaded>,
     /// A song to inject to play _right now_.
     inject: Option<(Arc<Item>, Duration)>,
     /// A song that has been sidelined by another song.
-    sidelined: VecDeque<(Loaded, Instant)>,
+    sidelined: VecDeque<Song>,
     /// Items to fall back to when there are no more songs in queue.
     fallback_items: Vec<Arc<Item>>,
-    /// Current volume.
+    /// Song volume.
     volume: Arc<RwLock<u32>>,
-    /// Current song that is loaded.
-    current: Arc<RwLock<Option<Current>>>,
+    /// Song that is currently loaded.
+    song: Arc<RwLock<Option<Song>>>,
     /// Path to write current song.
     current_song: Option<Arc<current_song::CurrentSong>>,
-    /// Current config.
+    /// Song config.
     echo_current_song: bool,
     /// Optional stream indicating when current song should update.
     current_song_update: Option<tokio_timer::Interval>,
@@ -1190,51 +1165,43 @@ pub struct PlaybackFuture {
 
 impl PlaybackFuture {
     /// Play what is at the front of the queue.
-    fn next_song(&mut self) -> Option<(Loaded, Duration)> {
+    fn next_song(&mut self) -> Option<Song> {
         use rand::Rng;
 
         if let Some((item, offset)) = self.inject.take() {
             // store the currently playing song in the sidelined slot.
-            if let Some(loaded) = self.loaded.take() {
-                self.sidelined.push_back((loaded, Instant::now()));
+            if let Some(mut song) = self.song.write().expect("poisoned").take() {
+                song.pause();
+                self.sidelined.push_back(song);
             }
 
-            let future = self.player.load(&*item, offset.as_millis() as u32);
-            let loaded = Loaded::new_with_elapsed(Origin::Injected, item, future, offset.clone());
-            return Some((loaded, offset));
+            let song = Song::new(item, offset, self.paused);
+            self.player.load(&song);
+            return Some(song);
         }
 
-        if let Some((loaded, paused_at)) = self.sidelined.pop_front() {
-            let elapsed = if paused_at > loaded.started_at {
-                // calculate offset to start playing at
-                (paused_at - loaded.started_at) + loaded.elapsed
-            } else {
-                Default::default()
-            };
-
-            let future = self.player.load(&*loaded.item, elapsed.as_millis() as u32);
-            let loaded =
-                Loaded::new_with_elapsed(loaded.origin, loaded.item, future, elapsed.clone());
-            return Some((loaded, elapsed));
+        if let Some(song) = self.sidelined.pop_front() {
+            self.player.load(&song);
+            return Some(song);
         }
 
+        // Take next from queue.
         if let Some(item) = self.queue.front() {
             self.pop_front = Some(self.queue.pop_front());
-            let future = self.player.load(&*item, 0);
-            let loaded = Loaded::new(Origin::Queue, item, future);
-            return Some((loaded, Default::default()));
+            let song = Song::new(item, Default::default(), self.paused);
+            self.player.load(&song);
+            return Some(song);
         }
 
-        if !self.paused || self.loaded.is_some() {
+        if !self.paused || self.song.read().expect("poisoned").is_some() {
             let mut rng = rand::thread_rng();
-
             let n = rng.gen_range(0, self.fallback_items.len());
 
             // Pick a random item to play.
             if let Some(item) = self.fallback_items.get(n) {
-                let future = self.player.load(&*item, 0);
-                let loaded = Loaded::new(Origin::Fallback, item.clone(), future);
-                return Some((loaded, Default::default()));
+                let song = Song::new(item.clone(), Default::default(), self.paused);
+                self.player.load(&song);
+                return Some(song);
             }
         }
 
@@ -1249,10 +1216,10 @@ impl PlaybackFuture {
             None => return,
         };
 
-        let current = self.current.read().expect("poisoned");
+        let song = self.song.read().expect("poisoned");
 
-        let result = match current.as_ref() {
-            Some(current) => current_song.write(current, self.paused),
+        let result = match song.as_ref() {
+            Some(song) => current_song.write(song, self.paused),
             None => current_song.blank(),
         };
 
@@ -1267,28 +1234,20 @@ impl PlaybackFuture {
 
     /// Load the next song.
     fn load_front(&mut self) {
-        if let Some((loaded, duration)) = self.next_song() {
-            *self.current.write().expect("poisoned") =
-                Some(Current::new(loaded.item.clone(), duration, self.paused));
-
+        if let Some(song) = self.next_song() {
             if !self.paused {
-                self.player.play();
-                self.broadcast(Event::Playing(
-                    self.echo_current_song,
-                    loaded.origin,
-                    loaded.item.clone(),
-                ));
+                self.player.play(&song);
+                self.broadcast(Event::Playing(self.echo_current_song, song.item.clone()));
             } else {
                 self.player.pause();
             }
 
-            self.loaded = Some(loaded);
+            *self.song.write().expect("poisoned") = Some(song);
             self.current_song();
             return;
         }
 
-        self.loaded = None;
-        *self.current.write().expect("poisoned") = None;
+        *self.song.write().expect("poisoned") = None;
 
         self.broadcast(Event::Empty);
         self.player.stop();
@@ -1320,8 +1279,8 @@ impl PlaybackFuture {
             Command::Pause if !self.paused => {
                 log::info!("pausing player");
 
-                if let Some(current) = self.current.write().expect("poisoned").as_mut() {
-                    current.pause();
+                if let Some(song) = self.song.write().expect("poisoned").as_mut() {
+                    song.pause();
                 }
 
                 self.paused = true;
@@ -1332,20 +1291,20 @@ impl PlaybackFuture {
             Command::Play if self.paused => {
                 log::info!("starting player");
 
-                if let Some(current) = self.current.write().expect("poisoned").as_mut() {
-                    current.play();
-                }
-
                 self.paused = false;
 
-                match self.loaded.as_ref() {
-                    Some(loaded) => {
-                        self.player.play();
-                        self.broadcast(Event::Playing(
-                            self.echo_current_song,
-                            loaded.origin,
-                            loaded.item.clone(),
-                        ));
+                let item = match self.song.write().expect("poisoned").as_mut() {
+                    Some(song) => {
+                        song.play();
+                        self.player.play(&song);
+                        Some(song.item.clone())
+                    }
+                    None => None,
+                };
+
+                match item {
+                    Some(item) => {
+                        self.broadcast(Event::Playing(self.echo_current_song, item));
                         self.current_song();
                     }
                     None => {
@@ -1354,7 +1313,7 @@ impl PlaybackFuture {
                 }
             }
             Command::Modified => {
-                if !self.paused && self.loaded.is_none() {
+                if !self.paused && self.song.read().expect("poisoned").is_none() {
                     self.load_front();
                 }
 
@@ -1402,29 +1361,18 @@ impl Future for PlaybackFuture {
                 not_ready = false;
             }
 
-            if let Some(loaded) = self.loaded.as_mut() {
-                match loaded.future.poll() {
-                    Ok(Async::Ready(())) => {
-                        log::info!("Song ended");
-                        self.load_front();
-                        not_ready = false;
-                    }
-                    Err(oneshot::Canceled) => {
-                        self.loaded = None;
-                        *self.current.write().expect("poisoned") = None;
-                    }
-                    Ok(Async::NotReady) => {}
-                }
-            }
-
             if let Async::Ready(event) = self
-                .events
+                .player
                 .poll()
                 .map_err(|_| format_err!("event stream errored"))?
             {
                 let event = event.ok_or_else(|| format_err!("events stream ended"))?;
 
                 match event {
+                    PlayerEvent::EndOfTrack => {
+                        log::info!("Song ended");
+                        self.load_front();
+                    }
                     other => {
                         log::trace!("player event: {:?}", other);
                     }

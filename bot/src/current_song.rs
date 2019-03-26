@@ -36,9 +36,9 @@ impl CurrentSong {
     }
 
     /// Write the current song to a path.
-    pub fn write(&self, current: &player::Current, paused: bool) -> Result<(), failure::Error> {
+    pub fn write(&self, song: &player::Song, paused: bool) -> Result<(), failure::Error> {
         let mut f = self.create_or_truncate()?;
-        let data = current.data(paused)?;
+        let data = song.data(paused)?;
         self.template.render(&mut f, &data)?;
         Ok(())
     }

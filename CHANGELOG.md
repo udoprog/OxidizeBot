@@ -6,7 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `[player] type = "connect"` to play music through Spotify's Connect API ([#17]).
+
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.1...HEAD
+[#17]: https://github.com/udoprog/setmod/issues/17
 
 ## [0.2.1]
 
