@@ -1273,11 +1273,11 @@ impl PlaybackFuture {
 
         match command {
             Command::Skip => {
-                log::info!("skipping song");
+                log::trace!("skipping song");
                 self.load_front();
             }
             Command::Pause if !self.paused => {
-                log::info!("pausing player");
+                log::trace!("pausing player");
 
                 if let Some(song) = self.song.write().expect("poisoned").as_mut() {
                     song.pause();
@@ -1289,7 +1289,7 @@ impl PlaybackFuture {
                 self.current_song();
             }
             Command::Play if self.paused => {
-                log::info!("starting player");
+                log::trace!("starting player");
 
                 self.paused = false;
 
