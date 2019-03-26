@@ -1370,7 +1370,7 @@ impl Future for PlaybackFuture {
 
                 match event {
                     PlayerEvent::EndOfTrack => {
-                        log::info!("Song ended");
+                        log::trace!("Song ended, loading next song...");
                         self.load_front();
                     }
                     other => {
