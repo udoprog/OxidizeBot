@@ -1,15 +1,75 @@
-<html>
-<body>
-    <h1>Setmod Admin Page</h1>
+{{#> layout title="setmod administration page" }}
+<div class="row">
+  <div class="col-sm">
+    <h4>Administration</h4>
 
-    <h2>Required Authentication</h2>
+    <p>
+    Congratulations on getting <b>setmod</b> running!
+    </p>
 
-    <ul>
-        {{#each auth}}
-        <li><a href="{{url}}">{{title}}</a></li>
+    <p>
+    If you need more help, go to the <a href="https://github.com/udoprog/setmod">README</a>.
+    </p>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-sm">
+    <h4>Authentication</h4>
+
+    {{#if auth}}
+      <div class="alert alert-danger" role="alert">
+        You have things that require authentication.
+      </div>
+
+      <table class="table">
+        <tbody>
+          {{#each auth}}
+            <td><a href="{{url}}">{{title}}</a></td>
+          {{/each}}
+        </tbody>
+      </table>
+    {{else}}
+      <div class="alert alert-success" role="alert">
+        Everything is successfully authenticated!
+      </div>
+    {{/if}}
+  </div>
+
+  <div class="col-sm">
+    <h4>Audio Device</h2>
+
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Device Name</th>
+          <th>Device Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#if auth}}
+          <tr>
+            <td colspan="2"><em>Cannot list audio devices right now. Refresh after authenticating.</em></td>
+          </tr>
         {{else}}
-        <li>Nothing to authenticate!</li>
-        {{/each}}
-    </ul>
-</body>
-</html>
+          {{#each audio_devices}}
+            <tr>
+              {{#if current}}
+                <td>{{name}} (current)</td>
+              {{else}}
+                <td><a href="{{url}}/api/set-device/{{id}}">{{name}}</a></td>
+              {{/if}}
+
+              <td>{{type}}</td>
+            </tr>
+          {{else}}
+            <tr>
+              <td colspan="2"><em>No audio devices found, try starting one and refreshing the page.</em></td>
+            </tr>
+          {{/each}}
+        {{/if}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{/layout}}

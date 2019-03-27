@@ -78,9 +78,10 @@ clip_cooldown = "15s"
 
 [player]
 # Player configuration.
-# To find out available speakers, change `speaker` to `"?"` and available speakers will be listed when running the
-# command.
-speaker = "Speakers (Realtek High Definiti"
+type = "connect"
+# Default device to use. Available device can be found in the Admin UI.
+device = "MyDevice"
+# Default volume.
 volume = 50
 
 # Set to false and the current song will not be echoed in chat.

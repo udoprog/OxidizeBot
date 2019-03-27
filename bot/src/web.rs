@@ -1,7 +1,12 @@
-use crate::utils;
-use futures::{future, sync::oneshot, Future};
+use crate::{
+    player, spotify,
+    utils::{self, BoxFuture},
+};
+use futures::{future, sync::oneshot, Future as _};
 use hashbrown::HashMap;
-use hyper::{body::Body, error, header, server, service, Request, Response, StatusCode, Uri};
+use hyper::{
+    body::Body, error, header, server, service, Method, Request, Response, StatusCode, Uri,
+};
 use std::{
     net::SocketAddr,
     sync::{Arc, RwLock},
@@ -10,8 +15,9 @@ use std::{
 pub const URL: &'static str = "http://localhost:12345";
 pub const REDIRECT_URI: &'static str = "/redirect";
 
-pub fn setup() -> Result<(Server, impl Future<Item = (), Error = error::Error>), failure::Error> {
+pub fn setup() -> Result<(Server, BoxFuture<(), error::Error>), failure::Error> {
     let mut reg = handlebars::Handlebars::new();
+    reg.register_partial("layout", include_str!("web/layout.html.hbs"))?;
     reg.register_template_string("index", include_str!("web/index.html.hbs"))?;
 
     let server = Server::new(Arc::new(reg));
@@ -24,7 +30,7 @@ pub fn setup() -> Result<(Server, impl Future<Item = (), Error = error::Error>),
         move || future::ok::<Server, error::Error>(server.clone())
     });
 
-    Ok((server, server_future))
+    Ok((server, Box::new(server_future)))
 }
 
 struct ExpectedToken {
@@ -39,6 +45,8 @@ pub struct Server {
     reg: Arc<handlebars::Handlebars>,
     /// Callbacks for when we have received a token.
     token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
+    /// Player interface.
+    player: Arc<RwLock<Option<player::PlayerClient>>>,
 }
 
 impl Server {
@@ -47,7 +55,13 @@ impl Server {
         Self {
             reg,
             token_callbacks: Arc::new(RwLock::new(HashMap::default())),
+            player: Default::default(),
         }
+    }
+
+    /// Set the player interface.
+    pub fn set_player(&self, player: player::PlayerClient) {
+        *self.player.write().expect("poisoned") = Some(player);
     }
 
     /// Receive an Oauth 2.0 token.
@@ -88,9 +102,17 @@ impl service::Service for Server {
     fn call(&mut self, req: Request<Self::ReqBody>) -> Self::Future {
         let uri = req.uri();
 
-        let result = match uri.path() {
-            REDIRECT_URI => Ok(self.handle_oauth2_redirect(uri)),
-            "/" => self.handle_index(),
+        let mut it = uri.path().split("/");
+        it.next();
+
+        let route = (req.method(), (it.next(), it.next(), it.next()));
+
+        let result = match route {
+            (&Method::GET, (Some("redirect"), None, None)) => self.handle_oauth2_redirect(uri),
+            (&Method::GET, (Some("api"), Some("set-device"), Some(id))) => {
+                self.handle_set_device(id)
+            }
+            (&Method::GET, (Some(""), None, None)) => self.handle_index(),
             _ => {
                 let mut r = Response::new(Body::from("No such page :("));
                 *r.status_mut() = StatusCode::NOT_FOUND;
@@ -114,11 +136,31 @@ impl service::Service for Server {
 impl Server {
     /// Handles Oauth 2.0 authentication redirect.
     pub fn handle_index(&mut self) -> Result<Response<Body>, failure::Error> {
-        let inner = self.token_callbacks.read().expect("lock poisoned");
+        let mut audio_devices = Vec::new();
+
+        if let Some(player) = self.player.read().expect("poisoned").as_ref() {
+            let current_device = player.current_device();
+
+            for device in player.list_devices().wait()? {
+                let current = current_device
+                    .as_ref()
+                    .map(|d| d.id == device.id)
+                    .unwrap_or_default();
+
+                audio_devices.push(AudioDevice {
+                    name: device.name.to_string(),
+                    id: device.id.to_string(),
+                    current,
+                    r#type: device_to_string(&device._type).to_string(),
+                })
+            }
+        }
+
+        let token_callbacks = self.token_callbacks.read().expect("lock poisoned");
 
         let mut auth = Vec::new();
 
-        for expected in inner.values() {
+        for expected in token_callbacks.values() {
             auth.push(Auth {
                 url: expected.url.to_string(),
                 title: expected.title.to_string(),
@@ -127,7 +169,10 @@ impl Server {
 
         auth.sort_by(|a, b| a.title.cmp(&b.title));
 
-        let data = Data { auth };
+        let data = Data {
+            auth,
+            audio_devices: &audio_devices,
+        };
 
         let body = self.reg.render("index", &data)?;
 
@@ -141,8 +186,9 @@ impl Server {
         return Ok(r);
 
         #[derive(serde::Serialize)]
-        struct Data {
+        struct Data<'a> {
             auth: Vec<Auth>,
+            audio_devices: &'a [AudioDevice],
         }
 
         #[derive(serde::Serialize)]
@@ -150,16 +196,39 @@ impl Server {
             title: String,
             url: String,
         }
+
+        #[derive(serde::Serialize)]
+        struct AudioDevice {
+            current: bool,
+            name: String,
+            id: String,
+            r#type: String,
+        }
+    }
+
+    /// Handle request to set device.
+    fn handle_set_device(&mut self, id: &str) -> Result<Response<Body>, failure::Error> {
+        if let Some(player) = self.player.read().expect("poisoned").as_ref() {
+            let mut audio_devices = Vec::new();
+
+            if let Some(player) = self.player.read().expect("poisoned").as_ref() {
+                audio_devices = player.list_devices().wait()?;
+            }
+
+            if let Some(device) = audio_devices.iter().find(|d| d.id == id) {
+                player.set_device(device.clone());
+            }
+        }
+
+        return redirect(URL);
     }
 
     /// Handles Oauth 2.0 authentication redirect.
-    pub fn handle_oauth2_redirect(&mut self, uri: &Uri) -> Response<Body> {
+    fn handle_oauth2_redirect(&mut self, uri: &Uri) -> Result<Response<Body>, failure::Error> {
         let query = match uri.query() {
             Some(query) => query,
             None => {
-                let mut r = Response::new(Body::from("Missing query in URL"));
-                *r.status_mut() = StatusCode::BAD_REQUEST;
-                return r;
+                return bad_request("Missing query in URL");
             }
         };
 
@@ -196,18 +265,14 @@ impl Server {
         let state = match state {
             Some(state) => String::from(state),
             None => {
-                let mut r = Response::new(Body::from("Missing `state` query parameter"));
-                *r.status_mut() = StatusCode::BAD_REQUEST;
-                return r;
+                return bad_request("Missing `state` query parameter");
             }
         };
 
         let code = match code {
             Some(code) => String::from(code),
             None => {
-                let mut r = Response::new(Body::from("Missing `code` query parameter"));
-                *r.status_mut() = StatusCode::BAD_REQUEST;
-                return r;
+                return bad_request("Missing `code` query parameter");
             }
         };
 
@@ -215,18 +280,35 @@ impl Server {
 
         if let Some(callback) = inner.remove(&state) {
             let _ = callback.channel.send(ReceivedToken { state, code });
-            // TODO: return a page that redirects you to the index page.
-            let mut r = Response::new(Body::from("Token received, feel free to close the window."));
-            *r.status_mut() = StatusCode::TEMPORARY_REDIRECT;
-            r.headers_mut()
-                .insert(header::LOCATION, URL.parse().expect("valid header value"));
-            return r;
+            return redirect(URL);
         }
 
-        let mut r = Response::new(Body::from("Sorry, I did not expect that :("));
-        *r.status_mut() = StatusCode::BAD_REQUEST;
-        return r;
+        bad_request("Sorry, I did not expect that :(")
     }
+}
+
+/// Convert a spotify device into a string.
+fn device_to_string(device: &spotify::DeviceType) -> &'static str {
+    match *device {
+        spotify::DeviceType::Computer => "Computer",
+        spotify::DeviceType::Smartphone => "Smart Phone",
+        spotify::DeviceType::Speaker => "Speaker",
+        spotify::DeviceType::Unknown => "Unknown",
+    }
+}
+
+fn redirect(url: &str) -> Result<Response<Body>, failure::Error> {
+    // TODO: return a page that redirects you to the index page.
+    let mut r = Response::new(Body::from(format!("Being redirected to: {}", url)));
+    *r.status_mut() = StatusCode::TEMPORARY_REDIRECT;
+    r.headers_mut().insert(header::LOCATION, URL.parse()?);
+    Ok(r)
+}
+
+fn bad_request(what: &str) -> Result<Response<Body>, failure::Error> {
+    let mut r = Response::new(Body::from(what.to_string()));
+    *r.status_mut() = StatusCode::BAD_REQUEST;
+    Ok(r)
 }
 
 #[derive(Debug)]

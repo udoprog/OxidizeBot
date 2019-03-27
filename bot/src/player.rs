@@ -16,26 +16,12 @@ use tokio_threadpool::{SpawnHandle, ThreadPool};
 
 mod connect;
 
-pub trait PlayerInterface:
-    Stream<Item = PlayerEvent, Error = failure::Error> + Send + 'static
-{
-    /// Stop playing.
-    fn stop(&mut self);
-
-    /// Start playing.
-    fn play(&mut self, song: &Song);
-
-    /// Pause playback.
-    fn pause(&mut self);
-
-    /// Adjust the volume of the player.
-    fn volume(&mut self, volume: u32);
-}
-
 #[derive(Debug)]
 pub enum PlayerEvent {
     /// We've reached the end of a track.
     EndOfTrack,
+    /// Indicate that the current device changed.
+    DeviceChanged,
     /// We've filtered a player event.
     Filtered,
     /// Indicate that we have successfully issued a playing command to the player.
@@ -155,7 +141,7 @@ pub fn run(
         Some(other) => failure::bail!("unsupported player type: {}", other),
     };
 
-    let player = match player_config {
+    let (player, player_interface) = match player_config {
         PlayerConfig::Connect(ref connect) => connect::setup(core, connect, spotify.clone())?,
     };
 
@@ -228,6 +214,7 @@ pub fn run(
     };
 
     let player = Player {
+        player_interface,
         queue,
         max_queue_length: config.max_queue_length,
         max_songs_per_user: config.max_songs_per_user,
@@ -255,102 +242,8 @@ pub fn run(
     Ok((future, player))
 }
 
-/// Convert a playlist into items.
-fn playlist_to_items(
-    core: &mut Core,
-    spotify: Arc<spotify::Spotify>,
-    playlist: &str,
-) -> Result<Vec<Arc<Item>>, failure::Error> {
-    let mut items = Vec::new();
-
-    let playlist = core.run(spotify.playlist(playlist))?;
-
-    for playlist_track in core.run(spotify.page_as_stream(playlist.tracks).concat2())? {
-        let track = playlist_track.track;
-
-        let track_id = TrackId(
-            SpotifyId::from_base62(&track.id)
-                .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
-        );
-
-        let artists = track
-            .artists
-            .into_iter()
-            .map(|a| a.name)
-            .collect::<Vec<_>>();
-
-        items.push(Arc::new(Item {
-            track_id,
-            artists,
-            name: track.name.to_string(),
-            user: None,
-            duration: Duration::from_millis(track.duration_ms.into()),
-        }));
-    }
-
-    Ok(items)
-}
-
-/// Convert all songs of a user into items.
-fn songs_to_items(
-    core: &mut Core,
-    spotify: Arc<spotify::Spotify>,
-) -> Result<Vec<Arc<Item>>, failure::Error> {
-    let mut items = Vec::new();
-
-    for added_song in core.run(spotify.my_tracks_stream().concat2())? {
-        let track = added_song.track;
-
-        let track_id = TrackId(
-            SpotifyId::from_base62(&track.id)
-                .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
-        );
-
-        let artists = track
-            .artists
-            .into_iter()
-            .map(|a| a.name)
-            .collect::<Vec<_>>();
-
-        items.push(Arc::new(Item {
-            track_id,
-            artists,
-            name: track.name.to_string(),
-            user: None,
-            duration: Duration::from_millis(track.duration_ms.into()),
-        }));
-    }
-
-    Ok(items)
-}
-
-/// Converts a track into an Item.
-fn convert_item(
-    thread_pool: &ThreadPool,
-    spotify: Arc<spotify::Spotify>,
-    user: Option<String>,
-    track_id: TrackId,
-) -> impl Future<Item = Arc<Item>, Error = failure::Error> {
-    let track_id_string = track_id.0.to_base62();
-
-    thread_pool
-        .spawn_handle(future::lazy(move || spotify.track(&track_id_string)))
-        .map(move |full_track| {
-            let artists = full_track
-                .artists
-                .into_iter()
-                .map(|a| a.name)
-                .collect::<Vec<_>>();
-
-            Arc::new(Item {
-                track_id,
-                artists,
-                name: full_track.name,
-                user,
-                duration: Duration::from_millis(full_track.duration_ms.into()),
-            })
-        })
-}
+/// Error value returned if a device has not been configured.
+pub struct NotConfigured;
 
 /// Events emitted by the player.
 #[derive(Debug, Clone)]
@@ -360,6 +253,8 @@ pub enum Event {
     Pausing,
     /// queue was modified in some way.
     Modified,
+    /// player has not been configured.
+    NotConfigured,
 }
 
 /// Information on current song.
@@ -481,6 +376,7 @@ pub struct CurrentData<'a> {
 /// A handler for the player.
 #[derive(Clone)]
 pub struct Player {
+    player_interface: self::connect::ConnectInterface,
     queue: Queue,
     max_queue_length: u32,
     max_songs_per_user: u32,
@@ -500,6 +396,7 @@ impl Player {
     /// The client components of the player.
     pub fn client(&self) -> PlayerClient {
         PlayerClient {
+            player_interface: self.player_interface.clone(),
             queue: self.queue.clone(),
             thread_pool: Arc::new(ThreadPool::new()),
             max_queue_length: self.max_queue_length,
@@ -539,6 +436,7 @@ impl Player {
 /// All parts of a Player that can be shared between threads.
 #[derive(Clone)]
 pub struct PlayerClient {
+    player_interface: self::connect::ConnectInterface,
     queue: Queue,
     thread_pool: Arc<ThreadPool>,
     max_queue_length: u32,
@@ -556,6 +454,21 @@ pub struct PlayerClient {
 }
 
 impl PlayerClient {
+    /// Get the current device.
+    pub fn current_device(&self) -> Option<spotify::Device> {
+        self.player_interface.current_device()
+    }
+
+    /// List all available devices.
+    pub fn list_devices(&self) -> impl Future<Item = Vec<spotify::Device>, Error = failure::Error> {
+        self.player_interface.list_devices()
+    }
+
+    /// Set which device to perform playback from.
+    pub fn set_device(&self, device: spotify::Device) {
+        self.player_interface.set_device(device)
+    }
+
     /// Send the given command.
     fn send(&self, command: Command) -> Result<(), failure::Error> {
         self.commands_tx
@@ -1124,7 +1037,7 @@ impl Future for PushBackFuture {
 
 /// Future associated with driving audio playback.
 pub struct PlaybackFuture {
-    player: Box<dyn PlayerInterface>,
+    player: self::connect::ConnectPlayer,
     commands: mpsc::UnboundedReceiver<Command>,
     queue: Queue,
     bus: Arc<RwLock<Bus<Event>>>,
@@ -1235,7 +1148,9 @@ impl PlaybackFuture {
 
                 if let Some(song) = self.next_song() {
                     if !self.paused {
-                        self.player.play(&song);
+                        if let Err(NotConfigured) = self.player.play(&song) {
+                            self.broadcast(Event::NotConfigured);
+                        }
                     }
 
                     *self.song.write().expect("poisoned") = Some(song);
@@ -1247,18 +1162,27 @@ impl PlaybackFuture {
             }
             Command::Pause if !self.paused => {
                 log::trace!("pausing player");
-                self.player.pause();
+
+                if let Err(NotConfigured) = self.player.pause() {
+                    self.broadcast(Event::NotConfigured);
+                }
             }
             Command::Play if self.paused => {
                 log::trace!("starting player");
 
                 if let Some(song) = self.song.read().expect("poisoned").as_ref() {
-                    self.player.play(&song);
+                    if let Err(NotConfigured) = self.player.play(&song) {
+                        self.broadcast(Event::NotConfigured);
+                    }
+
                     return;
                 }
 
                 if let Some(song) = self.next_song() {
-                    self.player.play(&song);
+                    if let Err(NotConfigured) = self.player.play(&song) {
+                        self.broadcast(Event::NotConfigured);
+                    }
+
                     *self.song.write().expect("poisoned") = Some(song);
                 } else {
                     self.broadcast(Event::Empty);
@@ -1270,7 +1194,10 @@ impl PlaybackFuture {
             Command::Modified => {
                 if !self.paused && self.song.read().expect("poisoned").is_none() {
                     if let Some(song) = self.next_song() {
-                        self.player.play(&song);
+                        if let Err(NotConfigured) = self.player.play(&song) {
+                            self.broadcast(Event::NotConfigured);
+                        }
+
                         *self.song.write().expect("poisoned") = Some(song);
                     }
                 }
@@ -1278,7 +1205,9 @@ impl PlaybackFuture {
                 self.broadcast(Event::Modified);
             }
             Command::Volume(volume) => {
-                self.player.volume(volume);
+                if let Err(NotConfigured) = self.player.volume(volume) {
+                    self.broadcast(Event::NotConfigured);
+                }
             }
             Command::Inject(item, offset) => {
                 // store the currently playing song in the sidelined slot.
@@ -1288,7 +1217,11 @@ impl PlaybackFuture {
                 }
 
                 let song = Song::new(item, offset);
-                self.player.play(&song);
+
+                if let Err(NotConfigured) = self.player.play(&song) {
+                    self.broadcast(Event::NotConfigured);
+                }
+
                 *self.song.write().expect("poisoned") = Some(song);
             }
             _ => {}
@@ -1337,12 +1270,26 @@ impl Future for PlaybackFuture {
                         log::trace!("Song ended, loading next song...");
 
                         if let Some(song) = self.next_song() {
-                            self.player.play(&song);
+                            if let Err(NotConfigured) = self.player.play(&song) {
+                                self.broadcast(Event::NotConfigured);
+                            }
+
                             *self.song.write().expect("poisoned") = Some(song);
                         } else {
                             self.broadcast(Event::Empty);
                             *self.song.write().expect("poisoned") = None;
                             self.current_song();
+                        }
+                    }
+                    PlayerEvent::DeviceChanged => {
+                        if !self.paused {
+                            if let Some(song) = self.song.write().expect("poisoned").as_mut() {
+                                song.pause();
+
+                                if let Err(NotConfigured) = self.player.play(&song) {
+                                    self.broadcast(Event::NotConfigured);
+                                }
+                            }
                         }
                     }
                     PlayerEvent::Playing => {
@@ -1395,4 +1342,101 @@ impl Future for PlaybackFuture {
             }
         }
     }
+}
+
+/// Convert a playlist into items.
+fn playlist_to_items(
+    core: &mut Core,
+    spotify: Arc<spotify::Spotify>,
+    playlist: &str,
+) -> Result<Vec<Arc<Item>>, failure::Error> {
+    let mut items = Vec::new();
+
+    let playlist = core.run(spotify.playlist(playlist))?;
+
+    for playlist_track in core.run(spotify.page_as_stream(playlist.tracks).concat2())? {
+        let track = playlist_track.track;
+
+        let track_id = TrackId(
+            SpotifyId::from_base62(&track.id)
+                .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
+        );
+
+        let artists = track
+            .artists
+            .into_iter()
+            .map(|a| a.name)
+            .collect::<Vec<_>>();
+
+        items.push(Arc::new(Item {
+            track_id,
+            artists,
+            name: track.name.to_string(),
+            user: None,
+            duration: Duration::from_millis(track.duration_ms.into()),
+        }));
+    }
+
+    Ok(items)
+}
+
+/// Convert all songs of a user into items.
+fn songs_to_items(
+    core: &mut Core,
+    spotify: Arc<spotify::Spotify>,
+) -> Result<Vec<Arc<Item>>, failure::Error> {
+    let mut items = Vec::new();
+
+    for added_song in core.run(spotify.my_tracks_stream().concat2())? {
+        let track = added_song.track;
+
+        let track_id = TrackId(
+            SpotifyId::from_base62(&track.id)
+                .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
+        );
+
+        let artists = track
+            .artists
+            .into_iter()
+            .map(|a| a.name)
+            .collect::<Vec<_>>();
+
+        items.push(Arc::new(Item {
+            track_id,
+            artists,
+            name: track.name.to_string(),
+            user: None,
+            duration: Duration::from_millis(track.duration_ms.into()),
+        }));
+    }
+
+    Ok(items)
+}
+
+/// Converts a track into an Item.
+fn convert_item(
+    thread_pool: &ThreadPool,
+    spotify: Arc<spotify::Spotify>,
+    user: Option<String>,
+    track_id: TrackId,
+) -> impl Future<Item = Arc<Item>, Error = failure::Error> {
+    let track_id_string = track_id.0.to_base62();
+
+    thread_pool
+        .spawn_handle(future::lazy(move || spotify.track(&track_id_string)))
+        .map(move |full_track| {
+            let artists = full_track
+                .artists
+                .into_iter()
+                .map(|a| a.name)
+                .collect::<Vec<_>>();
+
+            Arc::new(Item {
+                track_id,
+                artists,
+                name: full_track.name,
+                user,
+                duration: Duration::from_millis(full_track.duration_ms.into()),
+            })
+        })
 }

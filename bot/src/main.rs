@@ -212,6 +212,7 @@ fn main() -> Result<(), failure::Error> {
                 )?));
             }
 
+            web.set_player(player.client());
             Some(player)
         }
         _ => None,

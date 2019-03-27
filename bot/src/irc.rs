@@ -356,6 +356,9 @@ fn player_feedback_loop(
                             ),
                         );
                     }
+                    player::Event::NotConfigured => {
+                        sender.privmsg(channel.as_str(), "Player has not been configured yet!");
+                    }
                     // other event we don't care about
                     _ => {}
                 }

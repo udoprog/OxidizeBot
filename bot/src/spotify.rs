@@ -8,12 +8,15 @@ use reqwest::{
     Method, Url,
 };
 use rspotify::spotify::model::search;
-pub use rspotify::spotify::model::{
-    context::FullPlayingContext,
-    device::Device,
-    page::Page,
-    playlist::{FullPlaylist, SimplifiedPlaylist},
-    track::{FullTrack, SavedTrack},
+pub use rspotify::spotify::{
+    model::{
+        context::FullPlayingContext,
+        device::Device,
+        page::Page,
+        playlist::{FullPlaylist, SimplifiedPlaylist},
+        track::{FullTrack, SavedTrack},
+    },
+    senum::DeviceType,
 };
 use std::{
     mem,

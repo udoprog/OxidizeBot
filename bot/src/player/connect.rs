@@ -3,8 +3,8 @@ use crate::{
     utils::{self, BoxFuture},
 };
 use failure::format_err;
-use futures::{Async, Future, Poll, Stream};
-use std::sync::Arc;
+use futures::{sync::mpsc, Async, Future, Poll, Stream};
+use std::sync::{Arc, RwLock};
 use tokio::timer;
 use tokio_core::reactor::Core;
 
@@ -20,7 +20,7 @@ pub fn setup(
     core: &mut Core,
     config: &Config,
     spotify: Arc<spotify::Spotify>,
-) -> Result<Box<dyn super::PlayerInterface>, failure::Error> {
+) -> Result<(ConnectPlayer, ConnectInterface), failure::Error> {
     let devices = core.run(spotify.my_player_devices())?;
 
     for (i, device) in devices.iter().enumerate() {
@@ -32,23 +32,33 @@ pub fn setup(
         None => devices.into_iter().next(),
     };
 
-    let device = device.ok_or_else(|| format_err!("No connected devices found"))?;
+    let device = Arc::new(RwLock::new(device));
+
+    let (config_tx, config_rx) = mpsc::unbounded();
 
     let player = ConnectPlayer {
-        spotify,
-        device,
+        spotify: spotify.clone(),
+        device: device.clone(),
         play: None,
         pause: None,
         volume: None,
         timeout: None,
+        config_rx,
     };
 
-    Ok(Box::new(player))
+    // Configuration interface.
+    let interface = ConnectInterface {
+        spotify,
+        config_tx,
+        device,
+    };
+
+    Ok((player, interface))
 }
 
-struct ConnectPlayer {
+pub struct ConnectPlayer {
     spotify: Arc<spotify::Spotify>,
-    device: spotify::Device,
+    device: Arc<RwLock<Option<spotify::Device>>>,
     /// Last play command.
     play: Option<BoxFuture<(), failure::Error>>,
     /// Last pause command.
@@ -57,37 +67,58 @@ struct ConnectPlayer {
     volume: Option<(BoxFuture<(), failure::Error>, u32)>,
     /// Timeout for end of song.
     timeout: Option<timer::Delay>,
+    /// Receiver for configuration events.
+    config_rx: mpsc::UnboundedReceiver<ConfigurationEvent>,
 }
 
-impl super::PlayerInterface for ConnectPlayer {
-    fn stop(&mut self) {
-        self.pause = Some(Box::new(self.spotify.me_player_pause(&self.device.id)));
-        self.timeout = None;
-    }
+impl ConnectPlayer {
+    pub fn play(&mut self, song: &super::Song) -> Result<(), super::NotConfigured> {
+        let device = self.device.read().expect("poisoned");
 
-    fn play(&mut self, song: &super::Song) {
+        let device = match device.as_ref() {
+            Some(device) => device,
+            None => return Err(super::NotConfigured),
+        };
+
         let track_uri = format!("spotify:track:{}", song.item.track_id.to_base62());
 
         self.play = Some(Box::new(self.spotify.me_player_play(
-            &self.device.id,
+            &device.id,
             Some(track_uri.as_str()),
             Some(song.elapsed().as_millis() as u64),
         )));
 
         self.timeout = Some(timer::Delay::new(song.deadline()));
+        Ok(())
     }
 
-    fn pause(&mut self) {
-        self.pause = Some(Box::new(self.spotify.me_player_pause(&self.device.id)));
+    pub fn pause(&mut self) -> Result<(), super::NotConfigured> {
+        let device = self.device.read().expect("poisoned");
+
+        let device = match device.as_ref() {
+            Some(device) => device,
+            None => return Err(super::NotConfigured),
+        };
+
+        self.pause = Some(Box::new(self.spotify.me_player_pause(&device.id)));
         self.timeout = None;
+        Ok(())
     }
 
-    fn volume(&mut self, volume: u32) {
+    pub fn volume(&mut self, volume: u32) -> Result<(), super::NotConfigured> {
+        let device = self.device.read().expect("poisoned");
+
+        let device = match device.as_ref() {
+            Some(device) => device,
+            None => return Err(super::NotConfigured),
+        };
+
         let future = Box::new(
             self.spotify
-                .me_player_volume(&self.device.id, (volume as f32) / 100f32),
+                .me_player_volume(&device.id, (volume as f32) / 100f32),
         );
         self.volume = Some((future, volume));
+        Ok(())
     }
 }
 
@@ -131,6 +162,19 @@ impl Stream for ConnectPlayer {
                 }
             }
 
+            match self
+                .config_rx
+                .poll()
+                .map_err(|_| format_err!("failed to receive configuration event"))?
+            {
+                Async::Ready(None) => failure::bail!("configuration received ended"),
+                Async::Ready(Some(ConfigurationEvent::SetDevice(device))) => {
+                    *self.device.write().expect("poisoned") = Some(device);
+                    return Ok(Async::Ready(Some(super::PlayerEvent::DeviceChanged)));
+                }
+                Async::NotReady => (),
+            }
+
             if not_ready {
                 return Ok(Async::NotReady);
             }
@@ -160,4 +204,37 @@ fn handle_future(
     *future = None;
     *not_ready = false;
     result
+}
+
+pub enum ConfigurationEvent {
+    SetDevice(spotify::Device),
+}
+
+#[derive(Clone)]
+pub struct ConnectInterface {
+    spotify: Arc<spotify::Spotify>,
+    config_tx: mpsc::UnboundedSender<ConfigurationEvent>,
+    device: Arc<RwLock<Option<spotify::Device>>>,
+}
+
+impl ConnectInterface {
+    /// Get the current device.
+    pub fn current_device(&self) -> Option<spotify::Device> {
+        self.device.read().expect("poisoned").clone()
+    }
+
+    /// List all available devices.
+    pub fn list_devices(&self) -> impl Future<Item = Vec<spotify::Device>, Error = failure::Error> {
+        self.spotify.my_player_devices()
+    }
+
+    /// Set which device to perform playback from.
+    pub fn set_device(&self, device: spotify::Device) {
+        if let Err(_) = self
+            .config_tx
+            .unbounded_send(ConfigurationEvent::SetDevice(device))
+        {
+            log::error!("failed to configure device");
+        }
+    }
 }
