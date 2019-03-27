@@ -14,12 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Deprecated the use of the `native` player in favor of `connect` since it's a potential TOS violation.
 - Improved administration UI:
-  - Support for selecting Audio Device (does not persist across reboots).
+  - Support for selecting Audio Device (does not persist across reboots) ([#20]).
   - Informing you more clearly when you need to authenticate.
   - Provide hint on how to configure persistent device.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.1...HEAD
 [#17]: https://github.com/udoprog/setmod/issues/17
+[#20]: https://github.com/udoprog/setmod/issues/20
 
 ## [0.2.1]
 
