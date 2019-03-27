@@ -77,11 +77,8 @@ clip_cooldown = "15s"
 # name = "ether"
 
 [player]
-# Player configuration.
-type = "connect"
-# Default device to use. Available device can be found in the Admin UI.
-device = "MyDevice"
-# Default volume.
+# Optional: if you don't want to use the default device. All devices are listed in the Admin UI.
+# device = "MyDevice"
 volume = 50
 
 # Set to false and the current song will not be echoed in chat.

@@ -34,9 +34,6 @@ pub enum PlayerEvent {
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
-    /// The type of player to use.
-    #[serde(default, rename = "type")]
-    ty: Option<String>,
     /// The max queue length of the player.
     #[serde(default = "default_max_queue_length")]
     max_queue_length: u32,
@@ -55,13 +52,6 @@ pub struct Config {
     /// Device to use with connect player.
     #[serde(default)]
     device: Option<String>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(tag = "type")]
-pub enum PlayerConfig {
-    #[serde(rename = "connect")]
-    Connect(self::connect::Config),
 }
 
 fn default_true() -> bool {
@@ -134,16 +124,11 @@ pub fn run(
 ) -> Result<(PlaybackFuture, Player), failure::Error> {
     let (commands_tx, commands) = mpsc::unbounded();
 
-    let player_config = match config.ty.as_ref().map(|ty| ty.as_str()) {
-        Some("connect") | None => PlayerConfig::Connect(self::connect::Config {
-            device: config.device.clone(),
-        }),
-        Some(other) => failure::bail!("unsupported player type: {}", other),
+    let connect_config = self::connect::Config {
+        device: config.device.clone(),
     };
 
-    let (player, player_interface) = match player_config {
-        PlayerConfig::Connect(ref connect) => connect::setup(core, connect, spotify.clone())?,
-    };
+    let (player, player_interface) = connect::setup(core, &connect_config, spotify.clone())?;
 
     let bus = Arc::new(RwLock::new(Bus::new(1024)));
 
@@ -227,16 +212,11 @@ pub fn run(
         closed: closed.clone(),
     };
 
-    // NB: in case we add/re-introduce other players. this is specific to the connect-based player.
-    #[allow(irrefutable_let_patterns)]
-    {
-        if let PlayerConfig::Connect(..) = player_config {
-            player.pause()?;
+    // NB: make sure player is paused.
+    player.pause()?;
 
-            if let Some(volume) = config.volume {
-                player.volume(volume)?;
-            }
-        }
+    if let Some(volume) = config.volume {
+        player.volume(volume)?;
     }
 
     Ok((future, player))

@@ -31,15 +31,8 @@ notify_rewards = false
 name = "thingies"
 
 [player]
-# By default use the Connect API to control your player.
-type = "connect"
-# Optional: if you don't want to use the default device. All devices are listed when the bot starts up
-# device = "MEMPHIS"
-
-# If you want to use the native player:
-# type = "native"
-# speaker = "Speakers (Realtek High Definiti"
-
+# Optional: if you don't want to use the default device. All devices are listed in the Admin UI.
+# device = "MyDevice"
 volume = 50
 
 # Set to false and the current song will not be echoed in chat.
