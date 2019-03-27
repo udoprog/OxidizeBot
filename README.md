@@ -326,23 +326,26 @@ path = "E:\\temp\\countdown.txt"
 Enabled commands:
 
 * `!countdown set <duration> <template>` - Set a countdown, available template variables are `{{remaining}}`, `{{duration}}`, and `{{elapsed}}`.
+  - Example: `!countdown set 5m I'll be live in {{remaining}}`
+  - Example: `!countdown set 1m Getting food, back in {{remaining}}`
 * `!countdown clear` - Clear the current countdown.
 
 ## Aliases
 
-Aliases are enabled per-channel like this:
+Aliases are specified in the configuration file like this:
 
-```yaml
-irc:
-  channels:
-    - name: "#mychannel"
-      aliases:
-      - match: "!sr"
-        replace: "!song request {{rest}}"
-      - match: "!sl"
-        replace: "!song list {{rest}}"
-      - match: "!volume"
-        replace: "!song volume {{rest}}"
+```toml
+[[aliases]]
+match = "!sr"
+replace = "!song request {{rest}}"
+
+[[aliases]]
+match = "!sl"
+replace = "!song list {{rest}}"
+
+[[aliases]]
+match = "!volume"
+replace = "!song volume {{rest}}"
 ```
 
 Aliases are applied as a pre-processing step for each incoming command.
