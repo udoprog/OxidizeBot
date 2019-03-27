@@ -136,13 +136,14 @@ impl service::Service for Server {
 impl Server {
     /// Handles Oauth 2.0 authentication redirect.
     pub fn handle_index(&mut self) -> Result<Response<Body>, failure::Error> {
+        let mut current_device = None;
         let mut audio_devices = Vec::new();
 
         if let Some(player) = self.player.read().expect("poisoned").as_ref() {
-            let current_device = player.current_device();
+            let current = player.current_device();
 
             for device in player.list_devices().wait()? {
-                let current = current_device
+                let current = current
                     .as_ref()
                     .map(|d| d.id == device.id)
                     .unwrap_or_default();
@@ -154,6 +155,13 @@ impl Server {
                     r#type: device_to_string(&device._type).to_string(),
                 })
             }
+
+            current_device = current.map(|d| AudioDevice {
+                name: d.name.to_string(),
+                id: d.id.to_string(),
+                current: true,
+                r#type: device_to_string(&d._type).to_string(),
+            })
         }
 
         let token_callbacks = self.token_callbacks.read().expect("lock poisoned");
@@ -172,6 +180,7 @@ impl Server {
         let data = Data {
             auth,
             audio_devices: &audio_devices,
+            current_device: current_device.as_ref(),
         };
 
         let body = self.reg.render("index", &data)?;
@@ -189,6 +198,7 @@ impl Server {
         struct Data<'a> {
             auth: Vec<Auth>,
             audio_devices: &'a [AudioDevice],
+            current_device: Option<&'a AudioDevice>,
         }
 
         #[derive(serde::Serialize)]

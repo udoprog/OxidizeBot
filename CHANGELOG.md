@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved administration UI:
   - Support for selecting Audio Device (does not persist across reboots).
   - Informing you more clearly when you need to authenticate.
+  - Provide hint on how to configure persistent device.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.1...HEAD
 [#17]: https://github.com/udoprog/setmod/issues/17

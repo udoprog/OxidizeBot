@@ -39,6 +39,15 @@
   <div class="col-sm">
     <h4>Audio Device</h2>
 
+    {{#if current_device}}
+    <p>
+      Make sure you have the following in your <pre>config.toml</pre> if you want your current device saved:
+
+      <code><pre>[player]
+device = "{{current_device.name}}"</pre></code>
+    </p>
+    {{/if}}
+
     <table class="table">
       <thead>
         <tr>
