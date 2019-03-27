@@ -1728,7 +1728,7 @@ dependencies = [
 
 [[package]]
 name = "setmod-bot"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "Inflector 0.11.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "base64 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1759,7 +1759,7 @@ dependencies = [
  "serde 1.0.89 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_json 1.0.39 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde_yaml 0.8.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "setmod-notifier 0.2.1",
+ "setmod-notifier 0.2.2",
  "tokio 0.1.17 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-bus 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-core 0.1.17 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1771,7 +1771,7 @@ dependencies = [
 
 [[package]]
 name = "setmod-notifier"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "failure 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
