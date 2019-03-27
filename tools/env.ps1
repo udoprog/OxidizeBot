@@ -1,1 +1,0 @@
-$env:SQLITE3_LIB_DIR="$PSScriptRoot\..\bot\lib"

@@ -2,8 +2,6 @@
 # It can be evoked from anywhere on the filesystem.
 param([switch] $Release=$false)
 
-. "$PSScriptRoot\env.ps1"
-
 $Args = @()
 
 if ($Release) {

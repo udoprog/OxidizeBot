@@ -18,8 +18,6 @@ New-Item -Name $target -ItemType "directory"
 Copy-Item secrets.yml.example -Destination $target/
 Copy-Item config.toml.example -Destination $target/
 Copy-Item target/release/setmod-bot.exe -Destination $target/
-Copy-Item bot/lib/sqlite3.dll -Destination $target/
-Copy-Item bot/lib/portaudio_x64.dll -Destination $target/
 Copy-Item tools/setmod-dist.ps1 -Destination $target/setmod.ps1
 
 Set-Location -Path target

@@ -34,8 +34,6 @@ cp secrets.yml.example $dest/
 case $TRAVIS_OS_NAME in
 "windows")
     cp target/release/setmod-bot.exe $dest/
-    cp bot/lib/sqlite3.dll $dest/
-    cp bot/lib/portaudio_x64.dll $dest/
     7z a $dest.zip $dest/
     ;;
 "linux")
