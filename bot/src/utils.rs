@@ -176,7 +176,7 @@ struct DurationParts {
 }
 
 /// Partition the given duration into time components.
-fn partition(duration: time::Duration) -> DurationParts {
+fn partition(duration: &time::Duration) -> DurationParts {
     let seconds = duration.as_secs();
     let rest = seconds as u64;
     let hours = rest / 3600;
@@ -195,7 +195,7 @@ fn partition(duration: time::Duration) -> DurationParts {
 pub fn compact_duration(duration: time::Duration) -> String {
     let mut parts = Vec::new();
 
-    let p = partition(duration);
+    let p = partition(&duration);
 
     parts.extend(match p.hours {
         0 => None,
@@ -220,7 +220,7 @@ pub fn compact_duration(duration: time::Duration) -> String {
 }
 
 /// Format the given number of seconds as a long human time.
-pub fn long_duration(duration: time::Duration) -> String {
+pub fn long_duration(duration: &time::Duration) -> String {
     let mut parts = Vec::new();
 
     let p = partition(duration);
@@ -251,7 +251,7 @@ pub fn long_duration(duration: time::Duration) -> String {
 }
 
 /// Format the given number of seconds as a digital duration.
-pub fn digital_duration(duration: time::Duration) -> String {
+pub fn digital_duration(duration: &time::Duration) -> String {
     let mut parts = Vec::new();
 
     let p = partition(duration);

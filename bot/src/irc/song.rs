@@ -98,8 +98,8 @@ impl command::Handler for Song {
             }
             Some("current") => match self.player.current() {
                 Some(current) => {
-                    let elapsed = utils::digital_duration(current.elapsed());
-                    let duration = utils::digital_duration(current.duration());
+                    let elapsed = utils::digital_duration(&current.elapsed());
+                    let duration = utils::digital_duration(&current.duration());
 
                     if let Some(name) = current.item.user.as_ref() {
                         ctx.respond(format!(
@@ -366,11 +366,11 @@ impl command::Handler for Song {
                 match count {
                     0 => ctx.respond("No songs in queue :("),
                     1 => {
-                        let length = utils::long_duration(duration);
+                        let length = utils::long_duration(&duration);
                         ctx.respond(format!("One song in queue with {} of play time.", length));
                     }
                     count => {
-                        let length = utils::long_duration(duration);
+                        let length = utils::long_duration(&duration);
                         ctx.respond(format!(
                             "{} songs in queue with {} of play time.",
                             count, length

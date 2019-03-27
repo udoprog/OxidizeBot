@@ -109,17 +109,6 @@ impl Irc<'_> {
             ..
         } = self;
 
-        let mut handlers = module::Handlers::default();
-
-        for module in modules {
-            module.hook(module::HookContext {
-                db: &db,
-                handlers: &mut handlers,
-                currency: config.currency.as_ref(),
-                twitch: &bot_twitch,
-            })?;
-        }
-
         let access_token = token
             .read()
             .expect("poisoned lock")
@@ -150,7 +139,18 @@ impl Irc<'_> {
             sender.privmsg(irc_config.channel.as_str(), startup_message);
         }
 
+        let mut handlers = module::Handlers::default();
         let mut futures = Vec::<BoxFuture<(), failure::Error>>::new();
+
+        for module in modules {
+            module.hook(module::HookContext {
+                db: &db,
+                handlers: &mut handlers,
+                currency: config.currency.as_ref(),
+                twitch: &bot_twitch,
+                futures: &mut futures,
+            })?;
+        }
 
         if let Some(currency) = config.currency.as_ref() {
             let reward = 10;

@@ -431,8 +431,8 @@ impl Song {
             name: self.item.name.to_string(),
             artists,
             user: self.item.user.as_ref().map(|s| s.as_str()),
-            duration: utils::digital_duration(self.item.duration.clone()),
-            elapsed: utils::digital_duration(self.elapsed()),
+            duration: utils::digital_duration(&self.item.duration),
+            elapsed: utils::digital_duration(&self.elapsed()),
         })
     }
 

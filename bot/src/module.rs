@@ -1,4 +1,4 @@
-use crate::{command, config, currency, db, twitch};
+use crate::{command, config, currency, db, twitch, utils};
 use hashbrown::HashMap;
 
 #[derive(Default)]
@@ -44,6 +44,7 @@ pub struct HookContext<'a> {
     pub handlers: &'a mut Handlers,
     pub currency: Option<&'a currency::Currency>,
     pub twitch: &'a twitch::Twitch,
+    pub futures: &'a mut Vec<utils::BoxFuture<(), failure::Error>>,
 }
 
 pub trait Module {

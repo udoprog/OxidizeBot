@@ -295,6 +295,41 @@ This command has a cooldown determined by the `[irc] clip_cooldown` configuratio
 
 Enables the Magic `!8ball` command. Cause it's MAGIC.
 
+#### `swearjar`
+
+You enable the `swearjar` module by adding the following to your configuration:
+
+```toml
+[[modules]]
+type = "swearjar"
+
+# The amount of currency to reward all watchers with.
+reward = 10
+# Cooldown between invocations, default: 1m
+# cooldown = "1m"
+```
+
+This also requires the `currency` feature to be enabled.
+
+Enabled commands:
+
+* `!swearjar` - Anyone can invoke the swearjar to reward all viewers with some currency from the streamer when they swear.
+
+#### `countdown`
+
+You enable the `countdown` module by adding the following to your configuration:
+
+```toml
+[[modules]]
+type = "countdown"
+path = "E:\\temp\\countdown.txt"
+```
+
+Enabled commands:
+
+* `!countdown set <duration> <template>` - Set a countdown, available template variables are `{{remaining}}`, `{{duration}}`, and `{{elapsed}}`.
+* `!countdown clear` - Clear the current countdown.
+
 ## Aliases
 
 Aliases are enabled per-channel like this:
