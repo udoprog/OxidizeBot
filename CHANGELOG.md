@@ -12,8 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Player now plays music through Spotify's blessed Connect API ([#17]).
-- `!swearjar` command that can be enabled using as a module through `[[modules]]`.
-- `!countdown` command that can be enabled using as a module through `[[modules]]`.
+- `!swearjar` command that can be enabled using as a module through `[[modules]]` see [config.toml.example](config.toml.example).
+- `!countdown` command that can be enabled using as a module through `[[modules]]` see [config.toml.example](config.toml.example).
 
 ### Changed
 - Remove dependency on bundled `.dll` files.
