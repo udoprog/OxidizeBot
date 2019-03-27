@@ -1,4 +1,4 @@
-use librespot::core::spotify_id::SpotifyId;
+use crate::spotify_id::SpotifyId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, diesel::FromSqlRow, diesel::AsExpression)]
 #[sql_type = "diesel::sql_types::Text"]

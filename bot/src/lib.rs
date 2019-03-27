@@ -17,6 +17,7 @@ pub mod player;
 pub mod secrets;
 pub mod setbac;
 pub mod spotify;
+mod spotify_id;
 mod template;
 mod themes;
 mod track_id;

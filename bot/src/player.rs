@@ -1,7 +1,7 @@
 use tokio_core::reactor::Core;
 
-pub use crate::track_id::TrackId;
-use crate::{config, current_song, db, secrets, spotify, themes::Themes, utils};
+use crate::{config, current_song, db, spotify, themes::Themes, utils};
+pub use crate::{spotify_id::SpotifyId, track_id::TrackId};
 
 use chrono::Utc;
 use failure::format_err;
@@ -14,10 +14,7 @@ use std::{
 use tokio_bus::{Bus, BusReader};
 use tokio_threadpool::{SpawnHandle, ThreadPool};
 
-use librespot::core::spotify_id::SpotifyId;
-
 mod connect;
-mod native;
 
 pub trait PlayerInterface:
     Stream<Item = PlayerEvent, Error = failure::Error> + Send + 'static
@@ -31,13 +28,8 @@ pub trait PlayerInterface:
     /// Pause playback.
     fn pause(&mut self);
 
-    /// Load the given track.
-    ///
-    /// The oneshot is triggered when the track has completed.
-    fn load(&mut self, song: &Song);
-
     /// Adjust the volume of the player.
-    fn volume(&mut self, volume: Option<f32>);
+    fn volume(&mut self, volume: u32);
 }
 
 #[derive(Debug)]
@@ -46,6 +38,12 @@ pub enum PlayerEvent {
     EndOfTrack,
     /// We've filtered a player event.
     Filtered,
+    /// Indicate that we have successfully issued a playing command to the player.
+    Playing,
+    /// Indicate that we have successfully issued a pause command to the player.
+    Pausing,
+    /// Indicate that we have successfully issued a volume command to the player.
+    Volume(u32),
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -71,16 +69,11 @@ pub struct Config {
     /// Device to use with connect player.
     #[serde(default)]
     device: Option<String>,
-    /// Speaker to use with native player.
-    #[serde(default)]
-    speaker: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "type")]
 pub enum PlayerConfig {
-    #[serde(rename = "native")]
-    Native(self::native::Config),
     #[serde(rename = "connect")]
     Connect(self::connect::Config),
 }
@@ -152,7 +145,6 @@ pub fn run(
     spotify: Arc<spotify::Spotify>,
     parent_config: &config::Config,
     config: &Config,
-    secrets: &secrets::Secrets,
 ) -> Result<(PlaybackFuture, Player), failure::Error> {
     let (commands_tx, commands) = mpsc::unbounded();
 
@@ -160,17 +152,11 @@ pub fn run(
         Some("connect") | None => PlayerConfig::Connect(self::connect::Config {
             device: config.device.clone(),
         }),
-        Some("native") => PlayerConfig::Native(self::native::Config {
-            speaker: config.speaker.clone(),
-        }),
         Some(other) => failure::bail!("unsupported player type: {}", other),
     };
 
-    let (player, paused) = match player_config {
-        PlayerConfig::Connect(ref connect) => {
-            (connect::setup(core, connect, spotify.clone())?, false)
-        }
-        PlayerConfig::Native(ref native) => (native::setup(core, config, native, secrets)?, true),
+    let player = match player_config {
+        PlayerConfig::Connect(ref connect) => connect::setup(core, connect, spotify.clone())?,
     };
 
     let bus = Arc::new(RwLock::new(Bus::new(1024)));
@@ -182,6 +168,8 @@ pub fn run(
         Some(playlist) => playlist_to_items(core, spotify.clone(), playlist)?,
         None => songs_to_items(core, spotify.clone())?,
     };
+
+    log::info!("Added {} fallback songs", fallback_items.len());
 
     // Add tracks from database.
     for song in db.list()? {
@@ -206,7 +194,7 @@ pub fn run(
 
     let volume = Arc::new(RwLock::new(u32::min(
         100u32,
-        config.volume.unwrap_or(100u32),
+        config.volume.unwrap_or(50u32),
     )));
 
     let song = Arc::new(RwLock::new(None));
@@ -227,8 +215,9 @@ pub fn run(
         queue: queue.clone(),
         bus: bus.clone(),
         pop_front: None,
-        paused,
-        inject: None,
+        // NB: it is not considered paused _yet_.
+        // When we issue the pause command below, we only queue up the command.
+        paused: false,
         sidelined: Default::default(),
         fallback_items,
         volume: Arc::clone(&volume),
@@ -251,11 +240,15 @@ pub fn run(
         closed: closed.clone(),
     };
 
-    if let PlayerConfig::Connect(..) = player_config {
-        player.pause()?;
+    // NB: in case we add/re-introduce other players. this is specific to the connect-based player.
+    #[allow(irrefutable_let_patterns)]
+    {
+        if let PlayerConfig::Connect(..) = player_config {
+            player.pause()?;
 
-        if let Some(volume) = config.volume {
-            player.volume(volume)?;
+            if let Some(volume) = config.volume {
+                player.volume(volume)?;
+            }
         }
     }
 
@@ -381,14 +374,11 @@ pub struct Song {
 
 impl Song {
     /// Create a new current song.
-    pub fn new(item: Arc<Item>, elapsed: Duration, paused: bool) -> Self {
+    pub fn new(item: Arc<Item>, elapsed: Duration) -> Self {
         Song {
             item,
             elapsed,
-            started_at: match paused {
-                true => None,
-                false => Some(Instant::now()),
-            },
+            started_at: None,
         }
     }
 
@@ -435,13 +425,13 @@ impl Song {
     pub fn data(&self, paused: bool) -> Result<CurrentData<'_>, failure::Error> {
         let artists = utils::human_artists(&self.item.artists);
 
-        let name = htmlescape::decode_html(&self.item.name)
-            .map_err(|_| format_err!("failed to decode song name: {}", self.item.name))?;
+        /*let name = htmlescape::decode_html(&self.item.name)
+        .map_err(|_| format_err!("failed to decode song name: {}", self.item.name))?;*/
 
         Ok(CurrentData {
             paused,
             track_id: &self.item.track_id,
-            name,
+            name: self.item.name.to_string(),
             artists,
             user: self.item.user.as_ref().map(|s| s.as_str()),
             duration: utils::digital_duration(self.item.duration.clone()),
@@ -1145,8 +1135,6 @@ pub struct PlaybackFuture {
     pop_front: Option<PopFrontFuture>,
     /// Playback is paused.
     paused: bool,
-    /// A song to inject to play _right now_.
-    inject: Option<(Arc<Item>, Duration)>,
     /// A song that has been sidelined by another song.
     sidelined: VecDeque<Song>,
     /// Items to fall back to when there are no more songs in queue.
@@ -1164,52 +1152,47 @@ pub struct PlaybackFuture {
 }
 
 impl PlaybackFuture {
-    /// Play what is at the front of the queue.
+    /// Get the next song that should be played.
+    ///
+    /// This takes into account:
+    /// If there are any songs to be injected (e.g. theme songs).
+    /// If there are any songs that have been sidelines by injected songs.
+    /// If there are any songs in the queue.
+    ///
+    /// Finally, if there are any songs to fall back to.
     fn next_song(&mut self) -> Option<Song> {
         use rand::Rng;
 
-        if let Some((item, offset)) = self.inject.take() {
-            // store the currently playing song in the sidelined slot.
-            if let Some(mut song) = self.song.write().expect("poisoned").take() {
-                song.pause();
-                self.sidelined.push_back(song);
-            }
-
-            let song = Song::new(item, offset, self.paused);
-            self.player.load(&song);
-            return Some(song);
-        }
-
         if let Some(song) = self.sidelined.pop_front() {
-            self.player.load(&song);
             return Some(song);
         }
 
         // Take next from queue.
         if let Some(item) = self.queue.front() {
             self.pop_front = Some(self.queue.pop_front());
-            let song = Song::new(item, Default::default(), self.paused);
-            self.player.load(&song);
-            return Some(song);
+            return Some(Song::new(item, Default::default()));
         }
 
-        if !self.paused || self.song.read().expect("poisoned").is_some() {
-            let mut rng = rand::thread_rng();
-            let n = rng.gen_range(0, self.fallback_items.len());
-
-            // Pick a random item to play.
-            if let Some(item) = self.fallback_items.get(n) {
-                let song = Song::new(item.clone(), Default::default(), self.paused);
-                self.player.load(&song);
-                return Some(song);
-            }
+        if self.fallback_items.is_empty() {
+            log::warn!("there are no fallback songs available");
+            return None;
         }
 
-        self.paused = true;
-        None
+        let mut rng = rand::thread_rng();
+        let n = rng.gen_range(0, self.fallback_items.len());
+
+        // Pick a random item to play.
+        if let Some(item) = self.fallback_items.get(n) {
+            return Some(Song::new(item.clone(), Default::default()));
+        }
+
+        log::warn!("failed to get random song #{}: out-of-index", n);
+        return None;
     }
 
     /// Write current song. Log any errors.
+    ///
+    /// MUST NOT be called when self.song is locked.
     fn current_song(&self) {
         let current_song = match self.current_song.as_ref() {
             Some(current_song) => current_song,
@@ -1232,28 +1215,6 @@ impl PlaybackFuture {
         }
     }
 
-    /// Load the next song.
-    fn load_front(&mut self) {
-        if let Some(song) = self.next_song() {
-            if !self.paused {
-                self.player.play(&song);
-                self.broadcast(Event::Playing(self.echo_current_song, song.item.clone()));
-            } else {
-                self.player.pause();
-            }
-
-            *self.song.write().expect("poisoned") = Some(song);
-            self.current_song();
-            return;
-        }
-
-        *self.song.write().expect("poisoned") = None;
-
-        self.broadcast(Event::Empty);
-        self.player.stop();
-        self.current_song();
-    }
-
     /// Broadcast an event from the player.
     fn broadcast(&self, event: Event) {
         let mut b = self.bus.write().expect("poisoned");
@@ -1274,58 +1235,64 @@ impl PlaybackFuture {
         match command {
             Command::Skip => {
                 log::trace!("skipping song");
-                self.load_front();
+
+                if let Some(song) = self.next_song() {
+                    if !self.paused {
+                        self.player.play(&song);
+                    }
+
+                    *self.song.write().expect("poisoned") = Some(song);
+                } else {
+                    *self.song.write().expect("poisoned") = None;
+                    self.broadcast(Event::Empty);
+                    self.current_song();
+                }
             }
             Command::Pause if !self.paused => {
                 log::trace!("pausing player");
-
-                if let Some(song) = self.song.write().expect("poisoned").as_mut() {
-                    song.pause();
-                }
-
-                self.paused = true;
                 self.player.pause();
-                self.broadcast(Event::Pausing);
-                self.current_song();
             }
             Command::Play if self.paused => {
                 log::trace!("starting player");
 
-                self.paused = false;
+                if let Some(song) = self.song.read().expect("poisoned").as_ref() {
+                    self.player.play(&song);
+                    return;
+                }
 
-                let item = match self.song.write().expect("poisoned").as_mut() {
-                    Some(song) => {
-                        song.play();
-                        self.player.play(&song);
-                        Some(song.item.clone())
-                    }
-                    None => None,
-                };
-
-                match item {
-                    Some(item) => {
-                        self.broadcast(Event::Playing(self.echo_current_song, item));
-                        self.current_song();
-                    }
-                    None => {
-                        self.load_front();
-                    }
+                if let Some(song) = self.next_song() {
+                    self.player.play(&song);
+                    *self.song.write().expect("poisoned") = Some(song);
+                } else {
+                    self.broadcast(Event::Empty);
+                    *self.song.write().expect("poisoned") = None;
+                    self.current_song();
                 }
             }
+            // queue was modified in some way
             Command::Modified => {
                 if !self.paused && self.song.read().expect("poisoned").is_none() {
-                    self.load_front();
+                    if let Some(song) = self.next_song() {
+                        self.player.play(&song);
+                        *self.song.write().expect("poisoned") = Some(song);
+                    }
                 }
 
                 self.broadcast(Event::Modified);
             }
             Command::Volume(volume) => {
-                *self.volume.write().expect("poisoned") = volume;
-                self.player.volume(Some((volume as f32) / 100f32));
+                self.player.volume(volume);
             }
             Command::Inject(item, offset) => {
-                self.inject = Some((item, offset));
-                self.load_front();
+                // store the currently playing song in the sidelined slot.
+                if let Some(mut song) = self.song.write().expect("poisoned").take() {
+                    song.pause();
+                    self.sidelined.push_back(song);
+                }
+
+                let song = Song::new(item, offset);
+                self.player.play(&song);
+                *self.song.write().expect("poisoned") = Some(song);
             }
             _ => {}
         }
@@ -1371,7 +1338,42 @@ impl Future for PlaybackFuture {
                 match event {
                     PlayerEvent::EndOfTrack => {
                         log::trace!("Song ended, loading next song...");
-                        self.load_front();
+
+                        if let Some(song) = self.next_song() {
+                            self.player.play(&song);
+                            *self.song.write().expect("poisoned") = Some(song);
+                        } else {
+                            self.broadcast(Event::Empty);
+                            *self.song.write().expect("poisoned") = None;
+                            self.current_song();
+                        }
+                    }
+                    PlayerEvent::Playing => {
+                        if let Some(song) = self.song.write().expect("poisoned").as_mut() {
+                            song.play();
+                            self.broadcast(Event::Playing(
+                                self.echo_current_song,
+                                song.item.clone(),
+                            ));
+                            self.paused = false;
+                        } else {
+                            log::warn!("received a playing event, but there is no song loaded");
+                            self.paused = true;
+                        }
+
+                        self.current_song();
+                    }
+                    PlayerEvent::Pausing => {
+                        if let Some(song) = self.song.write().expect("poisoned").as_mut() {
+                            song.pause();
+                        }
+
+                        self.broadcast(Event::Pausing);
+                        self.paused = true;
+                        self.current_song();
+                    }
+                    PlayerEvent::Volume(volume) => {
+                        *self.volume.write().expect("poisoned") = volume;
                     }
                     other => {
                         log::trace!("player event: {:?}", other);

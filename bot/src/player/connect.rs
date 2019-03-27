@@ -1,4 +1,7 @@
-use crate::{spotify, utils::BoxFuture};
+use crate::{
+    spotify,
+    utils::{self, BoxFuture},
+};
 use failure::format_err;
 use futures::{Async, Future, Poll, Stream};
 use std::sync::Arc;
@@ -51,7 +54,7 @@ struct ConnectPlayer {
     /// Last pause command.
     pause: Option<BoxFuture<(), failure::Error>>,
     /// Last volume command.
-    volume: Option<BoxFuture<(), failure::Error>>,
+    volume: Option<(BoxFuture<(), failure::Error>, u32)>,
     /// Timeout for end of song.
     timeout: Option<timer::Delay>,
 }
@@ -79,13 +82,12 @@ impl super::PlayerInterface for ConnectPlayer {
         self.timeout = None;
     }
 
-    fn load(&mut self, _: &super::Song) {}
-
-    fn volume(&mut self, volume: Option<f32>) {
-        let volume = volume.unwrap_or(1f32);
-        self.volume = Some(Box::new(
-            self.spotify.me_player_volume(&self.device.id, volume),
-        ));
+    fn volume(&mut self, volume: u32) {
+        let future = Box::new(
+            self.spotify
+                .me_player_volume(&self.device.id, (volume as f32) / 100f32),
+        );
+        self.volume = Some((future, volume));
     }
 }
 
@@ -107,9 +109,27 @@ impl Stream for ConnectPlayer {
                 }
             }
 
-            handle_future(&mut self.play, &mut not_ready, "play command");
-            handle_future(&mut self.pause, &mut not_ready, "pause command");
-            handle_future(&mut self.volume, &mut not_ready, "volume command");
+            if handle_future(&mut self.play, &mut not_ready, "play command") {
+                return Ok(Async::Ready(Some(super::PlayerEvent::Playing)));
+            }
+
+            if handle_future(&mut self.pause, &mut not_ready, "pause command") {
+                return Ok(Async::Ready(Some(super::PlayerEvent::Pausing)));
+            }
+
+            if let Some((future, volume)) = self.volume.as_mut() {
+                match future.poll() {
+                    Ok(Async::Ready(())) => {
+                        let volume = *volume;
+                        self.volume = None;
+                        return Ok(Async::Ready(Some(super::PlayerEvent::Volume(volume))));
+                    }
+                    Ok(Async::NotReady) => (),
+                    Err(e) => {
+                        utils::log_err("failed to issue volume command", e);
+                    }
+                }
+            }
 
             if not_ready {
                 return Ok(Async::NotReady);
@@ -122,20 +142,22 @@ fn handle_future(
     future: &mut Option<BoxFuture<(), failure::Error>>,
     not_ready: &mut bool,
     what: &'static str,
-) {
+) -> bool {
     let pollable = match future.as_mut() {
         Some(future) => future,
-        None => return,
+        None => return false,
     };
 
-    match pollable.poll() {
-        Ok(Async::Ready(())) => (),
-        Ok(Async::NotReady) => return,
+    let result = match pollable.poll() {
+        Ok(Async::Ready(())) => true,
+        Ok(Async::NotReady) => return false,
         Err(e) => {
-            log::error!("failed to issue {what}: {error}", what = what, error = e);
+            utils::log_err(format!("failed to issue {what}", what = what), e);
+            false
         }
-    }
+    };
 
     *future = None;
     *not_ready = false;
+    result
 }

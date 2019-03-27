@@ -199,14 +199,8 @@ fn main() -> Result<(), failure::Error> {
     let player = match config.player.as_ref() {
         // Only setup if the song feature is enabled.
         Some(player) if config.features.test(Feature::Song) => {
-            let (future, player) = player::run(
-                &mut core,
-                db.clone(),
-                spotify.clone(),
-                &config,
-                player,
-                &secrets,
-            )?;
+            let (future, player) =
+                player::run(&mut core, db.clone(), spotify.clone(), &config, player)?;
 
             futures.push(Box::new(future));
 
