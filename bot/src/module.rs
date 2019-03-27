@@ -1,4 +1,4 @@
-use crate::{command, config, db};
+use crate::{command, config, currency, db, twitch};
 use hashbrown::HashMap;
 
 #[derive(Default)]
@@ -27,18 +27,23 @@ impl Handlers {
 }
 
 mod countdown;
+mod swearjar;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 #[serde(tag = "type")]
 pub enum Config {
     #[serde(rename = "countdown")]
     Countdown(countdown::Config),
+    #[serde(rename = "swearjar")]
+    SwearJar(swearjar::Config),
 }
 
 /// Context for a hook.
 pub struct HookContext<'a> {
     pub db: &'a db::Database,
     pub handlers: &'a mut Handlers,
+    pub currency: Option<&'a currency::Currency>,
+    pub twitch: &'a twitch::Twitch,
 }
 
 pub trait Module {
@@ -56,6 +61,9 @@ impl Config {
         Ok(match *self {
             Config::Countdown(ref module) => {
                 Box::new(self::countdown::Countdown::load(config, module)?)
+            }
+            Config::SwearJar(ref module) => {
+                Box::new(self::swearjar::SwearJar::load(config, module)?)
             }
         })
     }

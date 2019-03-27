@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `[player] type = "connect"` to play music through Spotify's Connect API ([#17]).
+- `!swearjar` command that can be enabled using as a module through `[[modules]]`.
 
 ### Changed
 - Deprecated the use of the `native` player in favor of `connect` since it's a potential TOS violation.

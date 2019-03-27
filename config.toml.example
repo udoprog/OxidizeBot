@@ -28,7 +28,7 @@ moderator_cooldown = "5s"
 notify_rewards = false
 
 [currency]
-name = "ether"
+name = "thingies"
 
 [player]
 # By default use the Connect API to control your player.
@@ -56,6 +56,10 @@ template = [
 [themes]
 blimp = {track = "spotify:track:7JczDg05i29N5C3VMZKIVA"}
 setup = {track = "spotify:track:2fZpKgrcAlWzWYwQeFG43O", offset = "00:14"}
+
+[[modules]]
+type = "swearjar"
+reward = 10
 
 [[aliases]]
 match = "!sr"

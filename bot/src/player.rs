@@ -425,9 +425,6 @@ impl Song {
     pub fn data(&self, paused: bool) -> Result<CurrentData<'_>, failure::Error> {
         let artists = utils::human_artists(&self.item.artists);
 
-        /*let name = htmlescape::decode_html(&self.item.name)
-        .map_err(|_| format_err!("failed to decode song name: {}", self.item.name))?;*/
-
         Ok(CurrentData {
             paused,
             track_id: &self.item.track_id,

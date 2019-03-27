@@ -115,6 +115,8 @@ impl Irc<'_> {
             module.hook(module::HookContext {
                 db: &db,
                 handlers: &mut handlers,
+                currency: config.currency.as_ref(),
+                twitch: &bot_twitch,
             })?;
         }
 

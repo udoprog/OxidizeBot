@@ -77,6 +77,51 @@ impl Database {
         Ok(b.map(|b| b.amount))
     }
 
+    /// Add (or subtract) from the balance for a single user.
+    pub fn balance_add(
+        &self,
+        channel: &str,
+        user: &str,
+        amount_to_add: i32,
+    ) -> impl Future<Item = (), Error = failure::Error> {
+        use self::schema::balances::dsl;
+
+        let user = user.to_string();
+        let channel = String::from(channel);
+        let pool = self.pool.clone();
+
+        self.thread_pool.spawn_handle(future::lazy(move || {
+            let c = pool.get()?;
+
+            let filter =
+                dsl::balances.filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&user)));
+
+            let b = filter.clone().first::<models::Balance>(&c).optional()?;
+
+            match b {
+                None => {
+                    let balance = models::Balance {
+                        channel: channel.to_string(),
+                        user,
+                        amount: amount_to_add,
+                    };
+
+                    diesel::insert_into(dsl::balances)
+                        .values(&balance)
+                        .execute(&c)?;
+                }
+                Some(b) => {
+                    let value = b.amount + amount_to_add;
+                    diesel::update(filter)
+                        .set(dsl::amount.eq(value))
+                        .execute(&c)?;
+                }
+            }
+
+            Ok(())
+        }))
+    }
+
     /// Add balance to users.
     pub fn balances_increment<'a>(
         &self,
