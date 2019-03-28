@@ -59,6 +59,10 @@ reward = 10
 type = "countdown"
 path = "E:\\temp\\countdown.txt"
 
+[[water]]
+# Water command to help remind the streamer to drink water.
+type = "water"
+
 [[aliases]]
 match = "!sr"
 replace = "!song request {{rest}}"

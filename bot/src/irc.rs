@@ -3,7 +3,7 @@ use crate::{
     currency::Currency,
     db,
     features::{Feature, Features},
-    module, oauth2, player, twitch, utils,
+    module, oauth2, player, stream_info, twitch, utils,
     utils::BoxFuture,
 };
 use failure::format_err;
@@ -142,6 +142,14 @@ impl Irc<'_> {
         let mut handlers = module::Handlers::default();
         let mut futures = Vec::<BoxFuture<(), failure::Error>>::new();
 
+        let stream_info = {
+            let interval = time::Duration::from_secs(30);
+            let (stream_info, future) =
+                stream_info::setup(config.streamer.as_str(), interval, streamer_twitch.clone());
+            futures.push(Box::new(future));
+            stream_info
+        };
+
         for module in modules {
             module.hook(module::HookContext {
                 db: &db,
@@ -149,6 +157,7 @@ impl Irc<'_> {
                 currency: config.currency.as_ref(),
                 twitch: &bot_twitch,
                 futures: &mut futures,
+                stream_info: &stream_info,
             })?;
         }
 
@@ -168,20 +177,6 @@ impl Irc<'_> {
 
             futures.push(Box::new(future));
         }
-
-        let interval = 60 * 5;
-
-        let stream_info = {
-            let stream_info = Arc::new(RwLock::new(None));
-            let future = stream_info_loop(
-                config,
-                interval,
-                streamer_twitch.clone(),
-                stream_info.clone(),
-            );
-            futures.push(Box::new(future));
-            stream_info
-        };
 
         if let Some(player) = player {
             futures.push(Box::new(player_feedback_loop(
@@ -426,63 +421,6 @@ fn reward_loop(
         .or_else(|e| {
             utils::log_err("failed to reward users", e);
             Ok(())
-        })
-        .for_each(|_| Ok(()))
-}
-
-/// Set up a reward loop.
-fn stream_info_loop(
-    config: &config::Config,
-    interval: u64,
-    twitch: twitch::Twitch,
-    stream_info: Arc<RwLock<Option<StreamInfo>>>,
-) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
-    // Add currency timer.
-    timer::Interval::new(time::Instant::now(), time::Duration::from_secs(interval))
-        .map_err(failure::Error::from)
-        .map({
-            let streamer = config.streamer.to_string();
-
-            move |_| {
-                log::trace!("refreshing stream info for streamer: {}", streamer);
-            }
-        })
-        .and_then({
-            let streamer = config.streamer.to_string();
-
-            move |_| {
-                let user = twitch.user_by_login(streamer.as_str());
-                let stream = twitch.stream_by_login(streamer.as_str());
-                let channel = twitch.channel_by_login(streamer.as_str());
-                user.join3(stream, channel)
-            }
-        })
-        .and_then(move |(user, stream, channel)| {
-            let mut stream_info = stream_info.write().map_err(|_| format_err!("poisoned"))?;
-            // NB: user old user information in case new one is not available yet.
-            let old_user = stream_info.as_mut().and_then(|s| s.user.take());
-
-            *stream_info = Some(StreamInfo {
-                user: user.or(old_user),
-                game: channel.game,
-                title: channel.status,
-                stream: stream,
-            });
-
-            Ok(())
-        })
-        // handle any errors.
-        .or_else({
-            let streamer = config.streamer.to_string();
-
-            move |e| {
-                log::error!(
-                    "failed to refresh stream info for streamer: {}: {}",
-                    streamer,
-                    e
-                );
-                Ok(())
-            }
         })
         .for_each(|_| Ok(()))
 }
@@ -900,14 +838,6 @@ impl<'m> User<'m> {
             target: self.target.to_owned(),
         }
     }
-}
-
-#[derive(Debug)]
-pub struct StreamInfo {
-    stream: Option<twitch::Stream>,
-    user: Option<twitch::User>,
-    title: String,
-    game: Option<String>,
 }
 
 /// Struct of tags.

@@ -1280,9 +1280,6 @@ impl Future for PlaybackFuture {
                                 song.item.clone(),
                             ));
                             self.paused = false;
-                        } else {
-                            log::warn!("received a playing event, but there is no song loaded");
-                            self.paused = true;
                         }
 
                         self.current_song();

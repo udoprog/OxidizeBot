@@ -1,11 +1,11 @@
-use crate::{command, irc, twitch, utils, utils::BoxFuture};
+use crate::{command, stream_info, twitch, utils, utils::BoxFuture};
 use failure::format_err;
 use futures::{future, Future as _};
 use std::sync::{Arc, RwLock};
 
 /// Handler for the `!clip` command.
 pub struct Clip {
-    pub stream_info: Arc<RwLock<Option<irc::StreamInfo>>>,
+    pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
     pub clip_cooldown: utils::Cooldown,
     pub twitch: twitch::Twitch,
 }
@@ -19,7 +19,7 @@ impl command::Handler for Clip {
 
         let stream_info = self.stream_info.read().expect("poisoned");
 
-        let user_id = match stream_info.as_ref().and_then(|s| s.user.as_ref()) {
+        let user_id = match stream_info.user.as_ref() {
             Some(user) => user.id.as_str(),
             None => {
                 log::error!("No information available on the current stream");

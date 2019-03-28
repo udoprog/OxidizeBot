@@ -330,6 +330,20 @@ Enabled commands:
   - Example: `!countdown set 1m Getting food, back in {{remaining}}`
 * `!countdown clear` - Clear the current countdown.
 
+#### `water`
+
+You enable the `water` module by adding the following to your configuration:
+
+```toml
+[[modules]]
+type = "water"
+```
+
+Enabled commands:
+
+* `!water` - A user can remind the streamer to drink water and will be rewarded one unit of stream currency for every minute since last reminder.
+* `!water undo` - Undos the last water reminder and refunds the reward.
+
 ## Aliases
 
 Aliases are specified in the configuration file like this:

@@ -1,13 +1,13 @@
 //! module for misc smaller commands.
 
-use crate::{command, irc, twitch, utils};
+use crate::{command, irc, stream_info, twitch, utils};
 use chrono::Utc;
 use futures::Future;
 use std::sync::{Arc, RwLock};
 
 /// Handler for the `!uptime` command.
 pub struct Uptime {
-    pub stream_info: Arc<RwLock<Option<irc::StreamInfo>>>,
+    pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
 }
 
 impl command::Handler for Uptime {
@@ -16,8 +16,9 @@ impl command::Handler for Uptime {
             .stream_info
             .read()
             .expect("poisoned")
+            .stream
             .as_ref()
-            .and_then(|s| s.stream.as_ref().map(|s| s.started_at.clone()));
+            .map(|s| s.started_at.clone());
 
         let now = Utc::now();
 
@@ -46,19 +47,14 @@ impl command::Handler for Uptime {
 
 /// Handler for the `!title` command.
 pub struct Title {
-    pub stream_info: Arc<RwLock<Option<irc::StreamInfo>>>,
+    pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
     pub twitch: twitch::Twitch,
 }
 
 impl Title {
     /// Handle the title command.
     fn show(&mut self, user: irc::User<'_>) {
-        let title = self
-            .stream_info
-            .read()
-            .expect("poisoned")
-            .as_ref()
-            .map(|s| s.title.clone());
+        let title = self.stream_info.read().expect("poisoned").title.clone();
 
         match title {
             Some(title) => {
@@ -111,19 +107,14 @@ impl command::Handler for Title {
 
 /// Handler for the `!title` command.
 pub struct Game {
-    pub stream_info: Arc<RwLock<Option<irc::StreamInfo>>>,
+    pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
     pub twitch: twitch::Twitch,
 }
 
 impl Game {
     /// Handle the game command.
     fn show(&mut self, user: irc::User<'_>) {
-        let game = self
-            .stream_info
-            .read()
-            .expect("poisoned")
-            .as_ref()
-            .and_then(|s| s.game.clone());
+        let game = self.stream_info.read().expect("poisoned").game.clone();
 
         match game {
             Some(game) => {

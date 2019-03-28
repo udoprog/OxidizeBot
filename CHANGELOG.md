@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `!water` command that can be enabled using as a module through `[[modules]]` see [README.md](README.md#water).
+
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.2...HEAD
 
 ## [0.2.2]

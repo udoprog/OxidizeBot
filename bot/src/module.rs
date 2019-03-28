@@ -1,5 +1,6 @@
-use crate::{command, config, currency, db, twitch, utils};
+use crate::{command, config, currency, db, stream_info, twitch, utils};
 use hashbrown::HashMap;
+use std::sync::{Arc, RwLock};
 
 #[derive(Default)]
 pub struct Handlers {
@@ -28,6 +29,7 @@ impl Handlers {
 
 mod countdown;
 mod swearjar;
+mod water;
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "type")]
@@ -36,6 +38,8 @@ pub enum Config {
     Countdown(countdown::Config),
     #[serde(rename = "swearjar")]
     SwearJar(swearjar::Config),
+    #[serde(rename = "water")]
+    Water(water::Config),
 }
 
 /// Context for a hook.
@@ -45,6 +49,7 @@ pub struct HookContext<'a> {
     pub currency: Option<&'a currency::Currency>,
     pub twitch: &'a twitch::Twitch,
     pub futures: &'a mut Vec<utils::BoxFuture<(), failure::Error>>,
+    pub stream_info: &'a Arc<RwLock<stream_info::StreamInfo>>,
 }
 
 pub trait Module {
@@ -66,6 +71,7 @@ impl Config {
             Config::SwearJar(ref module) => {
                 Box::new(self::swearjar::SwearJar::load(config, module)?)
             }
+            Config::Water(ref module) => Box::new(self::water::Module::load(config, module)?),
         })
     }
 }
