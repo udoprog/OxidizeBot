@@ -66,6 +66,15 @@ fn main() -> Result<(), failure::Error> {
 
     let handle = setup_logs(root).context("failed to setup logs")?;
 
+    match try_main(&root, &config) {
+        Err(e) => utils::log_err("bot crashed", e),
+        Ok(()) => log::info!("bot was shut down"),
+    }
+
+    Ok(())
+}
+
+fn try_main(root: &Path, config: &Path) -> Result<(), failure::Error> {
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
 
     let config: Config = if config.is_file() {
@@ -254,8 +263,8 @@ fn main() -> Result<(), failure::Error> {
     let shutdown_rx = shutdown_rx
         .map_err(|_| None)
         .and_then::<_, Result<(), Option<failure::Error>>>(|_| Err(None));
+
     let result = core.run(stuff.join(shutdown_rx).map(|_| ()));
-    drop(handle);
 
     match result {
         Ok(()) => Ok(()),
