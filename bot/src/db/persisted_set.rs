@@ -1,10 +1,8 @@
 use crate::db;
 use failure::{format_err, ResultExt as _};
 use hashbrown::{HashMap, HashSet};
-use std::{
-    cmp, error, fmt, hash, marker, str,
-    sync::{Arc, RwLock},
-};
+use parking_lot::RwLock;
+use std::{cmp, error, fmt, hash, marker, str, sync::Arc};
 
 /// The backend of a words store.
 pub trait Backend: Clone + Send + Sync {
@@ -61,7 +59,7 @@ where
 
     /// Insert a word into the bad words list.
     pub fn insert(&self, channel: &str, value: T) -> Result<(), failure::Error> {
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self.inner.write();
         let values = inner.entry(channel.to_string()).or_default();
 
         if !values.contains(&value) {
@@ -75,7 +73,7 @@ where
     /// Remove the given value from the container.
     pub fn delete(&self, channel: &str, value: &T) -> Result<bool, failure::Error> {
         use hashbrown::hash_map;
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self.inner.write();
 
         if let hash_map::Entry::Occupied(mut e) = inner.entry(channel.to_string()) {
             if !e.get_mut().remove(value) {
@@ -91,7 +89,7 @@ where
 
     /// Test the given word.
     pub fn contains<'a>(&'a self, channel: &str, value: &T) -> bool {
-        let inner = self.inner.read().expect("lock poisoned");
+        let inner = self.inner.read();
 
         if let Some(values) = inner.get(channel) {
             return values.contains(value);
@@ -102,7 +100,7 @@ where
 
     /// Get a list of all commands.
     pub fn list(&self, channel: &str) -> Vec<T> {
-        let inner = self.inner.read().expect("lock poisoned");
+        let inner = self.inner.read();
 
         let mut out = Vec::new();
 

@@ -1,8 +1,9 @@
 use failure::format_err;
 use futures::{Async, Future, Poll, Stream};
+use parking_lot::Mutex;
 use std::{
     net::{Ipv4Addr, SocketAddr},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 use tokio::{
     io::{self, AsyncRead, WriteHalf},
@@ -27,7 +28,7 @@ impl Notifier {
 
     /// Send a message to the bus.
     pub fn send(&self, n: Notification) -> Result<(), failure::Error> {
-        let mut bus = self.bus.lock().expect("lock poisoned");
+        let mut bus = self.bus.lock();
 
         if let Err(_) = bus.try_broadcast(n) {
             failure::bail!("bus is full");
@@ -47,7 +48,7 @@ impl Notifier {
             .map_err(failure::Error::from)
             .and_then(move |s| {
                 let (_, writer) = s.split();
-                let rx = self.bus.lock().expect("lock poisoned").add_rx();
+                let rx = self.bus.lock().add_rx();
 
                 let handler = BusHandler::new(writer, rx)
                     .map_err(|e| {

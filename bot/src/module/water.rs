@@ -2,10 +2,8 @@ use crate::{command, config, currency, db, module, stream_info, utils};
 use chrono::{DateTime, Utc};
 use failure::format_err;
 use futures::Future as _;
-use std::{
-    sync::{Arc, RwLock},
-    time,
-};
+use parking_lot::RwLock;
+use std::{sync::Arc, time};
 
 #[derive(Clone)]
 pub struct Reward {
@@ -33,7 +31,6 @@ impl Handler {
         let started_at = self
             .stream_info
             .read()
-            .expect("poisoned")
             .stream
             .as_ref()
             .map(|s| s.started_at.clone());

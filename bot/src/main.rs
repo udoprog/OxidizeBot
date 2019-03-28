@@ -127,6 +127,10 @@ fn main() -> Result<(), failure::Error> {
         ()
     }));
 
+    if let Err(e) = webbrowser::open(web::URL) {
+        log::error!("failed to open browser: {}", e);
+    }
+
     log::info!("Listening on: {}", web::URL);
 
     let mut tokens = vec![];

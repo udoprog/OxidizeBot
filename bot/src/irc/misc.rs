@@ -3,7 +3,8 @@
 use crate::{command, irc, stream_info, twitch, utils};
 use chrono::Utc;
 use futures::Future;
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Handler for the `!uptime` command.
 pub struct Uptime {
@@ -15,7 +16,6 @@ impl command::Handler for Uptime {
         let started_at = self
             .stream_info
             .read()
-            .expect("poisoned")
             .stream
             .as_ref()
             .map(|s| s.started_at.clone());
@@ -54,7 +54,7 @@ pub struct Title {
 impl Title {
     /// Handle the title command.
     fn show(&mut self, user: irc::User<'_>) {
-        let title = self.stream_info.read().expect("poisoned").title.clone();
+        let title = self.stream_info.read().title.clone();
 
         match title {
             Some(title) => {
@@ -114,7 +114,7 @@ pub struct Game {
 impl Game {
     /// Handle the game command.
     fn show(&mut self, user: irc::User<'_>) {
-        let game = self.stream_info.read().expect("poisoned").game.clone();
+        let game = self.stream_info.read().game.clone();
 
         match game {
             Some(game) => {

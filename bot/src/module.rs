@@ -1,6 +1,7 @@
 use crate::{command, config, currency, db, stream_info, twitch, utils};
 use hashbrown::HashMap;
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 #[derive(Default)]
 pub struct Handlers {

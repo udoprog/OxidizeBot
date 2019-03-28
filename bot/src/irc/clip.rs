@@ -1,7 +1,8 @@
 use crate::{command, stream_info, twitch, utils, utils::BoxFuture};
 use failure::format_err;
 use futures::{future, Future as _};
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Handler for the `!clip` command.
 pub struct Clip {
@@ -17,7 +18,7 @@ impl command::Handler for Clip {
             return Ok(());
         }
 
-        let stream_info = self.stream_info.read().expect("poisoned");
+        let stream_info = self.stream_info.read();
 
         let user_id = match stream_info.user.as_ref() {
             Some(user) => user.id.as_str(),

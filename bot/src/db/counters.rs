@@ -1,9 +1,10 @@
 use crate::{db, template};
 use failure::{format_err, ResultExt as _};
 use hashbrown::HashMap;
+use parking_lot::RwLock;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, RwLock,
+    Arc,
 };
 
 /// The backend of a words store.
@@ -87,7 +88,7 @@ where
         self.backend
             .edit(key.channel.as_str(), key.name.as_str(), text)?;
 
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self.inner.write();
         let count = inner.get(&key).map(|c| c.count()).unwrap_or(0);
 
         inner.insert(
@@ -113,7 +114,7 @@ where
             return Ok(false);
         }
 
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self.inner.write();
         inner.remove(&key);
         Ok(true)
     }
@@ -122,7 +123,7 @@ where
     pub fn get<'a>(&'a self, channel: &str, name: &str) -> Option<Arc<Counter>> {
         let key = Key::new(channel, name);
 
-        let inner = self.inner.read().expect("lock poisoned");
+        let inner = self.inner.read();
 
         if let Some(counter) = inner.get(&key) {
             return Some(Arc::clone(counter));
@@ -133,7 +134,7 @@ where
 
     /// Get a list of all counters.
     pub fn list(&self, channel: &str) -> Vec<Arc<Counter>> {
-        let inner = self.inner.read().expect("lock poisoned");
+        let inner = self.inner.read();
 
         let mut out = Vec::new();
 

@@ -7,10 +7,11 @@ use oauth2::{
     AccessToken, AuthUrl, AuthorizationCode, Client, ClientId, ClientSecret, CsrfToken,
     RedirectUrl, RefreshToken, RequestTokenError, Scope, TokenResponse, TokenUrl,
 };
+use parking_lot::RwLock;
 use std::{
     fs::{self, File},
     path::{Path, PathBuf},
-    sync::{Arc, RwLock},
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::timer;
@@ -563,7 +564,7 @@ impl Future for TokenRefreshFuture {
                 let token = Arc::clone(&self.token);
 
                 let refresh_future = {
-                    let current = token.read().expect("poisoned");
+                    let current = token.read();
 
                     if !current.expires_within(self.refresh_duration.clone())? {
                         return Ok(Async::NotReady);
@@ -573,7 +574,7 @@ impl Future for TokenRefreshFuture {
                 };
 
                 let refresh_future = refresh_future.map(move |new_token| {
-                    *token.write().expect("poisoned") = new_token;
+                    *token.write() = new_token;
                 });
 
                 self.refresh_future = Some(Box::new(refresh_future));

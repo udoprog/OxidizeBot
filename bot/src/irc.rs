@@ -19,12 +19,9 @@ use irc::{
         message::{Message, Tag},
     },
 };
+use parking_lot::{Mutex, RwLock};
 use setmod_notifier::{Notification, Notifier};
-use std::{
-    fmt,
-    sync::{Arc, Mutex, RwLock},
-    time,
-};
+use std::{fmt, sync::Arc, time};
 use tokio::timer;
 use tokio_threadpool::ThreadPool;
 
@@ -109,11 +106,7 @@ impl Irc<'_> {
             ..
         } = self;
 
-        let access_token = token
-            .read()
-            .expect("poisoned lock")
-            .access_token()
-            .to_string();
+        let access_token = token.read().access_token().to_string();
 
         let irc_client_config = client::data::config::Config {
             nickname: Some(irc_config.bot.clone()),
@@ -450,7 +443,7 @@ impl Sender {
         let limiter = Arc::clone(&self.limiter);
 
         self.thread_pool.spawn(future::lazy(move || {
-            limiter.lock().expect("poisoned").wait();
+            limiter.lock().wait();
 
             if let Err(e) = client.send(m) {
                 utils::log_err("failed to send message", e.into());

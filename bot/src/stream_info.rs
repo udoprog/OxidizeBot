@@ -1,10 +1,8 @@
 use crate::{twitch, utils::BoxFuture};
 use failure::format_err;
 use futures::{try_ready, Async, Future, Poll, Stream as _};
-use std::{
-    sync::{Arc, RwLock},
-    time,
-};
+use parking_lot::RwLock;
+use std::{sync::Arc, time};
 use tokio::timer;
 
 #[derive(Debug, Default)]
@@ -88,7 +86,7 @@ impl Future for StreamInfoFuture {
                         }
                     };
 
-                    let mut info = self.info.write().expect("poisoned");
+                    let mut info = self.info.write();
                     info.user = user;
                     info.stream = stream;
                     info.title = Some(channel.status);

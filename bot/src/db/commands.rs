@@ -1,7 +1,8 @@
 use crate::{db, template};
 use failure::{format_err, ResultExt as _};
 use hashbrown::HashMap;
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// The backend of a words store.
 pub trait Backend: Clone + Send + Sync {
@@ -56,7 +57,7 @@ where
         self.backend
             .edit(key.channel.as_str(), key.name.as_str(), command)?;
 
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self.inner.write();
 
         inner.insert(key.clone(), Arc::new(Command { key, template }));
 
@@ -74,7 +75,7 @@ where
             return Ok(false);
         }
 
-        self.inner.write().expect("lock poisoned").remove(&key);
+        self.inner.write().remove(&key);
         Ok(true)
     }
 
@@ -82,7 +83,7 @@ where
     pub fn get<'a>(&'a self, channel: &str, name: &str) -> Option<Arc<Command>> {
         let key = Key::new(channel, name);
 
-        let inner = self.inner.read().expect("lock poisoned");
+        let inner = self.inner.read();
 
         if let Some(command) = inner.get(&key) {
             return Some(Arc::clone(command));
@@ -93,7 +94,7 @@ where
 
     /// Get a list of all commands.
     pub fn list(&self, channel: &str) -> Vec<Arc<Command>> {
-        let inner = self.inner.read().expect("lock poisoned");
+        let inner = self.inner.read();
 
         let mut out = Vec::new();
 

@@ -3,15 +3,13 @@
 use crate::{oauth2, player, utils};
 use failure::format_err;
 use futures::{future, Future, Stream as _};
+use parking_lot::RwLock;
 use reqwest::{
     header,
     r#async::{Body, Client, Decoder},
     Method, Url,
 };
-use std::{
-    mem,
-    sync::{Arc, RwLock},
-};
+use std::{mem, sync::Arc};
 
 /// Run update loop shipping information to the remote server.
 pub fn run_update(
@@ -118,7 +116,7 @@ impl RequestBuilder {
     where
         T: serde::de::DeserializeOwned,
     {
-        let token = self.token.read().expect("lock poisoned");
+        let token = self.token.read();
         let access_token = token.access_token().to_string();
 
         let mut r = self.client.request(self.method, self.url);

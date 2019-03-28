@@ -1,10 +1,7 @@
 use crate::{db, template};
 use hashbrown::HashMap;
-use std::{
-    fs::File,
-    path::Path,
-    sync::{Arc, RwLock, RwLockReadGuard},
-};
+use parking_lot::{RwLock, RwLockReadGuard};
+use std::{fs::File, path::Path, sync::Arc};
 
 /// Tokenize the given word.
 pub fn tokenize(word: &str) -> String {
@@ -88,7 +85,7 @@ where
     pub fn load_from_path(&self, path: &Path) -> Result<(), failure::Error> {
         let config: Config = serde_yaml::from_reader(File::open(path)?)?;
 
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self.inner.write();
 
         for word in config.words {
             inner.insert(&word.word, word.why.as_ref().map(|s| s.as_str()))?;
@@ -100,7 +97,7 @@ where
     /// Insert a word into the bad words list.
     pub fn edit(&self, word: &str, why: Option<&str>) -> Result<(), failure::Error> {
         self.backend.edit(word, why)?;
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self.inner.write();
         inner.insert(word, why)?;
         Ok(())
     }
@@ -111,21 +108,20 @@ where
             return Ok(false);
         }
 
-        let mut inner = self.inner.write().expect("lock poisoned");
+        let mut inner = self.inner.write();
         inner.remove(word);
         Ok(true)
     }
 
     /// Build a tester.
     pub fn tester(&self) -> Tester<'_> {
-        let inner = self.inner.read().expect("lock poisoned");
+        let inner = self.inner.read();
 
         Tester { inner }
     }
 }
 
 /// A locked tester.
-#[derive(Debug)]
 pub struct Tester<'a> {
     inner: RwLockReadGuard<'a, Inner>,
 }

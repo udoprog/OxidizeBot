@@ -7,10 +7,8 @@ use hashbrown::HashMap;
 use hyper::{
     body::Body, error, header, server, service, Method, Request, Response, StatusCode, Uri,
 };
-use std::{
-    net::SocketAddr,
-    sync::{Arc, RwLock},
-};
+use parking_lot::RwLock;
+use std::{net::SocketAddr, sync::Arc};
 
 pub const URL: &'static str = "http://localhost:12345";
 pub const REDIRECT_URI: &'static str = "/redirect";
@@ -61,7 +59,7 @@ impl Server {
 
     /// Set the player interface.
     pub fn set_player(&self, player: player::PlayerClient) {
-        *self.player.write().expect("poisoned") = Some(player);
+        *self.player.write() = Some(player);
     }
 
     /// Receive an Oauth 2.0 token.
@@ -78,7 +76,7 @@ impl Server {
         state: String,
     ) -> oneshot::Receiver<ReceivedToken> {
         let (tx, rx) = oneshot::channel::<ReceivedToken>();
-        let mut inner = self.token_callbacks.write().expect("lock poisoned");
+        let mut inner = self.token_callbacks.write();
 
         inner.insert(
             state,
@@ -139,7 +137,7 @@ impl Server {
         let mut current_device = None;
         let mut audio_devices = Vec::new();
 
-        if let Some(player) = self.player.read().expect("poisoned").as_ref() {
+        if let Some(player) = self.player.read().as_ref() {
             let current = player.current_device();
 
             for device in player.list_devices().wait()? {
@@ -164,7 +162,7 @@ impl Server {
             })
         }
 
-        let token_callbacks = self.token_callbacks.read().expect("lock poisoned");
+        let token_callbacks = self.token_callbacks.read();
 
         let mut auth = Vec::new();
 
@@ -218,10 +216,10 @@ impl Server {
 
     /// Handle request to set device.
     fn handle_set_device(&mut self, id: &str) -> Result<Response<Body>, failure::Error> {
-        if let Some(player) = self.player.read().expect("poisoned").as_ref() {
+        if let Some(player) = self.player.read().as_ref() {
             let mut audio_devices = Vec::new();
 
-            if let Some(player) = self.player.read().expect("poisoned").as_ref() {
+            if let Some(player) = self.player.read().as_ref() {
                 audio_devices = player.list_devices().wait()?;
             }
 
@@ -286,7 +284,7 @@ impl Server {
             }
         };
 
-        let mut inner = self.token_callbacks.write().expect("lock poisoned");
+        let mut inner = self.token_callbacks.write();
 
         if let Some(callback) = inner.remove(&state) {
             let _ = callback.channel.send(ReceivedToken { state, code });

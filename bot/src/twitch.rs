@@ -3,15 +3,13 @@
 use crate::oauth2;
 use chrono::{DateTime, Utc};
 use futures::{future, Future, Stream as _};
+use parking_lot::RwLock;
 use reqwest::{
     header,
     r#async::{Body, Client, Decoder},
     Method, Url,
 };
-use std::{
-    mem,
-    sync::{Arc, RwLock},
-};
+use std::{mem, sync::Arc};
 
 pub const CLIPS_URL: &'static str = "http://clips.twitch.tv";
 const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";
@@ -256,7 +254,7 @@ impl RequestBuilder {
     where
         T: serde::de::DeserializeOwned,
     {
-        let token = self.token.read().expect("lock poisoned");
+        let token = self.token.read();
         let access_token = token.access_token().to_string();
 
         let mut r = self.client.request(self.method, self.url);

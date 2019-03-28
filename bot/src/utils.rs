@@ -1,4 +1,5 @@
-use std::{borrow, fmt, mem, sync, time};
+use parking_lot::Mutex;
+use std::{borrow, fmt, mem, sync::Arc, time};
 use url::percent_encoding::PercentDecode;
 
 /// Helper type for futures.
@@ -473,7 +474,7 @@ pub fn log_err(what: impl fmt::Display, e: failure::Error) {
 /// Helper to handle shutdowns.
 #[derive(Clone)]
 pub struct Shutdown {
-    sender: sync::Arc<sync::Mutex<Option<futures::sync::oneshot::Sender<()>>>>,
+    sender: Arc<Mutex<Option<futures::sync::oneshot::Sender<()>>>>,
 }
 
 impl Shutdown {
@@ -482,7 +483,7 @@ impl Shutdown {
         let (tx, rx) = futures::sync::oneshot::channel();
         (
             Self {
-                sender: sync::Arc::new(sync::Mutex::new(Some(tx))),
+                sender: Arc::new(Mutex::new(Some(tx))),
             },
             rx,
         )
@@ -490,7 +491,7 @@ impl Shutdown {
 
     /// Execute the shutdown handler.
     pub fn shutdown(&self) -> bool {
-        if let Some(sender) = self.sender.lock().expect("poisoned").take() {
+        if let Some(sender) = self.sender.lock().take() {
             sender.send(()).expect("no listener");
             return true;
         }

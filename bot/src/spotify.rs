@@ -2,6 +2,7 @@
 
 use crate::{oauth2, utils::BoxFuture};
 use futures::{future, Async, Future, Poll, Stream};
+use parking_lot::RwLock;
 use reqwest::{
     header,
     r#async::{Body, Client, Decoder},
@@ -18,10 +19,7 @@ pub use rspotify::spotify::{
     },
     senum::DeviceType,
 };
-use std::{
-    mem,
-    sync::{Arc, RwLock},
-};
+use std::{mem, sync::Arc};
 
 const API_URL: &'static str = "https://api.spotify.com/v1";
 
@@ -276,7 +274,7 @@ impl RequestBuilder {
     where
         T: serde::de::DeserializeOwned,
     {
-        let token = self.token.read().expect("lock poisoned");
+        let token = self.token.read();
         let access_token = token.access_token().to_string();
 
         let mut r = self.client.request(self.method, self.url);
@@ -314,7 +312,7 @@ impl RequestBuilder {
 
     /// Execute the request, expecting nothing back.
     pub fn execute_empty(self) -> impl Future<Item = (), Error = failure::Error> {
-        let token = self.token.read().expect("lock poisoned");
+        let token = self.token.read();
         let access_token = token.access_token().to_string();
 
         let mut r = self.client.request(self.method, self.url);
