@@ -176,6 +176,7 @@ impl Server {
         auth.sort_by(|a, b| a.title.cmp(&b.title));
 
         let data = Data {
+            version: crate::VERSION,
             auth,
             audio_devices: &audio_devices,
             current_device: current_device.as_ref(),
@@ -194,6 +195,7 @@ impl Server {
 
         #[derive(serde::Serialize)]
         struct Data<'a> {
+            version: &'static str,
             auth: Vec<Auth>,
             audio_devices: &'a [AudioDevice],
             current_device: Option<&'a AudioDevice>,

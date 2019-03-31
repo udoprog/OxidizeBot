@@ -3,6 +3,8 @@ extern crate diesel;
 #[macro_use]
 extern crate diesel_migrations;
 
+pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
 pub mod aliases;
 mod command;
 pub mod config;

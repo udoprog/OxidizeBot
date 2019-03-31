@@ -7,11 +7,9 @@ use setmod_bot::{
 use std::{fs, path::Path, sync::Arc};
 use tokio_core::reactor::Core;
 
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-
 fn opts() -> clap::App<'static, 'static> {
     clap::App::new("SetMod Bot")
-        .version(VERSION)
+        .version(setmod_bot::VERSION)
         .author("John-John Tedro <udoprog@tedro.se>")
         .about("Bot component of SetMod.")
         .arg(
@@ -76,6 +74,8 @@ fn main() -> Result<(), failure::Error> {
 }
 
 fn try_main(root: &Path, config: &Path) -> Result<(), failure::Error> {
+    log::info!("Starting SetMod Version {}", setmod_bot::VERSION);
+
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
 
     let config: Config = if config.is_file() {
