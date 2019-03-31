@@ -195,8 +195,8 @@ pub struct Item {
 impl From<Arc<player::Item>> for Item {
     fn from(i: Arc<player::Item>) -> Self {
         Item {
-            name: i.name.clone(),
-            artists: utils::human_artists(&i.artists),
+            name: i.track.name.clone(),
+            artists: utils::human_artists(&i.track.artists),
             track_id: i.track_id.to_base62(),
             user: i.user.clone(),
             duration: utils::compact_duration(i.duration.clone()),

@@ -1,8 +1,6 @@
 [workspace]
 
 members = [
-    "notifier",
     "bot",
     "web",
-#    "gfx",
 ]

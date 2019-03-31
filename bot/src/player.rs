@@ -1,6 +1,6 @@
 use tokio_core::reactor::Core;
 
-use crate::{config, current_song, db, spotify, themes::Themes, utils};
+use crate::{bus, config, current_song, db, spotify, themes::Themes, utils};
 pub use crate::{spotify_id::SpotifyId, track_id::TrackId};
 
 use chrono::Utc;
@@ -100,8 +100,7 @@ fn default_max_songs_per_user() -> u32 {
 #[derive(Debug, Clone)]
 pub struct Item {
     pub track_id: TrackId,
-    pub artists: Vec<String>,
-    pub name: String,
+    pub track: spotify::FullTrack,
     pub user: Option<String>,
     pub duration: Duration,
 }
@@ -109,10 +108,10 @@ pub struct Item {
 impl Item {
     /// Human readable version of playback item.
     pub fn what(&self) -> String {
-        if let Some(artists) = utils::human_artists(&self.artists) {
-            format!("\"{}\" by {}", self.name, artists)
+        if let Some(artists) = utils::human_artists(&self.track.artists) {
+            format!("\"{}\" by {}", self.track.name, artists)
         } else {
-            format!("\"{}\"", self.name.to_string())
+            format!("\"{}\"", self.track.name.to_string())
         }
     }
 }
@@ -152,6 +151,8 @@ pub fn run(
     spotify: Arc<spotify::Spotify>,
     parent_config: &config::Config,
     config: &Config,
+    // For sending notifications.
+    global_bus: Arc<bus::Bus>,
 ) -> Result<(PlaybackFuture, Player), failure::Error> {
     let (commands_tx, commands) = mpsc::unbounded();
 
@@ -231,6 +232,7 @@ pub fn run(
         current_song: parent_config.current_song.clone(),
         echo_current_song: config.echo_current_song,
         current_song_update,
+        global_bus,
     };
 
     let player = Player {
@@ -333,12 +335,12 @@ impl Song {
 
     /// Get serializable data for this item.
     pub fn data(&self, paused: bool) -> Result<CurrentData<'_>, failure::Error> {
-        let artists = utils::human_artists(&self.item.artists);
+        let artists = utils::human_artists(&self.item.track.artists);
 
         Ok(CurrentData {
             paused,
             track_id: &self.item.track_id,
-            name: self.item.name.to_string(),
+            name: self.item.track.name.to_string(),
             artists,
             user: self.item.user.as_ref().map(|s| s.as_str()),
             duration: utils::digital_duration(&self.item.duration),
@@ -1138,21 +1140,29 @@ pub struct PlaybackFuture {
     echo_current_song: bool,
     /// Optional stream indicating when current song should update.
     current_song_update: Option<tokio_timer::Interval>,
+    /// Notifier to use when sending song updates.
+    global_bus: Arc<bus::Bus>,
 }
 
 impl PlaybackFuture {
+    /// Set the current song.
+    fn write_song(&self, song: Option<Song>) {
+        self.global_bus
+            .send(bus::Message::from_song(song.as_ref(), self.paused));
+        self.current_song(song.as_ref());
+        *self.song.write() = song;
+    }
+
     /// Write current song. Log any errors.
     ///
     /// MUST NOT be called when self.song is locked.
-    fn current_song(&self) {
+    fn current_song(&self, song: Option<&Song>) {
         let current_song = match self.current_song.as_ref() {
             Some(current_song) => current_song,
             None => return,
         };
 
-        let song = self.song.read();
-
-        let result = match song.as_ref() {
+        let result = match song {
             Some(song) => current_song.write(song, self.paused),
             None => current_song.blank(),
         };
@@ -1191,7 +1201,7 @@ impl PlaybackFuture {
                         self.bus.broadcast(Event::Empty);
                     }
 
-                    self.current_song();
+                    self.write_song(None);
                 }
             }
             Command::Pause(kind) if !self.paused => {
@@ -1218,8 +1228,7 @@ impl PlaybackFuture {
                     }
 
                     self.paused = true;
-                    *self.song.write() = None;
-                    self.current_song();
+                    self.write_song(None);
                 }
             }
             // queue was modified in some way
@@ -1264,7 +1273,10 @@ impl Future for PlaybackFuture {
             if let Some(current_song_update) = self.current_song_update.as_mut() {
                 match current_song_update.poll()? {
                     Async::Ready(Some(_)) => {
-                        self.current_song();
+                        let song = self.song.read();
+                        self.global_bus
+                            .send(bus::Message::song_progress(song.as_ref()));
+                        self.current_song(song.as_ref());
                         not_ready = false;
                     }
                     Async::NotReady => {}
@@ -1301,8 +1313,7 @@ impl Future for PlaybackFuture {
                             *self.song.write() = Some(song);
                         } else {
                             self.bus.broadcast(Event::Empty);
-                            *self.song.write() = None;
-                            self.current_song();
+                            self.write_song(None);
                         }
                     }
                     PlayerEvent::DeviceChanged => {
@@ -1320,7 +1331,9 @@ impl Future for PlaybackFuture {
                         }
                     }
                     PlayerEvent::Playing(kind) => {
-                        if let Some(song) = self.song.write().as_mut() {
+                        let mut song = self.song.write();
+
+                        if let Some(song) = song.as_mut() {
                             song.play();
 
                             if let EventKind::Manual = kind {
@@ -1331,10 +1344,14 @@ impl Future for PlaybackFuture {
                             }
                         }
 
-                        self.current_song();
+                        self.global_bus
+                            .send(bus::Message::from_song(song.as_ref(), self.paused));
+                        self.current_song(song.as_ref());
                     }
                     PlayerEvent::Pausing(kind) => {
-                        if let Some(song) = self.song.write().as_mut() {
+                        let mut song = self.song.write();
+
+                        if let Some(song) = song.as_mut() {
                             song.pause();
                         }
 
@@ -1342,7 +1359,9 @@ impl Future for PlaybackFuture {
                             self.bus.broadcast(Event::Pausing);
                         }
 
-                        self.current_song();
+                        self.global_bus
+                            .send(bus::Message::from_song(song.as_ref(), self.paused));
+                        self.current_song(song.as_ref());
                     }
                     PlayerEvent::Volume(..) => {}
                     other => {
@@ -1388,18 +1407,13 @@ fn playlist_to_items(
                 .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
         );
 
-        let artists = track
-            .artists
-            .into_iter()
-            .map(|a| a.name)
-            .collect::<Vec<_>>();
+        let duration = Duration::from_millis(track.duration_ms.into());
 
         items.push(Arc::new(Item {
             track_id,
-            artists,
-            name: track.name.to_string(),
+            track,
             user: None,
-            duration: Duration::from_millis(track.duration_ms.into()),
+            duration,
         }));
     }
 
@@ -1421,18 +1435,13 @@ fn songs_to_items(
                 .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
         );
 
-        let artists = track
-            .artists
-            .into_iter()
-            .map(|a| a.name)
-            .collect::<Vec<_>>();
+        let duration = Duration::from_millis(track.duration_ms.into());
 
         items.push(Arc::new(Item {
             track_id,
-            artists,
-            name: track.name.to_string(),
+            track,
             user: None,
-            duration: Duration::from_millis(track.duration_ms.into()),
+            duration,
         }));
     }
 
@@ -1450,19 +1459,14 @@ fn convert_item(
 
     thread_pool
         .spawn_handle(future::lazy(move || spotify.track(&track_id_string)))
-        .map(move |full_track| {
-            let artists = full_track
-                .artists
-                .into_iter()
-                .map(|a| a.name)
-                .collect::<Vec<_>>();
+        .map(move |track| {
+            let duration = Duration::from_millis(track.duration_ms.into());
 
             Arc::new(Item {
                 track_id,
-                artists,
-                name: full_track.name,
+                track,
                 user,
-                duration: Duration::from_millis(full_track.duration_ms.into()),
+                duration,
             })
         })
 }

@@ -1,10 +1,14 @@
 use failure::{format_err, ResultExt};
 use futures::{future, Future};
 use setmod_bot::{
-    config::Config, db, features::Feature, irc, player, secrets, setbac, spotify, twitch, utils,
-    web,
+    bus, config::Config, db, features::Feature, irc, player, secrets, setbac, spotify, twitch,
+    utils, web,
 };
-use std::{fs, path::Path, sync::Arc};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 use tokio_core::reactor::Core;
 
 fn opts() -> clap::App<'static, 'static> {
@@ -18,6 +22,13 @@ fn opts() -> clap::App<'static, 'static> {
                 .long("config")
                 .value_name("file")
                 .help("Configuration files to use.")
+                .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("web-root")
+                .long("web-root")
+                .value_name("dir")
+                .help("Directory to use as web root.")
                 .takes_value(true),
         )
 }
@@ -62,9 +73,14 @@ fn main() -> Result<(), failure::Error> {
         .parent()
         .ok_or_else(|| format_err!("missing parent"))?;
 
+    let web_root = m
+        .value_of("web-root")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("web"));
+
     let handle = setup_logs(root).context("failed to setup logs")?;
 
-    match try_main(&root, &config) {
+    match try_main(&root, &web_root, &config) {
         Err(e) => utils::log_err("bot crashed", e),
         Ok(()) => log::info!("bot was shut down"),
     }
@@ -73,7 +89,7 @@ fn main() -> Result<(), failure::Error> {
     Ok(())
 }
 
-fn try_main(root: &Path, config: &Path) -> Result<(), failure::Error> {
+fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::Error> {
     log::info!("Starting SetMod Version {}", setmod_bot::VERSION);
 
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
@@ -122,14 +138,14 @@ fn try_main(root: &Path, config: &Path) -> Result<(), failure::Error> {
             .with_context(|_| format_err!("failed to load bad words from: {}", path.display()))?;
     };
 
-    let notifier = Arc::new(setmod_notifier::Notifier::new());
+    let global_bus = Arc::new(bus::Bus::new());
 
     let mut core = Core::new()?;
 
     let mut futures =
         Vec::<Box<dyn Future<Item = (), Error = failure::Error> + Send + 'static>>::new();
 
-    let (web, future) = web::setup()?;
+    let (web, future) = web::setup(web_root, global_bus.clone())?;
 
     // NB: spawn the web server on a separate thread because it's needed for the synchronous authentication flow below.
     core.runtime().executor().spawn(future.map_err(|e| {
@@ -203,7 +219,7 @@ fn try_main(root: &Path, config: &Path) -> Result<(), failure::Error> {
         .ok_or_else(|| format_err!("expected streamer token"))?;
     futures.push(Box::new(future));
 
-    futures.push(Box::new(notifier.clone().listen()?));
+    futures.push(Box::new(global_bus.clone().listen()));
 
     let (shutdown, shutdown_rx) = utils::Shutdown::new();
 
@@ -213,8 +229,14 @@ fn try_main(root: &Path, config: &Path) -> Result<(), failure::Error> {
     let player = match config.player.as_ref() {
         // Only setup if the song feature is enabled.
         Some(player) if config.features.test(Feature::Song) => {
-            let (future, player) =
-                player::run(&mut core, db.clone(), spotify.clone(), &config, player)?;
+            let (future, player) = player::run(
+                &mut core,
+                db.clone(),
+                spotify.clone(),
+                &config,
+                player,
+                global_bus.clone(),
+            )?;
 
             futures.push(Box::new(future));
 
@@ -250,7 +272,7 @@ fn try_main(root: &Path, config: &Path) -> Result<(), failure::Error> {
             commands,
             counters,
             bad_words,
-            notifier,
+            global_bus,
             player: player.as_ref(),
             modules: &modules,
             shutdown,

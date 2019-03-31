@@ -1,3 +1,4 @@
+use crate::spotify;
 use parking_lot::Mutex;
 use std::{borrow, fmt, mem, sync::Arc, time};
 use url::percent_encoding::PercentDecode;
@@ -287,7 +288,7 @@ pub fn english_num(n: u64) -> borrow::Cow<'static, str> {
 }
 
 /// Render artists in a human readable form INCLUDING an oxford comma.
-pub fn human_artists(artists: &[String]) -> Option<String> {
+pub fn human_artists(artists: &[spotify::SimplifiedArtist]) -> Option<String> {
     if artists.is_empty() {
         return None;
     }
@@ -296,19 +297,19 @@ pub fn human_artists(artists: &[String]) -> Option<String> {
     let mut artists = String::new();
 
     if let Some(artist) = it.next() {
-        artists.push_str(artist);
+        artists.push_str(artist.name.as_str());
     }
 
     let back = it.next_back();
 
     while let Some(artist) = it.next() {
         artists.push_str(", ");
-        artists.push_str(artist);
+        artists.push_str(artist.name.as_str());
     }
 
     if let Some(artist) = back {
         artists.push_str(", and ");
-        artists.push_str(artist);
+        artists.push_str(artist.name.as_str());
     }
 
     Some(artists)

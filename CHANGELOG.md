@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Web-based overlay with current song ([#22]).
+
+### Changed
+- Cleaned up old cruft in the codebase (`gfx` module).
+
+[#22]: https://github.com/udoprog/setmod/issues/22
+
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.3...HEAD
 
 ## [0.2.3]

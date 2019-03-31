@@ -13,7 +13,7 @@ impl command::Handler for Handler {
                     .commands
                     .list(ctx.user.target)
                     .into_iter()
-                    .map(|c| format!("!{}", c.key.name))
+                    .map(|c| c.key.name.to_string())
                     .collect::<Vec<_>>();
 
                 if names.is_empty() {

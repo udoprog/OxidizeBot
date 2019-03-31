@@ -11,6 +11,7 @@ use reqwest::{
 use rspotify::spotify::model::search;
 pub use rspotify::spotify::{
     model::{
+        artist::SimplifiedArtist,
         context::FullPlayingContext,
         device::Device,
         page::Page,

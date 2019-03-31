@@ -1,5 +1,5 @@
 use crate::{
-    aliases, command, config,
+    aliases, bus, command, config,
     currency::Currency,
     db,
     features::{Feature, Features},
@@ -20,7 +20,6 @@ use irc::{
     },
 };
 use parking_lot::{Mutex, RwLock};
-use setmod_notifier::{Notification, Notifier};
 use std::{fmt, sync::Arc, time};
 use tokio::timer;
 use tokio_threadpool::ThreadPool;
@@ -77,7 +76,7 @@ pub struct Irc<'a> {
     pub commands: db::Commands<db::Database>,
     pub counters: db::Counters<db::Database>,
     pub bad_words: db::Words<db::Database>,
-    pub notifier: Arc<Notifier>,
+    pub global_bus: Arc<bus::Bus>,
     pub player: Option<&'a player::Player>,
     pub modules: &'a [Box<dyn module::Module + 'static>],
     pub shutdown: utils::Shutdown,
@@ -99,7 +98,7 @@ impl Irc<'_> {
             commands,
             counters,
             bad_words,
-            notifier,
+            global_bus,
             player,
             modules,
             shutdown,
@@ -278,7 +277,7 @@ impl Irc<'_> {
             commands,
             counters,
             bad_words,
-            notifier,
+            global_bus,
             aliases: config.aliases.clone(),
             features: config.features.clone(),
             api_url: config.api_url.clone(),
@@ -492,7 +491,7 @@ struct Handler {
     /// Bad words.
     bad_words: db::Words<db::Database>,
     /// For sending notifications.
-    notifier: Arc<Notifier>,
+    global_bus: Arc<bus::Bus>,
     /// Aliases.
     aliases: aliases::Aliases,
     /// Enabled features.
@@ -531,17 +530,14 @@ impl Handler {
     /// Handle a command.
     pub fn process_command<'m>(
         &mut self,
-        tags: Tags<'m>,
         command: &str,
-        m: &'m Message,
+        user: User<'m>,
         it: &mut utils::Words<'m>,
     ) -> Result<(), failure::Error> {
-        let user = self.as_user(tags, m)?;
-
         match command {
             "ping" => {
                 user.respond("What do you want?");
-                self.notifier.send(Notification::Ping)?;
+                self.global_bus.send(bus::Message::Ping);
             }
             other => {
                 if let Some(handler) = self.handlers.get_mut(other) {
@@ -569,32 +565,6 @@ impl Handler {
                             balance = balance,
                             name = currency.name
                         ));
-                    }
-                }
-
-                if self.features.test(Feature::Command) {
-                    if let Some(command) = self.commands.get(user.target, other) {
-                        let vars = TemplateVars {
-                            name: &user.name,
-                            target: &user.target,
-                        };
-                        let response = command.render(&vars)?;
-                        self.sender.privmsg(user.target, response);
-                    }
-                }
-
-                if self.features.test(Feature::Counter) {
-                    if let Some(counter) = self.counters.get(user.target, other) {
-                        self.counters.increment(&*counter)?;
-
-                        let vars = CounterVars {
-                            name: &user.name,
-                            target: &user.target,
-                            count: counter.count(),
-                        };
-
-                        let response = counter.render(&vars)?;
-                        self.sender.privmsg(user.target, response);
                     }
                 }
             }
@@ -726,10 +696,38 @@ impl Handler {
                 }
 
                 if let Some(command) = it.next() {
+                    let user = self.as_user(tags.clone(), m)?;
+
+                    if self.features.test(Feature::Command) {
+                        if let Some(command) = self.commands.get(user.target, command) {
+                            let vars = TemplateVars {
+                                name: &user.name,
+                                target: &user.target,
+                            };
+                            let response = command.render(&vars)?;
+                            self.sender.privmsg(user.target, response);
+                        }
+                    }
+
+                    if self.features.test(Feature::Counter) {
+                        if let Some(counter) = self.counters.get(user.target, command) {
+                            self.counters.increment(&*counter)?;
+
+                            let vars = CounterVars {
+                                name: &user.name,
+                                target: &user.target,
+                                count: counter.count(),
+                            };
+
+                            let response = counter.render(&vars)?;
+                            self.sender.privmsg(user.target, response);
+                        }
+                    }
+
                     if command.starts_with('!') {
                         let command = &command[1..];
 
-                        if let Err(e) = self.process_command(tags.clone(), command, m, &mut it) {
+                        if let Err(e) = self.process_command(command, user, &mut it) {
                             utils::log_err("failed to process command", e);
                         }
                     }

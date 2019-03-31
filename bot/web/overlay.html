@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+
+    <title>setmod overlay</title>
+
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+      }
+
+      body {
+        background-color: black;
+        display: grid;
+        grid-template-columns: auto;
+        grid-template-rows: 0px [top] auto [middle] 0px [bottom];
+      }
+
+      #current-song {
+        display: grid;
+        grid-template-columns: [left] 64px 10px [gutter] auto [end];
+        align-items: center;
+
+        padding: 10px;
+        min-width: 800px;
+        max-width: 33%;
+
+        color: white;
+        font-family: Consolas, monospace;
+        font-size: 1.4em;
+        font-weight: bold;
+        text-shadow:
+          -1px -1px 0 #000,
+          1px -1px 0 #000,
+          -1px  1px 0 #000,
+          1px  1px 0 #000;
+
+        grid-row-end: top;
+      }
+
+      #current-song .album-art {
+        float: left;
+        display: none;
+
+        grid-column-start: left;
+      }
+
+      #current-song .info {
+        grid-column-start: gutter;
+        margin-top: -8px;
+      }
+
+      #current-song .artist {
+        display: none;
+      }
+
+      #current-song .artist-by {
+        font-size: .6em;
+      }
+
+      #current-song .artist-name {
+        font-size: .6em;
+      }
+
+      #current-song .progress-bar {
+        background-color: #888888;
+        transition: none;
+      }
+    </style>
+
+    <script src="overlay.js" type="application/javascript" async="true"></script>
+  </head>
+  <body>
+    <div id="current-song">
+      <img class="album-art"></img>
+
+      <div class="info">
+        <span class="state"></span>
+
+        <span class="name">No Track Loaded</span>
+
+        <span class="artist">
+          <span class="artist-by">by</span>
+          <span class="artist-name"></span>
+        </span>
+
+        <div class="progress">
+          <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

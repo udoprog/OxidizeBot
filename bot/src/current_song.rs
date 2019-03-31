@@ -35,12 +35,31 @@ impl CurrentSong {
         Ok(())
     }
 
+    /// Blank as a string.
+    pub fn blank_to_string(&self) -> String {
+        if let Some(not_playing) = self.not_playing.as_ref() {
+            not_playing.to_string()
+        } else {
+            "Not Playing".to_string()
+        }
+    }
+
     /// Write the current song to a path.
     pub fn write(&self, song: &player::Song, paused: bool) -> Result<(), failure::Error> {
         let mut f = self.create_or_truncate()?;
         let data = song.data(paused)?;
         self.template.render(&mut f, &data)?;
         Ok(())
+    }
+
+    /// Format as string.
+    pub fn write_to_string(
+        &self,
+        song: &player::Song,
+        paused: bool,
+    ) -> Result<String, failure::Error> {
+        let data = song.data(paused)?;
+        self.template.render_to_string(&data)
     }
 
     /// Get the current update frequency, if present.
