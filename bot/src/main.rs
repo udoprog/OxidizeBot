@@ -71,6 +71,7 @@ fn main() -> Result<(), failure::Error> {
         Ok(()) => log::info!("bot was shut down"),
     }
 
+    drop(handle);
     Ok(())
 }
 

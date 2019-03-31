@@ -39,12 +39,8 @@ impl Type {
         token: &Token,
     ) -> BoxFuture<Token, failure::Error> {
         match self {
-            Type::Twitch => {
-                Box::new(self.refresh_and_save_token_impl::<TwitchTokenResponse>(flow, token))
-            }
-            Type::Spotify => {
-                Box::new(self.refresh_and_save_token_impl::<BasicTokenResponse>(flow, token))
-            }
+            Type::Twitch => self.refresh_and_save_token_impl::<TwitchTokenResponse>(flow, token),
+            Type::Spotify => self.refresh_and_save_token_impl::<BasicTokenResponse>(flow, token),
         }
     }
 
@@ -69,9 +65,9 @@ impl Type {
         self,
         flow: Arc<Flow>,
         token: &Token,
-    ) -> impl Future<Item = Token, Error = failure::Error>
+    ) -> BoxFuture<Token, failure::Error>
     where
-        T: TokenResponse,
+        T: 'static + Send + TokenResponse,
     {
         let refresh_token = token.data.refresh_token.clone();
 
@@ -91,7 +87,7 @@ impl Type {
             Err(e) => Err(failure::Error::from(e)),
         });
 
-        future.and_then({
+        let future = future.and_then({
             let flow = flow.clone();
 
             move |token_response| {
@@ -102,7 +98,9 @@ impl Type {
 
                 flow.save_token(refresh_token, token_response)
             }
-        })
+        });
+
+        Box::new(future)
     }
 
     fn exchange_and_save_token_impl<T>(
@@ -316,11 +314,11 @@ impl Flow {
         self: Arc<Self>,
         what: &str,
     ) -> BoxFuture<(Arc<RwLock<Token>>, TokenRefreshFuture), failure::Error> {
-        let what = what.to_string();
-        let future = future::result(self.token_from_state_path());
+        let future = self.clone().token_from_state_path(what.to_string());
 
         let future = future
             .and_then::<_, BoxFuture<(Arc<RwLock<Token>>, TokenRefreshFuture), failure::Error>>({
+                let what = what.to_string();
                 let flow = self.clone();
 
                 move |token| match token {
@@ -367,33 +365,47 @@ impl Flow {
     }
 
     /// Load a token from the current state path.
-    fn token_from_state_path(&self) -> Result<Option<Token>, failure::Error> {
+    fn token_from_state_path(
+        self: Arc<Self>,
+        what: String,
+    ) -> BoxFuture<Option<Token>, failure::Error> {
         let path = match self.state_path.as_ref() {
             Some(path) => path,
-            None => return Ok(None),
+            None => return Box::new(future::ok(None)),
         };
 
         if !path.is_file() {
-            return Ok(None);
+            return Box::new(future::ok(None));
         }
 
         let token = match self.token_from_path(path) {
             Ok(token) => token,
             Err(e) => {
                 log::warn!("failed to load saved token: {}: {}", path.display(), e);
-                return Ok(None);
+                return Box::new(future::ok(None));
             }
         };
 
-        if token.expires_within(Duration::from_secs(60 * 10))? {
-            return Ok(None);
+        let expired = match token.expires_within(Duration::from_secs(60 * 10)) {
+            Ok(expired) => expired,
+            Err(e) => return Box::new(future::err(e)),
+        };
+
+        // try to refresh in case it has expired.
+        if expired {
+            log::info!("Attempting to refresh: {}", what);
+
+            return Box::new(self.refresh(&token).map(Some).or_else(|e| {
+                log::warn!("Failed to refresh saved token: {}", e);
+                Ok(None)
+            }));
         }
 
         if !token.has_scopes(&self.scopes) {
-            return Ok(None);
+            return Box::new(future::ok(None));
         }
 
-        Ok(Some(token))
+        Box::new(future::ok(Some(token)))
     }
 
     /// Refresh the token.
