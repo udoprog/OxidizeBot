@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.3...HEAD
+
+## [0.2.3]
+
 ### Added
 - `!water` command that can be enabled using as a module through `[[modules]]` see [README.md](README.md#water).
 - Attempt to automatically refresh expired tokens on startup ([#21]).
@@ -14,10 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Move all locks to [`parking_lot`]
 - Improved logic to notify on device configuration.
 
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.2...HEAD
 [`parking_lot`]: https://github.com/Amanieu/parking_lot
 
 [#21]: https://github.com/udoprog/setmod/issues/21
+
+[0.2.3]: https://github.com/udoprog/setmod/compare/0.2.2...0.2.3
 
 ## [0.2.2]
 
