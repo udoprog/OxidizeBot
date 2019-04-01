@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tokio::timer;
 
 /// Setup a player.
-pub fn setup(spotify: Arc<spotify::Spotify>) -> Result<(Player, ConnectInterface), failure::Error> {
+pub fn setup(spotify: Arc<spotify::Spotify>) -> Result<(Player, PlayerInterface), failure::Error> {
     let device = Arc::new(RwLock::new(None));
 
     let (config_tx, config_rx) = mpsc::unbounded();
@@ -25,7 +25,7 @@ pub fn setup(spotify: Arc<spotify::Spotify>) -> Result<(Player, ConnectInterface
     };
 
     // Configuration interface.
-    let interface = ConnectInterface {
+    let interface = PlayerInterface {
         spotify,
         config_tx,
         device,
@@ -218,13 +218,13 @@ pub enum ConfigurationEvent {
 }
 
 #[derive(Clone)]
-pub struct ConnectInterface {
+pub struct PlayerInterface {
     spotify: Arc<spotify::Spotify>,
     config_tx: mpsc::UnboundedSender<ConfigurationEvent>,
     device: Arc<RwLock<Option<spotify::Device>>>,
 }
 
-impl ConnectInterface {
+impl PlayerInterface {
     /// Get the current device.
     pub fn current_device(&self) -> Option<spotify::Device> {
         self.device.read().clone()

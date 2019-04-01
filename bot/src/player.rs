@@ -208,6 +208,18 @@ pub fn run(
         None => None,
     };
 
+    let sync_interval = tokio_timer::Interval::new_interval(Duration::from_secs(10))
+        .map_err(|_| failure::format_err!("failed to run sync interval"))
+        .and_then({
+            let spotify = spotify.clone();
+            move |_| spotify.me_player().map(Some)
+        })
+        .or_else(|e| {
+            log::warn!("failed to get remote player state: {}", e);
+            Ok(None)
+        })
+        .filter_map(|playback| playback);
+
     let mixer = Mixer {
         queue: queue.clone(),
         sidelined: Default::default(),
@@ -219,6 +231,7 @@ pub fn run(
 
     let future = PlaybackFuture {
         player,
+        player_interface: player_interface.clone(),
         commands,
         bus: EventBus { bus: bus.clone() },
         mixer,
@@ -230,6 +243,7 @@ pub fn run(
         current_song: parent_config.current_song.clone(),
         echo_current_song: config.echo_current_song,
         current_song_update,
+        sync_interval: Box::new(sync_interval),
         global_bus,
     };
 
@@ -247,60 +261,40 @@ pub fn run(
         closed: closed.clone(),
     };
 
-    let set_default = match core.run(spotify.me_player())? {
+    match core.run(spotify.me_player())?.and_then(Song::from_playing) {
         // make use of the information on the current playback to get the local player into a good state.
-        Some(playback) => {
-            if let (Some(progress_ms), Some(track)) = (playback.progress_ms, playback.item) {
-                let track_id: TrackId = str::parse(&track.id)?;
-                let elapsed = Duration::from_millis(progress_ms as u64);
-                let duration = Duration::from_millis(track.duration_ms.into());
+        Some((song, is_playing, device)) => {
+            player.volume(EventKind::Automatic, device.volume_percent)?;
 
-                let item = Arc::new(Item {
-                    track_id,
-                    track,
-                    user: None,
-                    duration,
-                });
-
-                let new_song = Song::new(item, elapsed);
-
-                player.volume(EventKind::Automatic, playback.device.volume_percent)?;
-
-                if playback.is_playing {
-                    player.play_sync(EventKind::Automatic, new_song)?;
-                } else {
-                    player.pause(EventKind::Automatic)?;
-                }
-
-                player_interface.set_device(playback.device, false);
-                false
+            if is_playing {
+                player.play_sync(EventKind::Automatic, song)?;
             } else {
-                true
+                player.pause(EventKind::Automatic)?;
             }
-        }
-        None => true,
-    };
 
-    if set_default {
-        let devices = core.run(spotify.my_player_devices())?;
-
-        for (i, device) in devices.iter().enumerate() {
-            log::info!("device #{}: {}", i, device.name)
-        }
-
-        let device = match config.device.as_ref() {
-            Some(device) => devices.into_iter().find(|d| d.name == *device),
-            None => devices.into_iter().next(),
-        };
-
-        if let Some(device) = device {
             player_interface.set_device(device, false);
         }
+        None => {
+            let devices = core.run(spotify.my_player_devices())?;
 
-        player.pause(EventKind::Automatic)?;
+            for (i, device) in devices.iter().enumerate() {
+                log::info!("device #{}: {}", i, device.name)
+            }
 
-        if let Some(volume) = config.volume {
-            player.volume(EventKind::Automatic, volume)?;
+            let device = match config.device.as_ref() {
+                Some(device) => devices.into_iter().find(|d| d.name == *device),
+                None => devices.into_iter().next(),
+            };
+
+            if let Some(device) = device {
+                player_interface.set_device(device, false);
+            }
+
+            player.pause(EventKind::Automatic)?;
+
+            if let Some(volume) = config.volume {
+                player.volume(EventKind::Automatic, volume)?;
+            }
         }
     }
 
@@ -340,6 +334,34 @@ impl Song {
             elapsed,
             started_at: None,
         }
+    }
+
+    /// Convert a playback information into a Song struct.
+    pub fn from_playing(
+        playback: spotify::FullPlayingContext,
+    ) -> Option<(Self, bool, spotify::Device)> {
+        let (progress_ms, track) = match (playback.progress_ms, playback.item) {
+            (Some(progress_ms), Some(track)) => (progress_ms, track),
+            _ => return None,
+        };
+
+        let track_id: TrackId = match str::parse(&track.id) {
+            Ok(track_id) => track_id,
+            Err(_) => return None,
+        };
+
+        let elapsed = Duration::from_millis(progress_ms as u64);
+        let duration = Duration::from_millis(track.duration_ms.into());
+
+        let item = Arc::new(Item {
+            track_id,
+            track,
+            user: None,
+            duration,
+        });
+
+        let song = Song::new(item, elapsed);
+        Some((song, playback.is_playing, playback.device))
     }
 
     /// Get the deadline for when this song will end, assuming it is currently playing.
@@ -441,7 +463,7 @@ pub struct CurrentData<'a> {
 /// A handler for the player.
 #[derive(Clone)]
 pub struct Player {
-    player_interface: self::connect::ConnectInterface,
+    player_interface: self::connect::PlayerInterface,
     queue: Queue,
     max_queue_length: u32,
     max_songs_per_user: u32,
@@ -506,7 +528,7 @@ impl Player {
 /// All parts of a Player that can be shared between threads.
 #[derive(Clone)]
 pub struct PlayerClient {
-    player_interface: self::connect::ConnectInterface,
+    player_interface: self::connect::PlayerInterface,
     queue: Queue,
     thread_pool: Arc<ThreadPool>,
     max_queue_length: u32,
@@ -1180,6 +1202,7 @@ impl EventBus {
 /// Future associated with driving audio playback.
 pub struct PlaybackFuture {
     player: self::connect::Player,
+    player_interface: self::connect::PlayerInterface,
     commands: mpsc::UnboundedReceiver<Command>,
     bus: EventBus,
     mixer: Mixer,
@@ -1195,6 +1218,10 @@ pub struct PlaybackFuture {
     echo_current_song: bool,
     /// Optional stream indicating when current song should update.
     current_song_update: Option<tokio_timer::Interval>,
+    /// Interval at which to call remote service to see that we are still in sync.
+    sync_interval: Box<
+        Stream<Item = Option<spotify::FullPlayingContext>, Error = failure::Error> + Send + 'static,
+    >,
     /// Notifier to use when sending song updates.
     global_bus: Arc<bus::Bus>,
 }
