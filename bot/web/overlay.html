@@ -8,103 +8,18 @@
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
 
+    <link rel="stylesheet" href="/static/overlay.css">
+
     <title>setmod overlay</title>
 
-    <style>
-      html, body {
-        margin: 0;
-        height: 100%;
-      }
-
-      body {
-        background-color: white;
-        display: grid;
-        grid-template-columns: auto;
-        grid-template-rows: 0px [top] auto [middle] 0px [bottom];
-      }
-
-      #current-song {
-        background-color: rgba(0, 0, 0, 0.25);
-        height: 84px;
-        display: grid;
-        grid-template-columns: [left] 64px 10px [gutter] auto [end];
-        align-items: center;
-
-        padding: 10px;
-        min-width: 800px;
-        max-width: 33%;
-
-        color: white;
-        font-family: Consolas, monospace;
-        font-size: 1.4em;
-        font-weight: bold;
-        text-shadow:
-          -1px -1px 0 #000,
-          1px -1px 0 #000,
-          -1px  1px 0 #000,
-          1px  1px 0 #000;
-
-        grid-row-end: top;
-      }
-
-      #current-song .track {
-        height: 1.2em;
-        width: 100%;
-      }
-
-      #current-song .track-name {
-        display: inline-block;
-        max-width: 70%;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      #current-song .request {
-        display: none;
-        float: right;
-        min-width: 10%;
-      }
-
-      #current-song .request-title {
-        font-size: 0.5em;
-      }
-
-      #current-song .album-art {
-        display: none;
-        grid-column-start: left;
-      }
-
-      #current-song .info {
-        grid-column-start: gutter;
-        margin-top: -8px;
-      }
-
-      #current-song .artist {
-        font-size: .6em;
-      }
-
-      #current-song .progress {
-        margin-top: 5px;
-      }
-
-      #current-song .progress-bar {
-        background-color: #888888;
-        transition: none;
-      }
-
-      #current-song .timer {
-        display: none;
-        position: absolute;
-        padding-left: 5px;
-      }
-    </style>
-
-    <script src="overlay.js" type="application/javascript" async="true"></script>
+    <script src="/static/overlay.js" type="application/javascript" async="true"></script>
   </head>
   <body>
     <div id="current-song">
-      <img class="album-art"></img>
+      <div class="album">
+        <div class="state"></div>
+        <img class="album-art"></img>
+      </div>
 
       <div class="info">
         <div class="track">

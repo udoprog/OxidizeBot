@@ -73,6 +73,7 @@ class CurrentSong {
         this.artistName = elem.querySelector(".artist-name");
         this.state = elem.querySelector(".state");
         this.progress = elem.querySelector(".progress-bar");
+        this.album = elem.querySelector(".album");
         this.albumArt = elem.querySelector(".album-art");
         this.progress = elem.querySelector(".progress-bar");
         this.timer = elem.querySelector(".timer");
@@ -105,12 +106,12 @@ class CurrentSong {
 
         if (data.track === null) {
             this.trackName.textContent = "No Track Loaded";
-            this.albumArt.style.display = "none";
+            this.album.style.display = "none";
             this.timer.style.display = "none";
             this.artistName.innerHTML = "<em>Unknown</em>";
         } else {
             this.timer.style.display = "inline";
-            this.albumArt.style.display = "inline-block";
+            this.album.style.display = "inline-block";
 
             this.trackName.textContent = data.track.name;
 
@@ -125,18 +126,22 @@ class CurrentSong {
             let image = this.pickAlbumArt(data.track.album.images, 64);
 
             if (image !== null) {
-                this.albumArt.style.display = "inline-block";
                 this.albumArt.src = image.url;
                 this.albumArt.width = image.width;
                 this.albumArt.height = image.height;
+                this.albumArt.style.display = "inline-block";
+            } else {
+                this.albumArt.style.display = "none";
             }
         }
 
         if (this.state) {
             if (data.paused) {
-                this.state.innerHTML = "&#9208;";
+                this.state.classList.remove("state-playing");
+                this.state.classList.add("state-paused");
             } else {
-                this.state.innerHTML = "&#9654;";
+                this.state.classList.remove("state-paused");
+                this.state.classList.add("state-playing");
             }
         }
     }

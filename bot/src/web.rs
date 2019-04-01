@@ -287,11 +287,13 @@ pub fn setup(
         })
         .boxed();
 
-    let overlay_js = web_root.join("overlay.js");
-    let overlay_js = path!("overlay.js").and(warp::fs::file(overlay_js)).boxed();
+    let static_dir = path!("static")
+        .and(warp::fs::dir(web_root.to_owned()))
+        .boxed();
 
-    let overlay_html = web_root.join("overlay.html");
-    let overlay_html = path!("overlay").and(warp::fs::file(overlay_html)).boxed();
+    let overlay_html = path!("overlay")
+        .and(warp::fs::file(web_root.join("overlay.html")))
+        .boxed();
 
     let page_routes = index.or(overlay_html).boxed();
 
@@ -300,7 +302,7 @@ pub fn setup(
             page_routes
                 .or(oauth2_redirect)
                 .or(device_api)
-                .or(overlay_js)
+                .or(static_dir)
                 .or(ws),
         )
         .recover(customize_error);
