@@ -37,10 +37,10 @@ class Handlers {
     call(data) {
         let cb = this.handlers[data.type];
 
-        console.log("ws", data);
-
         if (cb !== undefined) {
             cb(data);
+        } else {
+            console.log("unhandled ws message", data);
         }
     }
 }
@@ -99,10 +99,18 @@ class CurrentSong {
             this.timer.style.display = "none";
         } else {
             this.timer.style.display = "inline";
-            this.name.textContent = data.track.name;
-            this.artistName.textContent = data.track.artists[0].name;
             this.artist.style.display = "inline";
             this.albumArt.style.display = "inline-block";
+
+            this.name.textContent = data.track.name;
+
+            let artist = this.pickArtist(data.track.artists);
+
+            if (!!artist) {
+                this.artistName.textContent = artist.name;
+            } else {
+                this.artistName.innerHTML = "<em>Unknown</em>";
+            }
 
             let image = this.pickAlbumArt(data.track.album.images, 64);
 
@@ -155,6 +163,17 @@ class CurrentSong {
         }
 
         return null;
+    }
+
+    /**
+     * Pick the image best suited for album art.
+     */
+    pickArtist(artists) {
+        if (artists.length == 0) {
+            return null;
+        }
+
+        return artists[0];
     }
 }
 
