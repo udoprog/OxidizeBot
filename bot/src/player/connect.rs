@@ -7,33 +7,10 @@ use futures::{sync::mpsc, Async, Future, Poll, Stream};
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use std::sync::Arc;
 use tokio::timer;
-use tokio_core::reactor::Core;
-
-#[derive(Debug, serde::Deserialize)]
-pub struct Config {
-    /// Device to use with connect player.
-    #[serde(default)]
-    pub device: Option<String>,
-}
 
 /// Setup a player.
-pub fn setup(
-    core: &mut Core,
-    config: &Config,
-    spotify: Arc<spotify::Spotify>,
-) -> Result<(Player, ConnectInterface), failure::Error> {
-    let devices = core.run(spotify.my_player_devices())?;
-
-    for (i, device) in devices.iter().enumerate() {
-        log::info!("device #{}: {}", i, device.name)
-    }
-
-    let device = match config.device.as_ref() {
-        Some(device) => devices.into_iter().find(|d| d.name == *device),
-        None => devices.into_iter().next(),
-    };
-
-    let device = Arc::new(RwLock::new(device));
+pub fn setup(spotify: Arc<spotify::Spotify>) -> Result<(Player, ConnectInterface), failure::Error> {
+    let device = Arc::new(RwLock::new(None));
 
     let (config_tx, config_rx) = mpsc::unbounded();
 
@@ -84,6 +61,11 @@ impl PlayerClient<'_> {
             )),
         ));
 
+        *self.timeout = Some(timer::Delay::new(song.deadline()));
+    }
+
+    /// Synchronize the state of the player with the given song.
+    pub fn play_sync(&mut self, song: &super::Song) {
         *self.timeout = Some(timer::Delay::new(song.deadline()));
     }
 
@@ -187,9 +169,14 @@ impl Stream for Player {
                 .map_err(|_| format_err!("failed to receive configuration event"))?
             {
                 Async::Ready(None) => failure::bail!("configuration received ended"),
-                Async::Ready(Some(ConfigurationEvent::SetDevice(device))) => {
+                Async::Ready(Some(ConfigurationEvent::SetDevice(device, notify))) => {
                     *self.device.write() = Some(device);
-                    return Ok(Async::Ready(Some(super::PlayerEvent::DeviceChanged)));
+
+                    if notify {
+                        return Ok(Async::Ready(Some(super::PlayerEvent::DeviceChanged)));
+                    }
+
+                    not_ready = false;
                 }
                 Async::NotReady => (),
             }
@@ -226,7 +213,8 @@ fn handle_future(
 }
 
 pub enum ConfigurationEvent {
-    SetDevice(spotify::Device),
+    /// Set the device, boolean indicates if we should notify the bus of the changes or not.
+    SetDevice(spotify::Device, bool),
 }
 
 #[derive(Clone)]
@@ -248,10 +236,10 @@ impl ConnectInterface {
     }
 
     /// Set which device to perform playback from.
-    pub fn set_device(&self, device: spotify::Device) {
+    pub fn set_device(&self, device: spotify::Device, notify: bool) {
         if let Err(_) = self
             .config_tx
-            .unbounded_send(ConfigurationEvent::SetDevice(device))
+            .unbounded_send(ConfigurationEvent::SetDevice(device, notify))
         {
             log::error!("failed to configure device");
         }

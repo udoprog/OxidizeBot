@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use reqwest::{
     header,
     r#async::{Body, Client, Decoder},
-    Method, Url,
+    Method, StatusCode, Url,
 };
 use rspotify::spotify::model::search;
 pub use rspotify::spotify::{
@@ -104,8 +104,11 @@ impl Spotify {
     }
 
     /// Information on the current playback.
-    pub fn me_player(&self) -> impl Future<Item = FullPlayingContext, Error = failure::Error> {
-        self.request(Method::GET, &["me", "player"]).execute()
+    pub fn me_player(
+        &self,
+    ) -> impl Future<Item = Option<FullPlayingContext>, Error = failure::Error> {
+        self.request(Method::GET, &["me", "player"])
+            .execute_optional()
     }
 
     /// Start playing a track.
@@ -270,8 +273,20 @@ struct RequestBuilder {
 }
 
 impl RequestBuilder {
-    /// Execute the request.
+    /// Execute the request requiring content to be returned.
     pub fn execute<T>(self) -> impl Future<Item = T, Error = failure::Error>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        self.execute_optional().and_then(|result| match result {
+            Some(body) => Ok(body),
+            None => Err(failure::format_err!("got empty responde from server")),
+        })
+    }
+
+    /// Execute the request, taking into account that the server might return 204 NO CONTENT, and treat it as
+    /// `Option::None`
+    pub fn execute_optional<T>(self) -> impl Future<Item = Option<T>, Error = failure::Error>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -290,11 +305,11 @@ impl RequestBuilder {
 
         r.header(header::AUTHORIZATION, format!("Bearer {}", access_token))
             .send()
-            .map_err(Into::into)
+            .from_err()
             .and_then(|mut res| {
                 let body = mem::replace(res.body_mut(), Decoder::empty());
 
-                body.concat2().map_err(Into::into).and_then(move |body| {
+                body.concat2().from_err().and_then(move |body| {
                     let status = res.status();
 
                     if !status.is_success() {
@@ -305,8 +320,22 @@ impl RequestBuilder {
                         );
                     }
 
-                    log::trace!("response: {}", String::from_utf8_lossy(body.as_ref()));
-                    serde_json::from_slice(body.as_ref()).map_err(Into::into)
+                    if status == StatusCode::NO_CONTENT {
+                        return Ok(None);
+                    }
+
+                    match serde_json::from_slice(body.as_ref()) {
+                        Ok(body) => Ok(Some(body)),
+                        Err(e) => {
+                            log::trace!(
+                                "failed to deserialize: {}: {}: {}",
+                                status,
+                                e,
+                                String::from_utf8_lossy(body.as_ref())
+                            );
+                            Err(e.into())
+                        }
+                    }
                 })
             })
     }

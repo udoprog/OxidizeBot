@@ -118,19 +118,21 @@ impl Item {
 
 #[derive(Debug)]
 pub enum Command {
-    // Skip the current song.
+    /// Skip the current song.
     Skip(EventKind),
-    // Toggle playback.
+    /// Toggle playback.
     Toggle(EventKind),
-    // Pause playback.
+    /// Pause playback.
     Pause(EventKind),
-    // Start playback.
+    /// Start playback.
     Play(EventKind),
-    // The queue was modified.
+    /// Start playback on a specific song state.
+    PlaySync(EventKind, Song),
+    /// The queue was modified.
     Modified(EventKind),
-    // Set the gain of the player.
+    /// Set the gain of the player.
     Volume(EventKind, u32),
-    // Play the given item as a theme at the given offset.
+    /// Play the given item as a theme at the given offset.
     Inject(EventKind, Arc<Item>, Duration),
 }
 
@@ -154,13 +156,7 @@ pub fn run(
     // For sending notifications.
     global_bus: Arc<bus::Bus>,
 ) -> Result<(PlaybackFuture, Player), failure::Error> {
-    let (commands_tx, commands) = mpsc::unbounded();
-
-    let connect_config = self::connect::Config {
-        device: config.device.clone(),
-    };
-
-    let (player, player_interface) = connect::setup(core, &connect_config, spotify.clone())?;
+    let (player, player_interface) = connect::setup(spotify.clone())?;
 
     let bus = Arc::new(RwLock::new(Bus::new(1024)));
 
@@ -219,6 +215,8 @@ pub fn run(
         pop_front: None,
     };
 
+    let (commands_tx, commands) = mpsc::unbounded();
+
     let future = PlaybackFuture {
         player,
         commands,
@@ -236,24 +234,74 @@ pub fn run(
     };
 
     let player = Player {
-        player_interface,
+        player_interface: player_interface.clone(),
         queue,
         max_queue_length: config.max_queue_length,
         max_songs_per_user: config.max_songs_per_user,
-        spotify,
+        spotify: spotify.clone(),
         commands_tx,
         bus,
-        volume: Arc::clone(&volume),
+        volume: volume.clone(),
         song: song.clone(),
         themes: parent_config.themes.clone(),
         closed: closed.clone(),
     };
 
-    // NB: make sure player is paused.
-    player.pause(EventKind::Automatic)?;
+    let set_default = match core.run(spotify.me_player())? {
+        // make use of the information on the current playback to get the local player into a good state.
+        Some(playback) => {
+            if let (Some(progress_ms), Some(track)) = (playback.progress_ms, playback.item) {
+                let track_id: TrackId = str::parse(&track.id)?;
+                let elapsed = Duration::from_millis(progress_ms as u64);
+                let duration = Duration::from_millis(track.duration_ms.into());
 
-    if let Some(volume) = config.volume {
-        player.volume(EventKind::Automatic, volume)?;
+                let item = Arc::new(Item {
+                    track_id,
+                    track,
+                    user: None,
+                    duration,
+                });
+
+                let new_song = Song::new(item, elapsed);
+
+                player.volume(EventKind::Automatic, playback.device.volume_percent)?;
+
+                if playback.is_playing {
+                    player.play_sync(EventKind::Automatic, new_song)?;
+                } else {
+                    player.pause(EventKind::Automatic)?;
+                }
+
+                player_interface.set_device(playback.device, false);
+                false
+            } else {
+                true
+            }
+        }
+        None => true,
+    };
+
+    if set_default {
+        let devices = core.run(spotify.my_player_devices())?;
+
+        for (i, device) in devices.iter().enumerate() {
+            log::info!("device #{}: {}", i, device.name)
+        }
+
+        let device = match config.device.as_ref() {
+            Some(device) => devices.into_iter().find(|d| d.name == *device),
+            None => devices.into_iter().next(),
+        };
+
+        if let Some(device) = device {
+            player_interface.set_device(device, false);
+        }
+
+        player.pause(EventKind::Automatic)?;
+
+        if let Some(volume) = config.volume {
+            player.volume(EventKind::Automatic, volume)?;
+        }
     }
 
     Ok((future, player))
@@ -275,7 +323,7 @@ pub enum Event {
 }
 
 /// Information on current song.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Song {
     pub item: Arc<Item>,
     /// Since the last time it was unpaused, what was the initial elapsed duration.
@@ -432,6 +480,11 @@ impl Player {
         self.bus.write().add_rx()
     }
 
+    /// Synchronize playback with the given song.
+    pub fn play_sync(&self, kind: EventKind, song: Song) -> Result<(), failure::Error> {
+        self.send(Command::PlaySync(kind, song))
+    }
+
     /// Pause playback.
     pub fn pause(&self, kind: EventKind) -> Result<(), failure::Error> {
         self.send(Command::Pause(kind))
@@ -481,9 +534,11 @@ impl PlayerClient {
         self.player_interface.list_devices()
     }
 
-    /// Set which device to perform playback from.
+    /// External call to set device.
+    ///
+    /// Should always notify the player to change.
     pub fn set_device(&self, device: spotify::Device) {
-        self.player_interface.set_device(device)
+        self.player_interface.set_device(device, true)
     }
 
     /// Send the given command.
@@ -1230,6 +1285,16 @@ impl PlaybackFuture {
                     self.paused = true;
                     self.write_song(None);
                 }
+            }
+            Command::PlaySync(kind, mut song) => {
+                log::trace!("synchronize the state of the player with the given song");
+                song.play();
+                kind.checked(&mut self.player, &self.bus, |p| p.play_sync(&song));
+                // Notify the global bus that we are playing a song.
+                self.global_bus
+                    .send(bus::Message::from_song(Some(&song), false));
+                self.paused = false;
+                *self.song.write() = Some(song);
             }
             // queue was modified in some way
             Command::Modified(kind) => {

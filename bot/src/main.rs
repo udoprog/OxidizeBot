@@ -34,30 +34,9 @@ fn opts() -> clap::App<'static, 'static> {
 }
 
 /// Configure logging.
-fn setup_logs(root: &Path) -> Result<log4rs::Handle, failure::Error> {
-    use log4rs::{
-        append::{console::ConsoleAppender, file::FileAppender},
-        config::{Appender, Config, Root},
-        encode::pattern::PatternEncoder,
-    };
-
-    let stdout = ConsoleAppender::builder().build();
-
-    let file = FileAppender::builder()
-        .encoder(Box::new(PatternEncoder::new("{d} - {m}{n}")))
-        .build(root.join("setmod.log"))?;
-
-    let config = Config::builder()
-        .appender(Appender::builder().build("stdout", Box::new(stdout)))
-        .appender(Appender::builder().build("file", Box::new(file)))
-        .build(
-            Root::builder()
-                .appender("stdout")
-                .appender("file")
-                .build(log::LevelFilter::Info),
-        )?;
-
-    Ok(log4rs::init_config(config)?)
+fn setup_logs(root: &Path) -> Result<(), failure::Error> {
+    log4rs::init_file(root.join("log4rs.yaml"), Default::default())?;
+    Ok(())
 }
 
 fn main() -> Result<(), failure::Error> {
@@ -78,14 +57,13 @@ fn main() -> Result<(), failure::Error> {
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join("web"));
 
-    let handle = setup_logs(root).context("failed to setup logs")?;
+    setup_logs(root).context("failed to setup logs")?;
 
     match try_main(&root, &web_root, &config) {
         Err(e) => utils::log_err("bot crashed", e),
         Ok(()) => log::info!("bot was shut down"),
     }
 
-    drop(handle);
     Ok(())
 }
 

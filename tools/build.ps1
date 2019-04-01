@@ -15,6 +15,7 @@ if (Test-Path -Path $target) {
 New-Item -Name $target -ItemType "directory"
 
 # example secrets.yml
+Copy-Item log4rs.yaml -Destination $target/
 Copy-Item secrets.yml.example -Destination $target/
 Copy-Item config.toml.example -Destination $target/
 Copy-Item target/release/setmod-bot.exe -Destination $target/
