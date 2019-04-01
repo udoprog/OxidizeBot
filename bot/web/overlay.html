@@ -47,10 +47,31 @@
         grid-row-end: top;
       }
 
-      #current-song .album-art {
-        float: left;
-        display: none;
+      #current-song .track {
+        height: 1.2em;
+        width: 100%;
+      }
 
+      #current-song .track-name {
+        display: inline-block;
+        max-width: 70%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      #current-song .request {
+        display: none;
+        float: right;
+        min-width: 10%;
+      }
+
+      #current-song .request-title {
+        font-size: 0.5em;
+      }
+
+      #current-song .album-art {
+        display: none;
         grid-column-start: left;
       }
 
@@ -60,15 +81,11 @@
       }
 
       #current-song .artist {
-        display: none;
-      }
-
-      #current-song .artist-by {
         font-size: .6em;
       }
 
-      #current-song .artist-name {
-        font-size: .6em;
+      #current-song .progress {
+        margin-top: 5px;
       }
 
       #current-song .progress-bar {
@@ -90,14 +107,18 @@
       <img class="album-art"></img>
 
       <div class="info">
-        <span class="state"></span>
+        <div class="track">
+          <span class="track-name">No Track Loaded</span>
+          <span class="request">
+            <span class="request-title">request by</span>
+            <span class="request-by"></span>
+          </span>
+        </div>
 
-        <span class="name">No Track Loaded</span>
-
-        <span class="artist">
+        <div class="artist">
           <span class="artist-by">by</span>
-          <span class="artist-name"></span>
-        </span>
+          <span class="artist-name"><em>Unknown</em></span>
+        </div>
 
         <div class="progress">
           <span class="timer">

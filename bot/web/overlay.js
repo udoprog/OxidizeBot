@@ -68,7 +68,7 @@ function formatDuration(duration) {
 
 class CurrentSong {
     constructor(elem) {
-        this.name = elem.querySelector(".name");
+        this.trackName = elem.querySelector(".track-name");
         this.artist = elem.querySelector(".artist");
         this.artistName = elem.querySelector(".artist-name");
         this.state = elem.querySelector(".state");
@@ -76,6 +76,8 @@ class CurrentSong {
         this.albumArt = elem.querySelector(".album-art");
         this.progress = elem.querySelector(".progress-bar");
         this.timer = elem.querySelector(".timer");
+        this.request = elem.querySelector(".request");
+        this.requestBy = elem.querySelector(".request-by");
 
         if (!!this.timer) {
             this.elapsed = this.timer.querySelector(".elapsed");
@@ -91,18 +93,26 @@ class CurrentSong {
      * @param {object} data
      */
     update(data) {
+        if (this.request) {
+            if (!!data.user) {
+                this.request.style.display = "inline-block";
+                this.requestBy.textContent = data.user;
+            } else {
+                this.request.style.display = "none";
+                this.requestBy.textContent = "";
+            }
+        }
+
         if (data.track === null) {
-            this.name.textContent = "No Track";
-            this.artistName = "";
-            this.artist.style.display = "none";
+            this.trackName.textContent = "No Track Loaded";
             this.albumArt.style.display = "none";
             this.timer.style.display = "none";
+            this.artistName.innerHTML = "<em>Unknown</em>";
         } else {
             this.timer.style.display = "inline";
-            this.artist.style.display = "inline";
             this.albumArt.style.display = "inline-block";
 
-            this.name.textContent = data.track.name;
+            this.trackName.textContent = data.track.name;
 
             let artist = this.pickArtist(data.track.artists);
 
@@ -122,10 +132,12 @@ class CurrentSong {
             }
         }
 
-        if (data.paused) {
-            this.state.innerHTML = "&#9208;";
-        } else {
-            this.state.innerHTML = "&#9654;";
+        if (this.state) {
+            if (data.paused) {
+                this.state.innerHTML = "&#9208;";
+            } else {
+                this.state.innerHTML = "&#9654;";
+            }
         }
     }
 
