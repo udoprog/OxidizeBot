@@ -17,13 +17,15 @@
       }
 
       body {
-        background-color: black;
+        background-color: white;
         display: grid;
         grid-template-columns: auto;
         grid-template-rows: 0px [top] auto [middle] 0px [bottom];
       }
 
       #current-song {
+        background-color: rgba(0, 0, 0, 0.25);
+        height: 84px;
         display: grid;
         grid-template-columns: [left] 64px 10px [gutter] auto [end];
         align-items: center;
@@ -73,6 +75,12 @@
         background-color: #888888;
         transition: none;
       }
+
+      #current-song .timer {
+        display: none;
+        position: absolute;
+        padding-left: 5px;
+      }
     </style>
 
     <script src="overlay.js" type="application/javascript" async="true"></script>
@@ -92,6 +100,12 @@
         </span>
 
         <div class="progress">
+          <span class="timer">
+              <span class="elapsed">00:00</span>
+              <span>/</span>
+              <span class="duration">10:00</span>
+          </span>
+
           <div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
         </div>
       </div>

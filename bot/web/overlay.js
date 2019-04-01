@@ -75,6 +75,15 @@ class CurrentSong {
         this.progress = elem.querySelector(".progress-bar");
         this.albumArt = elem.querySelector(".album-art");
         this.progress = elem.querySelector(".progress-bar");
+        this.timer = elem.querySelector(".timer");
+
+        if (!!this.timer) {
+            this.elapsed = this.timer.querySelector(".elapsed");
+            this.duration = this.timer.querySelector(".duration");
+        } else {
+            this.elapsed = null;
+            this.duration = null;
+        }
     }
 
     /**
@@ -86,8 +95,10 @@ class CurrentSong {
             this.name.textContent = "No Track";
             this.artistName = "";
             this.artist.style.display = "none";
-            albumArt.style.display = "none";
+            this.albumArt.style.display = "none";
+            this.timer.style.display = "none";
         } else {
+            this.timer.style.display = "inline";
             this.name.textContent = data.track.name;
             this.artistName.textContent = data.track.artists[0].name;
             this.artist.style.display = "inline";
@@ -104,9 +115,9 @@ class CurrentSong {
         }
 
         if (data.paused) {
-            state.innerHTML = "&#9208;";
+            this.state.innerHTML = "&#9208;";
         } else {
-            state.innerHTML = "&#9654;";
+            this.state.innerHTML = "&#9654;";
         }
     }
 
@@ -121,6 +132,14 @@ class CurrentSong {
 
         let p = Math.round((data.elapsed / data.duration) * 10000) / 100;
         this.progress.style.width = `${p}%`;
+
+        if (this.elapsed) {
+            this.elapsed.textContent = formatDuration(data.elapsed);
+        }
+
+        if (this.duration) {
+            this.duration.textContent = formatDuration(data.duration);
+        }
     }
 
     /**
