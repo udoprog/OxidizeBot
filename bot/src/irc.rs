@@ -29,7 +29,6 @@ mod after_stream;
 mod bad_word;
 mod clip;
 mod command_admin;
-mod counter;
 mod eight_ball;
 mod misc;
 mod song;
@@ -74,7 +73,6 @@ pub struct Irc<'a> {
     pub irc_config: &'a Config,
     pub token: Arc<RwLock<oauth2::Token>>,
     pub commands: db::Commands<db::Database>,
-    pub counters: db::Counters<db::Database>,
     pub bad_words: db::Words<db::Database>,
     pub global_bus: Arc<bus::Bus>,
     pub player: Option<&'a player::Player>,
@@ -96,7 +94,6 @@ impl Irc<'_> {
             irc_config,
             token,
             commands,
-            counters,
             bad_words,
             global_bus,
             player,
@@ -219,15 +216,6 @@ impl Irc<'_> {
             );
         }
 
-        if config.features.test(Feature::Counter) {
-            handlers.insert(
-                "counter",
-                counter::Counter {
-                    counters: counters.clone(),
-                },
-            );
-        }
-
         if config.features.test(Feature::Command) {
             handlers.insert(
                 "command",
@@ -275,7 +263,6 @@ impl Irc<'_> {
             whitelisted_hosts: config.whitelisted_hosts.clone(),
             currency: config.currency.clone(),
             commands,
-            counters,
             bad_words,
             global_bus,
             aliases: config.aliases.clone(),
@@ -486,8 +473,6 @@ struct Handler {
     currency: Option<Currency>,
     /// All registered commands.
     commands: db::Commands<db::Database>,
-    /// All registered counters.
-    counters: db::Counters<db::Database>,
     /// Bad words.
     bad_words: db::Words<db::Database>,
     /// For sending notifications.
@@ -626,7 +611,7 @@ impl Handler {
                 if let (Some(why), Some(user), Some(target)) =
                     (word.why.as_ref(), user, m.response_target())
                 {
-                    let why = why.render_to_string(&TemplateVars {
+                    let why = why.render_to_string(&BadWordsVars {
                         name: user,
                         target: target,
                     });
@@ -700,26 +685,17 @@ impl Handler {
 
                     if self.features.test(Feature::Command) {
                         if let Some(command) = self.commands.get(user.target, command) {
-                            let vars = TemplateVars {
+                            if command.has_var("count") {
+                                self.commands.increment(&*command)?;
+                            }
+
+                            let vars = CommandVars {
                                 name: &user.name,
                                 target: &user.target,
+                                count: command.count(),
                             };
+
                             let response = command.render(&vars)?;
-                            self.sender.privmsg(user.target, response);
-                        }
-                    }
-
-                    if self.features.test(Feature::Counter) {
-                        if let Some(counter) = self.counters.get(user.target, command) {
-                            self.counters.increment(&*counter)?;
-
-                            let vars = CounterVars {
-                                name: &user.name,
-                                target: &user.target,
-                                count: counter.count(),
-                            };
-
-                            let response = counter.render(&vars)?;
                             self.sender.privmsg(user.target, response);
                         }
                     }
@@ -864,13 +840,13 @@ pub enum SenderThreadItem {
 }
 
 #[derive(serde::Serialize)]
-pub struct TemplateVars<'a> {
+pub struct BadWordsVars<'a> {
     name: &'a str,
     target: &'a str,
 }
 
 #[derive(serde::Serialize)]
-pub struct CounterVars<'a> {
+pub struct CommandVars<'a> {
     name: &'a str,
     target: &'a str,
     count: i32,

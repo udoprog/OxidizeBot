@@ -1,3 +1,4 @@
+use hashbrown::HashSet;
 use std::{io, string};
 
 lazy_static::lazy_static! {
@@ -75,6 +76,32 @@ impl Template {
         let mut output = StringOutput::new();
         self.render_internal(&mut output, data)?;
         output.into_string().map_err(Into::into)
+    }
+
+    /// Test if the template has the given variable.
+    pub fn vars(&self) -> HashSet<String> {
+        use handlebars::template::{Parameter, TemplateElement};
+
+        let mut out = HashSet::new();
+
+        for e in &self.0.elements {
+            collect_vars(&mut out, e);
+        }
+
+        return out;
+
+        fn collect_vars(out: &mut HashSet<String>, e: &TemplateElement) {
+            match e {
+                TemplateElement::Expression(ref p) => match *p {
+                    Parameter::Name(ref name) => {
+                        out.insert(name.to_string());
+                    }
+                    Parameter::Literal(_) => (),
+                    Parameter::Subexpression(ref e) => collect_vars(out, &e.element),
+                },
+                _ => (),
+            }
+        }
     }
 
     /// Render the template to the given output.

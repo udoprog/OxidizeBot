@@ -1,8 +1,11 @@
 use crate::{db, template};
 use failure::{format_err, ResultExt as _};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 /// The backend of a words store.
 pub trait Backend: Clone + Send + Sync {
@@ -14,6 +17,13 @@ pub trait Backend: Clone + Send + Sync {
 
     /// Delete the given command from the backend.
     fn delete(&self, channel: &str, word: &str) -> Result<bool, failure::Error>;
+
+    /// Increment the number of times the command has been invoked.
+    /// Returns `true` if the counter existed and was incremented. `false` otherwise.
+    fn increment(&self, channel: &str, name: &str) -> Result<bool, failure::Error>;
+
+    /// Rename the given command.
+    fn rename(&self, channel: &str, from: &str, to: &str) -> Result<bool, failure::Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -39,8 +49,18 @@ where
             })?;
 
             let key = Key::new(command.channel.as_str(), command.name.as_str());
+            let count = Arc::new(AtomicUsize::new(command.count as usize));
+            let vars = template.vars();
 
-            inner.insert(key.clone(), Arc::new(Command { key, template }));
+            inner.insert(
+                key.clone(),
+                Arc::new(Command {
+                    key,
+                    count,
+                    template,
+                    vars,
+                }),
+            );
         }
 
         Ok(Commands {
@@ -58,8 +78,20 @@ where
             .edit(key.channel.as_str(), key.name.as_str(), command)?;
 
         let mut inner = self.inner.write();
+        let count = inner.get(&key).map(|c| c.count()).unwrap_or(0);
 
-        inner.insert(key.clone(), Arc::new(Command { key, template }));
+        let vars = template.vars();
+
+        inner.insert(
+            key.clone(),
+            Arc::new(Command {
+                key,
+                // use integer atomics when available.
+                count: Arc::new(AtomicUsize::new(count as usize)),
+                template,
+                vars,
+            }),
+        );
 
         Ok(())
     }
@@ -108,6 +140,52 @@ where
 
         out
     }
+
+    /// Increment the specified command.
+    pub fn increment(&self, command: &Command) -> Result<(), failure::Error> {
+        self.backend
+            .increment(command.key.channel.as_str(), command.key.name.as_str())?;
+        command.count.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    /// Try to rename the command.
+    pub fn rename(&self, channel: &str, from: &str, to: &str) -> Result<(), super::RenameError> {
+        let from_key = Key::new(channel, from);
+        let to_key = Key::new(channel, to);
+
+        let mut inner = self.inner.write();
+
+        if inner.contains_key(&to_key) {
+            return Err(super::RenameError::Conflict);
+        }
+
+        let command = match inner.remove(&from_key) {
+            Some(command) => command,
+            None => return Err(super::RenameError::Missing),
+        };
+
+        let command = Command {
+            key: to_key.clone(),
+            count: command.count.clone(),
+            template: command.template.clone(),
+            vars: command.vars.clone(),
+        };
+
+        inner.insert(to_key, Arc::new(command));
+
+        match self.backend.rename(channel, from, to) {
+            Err(e) => {
+                log::error!("failed to rename command `{}` in database: {}", from, e);
+            }
+            Ok(false) => {
+                log::warn!("command {} not renamed in database", from);
+            }
+            Ok(true) => (),
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -128,15 +206,27 @@ impl Key {
 #[derive(Debug)]
 pub struct Command {
     pub key: Key,
+    count: Arc<AtomicUsize>,
     pub template: template::Template,
+    vars: HashSet<String>,
 }
 
 impl Command {
+    /// Get the currenct count.
+    pub fn count(&self) -> i32 {
+        self.count.load(Ordering::SeqCst) as i32
+    }
+
     /// Render the given command.
     pub fn render<T>(&self, data: &T) -> Result<String, failure::Error>
     where
         T: serde::Serialize,
     {
         Ok(self.template.render_to_string(data)?)
+    }
+
+    /// Test if the rendered command has the given var.
+    pub fn has_var(&self, var: &str) -> bool {
+        self.vars.contains(var)
     }
 }

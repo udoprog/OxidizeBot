@@ -106,7 +106,6 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
     let _domain_whitelist = db::PersistedSet::<_, String>::load(db.clone(), "whitelisted-domain")?;
 
     let commands = db::Commands::load(db.clone())?;
-    let counters = db::Counters::load(db.clone())?;
     let bad_words = db::Words::load(db.clone())?;
 
     if let Some(path) = config.bad_words.as_ref() {
@@ -248,7 +247,6 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
             irc_config,
             token: bot_token,
             commands,
-            counters,
             bad_words,
             global_bus,
             player: player.as_ref(),

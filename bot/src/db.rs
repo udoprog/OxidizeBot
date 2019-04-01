@@ -1,5 +1,4 @@
 mod commands;
-mod counters;
 pub mod models;
 mod persisted_set;
 mod schema;
@@ -9,7 +8,6 @@ use crate::player;
 
 pub use self::{
     commands::{Command, Commands},
-    counters::{Counter, Counters},
     persisted_set::PersistedSet,
     words::{Word, Words},
 };
@@ -18,8 +16,27 @@ use chrono::Utc;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use futures::{future, Future};
-use std::sync::Arc;
+use std::{error, fmt, sync::Arc};
 use tokio_threadpool::ThreadPool;
+
+#[derive(Debug)]
+pub enum RenameError {
+    /// Trying to rename something to a conflicting name.
+    Conflict,
+    /// Trying to rename something which doesn't exist.
+    Missing,
+}
+
+impl error::Error for RenameError {}
+
+impl fmt::Display for RenameError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            RenameError::Conflict => "conflict".fmt(fmt),
+            RenameError::Missing => "missing".fmt(fmt),
+        }
+    }
+}
 
 embed_migrations!("./migrations");
 
@@ -170,7 +187,6 @@ impl Database {
 }
 
 impl commands::Backend for Database {
-    /// Edit the given command.
     fn edit(&self, channel: &str, name: &str, text: &str) -> Result<(), failure::Error> {
         use self::schema::commands::dsl;
 
@@ -185,6 +201,7 @@ impl commands::Backend for Database {
                 let command = models::Command {
                     channel: channel.to_string(),
                     name,
+                    count: 0,
                     text: text.to_string(),
                 };
 
@@ -212,11 +229,33 @@ impl commands::Backend for Database {
         Ok(count == 1)
     }
 
-    /// List all available commands.
     fn list(&self) -> Result<Vec<models::Command>, failure::Error> {
         use self::schema::commands::dsl;
         let c = self.pool.get()?;
         Ok(dsl::commands.load::<models::Command>(&c)?)
+    }
+
+    fn increment(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
+        use self::schema::commands::dsl;
+
+        let c = self.pool.get()?;
+        let count =
+            diesel::update(dsl::commands.filter(dsl::channel.eq(channel).and(dsl::name.eq(&name))))
+                .set(dsl::count.eq(dsl::count + 1))
+                .execute(&c)?;
+        Ok(count == 1)
+    }
+
+    fn rename(&self, channel: &str, from: &str, to: &str) -> Result<bool, failure::Error> {
+        use self::schema::commands::dsl;
+
+        let c = self.pool.get()?;
+        let count =
+            diesel::update(dsl::commands.filter(dsl::channel.eq(channel).and(dsl::name.eq(from))))
+                .set(dsl::name.eq(to))
+                .execute(&c)?;
+
+        Ok(count == 1)
     }
 }
 
@@ -264,63 +303,6 @@ impl words::Backend for Database {
         let c = self.pool.get()?;
 
         let count = diesel::delete(dsl::bad_words.filter(dsl::word.eq(&word))).execute(&c)?;
-        Ok(count == 1)
-    }
-}
-
-impl counters::Backend for Database {
-    fn list(&self) -> Result<Vec<models::Counter>, failure::Error> {
-        use self::schema::counters::dsl;
-        let c = self.pool.get()?;
-        Ok(dsl::counters.load::<models::Counter>(&c)?)
-    }
-
-    fn edit(&self, channel: &str, name: &str, text: &str) -> Result<(), failure::Error> {
-        use self::schema::counters::dsl;
-
-        let c = self.pool.get()?;
-        let filter = dsl::counters.filter(dsl::name.eq(&name));
-        let b = filter.clone().first::<models::Counter>(&c).optional()?;
-
-        match b {
-            None => {
-                let command = models::Counter {
-                    channel: channel.to_string(),
-                    name: name.to_string(),
-                    count: 0,
-                    text: text.to_string(),
-                };
-
-                diesel::insert_into(dsl::counters)
-                    .values(&command)
-                    .execute(&c)?;
-            }
-            Some(_) => {
-                diesel::update(filter).set(dsl::text.eq(text)).execute(&c)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn delete(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
-        use self::schema::counters::dsl;
-
-        let c = self.pool.get()?;
-        let count =
-            diesel::delete(dsl::counters.filter(dsl::channel.eq(channel).and(dsl::name.eq(name))))
-                .execute(&c)?;
-        Ok(count == 1)
-    }
-
-    fn increment(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
-        use self::schema::counters::dsl;
-
-        let c = self.pool.get()?;
-        let count =
-            diesel::update(dsl::counters.filter(dsl::channel.eq(channel).and(dsl::name.eq(&name))))
-                .set(dsl::count.eq(dsl::count + 1))
-                .execute(&c)?;
         Ok(count == 1)
     }
 }

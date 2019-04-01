@@ -48,7 +48,6 @@ whitelisted_hosts = [
 features = [
   "admin",
   "command",
-  "counter",
   "song",
   "afterstream",
   "bad-words",
@@ -202,28 +201,11 @@ Enabled commands:
 
 * `!command edit <name> <what>` - Set the command `!<name>` to respond with `<what>` (**moderator**)..
 * `!command delete <name>` - Delete the command named `<name>` (**moderator**)..
+* `!command rename <from> <to>` - Rename the command `<from>` to `<to>`.
 
 Template variables that can be used in `<what>`:
 
-* `{{name}}` - the user who said the word.
-* `{{target}}` - the channel where the word was sent.
-
-#### `counter`
-
-Identical to `command` but keeps track of a counter of how many times it has been invoked.
-
-The counter named `foo` would be invoked `!foo`.
-
-A command is the bot responding with a pre-defined message based on a template.
-
-Enabled commands:
-
-* `!counter edit <name> <what>` - Set the command `!<name>` to respond with `<what>` (**moderator**)..
-* `!counter delete <name>` - Delete the command named `<name>` (**moderator**)..
-
-Template variables that can be used in `<what>`:
-
-* `{{count}}` - The number of times the counter has been invoked.
+* `{{count}}` - The number of times the command has been invoked.
 * `{{name}}` - The user who said the word.
 * `{{target}}` - The channel where the word was sent.
 

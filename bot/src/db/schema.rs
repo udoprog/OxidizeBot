@@ -10,6 +10,7 @@ table! {
     commands (channel, name) {
         channel -> Text,
         name -> Text,
+        count -> Integer,
         text -> Text,
     }
 }

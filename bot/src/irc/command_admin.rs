@@ -54,6 +54,27 @@ impl command::Handler for Handler {
                     ctx.respond("No such command.");
                 }
             }
+            Some("rename") => {
+                ctx.check_moderator()?;
+
+                let (from, to) = match (ctx.next(), ctx.next()) {
+                    (Some(from), Some(to)) => (from, to),
+                    _ => {
+                        ctx.respond("Expected: !command rename <from> <to>");
+                        failure::bail!("bad command");
+                    }
+                };
+
+                match self.commands.rename(ctx.user.target, from, to) {
+                    Ok(()) => ctx.respond(format!("Renamed command {} -> {}", from, to)),
+                    Err(db::RenameError::Conflict) => {
+                        ctx.respond(format!("Already a command named {}", to))
+                    }
+                    Err(db::RenameError::Missing) => {
+                        ctx.respond(format!("No such command: {}", from))
+                    }
+                }
+            }
             None | Some(..) => {
                 ctx.respond("Expected: list, edit, or delete.");
             }

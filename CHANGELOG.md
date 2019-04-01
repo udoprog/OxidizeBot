@@ -9,10 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Web-based overlay with current song ([#22]).
 - Player will no longer pause the current song (if it's playing) and will instead synchronize the state of the player with Spotify ([#18]).
+- Implement `!commands rename <from> <to>`
 
 ### Changed
 - Cleaned up old cruft in the codebase (`gfx` module).
 - Moved log configuration to external file (see [example log4rs.yaml]).
+
+### Removed
+- Removed `!counter` in favor of `!command` with same functionality. Using the `{{count}}` variable in the template will cause the count to be incremented.
 
 [example log4rs.yaml]: log4rs.yaml
 

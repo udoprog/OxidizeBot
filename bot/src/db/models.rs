@@ -13,6 +13,8 @@ pub struct Balance {
 pub struct Command {
     pub channel: String,
     pub name: String,
+    /// The number of times the counter has been invoked.
+    pub count: i32,
     pub text: String,
 }
 
