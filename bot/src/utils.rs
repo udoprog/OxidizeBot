@@ -504,15 +504,14 @@ impl Shutdown {
     }
 }
 
-#[serde(default, deserialize_with = "utils::deserialize_optional_duration")]
 #[cfg(test)]
 mod tests {
-    use super::{human_artists, parse_duration, TrimmedWords, Urls, Words};
+    use super::{parse_duration, TrimmedWords, Urls, Words};
 
     #[test]
     pub fn test_trimmed_words() {
-        let out = TrimmedWords::new("are, you a cherry? fucker?").collect::<Vec<_>>();
-        assert_eq!(out, vec!["are", "you", "a", "cherry", "fucker"]);
+        let out = TrimmedWords::new("hello, do you feel alive?").collect::<Vec<_>>();
+        assert_eq!(out, vec!["hello", "do", "you", "feel", "alive"]);
     }
 
     #[test]
@@ -532,22 +531,6 @@ mod tests {
                 str::parse("https://google.se/test+this").unwrap(),
                 str::parse("http://example.com").unwrap()
             ],
-        );
-    }
-
-    #[test]
-    pub fn test_human_artists() {
-        let artists = vec![String::from("foo"), String::from("bar")];
-        assert_eq!("foo, and bar", human_artists(&artists).expect("artists"));
-
-        let artists = vec![
-            String::from("foo"),
-            String::from("bar"),
-            String::from("baz"),
-        ];
-        assert_eq!(
-            "foo, bar, and baz",
-            human_artists(&artists).expect("artists")
         );
     }
 
