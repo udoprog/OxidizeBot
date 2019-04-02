@@ -5,6 +5,7 @@ use url::percent_encoding::PercentDecode;
 
 /// Helper type for futures.
 pub type BoxFuture<T, E> = Box<dyn futures::Future<Item = T, Error = E> + Send + 'static>;
+pub type BoxStream<T, E> = Box<dyn futures::Stream<Item = T, Error = E> + Send + 'static>;
 
 pub struct Urls<'a> {
     message: &'a str,

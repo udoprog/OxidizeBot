@@ -38,6 +38,10 @@ volume = 50
 # Set to false and the current song will not be echoed in chat.
 echo_current_song = true
 
+# How frequently we should check if the state of the remote player is different from the local state.
+# This allows doing stuff like playing a song on your own client.
+sync_player_interval = "10s"
+
 [current_song]
 path = "E:\\temp\\current_song.txt"
 not_playing = "No Song Playing"

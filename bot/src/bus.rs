@@ -159,7 +159,9 @@ pub enum Message {
     SongCurrent {
         track: Option<spotify::FullTrack>,
         user: Option<String>,
-        paused: bool,
+        is_playing: bool,
+        elapsed: u64,
+        duration: u64,
     },
 }
 
@@ -182,15 +184,17 @@ impl Message {
         }
     }
 
-    /// Message indicating that no song is playing.
-    pub fn from_song(song: Option<&player::Song>, paused: bool) -> Self {
+    /// Construct a message that the given song is running.
+    pub fn song(song: Option<&player::Song>) -> Self {
         let song = match song {
             Some(song) => song,
             None => {
                 return Message::SongCurrent {
                     track: None,
                     user: None,
-                    paused,
+                    is_playing: false,
+                    elapsed: 0,
+                    duration: 0,
                 }
             }
         };
@@ -198,7 +202,9 @@ impl Message {
         Message::SongCurrent {
             track: Some(song.item.track.clone()),
             user: song.item.user.clone(),
-            paused,
+            is_playing: song.is_playing(),
+            elapsed: song.elapsed().as_secs(),
+            duration: song.duration().as_secs(),
         }
     }
 

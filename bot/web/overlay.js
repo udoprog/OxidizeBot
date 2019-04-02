@@ -136,14 +136,16 @@ class CurrentSong {
         }
 
         if (this.state) {
-            if (data.paused) {
-                this.state.classList.remove("state-playing");
-                this.state.classList.add("state-paused");
-            } else {
+            if (data.is_playing) {
                 this.state.classList.remove("state-paused");
                 this.state.classList.add("state-playing");
+            } else {
+                this.state.classList.remove("state-playing");
+                this.state.classList.add("state-paused");
             }
         }
+
+        this.updateProgress(data);
     }
 
     /**
