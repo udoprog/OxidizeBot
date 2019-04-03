@@ -9,10 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Web-based overlay with current song ([#22]).
 - Player will no longer pause the current song (if it's playing) and will instead synchronize the state of the player with Spotify ([#18]).
-- Implement `!commands rename <from> <to>`
+- Implement `!command rename <from> <to>`
 - Ability to sync remote state of player with `[player] sync_player_interval = "10s"` ([#18]).
 - Much more helpful guidance when using `!song` incorrectly.
 - Store aliases in the database instead of the configuration. See the [`alias configuration`] for more details ([#24]).
+- Start storing some settings in the database ([#19]).
+  * Bot keeps track of first time it's being started to perform first-time configuration.
 
 ### Changed
 - Cleaned up old cruft in the codebase (`gfx` module).
