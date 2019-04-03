@@ -130,8 +130,16 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
         ()
     }));
 
-    if let Err(e) = webbrowser::open(web::URL) {
-        log::error!("failed to open browser: {}", e);
+    let settings = db.settings();
+
+    if settings.get::<bool>("first-run")?.unwrap_or(true) {
+        log::info!("Opening {} for the first time", web::URL);
+
+        if let Err(e) = webbrowser::open(web::URL) {
+            log::error!("failed to open browser: {}", e);
+        }
+
+        settings.set("first-run", false)?;
     }
 
     log::info!("Listening on: {}", web::URL);

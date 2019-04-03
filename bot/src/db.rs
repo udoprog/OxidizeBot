@@ -62,6 +62,11 @@ impl Database {
         })
     }
 
+    /// Access settings from the database.
+    pub fn settings(&self) -> Settings {
+        Settings { db: self.clone() }
+    }
+
     /// Add an afterstream reminder.
     pub fn insert_afterstream(&self, user: &str, text: &str) -> Result<(), failure::Error> {
         use self::schema::after_streams::dsl;
@@ -183,6 +188,111 @@ impl Database {
 
             Ok(())
         }))
+    }
+}
+
+#[derive(Clone)]
+pub struct Settings {
+    db: Database,
+}
+
+impl Settings {
+    /// Get the value of the given key from the database.
+    pub fn get<T>(&self, key: &str) -> Result<Option<T>, failure::Error>
+    where
+        T: std::str::FromStr,
+        T::Err: fmt::Display,
+    {
+        use self::schema::settings::dsl;
+        let c = self.db.pool.get()?;
+
+        let result = dsl::settings
+            .select(dsl::value)
+            .filter(dsl::key.eq(key))
+            .first::<String>(&c)
+            .optional()?;
+
+        match result {
+            Some(value) => match str::parse(&value) {
+                Ok(value) => Ok(Some(value)),
+                Err(e) => Err(failure::format_err!(
+                    "failed to deserialize: {}: {}",
+                    key,
+                    e
+                )),
+            },
+            None => Ok(None),
+        }
+    }
+
+    /// Insert the given setting.
+    pub fn set<T>(&self, key: &str, value: T) -> Result<bool, failure::Error>
+    where
+        T: fmt::Display,
+    {
+        use self::schema::settings::dsl;
+        let c = self.db.pool.get()?;
+        let count = diesel::insert_into(dsl::settings)
+            .values((dsl::key.eq(key), dsl::value.eq(value.to_string())))
+            .execute(&c)?;
+        Ok(count == 1)
+    }
+
+    /// Clear the given setting. Returning `true` if it was removed.
+    pub fn clear(&self, key: &str) -> Result<bool, failure::Error> {
+        use self::schema::settings::dsl;
+        let c = self.db.pool.get()?;
+        let count = diesel::delete(dsl::settings.filter(dsl::key.eq(key))).execute(&c)?;
+        Ok(count == 1)
+    }
+
+    /// Create a scoped setting.
+    pub fn scoped<S>(&self, scope: impl IntoIterator<Item = S>) -> ScopedSettings
+    where
+        S: AsRef<str>,
+    {
+        let scope = scope
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+
+        ScopedSettings {
+            settings: self.clone(),
+            scope,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ScopedSettings {
+    settings: Settings,
+    scope: Vec<String>,
+}
+
+impl ScopedSettings {
+    /// Get the value of the given key from the database.
+    pub fn get<T>(&self, key: &str) -> Result<Option<T>, failure::Error>
+    where
+        T: std::str::FromStr,
+        T::Err: fmt::Display,
+    {
+        self.settings.get(&self.scope(key))
+    }
+
+    /// Insert the given setting.
+    pub fn set(&self, key: &str, value: &str) -> Result<bool, failure::Error> {
+        self.settings.set(&self.scope(key), value)
+    }
+
+    /// Clear the given setting. Returning `true` if it was removed.
+    pub fn clear(&self, key: &str) -> Result<bool, failure::Error> {
+        self.settings.clear(&self.scope(key))
+    }
+
+    fn scope(&self, key: &str) -> String {
+        let mut scope = self.scope.clone();
+        scope.push(key.to_string());
+        scope.join("/")
     }
 }
 

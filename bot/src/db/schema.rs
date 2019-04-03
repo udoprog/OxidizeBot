@@ -59,3 +59,10 @@ table! {
         value -> Text,
     }
 }
+
+table! {
+    settings (key) {
+        key -> Text,
+        value -> Text,
+    }
+}
