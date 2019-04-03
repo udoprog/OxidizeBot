@@ -205,9 +205,14 @@ pub fn run(
                     let spotify = spotify.clone();
                     move |_| {
                         log::info!("Getting remote information on playback");
-                        spotify.me_player()
+                        spotify.me_player().map(Some)
                     }
-                }),
+                })
+                .or_else(|e| {
+                    log::error!("failed to call remote stream: {}", e);
+                    Ok(None::<Option<spotify::FullPlayingContext>>)
+                })
+                .filter_map(|v| v),
         ) as SyncIntervalStream)
     } else {
         None
