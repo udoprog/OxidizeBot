@@ -16,8 +16,9 @@ table! {
 }
 
 table! {
-    after_streams (channel, added_at, user) {
-        channel -> Text,
+    after_streams (id) {
+        id -> Integer,
+        channel -> Nullable<Text>,
         added_at -> Timestamp,
         user -> Text,
         text -> Text,

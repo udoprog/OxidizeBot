@@ -28,8 +28,19 @@ pub struct Alias {
     pub text: String,
 }
 
-#[derive(diesel::Insertable)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, diesel::Queryable)]
 pub struct AfterStream {
+    pub id: i32,
+    pub channel: Option<String>,
+    pub added_at: NaiveDateTime,
+    pub user: String,
+    pub text: String,
+}
+
+#[derive(diesel::Insertable)]
+#[table_name = "after_streams"]
+pub struct InsertAfterStream {
+    pub channel: Option<String>,
     pub user: String,
     pub text: String,
 }

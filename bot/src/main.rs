@@ -52,14 +52,12 @@ fn main() -> Result<(), failure::Error> {
         .parent()
         .ok_or_else(|| format_err!("missing parent"))?;
 
-    let web_root = m
-        .value_of("web-root")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| root.join("web"));
+    let web_root = m.value_of("web-root").map(PathBuf::from);
+    let web_root = web_root.as_ref().map(|p| p.as_path());
 
     setup_logs(root).context("failed to setup logs")?;
 
-    match try_main(&root, &web_root, &config) {
+    match try_main(&root, web_root, &config) {
         Err(e) => utils::log_err("bot crashed", e),
         Ok(()) => log::info!("bot was shut down"),
     }
@@ -67,7 +65,7 @@ fn main() -> Result<(), failure::Error> {
     Ok(())
 }
 
-fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::Error> {
+fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), failure::Error> {
     log::info!("Starting SetMod Version {}", setmod_bot::VERSION);
 
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
@@ -110,6 +108,7 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
     let commands = db::Commands::load(db.clone())?;
     let aliases = db::Aliases::load(db.clone())?;
     let bad_words = db::Words::load(db.clone())?;
+    let after_streams = db::AfterStreams::load(db.clone())?;
 
     // TODO: remove this migration next major release.
     if let Some(irc) = config.irc.as_ref() {
@@ -147,7 +146,7 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
     let mut futures =
         Vec::<Box<dyn Future<Item = (), Error = failure::Error> + Send + 'static>>::new();
 
-    let (web, future) = web::setup(web_root, global_bus.clone())?;
+    let (web, future) = web::setup(web_root, global_bus.clone(), after_streams.clone())?;
 
     // NB: spawn the web server on a separate thread because it's needed for the synchronous authentication flow below.
     core.runtime().executor().spawn(future.map_err(|e| {
@@ -285,6 +284,7 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
             commands,
             aliases,
             bad_words,
+            after_streams,
             global_bus,
             modules: &modules,
             shutdown,

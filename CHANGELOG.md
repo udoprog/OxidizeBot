@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cleaned up old cruft in the codebase (`gfx` module).
 - Moved log configuration to external file (see [example log4rs.yaml]).
 - No longer raise an error on bad input.
+- UI is now built in React ([#23]).
+  * This adds the `-WebRoot` option to [`tools/setmod.ps1`] to override where to load files from for development purposes.
 
 ### Removed
 - Removed `!counter` in favor of `!command` with same functionality. Using the `{{count}}` variable in the template will cause the count to be incremented.
@@ -27,9 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [`alias configuration`]: README.md#alias
 [example log4rs.yaml]: log4rs.yaml
+[`tools/setmod.ps1`]: tools/setmod.ps1
 
 [#18]: https://github.com/udoprog/setmod/issues/18
 [#22]: https://github.com/udoprog/setmod/issues/22
+[#23]: https://github.com/udoprog/setmod/issues/23
 [#24]: https://github.com/udoprog/setmod/issues/24
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.3...HEAD

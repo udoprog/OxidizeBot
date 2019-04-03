@@ -1,0 +1,154 @@
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background-color: white;
+  display: grid;
+  grid-template-columns: auto;
+  grid-template-rows: 0px [top] auto [middle] 0px [bottom];
+}
+
+#current-song {
+  background-color: rgba(0, 0, 0, 0.25);
+  display: grid;
+  grid-template-columns: [left] 64px 10px [gutter] auto [end];
+  align-items: center;
+
+  padding: 10px;
+  min-width: 800px;
+  max-width: 33%;
+
+  color: white;
+  font-family: Consolas, monospace;
+  font-size: 1.4em;
+  font-weight: bold;
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px  1px 0 #000, 1px  1px 0 #000;
+
+  grid-row-end: top;
+
+  .request {
+    display: none;
+    float: right;
+    min-width: 10%;
+
+    &-title {
+      font-size: 0.8em;
+    }
+  }
+
+  .album {
+    grid-column-start: left;
+    width: 64px;
+    height: 64px;
+  }
+
+  .info {
+    grid-column-start: gutter;
+
+    .track {
+      &-name {
+        line-height: 0.9em;
+        max-width: 70%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    }
+
+    .artist {
+      font-size: .8em;
+    }
+
+    .progress {
+      &-bar {
+        background-color: #888888;
+        transition: none;
+      }
+    }
+  }
+
+  .timer {
+    position: absolute;
+    padding-left: 5px;
+  }
+
+  .state {
+    display: none;
+    position: absolute;
+    width: 64px;
+    height: 64px;
+    z-index: 1000;
+
+    color: #FF7F50;
+    background-size: 32px 32px;
+    background-repeat: no-repeat;
+    background-position: left 16px top 16px;
+
+    &-paused {
+      display: block;
+      background-color: rgba(255, 255, 255, 0.5);
+      background-image: url("/static/feather/pause.svg");
+    }
+  }
+}
+
+.title-refresh {
+  margin-left: 0.4em;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.spinner {
+  margin: 100px auto 0;
+  width: 70px;
+  text-align: center;
+
+  .bounce1 {
+    -webkit-animation-delay: -0.32s;
+    animation-delay: -0.32s;
+  }
+
+  .bounce2 {
+    -webkit-animation-delay: -0.16s;
+    animation-delay: -0.16s;
+  }
+
+  & > div {
+    width: 18px;
+    height: 18px;
+    background-color: #333;
+
+    border-radius: 100%;
+    display: inline-block;
+    -webkit-animation: sk-bouncedelay 1.4s infinite ease-in-out both;
+    animation: sk-bouncedelay 1.4s infinite ease-in-out both;
+  }
+}
+
+@-webkit-keyframes sk-bouncedelay {
+  0%, 80%, 100% { -webkit-transform: scale(0) }
+  40% { -webkit-transform: scale(1.0) }
+}
+
+@keyframes sk-bouncedelay {
+  0%, 80%, 100% {
+    -webkit-transform: scale(0);
+    transform: scale(0);
+  } 40% {
+    -webkit-transform: scale(1.0);
+    transform: scale(1.0);
+  }
+}
+
+td.datetime {
+  white-space: nowrap;
+}
+
+button.action {
+  svg {
+  }
+}

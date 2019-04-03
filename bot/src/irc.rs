@@ -75,6 +75,7 @@ pub struct Irc<'a> {
     pub commands: db::Commands<db::Database>,
     pub aliases: db::Aliases<db::Database>,
     pub bad_words: db::Words<db::Database>,
+    pub after_streams: db::AfterStreams,
     pub global_bus: Arc<bus::Bus>,
     pub modules: &'a [Box<dyn module::Module + 'static>],
     pub shutdown: utils::Shutdown,
@@ -96,6 +97,7 @@ impl Irc<'_> {
             commands,
             aliases,
             bad_words,
+            after_streams,
             global_bus,
             modules,
             shutdown,
@@ -240,7 +242,7 @@ impl Irc<'_> {
                 "afterstream",
                 after_stream::AfterStream {
                     cooldown: irc_config.afterstream_cooldown.clone(),
-                    db: db.clone(),
+                    after_streams,
                 },
             );
         }

@@ -1,5 +1,5 @@
-use crate::{bus, player, spotify, utils::BoxFuture};
-use futures::{stream, sync::oneshot, Future as _, Sink as _, Stream as _};
+use crate::{bus, db, player, spotify, utils::BoxFuture};
+use futures::{future, stream, sync::oneshot, Future, Sink as _, Stream as _};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::{fmt, net::SocketAddr, path::Path, sync::Arc};
@@ -7,6 +7,9 @@ use warp::{http::Uri, Filter as _};
 
 pub const URL: &'static str = "http://localhost:12345";
 pub const REDIRECT_URI: &'static str = "/redirect";
+
+const INDEX_HTML: &'static [u8] = include_bytes!("../web/dist/index.html");
+const MAIN_JS: &'static [u8] = include_bytes!("../web/dist/main.js");
 
 #[derive(Debug)]
 enum Error {
@@ -38,26 +41,10 @@ struct ExpectedToken {
     channel: oneshot::Sender<ReceivedToken>,
 }
 
-struct WithTemplate<T>
-where
-    T: serde::Serialize,
-{
-    name: &'static str,
-    value: T,
-}
+#[derive(Default, serde::Serialize)]
+struct Empty {}
 
-fn render<T>(
-    template: WithTemplate<T>,
-    hbs: &Arc<handlebars::Handlebars>,
-) -> Result<impl warp::Reply, Error>
-where
-    T: serde::Serialize,
-{
-    let body = hbs
-        .render(template.name, &template.value)
-        .map_err(failure::Error::from)?;
-    Ok(warp::reply::html(body))
-}
+const EMPTY: Empty = Empty {};
 
 #[derive(serde::Serialize)]
 struct Auth {
@@ -65,102 +52,18 @@ struct Auth {
     url: String,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 struct AudioDevice {
-    current: bool,
+    is_current: bool,
     name: String,
     id: String,
     r#type: String,
-}
-
-#[derive(serde::Serialize)]
-struct IndexData {
-    version: String,
-    auth: Vec<Auth>,
-    audio_devices: Vec<AudioDevice>,
-    current_device: Option<AudioDevice>,
-}
-
-/// Index web handler.
-#[derive(Clone)]
-struct Index {
-    player: Arc<RwLock<Option<player::PlayerClient>>>,
-    token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
-}
-
-impl Index {
-    fn handle(&self) -> Result<WithTemplate<IndexData>, Error> {
-        let mut current_device = None;
-        let mut audio_devices = Vec::new();
-
-        if let Some(player) = self.player.read().as_ref() {
-            let current = player.current_device();
-
-            for device in player.list_devices().wait()? {
-                let current = current
-                    .as_ref()
-                    .map(|d| d.id == device.id)
-                    .unwrap_or_default();
-
-                audio_devices.push(AudioDevice {
-                    name: device.name.to_string(),
-                    id: device.id.to_string(),
-                    current,
-                    r#type: device_to_string(&device._type).to_string(),
-                })
-            }
-
-            current_device = current.map(|d| AudioDevice {
-                name: d.name.to_string(),
-                id: d.id.to_string(),
-                current: true,
-                r#type: device_to_string(&d._type).to_string(),
-            })
-        }
-
-        let token_callbacks = self.token_callbacks.read();
-
-        let mut auth = Vec::new();
-
-        for expected in token_callbacks.values() {
-            auth.push(Auth {
-                url: expected.url.to_string(),
-                title: expected.title.to_string(),
-            });
-        }
-
-        auth.sort_by(|a, b| a.title.cmp(&b.title));
-
-        let data = IndexData {
-            version: crate::VERSION.to_string(),
-            auth,
-            audio_devices: audio_devices,
-            current_device: current_device,
-        };
-
-        return Ok(WithTemplate {
-            name: "index",
-            value: data,
-        });
-
-        /// Convert a spotify device into a string.
-        fn device_to_string(device: &spotify::DeviceType) -> &'static str {
-            match *device {
-                spotify::DeviceType::Computer => "Computer",
-                spotify::DeviceType::Smartphone => "Smart Phone",
-                spotify::DeviceType::Speaker => "Speaker",
-                spotify::DeviceType::Unknown => "Unknown",
-            }
-        }
-    }
 }
 
 #[derive(serde::Deserialize)]
 struct RedirectQuery {
     state: String,
     code: String,
-    #[serde(rename = "scope")]
-    _scope: String,
 }
 
 /// Oauth 2.0 redirect handler
@@ -189,142 +92,269 @@ impl Oauth2Redirect {
 
 /// API to manage device.
 #[derive(Clone)]
-struct DeviceApi {
+struct Api {
     player: Arc<RwLock<Option<player::PlayerClient>>>,
+    token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
+    after_streams: db::AfterStreams,
 }
 
-impl DeviceApi {
+impl Api {
     /// Handle request to set device.
-    fn set_device(&self, id: String) -> Result<impl warp::Reply, Error> {
-        if let Some(player) = self.player.read().as_ref() {
-            let mut audio_devices = Vec::new();
+    fn set_device(&self, id: String) -> BoxFuture<impl warp::Reply, Error> {
+        let player = match self.player.read().clone() {
+            Some(player) => player,
+            None => return Box::new(future::err(Error::BadRequest)),
+        };
 
-            if let Some(player) = self.player.read().as_ref() {
-                audio_devices = player.list_devices().wait()?;
+        let future = player.list_devices().from_err();
+
+        let future = future.and_then({
+            move |devices| {
+                if let Some(device) = devices.iter().find(|d| d.id == id) {
+                    player.set_device(device.clone());
+                    return Ok(warp::reply::json(&EMPTY));
+                }
+
+                Err(Error::BadRequest)
+            }
+        });
+
+        Box::new(future)
+    }
+
+    /// Get a list of things that need authentication.
+    fn auth(&self) -> Result<impl warp::Reply, Error> {
+        let mut auth = Vec::new();
+
+        for expected in self.token_callbacks.read().values() {
+            auth.push(Auth {
+                url: expected.url.to_string(),
+                title: expected.title.to_string(),
+            });
+        }
+
+        auth.sort_by(|a, b| a.title.cmp(&b.title));
+        return Ok(warp::reply::json(&auth));
+    }
+
+    /// Get a list of things that need authentication.
+    fn devices(&self) -> BoxFuture<impl warp::Reply, Error> {
+        let player = match self.player.read().clone() {
+            Some(player) => player,
+            None => {
+                let data = Devices::default();
+                return Box::new(future::ok(warp::reply::json(&data)));
+            }
+        };
+
+        let c = player.current_device();
+        let future = player.list_devices().from_err();
+
+        let future = future.map(move |data| {
+            let mut devices = Vec::new();
+            let mut current = None;
+
+            for device in data {
+                let is_current = c.as_ref().map(|d| d.id == device.id).unwrap_or_default();
+
+                let device = AudioDevice {
+                    name: device.name.to_string(),
+                    id: device.id.to_string(),
+                    is_current,
+                    r#type: device_to_string(&device._type).to_string(),
+                };
+
+                if is_current {
+                    current = Some(device.clone());
+                }
+
+                devices.push(device);
             }
 
-            if let Some(device) = audio_devices.iter().find(|d| d.id == id) {
-                player.set_device(device.clone());
+            let data = Devices { devices, current };
+            warp::reply::json(&data)
+        });
+
+        return Box::new(future);
+
+        /// Convert a spotify device into a string.
+        fn device_to_string(device: &spotify::DeviceType) -> &'static str {
+            match *device {
+                spotify::DeviceType::Computer => "Computer",
+                spotify::DeviceType::Smartphone => "Smart Phone",
+                spotify::DeviceType::Speaker => "Speaker",
+                spotify::DeviceType::Unknown => "Unknown",
             }
         }
 
-        Ok(warp::redirect(Uri::from_static(URL)))
+        #[derive(Default, serde::Serialize)]
+        struct Devices {
+            devices: Vec<AudioDevice>,
+            current: Option<AudioDevice>,
+        }
+    }
+
+    /// Get the list of available after streams.
+    fn delete_after_stream(&self, id: i32) -> Result<impl warp::Reply, failure::Error> {
+        self.after_streams.delete(id)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Get the list of available after streams.
+    fn after_streams(&self) -> Result<impl warp::Reply, failure::Error> {
+        let after_streams = self.after_streams.list()?;
+        Ok(warp::reply::json(&after_streams))
     }
 }
 
 /// Set up the web endpoint.
 pub fn setup(
-    web_root: &Path,
+    web_root: Option<&Path>,
     bus: Arc<bus::Bus>,
+    after_streams: db::AfterStreams,
 ) -> Result<(Server, BoxFuture<(), failure::Error>), failure::Error> {
-    let mut hb = handlebars::Handlebars::new();
-    hb.register_partial("layout", include_str!("web/layout.html.hbs"))?;
-    hb.register_template_string("index", include_str!("web/index.html.hbs"))?;
-
-    if !web_root.is_dir() {
-        failure::bail!("missing directory: {}", web_root.display());
-    }
-
-    let hb = Arc::new(hb);
-
     let addr: SocketAddr = str::parse(&format!("0.0.0.0:12345"))?;
 
     let player = Arc::new(RwLock::new(None));
     let token_callbacks = Arc::new(RwLock::new(HashMap::<String, ExpectedToken>::new()));
 
-    let index = Index {
-        player: player.clone(),
-        token_callbacks: token_callbacks.clone(),
-    };
-
-    let index = warp::path::end()
-        .and_then(move || index.handle().map_err(warp::reject::custom))
-        .and_then({
-            let hb = hb.clone();
-            move |w| render(w, &hb).map_err(warp::reject::custom)
-        })
-        .boxed();
-
     let oauth2_redirect = Oauth2Redirect {
         token_callbacks: token_callbacks.clone(),
     };
 
-    let oauth2_redirect = path!("redirect")
+    let oauth2_redirect = warp::get2()
+        .and(path!("redirect"))
         .and(warp::query::<RedirectQuery>())
         .and_then(move |query| oauth2_redirect.handle(query).map_err(warp::reject::custom))
         .boxed();
 
-    let device_api = DeviceApi {
+    let api = Api {
         player: player.clone(),
+        token_callbacks: token_callbacks.clone(),
+        after_streams,
     };
 
-    let device_api = path!("api" / "set-device" / String)
-        .and_then(move |id| device_api.set_device(id).map_err(warp::reject::custom))
-        .boxed();
-
-    let ws = warp::path("ws")
-        .and(warp::ws2())
-        .map(move |ws: warp::ws::Ws2| {
-            let bus = bus.clone();
-
-            ws.on_upgrade(move |websocket| {
-                let (tx, _) = websocket.split();
-
-                let rx = stream::iter_ok(bus.latest()).chain(bus.add_rx());
-
-                rx.map_err(|_| failure::format_err!("failed to receive notification"))
-                    .and_then(|n| {
-                        serde_json::to_string(&n)
-                            .map(warp::filters::ws::Message::text)
-                            .map_err(failure::Error::from)
-                    })
-                    .forward(tx.sink_map_err(|e| failure::format_err!("error from sink: {}", e)))
-                    .map(|_| ())
-                    .map_err(|e| {
-                        log::error!("websocket error: {}", e);
-                    })
+    let api = {
+        let route = warp::post2()
+            .and(path!("device" / String))
+            .and_then({
+                let api = api.clone();
+                move |id| api.set_device(id).map_err(warp::reject::custom)
             })
-        })
-        .boxed();
+            .boxed();
 
-    let static_dir = path!("static")
-        .and(warp::fs::dir(web_root.to_owned()))
-        .boxed();
+        let route = route
+            .or(warp::get2().and(warp::path("auth")).and_then({
+                let api = api.clone();
+                move || api.auth().map_err(warp::reject::custom)
+            }))
+            .boxed();
 
-    let overlay_html = path!("overlay")
-        .and(warp::fs::file(web_root.join("overlay.html")))
-        .boxed();
+        let route = route
+            .or(warp::get2().and(warp::path("devices")).and_then({
+                let api = api.clone();
+                move || api.devices().map_err(warp::reject::custom)
+            }))
+            .boxed();
 
-    let page_routes = index.or(overlay_html).boxed();
+        let route = route
+            .or(warp::delete2().and(path!("after-stream" / i32)).and_then({
+                let api = api.clone();
+                move |id| api.delete_after_stream(id).map_err(warp::reject::custom)
+            }))
+            .boxed();
 
-    let routes = warp::get2()
-        .and(
-            page_routes
-                .or(oauth2_redirect)
-                .or(device_api)
-                .or(static_dir)
-                .or(ws),
-        )
-        .recover(customize_error);
+        let route = route
+            .or(warp::get2().and(warp::path("after-streams")).and_then({
+                let api = api.clone();
+                move || api.after_streams().map_err(warp::reject::custom)
+            }))
+            .boxed();
 
-    let service = warp::serve(routes);
+        warp::path("api").and(route)
+    };
+
+    let ws = {
+        let route = warp::path!("overlay")
+            .and(warp::ws2())
+            .map(move |ws: warp::ws::Ws2| {
+                let bus = bus.clone();
+
+                ws.on_upgrade(move |websocket| {
+                    let (tx, _) = websocket.split();
+
+                    let rx = stream::iter_ok(bus.latest()).chain(bus.add_rx());
+
+                    rx.map_err(|_| failure::format_err!("failed to receive notification"))
+                        .and_then(|n| {
+                            serde_json::to_string(&n)
+                                .map(warp::filters::ws::Message::text)
+                                .map_err(failure::Error::from)
+                        })
+                        .forward(
+                            tx.sink_map_err(|e| failure::format_err!("error from sink: {}", e)),
+                        )
+                        .map(|_| ())
+                        .map_err(|e| {
+                            log::error!("websocket error: {}", e);
+                        })
+                })
+            })
+            .boxed();
+
+        warp::get2()
+            .and(warp::path("ws"))
+            .and(route)
+            .recover(recover)
+    };
+
+    let routes = oauth2_redirect.recover(recover);
+    let routes = routes.or(api.recover(recover));
+    let routes = routes.or(ws.recover(recover));
+
+    let server_future = if let Some(web_root) = web_root {
+        let app = warp::get2()
+            .and(warp::path("main.js"))
+            .and(warp::filters::fs::file(web_root.join("main.js")));
+        let app = app.or(warp::get2().and(warp::filters::fs::file(web_root.join("index.html"))));
+        let routes = routes.or(app.recover(recover));
+
+        let service = warp::serve(routes);
+
+        let server_future = service.bind(addr).map_err(|_| {
+            // TODO: do we know _why_?
+            failure::format_err!("web service errored")
+        });
+
+        Box::new(server_future) as BoxFuture<(), failure::Error>
+    } else {
+        let app = warp::get2().and(warp::path("main.js")).map(|| {
+            use warp::http::Response;
+            Response::builder().body(MAIN_JS)
+        });
+        let app = app.or(warp::get2().map(|| warp::reply::html(INDEX_HTML)));
+        let routes = routes.or(app.recover(recover));
+        let service = warp::serve(routes);
+
+        let server_future = service.bind(addr).map_err(|_| {
+            // TODO: do we know _why_?
+            failure::format_err!("web service errored")
+        });
+
+        Box::new(server_future) as BoxFuture<(), failure::Error>
+    };
 
     let server = Server {
         player: player.clone(),
         token_callbacks: token_callbacks.clone(),
     };
 
-    let server_future = service.bind(addr).map_err(|_| {
-        // TODO: do we know _why_?
-        failure::format_err!("web service errored")
-    });
-
-    Ok((server, Box::new(server_future)))
+    Ok((server, server_future))
 }
 
 // This function receives a `Rejection` and tries to return a custom
 // value, othewise simply passes the rejection along.
-fn customize_error(err: warp::Rejection) -> Result<impl warp::Reply, warp::Rejection> {
+fn recover(err: warp::Rejection) -> Result<impl warp::Reply, warp::Rejection> {
     if let Some(e) = err.find_cause::<Error>() {
         let code = match *e {
             Error::BadRequest => warp::http::StatusCode::BAD_REQUEST,

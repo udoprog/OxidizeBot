@@ -1,3 +1,4 @@
+mod after_streams;
 mod aliases;
 mod commands;
 pub mod models;
@@ -8,6 +9,7 @@ mod words;
 use crate::player;
 
 pub use self::{
+    after_streams::{AfterStream, AfterStreams},
     aliases::{Alias, Aliases},
     commands::{Command, Commands},
     persisted_set::PersistedSet,
@@ -67,24 +69,6 @@ impl Database {
     /// Access settings from the database.
     pub fn settings(&self) -> Settings {
         Settings { db: self.clone() }
-    }
-
-    /// Add an afterstream reminder.
-    pub fn insert_afterstream(&self, user: &str, text: &str) -> Result<(), failure::Error> {
-        use self::schema::after_streams::dsl;
-
-        let c = self.pool.get()?;
-
-        let after_stream = models::AfterStream {
-            user: String::from(user),
-            text: String::from(text),
-        };
-
-        diesel::insert_into(dsl::after_streams)
-            .values(&after_stream)
-            .execute(&c)?;
-
-        Ok(())
     }
 
     /// Find user balance.

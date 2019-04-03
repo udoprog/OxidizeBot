@@ -3,7 +3,7 @@ use crate::{command, db, utils};
 /// Handler for the `!afterstream` command.
 pub struct AfterStream {
     pub cooldown: utils::Cooldown,
-    pub db: db::Database,
+    pub after_streams: db::AfterStreams,
 }
 
 impl command::Handler for AfterStream {
@@ -13,7 +13,8 @@ impl command::Handler for AfterStream {
             return Ok(());
         }
 
-        self.db.insert_afterstream(ctx.user.name, ctx.rest())?;
+        self.after_streams
+            .push(ctx.user.target, ctx.user.name, ctx.rest())?;
         ctx.respond("Reminder added.");
         Ok(())
     }
