@@ -1,4 +1,4 @@
-use crate::{command, config, currency, db, stream_info, twitch, utils};
+use crate::{command, config, currency, db, irc, stream_info, twitch, utils};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -29,6 +29,7 @@ impl Handlers {
 }
 
 mod countdown;
+pub mod song;
 mod swearjar;
 mod water;
 
@@ -45,12 +46,15 @@ pub enum Config {
 
 /// Context for a hook.
 pub struct HookContext<'a> {
+    pub config: &'a config::Config,
+    pub irc_config: &'a irc::Config,
     pub db: &'a db::Database,
     pub handlers: &'a mut Handlers,
     pub currency: Option<&'a currency::Currency>,
     pub twitch: &'a twitch::Twitch,
     pub futures: &'a mut Vec<utils::BoxFuture<(), failure::Error>>,
     pub stream_info: &'a Arc<RwLock<stream_info::StreamInfo>>,
+    pub sender: &'a irc::Sender,
 }
 
 pub trait Module {

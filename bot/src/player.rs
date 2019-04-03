@@ -505,6 +505,7 @@ impl Player {
             max_songs_per_user: self.max_songs_per_user,
             spotify: self.spotify.clone(),
             commands_tx: self.commands_tx.clone(),
+            bus: self.bus.clone(),
             volume: Arc::clone(&self.volume),
             song: self.song.clone(),
             themes: self.themes.clone(),
@@ -550,6 +551,7 @@ pub struct PlayerClient {
     max_songs_per_user: u32,
     spotify: Arc<spotify::Spotify>,
     commands_tx: mpsc::UnboundedSender<Command>,
+    bus: Arc<RwLock<Bus<Event>>>,
     /// Song volume.
     volume: Arc<RwLock<u32>>,
     /// Song song that is loaded.
@@ -561,6 +563,11 @@ pub struct PlayerClient {
 }
 
 impl PlayerClient {
+    /// Get a receiver for player events.
+    pub fn add_rx(&self) -> BusReader<Event> {
+        self.bus.write().add_rx()
+    }
+
     /// Get the current device.
     pub fn current_device(&self) -> Option<spotify::Device> {
         self.device.current_device()

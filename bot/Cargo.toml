@@ -46,6 +46,7 @@ lazy_static = "1.3.0"
 libsqlite3-sys = { version = "0.9.1", features = ["bundled"] }
 webbrowser = "0.4"
 parking_lot = "0.7.1"
+err-derive = "0.1.5"
 
 [build-dependencies]
 failure = "0.1"

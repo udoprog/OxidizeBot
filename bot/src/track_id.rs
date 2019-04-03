@@ -4,26 +4,60 @@ use crate::spotify_id::SpotifyId;
 #[sql_type = "diesel::sql_types::Text"]
 pub struct TrackId(pub SpotifyId);
 
+#[derive(Debug, err_derive::Error)]
+pub enum ParseTrackIdError {
+    /// Requested a URI from a bad host, like youtube.com.
+    #[error(display = "bad host, expected: open.spotify.com")]
+    BadHost(String),
+    #[error(display = "bad URL, expected: https://open.spotify.com/track/<id>")]
+    BadUrl(String),
+    /// Argument had a bad URI.
+    #[error(display = "bad URI, expected: spotify:tracks:<id>")]
+    BadUri(String),
+    /// Failed to parse an ID.
+    #[error(display = "bad track id: {}", _0)]
+    BadId(String),
+}
+
+impl ParseTrackIdError {
+    /// Test if a youtube track was requested.
+    pub fn is_bad_host_youtube(&self) -> bool {
+        match *self {
+            ParseTrackIdError::BadHost(ref host) => match host.as_str() {
+                "youtube.com" => true,
+                "youtu.be" => true,
+                "www.youtube.com" => true,
+                "www.youtu.be" => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+}
+
 impl TrackId {
     /// Convert to a base 62 ID.
     pub fn to_base62(&self) -> String {
         self.0.to_base62()
     }
 
-    /// Parse a track id from a URL or URI.
-    pub fn from_url_or_uri(s: &str) -> Result<TrackId, failure::Error> {
+    pub fn parse(s: &str) -> Result<Self, ParseTrackIdError> {
+        // Parse a track id from a URL or URI.
         if let Ok(url) = str::parse::<url::Url>(s) {
             match url.host() {
                 Some(host) => {
                     if host != url::Host::Domain("open.spotify.com") {
-                        failure::bail!("bad host: {}", host);
+                        return Err(ParseTrackIdError::BadHost(host.to_string()));
                     }
 
                     let parts = url.path().split("/").collect::<Vec<_>>();
 
                     match parts.as_slice() {
-                        &["", "track", id] => return str::parse(id),
-                        _ => failure::bail!("bad path in url"),
+                        &["", "track", id] => {
+                            return str::parse(id)
+                                .map_err(|_| ParseTrackIdError::BadId(id.to_string()))
+                        }
+                        _ => return Err(ParseTrackIdError::BadUrl(url.to_string())),
                     }
                 }
                 None => {}
@@ -31,10 +65,11 @@ impl TrackId {
         }
 
         if s.starts_with("spotify:track:") {
-            return str::parse(s.trim_start_matches("spotify:track:"));
+            let id = s.trim_start_matches("spotify:track:");
+            return str::parse(id).map_err(|_| ParseTrackIdError::BadId(id.to_string()));
         }
 
-        failure::bail!("bad track id");
+        Err(ParseTrackIdError::BadUri(s.to_string()))
     }
 }
 
@@ -77,6 +112,6 @@ impl<'de> serde::Deserialize<'de> for TrackId {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        TrackId::from_url_or_uri(&s).map_err(serde::de::Error::custom)
+        TrackId::parse(&s).map_err(serde::de::Error::custom)
     }
 }

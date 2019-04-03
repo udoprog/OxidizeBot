@@ -1,8 +1,8 @@
 use failure::{format_err, ResultExt};
 use futures::{future, Future};
 use setmod_bot::{
-    bus, config::Config, db, features::Feature, irc, player, secrets, setbac, spotify, twitch,
-    utils, web,
+    bus, config::Config, db, features::Feature, irc, module, player, secrets, setbac, spotify,
+    twitch, utils, web,
 };
 use std::{
     fs,
@@ -203,7 +203,7 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
     let spotify = Arc::new(spotify::Spotify::new(spotify_token.clone())?);
     let twitch = twitch::Twitch::new(streamer_token.clone())?;
 
-    let player = match config.player.as_ref() {
+    match config.player.as_ref() {
         // Only setup if the song feature is enabled.
         Some(player) if config.features.test(Feature::Song) => {
             let (future, player) = player::run(
@@ -226,6 +226,11 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
             }
 
             web.set_player(player.client());
+
+            // load the song module if we have a player configuration.
+            let module = module::song::Config::default();
+            modules.push(Box::new(module::song::Module::load(&module, &player)?));
+
             Some(player)
         }
         _ => None,
@@ -249,7 +254,6 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
             commands,
             bad_words,
             global_bus,
-            player: player.as_ref(),
             modules: &modules,
             shutdown,
         }

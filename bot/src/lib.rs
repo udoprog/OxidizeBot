@@ -16,7 +16,7 @@ mod current_song;
 pub mod db;
 pub mod features;
 pub mod irc;
-mod module;
+pub mod module;
 pub mod oauth2;
 pub mod player;
 pub mod secrets;

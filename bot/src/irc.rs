@@ -3,7 +3,7 @@ use crate::{
     currency::Currency,
     db,
     features::{Feature, Features},
-    module, oauth2, player, stream_info, twitch, utils,
+    module, oauth2, stream_info, twitch, utils,
     utils::BoxFuture,
 };
 use failure::format_err;
@@ -31,7 +31,6 @@ mod clip;
 mod command_admin;
 mod eight_ball;
 mod misc;
-mod song;
 
 const SERVER: &'static str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &'static str = "twitch.tv/tags";
@@ -75,7 +74,6 @@ pub struct Irc<'a> {
     pub commands: db::Commands<db::Database>,
     pub bad_words: db::Words<db::Database>,
     pub global_bus: Arc<bus::Bus>,
-    pub player: Option<&'a player::Player>,
     pub modules: &'a [Box<dyn module::Module + 'static>],
     pub shutdown: utils::Shutdown,
 }
@@ -96,7 +94,6 @@ impl Irc<'_> {
             commands,
             bad_words,
             global_bus,
-            player,
             modules,
             shutdown,
             ..
@@ -141,12 +138,15 @@ impl Irc<'_> {
 
         for module in modules {
             module.hook(module::HookContext {
+                config,
+                irc_config,
                 db: &db,
                 handlers: &mut handlers,
                 currency: config.currency.as_ref(),
                 twitch: &bot_twitch,
                 futures: &mut futures,
                 stream_info: &stream_info,
+                sender: &sender,
             })?;
         }
 
@@ -165,21 +165,6 @@ impl Irc<'_> {
             );
 
             futures.push(Box::new(future));
-        }
-
-        if let Some(player) = player {
-            futures.push(Box::new(player_feedback_loop(
-                irc_config,
-                player,
-                sender.clone(),
-            )));
-
-            handlers.insert(
-                "song",
-                song::Song {
-                    player: player.client(),
-                },
-            );
         }
 
         if config.features.test(Feature::Admin) {
@@ -289,57 +274,6 @@ impl Irc<'_> {
 
         Ok(future::join_all(futures).map(|_| ()))
     }
-}
-
-/// Notifications from the player.
-fn player_feedback_loop(
-    config: &Config,
-    player: &player::Player,
-    sender: Sender,
-) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
-    player
-        .add_rx()
-        .map_err(|e| format_err!("failed to receive player update: {}", e))
-        .for_each({
-            let channel = config.channel.to_string();
-
-            move |e| {
-                match e {
-                    player::Event::Playing(echo, item) => {
-                        if !echo {
-                            return Ok(());
-                        }
-
-                        let message = match item.user.as_ref() {
-                            Some(user) => {
-                                format!("Now playing: {}, requested by {}.", item.what(), user)
-                            }
-                            None => format!("Now playing: {}.", item.what(),),
-                        };
-
-                        sender.privmsg(channel.as_str(), message);
-                    }
-                    player::Event::Pausing => {
-                        sender.privmsg(channel.as_str(), "Pausing playback.");
-                    }
-                    player::Event::Empty => {
-                        sender.privmsg(
-                            channel.as_str(),
-                            format!(
-                                "Song queue is empty (use !song request <spotify-id> to add more).",
-                            ),
-                        );
-                    }
-                    player::Event::NotConfigured => {
-                        sender.privmsg(channel.as_str(), "Player has not been configured yet!");
-                    }
-                    // other event we don't care about
-                    _ => {}
-                }
-
-                Ok(())
-            }
-        })
 }
 
 /// Set up a reward loop.
@@ -518,6 +452,7 @@ impl Handler {
         command: &str,
         user: User<'m>,
         it: &mut utils::Words<'m>,
+        alias: Option<&str>,
     ) -> Result<(), failure::Error> {
         match command {
             "ping" => {
@@ -536,6 +471,7 @@ impl Handler {
                         user,
                         it,
                         shutdown: &self.shutdown,
+                        alias,
                     };
 
                     handler.handle(ctx)?;
@@ -674,10 +610,12 @@ impl Handler {
                 let mut it = utils::Words::new(message);
 
                 // NB: needs to store locally to maintain a reference to it.
-                let alias = self.aliases.lookup(it.clone());
+                let mut alias = None;
+                let a = self.aliases.lookup(it.clone());
 
-                if let Some(alias) = alias.as_ref() {
-                    it = utils::Words::new(alias.as_str());
+                if let Some((m, a)) = a.as_ref() {
+                    it = utils::Words::new(a.as_str());
+                    alias = Some(*m);
                 }
 
                 if let Some(command) = it.next() {
@@ -703,7 +641,7 @@ impl Handler {
                     if command.starts_with('!') {
                         let command = &command[1..];
 
-                        if let Err(e) = self.process_command(command, user, &mut it) {
+                        if let Err(e) = self.process_command(command, user, &mut it, alias) {
                             utils::log_err("failed to process command", e);
                         }
                     }
@@ -769,8 +707,8 @@ impl Handler {
 pub struct OwnedUser {
     tags: OwnedTags,
     sender: Sender,
-    name: String,
-    target: String,
+    pub name: String,
+    pub target: String,
 }
 
 impl OwnedUser {

@@ -9,12 +9,12 @@ pub struct Aliases {
 }
 
 impl Aliases {
-    pub fn lookup<'a>(&self, it: utils::Words<'a>) -> Option<String> {
+    pub fn lookup<'a>(&self, it: utils::Words<'a>) -> Option<(&'a str, String)> {
         let it = it.into_iter();
 
         for alias in self.aliases.iter() {
-            if let Some(out) = alias.matches(it.clone()) {
-                return Some(out);
+            if let Some((m, out)) = alias.matches(it.clone()) {
+                return Some((m, out));
             }
         }
 
@@ -31,12 +31,12 @@ struct MatchReplace {
 
 impl MatchReplace {
     /// Test if the given input matches and return the corresonding replacement if it does.
-    pub fn matches<'a>(&self, mut it: utils::Words<'a>) -> Option<String> {
+    pub fn matches<'a>(&self, mut it: utils::Words<'a>) -> Option<(&'a str, String)> {
         match self.m {
             Match::Command(ref name) => match it.next() {
                 Some(value) if value.starts_with('!') => {
                     if name == &value[1..] {
-                        return self.replace.render(it);
+                        return self.replace.render(it).map(|r| (value, r));
                     }
                 }
                 _ => {}

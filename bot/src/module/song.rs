@@ -1,13 +1,42 @@
-use crate::{command, irc, player, utils, utils::BoxFuture};
-use futures::future::{self, Future};
-use std::sync::Arc;
+use crate::{command, irc, module, player, track_id, utils, utils::BoxFuture};
+use futures::{future, Future, Stream as _};
+use std::{sync::Arc, time};
+
+const EXAMPLE_SEARCH: &'static str = "queen we will rock you";
 
 /// Handler for the `!song` command.
-pub struct Song {
+pub struct Handler {
     pub player: player::PlayerClient,
+    pub request_help_cooldown: utils::Cooldown,
 }
 
-impl command::Handler for Song {
+impl Handler {
+    /// Provide a help message instructing the user how to perform song requests.
+    fn request_help(&mut self, ctx: command::Context<'_, '_>, reason: Option<&str>) {
+        if !self.request_help_cooldown.is_open() {
+            if let Some(reason) = reason {
+                ctx.respond(reason);
+            }
+
+            return;
+        }
+
+        let mut response = format!(
+            "You can request a song from Spotify with \
+                {prefix} <search>, like \"{prefix} {search}\". You can also use an URI or an URL if you feel adventurous PogChamp",
+            prefix = ctx.alias.unwrap_or("!song request"),
+            search = EXAMPLE_SEARCH,
+        );
+
+        if let Some(reason) = reason {
+            response = format!("{}. {}", reason, response);
+        }
+
+        ctx.respond(response);
+    }
+}
+
+impl command::Handler for Handler {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
         match ctx.next() {
             Some("theme") => {
@@ -16,7 +45,10 @@ impl command::Handler for Song {
                 let name = match ctx.next() {
                     Some(name) => name,
                     None => {
-                        ctx.respond("Expected: !song theme <name>");
+                        ctx.respond(format!(
+                            "expected {prefix} <name> to play a theme song",
+                            prefix = ctx.alias.unwrap_or("!song theme")
+                        ));
                         failure::bail!("bad command");
                     }
                 };
@@ -252,14 +284,30 @@ impl command::Handler for Song {
                 let q = ctx.rest();
 
                 if !ctx.next().is_some() {
-                    ctx.respond("expected: !song request <id>|<text>");
+                    self.request_help(ctx, None);
                     failure::bail!("bad command");
                 }
 
                 let track_id_future: BoxFuture<Option<player::TrackId>, failure::Error> =
-                    match player::TrackId::from_url_or_uri(q) {
+                    match player::TrackId::parse(q) {
                         Ok(track_id) => Box::new(future::ok(Some(track_id))),
                         Err(e) => {
+                            match e {
+                                track_id::ParseTrackIdError::BadUri(_) => (),
+                                ref e if e.is_bad_host_youtube() => {
+                                    self.request_help(
+                                        ctx,
+                                        Some("Can't request songs from YouTube, sorry :("),
+                                    );
+                                    failure::bail!("bad song request: {}", e);
+                                }
+                                e => {
+                                    let e = format!("{}, sorry :(", e);
+                                    self.request_help(ctx, Some(e.as_str()));
+                                    failure::bail!("bad song request: {}", e);
+                                }
+                            }
+
                             log::info!("Failed to parse as URL/URI: {}: {}", q, e);
                             Box::new(self.player.search_track(q))
                         }
@@ -378,15 +426,75 @@ impl command::Handler for Song {
                     }
                 }
             }
-            None | Some(..) => {
-                if ctx.is_moderator() {
-                    ctx.respond("Expected: request, skip, play, pause, toggle, delete.");
-                } else {
-                    ctx.respond("Expected: !song request <request>, !song list, !song length, or !song delete mine.");
-                }
+            None | Some(_) => {
+                ctx.respond(format!(
+                    "Expected argument to {prefix} command.",
+                    prefix = ctx.alias.unwrap_or("!song"),
+                ));
             }
         }
 
+        Ok(())
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct Config {
+    #[serde(default = "default_cooldown")]
+    help_cooldown: utils::Cooldown,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            help_cooldown: default_cooldown(),
+        }
+    }
+}
+
+fn default_cooldown() -> utils::Cooldown {
+    utils::Cooldown::from_duration(time::Duration::from_secs(5))
+}
+
+pub struct Module {
+    help_cooldown: utils::Cooldown,
+    player: player::PlayerClient,
+}
+
+impl Module {
+    pub fn load(module: &Config, player: &player::Player) -> Result<Self, failure::Error> {
+        Ok(Module {
+            help_cooldown: module.help_cooldown.clone(),
+            player: player.client(),
+        })
+    }
+}
+
+impl module::Module for Module {
+    /// Set up command handlers for this module.
+    fn hook(
+        &self,
+        module::HookContext {
+            irc_config,
+            handlers,
+            futures,
+            sender,
+            ..
+        }: module::HookContext<'_>,
+    ) -> Result<(), failure::Error> {
+        futures.push(Box::new(player_feedback_loop(
+            irc_config,
+            self.player.clone(),
+            sender.clone(),
+        )));
+
+        handlers.insert(
+            "song",
+            Handler {
+                request_help_cooldown: self.help_cooldown.clone(),
+                player: self.player.clone(),
+            },
+        );
         Ok(())
     }
 }
@@ -436,4 +544,55 @@ fn display_songs(
     }
 
     user.respond(format!("{}.", lines.join("; ")));
+}
+
+/// Notifications from the player.
+fn player_feedback_loop(
+    config: &irc::Config,
+    player: player::PlayerClient,
+    sender: irc::Sender,
+) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
+    player
+        .add_rx()
+        .map_err(|e| failure::format_err!("failed to receive player update: {}", e))
+        .for_each({
+            let channel = config.channel.to_string();
+
+            move |e| {
+                match e {
+                    player::Event::Playing(echo, item) => {
+                        if !echo {
+                            return Ok(());
+                        }
+
+                        let message = match item.user.as_ref() {
+                            Some(user) => {
+                                format!("Now playing: {}, requested by {}.", item.what(), user)
+                            }
+                            None => format!("Now playing: {}.", item.what(),),
+                        };
+
+                        sender.privmsg(channel.as_str(), message);
+                    }
+                    player::Event::Pausing => {
+                        sender.privmsg(channel.as_str(), "Pausing playback.");
+                    }
+                    player::Event::Empty => {
+                        sender.privmsg(
+                            channel.as_str(),
+                            format!(
+                                "Song queue is empty (use !song request <spotify-id> to add more).",
+                            ),
+                        );
+                    }
+                    player::Event::NotConfigured => {
+                        sender.privmsg(channel.as_str(), "Player has not been configured yet!");
+                    }
+                    // other event we don't care about
+                    _ => {}
+                }
+
+                Ok(())
+            }
+        })
 }
