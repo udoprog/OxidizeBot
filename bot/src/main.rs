@@ -114,8 +114,9 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
     // TODO: remove this migration next major release.
     if let Some(irc) = config.irc.as_ref() {
         if !config.aliases.is_empty() {
-            log::warn!("The [[aliases]] section in the configuration is now deprecated. \
-              Please remove it in favor of the !alias command which stores aliases in the database.");
+            log::warn!("# DEPRECATION WARNING");
+            log::warn!("The [[aliases]] section in the configuration is now deprecated.");
+            log::warn!("Please remove it in favor of the !alias command which stores aliases in the database.");
 
             if !settings
                 .get::<bool>("migration/aliases-migrated")?
