@@ -1,4 +1,6 @@
-use super::schema::{after_streams, bad_words, balances, commands, counters, set_values, songs};
+use super::schema::{
+    after_streams, aliases, bad_words, balances, commands, counters, set_values, songs,
+};
 use crate::player::TrackId;
 use chrono::NaiveDateTime;
 
@@ -15,6 +17,14 @@ pub struct Command {
     pub name: String,
     /// The number of times the counter has been invoked.
     pub count: i32,
+    pub text: String,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
+#[table_name = "aliases"]
+pub struct Alias {
+    pub channel: String,
+    pub name: String,
     pub text: String,
 }
 

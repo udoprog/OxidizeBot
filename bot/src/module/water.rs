@@ -23,9 +23,9 @@ impl Handler {
     fn check_waters(
         &mut self,
         ctx: &mut command::Context<'_, '_>,
-    ) -> Result<(DateTime<Utc>, Option<Reward>), failure::Error> {
+    ) -> Option<(DateTime<Utc>, Option<Reward>)> {
         if let Some((when, user)) = self.waters.last() {
-            return Ok((when.clone(), user.clone()));
+            return Some((when.clone(), user.clone()));
         }
 
         let started_at = self
@@ -39,12 +39,12 @@ impl Handler {
             Some(started_at) => started_at,
             None => {
                 ctx.respond("Sorry, the !water command is currently not available :(");
-                failure::bail!("can't determine start time for stream");
+                return None;
             }
         };
 
         self.waters.push((started_at.clone(), None));
-        Ok((started_at, None))
+        Some((started_at, None))
     }
 }
 
@@ -58,7 +58,10 @@ impl command::Handler for Handler {
         match ctx.next() {
             Some("undo") => {
                 ctx.check_moderator()?;
-                let (_, reward) = self.check_waters(&mut ctx)?;
+                let (_, reward) = match self.check_waters(&mut ctx) {
+                    Some(water) => water,
+                    None => return Ok(()),
+                };
 
                 self.waters.pop();
 
@@ -84,7 +87,11 @@ impl command::Handler for Handler {
                 );
             }
             None => {
-                let (last, _) = self.check_waters(&mut ctx)?;
+                let (last, _) = match self.check_waters(&mut ctx) {
+                    Some(water) => water,
+                    None => return Ok(()),
+                };
+
                 let now = Utc::now();
                 let diff = now.clone() - last;
                 let amount = i64::max(0i64, diff.num_minutes()) as i32;

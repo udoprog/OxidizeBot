@@ -49,7 +49,7 @@ impl command::Handler for Handler {
                             "expected {prefix} <name> to play a theme song",
                             prefix = ctx.alias.unwrap_or("!song theme")
                         ));
-                        failure::bail!("bad command");
+                        return Ok(());
                     }
                 };
 
@@ -77,9 +77,9 @@ impl command::Handler for Handler {
             Some("promote") => {
                 ctx.check_moderator()?;
 
-                let index = match ctx.next() {
-                    Some(index) => parse_queue_position(&ctx.user, index)?,
-                    None => failure::bail!("bad command"),
+                let index = match ctx.next().and_then(|n| parse_queue_position(&ctx.user, n)) {
+                    Some(index) => index,
+                    None => return Ok(()),
                 };
 
                 if let Some(item) = self.player.promote_song(ctx.user.name, index) {
@@ -225,12 +225,17 @@ impl command::Handler for Handler {
                     Some("mine") => self.player.remove_last_by_user(&ctx.user.name)?,
                     Some(n) => {
                         ctx.check_moderator()?;
-                        let n = parse_queue_position(&ctx.user, n)?;
+
+                        let n = match parse_queue_position(&ctx.user, n) {
+                            Some(n) => n,
+                            None => return Ok(()),
+                        };
+
                         self.player.remove_at(n)?
                     }
                     None => {
                         ctx.respond(format!("Expected: last, last <user>, or mine"));
-                        failure::bail!("bad command");
+                        return Ok(());
                     }
                 };
 
@@ -255,7 +260,7 @@ impl command::Handler for Handler {
                             Ok(argument) => argument,
                             Err(_) => {
                                 ctx.respond("expected whole number argument");
-                                failure::bail!("bad command");
+                                return Ok(());
                             }
                         };
 
@@ -285,7 +290,7 @@ impl command::Handler for Handler {
 
                 if !ctx.next().is_some() {
                     self.request_help(ctx, None);
-                    failure::bail!("bad command");
+                    return Ok(());
                 }
 
                 let track_id_future: BoxFuture<Option<player::TrackId>, failure::Error> =
@@ -299,12 +304,13 @@ impl command::Handler for Handler {
                                         ctx,
                                         Some("Can't request songs from YouTube, sorry :("),
                                     );
-                                    failure::bail!("bad song request: {}", e);
+                                    return Ok(());
                                 }
                                 e => {
+                                    log::warn!("bad song request by {}: {}", ctx.user.name, e);
                                     let e = format!("{}, sorry :(", e);
                                     self.request_help(ctx, Some(e.as_str()));
-                                    failure::bail!("bad song request: {}", e);
+                                    return Ok(());
                                 }
                             }
 
@@ -500,16 +506,16 @@ impl module::Module for Module {
 }
 
 /// Parse a queue position.
-fn parse_queue_position(user: &irc::User<'_>, n: &str) -> Result<usize, failure::Error> {
+fn parse_queue_position(user: &irc::User<'_>, n: &str) -> Option<usize> {
     match str::parse::<usize>(n) {
         Ok(0) => {
-            user.respond("Can't remove the current song :(");
-            failure::bail!("bad command");
+            user.respond("Can't mess with the current song :(");
+            return None;
         }
-        Ok(n) => Ok(n.saturating_sub(1)),
-        Err(e) => {
+        Ok(n) => Some(n.saturating_sub(1)),
+        Err(_) => {
             user.respond("Expected whole number argument");
-            failure::bail!("bad whole number argument: {}", e);
+            return None;
         }
     }
 }

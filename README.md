@@ -193,21 +193,41 @@ Enabled commands:
 
 Allows setting and requesting custom commands.
 
-The command named `foo` would be invoked `!foo`.
-
 A command is the bot responding with a pre-defined message based on a template.
 
 Enabled commands:
 
-* `!command edit <name> <what>` - Set the command `!<name>` to respond with `<what>` (**moderator**)..
-* `!command delete <name>` - Delete the command named `<name>` (**moderator**)..
-* `!command rename <from> <to>` - Rename the command `<from>` to `<to>`.
+* `!command edit <name> <what>` - Set the command `<name>` to respond with `<what>` (**moderator**).
+* `!command delete <name>` - Delete the command named `<name>` (**moderator**).
+* `!command rename <from> <to>` - Rename the command `<from>` to `<to>` (**moderator**).
 
 Template variables that can be used in `<what>`:
 
 * `{{count}}` - The number of times the command has been invoked.
 * `{{name}}` - The user who said the word.
 * `{{target}}` - The channel where the word was sent.
+
+#### `alias`
+
+This feature is enabled by default.
+
+Allows setting custom aliases.
+Aliases are prefixes that when invoked they will be expanded when processed by the bot.
+
+For example, lets say we have an alias named `!sr` configured to `!song request {{rest}}`.
+This would allow us to invoke `!sr don't call me` and it would be processed as `!song request don't call me`.
+
+Enabled commands:
+
+* `!alias edit <name> <what>` - Set the command `<name>` to alias to `<what>` (**moderator**).
+* `!alias delete <name>` - Delete the command named `<name>` (**moderator**).
+* `!alias rename <from> <to>` - Rename the command `<from>` to `<to>` (**moderator**).
+
+Template variables that can be used in `<what>`:
+
+* `{{rest}}` - The rest of the line being passed in.
+* `{{name}}` - The user who invoked the alias.
+* `{{target}}` - The channel where the alias was invoked.
 
 #### `afterstream`
 

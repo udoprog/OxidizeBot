@@ -11,18 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Player will no longer pause the current song (if it's playing) and will instead synchronize the state of the player with Spotify ([#18]).
 - Implement `!commands rename <from> <to>`
 - Ability to sync remote state of player with `[player] sync_player_interval = "10s"` ([#18]).
+- Much more helpful guidance when using `!song` incorrectly.
+- Store aliases in the database instead of the configuration. See the [`alias configuration`] for more details ([#24]).
 
 ### Changed
 - Cleaned up old cruft in the codebase (`gfx` module).
 - Moved log configuration to external file (see [example log4rs.yaml]).
+- No longer raise an error on bad input.
 
 ### Removed
 - Removed `!counter` in favor of `!command` with same functionality. Using the `{{count}}` variable in the template will cause the count to be incremented.
+- `[[aliases]]` section from configuration. Aliases are now stored in the database.
 
+[`alias configuration`]: README.md#alias
 [example log4rs.yaml]: log4rs.yaml
 
 [#18]: https://github.com/udoprog/setmod/issues/18
 [#22]: https://github.com/udoprog/setmod/issues/22
+[#24]: https://github.com/udoprog/setmod/issues/24
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.3...HEAD
 

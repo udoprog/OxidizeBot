@@ -24,14 +24,14 @@ impl command::Handler for Handler {
                 let duration = match ctx.next() {
                     Some(duration) => match utils::parse_duration(duration) {
                         Ok(duration) => duration,
-                        Err(e) => {
+                        Err(_) => {
                             ctx.respond("Countdown not added, Bad <duration> :(");
-                            failure::bail!("bad <duration>: {}: {}", duration, e);
+                            return Ok(());
                         }
                     },
                     None => {
                         ctx.respond("Usage: !countdown <duration> <template>");
-                        failure::bail!("missing arguments");
+                        return Ok(());
                     }
                 };
 
@@ -39,9 +39,9 @@ impl command::Handler for Handler {
 
                 let template = match template::Template::compile(template) {
                     Ok(template) => template,
-                    Err(e) => {
+                    Err(_) => {
                         ctx.respond("Countdown not added, bad <template> :(");
-                        failure::bail!("bad <template>: {}: {}", template, e);
+                        return Ok(());
                     }
                 };
 
@@ -51,7 +51,7 @@ impl command::Handler for Handler {
                     }
                     Err(_) => {
                         ctx.respond("Could not set countdown :(");
-                        failure::bail!("failed to send set command");
+                        return Ok(());
                     }
                 }
             }
@@ -61,12 +61,12 @@ impl command::Handler for Handler {
                 }
                 Err(_) => {
                     ctx.respond("Could not clear countdown :(");
-                    failure::bail!("failed to send clear command");
+                    return Ok(());
                 }
             },
             _ => {
                 ctx.respond("Expected: !countdown set <duration> <template>, or !countdown clear");
-                failure::bail!("bad command");
+                return Ok(());
             }
         }
 

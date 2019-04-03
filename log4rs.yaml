@@ -12,13 +12,7 @@ root:
   appenders:
     - stdout
 loggers:
-  setmod_bot::spotify:
-    level: info
-    appenders:
-      - stdout
-    additive: false
   setmod_bot:
     level: info
     appenders:
       - file
-    additive: false

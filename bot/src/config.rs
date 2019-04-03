@@ -1,4 +1,4 @@
-use crate::{aliases, currency, current_song, features, irc, module, player, secrets, themes, web};
+use crate::{currency, current_song, features, irc, module, player, secrets, themes, web};
 use hashbrown::HashSet;
 use relative_path::RelativePathBuf;
 use std::{marker, path::Path, sync::Arc};
@@ -28,7 +28,7 @@ pub struct Config {
     pub player: Option<player::Config>,
     /// Aliases in use for channels.
     #[serde(default)]
-    pub aliases: aliases::Aliases,
+    pub aliases: Vec<DeprecatedAlias>,
     /// Features enabled for bot.
     #[serde(default)]
     pub features: features::Features,
@@ -46,6 +46,12 @@ pub struct Config {
     /// Modules to load.
     #[serde(default)]
     pub modules: Vec<module::Config>,
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct DeprecatedAlias {
+    pub r#match: String,
+    pub replace: String,
 }
 
 #[derive(Debug)]

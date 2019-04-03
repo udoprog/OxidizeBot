@@ -13,17 +13,17 @@ pub trait Backend: Clone + Send + Sync {
     fn list(&self) -> Result<Vec<db::models::Command>, failure::Error>;
 
     /// Insert or update an existing command.
-    fn edit(&self, channel: &str, word: &str, text: &str) -> Result<(), failure::Error>;
+    fn edit(&self, key: &Key, text: &str) -> Result<(), failure::Error>;
 
     /// Delete the given command from the backend.
-    fn delete(&self, channel: &str, word: &str) -> Result<bool, failure::Error>;
+    fn delete(&self, key: &Key) -> Result<bool, failure::Error>;
 
     /// Increment the number of times the command has been invoked.
     /// Returns `true` if the counter existed and was incremented. `false` otherwise.
-    fn increment(&self, channel: &str, name: &str) -> Result<bool, failure::Error>;
+    fn increment(&self, key: &Key) -> Result<bool, failure::Error>;
 
     /// Rename the given command.
-    fn rename(&self, channel: &str, from: &str, to: &str) -> Result<bool, failure::Error>;
+    fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -74,8 +74,7 @@ where
         let key = Key::new(channel, name);
 
         let template = template::Template::compile(command)?;
-        self.backend
-            .edit(key.channel.as_str(), key.name.as_str(), command)?;
+        self.backend.edit(&key, command)?;
 
         let mut inner = self.inner.write();
         let count = inner.get(&key).map(|c| c.count()).unwrap_or(0);
@@ -100,10 +99,7 @@ where
     pub fn delete(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
         let key = Key::new(channel, name);
 
-        if !self
-            .backend
-            .delete(key.channel.as_str(), key.name.as_str())?
-        {
+        if !self.backend.delete(&key)? {
             return Ok(false);
         }
 
@@ -143,47 +139,49 @@ where
 
     /// Increment the specified command.
     pub fn increment(&self, command: &Command) -> Result<(), failure::Error> {
-        self.backend
-            .increment(command.key.channel.as_str(), command.key.name.as_str())?;
+        self.backend.increment(&command.key)?;
         command.count.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
     /// Try to rename the command.
     pub fn rename(&self, channel: &str, from: &str, to: &str) -> Result<(), super::RenameError> {
-        let from_key = Key::new(channel, from);
-        let to_key = Key::new(channel, to);
+        let from = Key::new(channel, from);
+        let to = Key::new(channel, to);
 
         let mut inner = self.inner.write();
 
-        if inner.contains_key(&to_key) {
+        if inner.contains_key(&to) {
             return Err(super::RenameError::Conflict);
         }
 
-        let command = match inner.remove(&from_key) {
+        let command = match inner.remove(&from) {
             Some(command) => command,
             None => return Err(super::RenameError::Missing),
         };
 
         let command = Command {
-            key: to_key.clone(),
+            key: to.clone(),
             count: command.count.clone(),
             template: command.template.clone(),
             vars: command.vars.clone(),
         };
 
-        inner.insert(to_key, Arc::new(command));
-
-        match self.backend.rename(channel, from, to) {
+        match self.backend.rename(&from, &to) {
             Err(e) => {
-                log::error!("failed to rename command `{}` in database: {}", from, e);
+                log::error!(
+                    "failed to rename command `{}` in database: {}",
+                    from.name,
+                    e
+                );
             }
             Ok(false) => {
-                log::warn!("command {} not renamed in database", from);
+                log::warn!("command {} not renamed in database", from.name);
             }
             Ok(true) => (),
         }
 
+        inner.insert(to, Arc::new(command));
         Ok(())
     }
 }

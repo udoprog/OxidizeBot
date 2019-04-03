@@ -66,3 +66,11 @@ table! {
         value -> Text,
     }
 }
+
+table! {
+    aliases (channel, name) {
+        channel -> Text,
+        name -> Text,
+        text -> Text,
+    }
+}

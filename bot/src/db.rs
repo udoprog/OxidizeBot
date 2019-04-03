@@ -1,3 +1,4 @@
+mod aliases;
 mod commands;
 pub mod models;
 mod persisted_set;
@@ -7,6 +8,7 @@ mod words;
 use crate::player;
 
 pub use self::{
+    aliases::{Alias, Aliases},
     commands::{Command, Commands},
     persisted_set::PersistedSet,
     words::{Word, Words},
@@ -297,20 +299,19 @@ impl ScopedSettings {
 }
 
 impl commands::Backend for Database {
-    fn edit(&self, channel: &str, name: &str, text: &str) -> Result<(), failure::Error> {
+    fn edit(&self, key: &self::commands::Key, text: &str) -> Result<(), failure::Error> {
         use self::schema::commands::dsl;
 
-        let name = name.to_lowercase();
-
         let c = self.pool.get()?;
-        let filter = dsl::commands.filter(dsl::channel.eq(channel).and(dsl::name.eq(&name)));
+        let filter =
+            dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
         let b = filter.clone().first::<models::Command>(&c).optional()?;
 
         match b {
             None => {
                 let command = models::Command {
-                    channel: channel.to_string(),
-                    name,
+                    channel: key.channel.to_string(),
+                    name: key.name.to_string(),
                     count: 0,
                     text: text.to_string(),
                 };
@@ -327,15 +328,14 @@ impl commands::Backend for Database {
         Ok(())
     }
 
-    fn delete(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
+    fn delete(&self, key: &self::commands::Key) -> Result<bool, failure::Error> {
         use self::schema::commands::dsl;
 
-        let name = name.to_lowercase();
-
         let c = self.pool.get()?;
-        let count =
-            diesel::delete(dsl::commands.filter(dsl::channel.eq(channel).and(dsl::name.eq(&name))))
-                .execute(&c)?;
+        let count = diesel::delete(
+            dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+        )
+        .execute(&c)?;
         Ok(count == 1)
     }
 
@@ -345,25 +345,96 @@ impl commands::Backend for Database {
         Ok(dsl::commands.load::<models::Command>(&c)?)
     }
 
-    fn increment(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
+    fn increment(&self, key: &self::commands::Key) -> Result<bool, failure::Error> {
         use self::schema::commands::dsl;
 
         let c = self.pool.get()?;
-        let count =
-            diesel::update(dsl::commands.filter(dsl::channel.eq(channel).and(dsl::name.eq(&name))))
-                .set(dsl::count.eq(dsl::count + 1))
-                .execute(&c)?;
+        let count = diesel::update(
+            dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+        )
+        .set(dsl::count.eq(dsl::count + 1))
+        .execute(&c)?;
         Ok(count == 1)
     }
 
-    fn rename(&self, channel: &str, from: &str, to: &str) -> Result<bool, failure::Error> {
+    fn rename(
+        &self,
+        from: &self::commands::Key,
+        to: &self::commands::Key,
+    ) -> Result<bool, failure::Error> {
         use self::schema::commands::dsl;
 
         let c = self.pool.get()?;
-        let count =
-            diesel::update(dsl::commands.filter(dsl::channel.eq(channel).and(dsl::name.eq(from))))
-                .set(dsl::name.eq(to))
-                .execute(&c)?;
+        let count = diesel::update(
+            dsl::commands.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
+        )
+        .set((dsl::channel.eq(&to.channel), dsl::name.eq(&to.name)))
+        .execute(&c)?;
+
+        Ok(count == 1)
+    }
+}
+
+impl aliases::Backend for Database {
+    fn edit(&self, key: &self::aliases::Key, text: &str) -> Result<(), failure::Error> {
+        use self::schema::aliases::dsl;
+
+        let c = self.pool.get()?;
+        let filter =
+            dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
+        let b = filter.clone().first::<models::Alias>(&c).optional()?;
+
+        match b {
+            None => {
+                let alias = models::Alias {
+                    channel: key.channel.to_string(),
+                    name: key.name.to_string(),
+                    text: text.to_string(),
+                };
+
+                diesel::insert_into(dsl::aliases)
+                    .values(&alias)
+                    .execute(&c)?;
+            }
+            Some(_) => {
+                diesel::update(filter).set(dsl::text.eq(text)).execute(&c)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn delete(&self, key: &self::aliases::Key) -> Result<bool, failure::Error> {
+        use self::schema::aliases::dsl;
+
+        let c = self.pool.get()?;
+        let count = diesel::delete(
+            dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+        )
+        .execute(&c)?;
+
+        Ok(count == 1)
+    }
+
+    fn list(&self) -> Result<Vec<models::Alias>, failure::Error> {
+        use self::schema::aliases::dsl;
+        let c = self.pool.get()?;
+        Ok(dsl::aliases.load::<models::Alias>(&c)?)
+    }
+
+    fn rename(
+        &self,
+        from: &self::aliases::Key,
+        to: &self::aliases::Key,
+    ) -> Result<bool, failure::Error> {
+        use self::schema::aliases::dsl;
+
+        let c = self.pool.get()?;
+        let count = diesel::update(
+            dsl::aliases.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
+        )
+        .set((dsl::name.eq(&to.name), dsl::name.eq(&to.channel)))
+        .execute(&c)?;
 
         Ok(count == 1)
     }

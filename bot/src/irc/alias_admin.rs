@@ -1,8 +1,8 @@
 use crate::{command, db};
 
-/// Handler for the !command command.
+/// Handler for the !alias command.
 pub struct Handler {
-    pub commands: db::Commands<db::Database>,
+    pub aliases: db::Aliases<db::Database>,
 }
 
 impl command::Handler for Handler {
@@ -10,17 +10,17 @@ impl command::Handler for Handler {
         match ctx.next() {
             Some("list") => {
                 let mut names = self
-                    .commands
+                    .aliases
                     .list(ctx.user.target)
                     .into_iter()
                     .map(|c| c.key.name.to_string())
                     .collect::<Vec<_>>();
 
                 if names.is_empty() {
-                    ctx.respond("No custom commands.");
+                    ctx.respond("No custom aliases.");
                 } else {
                     names.sort();
-                    ctx.respond(format!("Custom commands: {}", names.join(", ")));
+                    ctx.respond(format!("Custom aliases: {}", names.join(", ")));
                 }
             }
             Some("edit") => {
@@ -34,8 +34,8 @@ impl command::Handler for Handler {
                     }
                 };
 
-                self.commands.edit(ctx.user.target, name, ctx.rest())?;
-                ctx.respond("Edited command.");
+                self.aliases.edit(ctx.user.target, name, ctx.rest())?;
+                ctx.respond("Edited alias.");
             }
             Some("delete") => {
                 ctx.check_moderator()?;
@@ -48,10 +48,10 @@ impl command::Handler for Handler {
                     }
                 };
 
-                if self.commands.delete(ctx.user.target, name)? {
-                    ctx.respond(format!("Deleted command `{}`.", name));
+                if self.aliases.delete(ctx.user.target, name)? {
+                    ctx.respond(format!("Deleted alias `{}`.", name));
                 } else {
-                    ctx.respond("No such command.");
+                    ctx.respond("No such alias.");
                 }
             }
             Some("rename") => {
@@ -60,18 +60,18 @@ impl command::Handler for Handler {
                 let (from, to) = match (ctx.next(), ctx.next()) {
                     (Some(from), Some(to)) => (from, to),
                     _ => {
-                        ctx.respond("Expected: !command rename <from> <to>");
+                        ctx.respond("Expected: !alias rename <from> <to>");
                         return Ok(());
                     }
                 };
 
-                match self.commands.rename(ctx.user.target, from, to) {
-                    Ok(()) => ctx.respond(format!("Renamed command {} -> {}", from, to)),
+                match self.aliases.rename(ctx.user.target, from, to) {
+                    Ok(()) => ctx.respond(format!("Renamed alias {} -> {}", from, to)),
                     Err(db::RenameError::Conflict) => {
-                        ctx.respond(format!("Already a command named {}", to))
+                        ctx.respond(format!("Already an alias named {}", to))
                     }
                     Err(db::RenameError::Missing) => {
-                        ctx.respond(format!("No such command: {}", from))
+                        ctx.respond(format!("No such alias: {}", from))
                     }
                 }
             }

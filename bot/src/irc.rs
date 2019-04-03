@@ -1,5 +1,5 @@
 use crate::{
-    aliases, bus, command, config,
+    bus, command, config,
     currency::Currency,
     db,
     features::{Feature, Features},
@@ -26,6 +26,7 @@ use tokio_threadpool::ThreadPool;
 
 mod admin;
 mod after_stream;
+mod alias_admin;
 mod bad_word;
 mod clip;
 mod command_admin;
@@ -72,6 +73,7 @@ pub struct Irc<'a> {
     pub irc_config: &'a Config,
     pub token: Arc<RwLock<oauth2::Token>>,
     pub commands: db::Commands<db::Database>,
+    pub aliases: db::Aliases<db::Database>,
     pub bad_words: db::Words<db::Database>,
     pub global_bus: Arc<bus::Bus>,
     pub modules: &'a [Box<dyn module::Module + 'static>],
@@ -92,6 +94,7 @@ impl Irc<'_> {
             irc_config,
             token,
             commands,
+            aliases,
             bad_words,
             global_bus,
             modules,
@@ -210,6 +213,13 @@ impl Irc<'_> {
             );
         }
 
+        handlers.insert(
+            "alias",
+            alias_admin::Handler {
+                aliases: aliases.clone(),
+            },
+        );
+
         if config.features.test(Feature::EightBall) {
             handlers.insert("8ball", eight_ball::EightBall {});
         }
@@ -250,7 +260,7 @@ impl Irc<'_> {
             commands,
             bad_words,
             global_bus,
-            aliases: config.aliases.clone(),
+            aliases,
             features: config.features.clone(),
             api_url: config.api_url.clone(),
             thread_pool: Arc::new(ThreadPool::new()),
@@ -412,7 +422,7 @@ struct Handler {
     /// For sending notifications.
     global_bus: Arc<bus::Bus>,
     /// Aliases.
-    aliases: aliases::Aliases,
+    aliases: db::Aliases<db::Database>,
     /// Enabled features.
     features: Features,
     /// Configured API URL.
@@ -606,12 +616,13 @@ impl Handler {
         match m.command {
             Command::PRIVMSG(ref source, ref message) => {
                 let tags = Self::tags(&m);
+                let user = self.as_user(tags.clone(), m)?;
 
                 let mut it = utils::Words::new(message);
 
                 // NB: needs to store locally to maintain a reference to it.
                 let mut alias = None;
-                let a = self.aliases.lookup(it.clone());
+                let a = self.aliases.lookup(user.target, it.clone());
 
                 if let Some((m, a)) = a.as_ref() {
                     it = utils::Words::new(a.as_str());
@@ -619,8 +630,6 @@ impl Handler {
                 }
 
                 if let Some(command) = it.next() {
-                    let user = self.as_user(tags.clone(), m)?;
-
                     if self.features.test(Feature::Command) {
                         if let Some(command) = self.commands.get(user.target, command) {
                             if command.has_var("count") {

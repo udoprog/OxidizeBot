@@ -103,10 +103,34 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
 
     let db = db::Database::open(database_url, Arc::clone(&thread_pool))?;
 
+    let settings = db.settings();
+
     let _domain_whitelist = db::PersistedSet::<_, String>::load(db.clone(), "whitelisted-domain")?;
 
     let commands = db::Commands::load(db.clone())?;
+    let aliases = db::Aliases::load(db.clone())?;
     let bad_words = db::Words::load(db.clone())?;
+
+    // TODO: remove this migration next major release.
+    if let Some(irc) = config.irc.as_ref() {
+        if !config.aliases.is_empty() {
+            log::warn!("The [[aliases]] section in the configuration is now deprecated. \
+              Please remove it in favor of the !alias command which stores aliases in the database.");
+
+            if !settings
+                .get::<bool>("migration/aliases-migrated")?
+                .unwrap_or_default()
+            {
+                log::warn!("Performing a one time migration of aliases from configuration.");
+
+                for alias in &config.aliases {
+                    aliases.edit(irc.channel.as_str(), &alias.r#match, &alias.replace)?;
+                }
+
+                settings.set("migration/aliases-migrated", true)?;
+            }
+        }
+    }
 
     if let Some(path) = config.bad_words.as_ref() {
         let path = path.to_path(root);
@@ -129,8 +153,6 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
         log::error!("Error in web server: {}", e);
         ()
     }));
-
-    let settings = db.settings();
 
     if settings.get::<bool>("first-run")?.unwrap_or(true) {
         log::info!("Opening {} for the first time", web::URL);
@@ -260,6 +282,7 @@ fn try_main(root: &Path, web_root: &Path, config: &Path) -> Result<(), failure::
             irc_config,
             token: bot_token,
             commands,
+            aliases,
             bad_words,
             global_bus,
             modules: &modules,
