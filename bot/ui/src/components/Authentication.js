@@ -79,7 +79,7 @@ export default class Authentication extends React.Component {
 
     return (
       <div>
-        <h4>Authentication</h4>
+        <h2>Authentication</h2>
         {error}
         {needsAuth}
         {content}

@@ -1,7 +1,6 @@
 import {Spinner} from "../utils.js";
 import React from "react";
 import {Alert, Table} from "react-bootstrap";
-import {Play, Speaker} from "react-feather";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 
 export default class Authentication extends React.Component {
@@ -103,9 +102,9 @@ export default class Authentication extends React.Component {
 
     if (this.state.loading) {
       loading = <Spinner />;
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh" />;
+      refresh = <FontAwesomeIcon icon="sync" className="title-refresh right" />;
     } else {
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh clickable" onClick={() => this.listDevices()} />;
+      refresh = <FontAwesomeIcon icon="sync" className="title-refresh clickable right" onClick={() => this.listDevices()} />;
     }
 
     let content = null;
@@ -165,10 +164,10 @@ export default class Authentication extends React.Component {
 
     return (
       <div>
-        <h4>
+        <h2>
           Devices
           {refresh}
-        </h4>
+        </h2>
         {error}
         {current}
         {content}

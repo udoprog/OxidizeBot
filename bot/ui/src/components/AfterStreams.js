@@ -130,10 +130,10 @@ export default class AfterStreams extends React.Component {
 
     return (
       <div>
-        <h4>
+        <h2>
           After Streams
           {refresh}
-        </h4>
+        </h2>
         {error}
         {content}
         {loading}
