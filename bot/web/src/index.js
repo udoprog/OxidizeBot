@@ -3,7 +3,7 @@ import * as utils from "./utils.js";
 import {Api} from "./api.js";
 import React from "react";
 import ReactDOM from "react-dom";
-import { BrowserRouter as Router, Route} from "react-router-dom";
+import { BrowserRouter as Router, Route, Link, withRouter} from "react-router-dom";
 import Websocket from "react-websocket";
 import {Container, Row, Col, Navbar, Nav} from "react-bootstrap";
 import Authentication from "./components/Authentication.js";
@@ -175,6 +175,8 @@ class Overlay extends React.Component {
   }
 }
 
+const RouteLayout = withRouter(props => <Layout {...props} />)
+
 class AfterStreamsPage extends React.Component {
   constructor(props) {
     super(props);
@@ -183,13 +185,13 @@ class AfterStreamsPage extends React.Component {
 
   render() {
     return (
-      <Layout>
+      <RouteLayout>
         <Row>
           <Col>
             <AfterStreams api={this.api} />
           </Col>
         </Row>
-      </Layout>
+      </RouteLayout>
     );
   }
 }
@@ -202,7 +204,7 @@ class IndexPage extends React.Component {
 
   render() {
     return (
-      <Layout>
+      <RouteLayout>
         <Row>
           <Col>
             <h4>Administration</h4>
@@ -226,12 +228,14 @@ class IndexPage extends React.Component {
             <Devices api={this.api} />
           </Col>
         </Row>
-      </Layout>
+      </RouteLayout>
     );
   }
 }
 
 function Layout(props) {
+  let path = props.location.pathname;
+
   return (
     <div>
       <Navbar bg="light" expand="sm">
@@ -240,9 +244,9 @@ function Layout(props) {
 
         <Navbar.Collapse id="basic-navbar-nav">
           <Nav className="mr-auto">
-            <Nav.Link href="/">Home</Nav.Link>
-            <Nav.Link href="/after-streams">After Streams</Nav.Link>
-            <Nav.Link href="/overlay" target="overlay">Overlay</Nav.Link>
+            <Nav.Link as={Link} active={path === "/"} to="/">Home</Nav.Link>
+            <Nav.Link as={Link} active={path === "/after-streams"} to="/after-streams">After Streams</Nav.Link>
+            <Nav.Link as={Link} active={path === "/overlay"} to="/overlay" target="overlay">Overlay</Nav.Link>
           </Nav>
         </Navbar.Collapse>
       </Navbar>,

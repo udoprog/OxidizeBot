@@ -144,11 +144,14 @@ body {
   }
 }
 
-td.datetime {
-  white-space: nowrap;
-}
+.afterstream {
+  &-added-at {
+    white-space: nowrap;
+    display: block;
+    font-size: 0.8em;
+  }
 
-button.action {
-  svg {
+  &-datetime {
+    margin-left: 0.4em;
   }
 }

@@ -98,8 +98,7 @@ export default class AfterStreams extends React.Component {
             <thead>
               <tr>
                 <th>User</th>
-                <th>Added at</th>
-                <th>Message</th>
+                <th width="99%">Message</th>
                 <th></th>
               </tr>
             </thead>
@@ -107,8 +106,13 @@ export default class AfterStreams extends React.Component {
               {this.state.data.map((a, id) => {
                 return (
                   <tr key={id}>
-                    <td><a href={`https://twitch.tv/${a.user}`}>@{a.user}</a></td>
-                    <td className="datetime">{a.added_at}</td>
+                    <td className="afterstream-user">
+                      <a className="afterstream-name" href={`https://twitch.tv/${a.user}`}>@{a.user}</a>
+                      <span className="afterstream-added-at">
+                        <span className="afterstream-at">at</span>
+                        <span className="afterstream-datetime datetime">{a.added_at}</span>
+                      </span>
+                    </td>
                     <td><code>{a.text}</code></td>
                     <td>
                       <Button size="sm" variant="danger" className="action" onClick={() => this.delete(a.id)}>

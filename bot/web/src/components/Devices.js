@@ -133,7 +133,7 @@ export default class Authentication extends React.Component {
                   return (
                     <tr key={id}>
                       <td width="24" title="Current device">
-                        <FontAwesomeIcon icon="volume-up" size="24" />
+                        <FontAwesomeIcon icon="volume-up" />
                       </td>
                       <td>
                         {d.name}
