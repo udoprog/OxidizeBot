@@ -144,6 +144,8 @@ pub fn run(
     config: &Config,
     // For sending notifications.
     global_bus: Arc<bus::Bus>,
+    // Settings abstraction.
+    settings: db::Settings,
 ) -> Result<(PlaybackFuture, Player), failure::Error> {
     let (player, device) = connect::setup(spotify.clone())?;
 
@@ -245,11 +247,30 @@ pub fn run(
         global_bus,
     };
 
+    let (stream, max_songs_per_user) =
+        settings.init_and_stream("player/max-songs-per-user", config.max_songs_per_user)?;
+
+    let max_songs_per_user = Arc::new(RwLock::new(max_songs_per_user));
+
+    core.runtime().executor().spawn(stream.for_each({
+        let max_songs_per_user = max_songs_per_user.clone();
+        let default = config.max_songs_per_user;
+
+        move |value| {
+            *max_songs_per_user.write() = match value {
+                db::Event::Set(value) => value,
+                db::Event::Clear => default,
+            };
+
+            Ok(())
+        }
+    }));
+
     let player = Player {
         device: device.clone(),
         queue,
         max_queue_length: config.max_queue_length,
-        max_songs_per_user: config.max_songs_per_user,
+        max_songs_per_user: max_songs_per_user,
         spotify: spotify.clone(),
         commands_tx,
         bus,
@@ -486,7 +507,7 @@ pub struct Player {
     device: self::connect::ConnectDevice,
     queue: Queue,
     max_queue_length: u32,
-    max_songs_per_user: u32,
+    max_songs_per_user: Arc<RwLock<u32>>,
     spotify: Arc<spotify::Spotify>,
     commands_tx: mpsc::UnboundedSender<Command>,
     bus: Arc<RwLock<Bus<Event>>>,
@@ -507,7 +528,7 @@ impl Player {
             queue: self.queue.clone(),
             thread_pool: Arc::new(ThreadPool::new()),
             max_queue_length: self.max_queue_length,
-            max_songs_per_user: self.max_songs_per_user,
+            max_songs_per_user: self.max_songs_per_user.clone(),
             spotify: self.spotify.clone(),
             commands_tx: self.commands_tx.clone(),
             bus: self.bus.clone(),
@@ -553,7 +574,7 @@ pub struct PlayerClient {
     queue: Queue,
     thread_pool: Arc<ThreadPool>,
     max_queue_length: u32,
-    max_songs_per_user: u32,
+    max_songs_per_user: Arc<RwLock<u32>>,
     spotify: Arc<spotify::Spotify>,
     commands_tx: mpsc::UnboundedSender<Command>,
     bus: Arc<RwLock<Bus<Event>>>,
@@ -725,7 +746,7 @@ impl PlayerClient {
         let fut = future::lazy({
             let queue = self.queue.queue.clone();
             let max_queue_length = self.max_queue_length;
-            let max_songs_per_user = self.max_songs_per_user;
+            let max_songs_per_user = *self.max_songs_per_user.read();
             let closed = self.closed.clone();
             let user = user.to_string();
             let track_id = track_id.clone();

@@ -175,3 +175,9 @@ body {
 .content {
   margin-top: 1rem;
 }
+
+.settings {
+  &-key {
+    white-space: nowrap;
+  }
+}

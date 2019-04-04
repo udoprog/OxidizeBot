@@ -127,7 +127,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
                     aliases.edit(irc.channel.as_str(), &alias.r#match, &alias.replace)?;
                 }
 
-                settings.set("migration/aliases-migrated", true)?;
+                settings.set("migration/aliases-migrated", &true)?;
             }
         }
     }
@@ -146,7 +146,12 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     let mut futures =
         Vec::<Box<dyn Future<Item = (), Error = failure::Error> + Send + 'static>>::new();
 
-    let (web, future) = web::setup(web_root, global_bus.clone(), after_streams.clone())?;
+    let (web, future) = web::setup(
+        web_root,
+        global_bus.clone(),
+        after_streams.clone(),
+        settings.clone(),
+    )?;
 
     // NB: spawn the web server on a separate thread because it's needed for the synchronous authentication flow below.
     core.runtime().executor().spawn(future.map_err(|e| {
@@ -161,7 +166,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             log::error!("failed to open browser: {}", e);
         }
 
-        settings.set("first-run", false)?;
+        settings.set("first-run", &false)?;
     }
 
     log::info!("Listening on: {}", web::URL);
@@ -243,6 +248,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
                 &config,
                 player,
                 global_bus.clone(),
+                settings.clone(),
             )?;
 
             futures.push(Box::new(future));

@@ -90,12 +90,18 @@ impl Oauth2Redirect {
     }
 }
 
+#[derive(serde::Deserialize)]
+pub struct PutSetting {
+    value: String,
+}
+
 /// API to manage device.
 #[derive(Clone)]
 struct Api {
     player: Arc<RwLock<Option<player::PlayerClient>>>,
     token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
     after_streams: db::AfterStreams,
+    settings: db::Settings,
 }
 
 impl Api {
@@ -205,6 +211,24 @@ impl Api {
         let after_streams = self.after_streams.list()?;
         Ok(warp::reply::json(&after_streams))
     }
+
+    /// Get the list of all settings in the bot.
+    fn settings(&self) -> Result<impl warp::Reply, failure::Error> {
+        let settings = self.settings.list()?;
+        Ok(warp::reply::json(&settings))
+    }
+
+    /// Delete the given setting by key.
+    fn delete_setting(&self, key: String) -> Result<impl warp::Reply, failure::Error> {
+        self.settings.clear(&key)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Delete the given setting by key.
+    fn edit_setting(&self, key: &str, value: String) -> Result<impl warp::Reply, failure::Error> {
+        self.settings.set_json(key, value)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
 }
 
 /// Set up the web endpoint.
@@ -212,6 +236,7 @@ pub fn setup(
     web_root: Option<&Path>,
     bus: Arc<bus::Bus>,
     after_streams: db::AfterStreams,
+    settings: db::Settings,
 ) -> Result<(Server, BoxFuture<(), failure::Error>), failure::Error> {
     let addr: SocketAddr = str::parse(&format!("0.0.0.0:12345"))?;
 
@@ -232,6 +257,7 @@ pub fn setup(
         player: player.clone(),
         token_callbacks: token_callbacks.clone(),
         after_streams,
+        settings,
     };
 
     let api = {
@@ -268,6 +294,33 @@ pub fn setup(
             .or(warp::get2().and(warp::path("after-streams")).and_then({
                 let api = api.clone();
                 move || api.after_streams().map_err(warp::reject::custom)
+            }))
+            .boxed();
+
+        let route = route
+            .or(warp::delete2().and(path!("setting" / String)).and_then({
+                let api = api.clone();
+                move |key| api.delete_setting(key).map_err(warp::reject::custom)
+            }))
+            .boxed();
+
+        let route = route
+            .or(warp::put2()
+                .and(warp::path("setting"))
+                .and(warp::filters::path::tail().and(warp::body::json()))
+                .and_then({
+                    let api = api.clone();
+                    move |key: warp::filters::path::Tail, body: PutSetting| {
+                        api.edit_setting(key.as_str(), body.value)
+                            .map_err(warp::reject::custom)
+                    }
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::get2().and(warp::path("settings")).and_then({
+                let api = api.clone();
+                move || api.settings().map_err(warp::reject::custom)
             }))
             .boxed();
 
