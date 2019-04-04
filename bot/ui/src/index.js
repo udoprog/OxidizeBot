@@ -220,11 +220,11 @@ class IndexPage extends React.Component {
         </Row>
 
         <Row>
-          <Col>
+          <Col lg="6">
             <Authentication api={this.api} />
           </Col>
 
-          <Col>
+          <Col lg="6">
             <Devices api={this.api} />
           </Col>
         </Row>
