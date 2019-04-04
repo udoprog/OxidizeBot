@@ -8,8 +8,8 @@ use warp::{http::Uri, Filter as _};
 pub const URL: &'static str = "http://localhost:12345";
 pub const REDIRECT_URI: &'static str = "/redirect";
 
-const INDEX_HTML: &'static [u8] = include_bytes!("../web/dist/index.html");
-const MAIN_JS: &'static [u8] = include_bytes!("../web/dist/main.js");
+const INDEX_HTML: &'static [u8] = include_bytes!("../ui/dist/index.html");
+const MAIN_JS: &'static [u8] = include_bytes!("../ui/dist/main.js");
 
 #[derive(Debug)]
 enum Error {

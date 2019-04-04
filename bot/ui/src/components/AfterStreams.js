@@ -78,9 +78,9 @@ export default class AfterStreams extends React.Component {
 
     if (this.state.loading) {
       loading = <Spinner />;
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh" />;
+      refresh = <FontAwesomeIcon icon="sync" className="title-refresh right" />;
     } else {
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh clickable" onClick={() => this.list()} />;
+      refresh = <FontAwesomeIcon icon="sync" className="title-refresh clickable right" onClick={() => this.list()} />;
     }
 
     let content = null;
