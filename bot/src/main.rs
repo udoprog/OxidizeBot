@@ -109,6 +109,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     let aliases = db::Aliases::load(db.clone())?;
     let bad_words = db::Words::load(db.clone())?;
     let after_streams = db::AfterStreams::load(db.clone())?;
+    let promotions = db::Promotions::load(db.clone())?;
 
     // TODO: remove this migration next major release.
     if let Some(irc) = config.irc.as_ref() {
@@ -272,6 +273,14 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         _ => None,
     };
 
+    if config.features.test(Feature::Command) {
+        let module = module::command_admin::Config::default();
+        modules.push(Box::new(module::command_admin::Module::load(&module)?));
+    }
+
+    let module = module::alias_admin::Config::default();
+    modules.push(Box::new(module::alias_admin::Module::load(&module)?));
+
     if let Some(irc_config) = config.irc.as_ref() {
         let (bot_token, future) = it
             .next()
@@ -289,6 +298,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             token: bot_token,
             commands,
             aliases,
+            promotions,
             bad_words,
             after_streams,
             global_bus,

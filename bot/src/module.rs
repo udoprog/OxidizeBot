@@ -28,7 +28,10 @@ impl Handlers {
     }
 }
 
+pub mod alias_admin;
+pub mod command_admin;
 mod countdown;
+mod promotions;
 pub mod song;
 mod swearjar;
 mod water;
@@ -42,6 +45,8 @@ pub enum Config {
     SwearJar(swearjar::Config),
     #[serde(rename = "water")]
     Water(water::Config),
+    #[serde(rename = "promotions")]
+    Promotions(promotions::Config),
 }
 
 /// Context for a hook.
@@ -49,6 +54,9 @@ pub struct HookContext<'a> {
     pub config: &'a config::Config,
     pub irc_config: &'a irc::Config,
     pub db: &'a db::Database,
+    pub commands: &'a db::Commands,
+    pub aliases: &'a db::Aliases,
+    pub promotions: &'a db::Promotions,
     pub handlers: &'a mut Handlers,
     pub currency: Option<&'a currency::Currency>,
     pub twitch: &'a twitch::Twitch,
@@ -57,7 +65,7 @@ pub struct HookContext<'a> {
     pub sender: &'a irc::Sender,
 }
 
-pub trait Module {
+pub trait Module: 'static {
     /// Set up command handlers for this module.
     fn hook(&self, _: HookContext<'_>) -> Result<(), failure::Error> {
         Ok(())
@@ -65,18 +73,14 @@ pub trait Module {
 }
 
 impl Config {
-    pub fn load(
-        &self,
-        config: &config::Config,
-    ) -> Result<Box<dyn Module + 'static>, failure::Error> {
+    pub fn load(&self, config: &config::Config) -> Result<Box<dyn Module>, failure::Error> {
         Ok(match *self {
             Config::Countdown(ref module) => {
-                Box::new(self::countdown::Countdown::load(config, module)?)
+                Box::new(self::countdown::Module::load(config, module)?)
             }
-            Config::SwearJar(ref module) => {
-                Box::new(self::swearjar::SwearJar::load(config, module)?)
-            }
+            Config::SwearJar(ref module) => Box::new(self::swearjar::Module::load(config, module)?),
             Config::Water(ref module) => Box::new(self::water::Module::load(config, module)?),
+            Config::Promotions(ref module) => Box::new(self::promotions::Module::load(module)?),
         })
     }
 }

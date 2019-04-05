@@ -1,5 +1,5 @@
 use super::schema::{
-    after_streams, aliases, bad_words, balances, commands, counters, set_values, songs,
+    after_streams, aliases, bad_words, balances, commands, counters, promotions, set_values, songs,
 };
 use crate::player::TrackId;
 use chrono::NaiveDateTime;
@@ -97,4 +97,16 @@ pub struct SetValue {
     /// The kind of the value.
     pub kind: String,
     pub value: String,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
+pub struct Promotion {
+    pub channel: String,
+    pub name: String,
+    /// The frequency in seconds at which the promotion is posted.
+    pub frequency: i32,
+    /// The last time the promoted was promoted.
+    pub promoted_at: Option<NaiveDateTime>,
+    /// The promotion template to run.
+    pub text: String,
 }

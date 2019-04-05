@@ -229,6 +229,28 @@ Template variables that can be used in `<what>`:
 * `{{name}}` - The user who invoked the alias.
 * `{{target}}` - The channel where the alias was invoked.
 
+###### Deprecated configuration
+
+Aliases used to be specified in the configuration.
+If these are still present, the bot will migrate those aliases into the database and post a warning at startup.
+
+The configuration used to look like this:
+
+```toml
+[[aliases]]
+match = "!sr"
+replace = "!song request {{rest}}"
+
+[[aliases]]
+match = "!sl"
+replace = "!song list {{rest}}"
+
+[[aliases]]
+match = "!volume"
+replace = "!song volume {{rest}}"
+```
+
+
 #### `afterstream`
 
 Add an afterstream message.
@@ -239,14 +261,7 @@ Enabled commands:
 
 * `!afterstream <message>` - Leaves the `<message>` in the afterstream queue.
 
-Note: the only way to list afterstream messages right now is to read the database:
-
-```
-sqlite3.exe database.sql
-sqlite> select * from after_streams;
-
-...
-```
+Afterstreams that are posted are made available in the UI at: http://localhost:12345/after-streams
 
 #### `admin`
 
@@ -346,22 +361,23 @@ Enabled commands:
 * `!water` - A user can remind the streamer to drink water and will be rewarded one unit of stream currency for every minute since last reminder.
 * `!water undo` - Undos the last water reminder and refunds the reward.
 
-## Aliases
+#### `promotions`
 
-Aliases are specified in the configuration file like this:
+You enable the `promotions` module by adding the following to your configuration:
 
 ```toml
-[[aliases]]
-match = "!sr"
-replace = "!song request {{rest}}"
-
-[[aliases]]
-match = "!sl"
-replace = "!song list {{rest}}"
-
-[[aliases]]
-match = "!volume"
-replace = "!song volume {{rest}}"
+[[modules]]
+type = "promotions"
+frequency = "15m"
 ```
 
-Aliases are applied as a pre-processing step for each incoming command.
+The frequency says how frequently promotions should be posted.
+This is also combined with a custom frequency that must be met per promotion.
+
+Enabled commands:
+
+* `!promo list` - List all available promotions.
+* `!promo edit <id> <frequency> <what>` - Set the promotion identified by `<id>` to send the message `<what>` every `<frequency>`.
+  - Example: `!promo edit discord 30m Hey, did you know I have a Discord? Join it at http://example.com!`
+* `!promo delete <id>` - Delete the promotion with the given id.
+* `!promo rename <from> <to>` - Delete the promotion with the given id.

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Store aliases in the database instead of the configuration. See the [`alias configuration`] for more details ([#24]).
 - Start storing some settings in the database ([#19]).
   * Bot keeps track of first time it's being started to perform first-time configuration.
+- Promotions through the `promotions` module. See the [`promotions configuration`] for more details ([#25]).
 
 ### Changed
 - Cleaned up old cruft in the codebase (`gfx` module).
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `[[aliases]]` section from configuration. Aliases are now stored in the database.
 
 [`alias configuration`]: README.md#alias
+[`promotions configuration`]: README.md#promotions
 [example log4rs.yaml]: log4rs.yaml
 [`tools/setmod.ps1`]: tools/setmod.ps1
 
@@ -35,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#22]: https://github.com/udoprog/setmod/issues/22
 [#23]: https://github.com/udoprog/setmod/issues/23
 [#24]: https://github.com/udoprog/setmod/issues/24
+[#25]: https://github.com/udoprog/setmod/issues/25
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.3...HEAD
 

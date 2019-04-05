@@ -74,7 +74,7 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Countdown {
+pub struct Module {
     path: PathBuf,
 }
 
@@ -83,15 +83,15 @@ pub struct Config {
     path: PathBuf,
 }
 
-impl Countdown {
+impl Module {
     pub fn load(_config: &config::Config, module: &Config) -> Result<Self, failure::Error> {
-        Ok(Countdown {
+        Ok(Module {
             path: module.path.clone(),
         })
     }
 }
 
-impl super::Module for Countdown {
+impl super::Module for Module {
     /// Set up command handlers for this module.
     fn hook(
         &self,

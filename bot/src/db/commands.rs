@@ -1,4 +1,5 @@
 use crate::{db, template};
+use diesel::prelude::*;
 use failure::{format_err, ResultExt as _};
 use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
@@ -7,15 +8,15 @@ use std::sync::{
     Arc,
 };
 
-/// The backend of a words store.
-pub trait Backend: Clone + Send + Sync {
-    /// List all commands in backend.
+/// The db of a words store.
+trait Backend: Clone + Send + Sync {
+    /// List all commands in db.
     fn list(&self) -> Result<Vec<db::models::Command>, failure::Error>;
 
     /// Insert or update an existing command.
     fn edit(&self, key: &Key, text: &str) -> Result<(), failure::Error>;
 
-    /// Delete the given command from the backend.
+    /// Delete the given command from the db.
     fn delete(&self, key: &Key) -> Result<bool, failure::Error>;
 
     /// Increment the number of times the command has been invoked.
@@ -26,26 +27,93 @@ pub trait Backend: Clone + Send + Sync {
     fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error>;
 }
 
-#[derive(Debug, Clone)]
-pub struct Commands<B>
-where
-    B: Backend,
-{
-    inner: Arc<RwLock<HashMap<Key, Arc<Command>>>>,
-    backend: B,
+impl Backend for db::Database {
+    fn edit(&self, key: &Key, text: &str) -> Result<(), failure::Error> {
+        use db::schema::commands::dsl;
+
+        let c = self.pool.get()?;
+        let filter =
+            dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
+        let b = filter.clone().first::<db::models::Command>(&c).optional()?;
+
+        match b {
+            None => {
+                let command = db::models::Command {
+                    channel: key.channel.to_string(),
+                    name: key.name.to_string(),
+                    count: 0,
+                    text: text.to_string(),
+                };
+
+                diesel::insert_into(dsl::commands)
+                    .values(&command)
+                    .execute(&c)?;
+            }
+            Some(_) => {
+                diesel::update(filter).set(dsl::text.eq(text)).execute(&c)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
+        use db::schema::commands::dsl;
+
+        let c = self.pool.get()?;
+        let count = diesel::delete(
+            dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+        )
+        .execute(&c)?;
+        Ok(count == 1)
+    }
+
+    fn list(&self) -> Result<Vec<db::models::Command>, failure::Error> {
+        use db::schema::commands::dsl;
+        let c = self.pool.get()?;
+        Ok(dsl::commands.load::<db::models::Command>(&c)?)
+    }
+
+    fn increment(&self, key: &Key) -> Result<bool, failure::Error> {
+        use db::schema::commands::dsl;
+
+        let c = self.pool.get()?;
+        let count = diesel::update(
+            dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+        )
+        .set(dsl::count.eq(dsl::count + 1))
+        .execute(&c)?;
+        Ok(count == 1)
+    }
+
+    fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error> {
+        use db::schema::commands::dsl;
+
+        let c = self.pool.get()?;
+        let count = diesel::update(
+            dsl::commands.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
+        )
+        .set((dsl::channel.eq(&to.channel), dsl::name.eq(&to.name)))
+        .execute(&c)?;
+
+        Ok(count == 1)
+    }
 }
 
-impl<B> Commands<B>
-where
-    B: Backend,
-{
-    /// Construct a new commands store with a backend.
-    pub fn load(backend: B) -> Result<Commands<B>, failure::Error> {
+#[derive(Clone)]
+pub struct Commands {
+    inner: Arc<RwLock<HashMap<Key, Arc<Command>>>>,
+    db: db::Database,
+}
+
+impl Commands {
+    /// Construct a new commands store with a db.
+    pub fn load(db: db::Database) -> Result<Commands, failure::Error> {
         let mut inner = HashMap::new();
 
-        for command in backend.list()? {
+        for command in db.list()? {
             let template = template::Template::compile(&command.text).with_context(|_| {
-                format_err!("failed to compile command `{:?}` from backend", command)
+                format_err!("failed to compile command `{:?}` from db", command)
             })?;
 
             let key = Key::new(command.channel.as_str(), command.name.as_str());
@@ -65,7 +133,7 @@ where
 
         Ok(Commands {
             inner: Arc::new(RwLock::new(inner)),
-            backend,
+            db,
         })
     }
 
@@ -74,7 +142,7 @@ where
         let key = Key::new(channel, name);
 
         let template = template::Template::compile(command)?;
-        self.backend.edit(&key, command)?;
+        self.db.edit(&key, command)?;
 
         let mut inner = self.inner.write();
         let count = inner.get(&key).map(|c| c.count()).unwrap_or(0);
@@ -99,7 +167,7 @@ where
     pub fn delete(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
         let key = Key::new(channel, name);
 
-        if !self.backend.delete(&key)? {
+        if !self.db.delete(&key)? {
             return Ok(false);
         }
 
@@ -139,7 +207,7 @@ where
 
     /// Increment the specified command.
     pub fn increment(&self, command: &Command) -> Result<(), failure::Error> {
-        self.backend.increment(&command.key)?;
+        self.db.increment(&command.key)?;
         command.count.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
@@ -167,7 +235,7 @@ where
             vars: command.vars.clone(),
         };
 
-        match self.backend.rename(&from, &to) {
+        match self.db.rename(&from, &to) {
             Err(e) => {
                 log::error!(
                     "failed to rename command `{}` in database: {}",

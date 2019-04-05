@@ -1,41 +1,97 @@
 use crate::{db, template, utils};
+use diesel::prelude::*;
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-/// The backend of a words store.
+/// The db of a words store.
 pub trait Backend: Clone + Send + Sync {
-    /// List all commands in backend.
+    /// List all commands in db.
     fn list(&self) -> Result<Vec<db::models::Alias>, failure::Error>;
 
     /// Insert or update an existing alias.
     fn edit(&self, key: &Key, text: &str) -> Result<(), failure::Error>;
 
-    /// Delete the given alias from the backend.
+    /// Delete the given alias from the db.
     fn delete(&self, key: &Key) -> Result<bool, failure::Error>;
 
     /// Rename the given alias.
     fn rename(&self, from_key: &Key, to_key: &Key) -> Result<bool, failure::Error>;
 }
 
-#[derive(Debug, Clone)]
-pub struct Aliases<B>
-where
-    B: Backend,
-{
-    inner: Arc<RwLock<HashMap<Key, Arc<Alias>>>>,
-    backend: B,
+impl Backend for db::Database {
+    fn edit(&self, key: &Key, text: &str) -> Result<(), failure::Error> {
+        use db::schema::aliases::dsl;
+
+        let c = self.pool.get()?;
+        let filter =
+            dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
+        let b = filter.clone().first::<db::models::Alias>(&c).optional()?;
+
+        match b {
+            None => {
+                let alias = db::models::Alias {
+                    channel: key.channel.to_string(),
+                    name: key.name.to_string(),
+                    text: text.to_string(),
+                };
+
+                diesel::insert_into(dsl::aliases)
+                    .values(&alias)
+                    .execute(&c)?;
+            }
+            Some(_) => {
+                diesel::update(filter).set(dsl::text.eq(text)).execute(&c)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
+        use db::schema::aliases::dsl;
+
+        let c = self.pool.get()?;
+        let count = diesel::delete(
+            dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+        )
+        .execute(&c)?;
+
+        Ok(count == 1)
+    }
+
+    fn list(&self) -> Result<Vec<db::models::Alias>, failure::Error> {
+        use db::schema::aliases::dsl;
+        let c = self.pool.get()?;
+        Ok(dsl::aliases.load::<db::models::Alias>(&c)?)
+    }
+
+    fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error> {
+        use db::schema::aliases::dsl;
+
+        let c = self.pool.get()?;
+        let count = diesel::update(
+            dsl::aliases.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
+        )
+        .set((dsl::name.eq(&to.name), dsl::name.eq(&to.channel)))
+        .execute(&c)?;
+
+        Ok(count == 1)
+    }
 }
 
-impl<B> Aliases<B>
-where
-    B: Backend,
-{
-    /// Construct a new commands store with a backend.
-    pub fn load(backend: B) -> Result<Aliases<B>, failure::Error> {
+#[derive(Clone)]
+pub struct Aliases {
+    inner: Arc<RwLock<HashMap<Key, Arc<Alias>>>>,
+    db: db::Database,
+}
+
+impl Aliases {
+    /// Construct a new commands store with a db.
+    pub fn load(db: db::Database) -> Result<Aliases, failure::Error> {
         let mut inner = HashMap::new();
 
-        for alias in backend.list()? {
+        for alias in db.list()? {
             let key = Key::new(alias.channel.as_str(), alias.name.as_str());
             let template = template::Template::compile(alias.text)?;
             inner.insert(key.clone(), Arc::new(Alias { key, template }));
@@ -43,7 +99,7 @@ where
 
         Ok(Aliases {
             inner: Arc::new(RwLock::new(inner)),
-            backend,
+            db,
         })
     }
 
@@ -69,7 +125,7 @@ where
     pub fn edit(&self, channel: &str, name: &str, text: &str) -> Result<(), failure::Error> {
         let key = Key::new(channel, name);
         let template = template::Template::compile(text)?;
-        self.backend.edit(&key, text)?;
+        self.db.edit(&key, text)?;
         self.inner
             .write()
             .insert(key.clone(), Arc::new(Alias { key, template }));
@@ -80,7 +136,7 @@ where
     pub fn delete(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
         let key = Key::new(channel, name);
 
-        if !self.backend.delete(&key)? {
+        if !self.db.delete(&key)? {
             return Ok(false);
         }
 
@@ -139,7 +195,7 @@ where
             template: alias.template.clone(),
         };
 
-        match self.backend.rename(&from_key, &to_key) {
+        match self.db.rename(&from_key, &to_key) {
             Err(e) => {
                 log::error!("failed to rename alias `{}` in database: {}", from, e);
             }

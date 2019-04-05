@@ -26,10 +26,8 @@ use tokio_threadpool::ThreadPool;
 
 mod admin;
 mod after_stream;
-mod alias_admin;
 mod bad_word;
 mod clip;
-mod command_admin;
 mod eight_ball;
 mod misc;
 
@@ -72,12 +70,13 @@ pub struct Irc<'a> {
     pub config: &'a config::Config,
     pub irc_config: &'a Config,
     pub token: Arc<RwLock<oauth2::Token>>,
-    pub commands: db::Commands<db::Database>,
-    pub aliases: db::Aliases<db::Database>,
+    pub commands: db::Commands,
+    pub aliases: db::Aliases,
+    pub promotions: db::Promotions,
     pub bad_words: db::Words<db::Database>,
     pub after_streams: db::AfterStreams,
     pub global_bus: Arc<bus::Bus>,
-    pub modules: &'a [Box<dyn module::Module + 'static>],
+    pub modules: &'a [Box<dyn module::Module>],
     pub shutdown: utils::Shutdown,
 }
 
@@ -96,6 +95,7 @@ impl Irc<'_> {
             token,
             commands,
             aliases,
+            promotions,
             bad_words,
             after_streams,
             global_bus,
@@ -146,6 +146,9 @@ impl Irc<'_> {
                 config,
                 irc_config,
                 db: &db,
+                commands: &commands,
+                aliases: &aliases,
+                promotions: &promotions,
                 handlers: &mut handlers,
                 currency: config.currency.as_ref(),
                 twitch: &bot_twitch,
@@ -205,22 +208,6 @@ impl Irc<'_> {
                 },
             );
         }
-
-        if config.features.test(Feature::Command) {
-            handlers.insert(
-                "command",
-                command_admin::Handler {
-                    commands: commands.clone(),
-                },
-            );
-        }
-
-        handlers.insert(
-            "alias",
-            alias_admin::Handler {
-                aliases: aliases.clone(),
-            },
-        );
 
         if config.features.test(Feature::EightBall) {
             handlers.insert("8ball", eight_ball::EightBall {});
@@ -418,13 +405,13 @@ struct Handler {
     /// Currency in use.
     currency: Option<Currency>,
     /// All registered commands.
-    commands: db::Commands<db::Database>,
+    commands: db::Commands,
     /// Bad words.
     bad_words: db::Words<db::Database>,
     /// For sending notifications.
     global_bus: Arc<bus::Bus>,
     /// Aliases.
-    aliases: db::Aliases<db::Database>,
+    aliases: db::Aliases,
     /// Enabled features.
     features: Features,
     /// Configured API URL.

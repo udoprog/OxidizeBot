@@ -75,3 +75,13 @@ table! {
         text -> Text,
     }
 }
+
+table! {
+    promotions (channel, name) {
+        channel -> Text,
+        name -> Text,
+        frequency -> Integer,
+        promoted_at -> Nullable<Timestamp>,
+        text -> Text,
+    }
+}

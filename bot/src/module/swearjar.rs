@@ -77,7 +77,7 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct SwearJar {
+pub struct Module {
     reward: i32,
     cooldown: utils::Cooldown,
 }
@@ -94,16 +94,16 @@ fn default_cooldown() -> utils::Cooldown {
     utils::Cooldown::from_duration(time::Duration::from_secs(60 * 10))
 }
 
-impl SwearJar {
+impl Module {
     pub fn load(_config: &config::Config, module: &Config) -> Result<Self, failure::Error> {
-        Ok(SwearJar {
+        Ok(Module {
             reward: module.reward,
             cooldown: module.cooldown.clone(),
         })
     }
 }
 
-impl super::Module for SwearJar {
+impl super::Module for Module {
     /// Set up command handlers for this module.
     fn hook(
         &self,
