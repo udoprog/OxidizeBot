@@ -1,16 +1,16 @@
+//! Utilities for dealing with dynamic configuration and settings.
+
+use crate::db;
 use diesel::prelude::*;
 use futures::{sync::mpsc, Async, Poll};
-use hashbrown::{hash_map, HashMap};
+use hashbrown::HashMap;
 use parking_lot::RwLock;
-use std::{
-    fmt,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-};
+use std::{fmt, sync::Arc};
 
 const SEPARATOR: &'static str = "/";
+
+type EventSender = mpsc::UnboundedSender<Event<serde_json::Value>>;
+type Subscriptions = Arc<RwLock<HashMap<String, (Type, EventSender)>>>;
 
 /// Update events for a given key.
 #[derive(Clone)]
@@ -21,39 +21,36 @@ pub enum Event<T> {
     Set(T),
 }
 
-type SubId = usize;
-type Subscriptions = HashMap<SubId, mpsc::UnboundedSender<Event<String>>>;
-
 /// A container for settings from which we can subscribe for updates.
 #[derive(Clone)]
 pub struct Settings {
-    db: super::Database,
+    db: db::Database,
     /// Maps setting prefixes to subscriptions.
-    subscriptions: Arc<RwLock<HashMap<String, Subscriptions>>>,
-    id_gen: Arc<AtomicUsize>,
+    subscriptions: Subscriptions,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Setting {
+    #[serde(rename = "type")]
+    ty: Option<Type>,
     key: String,
-    value: String,
+    value: serde_json::Value,
 }
 
 impl Settings {
-    pub fn new(db: super::Database) -> Self {
+    pub fn new(db: db::Database) -> Self {
         Self {
             db,
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
-            id_gen: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     /// Get the value of the given key from the database.
     pub fn get<T>(&self, key: &str) -> Result<Option<T>, failure::Error>
     where
-        T: serde::de::DeserializeOwned,
+        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
-        use super::schema::settings::dsl;
+        use self::db::schema::settings::dsl;
         let c = self.db.pool.get()?;
 
         let result = dsl::settings
@@ -79,24 +76,22 @@ impl Settings {
     /// Insert the given setting.
     pub fn set<T>(&self, key: &str, value: &T) -> Result<(), failure::Error>
     where
-        T: serde::Serialize,
+        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
-        let value = serde_json::to_string(value)?;
+        let value = serde_json::to_value(value)?;
         self.set_json(key, value)
     }
 
     /// Insert the given setting as raw JSON.
-    pub fn set_json(&self, key: &str, value: String) -> Result<(), failure::Error> {
-        use super::schema::settings::dsl;
+    pub fn set_json(&self, key: &str, value: serde_json::Value) -> Result<(), failure::Error> {
+        use self::db::schema::settings::dsl;
 
         {
             let subscriptions = self.subscriptions.read();
 
-            if let Some(subs) = subscriptions.get(key) {
-                for (id, sub) in subs {
-                    if let Err(_) = sub.unbounded_send(Event::Set(value.clone())) {
-                        log::error!("failed to send message to subscription: {}", id);
-                    }
+            if let Some((_, sub)) = subscriptions.get(key) {
+                if let Err(_) = sub.unbounded_send(Event::Set(value.clone())) {
+                    log::error!("failed to send message to subscription on: {}", key);
                 }
             }
         }
@@ -104,11 +99,14 @@ impl Settings {
         let c = self.db.pool.get()?;
 
         let filter = dsl::settings.filter(dsl::key.eq(&key));
+
         let b = filter
             .clone()
             .select((dsl::key, dsl::value))
             .first::<(String, String)>(&c)
             .optional()?;
+
+        let value = serde_json::to_string(&value)?;
 
         match b {
             None => {
@@ -128,19 +126,28 @@ impl Settings {
 
     /// Insert the given setting.
     pub fn list(&self) -> Result<Vec<Setting>, failure::Error> {
-        use super::schema::settings::dsl;
+        use self::db::schema::settings::dsl;
         let c = self.db.pool.get()?;
 
         let mut settings = Vec::new();
+        let subscriptions = self.subscriptions.read();
 
         for (key, value) in dsl::settings
             .select((dsl::key, dsl::value))
             .order(dsl::key)
             .load::<(String, String)>(&c)?
         {
+            let value = serde_json::from_str(&value)?;
+
+            let ty = match subscriptions.get(&key) {
+                Some((ty, _)) => Some(ty.clone()),
+                None => None,
+            };
+
             settings.push(Setting {
+                ty,
                 key: key.to_string(),
-                value: value.to_string(),
+                value,
             });
         }
 
@@ -149,19 +156,18 @@ impl Settings {
 
     /// Clear the given setting. Returning `true` if it was removed.
     pub fn clear(&self, key: &str) -> Result<bool, failure::Error> {
+        use self::db::schema::settings::dsl;
+
         {
             let subscriptions = self.subscriptions.read();
 
-            if let Some(subs) = subscriptions.get(key) {
-                for (id, sub) in subs {
-                    if let Err(_) = sub.unbounded_send(Event::Clear) {
-                        log::error!("failed to send message to subscription: {}", id);
-                    }
+            if let Some((_, sub)) = subscriptions.get(key) {
+                if let Err(_) = sub.unbounded_send(Event::Clear) {
+                    log::error!("failed to send message to subscription on: {}", key);
                 }
             }
         }
 
-        use super::schema::settings::dsl;
         let c = self.db.pool.get()?;
         let count = diesel::delete(dsl::settings.filter(dsl::key.eq(key))).execute(&c)?;
         Ok(count == 1)
@@ -184,27 +190,21 @@ impl Settings {
     }
 
     /// Subscribe for events on the given key.
-    pub fn stream<T>(&self, key: &str, default: T) -> Stream<T>
+    pub fn stream<T>(&self, key: &str, default: T, ty: Type) -> Stream<T>
     where
-        T: Clone,
+        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
-        let id = self.id_gen.fetch_add(1, Ordering::SeqCst);
-
         let (tx, rx) = mpsc::unbounded();
 
         let mut subscriptions = self.subscriptions.write();
 
-        let m = match subscriptions.entry(key.to_string()) {
-            hash_map::Entry::Vacant(e) => e.insert(Default::default()),
-            hash_map::Entry::Occupied(e) => e.into_mut(),
-        };
-
-        m.insert(id, tx);
+        if subscriptions.insert(key.to_string(), (ty, tx)).is_some() {
+            panic!("already a subscription for key: {}", key);
+        }
 
         Stream {
             default,
-            settings: self.clone(),
-            id,
+            subscriptions: self.subscriptions.clone(),
             key: key.to_string(),
             rx,
         }
@@ -215,6 +215,7 @@ impl Settings {
         &self,
         key: &str,
         default: T,
+        ty: Type,
     ) -> Result<(Stream<T>, T), failure::Error>
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
@@ -227,7 +228,7 @@ impl Settings {
             }
         };
 
-        Ok((self.stream(key, default), value))
+        Ok((self.stream(key, default, ty), value))
     }
 }
 
@@ -241,7 +242,7 @@ impl ScopedSettings {
     /// Get the value of the given key from the database.
     pub fn get<T>(&self, key: &str) -> Result<Option<T>, failure::Error>
     where
-        T: serde::de::DeserializeOwned,
+        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
         self.settings.get(&self.scope(key))
     }
@@ -249,7 +250,7 @@ impl ScopedSettings {
     /// Insert the given setting.
     pub fn set<T>(&self, key: &str, value: &T) -> Result<(), failure::Error>
     where
-        T: serde::Serialize,
+        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
         self.settings.set(&self.scope(key), value)
     }
@@ -260,11 +261,11 @@ impl ScopedSettings {
     }
 
     /// Subscribe for events on the given key.
-    pub fn stream<T>(&self, key: &str, default: T) -> Stream<T>
+    pub fn stream<T>(&self, key: &str, default: T, ty: Type) -> Stream<T>
     where
-        T: Clone,
+        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
-        self.settings.stream(&self.scope(key), default)
+        self.settings.stream(&self.scope(key), default, ty)
     }
 
     fn scope(&self, key: &str) -> String {
@@ -277,23 +278,21 @@ impl ScopedSettings {
 /// Get updates for a specific setting.
 pub struct Stream<T> {
     default: T,
-    settings: Settings,
-    id: SubId,
+    subscriptions: Subscriptions,
     key: String,
-    rx: mpsc::UnboundedReceiver<Event<String>>,
+    rx: mpsc::UnboundedReceiver<Event<serde_json::Value>>,
 }
 
 impl<T> Drop for Stream<T> {
     fn drop(&mut self) {
-        let mut subscriptions = self.settings.subscriptions.write();
-
-        if let Some(subs) = subscriptions.get_mut(&self.key) {
-            if let Some(_) = subs.remove(&self.id) {
-                return;
-            }
+        if self.subscriptions.write().remove(&self.key).is_some() {
+            return;
         }
 
-        log::warn!("Subscription dropped, but failed to clean up Settings");
+        log::warn!(
+            "Subscription dropped, but failed to clean up Settings for key: {}",
+            self.key
+        );
     }
 }
 
@@ -310,7 +309,7 @@ where
                 Some(e) => match e {
                     Event::Clear => Some(self.default.clone()),
                     Event::Set(value) => {
-                        let value = match serde_json::from_str(&value) {
+                        let value = match serde_json::from_value(value) {
                             Ok(value) => value,
                             Err(e) => {
                                 log::warn!("bad value for key: {}: {}", self.key, e);
@@ -327,4 +326,14 @@ where
             return Ok(Async::Ready(n));
         }
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub enum Type {
+    #[serde(rename = "duration")]
+    Duration,
+    #[serde(rename = "bool")]
+    Bool,
+    #[serde(rename = "number")]
+    U32,
 }

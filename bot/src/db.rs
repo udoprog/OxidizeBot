@@ -1,11 +1,10 @@
 mod after_streams;
 mod aliases;
 mod commands;
-pub mod models;
+pub(crate) mod models;
 mod persisted_set;
 mod promotions;
-mod schema;
-pub mod settings;
+pub(crate) mod schema;
 mod words;
 
 use crate::player;
@@ -16,7 +15,6 @@ pub use self::{
     commands::{Command, Commands},
     persisted_set::PersistedSet,
     promotions::{Promotion, Promotions},
-    settings::{Event, Settings},
     words::{Word, Words},
 };
 
@@ -51,7 +49,7 @@ embed_migrations!("./migrations");
 /// Database abstraction.
 #[derive(Clone)]
 pub struct Database {
-    pool: Arc<Pool<ConnectionManager<SqliteConnection>>>,
+    pub(crate) pool: Arc<Pool<ConnectionManager<SqliteConnection>>>,
     thread_pool: Arc<ThreadPool>,
 }
 
@@ -71,8 +69,8 @@ impl Database {
     }
 
     /// Access settings from the database.
-    pub fn settings(&self) -> self::settings::Settings {
-        self::settings::Settings::new(self.clone())
+    pub fn settings(&self) -> crate::settings::Settings {
+        crate::settings::Settings::new(self.clone())
     }
 
     /// Find user balance.

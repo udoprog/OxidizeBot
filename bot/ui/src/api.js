@@ -78,7 +78,7 @@ export class Api {
    * Edit the given setting.
    *
    * @param {string} key the key to edit
-   * @param {string} value the value to edit
+   * @param {any} value the value to edit
    */
   editSetting(key, value) {
     return this.fetch(`setting/${key}`, {

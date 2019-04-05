@@ -5,13 +5,24 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 
 const SECRET_PREFIX = "secrets/";
 
+function validJson(json) {
+  try {
+    JSON.parse(json);
+    return true;
+  } catch(e) {
+    return false;
+  }
+}
+
 function ConfirmButtons(props) {
+  let confirmDisabled = props.confirmDisabled || false;
+
   return (
     <ButtonGroup>
       <Button title={`Cancel ${props.what}`} variant="primary" size="sm" onClick={e => props.onCancel(e)}>
         <FontAwesomeIcon icon="window-close" />
       </Button>
-      <Button title={`Confirm ${props.what}`} variant="danger" size="sm" onClick={e => props.onConfirm(e)}>
+      <Button title={`Confirm ${props.what}`} disabled={confirmDisabled} variant="danger" size="sm" onClick={e => props.onConfirm(e)}>
         <FontAwesomeIcon icon="check-circle" />
       </Button>
     </ButtonGroup>
@@ -105,6 +116,8 @@ export default class Settings extends React.Component {
       editValue: null,
     });
 
+    value = JSON.parse(value);
+
     this.api.editSetting(key, value)
       .then(() => {
         return this.list();
@@ -166,17 +179,19 @@ export default class Settings extends React.Component {
                     </Button>
                     <Button size="sm" variant="info" className="action" onClick={() => this.setState({
                       editKey: setting.key,
-                      editValue: setting.value,
+                      editValue: JSON.stringify(setting.value),
                     })}>
                       <FontAwesomeIcon icon="edit" />
                     </Button>
                   </ButtonGroup>
                 );
 
-                let value = <code>{setting.value}</code>;
+                let value = null;
 
                 if (isSecret) {
                   value = <b title="Secret value, only showed when editing">****</b>;
+                } else {
+                  value = <code>{JSON.stringify(setting.value)}</code>;
                 }
 
                 if (this.state.deleteKey === setting.key) {
@@ -192,9 +207,11 @@ export default class Settings extends React.Component {
                 }
 
                 if (this.state.editKey === setting.key) {
+                  let isValid = validJson(this.state.editValue);
+
                   value = (
                     <Form onSubmit={() => this.edit(this.state.editKey, this.state.editValue)}>
-                      <Form.Control size="sm" type="value" value={this.state.editValue} onChange={e => {
+                      <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.state.editValue} onChange={e => {
                         this.setState({
                           editValue: e.target.value,
                         });
@@ -204,6 +221,7 @@ export default class Settings extends React.Component {
 
                   buttons = <ConfirmButtons
                     what="edit"
+                    confirmDisabled={!isValid}
                     onConfirm={() => this.edit(this.state.editKey, this.state.editValue)}
                     onCancel={() => {
                       this.setState({

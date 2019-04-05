@@ -1,6 +1,6 @@
 use tokio_core::reactor::Core;
 
-use crate::{bus, config, current_song, db, spotify, themes::Themes, utils};
+use crate::{bus, config, current_song, db, settings, spotify, themes::Themes, utils};
 pub use crate::{spotify_id::SpotifyId, track_id::TrackId};
 
 use chrono::Utc;
@@ -145,7 +145,7 @@ pub fn run(
     // For sending notifications.
     global_bus: Arc<bus::Bus>,
     // Settings abstraction.
-    settings: db::Settings,
+    settings: settings::Settings,
 ) -> Result<(PlaybackFuture, Player), failure::Error> {
     let (player, device) = connect::setup(spotify.clone())?;
 
@@ -247,8 +247,11 @@ pub fn run(
         global_bus,
     };
 
-    let (stream, max_songs_per_user) =
-        settings.init_and_stream("player/max-songs-per-user", config.max_songs_per_user)?;
+    let (stream, max_songs_per_user) = settings.init_and_stream(
+        "player/max-songs-per-user",
+        config.max_songs_per_user,
+        settings::Type::U32,
+    )?;
 
     let max_songs_per_user = Arc::new(RwLock::new(max_songs_per_user));
 

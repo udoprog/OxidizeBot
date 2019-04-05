@@ -3,7 +3,7 @@ use crate::{
     currency::Currency,
     db,
     features::{Feature, Features},
-    module, oauth2, stream_info, twitch, utils,
+    module, oauth2, settings, stream_info, twitch, utils,
     utils::BoxFuture,
 };
 use failure::format_err;
@@ -78,7 +78,7 @@ pub struct Irc<'a> {
     pub global_bus: Arc<bus::Bus>,
     pub modules: &'a [Box<dyn module::Module>],
     pub shutdown: utils::Shutdown,
-    pub settings: db::Settings,
+    pub settings: settings::Settings,
 }
 
 impl Irc<'_> {

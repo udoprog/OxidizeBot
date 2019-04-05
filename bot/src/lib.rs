@@ -22,6 +22,7 @@ pub mod oauth2;
 pub mod player;
 pub mod secrets;
 pub mod setbac;
+pub mod settings;
 pub mod spotify;
 mod spotify_id;
 mod stream_info;

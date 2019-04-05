@@ -1,4 +1,4 @@
-use crate::{command, db, irc, module, utils};
+use crate::{command, db, irc, module, settings, utils};
 use chrono::Utc;
 use futures::{future, Async, Future, Poll, Stream as _};
 use std::sync::Arc;
@@ -144,8 +144,11 @@ impl super::Module for Module {
             },
         );
 
-        let (setting, frequency) =
-            settings.init_and_stream("promotions/frequency", self.frequency.clone())?;
+        let (setting, frequency) = settings.init_and_stream(
+            "promotions/frequency",
+            self.frequency.clone(),
+            settings::Type::Duration,
+        )?;
 
         let promotions = promotions.clone();
         let sender = sender.clone();
@@ -168,7 +171,7 @@ impl super::Module for Module {
 struct PromotionFuture {
     interval: tokio_timer::Interval,
     // channel for configuration updates.
-    setting: db::settings::Stream<utils::Duration>,
+    setting: settings::Stream<utils::Duration>,
     promotions: db::Promotions,
     sender: irc::Sender,
     channel: String,

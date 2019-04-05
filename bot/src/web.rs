@@ -1,4 +1,4 @@
-use crate::{bus, db, player, spotify, utils::BoxFuture};
+use crate::{bus, db, player, settings, spotify, utils::BoxFuture};
 use futures::{future, stream, sync::oneshot, Future, Sink as _, Stream as _};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
@@ -92,7 +92,7 @@ impl Oauth2Redirect {
 
 #[derive(serde::Deserialize)]
 pub struct PutSetting {
-    value: String,
+    value: serde_json::Value,
 }
 
 /// API to manage device.
@@ -101,7 +101,7 @@ struct Api {
     player: Arc<RwLock<Option<player::PlayerClient>>>,
     token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
     after_streams: db::AfterStreams,
-    settings: db::Settings,
+    settings: settings::Settings,
 }
 
 impl Api {
@@ -225,7 +225,11 @@ impl Api {
     }
 
     /// Delete the given setting by key.
-    fn edit_setting(&self, key: &str, value: String) -> Result<impl warp::Reply, failure::Error> {
+    fn edit_setting(
+        &self,
+        key: &str,
+        value: serde_json::Value,
+    ) -> Result<impl warp::Reply, failure::Error> {
         self.settings.set_json(key, value)?;
         Ok(warp::reply::json(&EMPTY))
     }
@@ -236,7 +240,7 @@ pub fn setup(
     web_root: Option<&Path>,
     bus: Arc<bus::Bus>,
     after_streams: db::AfterStreams,
-    settings: db::Settings,
+    settings: settings::Settings,
 ) -> Result<(Server, BoxFuture<(), failure::Error>), failure::Error> {
     let addr: SocketAddr = str::parse(&format!("0.0.0.0:12345"))?;
 
