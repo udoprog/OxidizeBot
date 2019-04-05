@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.4...HEAD
+
+## [0.2.4]
+
 ### Added
 - Web-based overlay with current song ([#22]).
 - Player will no longer pause the current song (if it's playing) and will instead synchronize the state of the player with Spotify ([#18]).
@@ -40,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#24]: https://github.com/udoprog/setmod/issues/24
 [#25]: https://github.com/udoprog/setmod/issues/25
 
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.3...HEAD
+[0.2.4]: https://github.com/udoprog/setmod/compare/0.2.3...0.2.4
 
 ## [0.2.3]
 
