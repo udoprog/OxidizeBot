@@ -1,18 +1,10 @@
-import {Spinner} from "../utils.js";
 import React from "react";
+import {Spinner} from "../utils.js";
 import {Form, Button, Alert, Table, ButtonGroup} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+import * as types from "./Settings/Types.js";
 
 const SECRET_PREFIX = "secrets/";
-
-function validJson(json) {
-  try {
-    JSON.parse(json);
-    return true;
-  } catch(e) {
-    return false;
-  }
-}
 
 function ConfirmButtons(props) {
   let confirmDisabled = props.confirmDisabled || false;
@@ -65,6 +57,31 @@ export default class Settings extends React.Component {
 
     this.api.settings()
       .then(data => {
+        data = data.map(d => {
+          switch (d.type) {
+            case "duration":
+              return {
+                key: d.key,
+                value: types.Duration.parse(d.value),
+              };
+            case "boolean":
+              return {
+                key: d.key,
+                value: new types.Boolean(d.value),
+              };
+            case "number":
+              return {
+                key: d.key,
+                value: new types.Number(d.value),
+              };
+            default:
+              return {
+                key: d.key,
+                value: new types.Raw(d.value),
+              };
+          }
+        });
+
         this.setState({
           loading: false,
           error: null,
@@ -113,10 +130,9 @@ export default class Settings extends React.Component {
     this.setState({
       loading: true,
       editKey: null,
+      editType: null,
       editValue: null,
     });
-
-    value = JSON.parse(value);
 
     this.api.editSetting(key, value)
       .then(() => {
@@ -179,7 +195,8 @@ export default class Settings extends React.Component {
                     </Button>
                     <Button size="sm" variant="info" className="action" onClick={() => this.setState({
                       editKey: setting.key,
-                      editValue: JSON.stringify(setting.value),
+                      editType: setting.value.type(),
+                      editValue: setting.value.toString(),
                     })}>
                       <FontAwesomeIcon icon="edit" />
                     </Button>
@@ -191,7 +208,7 @@ export default class Settings extends React.Component {
                 if (isSecret) {
                   value = <b title="Secret value, only showed when editing">****</b>;
                 } else {
-                  value = <code>{JSON.stringify(setting.value)}</code>;
+                  value = <code>{setting.value.toString()}</code>;
                 }
 
                 if (this.state.deleteKey === setting.key) {
@@ -207,10 +224,15 @@ export default class Settings extends React.Component {
                 }
 
                 if (this.state.editKey === setting.key) {
-                  let isValid = validJson(this.state.editValue);
+                  let isValid = this.state.editType.validate(this.state.editValue);
+
+                  let save = () => {
+                    let value = this.state.editType.parse(this.state.editValue);
+                    this.edit(this.state.editKey, value.serialize());
+                  };
 
                   value = (
-                    <Form onSubmit={() => this.edit(this.state.editKey, this.state.editValue)}>
+                    <Form onSubmit={() => save()}>
                       <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.state.editValue} onChange={e => {
                         this.setState({
                           editValue: e.target.value,
@@ -222,7 +244,7 @@ export default class Settings extends React.Component {
                   buttons = <ConfirmButtons
                     what="edit"
                     confirmDisabled={!isValid}
-                    onConfirm={() => this.edit(this.state.editKey, this.state.editValue)}
+                    onConfirm={() => save()}
                     onCancel={() => {
                       this.setState({
                         editKey: null,

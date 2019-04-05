@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - No longer raise an error on bad input.
 - UI is now built in React ([#23]).
   * This adds the `-WebRoot` option to [`tools/setmod.ps1`] to override where to load files from for development purposes.
+- `.oauth2` state is now stored in the database under settings.
 
 ### Removed
 - Removed `!counter` in favor of `!command` with same functionality. Using the `{{count}}` variable in the template will cause the count to be incremented.

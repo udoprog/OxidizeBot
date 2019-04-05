@@ -174,10 +174,12 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     let mut tokens = vec![];
 
+    let token_settings = settings.scoped(&["secrets", "oauth2"]);
+
     tokens.push({
         let flow = config
             .spotify
-            .new_flow_builder(web.clone(), "spotify", &root, &secrets)?
+            .new_flow_builder(web.clone(), "spotify", &token_settings, &secrets)?
             .with_scopes(vec![
                 String::from("playlist-read-collaborative"),
                 String::from("playlist-read-private"),
@@ -193,7 +195,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     tokens.push({
         let flow = config
             .twitch
-            .new_flow_builder(web.clone(), "twitch-streamer", &root, &secrets)?
+            .new_flow_builder(web.clone(), "twitch-streamer", &token_settings, &secrets)?
             .with_scopes(vec![
                 String::from("channel_editor"),
                 String::from("channel_read"),
@@ -206,7 +208,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     if config.irc.is_some() {
         let flow = config
             .twitch
-            .new_flow_builder(web.clone(), "twitch-bot", &root, &secrets)?
+            .new_flow_builder(web.clone(), "twitch-bot", &token_settings, &secrets)?
             .with_scopes(vec![
                 String::from("channel:moderate"),
                 String::from("chat:edit"),

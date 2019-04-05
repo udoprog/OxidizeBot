@@ -1,4 +1,4 @@
-use crate::{utils::BoxFuture, web};
+use crate::{settings, utils::BoxFuture, web};
 use chrono::{DateTime, Utc};
 use failure::{format_err, ResultExt};
 use futures::{future, sync::oneshot, Async, Future, Poll, Stream as _};
@@ -9,8 +9,6 @@ use oauth2::{
 };
 use parking_lot::RwLock;
 use std::{
-    fs::{self, File},
-    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -155,8 +153,8 @@ pub fn twitch(
         token_url: Some(TokenUrl::new(Url::parse(
             "https://id.twitch.tv/oauth2/token",
         )?)),
-        scopes: vec![],
-        state_path: None,
+        scopes: Default::default(),
+        settings: Default::default(),
     })
 }
 
@@ -177,7 +175,7 @@ pub fn spotify(
             "https://accounts.spotify.com/api/token",
         )?)),
         scopes: Default::default(),
-        state_path: Default::default(),
+        settings: Default::default(),
     })
 }
 
@@ -254,7 +252,7 @@ pub struct FlowBuilder {
     auth_url: AuthUrl,
     token_url: Option<TokenUrl>,
     scopes: Vec<String>,
-    state_path: Option<PathBuf>,
+    settings: Option<settings::ScopedSettings>,
 }
 
 impl FlowBuilder {
@@ -264,9 +262,9 @@ impl FlowBuilder {
     }
 
     /// Configure a local cache file for token.
-    pub fn with_state_path(self, state_path: PathBuf) -> FlowBuilder {
+    pub fn with_settings(self, settings: settings::ScopedSettings) -> FlowBuilder {
         FlowBuilder {
-            state_path: Some(state_path),
+            settings: Some(settings),
             ..self
         }
     }
@@ -293,7 +291,7 @@ impl FlowBuilder {
             web: self.web.clone(),
             secrets_config,
             client: Arc::new(client),
-            state_path: Arc::new(self.state_path.map(|p| p.to_owned())),
+            settings: Arc::new(self.settings.clone()),
             scopes: Arc::new(self.scopes),
         }))
     }
@@ -304,7 +302,7 @@ pub struct Flow {
     web: web::Server,
     secrets_config: Arc<SecretsConfig>,
     client: Arc<Client>,
-    state_path: Arc<Option<PathBuf>>,
+    settings: Arc<Option<settings::ScopedSettings>>,
     scopes: Arc<Vec<String>>,
 }
 
@@ -369,21 +367,27 @@ impl Flow {
         self: Arc<Self>,
         what: String,
     ) -> BoxFuture<Option<Token>, failure::Error> {
-        let path = match self.state_path.as_ref() {
-            Some(path) => path,
+        let settings = match self.settings.as_ref() {
+            Some(settings) => settings,
             None => return Box::new(future::ok(None)),
         };
 
-        if !path.is_file() {
-            return Box::new(future::ok(None));
-        }
-
-        let token = match self.token_from_path(path) {
+        let data = match settings.get("token") {
             Ok(token) => token,
             Err(e) => {
-                log::warn!("failed to load saved token: {}: {}", path.display(), e);
+                log::warn!("failed to load saved token: {}", e);
                 return Box::new(future::ok(None));
             }
+        };
+
+        let data = match data {
+            Some(data) => data,
+            None => return Box::new(future::ok(None)),
+        };
+
+        let token = Token {
+            secrets_config: Arc::clone(&self.secrets_config),
+            data,
         };
 
         let expired = match token.expires_within(Duration::from_secs(60 * 10)) {
@@ -432,43 +436,16 @@ impl Flow {
                 .unwrap_or_default(),
         };
 
-        if let Some(path) = self.state_path.as_ref() {
-            if let Some(parent) = path.parent() {
-                if !parent.is_dir() {
-                    fs::create_dir_all(parent).with_context(|_| {
-                        format_err!("failed to create directory: {}", parent.display())
-                    })?;
-                }
-            }
-
-            self.token_to_path(path, &data).with_context(|_| {
-                failure::format_err!("failed to write token to: {}", path.display())
-            })?;
+        if let Some(settings) = self.settings.as_ref() {
+            settings
+                .set("token", &data)
+                .with_context(|_| failure::format_err!("failed to write token to"))?;
         }
 
         Ok(Token {
             secrets_config: Arc::clone(&self.secrets_config),
             data,
         })
-    }
-
-    /// Read token data from path.
-    fn token_from_path(&self, path: &Path) -> Result<Token, failure::Error> {
-        let f = File::open(path)?;
-        let data = serde_yaml::from_reader(f)?;
-
-        Ok(Token {
-            secrets_config: Arc::clone(&self.secrets_config),
-            data,
-        })
-    }
-
-    /// Write token to path.
-    fn token_to_path(&self, path: &Path, data: &TokenData) -> Result<(), failure::Error> {
-        let f = File::create(path)?;
-        log::trace!("Writing: {}", path.display());
-        serde_yaml::to_writer(f, data)?;
-        Ok(())
     }
 }
 

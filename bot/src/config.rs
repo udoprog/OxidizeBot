@@ -1,7 +1,9 @@
-use crate::{currency, current_song, features, irc, module, player, secrets, themes, web};
+use crate::{
+    currency, current_song, features, irc, module, player, secrets, settings, themes, web,
+};
 use hashbrown::HashSet;
 use relative_path::RelativePathBuf;
-use std::{marker, path::Path, sync::Arc};
+use std::{marker, sync::Arc};
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Config {
@@ -90,10 +92,6 @@ pub trait Oauth2Defaults {
         web: web::Server,
         secrets_config: Arc<crate::oauth2::SecretsConfig>,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error>;
-
-    fn default_state_path() -> RelativePathBuf {
-        RelativePathBuf::from(".oauth2")
-    }
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -101,8 +99,6 @@ pub struct Oauth2Config<T>
 where
     T: Oauth2Defaults,
 {
-    #[serde(default = "T::default_state_path")]
-    state_path: RelativePathBuf,
     #[serde(default)]
     marker: marker::PhantomData<T>,
 }
@@ -116,17 +112,12 @@ where
         &self,
         web: web::Server,
         name: &str,
-        root: &Path,
+        settings: &settings::ScopedSettings,
         secrets: &secrets::Secrets,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
         let secrets = secrets.load(T::SECRETS_KEY)?;
-
-        let state_path = self
-            .state_path
-            .join(format!("{}.oauth2.yml", name))
-            .to_path(root);
-
-        Ok(T::new_flow_builder(web, secrets)?.with_state_path(state_path))
+        let settings = settings.scoped(&[name]);
+        Ok(T::new_flow_builder(web, secrets)?.with_settings(settings.clone()))
     }
 }
 
@@ -136,7 +127,6 @@ where
 {
     fn default() -> Oauth2Config<T> {
         Oauth2Config {
-            state_path: T::default_state_path(),
             marker: Default::default(),
         }
     }

@@ -2,10 +2,11 @@
 
 use crate::db;
 use diesel::prelude::*;
-use futures::{sync::mpsc, Async, Poll};
+use futures::{sync::mpsc, Async, Poll, Stream as FuturesStream};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
-use std::{fmt, sync::Arc};
+use std::sync::Arc;
+use tokio_core::reactor::Core;
 
 const SEPARATOR: &'static str = "/";
 
@@ -230,6 +231,33 @@ impl Settings {
 
         Ok((self.stream(key, default, ty), value))
     }
+
+    /// Get a synchronized variable for the given configuration key.
+    pub fn sync_var<T>(
+        &self,
+        core: &mut Core,
+        key: &str,
+        default: T,
+        ty: Type,
+    ) -> Result<Arc<RwLock<T>>, failure::Error>
+    where
+        T: 'static + Send + Sync + Clone + serde::Serialize + serde::de::DeserializeOwned,
+    {
+        let (stream, value) = self.init_and_stream(key, default, ty)?;
+
+        let value = Arc::new(RwLock::new(value));
+
+        core.runtime().executor().spawn(stream.for_each({
+            let value = value.clone();
+
+            move |update| {
+                *value.write() = update;
+                Ok(())
+            }
+        }));
+
+        Ok(value)
+    }
 }
 
 #[derive(Clone)]
@@ -273,6 +301,47 @@ impl ScopedSettings {
         scope.push(key.to_string());
         scope.join(SEPARATOR)
     }
+
+    /// Initialize the value from the database.
+    pub fn init_and_stream<T>(
+        &self,
+        key: &str,
+        default: T,
+        ty: Type,
+    ) -> Result<(Stream<T>, T), failure::Error>
+    where
+        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
+    {
+        self.settings.init_and_stream(&self.scope(key), default, ty)
+    }
+
+    /// Get a synchronized variable for the given configuration key.
+    pub fn sync_var<T>(
+        &self,
+        core: &mut Core,
+        key: &str,
+        default: T,
+        ty: Type,
+    ) -> Result<Arc<RwLock<T>>, failure::Error>
+    where
+        T: 'static + Send + Sync + Clone + serde::Serialize + serde::de::DeserializeOwned,
+    {
+        self.settings.sync_var(core, &self.scope(key), default, ty)
+    }
+
+    /// Scope the settings a bit more.
+    pub fn scoped<S>(&self, add: impl IntoIterator<Item = S>) -> ScopedSettings
+    where
+        S: AsRef<str>,
+    {
+        let mut scope = self.scope.clone();
+        scope.extend(add.into_iter().map(|s| s.as_ref().to_string()));
+
+        ScopedSettings {
+            settings: self.settings.clone(),
+            scope,
+        }
+    }
 }
 
 /// Get updates for a specific setting.
@@ -298,7 +367,7 @@ impl<T> Drop for Stream<T> {
 
 impl<T> futures::Stream for Stream<T>
 where
-    T: Clone + fmt::Debug + serde::de::DeserializeOwned,
+    T: Clone + serde::de::DeserializeOwned,
 {
     type Item = T;
     type Error = ();

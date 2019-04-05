@@ -219,8 +219,8 @@ impl Api {
     }
 
     /// Delete the given setting by key.
-    fn delete_setting(&self, key: String) -> Result<impl warp::Reply, failure::Error> {
-        self.settings.clear(&key)?;
+    fn delete_setting(&self, key: &str) -> Result<impl warp::Reply, failure::Error> {
+        self.settings.clear(key)?;
         Ok(warp::reply::json(&EMPTY))
     }
 
@@ -302,10 +302,15 @@ pub fn setup(
             .boxed();
 
         let route = route
-            .or(warp::delete2().and(path!("setting" / String)).and_then({
-                let api = api.clone();
-                move |key| api.delete_setting(key).map_err(warp::reject::custom)
-            }))
+            .or(warp::delete2()
+                .and(warp::path("setting").and(warp::filters::path::tail()))
+                .and_then({
+                    let api = api.clone();
+                    move |key: warp::filters::path::Tail| {
+                        api.delete_setting(key.as_str())
+                            .map_err(warp::reject::custom)
+                    }
+                }))
             .boxed();
 
         let route = route
