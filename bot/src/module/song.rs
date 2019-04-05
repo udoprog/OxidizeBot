@@ -1,6 +1,6 @@
 use crate::{command, irc, module, player, track_id, utils, utils::BoxFuture};
 use futures::{future, Future, Stream as _};
-use std::{sync::Arc, time};
+use std::sync::Arc;
 
 const EXAMPLE_SEARCH: &'static str = "queen we will rock you";
 
@@ -459,7 +459,7 @@ impl Default for Config {
 }
 
 fn default_cooldown() -> utils::Cooldown {
-    utils::Cooldown::from_duration(time::Duration::from_secs(5))
+    utils::Cooldown::from_duration(utils::Duration::seconds(5))
 }
 
 pub struct Module {

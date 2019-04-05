@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use failure::format_err;
 use futures::Future as _;
 use parking_lot::RwLock;
-use std::{sync::Arc, time};
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Reward {
@@ -139,7 +139,7 @@ pub struct Config {
 }
 
 fn default_cooldown() -> utils::Cooldown {
-    utils::Cooldown::from_duration(time::Duration::from_secs(60))
+    utils::Cooldown::from_duration(utils::Duration::seconds(60))
 }
 
 impl Module {

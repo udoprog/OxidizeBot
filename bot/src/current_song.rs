@@ -11,8 +11,8 @@ pub struct CurrentSong {
     #[serde(default)]
     not_playing: Option<String>,
     /// Update frequency.
-    #[serde(default, deserialize_with = "utils::deserialize_duration")]
-    update_interval: time::Duration,
+    #[serde(default)]
+    update_interval: utils::Duration,
 }
 
 impl CurrentSong {
@@ -63,11 +63,11 @@ impl CurrentSong {
     }
 
     /// Get the current update frequency, if present.
-    pub fn update_interval(&self) -> Option<&time::Duration> {
-        if self.update_interval.as_secs() == 0 {
+    pub fn update_interval(&self) -> Option<time::Duration> {
+        if self.update_interval.is_empty() {
             return None;
         }
 
-        Some(&self.update_interval)
+        Some(self.update_interval.as_std())
     }
 }

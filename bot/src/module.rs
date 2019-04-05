@@ -63,6 +63,7 @@ pub struct HookContext<'a> {
     pub futures: &'a mut Vec<utils::BoxFuture<(), failure::Error>>,
     pub stream_info: &'a Arc<RwLock<stream_info::StreamInfo>>,
     pub sender: &'a irc::Sender,
+    pub settings: &'a db::Settings,
 }
 
 pub trait Module: 'static {

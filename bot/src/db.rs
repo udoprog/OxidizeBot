@@ -5,7 +5,7 @@ pub mod models;
 mod persisted_set;
 mod promotions;
 mod schema;
-mod settings;
+pub mod settings;
 mod words;
 
 use crate::player;

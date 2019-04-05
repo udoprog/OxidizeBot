@@ -6,7 +6,7 @@ use tokio::timer;
 
 enum Event {
     /// Set the countdown.
-    Set(time::Duration, template::Template),
+    Set(utils::Duration, template::Template),
     /// Clear the countdown.
     Clear,
 }
@@ -22,7 +22,7 @@ impl command::Handler for Handler {
         match ctx.next() {
             Some("set") => {
                 let duration = match ctx.next() {
-                    Some(duration) => match utils::parse_duration(duration) {
+                    Some(duration) => match str::parse::<utils::Duration>(duration) {
                         Ok(duration) => duration,
                         Err(_) => {
                             ctx.respond("Countdown not added, Bad <duration> :(");
@@ -120,9 +120,9 @@ struct CountdownFuture {
 }
 
 struct Current {
-    duration: time::Duration,
+    duration: utils::Duration,
     template: template::Template,
-    elapsed: time::Duration,
+    elapsed: utils::Duration,
     interval: timer::Interval,
     path: PathBuf,
 }
@@ -130,13 +130,10 @@ struct Current {
 impl Current {
     fn write(&mut self) -> Result<(), failure::Error> {
         let mut f = fs::File::create(&self.path)?;
-        let remaining = self
-            .duration
-            .checked_sub(self.elapsed.clone())
-            .unwrap_or_default();
-        let remaining = utils::digital_duration(&remaining);
-        let elapsed = utils::digital_duration(&self.elapsed);
-        let duration = utils::digital_duration(&self.duration);
+        let remaining = self.duration.saturating_sub(self.elapsed.clone());
+        let remaining = remaining.as_digital();
+        let elapsed = self.elapsed.as_digital();
+        let duration = self.duration.as_digital();
 
         self.template.render(
             &mut f,
@@ -189,7 +186,7 @@ impl Stream for Current {
         match self.interval.poll()? {
             Async::Ready(None) => failure::bail!("interval timer ended"),
             Async::Ready(Some(_)) => {
-                self.elapsed += time::Duration::from_secs(1);
+                self.elapsed += utils::Duration::seconds(1);
 
                 if self.elapsed >= self.duration {
                     return Ok(Async::Ready(None));

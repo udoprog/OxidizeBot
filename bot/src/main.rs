@@ -304,6 +304,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             global_bus,
             modules: &modules,
             shutdown,
+            settings,
         }
         .run()?;
 

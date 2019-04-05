@@ -1,4 +1,4 @@
-use crate::{db, template};
+use crate::{db, template, utils};
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use failure::{format_err, ResultExt as _};
@@ -22,12 +22,8 @@ trait Backend: Clone + Send + Sync {
     fn list(&self) -> Result<Vec<db::models::Promotion>, failure::Error>;
 
     /// Insert or update an existing promotion.
-    fn edit(
-        &self,
-        key: &Key,
-        frequency: chrono::Duration,
-        text: &str,
-    ) -> Result<(), failure::Error>;
+    fn edit(&self, key: &Key, frequency: utils::Duration, text: &str)
+        -> Result<(), failure::Error>;
 
     /// Delete the given promotion from the db.
     fn delete(&self, key: &Key) -> Result<bool, failure::Error>;
@@ -43,7 +39,7 @@ impl Backend for super::Database {
     fn edit(
         &self,
         key: &Key,
-        frequency: chrono::Duration,
+        frequency: utils::Duration,
         text: &str,
     ) -> Result<(), failure::Error> {
         use db::schema::promotions::dsl;
@@ -143,7 +139,7 @@ impl Promotions {
             })?;
 
             let key = Key::new(promotion.channel.as_str(), promotion.name.as_str());
-            let frequency = chrono::Duration::seconds(promotion.frequency as i64);
+            let frequency = utils::Duration::seconds(promotion.frequency as u64);
             let promoted_at = promotion
                 .promoted_at
                 .map(|d| DateTime::<Utc>::from_utc(d, Utc));
@@ -170,7 +166,7 @@ impl Promotions {
         &self,
         channel: &str,
         name: &str,
-        frequency: chrono::Duration,
+        frequency: utils::Duration,
         text: &str,
     ) -> Result<(), failure::Error> {
         let key = Key::new(channel, name);
@@ -321,7 +317,7 @@ impl Key {
 #[derive(Debug)]
 pub struct Promotion {
     pub key: Key,
-    pub frequency: chrono::Duration,
+    pub frequency: utils::Duration,
     pub promoted_at: Option<DateTime<Utc>>,
     pub template: template::Template,
 }

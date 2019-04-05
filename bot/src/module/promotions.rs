@@ -1,7 +1,7 @@
 use crate::{command, db, irc, module, utils};
 use chrono::Utc;
-use futures::{future, Future as _, Stream as _};
-use std::{sync::Arc, time};
+use futures::{future, Async, Future, Poll, Stream as _};
+use std::sync::Arc;
 use tokio_timer::Interval;
 
 pub struct Handler {
@@ -38,12 +38,9 @@ impl command::Handler for Handler {
                 };
 
                 let frequency = match ctx.next() {
-                    Some(frequency) => match utils::parse_duration(frequency)
-                        .map_err(|_| ())
-                        .and_then(|d| chrono::Duration::from_std(d).map_err(|_| ()))
-                    {
+                    Some(frequency) => match str::parse::<utils::Duration>(frequency) {
                         Ok(frequency) => frequency,
-                        Err(()) => {
+                        Err(_) => {
                             ctx.respond(format!("Bad <frequency>: {}", frequency));
                             return Ok(());
                         }
@@ -106,20 +103,17 @@ impl command::Handler for Handler {
 }
 
 pub struct Module {
-    frequency: time::Duration,
+    frequency: utils::Duration,
 }
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Config {
-    #[serde(
-        default = "default_duration",
-        deserialize_with = "utils::deserialize_duration"
-    )]
-    frequency: time::Duration,
+    #[serde(default = "default_duration")]
+    frequency: utils::Duration,
 }
 
-fn default_duration() -> time::Duration {
-    time::Duration::from_secs(5 * 60)
+fn default_duration() -> utils::Duration {
+    utils::Duration::seconds(5 * 60)
 }
 
 impl Module {
@@ -139,6 +133,7 @@ impl super::Module for Module {
             futures,
             sender,
             irc_config,
+            settings,
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
@@ -149,75 +144,126 @@ impl super::Module for Module {
             },
         );
 
+        let (setting, frequency) =
+            settings.init_and_stream("promotions/frequency", self.frequency.clone())?;
+
         let promotions = promotions.clone();
         let sender = sender.clone();
         let channel = irc_config.channel.to_string();
 
-        let future = Box::new(
-            Interval::new_interval(self.frequency.clone())
-                .map_err(|_| ())
-                .for_each(move |_| {
-                    let promotions = promotions.clone();
-                    let sender = sender.clone();
-                    let channel = channel.clone();
+        let interval = Interval::new_interval(frequency.as_std());
 
-                    tokio::spawn(future::lazy({
-                        move || {
-                            if let Err(e) = promote(promotions, sender, &channel) {
-                                log::error!("failed to run promotions: {}", e);
-                            }
+        futures.push(Box::new(PromotionFuture {
+            interval,
+            setting,
+            promotions: promotions.clone(),
+            sender: sender.clone(),
+            channel: channel.clone(),
+        }));
 
-                            Ok(())
-                        }
-                    }))
-                })
-                .map_err(|()| failure::format_err!("interval timer failed")),
-        ) as utils::BoxFuture<(), failure::Error>;
+        Ok(())
+    }
+}
 
-        futures.push(future);
+struct PromotionFuture {
+    interval: tokio_timer::Interval,
+    // channel for configuration updates.
+    setting: db::settings::Stream<utils::Duration>,
+    promotions: db::Promotions,
+    sender: irc::Sender,
+    channel: String,
+}
 
-        return Ok(());
+impl Future for PromotionFuture {
+    type Item = ();
+    type Error = failure::Error;
 
-        /// Run the next promotion.
-        fn promote(
-            promotions: db::Promotions,
-            sender: irc::Sender,
-            channel: &str,
-        ) -> Result<(), failure::Error> {
-            if let Some(p) = pick(promotions.list(channel)) {
-                let text = p.render(&PromoData { channel })?;
-                promotions.bump_promoted_at(&*p)?;
-                sender.privmsg(channel, text);
-            }
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        loop {
+            let mut setting_not_ready = false;
+            let mut interval_not_ready = false;
 
-            Ok(())
-        }
+            let rx = match self.setting.poll() {
+                Ok(rx) => rx,
+                Err(_) => failure::bail!("rx queue errored"),
+            };
 
-        #[derive(Debug, serde::Serialize)]
-        struct PromoData<'a> {
-            channel: &'a str,
-        }
-
-        /// Pick the best promo.
-        fn pick(mut promotions: Vec<Arc<db::Promotion>>) -> Option<Arc<db::Promotion>> {
-            promotions.sort_by(|a, b| a.promoted_at.cmp(&b.promoted_at));
-
-            let now = Utc::now();
-
-            for p in promotions {
-                let promoted_at = match p.promoted_at.as_ref() {
-                    None => return Some(p),
-                    Some(promoted_at) => promoted_at,
-                };
-
-                if now.clone().signed_duration_since(promoted_at.clone()) < p.frequency {
-                    continue;
+            match rx {
+                Async::NotReady => setting_not_ready = true,
+                Async::Ready(None) => failure::bail!("rx queue ended"),
+                Async::Ready(Some(interval)) => {
+                    self.interval = tokio_timer::Interval::new_interval(interval.as_std());
                 }
-
-                return Some(p);
             }
 
-            None
+            let interval = match self.interval.poll() {
+                Ok(interval) => interval,
+                Err(_) => failure::bail!("interval queue errored"),
+            };
+
+            match interval {
+                Async::NotReady => interval_not_ready = true,
+                Async::Ready(None) => failure::bail!("interval queue ended"),
+                Async::Ready(Some(_)) => {
+                    let promotions = self.promotions.clone();
+                    let sender = self.sender.clone();
+                    let channel = self.channel.clone();
+
+                    tokio::spawn(future::lazy(move || {
+                        if let Err(e) = promote(promotions, sender, &channel) {
+                            log::error!("failed to send promotion: {}", e);
+                        }
+
+                        Ok(())
+                    }));
+                }
+            }
+
+            if setting_not_ready && interval_not_ready {
+                return Ok(Async::NotReady);
+            }
         }
     }
+}
+
+/// Run the next promotion.
+fn promote(
+    promotions: db::Promotions,
+    sender: irc::Sender,
+    channel: &str,
+) -> Result<(), failure::Error> {
+    if let Some(p) = pick(promotions.list(channel)) {
+        let text = p.render(&PromoData { channel })?;
+        promotions.bump_promoted_at(&*p)?;
+        sender.privmsg(channel, text);
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, serde::Serialize)]
+struct PromoData<'a> {
+    channel: &'a str,
+}
+
+/// Pick the best promo.
+fn pick(mut promotions: Vec<Arc<db::Promotion>>) -> Option<Arc<db::Promotion>> {
+    promotions.sort_by(|a, b| a.promoted_at.cmp(&b.promoted_at));
+
+    let now = Utc::now();
+
+    for p in promotions {
+        let promoted_at = match p.promoted_at.as_ref() {
+            None => return Some(p),
+            Some(promoted_at) => promoted_at,
+        };
+
+        if now.clone().signed_duration_since(promoted_at.clone()) < p.frequency.as_chrono() {
+            continue;
+        }
+
+        return Some(p);
+    }
+
+    None
 }

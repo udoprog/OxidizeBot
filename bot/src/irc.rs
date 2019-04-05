@@ -58,7 +58,7 @@ pub struct Config {
 }
 
 fn default_cooldown() -> utils::Cooldown {
-    utils::Cooldown::from_duration(time::Duration::from_secs(15))
+    utils::Cooldown::from_duration(utils::Duration::seconds(15))
 }
 
 /// Helper struct to construct IRC integration.
@@ -78,6 +78,7 @@ pub struct Irc<'a> {
     pub global_bus: Arc<bus::Bus>,
     pub modules: &'a [Box<dyn module::Module>],
     pub shutdown: utils::Shutdown,
+    pub settings: db::Settings,
 }
 
 impl Irc<'_> {
@@ -101,6 +102,7 @@ impl Irc<'_> {
             global_bus,
             modules,
             shutdown,
+            settings,
             ..
         } = self;
 
@@ -155,6 +157,7 @@ impl Irc<'_> {
                 futures: &mut futures,
                 stream_info: &stream_info,
                 sender: &sender,
+                settings: &settings,
             })?;
         }
 

@@ -70,8 +70,8 @@ pub struct Config {
     #[serde(default)]
     device: Option<String>,
     /// Interval at which to try to sync the remote player with the local state.
-    #[serde(default, deserialize_with = "utils::deserialize_duration")]
-    sync_player_interval: Duration,
+    #[serde(default)]
+    sync_player_interval: utils::Duration,
 }
 
 fn default_true() -> bool {
@@ -199,9 +199,9 @@ pub fn run(
         None => None,
     };
 
-    let sync_player_interval = if config.sync_player_interval.as_secs() > 0 {
+    let sync_player_interval = if !config.sync_player_interval.is_empty() {
         Some(Box::new(
-            tokio_timer::Interval::new_interval(config.sync_player_interval.clone())
+            tokio_timer::Interval::new_interval(config.sync_player_interval.as_std())
                 .map_err(|_| failure::format_err!("failed to run sync interval"))
                 .and_then({
                     let spotify = spotify.clone();
@@ -254,14 +254,9 @@ pub fn run(
 
     core.runtime().executor().spawn(stream.for_each({
         let max_songs_per_user = max_songs_per_user.clone();
-        let default = config.max_songs_per_user;
 
         move |value| {
-            *max_songs_per_user.write() = match value {
-                db::Event::Set(value) => value,
-                db::Event::Clear => default,
-            };
-
+            *max_songs_per_user.write() = value;
             Ok(())
         }
     }));

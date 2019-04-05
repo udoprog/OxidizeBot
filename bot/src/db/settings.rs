@@ -3,7 +3,7 @@ use futures::{sync::mpsc, Async, Poll};
 use hashbrown::{hash_map, HashMap};
 use parking_lot::RwLock;
 use std::{
-    fmt, marker,
+    fmt,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -184,7 +184,10 @@ impl Settings {
     }
 
     /// Subscribe for events on the given key.
-    pub fn stream<T>(&self, key: &str) -> Stream<T> {
+    pub fn stream<T>(&self, key: &str, default: T) -> Stream<T>
+    where
+        T: Clone,
+    {
         let id = self.id_gen.fetch_add(1, Ordering::SeqCst);
 
         let (tx, rx) = mpsc::unbounded();
@@ -199,11 +202,11 @@ impl Settings {
         m.insert(id, tx);
 
         Stream {
+            default,
             settings: self.clone(),
             id,
             key: key.to_string(),
             rx,
-            marker: marker::PhantomData,
         }
     }
 
@@ -214,17 +217,17 @@ impl Settings {
         default: T,
     ) -> Result<(Stream<T>, T), failure::Error>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned,
+        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
         let value = match self.get::<T>(key)? {
             Some(value) => value,
             None => {
                 self.set(key, &default)?;
-                default
+                default.clone()
             }
         };
 
-        Ok((self.stream(key), value))
+        Ok((self.stream(key, default), value))
     }
 }
 
@@ -257,8 +260,11 @@ impl ScopedSettings {
     }
 
     /// Subscribe for events on the given key.
-    pub fn stream<T>(&self, key: &str) -> Stream<T> {
-        self.settings.stream(&self.scope(key))
+    pub fn stream<T>(&self, key: &str, default: T) -> Stream<T>
+    where
+        T: Clone,
+    {
+        self.settings.stream(&self.scope(key), default)
     }
 
     fn scope(&self, key: &str) -> String {
@@ -270,11 +276,11 @@ impl ScopedSettings {
 
 /// Get updates for a specific setting.
 pub struct Stream<T> {
+    default: T,
     settings: Settings,
     id: SubId,
     key: String,
     rx: mpsc::UnboundedReceiver<Event<String>>,
-    marker: marker::PhantomData<T>,
 }
 
 impl<T> Drop for Stream<T> {
@@ -293,16 +299,16 @@ impl<T> Drop for Stream<T> {
 
 impl<T> futures::Stream for Stream<T>
 where
-    T: fmt::Debug + serde::de::DeserializeOwned,
+    T: Clone + fmt::Debug + serde::de::DeserializeOwned,
 {
-    type Item = Event<T>;
+    type Item = T;
     type Error = ();
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         loop {
             let n = match futures::try_ready!(self.rx.poll()) {
                 Some(e) => match e {
-                    Event::Clear => Some(Event::Clear),
+                    Event::Clear => Some(self.default.clone()),
                     Event::Set(value) => {
                         let value = match serde_json::from_str(&value) {
                             Ok(value) => value,
@@ -312,7 +318,7 @@ where
                             }
                         };
 
-                        Some(Event::Set(value))
+                        Some(value)
                     }
                 },
                 None => None,

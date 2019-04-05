@@ -2,7 +2,6 @@ use crate::{command, config, currency, db, module, twitch, utils};
 use failure::format_err;
 use futures::Future as _;
 use hashbrown::HashSet;
-use std::time;
 
 pub struct Handler {
     reward: i32,
@@ -91,7 +90,7 @@ pub struct Config {
 }
 
 fn default_cooldown() -> utils::Cooldown {
-    utils::Cooldown::from_duration(time::Duration::from_secs(60 * 10))
+    utils::Cooldown::from_duration(utils::Duration::seconds(60 * 10))
 }
 
 impl Module {
