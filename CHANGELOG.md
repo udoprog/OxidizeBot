@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - Removed `!counter` in favor of `!command` with same functionality. Using the `{{count}}` variable in the template will cause the count to be incremented.
-- `[[aliases]]` section from configuration. Aliases are now stored in the database.
+- `[[aliases]]` section from configuration. Aliases are now stored in the database. The first time you run the bot it will migrate all the aliases into the database.
 
 [`alias configuration`]: README.md#alias
 [`promotions configuration`]: README.md#promotions
