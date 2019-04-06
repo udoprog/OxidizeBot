@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [`tools/setmod.ps1`]: tools/setmod.ps1
 
 [#18]: https://github.com/udoprog/setmod/issues/18
+[#19]: https://github.com/udoprog/setmod/issues/19
 [#22]: https://github.com/udoprog/setmod/issues/22
 [#23]: https://github.com/udoprog/setmod/issues/23
 [#24]: https://github.com/udoprog/setmod/issues/24
