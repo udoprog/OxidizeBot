@@ -16,6 +16,7 @@ pub mod currency;
 mod current_song;
 pub mod db;
 pub mod features;
+mod idle;
 pub mod irc;
 pub mod module;
 pub mod oauth2;
