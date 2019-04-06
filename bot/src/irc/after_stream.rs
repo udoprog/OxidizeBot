@@ -13,6 +13,14 @@ impl command::Handler for AfterStream {
             return Ok(());
         }
 
+        if ctx.rest().trim().is_empty() {
+            ctx.respond(
+                "You add a reminder by calling !afterstream <reminder>, \
+                 like \"!afterstream remember that you are awesome <3\"",
+            );
+            return Ok(());
+        }
+
         self.after_streams
             .push(ctx.user.target, ctx.user.name, ctx.rest())?;
         ctx.respond("Reminder added.");
