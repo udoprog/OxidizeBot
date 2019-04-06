@@ -3,7 +3,7 @@ use crate::{
     currency::Currency,
     db,
     features::{Feature, Features},
-    module, oauth2, settings, stream_info, twitch, utils,
+    idle, module, oauth2, settings, stream_info, twitch, utils,
     utils::BoxFuture,
 };
 use failure::format_err;
@@ -143,6 +143,11 @@ impl Irc<'_> {
             stream_info
         };
 
+        let threshold =
+            settings.sync_var(core, "irc/idle-detection/threshold", 5, settings::Type::U32)?;
+
+        let idle = idle::Idle::new(threshold);
+
         for module in modules {
             module.hook(module::HookContext {
                 config,
@@ -158,6 +163,7 @@ impl Irc<'_> {
                 stream_info: &stream_info,
                 sender: &sender,
                 settings: &settings,
+                idle: &idle,
             })?;
         }
 
@@ -259,6 +265,7 @@ impl Irc<'_> {
             moderator_cooldown: irc_config.moderator_cooldown.clone(),
             handlers,
             shutdown,
+            idle,
         };
 
         futures.push(Box::new(
@@ -427,6 +434,8 @@ struct Handler {
     handlers: module::Handlers,
     /// Handler for shutting down the service.
     shutdown: utils::Shutdown,
+    /// Build idle detection.
+    idle: idle::Idle,
 }
 
 impl Handler {
@@ -607,6 +616,8 @@ impl Handler {
     pub fn handle<'local>(&mut self, m: &'local Message) -> Result<(), failure::Error> {
         match m.command {
             Command::PRIVMSG(ref source, ref message) => {
+                self.idle.seen();
+
                 let tags = Self::tags(&m);
                 let user = self.as_user(tags.clone(), m)?;
 

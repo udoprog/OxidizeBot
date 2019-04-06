@@ -1,4 +1,4 @@
-use crate::{command, db, irc, module, settings, utils};
+use crate::{command, db, idle, irc, module, settings, utils};
 use chrono::Utc;
 use futures::{future, Async, Future, Poll, Stream as _};
 use std::sync::Arc;
@@ -134,6 +134,7 @@ impl super::Module for Module {
             sender,
             irc_config,
             settings,
+            idle,
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
@@ -162,6 +163,7 @@ impl super::Module for Module {
             promotions: promotions.clone(),
             sender: sender.clone(),
             channel: channel.clone(),
+            idle: idle.clone(),
         }));
 
         Ok(())
@@ -175,6 +177,7 @@ struct PromotionFuture {
     promotions: db::Promotions,
     sender: irc::Sender,
     channel: String,
+    idle: idle::Idle,
 }
 
 impl Future for PromotionFuture {
@@ -208,6 +211,11 @@ impl Future for PromotionFuture {
                 Async::NotReady => interval_not_ready = true,
                 Async::Ready(None) => failure::bail!("interval queue ended"),
                 Async::Ready(Some(_)) => {
+                    if self.idle.is_idle() {
+                        log::trace!("channel is too idle to send a promotion");
+                        continue;
+                    }
+
                     let promotions = self.promotions.clone();
                     let sender = self.sender.clone();
                     let channel = self.channel.clone();

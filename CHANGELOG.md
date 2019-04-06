@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `!promo` now uses hangout detection determined by the `irc/idle-detection/threshold` setting.
+
 ### Changed
 - Fixed bug where `Settings` frontend would make the value into a string before sending it to backend.
 
