@@ -103,7 +103,7 @@ export class Number {
   }
 
   serialize() {
-    return this.data.toString();
+    return this.data;
   }
 
   toString() {
@@ -141,7 +141,7 @@ export class Boolean {
   }
 
   serialize() {
-    return this.data.toString();
+    return this.data;
   }
 
   toString() {

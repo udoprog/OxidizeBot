@@ -226,13 +226,19 @@ export default class Settings extends React.Component {
                 if (this.state.editKey === setting.key) {
                   let isValid = this.state.editType.validate(this.state.editValue);
 
-                  let save = () => {
-                    let value = this.state.editType.parse(this.state.editValue);
-                    this.edit(this.state.editKey, value.serialize());
+                  let save = (e) => {
+                    e.preventDefault();
+
+                    if (isValid) {
+                      let value = this.state.editType.parse(this.state.editValue);
+                      this.edit(this.state.editKey, value.serialize());
+                    }
+
+                    return false;
                   };
 
                   value = (
-                    <Form onSubmit={() => save()}>
+                    <Form onSubmit={e => save(e)}>
                       <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.state.editValue} onChange={e => {
                         this.setState({
                           editValue: e.target.value,
@@ -244,7 +250,7 @@ export default class Settings extends React.Component {
                   buttons = <ConfirmButtons
                     what="edit"
                     confirmDisabled={!isValid}
-                    onConfirm={() => save()}
+                    onConfirm={e => save(e)}
                     onCancel={() => {
                       this.setState({
                         editKey: null,
