@@ -206,7 +206,7 @@ pub fn run(
                 .and_then({
                     let spotify = spotify.clone();
                     move |_| {
-                        log::info!("Getting remote information on playback");
+                        log::trace!("Getting remote information on playback");
                         spotify.me_player().map(Some)
                     }
                 })
