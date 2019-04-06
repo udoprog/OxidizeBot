@@ -54,6 +54,56 @@ http://localhost:12345/redirect
 
 This is where the bot will be running while it is receiving tokens.
 
+## Settings
+
+SetMod is moving towards storing settings in the database.
+
+These settings are stored as slash-separated strings, like `player/max-songs-per-user`.
+
+The available settings are:
+
+#### `first-run`
+
+Indicates if the bit has run before or not.
+This is used to determine whether the bot should do first time behavior on startup (like opening the browser).
+
+#### `irc/idle-detection/threshold`
+
+Determines how many messages must bee seen to not consider the channel idle.
+
+Idle detection is used by the `!promo` feature.
+
+#### `migration/aliases-migrated`
+
+Indicates if `[[aliases]]` has been migrated from the configuration file.
+
+This setting can be removed if you remove the `[[aliases]]` section from the configuration file.
+
+#### `player/max-queue-length`
+
+The max queue length permitted by the player.
+
+#### `player/max-songs-per-user`
+
+The max number of songs permitted by non-mod users.
+
+#### `promotions/frequency`
+
+The frequency at which to run promotions.
+
+#### `secrets/*`
+
+Secret things which are stored in the database, like tokens.
+
+## Built-in Commands
+
+#### `!admin`
+
+All admin commands are restricted to **moderators**.
+
+* `!admin refresh-mods` - Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running.
+* `!admin shutdown` - Cause the mod to cleanly shut down, and hopefully being restarted by the management process.
+
 ## Bad Words
 
 Bad words filter looks at all words in a channel, converts them to singular and matches them phonetically against a word list.
@@ -78,19 +128,27 @@ It supports the following template variables:
 
 ## Features
 
+Note: In a future version, `features` will be removed in favor of `[[modules]]`. See below.
+
 Features are enabled per-channel like this:
 
-```yaml
-irc:
-  channels:
-    - name: "#mychannel"
-      features:
-        - name-of-feature
+```toml
+features = [
+    "name-of-feature"
+]
 ```
 
 Where `name-of-feature` is one of the features listed below.
 
-#### `admin`
+#### `admin` feature
+
+You enable the feature by adding `"admin"` to the `features` array in the configuration:
+
+```toml
+features = [
+  "admin",
+]
+```
 
 Enabled commands:
 
@@ -100,7 +158,15 @@ Enabled commands:
 * `!game` - Get the current game.
 * `!game <game>` - Update the game to be `<game>`.
 
-#### `command`
+#### `command` feature
+
+You enable the feature by adding `"command"` to the `features` array in the configuration:
+
+```toml
+features = [
+  "command",
+]
+```
 
 Allows setting and requesting custom commands.
 
@@ -118,7 +184,7 @@ Template variables that can be used in `<what>`:
 * `{{name}}` - The user who said the word.
 * `{{target}}` - The channel where the word was sent.
 
-#### `alias`
+#### `alias` feature
 
 This feature is enabled by default.
 
@@ -161,10 +227,17 @@ match = "!volume"
 replace = "!song volume {{rest}}"
 ```
 
+#### `afterstream` feature
 
-#### `afterstream`
+You enable the feature by adding `"afterstream"` to the `features` array in the configuration:
 
-Add an afterstream message.
+```toml
+features = [
+  "afterstream",
+]
+```
+
+Enabled adding afterstream messages.
 
 Afterstream messages keeps track of who added them and when.
 
@@ -174,14 +247,16 @@ Enabled commands:
 
 Afterstreams that are posted are made available in the UI at: http://localhost:12345/after-streams
 
-#### `admin`
 
-All admin commands are restricted to **moderators**.
+#### `song` feature
 
-* `!admin refresh-mods` - Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running.
-* `!admin shutdown` - Cause the mod to cleanly shut down, and hopefully being restarted by the management process.
+You enable the feature by adding `"song"` to the `features` array in the configuration:
 
-#### `song`
+```toml
+features = [
+  "song",
+]
+```
 
 Enables song playback through Spotify.
 
@@ -211,15 +286,38 @@ Enabled commands:
 * `!song when` - Find out when your song will play.
 * `!song when <user>` - Find out when the song for a specific user will play (**moderator**).
 
-#### `clip`
+#### `clip` feature
+
+You enable the feature by adding `"clip"` to the `features` array in the configuration:
+
+```toml
+features = [
+  "clip",
+]
+```
 
 The `clip` feature enables the `!clip` command.
 
 This command has a cooldown determined by the `[irc] clip_cooldown` configuration key (see above).
 
-#### `8ball`
+#### `8ball` feature
+
+You enable the feature by adding `"8ball"` to the `features` array in the configuration:
+
+```toml
+features = [
+  "8ball",
+]
+```
 
 Enables the Magic `!8ball` command. Cause it's MAGIC.
+
+## Modules
+
+Modules are defined in the `[[modules]]` sections of the configuration.
+
+They enable certain behavior of the bot, and are generally better than `features` since they allow adding configuration
+associated with the module.
 
 #### `swearjar`
 
