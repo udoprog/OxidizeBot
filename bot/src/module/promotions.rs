@@ -117,6 +117,10 @@ fn default_duration() -> utils::Duration {
 }
 
 impl Module {
+    pub fn ty(&self) -> &'static str {
+        "promotions"
+    }
+
     pub fn load(config: &Config) -> Result<Self, failure::Error> {
         Ok(Module {
             frequency: config.frequency.clone(),

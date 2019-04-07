@@ -2,6 +2,7 @@ use crate::{command, config, currency, db, idle, irc, settings, stream_info, twi
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
+use tokio_core::reactor::Core;
 
 #[derive(Default)]
 pub struct Handlers {
@@ -47,10 +48,13 @@ pub enum Config {
     Water(water::Config),
     #[serde(rename = "promotions")]
     Promotions(promotions::Config),
+    #[serde(rename = "gtav")]
+    Gtav(gtav::Config),
 }
 
 /// Context for a hook.
 pub struct HookContext<'a> {
+    pub core: &'a mut Core,
     pub config: &'a config::Config,
     pub irc_config: &'a irc::Config,
     pub db: &'a db::Database,
@@ -68,6 +72,11 @@ pub struct HookContext<'a> {
 }
 
 pub trait Module: 'static {
+    /// Get the type of the module as a string.
+    fn ty(&self) -> &'static str {
+        "unknown"
+    }
+
     /// Set up command handlers for this module.
     fn hook(&self, _: HookContext<'_>) -> Result<(), failure::Error> {
         Ok(())

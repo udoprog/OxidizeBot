@@ -92,6 +92,10 @@ impl Module {
 }
 
 impl super::Module for Module {
+    pub fn ty(&self) -> &'static str {
+        "countdown"
+    }
+
     /// Set up command handlers for this module.
     fn hook(
         &self,
