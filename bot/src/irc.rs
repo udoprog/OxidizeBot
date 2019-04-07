@@ -6,7 +6,7 @@ use crate::{
     idle, module, oauth2, settings, stream_info, twitch, utils,
     utils::BoxFuture,
 };
-use failure::format_err;
+use failure::{format_err, ResultExt as _};
 use futures::{
     future::{self, Future},
     stream::Stream,
@@ -149,7 +149,8 @@ impl Irc<'_> {
         let idle = idle::Idle::new(threshold);
 
         for module in modules {
-            module.hook(module::HookContext {
+            let result = module.hook(module::HookContext {
+                core,
                 config,
                 irc_config,
                 db: &db,
@@ -164,6 +165,10 @@ impl Irc<'_> {
                 sender: &sender,
                 settings: &settings,
                 idle: &idle,
+            });
+
+            result.with_context(|_| {
+                failure::format_err!("failed to initialize module: {}", module.ty())
             })?;
         }
 

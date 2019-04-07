@@ -12,6 +12,10 @@ pub struct Handler {
 }
 
 impl command::Handler for Handler {
+    pub fn ty(&self) -> &'static str {
+        "swearjar"
+    }
+
     fn handle<'m>(&mut self, ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         if !self.cooldown.is_open() {
             ctx.respond("A !swearjar command was recently issued, please wait a bit longer!");
