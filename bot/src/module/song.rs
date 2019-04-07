@@ -477,6 +477,10 @@ impl Module {
 }
 
 impl module::Module for Module {
+    fn ty(&self) -> &'static str {
+        "song"
+    }
+
     /// Set up command handlers for this module.
     fn hook(
         &self,

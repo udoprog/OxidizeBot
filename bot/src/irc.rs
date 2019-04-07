@@ -1,7 +1,5 @@
 use crate::{
-    bus, command, config,
-    currency::Currency,
-    db,
+    bus, command, config, currency, db,
     features::{Feature, Features},
     idle, module, oauth2, settings, stream_info, twitch, utils,
     utils::BoxFuture,
@@ -28,6 +26,7 @@ mod admin;
 mod after_stream;
 mod bad_word;
 mod clip;
+mod currency_admin;
 mod eight_ball;
 mod misc;
 
@@ -69,6 +68,7 @@ pub struct Irc<'a> {
     pub bot_twitch: twitch::Twitch,
     pub config: &'a config::Config,
     pub irc_config: &'a Config,
+    pub currency: Option<currency::Currency>,
     pub token: Arc<RwLock<oauth2::Token>>,
     pub commands: db::Commands,
     pub aliases: db::Aliases,
@@ -158,7 +158,7 @@ impl Irc<'_> {
                 aliases: &aliases,
                 promotions: &promotions,
                 handlers: &mut handlers,
-                currency: config.currency.as_ref(),
+                currency: self.currency.as_ref(),
                 twitch: &bot_twitch,
                 futures: &mut futures,
                 stream_info: &stream_info,
@@ -172,19 +172,19 @@ impl Irc<'_> {
             })?;
         }
 
-        if let Some(currency) = config.currency.as_ref() {
+        if let Some(currency) = self.currency.as_ref() {
+            handlers.insert(
+                &*currency.name,
+                currency_admin::Handler {
+                    currency: currency.clone(),
+                    db: db.clone(),
+                },
+            );
+
             let reward = 10;
             let interval = 60 * 10;
 
-            let future = reward_loop(
-                irc_config,
-                reward,
-                interval,
-                db.clone(),
-                streamer_twitch.clone(),
-                sender.clone(),
-                currency,
-            );
+            let future = reward_loop(irc_config, reward, interval, sender.clone(), currency);
 
             futures.push(Box::new(future));
         }
@@ -255,11 +255,9 @@ impl Irc<'_> {
         let mut handler = Handler {
             streamer: config.streamer.clone(),
             channel: irc_config.channel.clone(),
-            db,
             sender: sender.clone(),
             moderators: HashSet::default(),
             whitelisted_hosts: config.whitelisted_hosts.clone(),
-            currency: config.currency.clone(),
             commands,
             bad_words,
             global_bus,
@@ -295,10 +293,8 @@ fn reward_loop(
     config: &Config,
     reward: i32,
     interval: u64,
-    db: db::Database,
-    twitch: twitch::Twitch,
     sender: Sender,
-    currency: &Currency,
+    currency: &currency::Currency,
 ) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
     // Add currency timer.
     timer::Interval::new_interval(time::Duration::from_secs(interval))
@@ -306,37 +302,20 @@ fn reward_loop(
         // fetch all users.
         .and_then({
             let channel = config.channel.to_string();
+            let currency = currency.clone();
 
             move |_| {
                 log::trace!("running reward loop");
-
-                twitch.chatters(channel.as_str()).and_then(|chatters| {
-                    let mut u = HashSet::new();
-                    u.extend(chatters.viewers);
-                    u.extend(chatters.moderators);
-                    u.extend(chatters.broadcaster);
-
-                    if u.is_empty() {
-                        Err(format_err!("no chatters to reward"))
-                    } else {
-                        Ok(u)
-                    }
-                })
+                currency.add_channel_all(channel.as_str(), reward)
             }
-        })
-        // update database.
-        .and_then({
-            let channel = config.channel.to_string();
-
-            move |u| db.balances_increment(channel.as_str(), u, reward)
         })
         .map({
             let notify_rewards = config.notify_rewards;
             let channel = config.channel.to_string();
             let currency = currency.clone();
 
-            move |_| {
-                if notify_rewards {
+            move |count| {
+                if notify_rewards && count > 0 {
                     sender.privmsg(
                         channel.as_str(),
                         format!("/me has given {} {} to all viewers!", reward, currency.name),
@@ -409,16 +388,12 @@ struct Handler {
     streamer: String,
     /// Currench channel.
     channel: Arc<String>,
-    /// Database.
-    db: db::Database,
     /// Queue for sending messages.
     sender: Sender,
     /// Moderators.
     moderators: HashSet<String>,
     /// Whitelisted hosts for links.
     whitelisted_hosts: HashSet<String>,
-    /// Currency in use.
-    currency: Option<Currency>,
     /// All registered commands.
     commands: db::Commands,
     /// Bad words.
@@ -468,7 +443,7 @@ impl Handler {
         command: &str,
         user: User<'m>,
         it: &mut utils::Words<'m>,
-        alias: Option<&str>,
+        alias: Option<(&str, &str)>,
     ) -> Result<(), failure::Error> {
         match command {
             "ping" => {
@@ -487,22 +462,11 @@ impl Handler {
                         user,
                         it,
                         shutdown: &self.shutdown,
-                        alias,
+                        alias: command::Alias { alias },
                     };
 
                     handler.handle(ctx)?;
                     return Ok(());
-                }
-
-                if let Some(currency) = self.currency.as_ref() {
-                    if currency.name == other {
-                        let balance = self.db.balance_of(user.name)?.unwrap_or(0);
-                        user.respond(format!(
-                            "You have {balance} {name}.",
-                            balance = balance,
-                            name = currency.name
-                        ));
-                    }
                 }
             }
         }
@@ -634,7 +598,7 @@ impl Handler {
 
                 if let Some((m, a)) = a.as_ref() {
                     it = utils::Words::new(a.as_str());
-                    alias = Some(*m);
+                    alias = Some((*m, a.as_str()));
                 }
 
                 if let Some(command) = it.next() {

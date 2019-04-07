@@ -32,6 +32,7 @@ impl Handlers {
 pub mod alias_admin;
 pub mod command_admin;
 mod countdown;
+mod gtav;
 mod promotions;
 pub mod song;
 mod swearjar;
@@ -72,10 +73,8 @@ pub struct HookContext<'a> {
 }
 
 pub trait Module: 'static {
-    /// Get the type of the module as a string.
-    fn ty(&self) -> &'static str {
-        "unknown"
-    }
+    /// Type of the module as a string to help with diagnostics.
+    fn ty(&self) -> &'static str;
 
     /// Set up command handlers for this module.
     fn hook(&self, _: HookContext<'_>) -> Result<(), failure::Error> {
@@ -92,6 +91,7 @@ impl Config {
             Config::SwearJar(ref module) => Box::new(self::swearjar::Module::load(config, module)?),
             Config::Water(ref module) => Box::new(self::water::Module::load(config, module)?),
             Config::Promotions(ref module) => Box::new(self::promotions::Module::load(module)?),
+            Config::Gtav(ref module) => Box::new(self::gtav::Module::load(module)?),
         })
     }
 }

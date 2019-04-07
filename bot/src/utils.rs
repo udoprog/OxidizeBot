@@ -542,7 +542,7 @@ impl serde::Serialize for Duration {
 #[derive(Debug, Clone)]
 pub struct Cooldown {
     last_action_at: Option<time::Instant>,
-    cooldown: time::Duration,
+    cooldown: Duration,
 }
 
 impl Cooldown {
@@ -550,7 +550,7 @@ impl Cooldown {
     pub fn from_duration(duration: Duration) -> Self {
         Self {
             last_action_at: None,
-            cooldown: duration.as_std(),
+            cooldown: duration,
         }
     }
 
@@ -559,13 +559,22 @@ impl Cooldown {
         let now = time::Instant::now();
 
         if let Some(last_action_at) = self.last_action_at.as_ref() {
-            if now - *last_action_at < self.cooldown {
+            if now - *last_action_at < self.cooldown.as_std() {
                 return false;
             }
         }
 
         self.last_action_at = Some(now);
         return true;
+    }
+}
+
+impl serde::Serialize for Cooldown {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.cooldown.serialize(serializer)
     }
 }
 

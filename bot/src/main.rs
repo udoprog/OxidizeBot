@@ -290,12 +290,18 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
         futures.push(Box::new(future));
 
+        let currency = config
+            .currency
+            .clone()
+            .map(|c| c.into_currency(db.clone(), twitch.clone()));
+
         let future = irc::Irc {
             core: &mut core,
             db: db,
             streamer_twitch: twitch.clone(),
             bot_twitch: twitch::Twitch::new(bot_token.clone())?,
             config: &config,
+            currency,
             irc_config,
             token: bot_token,
             commands,
