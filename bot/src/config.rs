@@ -44,7 +44,7 @@ pub struct Config {
     pub api_url: Option<String>,
     /// Loyalty currency in use.
     #[serde(default)]
-    pub currency: Option<currency::Currency>,
+    pub currency: Option<currency::Config>,
     /// Modules to load.
     #[serde(default)]
     pub modules: Vec<module::Config>,

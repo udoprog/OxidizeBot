@@ -143,10 +143,6 @@ fn default_cooldown() -> utils::Cooldown {
 }
 
 impl Module {
-    pub fn ty(&self) -> &'static str {
-        "water"
-    }
-
     pub fn load(_config: &config::Config, module: &Config) -> Result<Self, failure::Error> {
         Ok(Module {
             cooldown: module.cooldown.clone(),
@@ -155,6 +151,10 @@ impl Module {
 }
 
 impl super::Module for Module {
+    fn ty(&self) -> &'static str {
+        "water"
+    }
+
     /// Set up command handlers for this module.
     fn hook(
         &self,

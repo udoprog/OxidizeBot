@@ -96,7 +96,7 @@ impl Module {
 }
 
 impl super::Module for Module {
-    pub fn ty(&self) -> &'static str {
+    fn ty(&self) -> &'static str {
         "alias"
     }
 

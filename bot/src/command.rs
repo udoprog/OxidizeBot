@@ -12,6 +12,30 @@ pub trait Handler {
     fn handle<'m>(&mut self, ctx: Context<'_, '_>) -> Result<(), failure::Error>;
 }
 
+/// The alias that was expanded for this command.
+pub struct Alias<'a> {
+    pub alias: Option<(&'a str, &'a str)>,
+}
+
+impl Alias<'_> {
+    /// Unwrap the given alias, or decode it.
+    pub fn unwrap_or(&self, default: &str) -> String {
+        let (alias, expanded) = match self.alias {
+            Some((alias, expanded)) => (alias, expanded),
+            None => return default.to_string(),
+        };
+
+        let mut out = Vec::new();
+        out.push(alias.to_string());
+
+        let skip = utils::Words::new(expanded).count();
+
+        out.extend(utils::Words::new(default).skip(skip).map(|s| s.to_string()));
+
+        out.join(" ")
+    }
+}
+
 /// Context for a single command invocation.
 pub struct Context<'a, 'm> {
     pub api_url: Option<&'a str>,
@@ -26,7 +50,7 @@ pub struct Context<'a, 'm> {
     pub user: irc::User<'m>,
     pub it: &'a mut utils::Words<'m>,
     pub shutdown: &'a utils::Shutdown,
-    pub alias: Option<&'a str>,
+    pub alias: Alias<'a>,
 }
 
 impl<'a, 'm> Context<'a, 'm> {

@@ -74,13 +74,13 @@ impl Database {
     }
 
     /// Find user balance.
-    pub fn balance_of(&self, name: &str) -> Result<Option<i32>, failure::Error> {
-        use self::schema::balances::dsl::*;
+    pub fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i32>, failure::Error> {
+        use self::schema::balances::dsl;
 
         let c = self.pool.get()?;
 
-        let b = balances
-            .filter(user.eq(name))
+        let b = dsl::balances
+            .filter(dsl::channel.eq(channel).and(dsl::user.eq(user)))
             .first::<models::Balance>(&c)
             .optional()?;
 
@@ -148,6 +148,8 @@ impl Database {
             let c = pool.get()?;
 
             for user in users {
+                let user = user.to_lowercase();
+
                 let filter = dsl::balances
                     .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&user)));
 
