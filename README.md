@@ -390,3 +390,49 @@ Enabled commands:
   - Example: `!promo edit discord 30m Hey, did you know I have a Discord? Join it at http://example.com!`
 * `!promo delete <id>` - Delete the promotion with the given id.
 * `!promo rename <from> <to>` - Delete the promotion with the given id.
+
+#### `gtav`
+
+The `gtav` module enables support for [`ChaosMod`](https://github.com/udoprog/ChaosMod).
+
+It enables _a lot_ of commands:
+
+* `!gtav other randomize-color`
+* `!gtav other randomize-weather`
+* `!gtav other randomize-character`
+* `!gtav other license <name>`
+* `!gtav reward car`
+* `!gtav reward vehicle`
+* `!gtav reward repair`
+* `!gtav reward wanted`
+* `!gtav reward weapon`
+* `!gtav reward health`
+* `!gtav reward armor`
+* `!gtav reward parachute`
+* `!gtav reward boost`
+* `!gtav reward superboost`
+* `!gtav reward superspeed`
+* `!gtav reward superswim`
+* `!gtav reward superjump`
+* `!gtav reward invincibility`
+* `!gtav reward ammo`
+* `!gtav punish wanted 1`
+* `!gtav punish wanted 2`
+* `!gtav punish wanted 3`
+* `!gtav punish wanted 4`
+* `!gtav punish wanted 5`
+* `!gtav punish stumble`
+* `!gtav punish fall`
+* `!gtav punish health`
+* `!gtav punish engine`
+* `!gtav punish tires`
+* `!gtav punish weapon`
+* `!gtav punish all-weapons`
+* `!gtav punish brake`
+* `!gtav punish ammo`
+* `!gtav punish enemy`
+* `!gtav punish enemy <amount>`
+
+All of these have different effects and costs (which requires the `currency` feature).
+
+These are mostly detailed here: https://bit.ly/gtavchaos
