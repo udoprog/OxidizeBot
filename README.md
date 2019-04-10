@@ -28,10 +28,6 @@ First, `config.toml`. You can use the [config.toml.example] as a base which shou
 Second, `secrets.yml` which specifies client secrets for your bot.
 
 ```yaml
-spotify::native:
-  username: USERNAME
-  password: PASSWORD
-
 spotify::oauth2:
   client_id: SPOTIFY_CLIENT_ID
   client_secret: SPOTIFY_CLIENT_SECRET
