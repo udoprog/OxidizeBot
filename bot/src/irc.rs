@@ -184,7 +184,14 @@ impl Irc<'_> {
             let reward = 10;
             let interval = 60 * 10;
 
-            let future = reward_loop(irc_config, reward, interval, sender.clone(), currency);
+            let future = reward_loop(
+                irc_config,
+                reward,
+                interval,
+                sender.clone(),
+                currency,
+                &idle,
+            );
 
             futures.push(Box::new(future));
         }
@@ -295,6 +302,7 @@ fn reward_loop(
     interval: u64,
     sender: Sender,
     currency: &currency::Currency,
+    idle: &idle::Idle,
 ) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
     // Add currency timer.
     timer::Interval::new_interval(time::Duration::from_secs(interval))
@@ -310,12 +318,13 @@ fn reward_loop(
             }
         })
         .map({
+            let idle = idle.clone();
             let notify_rewards = config.notify_rewards;
             let channel = config.channel.to_string();
             let currency = currency.clone();
 
             move |count| {
-                if notify_rewards && count > 0 {
+                if notify_rewards && count > 0 && !idle.is_idle() {
                     sender.privmsg(
                         channel.as_str(),
                         format!("/me has given {} {} to all viewers!", reward, currency.name),
