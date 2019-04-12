@@ -76,6 +76,7 @@ impl Database {
     pub fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i32>, failure::Error> {
         use self::schema::balances::dsl;
 
+        let user = user.to_lowercase();
         let c = self.pool.lock();
 
         let b = dsl::balances
@@ -95,7 +96,7 @@ impl Database {
     ) -> impl Future<Item = (), Error = failure::Error> {
         use self::schema::balances::dsl;
 
-        let user = user.to_string();
+        let user = user.to_lowercase();
         let channel = String::from(channel);
         let pool = self.pool.clone();
 
