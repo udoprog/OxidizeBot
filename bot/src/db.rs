@@ -89,7 +89,7 @@ impl Database {
         channel: &str,
         giver: &str,
         taker: &str,
-        amount: i32,
+        amount: i64,
         override_balance: bool,
     ) -> impl Future<Item = (), Error = BalanceTransferError> {
         use self::schema::balances::dsl;
@@ -108,7 +108,7 @@ impl Database {
             let balance = giver_filter
                 .clone()
                 .select(dsl::amount)
-                .first::<i32>(&*c)
+                .first::<i64>(&*c)
                 .optional()?
                 .unwrap_or_default();
 
@@ -123,18 +123,19 @@ impl Database {
     }
 
     /// Find user balance.
-    pub fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i32>, failure::Error> {
+    pub fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i64>, failure::Error> {
         use self::schema::balances::dsl;
 
         let user = user.to_lowercase();
         let c = self.pool.lock();
 
-        let b = dsl::balances
+        let balance = dsl::balances
+            .select(dsl::amount)
             .filter(dsl::channel.eq(channel).and(dsl::user.eq(user)))
-            .first::<models::Balance>(&*c)
+            .first::<i64>(&*c)
             .optional()?;
 
-        Ok(b.map(|b| b.amount))
+        Ok(balance)
     }
 
     /// Add (or subtract) from the balance for a single user.
@@ -142,7 +143,7 @@ impl Database {
         &self,
         channel: &str,
         user: &str,
-        amount: i32,
+        amount: i64,
     ) -> impl Future<Item = (), Error = failure::Error> {
         let user = user.to_lowercase();
         let channel = String::from(channel);
@@ -159,7 +160,7 @@ impl Database {
         &self,
         channel: &str,
         users: impl IntoIterator<Item = String> + Send + 'static,
-        amount_to_add: i32,
+        amount: i64,
     ) -> impl Future<Item = (), Error = failure::Error> {
         use self::schema::balances::dsl;
 
@@ -182,7 +183,7 @@ impl Database {
                         let balance = models::Balance {
                             channel: channel.to_string(),
                             user: user.clone(),
-                            amount: amount_to_add,
+                            amount: amount,
                         };
 
                         diesel::insert_into(dsl::balances)
@@ -190,7 +191,7 @@ impl Database {
                             .execute(&*c)?;
                     }
                     Some(b) => {
-                        let value = b.amount.saturating_add(amount_to_add);
+                        let value = b.amount.saturating_add(amount);
 
                         diesel::update(filter)
                             .set(dsl::amount.eq(value))
@@ -209,7 +210,7 @@ fn modify_balance(
     c: &SqliteConnection,
     channel: &str,
     user: &str,
-    amount: i32,
+    amount: i64,
 ) -> Result<(), failure::Error> {
     use self::schema::balances::dsl;
 

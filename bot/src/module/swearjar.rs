@@ -4,7 +4,7 @@ use futures::Future as _;
 use hashbrown::HashSet;
 
 pub struct Handler {
-    reward: i32,
+    reward: i64,
     db: db::Database,
     currency: currency::Currency,
     twitch: twitch::Twitch,
@@ -40,7 +40,7 @@ impl command::Handler for Handler {
                     let streamer = ctx.streamer.to_string();
 
                     move |u| {
-                        let total_reward = reward * u.len() as i32;
+                        let total_reward = reward * u.len() as i64;
 
                         db.balance_add(channel.as_str(), streamer.as_str(), -total_reward)
                             .and_then(move |_| {
@@ -77,14 +77,14 @@ impl command::Handler for Handler {
 }
 
 pub struct Module {
-    reward: i32,
+    reward: i64,
     cooldown: utils::Cooldown,
 }
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
     /// Amount payed out for each swear.
-    reward: i32,
+    reward: i64,
     #[serde(default = "default_cooldown")]
     cooldown: utils::Cooldown,
 }

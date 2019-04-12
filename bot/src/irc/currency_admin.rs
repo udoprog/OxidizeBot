@@ -58,7 +58,7 @@ impl command::Handler for Handler {
                     }
                 };
 
-                let amount: i32 = match ctx.next().map(str::parse) {
+                let amount: i64 = match ctx.next().map(str::parse) {
                     Some(Ok(amount)) => amount,
                     None | Some(Err(_)) => {
                         ctx.respond(format!(

@@ -8,7 +8,7 @@ use chrono::NaiveDateTime;
 pub struct Balance {
     pub channel: String,
     pub user: String,
-    pub amount: i32,
+    pub amount: i64,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
