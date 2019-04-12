@@ -232,6 +232,7 @@ pub struct Handler {
     db: db::Database,
     currency: currency::Currency,
     cooldown: Arc<RwLock<utils::Cooldown>>,
+    prefix: Arc<RwLock<String>>,
     other_scaling: Arc<RwLock<u32>>,
     punish_scaling: Arc<RwLock<u32>>,
     reward_scaling: Arc<RwLock<u32>>,
@@ -482,9 +483,11 @@ impl command::Handler for Handler {
 
         if balance < cost {
             ctx.respond(format!(
-                "You need at least {limit} {currency} to reward the streamer, \
+                "{prefix}\
+                 You need at least {limit} {currency} to reward the streamer, \
                  you currently have {balance} {currency}. \
                  Keep watching to earn more!",
+                prefix = *self.prefix.read(),
                 limit = cost,
                 currency = self.currency.name,
                 balance = balance,
@@ -503,7 +506,8 @@ impl command::Handler for Handler {
         );
 
         ctx.privmsg(format!(
-            "{user} {what} the streamer for {cost} {currency} by {command}",
+            "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
+            prefix = *self.prefix.read(),
             user = ctx.user.name,
             what = command.what(),
             command = command,
@@ -592,6 +596,12 @@ impl super::Module for Module {
             settings::Type::Duration,
         )?;
 
+        let prefix = settings.sync_var(
+            core,
+            "gtav/chat-prefix",
+            String::from("ChaosMod: "),
+            settings::Type::String,
+        )?;
         let other_scaling =
             settings.sync_var(core, "gtav/other-scaling", 100, settings::Type::U32)?;
         let punish_scaling =
@@ -607,6 +617,7 @@ impl super::Module for Module {
                 db: db.clone(),
                 currency,
                 cooldown,
+                prefix,
                 other_scaling,
                 punish_scaling,
                 reward_scaling,

@@ -31,10 +31,13 @@ impl Backend for db::Database {
     fn edit(&self, key: &Key, text: &str) -> Result<(), failure::Error> {
         use db::schema::commands::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         let filter =
             dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
-        let b = filter.clone().first::<db::models::Command>(&c).optional()?;
+        let b = filter
+            .clone()
+            .first::<db::models::Command>(&*c)
+            .optional()?;
 
         match b {
             None => {
@@ -47,10 +50,12 @@ impl Backend for db::Database {
 
                 diesel::insert_into(dsl::commands)
                     .values(&command)
-                    .execute(&c)?;
+                    .execute(&*c)?;
             }
             Some(_) => {
-                diesel::update(filter).set(dsl::text.eq(text)).execute(&c)?;
+                diesel::update(filter)
+                    .set(dsl::text.eq(text))
+                    .execute(&*c)?;
             }
         }
 
@@ -60,41 +65,41 @@ impl Backend for db::Database {
     fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
         use db::schema::commands::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         let count = diesel::delete(
             dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
         )
-        .execute(&c)?;
+        .execute(&*c)?;
         Ok(count == 1)
     }
 
     fn list(&self) -> Result<Vec<db::models::Command>, failure::Error> {
         use db::schema::commands::dsl;
-        let c = self.pool.get()?;
-        Ok(dsl::commands.load::<db::models::Command>(&c)?)
+        let c = self.pool.lock();
+        Ok(dsl::commands.load::<db::models::Command>(&*c)?)
     }
 
     fn increment(&self, key: &Key) -> Result<bool, failure::Error> {
         use db::schema::commands::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         let count = diesel::update(
             dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
         )
         .set(dsl::count.eq(dsl::count + 1))
-        .execute(&c)?;
+        .execute(&*c)?;
         Ok(count == 1)
     }
 
     fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error> {
         use db::schema::commands::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         let count = diesel::update(
             dsl::commands.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
         )
         .set((dsl::channel.eq(&to.channel), dsl::name.eq(&to.name)))
-        .execute(&c)?;
+        .execute(&*c)?;
 
         Ok(count == 1)
     }

@@ -69,6 +69,11 @@ export default class Settings extends React.Component {
                 key: d.key,
                 value: new types.Boolean(d.value),
               };
+            case "string":
+              return {
+                key: d.key,
+                value: new types.String(d.value),
+              };
             case "number":
               return {
                 key: d.key,

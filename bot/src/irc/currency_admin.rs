@@ -36,6 +36,11 @@ impl command::Handler for Handler {
                     }
                 };
 
+                if !ctx.user.is(ctx.streamer) && ctx.user.is(&boosted_user) {
+                    ctx.respond("You gonna have to play by the rules (or ask another mod) :(");
+                    return Ok(());
+                }
+
                 let amount = match ctx.next().map(str::parse) {
                     Some(Ok(amount)) => amount,
                     None | Some(Err(_)) => {
@@ -66,7 +71,7 @@ impl command::Handler for Handler {
                                     user.respond(format!(
                                         "Took away {amount} {currency} from {user}!",
                                         user = boosted_user,
-                                        amount = amount,
+                                        amount = -amount,
                                         currency = currency.name
                                     ));
                                 }
