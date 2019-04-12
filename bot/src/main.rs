@@ -241,7 +241,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     let spotify = Arc::new(spotify::Spotify::new(spotify_token.clone())?);
     let twitch = twitch::Twitch::new(streamer_token.clone())?;
 
-    match config.player.as_ref() {
+    let player = match config.player.as_ref() {
         // Only setup if the song feature is enabled.
         Some(player) if config.features.test(Feature::Song) => {
             let (future, player) = player::run(
@@ -313,6 +313,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             modules: &modules,
             shutdown,
             settings,
+            player: player.as_ref(),
         }
         .run()?;
 

@@ -101,24 +101,27 @@ impl Database {
 
         return self.thread_pool.spawn_handle(future::lazy(move || {
             let c = pool.lock();
+            let c = &*c;
 
-            let giver_filter =
-                dsl::balances.filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&giver)));
+            c.transaction(move || {
+                let giver_filter = dsl::balances
+                    .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&giver)));
 
-            let balance = giver_filter
-                .clone()
-                .select(dsl::amount)
-                .first::<i64>(&*c)
-                .optional()?
-                .unwrap_or_default();
+                let balance = giver_filter
+                    .clone()
+                    .select(dsl::amount)
+                    .first::<i64>(&*c)
+                    .optional()?
+                    .unwrap_or_default();
 
-            if balance <= amount && !override_balance {
-                return Err(BalanceTransferError::NoBalance);
-            }
+                if balance <= amount && !override_balance {
+                    return Err(BalanceTransferError::NoBalance);
+                }
 
-            modify_balance(&*c, &channel, &taker, amount)?;
-            modify_balance(&*c, &channel, &giver, -amount)?;
-            Ok(())
+                modify_balance(c, &channel, &taker, amount)?;
+                modify_balance(c, &channel, &giver, -amount)?;
+                Ok(())
+            })
         }));
     }
 
