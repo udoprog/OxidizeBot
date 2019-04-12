@@ -718,6 +718,11 @@ pub struct User<'m> {
 }
 
 impl<'m> User<'m> {
+    /// Test if the current user is the given user.
+    pub fn is(&self, name: &str) -> bool {
+        self.name == name.to_lowercase()
+    }
+
     /// Respond to the user with a message.
     pub fn respond(&self, m: impl fmt::Display) {
         self.sender

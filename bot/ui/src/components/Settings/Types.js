@@ -153,6 +153,36 @@ export class Boolean {
   }
 }
 
+export class String {
+  constructor(data) {
+    this.data = data;
+  }
+
+  static validate(text) {
+    return true;
+  }
+
+  static parse(input) {
+    if (typeof input !== "string") {
+      throw new Error("expected string");
+    }
+
+    return new String(data);
+  }
+
+  serialize() {
+    return this.data;
+  }
+
+  toString() {
+    return this.data.toString();
+  }
+
+  type() {
+    return Raw;
+  }
+}
+
 export class Raw {
   constructor(data) {
     this.data = data;

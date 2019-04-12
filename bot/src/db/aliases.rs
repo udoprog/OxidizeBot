@@ -23,10 +23,10 @@ impl Backend for db::Database {
     fn edit(&self, key: &Key, text: &str) -> Result<(), failure::Error> {
         use db::schema::aliases::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         let filter =
             dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
-        let b = filter.clone().first::<db::models::Alias>(&c).optional()?;
+        let b = filter.clone().first::<db::models::Alias>(&*c).optional()?;
 
         match b {
             None => {
@@ -38,10 +38,12 @@ impl Backend for db::Database {
 
                 diesel::insert_into(dsl::aliases)
                     .values(&alias)
-                    .execute(&c)?;
+                    .execute(&*c)?;
             }
             Some(_) => {
-                diesel::update(filter).set(dsl::text.eq(text)).execute(&c)?;
+                diesel::update(filter)
+                    .set(dsl::text.eq(text))
+                    .execute(&*c)?;
             }
         }
 
@@ -51,30 +53,30 @@ impl Backend for db::Database {
     fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
         use db::schema::aliases::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         let count = diesel::delete(
             dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
         )
-        .execute(&c)?;
+        .execute(&*c)?;
 
         Ok(count == 1)
     }
 
     fn list(&self) -> Result<Vec<db::models::Alias>, failure::Error> {
         use db::schema::aliases::dsl;
-        let c = self.pool.get()?;
-        Ok(dsl::aliases.load::<db::models::Alias>(&c)?)
+        let c = self.pool.lock();
+        Ok(dsl::aliases.load::<db::models::Alias>(&*c)?)
     }
 
     fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error> {
         use db::schema::aliases::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         let count = diesel::update(
             dsl::aliases.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
         )
         .set((dsl::name.eq(&to.name), dsl::name.eq(&to.channel)))
-        .execute(&c)?;
+        .execute(&*c)?;
 
         Ok(count == 1)
     }

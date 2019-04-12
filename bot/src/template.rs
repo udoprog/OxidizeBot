@@ -1,5 +1,5 @@
 use hashbrown::HashSet;
-use std::{io, string};
+use std::{fmt, io, string};
 
 lazy_static::lazy_static! {
     static ref REGISTRY: handlebars::Handlebars = {
@@ -10,7 +10,10 @@ lazy_static::lazy_static! {
 }
 
 #[derive(Debug, Clone)]
-pub struct Template(handlebars::template::Template);
+pub struct Template {
+    source: String,
+    template: handlebars::template::Template,
+}
 
 impl<'de> serde::Deserialize<'de> for Template {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -43,7 +46,11 @@ impl<'de> serde::Deserialize<'de> for Template {
         };
 
         let template = handlebars::Template::compile(&s).map_err(serde::de::Error::custom)?;
-        return Ok(Template(template));
+
+        return Ok(Template {
+            source: s.to_string(),
+            template,
+        });
 
         #[derive(serde::Deserialize)]
         #[serde(untagged)]
@@ -58,7 +65,12 @@ impl<'de> serde::Deserialize<'de> for Template {
 
 impl Template {
     pub fn compile(s: impl AsRef<str>) -> Result<Template, failure::Error> {
-        Ok(Template(handlebars::Template::compile(s)?))
+        let source = s.as_ref();
+
+        Ok(Template {
+            source: source.to_string(),
+            template: handlebars::Template::compile(source)?,
+        })
     }
 
     /// Render the template to the given output.
@@ -84,7 +96,7 @@ impl Template {
 
         let mut out = HashSet::new();
 
-        for e in &self.0.elements {
+        for e in &self.template.elements {
             collect_vars(&mut out, e);
         }
 
@@ -114,9 +126,15 @@ impl Template {
 
         let ctx = handlebars::Context::wraps(data)?;
         let mut render_context = handlebars::RenderContext::new(None);
-        self.0
+        self.template
             .render(&*REGISTRY, &ctx, &mut render_context, output)
             .map_err(Into::into)
+    }
+}
+
+impl fmt::Display for Template {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.source.fmt(fmt)
     }
 }
 

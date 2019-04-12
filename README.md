@@ -315,6 +315,23 @@ Modules are defined in the `[[modules]]` sections of the configuration.
 They enable certain behavior of the bot, and are generally better than `features` since they allow adding configuration
 associated with the module.
 
+#### `currency`
+
+Enables a loyalty currency system and a couple of commands.
+
+A currency is enabled by adding the following to your configuration:
+
+```toml
+[currency]
+name = "thingies"
+```
+
+Enabled commands depend on the `name` of your currency, so we are gonna assume the currency is currently named `thingies`:
+
+- `!thingies` - Get your current balance.
+- `!thingies boost <user> <amount>` - Give the specified `<user>` an `<amount>` of currency. Can be negative to take away.
+- `!thingies windfall <amount>` - Give away `<amount>` currency to all current viewers.
+
 #### `swearjar`
 
 You enable the `swearjar` module by adding the following to your configuration:

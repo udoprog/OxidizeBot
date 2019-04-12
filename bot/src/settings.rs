@@ -52,12 +52,12 @@ impl Settings {
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
         use self::db::schema::settings::dsl;
-        let c = self.db.pool.get()?;
+        let c = self.db.pool.lock();
 
         let result = dsl::settings
             .select(dsl::value)
             .filter(dsl::key.eq(key))
-            .first::<String>(&c)
+            .first::<String>(&*c)
             .optional()?;
 
         let value = match result {
@@ -97,14 +97,14 @@ impl Settings {
             }
         }
 
-        let c = self.db.pool.get()?;
+        let c = self.db.pool.lock();
 
         let filter = dsl::settings.filter(dsl::key.eq(&key));
 
         let b = filter
             .clone()
             .select((dsl::key, dsl::value))
-            .first::<(String, String)>(&c)
+            .first::<(String, String)>(&*c)
             .optional()?;
 
         let value = serde_json::to_string(&value)?;
@@ -113,12 +113,12 @@ impl Settings {
             None => {
                 diesel::insert_into(dsl::settings)
                     .values((dsl::key.eq(key), dsl::value.eq(value)))
-                    .execute(&c)?;
+                    .execute(&*c)?;
             }
             Some(_) => {
                 diesel::update(filter)
                     .set((dsl::key.eq(key), dsl::value.eq(&value)))
-                    .execute(&c)?;
+                    .execute(&*c)?;
             }
         }
 
@@ -128,7 +128,7 @@ impl Settings {
     /// Insert the given setting.
     pub fn list(&self) -> Result<Vec<Setting>, failure::Error> {
         use self::db::schema::settings::dsl;
-        let c = self.db.pool.get()?;
+        let c = self.db.pool.lock();
 
         let mut settings = Vec::new();
         let subscriptions = self.subscriptions.read();
@@ -136,7 +136,7 @@ impl Settings {
         for (key, value) in dsl::settings
             .select((dsl::key, dsl::value))
             .order(dsl::key)
-            .load::<(String, String)>(&c)?
+            .load::<(String, String)>(&*c)?
         {
             let value = serde_json::from_str(&value)?;
 
@@ -169,8 +169,8 @@ impl Settings {
             }
         }
 
-        let c = self.db.pool.get()?;
-        let count = diesel::delete(dsl::settings.filter(dsl::key.eq(key))).execute(&c)?;
+        let c = self.db.pool.lock();
+        let count = diesel::delete(dsl::settings.filter(dsl::key.eq(key))).execute(&*c)?;
         Ok(count == 1)
     }
 
@@ -405,4 +405,6 @@ pub enum Type {
     Bool,
     #[serde(rename = "number")]
     U32,
+    #[serde(rename = "string")]
+    String,
 }

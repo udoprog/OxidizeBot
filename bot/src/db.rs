@@ -20,8 +20,8 @@ pub use self::{
 
 use chrono::Utc;
 use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager, Pool};
 use futures::{future, Future};
+use parking_lot::Mutex;
 use std::{error, fmt, sync::Arc};
 use tokio_threadpool::ThreadPool;
 
@@ -49,21 +49,20 @@ embed_migrations!("./migrations");
 /// Database abstraction.
 #[derive(Clone)]
 pub struct Database {
-    pub(crate) pool: Arc<Pool<ConnectionManager<SqliteConnection>>>,
+    pub(crate) pool: Arc<Mutex<SqliteConnection>>,
     thread_pool: Arc<ThreadPool>,
 }
 
 impl Database {
     /// Find posts by users.
     pub fn open(url: &str, thread_pool: Arc<ThreadPool>) -> Result<Database, failure::Error> {
-        let manager = ConnectionManager::<SqliteConnection>::new(url);
-        let pool = Pool::new(manager)?;
+        let pool = SqliteConnection::establish(url)?;
 
         // Run all migrations.
-        embedded_migrations::run_with_output(&pool.get()?, &mut std::io::stdout())?;
+        embedded_migrations::run_with_output(&pool, &mut std::io::stdout())?;
 
         Ok(Database {
-            pool: Arc::new(pool),
+            pool: Arc::new(Mutex::new(pool)),
             thread_pool,
         })
     }
@@ -77,11 +76,11 @@ impl Database {
     pub fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i32>, failure::Error> {
         use self::schema::balances::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
 
         let b = dsl::balances
             .filter(dsl::channel.eq(channel).and(dsl::user.eq(user)))
-            .first::<models::Balance>(&c)
+            .first::<models::Balance>(&*c)
             .optional()?;
 
         Ok(b.map(|b| b.amount))
@@ -101,12 +100,12 @@ impl Database {
         let pool = self.pool.clone();
 
         self.thread_pool.spawn_handle(future::lazy(move || {
-            let c = pool.get()?;
+            let c = pool.lock();
 
             let filter =
                 dsl::balances.filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&user)));
 
-            let b = filter.clone().first::<models::Balance>(&c).optional()?;
+            let b = filter.clone().first::<models::Balance>(&*c).optional()?;
 
             match b {
                 None => {
@@ -118,13 +117,13 @@ impl Database {
 
                     diesel::insert_into(dsl::balances)
                         .values(&balance)
-                        .execute(&c)?;
+                        .execute(&*c)?;
                 }
                 Some(b) => {
                     let value = b.amount + amount_to_add;
                     diesel::update(filter)
                         .set(dsl::amount.eq(value))
-                        .execute(&c)?;
+                        .execute(&*c)?;
                 }
             }
 
@@ -145,7 +144,7 @@ impl Database {
         let pool = Arc::clone(&self.pool);
 
         self.thread_pool.spawn_handle(future::lazy(move || {
-            let c = pool.get()?;
+            let c = pool.lock();
 
             for user in users {
                 let user = user.to_lowercase();
@@ -153,7 +152,7 @@ impl Database {
                 let filter = dsl::balances
                     .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&user)));
 
-                let b = filter.clone().first::<models::Balance>(&c).optional()?;
+                let b = filter.clone().first::<models::Balance>(&*c).optional()?;
 
                 match b {
                     None => {
@@ -165,13 +164,13 @@ impl Database {
 
                         diesel::insert_into(dsl::balances)
                             .values(&balance)
-                            .execute(&c)?;
+                            .execute(&*c)?;
                     }
                     Some(b) => {
                         let value = b.amount + amount_to_add;
                         diesel::update(filter)
                             .set(dsl::amount.eq(value))
-                            .execute(&c)?;
+                            .execute(&*c)?;
                     }
                 }
             }
@@ -185,18 +184,18 @@ impl words::Backend for Database {
     /// List all bad words.
     fn list(&self) -> Result<Vec<models::BadWord>, failure::Error> {
         use self::schema::bad_words::dsl;
-        let c = self.pool.get()?;
-        Ok(dsl::bad_words.load::<models::BadWord>(&c)?)
+        let c = self.pool.lock();
+        Ok(dsl::bad_words.load::<models::BadWord>(&*c)?)
     }
 
     /// Insert a bad word into the database.
     fn edit(&self, word: &str, why: Option<&str>) -> Result<(), failure::Error> {
         use self::schema::bad_words::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
 
         let filter = dsl::bad_words.filter(dsl::word.eq(word));
-        let b = filter.clone().first::<models::BadWord>(&c).optional()?;
+        let b = filter.clone().first::<models::BadWord>(&*c).optional()?;
 
         match b {
             None => {
@@ -207,12 +206,12 @@ impl words::Backend for Database {
 
                 diesel::insert_into(dsl::bad_words)
                     .values(&bad_word)
-                    .execute(&c)?;
+                    .execute(&*c)?;
             }
             Some(_) => {
                 diesel::update(filter)
                     .set(why.map(|w| dsl::why.eq(w)))
-                    .execute(&c)?;
+                    .execute(&*c)?;
             }
         }
 
@@ -222,9 +221,9 @@ impl words::Backend for Database {
     fn delete(&self, word: &str) -> Result<bool, failure::Error> {
         use self::schema::bad_words::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
 
-        let count = diesel::delete(dsl::bad_words.filter(dsl::word.eq(&word))).execute(&c)?;
+        let count = diesel::delete(dsl::bad_words.filter(dsl::word.eq(&word))).execute(&*c)?;
         Ok(count == 1)
     }
 }
@@ -232,34 +231,34 @@ impl words::Backend for Database {
 impl player::Backend for Database {
     fn list(&self) -> Result<Vec<models::Song>, failure::Error> {
         use self::schema::songs::dsl;
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         let songs = dsl::songs
             .filter(dsl::deleted.eq(false))
             .order((dsl::promoted_at.desc(), dsl::added_at.asc()))
-            .load::<models::Song>(&c)?;
+            .load::<models::Song>(&*c)?;
         Ok(songs)
     }
 
     fn push_back(&self, song: &models::AddSong) -> Result<(), failure::Error> {
         use self::schema::songs::dsl;
-        let c = self.pool.get()?;
-        diesel::insert_into(dsl::songs).values(song).execute(&c)?;
+        let c = self.pool.lock();
+        diesel::insert_into(dsl::songs).values(song).execute(&*c)?;
         Ok(())
     }
 
     /// Purge the given channel from songs.
     fn song_purge(&self) -> Result<usize, failure::Error> {
         use self::schema::songs::dsl;
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         Ok(diesel::update(dsl::songs.filter(dsl::deleted.eq(false)))
             .set(dsl::deleted.eq(true))
-            .execute(&c)?)
+            .execute(&*c)?)
     }
 
     /// Remove the song at the given location.
     fn remove_song(&self, track_id: &player::TrackId) -> Result<bool, failure::Error> {
         use self::schema::songs::dsl;
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
 
         let track_id = track_id.to_base62();
 
@@ -268,11 +267,11 @@ impl player::Backend for Database {
             .filter(dsl::deleted.eq(false).and(dsl::track_id.eq(&track_id)))
             .order(dsl::added_at.desc())
             .limit(1)
-            .load(&c)?;
+            .load(&*c)?;
 
         let count = diesel::update(dsl::songs.filter(dsl::id.eq_any(ids)))
             .set(dsl::deleted.eq(true))
-            .execute(&c)?;
+            .execute(&*c)?;
 
         Ok(count == 1)
     }
@@ -280,7 +279,7 @@ impl player::Backend for Database {
     /// Promote the song with the given ID.
     fn promote_song(&self, user: &str, track_id: &player::TrackId) -> Result<bool, failure::Error> {
         use self::schema::songs::dsl;
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
 
         let track_id = track_id.to_base62();
 
@@ -289,14 +288,14 @@ impl player::Backend for Database {
             .filter(dsl::deleted.eq(false).and(dsl::track_id.eq(&track_id)))
             .order(dsl::added_at.desc())
             .limit(1)
-            .load(&c)?;
+            .load(&*c)?;
 
         let count = diesel::update(dsl::songs.filter(dsl::id.eq_any(ids)))
             .set((
                 dsl::promoted_at.eq(Utc::now().naive_utc()),
                 dsl::promoted_by.eq(user),
             ))
-            .execute(&c)?;
+            .execute(&*c)?;
 
         Ok(count == 1)
     }
@@ -305,15 +304,15 @@ impl player::Backend for Database {
 impl persisted_set::Backend for Database {
     fn list(&self, kind: &str) -> Result<Vec<models::SetValue>, failure::Error> {
         use self::schema::set_values::dsl;
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         Ok(dsl::set_values
             .filter(dsl::kind.eq(kind))
-            .load::<models::SetValue>(&c)?)
+            .load::<models::SetValue>(&*c)?)
     }
 
     fn insert(&self, channel: &str, kind: &str, value: String) -> Result<(), failure::Error> {
         use self::schema::set_values::dsl;
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
 
         let value = models::SetValue {
             channel: channel.to_string(),
@@ -323,13 +322,13 @@ impl persisted_set::Backend for Database {
 
         diesel::insert_into(dsl::set_values)
             .values(value)
-            .execute(&c)?;
+            .execute(&*c)?;
         Ok(())
     }
 
     fn remove(&self, channel: &str, kind: &str, value: String) -> Result<bool, failure::Error> {
         use self::schema::set_values::dsl;
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
 
         let filter = dsl::set_values.filter(
             dsl::channel
@@ -338,7 +337,7 @@ impl persisted_set::Backend for Database {
                 .and(dsl::value.eq(value)),
         );
 
-        let count = diesel::delete(filter).execute(&c)?;
+        let count = diesel::delete(filter).execute(&*c)?;
         Ok(count == 1)
     }
 }

@@ -7,7 +7,29 @@ pub struct Handler {
 
 impl command::Handler for Handler {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+        ctx.check_moderator()?;
+
         match ctx.next() {
+            Some("show") => {
+                let name = match ctx.next() {
+                    Some(name) => name,
+                    None => {
+                        ctx.respond("Expected name.");
+                        return Ok(());
+                    }
+                };
+
+                let alias = self.aliases.get(ctx.user.target, &name);
+
+                match alias {
+                    Some(alias) => {
+                        ctx.respond(format!("{} -> {}", alias.key.name, alias.template));
+                    }
+                    None => {
+                        ctx.respond(format!("No alias named `{}`", name));
+                    }
+                }
+            }
             Some("list") => {
                 let mut names = self
                     .aliases
@@ -24,8 +46,6 @@ impl command::Handler for Handler {
                 }
             }
             Some("edit") => {
-                ctx.check_moderator()?;
-
                 let name = match ctx.next() {
                     Some(name) => name,
                     None => {
@@ -38,8 +58,6 @@ impl command::Handler for Handler {
                 ctx.respond("Edited alias.");
             }
             Some("delete") => {
-                ctx.check_moderator()?;
-
                 let name = match ctx.next() {
                     Some(name) => name,
                     None => {
@@ -55,8 +73,6 @@ impl command::Handler for Handler {
                 }
             }
             Some("rename") => {
-                ctx.check_moderator()?;
-
                 let (from, to) = match (ctx.next(), ctx.next()) {
                     (Some(from), Some(to)) => (from, to),
                     _ => {

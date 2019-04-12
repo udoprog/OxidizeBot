@@ -44,12 +44,12 @@ impl Backend for super::Database {
     ) -> Result<(), failure::Error> {
         use db::schema::promotions::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         let filter =
             dsl::promotions.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
         let b = filter
             .clone()
-            .first::<db::models::Promotion>(&c)
+            .first::<db::models::Promotion>(&*c)
             .optional()?;
 
         let frequency = frequency.num_seconds() as i32;
@@ -66,12 +66,12 @@ impl Backend for super::Database {
 
                 diesel::insert_into(dsl::promotions)
                     .values(&command)
-                    .execute(&c)?;
+                    .execute(&*c)?;
             }
             Some(_) => {
                 diesel::update(filter)
                     .set((dsl::text.eq(text), dsl::frequency.eq(frequency)))
-                    .execute(&c)?;
+                    .execute(&*c)?;
             }
         }
 
@@ -81,29 +81,29 @@ impl Backend for super::Database {
     fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
         use db::schema::promotions::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         let count = diesel::delete(
             dsl::promotions.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
         )
-        .execute(&c)?;
+        .execute(&*c)?;
         Ok(count == 1)
     }
 
     fn list(&self) -> Result<Vec<db::models::Promotion>, failure::Error> {
         use db::schema::promotions::dsl;
-        let c = self.pool.get()?;
-        Ok(dsl::promotions.load::<db::models::Promotion>(&c)?)
+        let c = self.pool.lock();
+        Ok(dsl::promotions.load::<db::models::Promotion>(&*c)?)
     }
 
     fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error> {
         use db::schema::promotions::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         let count = diesel::update(
             dsl::promotions.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
         )
         .set((dsl::channel.eq(&to.channel), dsl::name.eq(&to.name)))
-        .execute(&c)?;
+        .execute(&*c)?;
 
         Ok(count == 1)
     }
@@ -111,12 +111,12 @@ impl Backend for super::Database {
     fn bump_promoted_at(&self, from: &Key, now: &DateTime<Utc>) -> Result<bool, failure::Error> {
         use db::schema::promotions::dsl;
 
-        let c = self.pool.get()?;
+        let c = self.pool.lock();
         let count = diesel::update(
             dsl::promotions.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
         )
         .set(dsl::promoted_at.eq(now.naive_utc()))
-        .execute(&c)?;
+        .execute(&*c)?;
 
         Ok(count == 1)
     }

@@ -17,7 +17,7 @@ impl AfterStreams {
     /// Push the given afterstream message.
     pub fn push(&self, channel: &str, user: &str, text: &str) -> Result<(), failure::Error> {
         use self::schema::after_streams::dsl;
-        let c = self.db.pool.get()?;
+        let c = self.db.pool.lock();
 
         let after_stream = models::InsertAfterStream {
             channel: Some(String::from(channel)),
@@ -27,7 +27,7 @@ impl AfterStreams {
 
         diesel::insert_into(dsl::after_streams)
             .values(&after_stream)
-            .execute(&c)?;
+            .execute(&*c)?;
 
         Ok(())
     }
@@ -35,17 +35,17 @@ impl AfterStreams {
     /// Delete the after stream with the given id.
     pub fn delete(&self, id: i32) -> Result<bool, failure::Error> {
         use self::schema::after_streams::dsl;
-        let c = self.db.pool.get()?;
-        let count = diesel::delete(dsl::after_streams.filter(dsl::id.eq(id))).execute(&c)?;
+        let c = self.db.pool.lock();
+        let count = diesel::delete(dsl::after_streams.filter(dsl::id.eq(id))).execute(&*c)?;
         Ok(count == 1)
     }
 
     /// List all available after streams.
     pub fn list(&self) -> Result<Vec<AfterStream>, failure::Error> {
         use self::schema::after_streams::dsl;
-        let c = self.db.pool.get()?;
+        let c = self.db.pool.lock();
         Ok(dsl::after_streams
             .order(dsl::added_at.asc())
-            .load::<models::AfterStream>(&c)?)
+            .load::<models::AfterStream>(&*c)?)
     }
 }
