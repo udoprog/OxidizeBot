@@ -298,7 +298,7 @@ impl Irc<'_> {
 /// Set up a reward loop.
 fn reward_loop(
     config: &Config,
-    reward: i32,
+    reward: i64,
     interval: u64,
     sender: Sender,
     currency: &currency::Currency,

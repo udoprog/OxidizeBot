@@ -33,7 +33,7 @@ impl Currency {
     pub fn add_channel_all(
         &self,
         channel: &str,
-        reward: i32,
+        reward: i64,
     ) -> impl Future<Item = usize, Error = failure::Error> {
         self.twitch
             .chatters(channel)

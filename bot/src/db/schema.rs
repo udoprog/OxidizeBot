@@ -2,7 +2,7 @@ table! {
     balances (channel, user) {
         channel -> Text,
         user -> Text,
-        amount -> Integer,
+        amount -> BigInt,
     }
 }
 

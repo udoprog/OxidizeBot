@@ -498,7 +498,7 @@ impl command::Handler for Handler {
 
         ctx.spawn(
             self.db
-                .balance_add(ctx.user.target, ctx.user.name, -(cost as i32))
+                .balance_add(ctx.user.target, ctx.user.name, -(cost as i64))
                 .or_else(|e| {
                     utils::log_err("failed to modify balance of user", e);
                     Ok(())

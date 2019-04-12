@@ -8,7 +8,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct Reward {
     user: String,
-    amount: i32,
+    amount: i64,
 }
 
 pub struct Handler {
@@ -94,7 +94,7 @@ impl command::Handler for Handler {
 
                 let now = Utc::now();
                 let diff = now.clone() - last;
-                let amount = i64::max(0i64, diff.num_minutes()) as i32;
+                let amount = i64::max(0i64, diff.num_minutes());
 
                 self.waters.push((
                     now,
