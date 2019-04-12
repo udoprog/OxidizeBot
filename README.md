@@ -431,6 +431,7 @@ It enables _a lot_ of commands:
 * `!gtav reward superjump`
 * `!gtav reward invincibility`
 * `!gtav reward ammo`
+* `!gtav reward exploding-bullets`
 * `!gtav punish wanted 1`
 * `!gtav punish wanted 2`
 * `!gtav punish wanted 3`

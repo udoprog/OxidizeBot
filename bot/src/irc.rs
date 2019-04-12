@@ -1,7 +1,7 @@
 use crate::{
     bus, command, config, currency, db,
     features::{Feature, Features},
-    idle, module, oauth2, settings, stream_info, twitch, utils,
+    idle, module, oauth2, player, settings, stream_info, twitch, utils,
     utils::BoxFuture,
 };
 use failure::{format_err, ResultExt as _};
@@ -79,6 +79,7 @@ pub struct Irc<'a> {
     pub modules: &'a [Box<dyn module::Module>],
     pub shutdown: utils::Shutdown,
     pub settings: settings::Settings,
+    pub player: Option<&'a player::Player>,
 }
 
 impl Irc<'_> {
@@ -103,6 +104,7 @@ impl Irc<'_> {
             modules,
             shutdown,
             settings,
+            player,
             ..
         } = self;
 
@@ -165,6 +167,7 @@ impl Irc<'_> {
                 sender: &sender,
                 settings: &settings,
                 idle: &idle,
+                player,
             });
 
             result.with_context(|_| {

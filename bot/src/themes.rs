@@ -13,6 +13,8 @@ pub struct Theme {
     pub track: TrackId,
     #[serde(default)]
     pub offset: Offset,
+    #[serde(default)]
+    pub end: Option<Offset>,
 }
 
 impl Themes {

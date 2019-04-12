@@ -1,4 +1,4 @@
-use crate::{command, currency, db, irc, module, settings, utils};
+use crate::{command, currency, db, irc, module, player, settings, utils};
 use failure::format_err;
 use futures::{sync::mpsc, Future as _, Stream as _};
 use parking_lot::RwLock;
@@ -62,6 +62,10 @@ enum Command {
     Invincibility(f32),
     /// Spawn a number of enemies around the player.
     SpawnEnemy(u32),
+    /// Enable exploding bullets.
+    ExplodingBullets,
+    /// Send a raw command to ChaosMod.
+    Raw(String),
 }
 
 impl Command {
@@ -99,6 +103,8 @@ impl Command {
             SuperJump(..) => "rewarded",
             Invincibility(..) => "rewarded",
             SpawnEnemy(..) => "punished",
+            ExplodingBullets => "reward",
+            Raw(..) => "?",
         }
     }
 
@@ -136,6 +142,8 @@ impl Command {
             SuperJump(n) => format!("super-jump {}", n),
             Invincibility(n) => format!("invincibility {}", n),
             SpawnEnemy(n) => format!("spawn-enemy {}", n),
+            ExplodingBullets => format!("exploding-bullets"),
+            Raw(ref cmd) => cmd.to_string(),
         }
     }
 
@@ -175,6 +183,8 @@ impl Command {
             SuperJump(n) => n as u32,
             Invincibility(n) => 2 * (n as u32),
             SpawnEnemy(n) => 10 * n,
+            ExplodingBullets => 50,
+            Raw(..) => 0,
         }
     }
 }
@@ -218,6 +228,8 @@ impl fmt::Display for Command {
             ),
             SpawnEnemy(1) => write!(fmt, "spawning an enemy monkaS"),
             SpawnEnemy(n) => write!(fmt, "spawning {} enemies monkaS", n),
+            ExplodingBullets => write!(fmt, "enabling exploding bullets CurseLit"),
+            Raw(..) => write!(fmt, "sending a raw command"),
         }
     }
 }
@@ -230,6 +242,7 @@ pub struct Reward {
 
 pub struct Handler {
     db: db::Database,
+    player: Option<player::PlayerClient>,
     currency: currency::Currency,
     cooldown: Arc<RwLock<utils::Cooldown>>,
     prefix: Arc<RwLock<String>>,
@@ -241,6 +254,25 @@ pub struct Handler {
 }
 
 impl Handler {
+    /// Play the specified theme song.
+    fn play_theme_song(&mut self, ctx: &mut command::Context<'_, '_>, id: &str) {
+        if let Some(player) = self.player.as_ref() {
+            ctx.spawn(player.play_theme(id).then(|result| {
+                match result {
+                    Ok(()) => {}
+                    Err(player::PlayThemeError::NoSuchTheme) => {
+                        log::error!("you need to configure the theme `running90s`");
+                    }
+                    Err(player::PlayThemeError::Error(e)) => {
+                        log::error!("error when playing theme: {}", e);
+                    }
+                }
+
+                Ok(())
+            }));
+        }
+    }
+
     /// Handle the other commands.
     fn handle_other(
         &mut self,
@@ -264,6 +296,10 @@ impl Handler {
                     return Ok(None);
                 }
             },
+            Some("raw") => {
+                ctx.check_moderator()?;
+                Command::Raw(ctx.rest().to_string())
+            }
             Some(..) | None => {
                 ctx.respond(format!(
                     "Available mods are: \
@@ -411,12 +447,19 @@ impl Handler {
             Some("health") => Command::GiveHealth,
             Some("armor") => Command::GiveArmor,
             Some("boost") => Command::Boost,
-            Some("superboost") => Command::SuperBoost,
-            Some("superspeed") => Command::SuperSpeed(10f32),
+            Some("superboost") => {
+                self.play_theme_song(ctx, "gtav/superboost");
+                Command::SuperBoost
+            }
+            Some("superspeed") => {
+                self.play_theme_song(ctx, "gtav/superspeed");
+                Command::SuperSpeed(10f32)
+            }
             Some("superswim") => Command::SuperSwim(10f32),
             Some("superjump") => Command::SuperJump(10f32),
             Some("invincibility") => Command::Invincibility(10f32),
             Some("ammo") => Command::GiveAmmo,
+            Some("exploding-bullets") => Command::ExplodingBullets,
             _ => {
                 ctx.respond(format!(
                     "Available rewards are: \
@@ -582,6 +625,7 @@ impl super::Module for Module {
             currency,
             settings,
             futures,
+            player,
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
@@ -615,6 +659,7 @@ impl super::Module for Module {
             "gtav",
             Handler {
                 db: db.clone(),
+                player: player.map(|p| p.client()),
                 currency,
                 cooldown,
                 prefix,
@@ -675,11 +720,11 @@ enum Weapon {
 
     Knife,
 
-    Firework,
-
     Minigun,
 
     Parachute,
+
+    Firework,
 }
 
 impl Weapon {
@@ -697,9 +742,9 @@ impl Weapon {
             GrenadeLauncherSmoke => format!("a smoke grenade launcher"),
             RocketLauncher | Rpg => format!("a rocket launcher!"),
             Knife => format!("a knife!"),
-            Firework => format!("fireworks!"),
             Minigun => format!("a minigun!"),
             Parachute => format!("a parachute!"),
+            Firework => format!("fireworks!"),
         }
     }
 
@@ -723,9 +768,9 @@ impl Weapon {
             "rocket-launcher" => Some(RocketLauncher),
             "rpg" => Some(Rpg),
             "knife" => Some(Knife),
-            "firework" => Some(Firework),
             "minigun" => Some(Minigun),
             "parachute" => Some(Parachute),
+            "firework" => Some(Firework),
             _ => None,
         }
     }
@@ -758,10 +803,11 @@ impl Weapon {
             Rpg => 15,
 
             Knife => 1,
-            Firework => 1,
 
             Minigun => 20,
             Parachute => 10,
+
+            Firework => 20,
         }
     }
 
@@ -785,9 +831,9 @@ impl Weapon {
             RocketLauncher,
             Rpg,
             Knife,
-            Firework,
             Minigun,
             Parachute,
+            Firework,
         ]
     }
 }
@@ -818,11 +864,12 @@ impl fmt::Display for Weapon {
             Rpg => "rpg",
 
             Knife => "knife",
-            Firework => "firework",
 
             Minigun => "minigun",
 
             Parachute => "parachute",
+
+            Firework => "firework",
         };
 
         s.fmt(fmt)
@@ -842,6 +889,8 @@ enum Vehicle {
     JetSki,
     Blimp,
     Tank,
+    Hydra,
+    Sub,
 }
 
 impl Vehicle {
@@ -861,6 +910,8 @@ impl Vehicle {
             JetSki => format!("a jet ski DansRage"),
             Blimp => format!("a blimp SeemsGood"),
             Tank => format!("a tank!"),
+            Sub => format!("a submarine!"),
+            Hydra => format!("a hydra!"),
         }
     }
 
@@ -878,6 +929,8 @@ impl Vehicle {
             "jet-ski" => Some(Vehicle::JetSki),
             "blimp" => Some(Vehicle::Blimp),
             "tank" => Some(Vehicle::Tank),
+            "sub" => Some(Vehicle::Sub),
+            "hydra" => Some(Vehicle::Hydra),
             _ => None,
         }
     }
@@ -900,6 +953,8 @@ impl Vehicle {
             JetSki => 10,
             Blimp => 50,
             Tank => 50,
+            Sub => 20,
+            Hydra => 60,
         }
     }
 
@@ -916,6 +971,7 @@ impl Vehicle {
 
         vec![
             Random, Slow, Normal, Fast, Bike, PedalBike, Gauntlet, FighterJet, Blimp, JetSki, Tank,
+            Sub, Hydra,
         ]
     }
 
@@ -944,6 +1000,8 @@ impl fmt::Display for Vehicle {
             JetSki => "jet-ski".fmt(fmt),
             Blimp => "blimp".fmt(fmt),
             Tank => "tank".fmt(fmt),
+            Hydra => "hydra".fmt(fmt),
+            Sub => "sub".fmt(fmt),
         }
     }
 }

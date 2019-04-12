@@ -168,6 +168,7 @@ pub fn run(
             spotify.clone(),
             song.user.clone(),
             song.track_id,
+            None,
         ))?);
     }
 
@@ -711,7 +712,9 @@ impl PlayerClient {
             let spotify = Arc::clone(&self.spotify);
 
             move |theme| {
-                convert_item(&thread_pool, spotify, None, theme.track.clone())
+                let duration = theme.end.clone().map(|o| o.as_duration());
+
+                convert_item(&thread_pool, spotify, None, theme.track.clone(), duration)
                     .map(move |item| (item, theme))
                     .map_err(|e| PlayThemeError::Error(e.into()))
             }
@@ -791,7 +794,7 @@ impl PlayerClient {
             let spotify = Arc::clone(&self.spotify);
 
             move |len| {
-                convert_item(&thread_pool, spotify, Some(user), track_id)
+                convert_item(&thread_pool, spotify, Some(user), track_id, None)
                     .map(move |item| (len, item))
                     .map_err(|e| AddTrackError::Error(e.into()))
             }
@@ -1378,6 +1381,11 @@ impl PlaybackFuture {
                 *self.volume.write() = volume;
             }
             Command::Inject(source, item, offset) => {
+                if !self.is_playing {
+                    log::warn!("tried to inject song, but player is not running");
+                    return;
+                }
+
                 // store the currently playing song in the sidelined slot.
                 if let Some(mut song) = self.song.write().take() {
                     song.pause();
@@ -1649,13 +1657,17 @@ fn convert_item(
     spotify: Arc<spotify::Spotify>,
     user: Option<String>,
     track_id: TrackId,
+    duration: Option<Duration>,
 ) -> impl Future<Item = Arc<Item>, Error = failure::Error> {
     let track_id_string = track_id.0.to_base62();
 
     thread_pool
         .spawn_handle(future::lazy(move || spotify.track(&track_id_string)))
         .map(move |track| {
-            let duration = Duration::from_millis(track.duration_ms.into());
+            let duration = match duration {
+                Some(duration) => duration,
+                None => Duration::from_millis(track.duration_ms.into()),
+            };
 
             Arc::new(Item {
                 track_id,
