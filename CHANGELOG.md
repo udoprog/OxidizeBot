@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Expand `currency` feature. See the [`currency` configuration].
+- Added `!thingies give` and `!thingies show`. See the [`currency` configuration].
 
 ### Added
 - `!promo` now uses hangout detection determined by the `irc/idle-detection/threshold` setting.

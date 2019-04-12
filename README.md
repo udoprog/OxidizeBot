@@ -329,8 +329,10 @@ name = "thingies"
 Enabled commands depend on the `name` of your currency, so we are gonna assume the currency is currently named `thingies`:
 
 - `!thingies` - Get your current balance.
-- `!thingies boost <user> <amount>` - Give the specified `<user>` an `<amount>` of currency. Can be negative to take away.
-- `!thingies windfall <amount>` - Give away `<amount>` currency to all current viewers.
+- `!thingies give <user> <amount>` - Give `<user>` `<amount>` of the given currency. This will _transfer_ the specified amount from your account to another.
+- `!thingies boost <user> <amount>` - Give the specified `<user>` an `<amount>` of currency. Can be negative to take away (**moderator**).
+- `!thingies windfall <amount>` - Give away `<amount>` currency to all current viewers (**moderator**).
+- `!thingies show <user>` - Show the amount of currency for the given user (**moderator**).
 
 #### `swearjar`
 
