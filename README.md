@@ -448,6 +448,8 @@ It enables _a lot_ of commands:
 * `!gtav punish ammo`
 * `!gtav punish enemy`
 * `!gtav punish enemy <amount>`
+* `!gtav punish drunk`
+* `!gtav punish very-drunk`
 
 All of these have different effects and costs (which requires the `currency` feature).
 
