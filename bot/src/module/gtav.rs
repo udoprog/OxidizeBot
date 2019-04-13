@@ -64,6 +64,10 @@ enum Command {
     SpawnEnemy(u32),
     /// Enable exploding bullets.
     ExplodingBullets,
+    /// Make moderate drunk.
+    Drunk,
+    /// Make very drunk.
+    VeryDrunk,
     /// Send a raw command to ChaosMod.
     Raw(String),
 }
@@ -104,6 +108,8 @@ impl Command {
             Invincibility(..) => "rewarded",
             SpawnEnemy(..) => "punished",
             ExplodingBullets => "reward",
+            Drunk => "punished",
+            VeryDrunk => "punished",
             Raw(..) => "?",
         }
     }
@@ -143,6 +149,8 @@ impl Command {
             Invincibility(n) => format!("invincibility {}", n),
             SpawnEnemy(n) => format!("spawn-enemy {}", n),
             ExplodingBullets => format!("exploding-bullets"),
+            Drunk => format!("drunk"),
+            VeryDrunk => format!("very-drunk"),
             Raw(ref cmd) => cmd.to_string(),
         }
     }
@@ -184,6 +192,8 @@ impl Command {
             Invincibility(n) => 2 * (n as u32),
             SpawnEnemy(n) => 10 * n,
             ExplodingBullets => 50,
+            Drunk => 20,
+            VeryDrunk => 40,
             Raw(..) => 0,
         }
     }
@@ -229,6 +239,8 @@ impl fmt::Display for Command {
             SpawnEnemy(1) => write!(fmt, "spawning an enemy monkaS"),
             SpawnEnemy(n) => write!(fmt, "spawning {} enemies monkaS", n),
             ExplodingBullets => write!(fmt, "enabling exploding bullets CurseLit"),
+            Drunk => write!(fmt, "making them drunk"),
+            VeryDrunk => write!(fmt, "making them VERY drunk"),
             Raw(..) => write!(fmt, "sending a raw command"),
         }
     }
@@ -460,6 +472,8 @@ impl Handler {
             Some("invincibility") => Command::Invincibility(10f32),
             Some("ammo") => Command::GiveAmmo,
             Some("exploding-bullets") => Command::ExplodingBullets,
+            Some("drunk") => Command::Drunk,
+            Some("very-drunk") => Command::VeryDrunk,
             _ => {
                 ctx.respond(format!(
                     "Available rewards are: \
@@ -475,7 +489,10 @@ impl Handler {
                      {c} superswim, \
                      {c} superjump, \
                      {c} invincibility, \
-                     {c} ammo. \
+                     {c} ammo, \
+                     {c} exploding-bullets, \
+                     {c} drunk, \
+                     {c} very-drunk. \
                      See !chaos% for more details.",
                     c = ctx.alias.unwrap_or("!gtav reward"),
                 ));
@@ -910,8 +927,8 @@ impl Vehicle {
             JetSki => format!("a jet ski DansRage"),
             Blimp => format!("a blimp SeemsGood"),
             Tank => format!("a tank!"),
-            Sub => format!("a submarine!"),
             Hydra => format!("a hydra!"),
+            Sub => format!("a submarine!"),
         }
     }
 
