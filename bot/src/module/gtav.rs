@@ -68,6 +68,10 @@ enum Command {
     Drunk,
     /// Make very drunk.
     VeryDrunk,
+    /// Set player on fire.
+    SetOnFire,
+    /// Set pedestrians on fire.
+    SetPedsOnFire,
     /// Send a raw command to ChaosMod.
     Raw(String),
 }
@@ -110,6 +114,8 @@ impl Command {
             ExplodingBullets => "reward",
             Drunk => "punished",
             VeryDrunk => "punished",
+            SetOnFire => "punished",
+            SetPedsOnFire => "punished",
             Raw(..) => "?",
         }
     }
@@ -151,6 +157,8 @@ impl Command {
             ExplodingBullets => format!("exploding-bullets"),
             Drunk => format!("drunk"),
             VeryDrunk => format!("very-drunk"),
+            SetOnFire => format!("set-on-fire"),
+            SetPedsOnFire => format!("set-peds-on-fire"),
             Raw(ref cmd) => cmd.to_string(),
         }
     }
@@ -194,6 +202,8 @@ impl Command {
             ExplodingBullets => 50,
             Drunk => 20,
             VeryDrunk => 40,
+            SetOnFire => 40,
+            SetPedsOnFire => 20,
             Raw(..) => 0,
         }
     }
@@ -241,6 +251,8 @@ impl fmt::Display for Command {
             ExplodingBullets => write!(fmt, "enabling exploding bullets CurseLit"),
             Drunk => write!(fmt, "making them drunk"),
             VeryDrunk => write!(fmt, "making them VERY drunk"),
+            SetOnFire => write!(fmt, "setting them on fire"),
+            SetPedsOnFire => write!(fmt, "setting ALL the pedestrians on fire"),
             Raw(..) => write!(fmt, "sending a raw command"),
         }
     }
@@ -374,6 +386,10 @@ impl Handler {
                     return Ok(None);
                 }
             },
+            Some("drunk") => Command::Drunk,
+            Some("very-drunk") => Command::VeryDrunk,
+            Some("set-on-fire") => Command::SetOnFire,
+            Some("set-peds-on-fire") => Command::SetPedsOnFire,
             _ => {
                 ctx.respond(format!(
                     "Available punishments are: \
@@ -388,7 +404,11 @@ impl Handler {
                      {c} weather, \
                      {c} brake, \
                      {c} ammo, \
-                     {c} enemy. \
+                     {c} enemy, \
+                     {c} drunk, \
+                     {c} very-drunk, \
+                     {c} set-on-fire, \
+                     {c} set-peds-on-fire. \
                      See !chaos% for more details.",
                     c = ctx.alias.unwrap_or("!gtav punish"),
                 ));
@@ -472,8 +492,6 @@ impl Handler {
             Some("invincibility") => Command::Invincibility(10f32),
             Some("ammo") => Command::GiveAmmo,
             Some("exploding-bullets") => Command::ExplodingBullets,
-            Some("drunk") => Command::Drunk,
-            Some("very-drunk") => Command::VeryDrunk,
             _ => {
                 ctx.respond(format!(
                     "Available rewards are: \
@@ -490,9 +508,7 @@ impl Handler {
                      {c} superjump, \
                      {c} invincibility, \
                      {c} ammo, \
-                     {c} exploding-bullets, \
-                     {c} drunk, \
-                     {c} very-drunk. \
+                     {c} exploding-bullets. \
                      See !chaos% for more details.",
                     c = ctx.alias.unwrap_or("!gtav reward"),
                 ));

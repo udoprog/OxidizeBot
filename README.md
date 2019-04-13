@@ -450,6 +450,8 @@ It enables _a lot_ of commands:
 * `!gtav punish enemy <amount>`
 * `!gtav punish drunk`
 * `!gtav punish very-drunk`
+* `!gtav punish set-on-fire`
+* `!gtav punish set-peds-on-fire`
 
 All of these have different effects and costs (which requires the `currency` feature).
 
