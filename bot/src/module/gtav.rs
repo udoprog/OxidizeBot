@@ -308,9 +308,9 @@ pub struct Handler {
     currency: currency::Currency,
     cooldown: Arc<RwLock<utils::Cooldown>>,
     prefix: Arc<RwLock<String>>,
-    other_scaling: Arc<RwLock<u32>>,
-    punish_scaling: Arc<RwLock<u32>>,
-    reward_scaling: Arc<RwLock<u32>>,
+    other_percentage: Arc<RwLock<u32>>,
+    punish_percentage: Arc<RwLock<u32>>,
+    reward_percentage: Arc<RwLock<u32>>,
     id_counter: usize,
     tx: mpsc::UnboundedSender<(irc::OwnedUser, usize, Command)>,
 }
@@ -377,7 +377,7 @@ impl Handler {
             }
         };
 
-        Ok(Some((command, *self.other_scaling.read())))
+        Ok(Some((command, *self.other_percentage.read())))
     }
 
     /// Handle the punish command.
@@ -483,7 +483,7 @@ impl Handler {
             }
         };
 
-        Ok(Some((command, *self.punish_scaling.read())))
+        Ok(Some((command, *self.punish_percentage.read())))
     }
 
     /// Handle the reward command.
@@ -611,7 +611,7 @@ impl Handler {
             }
         };
 
-        Ok(Some((command, *self.reward_scaling.read())))
+        Ok(Some((command, *self.reward_percentage.read())))
     }
 }
 
@@ -633,8 +633,8 @@ impl command::Handler for Handler {
             }
         };
 
-        let (command, scaling) = match result {
-            Some((command, scaling)) => (command, scaling),
+        let (command, percentage) = match result {
+            Some((command, percentage)) => (command, percentage),
             None => return Ok(()),
         };
 
@@ -643,7 +643,7 @@ impl command::Handler for Handler {
             return Ok(());
         }
 
-        let cost = command.cost() * scaling / 100;
+        let cost = command.cost() * percentage / 100;
 
         let balance = self
             .db
@@ -773,12 +773,11 @@ impl super::Module for Module {
             String::from("ChaosMod: "),
             settings::Type::String,
         )?;
-        let other_scaling =
-            settings.sync_var(core, "gtav/other-scaling", 100, settings::Type::U32)?;
-        let punish_scaling =
-            settings.sync_var(core, "gtav/punish-scaling", 100, settings::Type::U32)?;
-        let reward_scaling =
-            settings.sync_var(core, "gtav/reward-scaling", 100, settings::Type::U32)?;
+        let other_percentage = settings.sync_var(core, "gtav/other%", 100, settings::Type::U32)?;
+        let punish_percentage =
+            settings.sync_var(core, "gtav/punish%", 100, settings::Type::U32)?;
+        let reward_percentage =
+            settings.sync_var(core, "gtav/reward%", 100, settings::Type::U32)?;
 
         let (tx, rx) = mpsc::unbounded();
 
@@ -790,9 +789,9 @@ impl super::Module for Module {
                 currency,
                 cooldown,
                 prefix,
-                other_scaling,
-                punish_scaling,
-                reward_scaling,
+                other_percentage,
+                punish_percentage,
+                reward_percentage,
                 id_counter: 0,
                 tx,
             },
