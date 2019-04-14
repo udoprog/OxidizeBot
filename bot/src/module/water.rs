@@ -1,4 +1,4 @@
-use crate::{command, config, currency, db, module, stream_info, utils};
+use crate::{command, config, currency, db, module, settings, stream_info, utils};
 use chrono::{DateTime, Utc};
 use failure::format_err;
 use futures::Future as _;
@@ -17,6 +17,7 @@ pub struct Handler {
     cooldown: utils::Cooldown,
     waters: Vec<(DateTime<Utc>, Option<Reward>)>,
     stream_info: Arc<RwLock<stream_info::StreamInfo>>,
+    reward_multiplier: Arc<RwLock<u32>>,
 }
 
 impl Handler {
@@ -95,6 +96,7 @@ impl command::Handler for Handler {
                 let now = Utc::now();
                 let diff = now.clone() - last;
                 let amount = i64::max(0i64, diff.num_minutes());
+                let amount = amount * self.reward_multiplier.read() as i64;
 
                 self.waters.push((
                     now,
@@ -163,9 +165,13 @@ impl super::Module for Module {
             handlers,
             currency,
             stream_info,
+            settings,
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
+        let reward_multiplier =
+            settings.sync_var(core, "water/reward-multiplier", 1, settings::Type::U32)?;
+
         let currency = currency
             .ok_or_else(|| format_err!("currency required for !swearjar module"))?
             .clone();
@@ -178,6 +184,7 @@ impl super::Module for Module {
                 cooldown: self.cooldown.clone(),
                 waters: Vec::new(),
                 stream_info: stream_info.clone(),
+                reward_multiplier,
             },
         );
 
