@@ -187,6 +187,9 @@ impl Irc<'_> {
             let reward = 10;
             let interval = 60 * 10;
 
+            let reward_percentage =
+                settings.sync_var(core, "irc/viewer-reward%", 100, settings::Type::U32)?;
+
             let future = reward_loop(
                 irc_config,
                 reward,
@@ -194,6 +197,7 @@ impl Irc<'_> {
                 sender.clone(),
                 currency,
                 &idle,
+                reward_percentage,
             );
 
             futures.push(Box::new(future));
@@ -306,6 +310,7 @@ fn reward_loop(
     sender: Sender,
     currency: &currency::Currency,
     idle: &idle::Idle,
+    reward_percentage: Arc<RwLock<u32>>,
 ) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
     // Add currency timer.
     timer::Interval::new_interval(time::Duration::from_secs(interval))
@@ -316,8 +321,11 @@ fn reward_loop(
             let currency = currency.clone();
 
             move |_| {
+                let reward = (reward * *reward_percentage.read() as i64) / 100i64;
                 log::trace!("running reward loop");
-                currency.add_channel_all(channel.as_str(), reward)
+                currency
+                    .add_channel_all(channel.as_str(), reward)
+                    .map(move |count| (count, reward))
             }
         })
         .map({
@@ -326,7 +334,7 @@ fn reward_loop(
             let channel = config.channel.to_string();
             let currency = currency.clone();
 
-            move |count| {
+            move |(count, reward)| {
                 if notify_rewards && count > 0 && !idle.is_idle() {
                     sender.privmsg(
                         channel.as_str(),

@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `!afterstream` command without argument now prints a help message ([#26]).
 - Added `gtav` module to interface with [ChaosMod]. See [`gtav` configuration].
 - Theme songs now can have an `end` parameter, indicating when it should end.
+- Song requests can be rewarded using the `song/request-reward` setting.
+- Water reward can be scaled using `water/reward%`.
+- Viewer reward can be scaled using `irc/viewer-reward%`.
 
 [`currency` configuration]: README.md#currency
 [`gtav` configuration]: README.md#gtav

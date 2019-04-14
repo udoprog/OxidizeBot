@@ -1,18 +1,181 @@
-use crate::{command, irc, module, player, track_id, utils, utils::BoxFuture};
+use crate::{
+    command, currency, db, irc, module, player, settings, track_id, utils, utils::BoxFuture,
+};
 use futures::{future, Future, Stream as _};
+use parking_lot::RwLock;
 use std::sync::Arc;
 
 const EXAMPLE_SEARCH: &'static str = "queen we will rock you";
 
 /// Handler for the `!song` command.
 pub struct Handler {
+    pub db: db::Database,
     pub player: player::PlayerClient,
     pub request_help_cooldown: utils::Cooldown,
+    pub request_reward: Arc<RwLock<u32>>,
+    pub currency: Option<Arc<currency::Currency>>,
 }
 
 impl Handler {
+    fn handle_request(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
+        let q = ctx.rest();
+
+        if !ctx.next().is_some() {
+            self.request_help(ctx, None);
+            return Ok(());
+        }
+
+        let track_id_future: BoxFuture<Option<player::TrackId>, failure::Error> =
+            match player::TrackId::parse(q) {
+                Ok(track_id) => Box::new(future::ok(Some(track_id))),
+                Err(e) => {
+                    match e {
+                        track_id::ParseTrackIdError::BadUri(_) => (),
+                        ref e if e.is_bad_host_youtube() => {
+                            self.request_help(
+                                ctx,
+                                Some("Can't request songs from YouTube, sorry :("),
+                            );
+                            return Ok(());
+                        }
+                        e => {
+                            log::warn!("bad song request by {}: {}", ctx.user.name, e);
+                            let e = format!("{}, sorry :(", e);
+                            self.request_help(ctx, Some(e.as_str()));
+                            return Ok(());
+                        }
+                    }
+
+                    log::info!("Failed to parse as URL/URI: {}: {}", q, e);
+                    Box::new(self.player.search_track(q))
+                }
+            };
+
+        let future = track_id_future.and_then({
+            let user = ctx.user.as_owned_user();
+
+            move |track_id| match track_id {
+                None => {
+                    user.respond("Could not find a track matching your request, sorry :(");
+                    return Err(failure::format_err!("bad track in request"));
+                }
+                Some(track_id) => return Ok(track_id),
+            }
+        });
+
+        let future = future.map_err(|e| {
+            utils::log_err("failed to add track", e);
+            ()
+        });
+
+        let future = future
+            .and_then({
+                let is_moderator = ctx.is_moderator();
+                let user = ctx.user.as_owned_user();
+                let player = self.player.clone();
+
+                move |track_id| {
+                    player.add_track(&user.name, track_id, is_moderator).then(move |result| {
+                        match result {
+                            Ok((pos, item)) => return Ok((pos, item)),
+                            Err(player::AddTrackError::PlayerClosed(reason)) => {
+                                match reason {
+                                    Some(reason) => {
+                                        user.respond(reason.as_str());
+                                    },
+                                    None => {
+                                        user.respond("Player is closed from further requests, sorry :(");
+                                    }
+                                }
+                            }
+                            Err(player::AddTrackError::QueueContainsTrack(pos)) => {
+                                user.respond(format!(
+                                    "Player already contains that track (position #{pos}).",
+                                    pos = pos + 1,
+                                ));
+                            }
+                            Err(player::AddTrackError::TooManyUserTracks(count)) => {
+                                match count {
+                                    0 => {
+                                        user.respond("Unfortunately you are not allowed to add tracks :(");
+                                    }
+                                    1 => {
+                                        user.respond(
+                                            "<3 your enthusiasm, but you already have a track in the queue.",
+                                        );
+                                    }
+                                    count => {
+                                        user.respond(format!(
+                                            "<3 your enthusiasm, but you already have {count} tracks in the queue.",
+                                            count = count,
+                                        ));
+                                    }
+                                }
+                            }
+                            Err(player::AddTrackError::QueueFull) => {
+                                user.respond("Player is full, try again later!");
+                            }
+                            Err(player::AddTrackError::Error(e)) => {
+                                user.respond("There was a problem adding your song :(");
+                                utils::log_err("failed to add song", e);
+                            }
+                        }
+
+                        Err(())
+                    })
+                }
+            });
+
+        let future = future.and_then::<_, BoxFuture<(), ()>>({
+            let currency = self.currency.clone();
+            let request_reward = *self.request_reward.read();
+            let db = self.db.clone();
+            let user = ctx.user.as_owned_user();
+
+            move |(pos, item)| {
+                let currency = match currency.clone() {
+                    Some(ref currency) if request_reward > 0 => currency.clone(),
+                    _ => {
+                        user.respond(format!(
+                            "Added {what} at position #{pos}!",
+                            what = item.what(),
+                            pos = pos + 1
+                        ));
+
+                        return Box::new(future::ok(()));
+                    }
+                };
+
+                let future = db.balance_add(&user.target, &user.name, request_reward as i64);
+
+                let future = future.then(move |result| match result {
+                    Ok(()) => {
+                        user.respond(format!(
+                            "Added {what} at position #{pos}, here's your {amount} {currency}!",
+                            what = item.what(),
+                            pos = pos + 1,
+                            amount = request_reward,
+                            currency = currency.name,
+                        ));
+
+                        Ok(())
+                    }
+                    Err(e) => {
+                        utils::log_err("failed to reward user for song request", e);
+                        Ok(())
+                    }
+                });
+
+                Box::new(future)
+            }
+        });
+
+        ctx.spawn(future);
+        Ok(())
+    }
+
     /// Provide a help message instructing the user how to perform song requests.
-    fn request_help(&mut self, ctx: command::Context<'_, '_>, reason: Option<&str>) {
+    fn request_help(&mut self, ctx: &mut command::Context<'_, '_>, reason: Option<&str>) {
         if !self.request_help_cooldown.is_open() {
             if let Some(reason) = reason {
                 ctx.respond(reason);
@@ -286,121 +449,7 @@ impl command::Handler for Handler {
                 self.player.skip()?;
             }
             Some("request") => {
-                let q = ctx.rest();
-
-                if !ctx.next().is_some() {
-                    self.request_help(ctx, None);
-                    return Ok(());
-                }
-
-                let track_id_future: BoxFuture<Option<player::TrackId>, failure::Error> =
-                    match player::TrackId::parse(q) {
-                        Ok(track_id) => Box::new(future::ok(Some(track_id))),
-                        Err(e) => {
-                            match e {
-                                track_id::ParseTrackIdError::BadUri(_) => (),
-                                ref e if e.is_bad_host_youtube() => {
-                                    self.request_help(
-                                        ctx,
-                                        Some("Can't request songs from YouTube, sorry :("),
-                                    );
-                                    return Ok(());
-                                }
-                                e => {
-                                    log::warn!("bad song request by {}: {}", ctx.user.name, e);
-                                    let e = format!("{}, sorry :(", e);
-                                    self.request_help(ctx, Some(e.as_str()));
-                                    return Ok(());
-                                }
-                            }
-
-                            log::info!("Failed to parse as URL/URI: {}: {}", q, e);
-                            Box::new(self.player.search_track(q))
-                        }
-                    };
-
-                let future = track_id_future.and_then({
-                    let user = ctx.user.as_owned_user();
-
-                    move |track_id| match track_id {
-                        None => {
-                            user.respond("Could not find a track matching your request, sorry :(");
-                            return Err(failure::format_err!("bad track in request"));
-                        }
-                        Some(track_id) => return Ok(track_id),
-                    }
-                });
-
-                let future = future.map_err(|e| {
-                    utils::log_err("failed to add track", e);
-                    ()
-                });
-
-                let future = future
-                    .and_then({
-                        let is_moderator = ctx.is_moderator();
-                        let user = ctx.user.as_owned_user();
-                        let player = self.player.clone();
-
-                        move |track_id| {
-                            player.add_track(&user.name, track_id, is_moderator).then(move |result| {
-                                match result {
-                                    Ok((pos, item)) => {
-                                        user.respond(format!(
-                                            "Added {what} at position #{pos}!",
-                                            what = item.what(),
-                                            pos = pos + 1
-                                        ));
-                                    }
-                                    Err(player::AddTrackError::PlayerClosed(reason)) => {
-                                        match reason {
-                                            Some(reason) => {
-                                                user.respond(reason.as_str());
-                                            },
-                                            None => {
-                                                user.respond("Player is closed from further requests, sorry :(");
-                                            }
-                                        }
-                                    }
-                                    Err(player::AddTrackError::QueueContainsTrack(pos)) => {
-                                        user.respond(format!(
-                                            "Player already contains that track (position #{pos}).",
-                                            pos = pos + 1,
-                                        ));
-                                    }
-                                    Err(player::AddTrackError::TooManyUserTracks(count)) => {
-                                        match count {
-                                            0 => {
-                                                user.respond("Unfortunately you are not allowed to add tracks :(");
-                                            }
-                                            1 => {
-                                                user.respond(
-                                                    "<3 your enthusiasm, but you already have a track in the queue.",
-                                                );
-                                            }
-                                            count => {
-                                                user.respond(format!(
-                                                    "<3 your enthusiasm, but you already have {count} tracks in the queue.",
-                                                    count = count,
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    Err(player::AddTrackError::QueueFull) => {
-                                        user.respond("Player is full, try again later!");
-                                    }
-                                    Err(player::AddTrackError::Error(e)) => {
-                                        user.respond("There was a problem adding your song :(");
-                                        utils::log_err("failed to add song", e);
-                                    }
-                                }
-
-                                Ok(())
-                            })
-                        }
-                    });
-
-                ctx.spawn(future);
+                self.handle_request(&mut ctx)?;
             }
             Some("toggle") => {
                 ctx.check_moderator()?;
@@ -485,10 +534,14 @@ impl module::Module for Module {
     fn hook(
         &self,
         module::HookContext {
+            core,
+            db,
             irc_config,
             handlers,
             futures,
             sender,
+            settings,
+            currency,
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
@@ -498,11 +551,17 @@ impl module::Module for Module {
             sender.clone(),
         )));
 
+        let request_reward =
+            settings.sync_var(core, "song/request-reward", 0, settings::Type::U32)?;
+
         handlers.insert(
             "song",
             Handler {
+                db: db.clone(),
                 request_help_cooldown: self.help_cooldown.clone(),
                 player: self.player.clone(),
+                request_reward,
+                currency: currency.cloned().map(Arc::new),
             },
         );
         Ok(())

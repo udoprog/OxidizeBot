@@ -96,7 +96,7 @@ impl command::Handler for Handler {
                 let now = Utc::now();
                 let diff = now.clone() - last;
                 let amount = i64::max(0i64, diff.num_minutes());
-                let amount = amount * self.reward_multiplier.read() as i64;
+                let amount = (amount * *self.reward_multiplier.read() as i64) / 100i64;
 
                 self.waters.push((
                     now,
@@ -161,6 +161,7 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
+            core,
             db,
             handlers,
             currency,
@@ -170,7 +171,7 @@ impl super::Module for Module {
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
         let reward_multiplier =
-            settings.sync_var(core, "water/reward-multiplier", 1, settings::Type::U32)?;
+            settings.sync_var(core, "water/reward%", 100, settings::Type::U32)?;
 
         let currency = currency
             .ok_or_else(|| format_err!("currency required for !swearjar module"))?
