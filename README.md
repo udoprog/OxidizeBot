@@ -433,6 +433,7 @@ It enables _a lot_ of commands:
 * `!gtav reward ammo`
 * `!gtav reward exploding-bullets`
 * `!gtav reward matrix-slam`
+* `!gtav reward mod-vehicle`
 * `!gtav punish wanted 1`
 * `!gtav punish wanted 2`
 * `!gtav punish wanted 3`
@@ -454,6 +455,7 @@ It enables _a lot_ of commands:
 * `!gtav punish set-on-fire`
 * `!gtav punish set-peds-on-fire`
 * `!gtav punish make-peds-aggressive`
+* `!gtav punish disable-control`
 
 All of these have different effects and costs (which requires the `currency` feature).
 

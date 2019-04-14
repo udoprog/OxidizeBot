@@ -78,6 +78,12 @@ enum Command {
     MakePedsAggressive,
     /// Perform a matrix slam.
     MatrixSlam,
+    /// Close the player's parachute.
+    CloseParachute,
+    /// Disable a control for a short period of time.
+    DisableControl(Control),
+    /// Mod the current vehicle.
+    ModVehicle(VehicleMod),
     /// Send a raw command to ChaosMod.
     Raw(String),
 }
@@ -125,6 +131,9 @@ impl Command {
             SetPedsOnFire => "punished",
             MakePedsAggressive => "punished",
             MatrixSlam => "rewarded",
+            CloseParachute => "close-parachute",
+            DisableControl(..) => "punished",
+            ModVehicle(..) => "rewarded",
             Raw(..) => "?",
         }
     }
@@ -171,6 +180,9 @@ impl Command {
             SetPedsOnFire => format!("set-peds-on-fire"),
             MakePedsAggressive => format!("make-peds-aggressive"),
             MatrixSlam => format!("matrix-slam"),
+            CloseParachute => format!("close-parachute"),
+            DisableControl(ref control) => format!("disable-control {}", control),
+            ModVehicle(ref m) => format!("mod-vehicle {}", m),
             Raw(ref cmd) => cmd.to_string(),
         }
     }
@@ -219,6 +231,9 @@ impl Command {
             SetPedsOnFire => 20,
             MakePedsAggressive => 40,
             MatrixSlam => 50,
+            CloseParachute => 50,
+            DisableControl(ref control) => control.cost(),
+            ModVehicle(ref m) => m.cost(),
             Raw(..) => 0,
         }
     }
@@ -270,7 +285,12 @@ impl fmt::Display for Command {
             SetOnFire => write!(fmt, "setting them on fire"),
             SetPedsOnFire => write!(fmt, "setting ALL the pedestrians on fire"),
             MakePedsAggressive => write!(fmt, "setting the pedestrians on them"),
-            MatrixSlam => write!(fmt, "performing a Matrix slam!"),
+            MatrixSlam => write!(fmt, "performing a Matrix slam"),
+            CloseParachute => write!(fmt, "opening their parachute"),
+            DisableControl(ref control) => {
+                write!(fmt, "disabling their {} control", control.display())
+            }
+            ModVehicle(ref m) => write!(fmt, "adding {} mod to their current vehicle", m.display()),
             Raw(..) => write!(fmt, "sending a raw command"),
         }
     }
@@ -378,7 +398,7 @@ impl Handler {
                 _ => {
                     ctx.respond(format!(
                         "Expected number between 1 and 5, like \"{} wanted 3\"",
-                        ctx.alias.unwrap_or("!gtav punish")
+                        ctx.alias.unwrap_or("!gtav punish wanted")
                     ));
                     return Ok(None);
                 }
@@ -409,6 +429,30 @@ impl Handler {
             Some("set-on-fire") => Command::SetOnFire,
             Some("set-peds-on-fire") => Command::SetPedsOnFire,
             Some("make-peds-aggressive") => Command::MakePedsAggressive,
+            Some("close-parachute") => Command::CloseParachute,
+            Some("disable-control") => {
+                let control = match ctx.next().and_then(Control::from_id) {
+                    Some(weapon) => weapon,
+                    None => {
+                        let controls = Control::all()
+                            .into_iter()
+                            .map(|w| format!("{} ({})", w, w.cost()))
+                            .collect::<Vec<String>>()
+                            .join(", ");
+
+                        ctx.respond(format!(
+                            "You disable controls using for example {c} steering. \
+                             Available controls to disable are: {controls}. ",
+                            c = ctx.alias.unwrap_or("!gtav punish disable-control"),
+                            controls = controls,
+                        ));
+
+                        return Ok(None);
+                    }
+                };
+
+                Command::DisableControl(control)
+            }
             _ => {
                 ctx.respond(format!(
                     "Available punishments are: \
@@ -428,7 +472,9 @@ impl Handler {
                      {c} very-drunk, \
                      {c} set-on-fire, \
                      {c} set-peds-on-fire, \
-                     {c} make-peds-aggressive. \
+                     {c} make-peds-aggressive,
+                     {c} close-parachute,
+                     {c} disable-control. \
                      See !chaos% for more details.",
                     c = ctx.alias.unwrap_or("!gtav punish"),
                 ));
@@ -514,6 +560,29 @@ impl Handler {
             Some("exploding-bullets") => Command::ExplodingBullets,
             Some("exploding-punches") => Command::ExplodingPunches,
             Some("matrix-slam") => Command::MatrixSlam,
+            Some("mod-vehicle") => {
+                let m = match ctx.next().and_then(VehicleMod::from_id) {
+                    Some(weapon) => weapon,
+                    None => {
+                        let mods = VehicleMod::all()
+                            .into_iter()
+                            .map(|w| format!("{} ({})", w, w.cost()))
+                            .collect::<Vec<String>>()
+                            .join(", ");
+
+                        ctx.respond(format!(
+                            "You give the streamer vehicle mods using for example {c} random. \
+                             Available mods are: {mods}. ",
+                            c = ctx.alias.unwrap_or("!gtav reward mod-vehicle"),
+                            mods = mods,
+                        ));
+
+                        return Ok(None);
+                    }
+                };
+
+                Command::ModVehicle(m)
+            }
             _ => {
                 ctx.respond(format!(
                     "Available rewards are: \
@@ -532,7 +601,8 @@ impl Handler {
                      {c} ammo, \
                      {c} exploding-bullets, \
                      {c} exploding-punches, \
-                     {c} matrix-slam. \
+                     {c} matrix-slam, \
+                     {c} mod-vehicle. \
                      See !chaos% for more details.",
                     c = ctx.alias.unwrap_or("!gtav reward"),
                 ));
@@ -927,6 +997,128 @@ impl fmt::Display for Weapon {
             Parachute => "parachute",
 
             Firework => "firework",
+        };
+
+        s.fmt(fmt)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum VehicleMod {
+    Random,
+    LowTier,
+    MidTier,
+    HighTier,
+}
+
+impl VehicleMod {
+    /// Human-readable display of this mod.
+    pub fn display(&self) -> String {
+        use self::VehicleMod::*;
+
+        match *self {
+            Random => format!("random mods BlessRNG"),
+            LowTier => format!("low tier mods"),
+            MidTier => format!("mid tier mods"),
+            HighTier => format!("high tier mods"),
+        }
+    }
+
+    /// Map an id to a mod.
+    pub fn from_id(id: &str) -> Option<VehicleMod> {
+        use self::VehicleMod::*;
+
+        match id {
+            "random" => Some(Random),
+            "low-tier" => Some(LowTier),
+            "mid-tier" => Some(MidTier),
+            "high-tier" => Some(HighTier),
+            _ => None,
+        }
+    }
+
+    /// Get the cost of a mod tier.
+    fn cost(&self) -> u32 {
+        use self::VehicleMod::*;
+
+        match *self {
+            Random => 5,
+            LowTier => 5,
+            MidTier => 5,
+            HighTier => 10,
+        }
+    }
+
+    /// Get a list of all mod tiers.
+    fn all() -> Vec<VehicleMod> {
+        use self::VehicleMod::*;
+
+        vec![Random, LowTier, MidTier, HighTier]
+    }
+}
+
+impl fmt::Display for VehicleMod {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use self::VehicleMod::*;
+
+        let s = match *self {
+            Random => "random",
+            LowTier => "low-tier",
+            MidTier => "mid-tier",
+            HighTier => "high-tier",
+        };
+
+        s.fmt(fmt)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Control {
+    Steering,
+}
+
+impl Control {
+    /// Human-readable display of this control.
+    pub fn display(&self) -> String {
+        use self::Control::*;
+
+        match *self {
+            Steering => format!("steering"),
+        }
+    }
+
+    /// Map an id to a mod.
+    pub fn from_id(id: &str) -> Option<Control> {
+        use self::Control::*;
+
+        match id {
+            "steering" => Some(Steering),
+            _ => None,
+        }
+    }
+
+    /// Get the cost of a control.
+    fn cost(&self) -> u32 {
+        use self::Control::*;
+
+        match *self {
+            Steering => 50,
+        }
+    }
+
+    /// Get a list of all mod tiers.
+    fn all() -> Vec<Control> {
+        use self::Control::*;
+        vec![Steering]
+    }
+}
+
+impl fmt::Display for Control {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use self::Control::*;
+
+        let s = match *self {
+            Steering => "steering",
         };
 
         s.fmt(fmt)
