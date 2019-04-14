@@ -64,6 +64,8 @@ enum Command {
     SpawnEnemy(u32),
     /// Enable exploding bullets.
     ExplodingBullets,
+    /// Enable exploding punches.
+    ExplodingPunches,
     /// Make moderate drunk.
     Drunk,
     /// Make very drunk.
@@ -72,6 +74,10 @@ enum Command {
     SetOnFire,
     /// Set pedestrians on fire.
     SetPedsOnFire,
+    /// Make a number of close by peds aggressive.
+    MakePedsAggressive,
+    /// Perform a matrix slam.
+    MatrixSlam,
     /// Send a raw command to ChaosMod.
     Raw(String),
 }
@@ -112,10 +118,13 @@ impl Command {
             Invincibility(..) => "rewarded",
             SpawnEnemy(..) => "punished",
             ExplodingBullets => "reward",
+            ExplodingPunches => "reward",
             Drunk => "punished",
             VeryDrunk => "punished",
             SetOnFire => "punished",
             SetPedsOnFire => "punished",
+            MakePedsAggressive => "punished",
+            MatrixSlam => "rewarded",
             Raw(..) => "?",
         }
     }
@@ -155,10 +164,13 @@ impl Command {
             Invincibility(n) => format!("invincibility {}", n),
             SpawnEnemy(n) => format!("spawn-enemy {}", n),
             ExplodingBullets => format!("exploding-bullets"),
+            ExplodingPunches => format!("exploding-punches"),
             Drunk => format!("drunk"),
             VeryDrunk => format!("very-drunk"),
             SetOnFire => format!("set-on-fire"),
             SetPedsOnFire => format!("set-peds-on-fire"),
+            MakePedsAggressive => format!("make-peds-aggressive"),
+            MatrixSlam => format!("matrix-slam"),
             Raw(ref cmd) => cmd.to_string(),
         }
     }
@@ -200,10 +212,13 @@ impl Command {
             Invincibility(n) => 2 * (n as u32),
             SpawnEnemy(n) => 10 * n,
             ExplodingBullets => 50,
+            ExplodingPunches => 50,
             Drunk => 20,
             VeryDrunk => 40,
             SetOnFire => 40,
             SetPedsOnFire => 20,
+            MakePedsAggressive => 40,
+            MatrixSlam => 50,
             Raw(..) => 0,
         }
     }
@@ -249,10 +264,13 @@ impl fmt::Display for Command {
             SpawnEnemy(1) => write!(fmt, "spawning an enemy monkaS"),
             SpawnEnemy(n) => write!(fmt, "spawning {} enemies monkaS", n),
             ExplodingBullets => write!(fmt, "enabling exploding bullets CurseLit"),
+            ExplodingPunches => write!(fmt, "enabling exploding punches CurseLit"),
             Drunk => write!(fmt, "making them drunk"),
             VeryDrunk => write!(fmt, "making them VERY drunk"),
             SetOnFire => write!(fmt, "setting them on fire"),
             SetPedsOnFire => write!(fmt, "setting ALL the pedestrians on fire"),
+            MakePedsAggressive => write!(fmt, "setting the pedestrians on them"),
+            MatrixSlam => write!(fmt, "performing a Matrix slam!"),
             Raw(..) => write!(fmt, "sending a raw command"),
         }
     }
@@ -390,6 +408,7 @@ impl Handler {
             Some("very-drunk") => Command::VeryDrunk,
             Some("set-on-fire") => Command::SetOnFire,
             Some("set-peds-on-fire") => Command::SetPedsOnFire,
+            Some("make-peds-aggressive") => Command::MakePedsAggressive,
             _ => {
                 ctx.respond(format!(
                     "Available punishments are: \
@@ -408,7 +427,8 @@ impl Handler {
                      {c} drunk, \
                      {c} very-drunk, \
                      {c} set-on-fire, \
-                     {c} set-peds-on-fire. \
+                     {c} set-peds-on-fire, \
+                     {c} make-peds-aggressive. \
                      See !chaos% for more details.",
                     c = ctx.alias.unwrap_or("!gtav punish"),
                 ));
@@ -492,6 +512,8 @@ impl Handler {
             Some("invincibility") => Command::Invincibility(10f32),
             Some("ammo") => Command::GiveAmmo,
             Some("exploding-bullets") => Command::ExplodingBullets,
+            Some("exploding-punches") => Command::ExplodingPunches,
+            Some("matrix-slam") => Command::MatrixSlam,
             _ => {
                 ctx.respond(format!(
                     "Available rewards are: \
@@ -508,7 +530,9 @@ impl Handler {
                      {c} superjump, \
                      {c} invincibility, \
                      {c} ammo, \
-                     {c} exploding-bullets. \
+                     {c} exploding-bullets, \
+                     {c} exploding-punches, \
+                     {c} matrix-slam. \
                      See !chaos% for more details.",
                     c = ctx.alias.unwrap_or("!gtav reward"),
                 ));
