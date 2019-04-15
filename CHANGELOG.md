@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.4...HEAD
+
+## [0.2.5]
+
 ### Changed
 - Expand `currency` feature. See the [`currency` configuration].
 - Added `!thingies give` and `!thingies show`. See the [`currency` configuration].
@@ -30,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [#26]: https://github.com/udoprog/setmod/issues/26
 
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.4...HEAD
+[0.2.5]: https://github.com/udoprog/setmod/compare/0.2.4...0.2.5
 
 ## [0.2.4]
 
