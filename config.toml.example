@@ -55,42 +55,18 @@ blimp = {track = "spotify:track:7JczDg05i29N5C3VMZKIVA"}
 setup = {track = "spotify:track:2fZpKgrcAlWzWYwQeFG43O", offset = "00:14"}
 
 [[modules]]
-type = "swearjar"
-reward = 10
-
-[[modules]]
 # A countdown module that will set a countdown based on a template.
 type = "countdown"
 path = "E:\\temp\\countdown.txt"
 
-[[water]]
+[[modules]]
 # Water command to help remind the streamer to drink water.
 type = "water"
 
-[[aliases]]
-match = "!sr"
-replace = "!song request {{rest}}"
+[[modules]]
+type = "swearjar"
+reward = 10
 
-[[aliases]]
-match = "!sl"
-replace = "!song list {{rest}}"
-
-[[aliases]]
-match = "!resume"
-replace = "!song play"
-
-[[aliases]]
-match = "!pause"
-replace = "!song pause"
-
-[[aliases]]
-match = "!volume"
-replace = "!song volume {{rest}}"
-
-[[aliases]]
-match = "!currentsong"
-replace = "!song current"
-
-[[aliases]]
-match = "!wrongsong"
-replace = "!song delete mine"
+[[modules]]
+# ChaosMod integration.
+type = "gtav"

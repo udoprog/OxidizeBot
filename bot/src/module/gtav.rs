@@ -311,6 +311,7 @@ pub struct Handler {
     other_percentage: Arc<RwLock<u32>>,
     punish_percentage: Arc<RwLock<u32>>,
     reward_percentage: Arc<RwLock<u32>>,
+    success_feedback: Arc<RwLock<bool>>,
     id_counter: usize,
     tx: mpsc::UnboundedSender<(irc::OwnedUser, usize, Command)>,
 }
@@ -675,15 +676,17 @@ impl command::Handler for Handler {
                 }),
         );
 
-        ctx.privmsg(format!(
-            "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
-            prefix = *self.prefix.read(),
-            user = ctx.user.name,
-            what = command.what(),
-            command = command,
-            cost = cost,
-            currency = self.currency.name,
-        ));
+        if *self.success_feedback.read() {
+            ctx.privmsg(format!(
+                "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
+                prefix = *self.prefix.read(),
+                user = ctx.user.name,
+                what = command.what(),
+                command = command,
+                cost = cost,
+                currency = self.currency.name,
+            ));
+        }
 
         let id = self.id_counter;
         self.id_counter += 1;
@@ -778,6 +781,8 @@ impl super::Module for Module {
             settings.sync_var(core, "gtav/punish%", 100, settings::Type::U32)?;
         let reward_percentage =
             settings.sync_var(core, "gtav/reward%", 100, settings::Type::U32)?;
+        let success_feedback =
+            settings.sync_var(core, "gtav/success-feedback", false, settings::Type::Bool)?;
 
         let (tx, rx) = mpsc::unbounded();
 
@@ -792,6 +797,7 @@ impl super::Module for Module {
                 other_percentage,
                 punish_percentage,
                 reward_percentage,
+                success_feedback,
                 id_counter: 0,
                 tx,
             },
