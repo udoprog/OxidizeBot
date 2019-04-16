@@ -6,7 +6,9 @@ export class Api {
   fetch(path, data = {}) {
     return fetch(`${this.url}/${path}`, data).then((r) => {
       if (!r.ok) {
-        throw Error(`got bad status code: ${r.status}`);
+        return r.text().then(text => {
+          throw Error(`got bad status code: ${r.status}: ${text}`);
+        });
       }
 
       return r.json();

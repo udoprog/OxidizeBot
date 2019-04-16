@@ -1,5 +1,5 @@
 import React from "react";
-import {Button, Form} from "react-bootstrap";
+import {Button, Form, Alert} from "react-bootstrap";
 import { faUtensilSpoon } from "@fortawesome/fontawesome-free-solid";
 import * as utils from "../utils.js";
 
@@ -10,6 +10,7 @@ class PhantomBotImportCsvForm extends React.Component {
 
     this.state = {
       loading: false,
+      success: null,
       error: null,
       channel: "",
       text: "",
@@ -57,11 +58,17 @@ class PhantomBotImportCsvForm extends React.Component {
         throw new Error(`expected 3 columns but got: ${line}`);
       }
 
-      var user = cols[1];
+      var user = cols[1].trim();
+      var amountText = cols[2].trim();
+
+      if (amountText === "null") {
+        continue;
+      }
+
       var amount = 0;
 
       try {
-        amount = parseInt(cols[2]);
+        amount = parseInt(amountText);
       } catch {
         throw new Error(`expected numeric third column on line: ${line}`);
       }
@@ -103,11 +110,14 @@ class PhantomBotImportCsvForm extends React.Component {
     this.api.importBalances(json).then(() => {
       this.setState({
         loading: false,
+        error: null,
+        success: "Successfully imported balances!",
       });
     }, e => {
       this.setState({
         loading: false,
         error: `Failed to import balances: ${e}`,
+        success: null,
       });
     });
   }
@@ -125,6 +135,16 @@ class PhantomBotImportCsvForm extends React.Component {
   }
 
   render() {
+    var message = null;
+
+    if (!!this.state.success) {
+      message = <Alert variant="info">{this.state.success}</Alert>;
+    }
+
+    if (!!this.state.error) {
+      message = <Alert variant="danger">{this.state.error}</Alert>;
+    }
+
     var spinner = null;
 
     if (this.state.loading) {
@@ -144,6 +164,8 @@ class PhantomBotImportCsvForm extends React.Component {
     }
 
     return (
+      <div>
+      {message}
       <Form onSubmit={e => this.import(e)} disabled={this.state.loading}>
         <Form.Group id="channel">
           <Form.Label>Channel</Form.Label>
@@ -178,6 +200,7 @@ class PhantomBotImportCsvForm extends React.Component {
 
         {spinner}
       </Form>
+      </div>
     );
   }
 }
