@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Import/Export for PhantomBot points.
+
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.4...HEAD
 
 ## [0.2.5]

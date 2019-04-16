@@ -91,4 +91,24 @@ export class Api {
       }),
     });
   }
+
+  /**
+   * Export balances.
+   */
+  exportBalances() {
+    return this.fetch("balances");
+  }
+
+  /**
+   * Import balances.
+   */
+  importBalances(balances) {
+    return this.fetch("balances", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(balances),
+    });
+  }
 }

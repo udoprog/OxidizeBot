@@ -101,7 +101,14 @@ struct Api {
     player: Arc<RwLock<Option<player::PlayerClient>>>,
     token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
     after_streams: db::AfterStreams,
+    db: db::Database,
     settings: settings::Settings,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct Balance {
+    name: String,
+    balance: i64,
 }
 
 impl Api {
@@ -233,6 +240,27 @@ impl Api {
         self.settings.set_json(key, value)?;
         Ok(warp::reply::json(&EMPTY))
     }
+
+    /// Import balances.
+    fn import_balances(
+        &self,
+        balances: Vec<db::models::Balance>,
+    ) -> BoxFuture<impl warp::Reply, failure::Error> {
+        Box::new(
+            self.db
+                .import_balances(balances)
+                .and_then(|_| Ok(warp::reply::json(&EMPTY))),
+        )
+    }
+
+    /// Export balances.
+    fn export_balances(&self) -> BoxFuture<impl warp::Reply, failure::Error> {
+        Box::new(
+            self.db
+                .export_balances()
+                .and_then(|balances| Ok(warp::reply::json(&balances))),
+        )
+    }
 }
 
 /// Set up the web endpoint.
@@ -240,6 +268,7 @@ pub fn setup(
     web_root: Option<&Path>,
     bus: Arc<bus::Bus>,
     after_streams: db::AfterStreams,
+    db: db::Database,
     settings: settings::Settings,
 ) -> Result<(Server, BoxFuture<(), failure::Error>), failure::Error> {
     let addr: SocketAddr = str::parse(&format!("0.0.0.0:12345"))?;
@@ -261,6 +290,7 @@ pub fn setup(
         player: player.clone(),
         token_callbacks: token_callbacks.clone(),
         after_streams,
+        db,
         settings,
     };
 
@@ -330,6 +360,25 @@ pub fn setup(
             .or(warp::get2().and(warp::path("settings")).and_then({
                 let api = api.clone();
                 move || api.settings().map_err(warp::reject::custom)
+            }))
+            .boxed();
+
+        let route = route
+            .or(warp::put2()
+                .and(warp::path("balances"))
+                .and(warp::body::json())
+                .and_then({
+                    let api = api.clone();
+                    move |balances: Vec<db::models::Balance>| {
+                        api.import_balances(balances).map_err(warp::reject::custom)
+                    }
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::get2().and(warp::path("balances")).and_then({
+                let api = api.clone();
+                move || api.export_balances().map_err(warp::reject::custom)
             }))
             .boxed();
 

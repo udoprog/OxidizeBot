@@ -4,11 +4,22 @@ use super::schema::{
 use crate::player::TrackId;
 use chrono::NaiveDateTime;
 
-#[derive(diesel::Queryable, diesel::Insertable)]
+#[derive(serde::Serialize, serde::Deserialize, diesel::Queryable, diesel::Insertable)]
 pub struct Balance {
     pub channel: String,
     pub user: String,
     pub amount: i64,
+}
+
+impl Balance {
+    /// Helper function to convert into a checked balance.
+    pub fn checked(self) -> Self {
+        Self {
+            channel: self.channel,
+            user: super::user_id(&self.user),
+            amount: self.amount,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
