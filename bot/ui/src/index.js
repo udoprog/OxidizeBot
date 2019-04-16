@@ -10,6 +10,7 @@ import Devices from "./components/Devices.js";
 import AfterStreams from "./components/AfterStreams.js";
 import Overlay from "./components/Overlay.js";
 import Settings from "./components/Settings.js";
+import ImportExport from "./components/ImportExport.js";
 import '@fortawesome/fontawesome-free-solid'
 
 const RouteLayout = withRouter(props => <Layout {...props} />)
@@ -45,6 +46,25 @@ class SettingsPage extends React.Component {
         <Row>
           <Col>
             <Settings api={this.api} />
+          </Col>
+        </Row>
+      </RouteLayout>
+    );
+  }
+}
+
+class ImportExportPage extends React.Component {
+  constructor(props) {
+    super(props);
+    this.api = new Api(utils.apiUrl());
+  }
+
+  render() {
+    return (
+      <RouteLayout>
+        <Row>
+          <Col>
+            <ImportExport api={this.api} />
           </Col>
         </Row>
       </RouteLayout>
@@ -101,6 +121,7 @@ function Layout(props) {
             <Nav.Link as={Link} active={path === "/"} to="/">Home</Nav.Link>
             <Nav.Link as={Link} active={path === "/after-streams"} to="/after-streams">After Streams</Nav.Link>
             <Nav.Link as={Link} active={path === "/settings"} to="/settings">Settings</Nav.Link>
+            <Nav.Link as={Link} active={path === "/import-export"} to="/import-export">Import / Export</Nav.Link>
             <Nav.Link as={Link} active={path === "/overlay"} to="/overlay" target="overlay">Overlay</Nav.Link>
           </Nav>
         </Navbar.Collapse>
@@ -119,6 +140,7 @@ function AppRouter() {
       <Route path="/" exact component={IndexPage} />
       <Route path="/after-streams" exact component={AfterStreamsPage} />
       <Route path="/settings" exact component={SettingsPage} />
+      <Route path="/import-export" exact component={ImportExportPage} />
       <Route path="/overlay/" component={Overlay} />
     </Router>
   );

@@ -151,6 +151,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         web_root,
         global_bus.clone(),
         after_streams.clone(),
+        db.clone(),
         settings.clone(),
     )?;
 

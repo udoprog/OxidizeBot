@@ -94,8 +94,8 @@ impl Database {
     ) -> impl Future<Item = (), Error = BalanceTransferError> {
         use self::schema::balances::dsl;
 
-        let taker = taker.to_lowercase();
-        let giver = giver.to_lowercase();
+        let taker = user_id(taker);
+        let giver = user_id(giver);
         let channel = String::from(channel);
         let pool = self.pool.clone();
 
@@ -125,11 +125,67 @@ impl Database {
         }));
     }
 
+    /// Get balances for all users.
+    pub fn export_balances(
+        &self,
+    ) -> impl Future<Item = Vec<models::Balance>, Error = failure::Error> {
+        use self::schema::balances::dsl;
+
+        let pool = self.pool.clone();
+
+        self.thread_pool.spawn_handle(future::lazy(move || {
+            let c = pool.lock();
+            let balances = dsl::balances.load::<models::Balance>(&*c)?;
+            Ok(balances)
+        }))
+    }
+
+    /// Import balances for all users.
+    pub fn import_balances(
+        &self,
+        balances: Vec<models::Balance>,
+    ) -> impl Future<Item = (), Error = failure::Error> {
+        use self::schema::balances::dsl;
+
+        let pool = Arc::clone(&self.pool);
+
+        self.thread_pool.spawn_handle(future::lazy(move || {
+            let c = pool.lock();
+
+            for balance in balances {
+                let balance = balance.checked();
+
+                let filter = dsl::balances.filter(
+                    dsl::channel
+                        .eq(balance.channel.as_str())
+                        .and(dsl::user.eq(&balance.user)),
+                );
+
+                let b = filter.clone().first::<models::Balance>(&*c).optional()?;
+
+                match b {
+                    None => {
+                        diesel::insert_into(dsl::balances)
+                            .values(&balance)
+                            .execute(&*c)?;
+                    }
+                    Some(_) => {
+                        diesel::update(filter)
+                            .set(dsl::amount.eq(balance.amount))
+                            .execute(&*c)?;
+                    }
+                }
+            }
+
+            Ok(())
+        }))
+    }
+
     /// Find user balance.
     pub fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i64>, failure::Error> {
         use self::schema::balances::dsl;
 
-        let user = user.to_lowercase();
+        let user = user_id(user);
         let c = self.pool.lock();
 
         let balance = dsl::balances
@@ -148,7 +204,7 @@ impl Database {
         user: &str,
         amount: i64,
     ) -> impl Future<Item = (), Error = failure::Error> {
-        let user = user.to_lowercase();
+        let user = user_id(user);
         let channel = String::from(channel);
         let pool = self.pool.clone();
 
@@ -174,7 +230,7 @@ impl Database {
             let c = pool.lock();
 
             for user in users {
-                let user = user.to_lowercase();
+                let user = user_id(&user);
 
                 let filter = dsl::balances
                     .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&user)));
@@ -206,6 +262,11 @@ impl Database {
             Ok(())
         }))
     }
+}
+
+/// Convert a user display name into a user id.
+fn user_id(user: &str) -> String {
+    user.trim_start_matches('@').to_lowercase()
 }
 
 /// Common function to modify the balance for the given user.
@@ -402,5 +463,15 @@ impl persisted_set::Backend for Database {
 
         let count = diesel::delete(filter).execute(&*c)?;
         Ok(count == 1)
+    }
+}
+
+#[cfg(tests)]
+mod tests {
+    use super::user_id;
+
+    #[test]
+    fn test_user_id() {
+        assert_eq!("setmod", user_id("@SetMod"));
     }
 }
