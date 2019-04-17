@@ -5,11 +5,15 @@ use parking_lot::RwLock;
 use std::{fmt, net::SocketAddr, sync::Arc};
 use tokio::net::UdpSocket;
 
+const VEHICLE_URL: &'static str = "http://bit.ly/gtavvehicles";
+
+mod vehicle;
+
 enum Command {
     /// Spawn a vehicle.
-    SpawnVehicle(Vehicle),
+    SpawnVehicle(vehicle::Vehicle),
     /// Spawn a random vehicle.
-    SpawnRandomVehicle(Vehicle),
+    SpawnRandomVehicle(vehicle::Vehicle),
     /// Destroy the engine of the current vehicle.
     KillEngine,
     /// Fix the engine of the current vehicle.
@@ -493,12 +497,16 @@ impl Handler {
         ctx: &mut command::Context<'_, '_>,
     ) -> Result<Option<(Command, u32)>, failure::Error> {
         let command = match ctx.next() {
-            Some("car") => Command::SpawnRandomVehicle(Vehicle::random_car()),
+            Some("car") => Command::SpawnRandomVehicle(vehicle::Vehicle::random_car()),
             Some("vehicle") => {
-                let vehicle = match ctx.next().and_then(Vehicle::from_id) {
+                let vehicle = match ctx
+                    .next()
+                    .map(str::to_lowercase)
+                    .and_then(vehicle::Vehicle::from_id)
+                {
                     Some(vehicle) => vehicle,
                     None => {
-                        let vehicles = Vehicle::all()
+                        let vehicles = vehicle::Vehicle::categories()
                             .into_iter()
                             .map(|v| format!("{} ({})", v, v.cost()))
                             .collect::<Vec<String>>()
@@ -506,8 +514,11 @@ impl Handler {
 
                         ctx.respond(format!(
                             "You give the streamer a vehicle using for example {c} random. \
-                             Available vehicles are: {vehicles}. ",
+                             You can pick a vehicle by its name or a category. \
+                             Available names are listed here: {url} - \
+                             Available categories are: {vehicles}. ",
                             c = ctx.alias.unwrap_or("!gtav reward vehicle"),
+                            url = VEHICLE_URL,
                             vehicles = vehicles,
                         ));
 
@@ -1127,135 +1138,5 @@ impl fmt::Display for Control {
         };
 
         s.fmt(fmt)
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Vehicle {
-    Random,
-    Slow,
-    Normal,
-    Fast,
-    Bike,
-    PedalBike,
-    Gauntlet,
-    FighterJet,
-    JetSki,
-    Blimp,
-    Tank,
-    Hydra,
-    Sub,
-}
-
-impl Vehicle {
-    /// Human-readable display of this vehicle.
-    pub fn display(&self) -> String {
-        use self::Vehicle::*;
-
-        match *self {
-            Random => format!("a random vehicle BlessRNG"),
-            Slow => format!("something slow PepeHands"),
-            Normal => format!("a normal car"),
-            Fast => format!("something fast monkaSpeed"),
-            Bike => format!("a bike!"),
-            PedalBike => format!("a... bike?"),
-            Gauntlet => format!("a Gauntlet SwiftRage"),
-            FighterJet => format!("a fighter jet DansRage"),
-            JetSki => format!("a jet ski DansRage"),
-            Blimp => format!("a blimp SeemsGood"),
-            Tank => format!("a tank!"),
-            Hydra => format!("a hydra!"),
-            Sub => format!("a submarine!"),
-        }
-    }
-
-    /// Map an id to a vehicle.
-    pub fn from_id(id: &str) -> Option<Vehicle> {
-        match id {
-            "random" => Some(Vehicle::Random),
-            "slow" => Some(Vehicle::Slow),
-            "normal" => Some(Vehicle::Normal),
-            "fast" => Some(Vehicle::Fast),
-            "bike" => Some(Vehicle::Bike),
-            "pedalbike" => Some(Vehicle::PedalBike),
-            "gauntlet" => Some(Vehicle::Gauntlet),
-            "fighter-jet" => Some(Vehicle::FighterJet),
-            "jet-ski" => Some(Vehicle::JetSki),
-            "blimp" => Some(Vehicle::Blimp),
-            "tank" => Some(Vehicle::Tank),
-            "sub" => Some(Vehicle::Sub),
-            "hydra" => Some(Vehicle::Hydra),
-            _ => None,
-        }
-    }
-
-    /**
-     * Get the cost of a vehicle.
-     */
-    fn cost(&self) -> u32 {
-        use self::Vehicle::*;
-
-        match *self {
-            Random => 10,
-            Slow => 20,
-            Normal => 20,
-            Fast => 30,
-            Bike => 50,
-            PedalBike => 10,
-            Gauntlet => 30,
-            FighterJet => 50,
-            JetSki => 10,
-            Blimp => 50,
-            Tank => 50,
-            Sub => 20,
-            Hydra => 60,
-        }
-    }
-
-    /// Get a list of all cars.
-    fn cars() -> Vec<Vehicle> {
-        use self::Vehicle::*;
-
-        vec![Slow, Normal, Fast]
-    }
-
-    /// Get a list of all vehicles.
-    fn all() -> Vec<Vehicle> {
-        use self::Vehicle::*;
-
-        vec![
-            Random, Slow, Normal, Fast, Bike, PedalBike, Gauntlet, FighterJet, Blimp, JetSki, Tank,
-            Sub, Hydra,
-        ]
-    }
-
-    /// Get a random car.
-    fn random_car() -> Vehicle {
-        use rand::Rng as _;
-        let mut rng = rand::thread_rng();
-        let cars = Self::cars();
-        cars[rng.gen_range(0, cars.len())]
-    }
-}
-
-impl fmt::Display for Vehicle {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use self::Vehicle::*;
-
-        match *self {
-            Random => "random".fmt(fmt),
-            Slow => "slow".fmt(fmt),
-            Normal => "normal".fmt(fmt),
-            Fast => "fast".fmt(fmt),
-            Bike => "bike".fmt(fmt),
-            PedalBike => "pedalbike".fmt(fmt),
-            Gauntlet => "gauntlet".fmt(fmt),
-            FighterJet => "fighter-jet".fmt(fmt),
-            JetSki => "jet-ski".fmt(fmt),
-            Blimp => "blimp".fmt(fmt),
-            Tank => "tank".fmt(fmt),
-            Hydra => "hydra".fmt(fmt),
-            Sub => "sub".fmt(fmt),
-        }
     }
 }

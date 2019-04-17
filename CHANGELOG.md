@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Import/Export for PhantomBot points.
+- gtav: Add vehicle by name from https://bit.ly/gtavvehicles
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.4...HEAD
 [#30]: https://github.com/udoprog/setmod/issues/30
