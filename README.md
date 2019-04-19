@@ -6,14 +6,7 @@ This is a high performance Twitch Bot written in Rust.
 
 You'll need Rust and a working compiler: https://rustup.rs/
 
-Building requires setting the necessary environment variables to point out libraries.
-You can set them in PowerShell by running:
-
-```
-. ./tools/env.ps1
-```
-
-After this, build using cargo:
+After this, you build the project using cargo:
 
 ```
 cargo build --release
