@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `!song promote` now moves the promoted song to the front of the queue instead of swapping positions with the first song in the queue. ([#30])
+
 ### Added
 - Import/Export for PhantomBot points.
 
