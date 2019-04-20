@@ -1142,7 +1142,9 @@ impl Queue {
             return None;
         }
 
-        q.swap(0, n);
+        if let Some(removed) = q.remove(n) {
+            q.push_front(removed);
+        }
 
         if let Some(item) = q.get(0).cloned() {
             self.db.promote_song_log(user, &item.track_id);
