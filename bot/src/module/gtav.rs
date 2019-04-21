@@ -92,6 +92,8 @@ enum Command {
     Levitate,
     /// Eject from the current vehicle.
     Eject,
+    /// Slow down time.
+    SlowDownTime,
     /// Send a raw command to ChaosMod.
     Raw(String),
 }
@@ -144,6 +146,7 @@ impl Command {
             ModVehicle(..) => "rewarded",
             Levitate => "rewarded",
             Eject => "punished",
+            SlowDownTime => "rewarded",
             Raw(..) => "?",
         }
     }
@@ -195,6 +198,7 @@ impl Command {
             ModVehicle(ref m) => format!("mod-vehicle {}", m),
             Levitate => format!("levitate"),
             Eject => format!("eject"),
+            SlowDownTime => format!("slow-down-time"),
             Raw(ref cmd) => cmd.to_string(),
         }
     }
@@ -248,6 +252,7 @@ impl Command {
             ModVehicle(ref m) => m.cost(),
             Levitate => 25,
             Eject => 50,
+            SlowDownTime => 25,
             Raw(..) => 0,
         }
     }
@@ -307,6 +312,7 @@ impl fmt::Display for Command {
             ModVehicle(ref m) => write!(fmt, "adding {} mod to their current vehicle", m.display()),
             Levitate => write!(fmt, "causing them to levitate"),
             Eject => write!(fmt, "causing them to eject"),
+            SlowDownTime => write!(fmt, "causing time to slow down"),
             Raw(..) => write!(fmt, "sending a raw command"),
         }
     }
@@ -600,6 +606,7 @@ impl Handler {
                 Command::ModVehicle(m)
             }
             Some("levitate") => Command::Levitate,
+            Some("slow-down-time") => Command::SlowDownTime,
             _ => {
                 ctx.respond(format!(
                     "Available rewards are: \
@@ -620,7 +627,8 @@ impl Handler {
                      {c} exploding-punches, \
                      {c} matrix-slam, \
                      {c} mod-vehicle, \
-                     {c} levitate. \
+                     {c} levitate, \
+                     {c} slow-down-time. \
                      See !chaos% for more details.",
                     c = ctx.alias.unwrap_or("!gtav reward"),
                 ));
