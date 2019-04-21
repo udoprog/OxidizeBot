@@ -88,6 +88,10 @@ enum Command {
     DisableControl(Control),
     /// Mod the current vehicle.
     ModVehicle(VehicleMod),
+    /// Cause the current player or vehicle to levitate.
+    Levitate,
+    /// Eject from the current vehicle.
+    Eject,
     /// Send a raw command to ChaosMod.
     Raw(String),
 }
@@ -138,6 +142,8 @@ impl Command {
             CloseParachute => "close-parachute",
             DisableControl(..) => "punished",
             ModVehicle(..) => "rewarded",
+            Levitate => "rewarded",
+            Eject => "punished",
             Raw(..) => "?",
         }
     }
@@ -187,6 +193,8 @@ impl Command {
             CloseParachute => format!("close-parachute"),
             DisableControl(ref control) => format!("disable-control {}", control),
             ModVehicle(ref m) => format!("mod-vehicle {}", m),
+            Levitate => format!("levitate"),
+            Eject => format!("eject"),
             Raw(ref cmd) => cmd.to_string(),
         }
     }
@@ -238,6 +246,8 @@ impl Command {
             CloseParachute => 50,
             DisableControl(ref control) => control.cost(),
             ModVehicle(ref m) => m.cost(),
+            Levitate => 25,
+            Eject => 50,
             Raw(..) => 0,
         }
     }
@@ -295,6 +305,8 @@ impl fmt::Display for Command {
                 write!(fmt, "disabling their {} control", control.display())
             }
             ModVehicle(ref m) => write!(fmt, "adding {} mod to their current vehicle", m.display()),
+            Levitate => write!(fmt, "causing them to levitate"),
+            Eject => write!(fmt, "causing them to eject"),
             Raw(..) => write!(fmt, "sending a raw command"),
         }
     }
@@ -349,19 +361,9 @@ impl Handler {
             Some("randomize-color") => Command::RandomizeColor,
             Some("randomize-weather") => Command::RandomizeWeather,
             Some("randomize-character") => Command::RandomizeCharacter,
-            Some("license") => match ctx.next() {
-                Some(s) => match license(s, ctx) {
-                    Some(license) => Command::License(license.to_string()),
-                    None => return Ok(None),
-                },
-                None => {
-                    ctx.respond(format!(
-                        "{c} requires an argument, like \"{c} g2gfast\"",
-                        c = ctx.alias.unwrap_or("!gtav other license plate"),
-                    ));
-
-                    return Ok(None);
-                }
+            Some("license") => match license(ctx.rest(), ctx) {
+                Some(license) => Command::License(license),
+                None => return Ok(None),
             },
             Some("raw") => {
                 ctx.check_moderator()?;
@@ -458,6 +460,7 @@ impl Handler {
 
                 Command::DisableControl(control)
             }
+            Some("eject") => Command::Eject,
             _ => {
                 ctx.respond(format!(
                     "Available punishments are: \
@@ -479,7 +482,8 @@ impl Handler {
                      {c} set-peds-on-fire, \
                      {c} make-peds-aggressive,
                      {c} close-parachute,
-                     {c} disable-control. \
+                     {c} disable-control,
+                     {c} eject. \
                      See !chaos% for more details.",
                     c = ctx.alias.unwrap_or("!gtav punish"),
                 ));
@@ -595,6 +599,7 @@ impl Handler {
 
                 Command::ModVehicle(m)
             }
+            Some("levitate") => Command::Levitate,
             _ => {
                 ctx.respond(format!(
                     "Available rewards are: \
@@ -614,7 +619,8 @@ impl Handler {
                      {c} exploding-bullets, \
                      {c} exploding-punches, \
                      {c} matrix-slam, \
-                     {c} mod-vehicle. \
+                     {c} mod-vehicle, \
+                     {c} levitate. \
                      See !chaos% for more details.",
                     c = ctx.alias.unwrap_or("!gtav reward"),
                 ));
