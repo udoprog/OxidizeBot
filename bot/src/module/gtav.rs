@@ -67,9 +67,11 @@ enum Command {
     /// Spawn a number of enemies around the player.
     SpawnEnemy(u32),
     /// Enable exploding bullets.
-    ExplodingBullets,
+    ExplodingBullets(f32),
+    /// Enable fire ammunition.
+    FireAmmo(f32),
     /// Enable exploding punches.
-    ExplodingPunches,
+    ExplodingPunches(f32),
     /// Make moderate drunk.
     Drunk,
     /// Make very drunk.
@@ -90,10 +92,16 @@ enum Command {
     ModVehicle(VehicleMod),
     /// Cause the current player or vehicle to levitate.
     Levitate,
+    /// Cause other game entities to levitate
+    LevitateEntities,
     /// Eject from the current vehicle.
     Eject,
     /// Slow down time.
     SlowDownTime,
+    /// Make fire proof for n seconds.
+    MakeFireProof(f32),
+    /// Make the current car leak all its fuel in 30 seconds.
+    FuelLeakage,
     /// Send a raw command to ChaosMod.
     Raw(String),
 }
@@ -133,8 +141,9 @@ impl Command {
             SuperJump(..) => "rewarded",
             Invincibility(..) => "rewarded",
             SpawnEnemy(..) => "punished",
-            ExplodingBullets => "reward",
-            ExplodingPunches => "reward",
+            ExplodingBullets(..) => "reward",
+            FireAmmo(..) => "reward",
+            ExplodingPunches(..) => "reward",
             Drunk => "punished",
             VeryDrunk => "punished",
             SetOnFire => "punished",
@@ -145,8 +154,11 @@ impl Command {
             DisableControl(..) => "punished",
             ModVehicle(..) => "rewarded",
             Levitate => "rewarded",
+            LevitateEntities => "rewarded",
             Eject => "punished",
             SlowDownTime => "rewarded",
+            MakeFireProof(..) => "rewarded",
+            FuelLeakage => "punished",
             Raw(..) => "?",
         }
     }
@@ -185,8 +197,9 @@ impl Command {
             SuperJump(n) => format!("super-jump {}", n),
             Invincibility(n) => format!("invincibility {}", n),
             SpawnEnemy(n) => format!("spawn-enemy {}", n),
-            ExplodingBullets => format!("exploding-bullets"),
-            ExplodingPunches => format!("exploding-punches"),
+            ExplodingBullets(n) => format!("exploding-bullets {}", n),
+            FireAmmo(n) => format!("fire-ammo {}", n),
+            ExplodingPunches(n) => format!("exploding-punches {}", n),
             Drunk => format!("drunk"),
             VeryDrunk => format!("very-drunk"),
             SetOnFire => format!("set-on-fire"),
@@ -197,8 +210,11 @@ impl Command {
             DisableControl(ref control) => format!("disable-control {}", control),
             ModVehicle(ref m) => format!("mod-vehicle {}", m),
             Levitate => format!("levitate"),
+            LevitateEntities => format!("levitate-entities"),
             Eject => format!("eject"),
             SlowDownTime => format!("slow-down-time"),
+            MakeFireProof(n) => format!("make-fire-proof {}", n),
+            FuelLeakage => format!("fuel-leakage"),
             Raw(ref cmd) => cmd.to_string(),
         }
     }
@@ -239,8 +255,9 @@ impl Command {
             SuperJump(n) => n as u32,
             Invincibility(n) => 2 * (n as u32),
             SpawnEnemy(n) => 10 * n,
-            ExplodingBullets => 50,
-            ExplodingPunches => 50,
+            ExplodingBullets(..) => 50,
+            FireAmmo(..) => 50,
+            ExplodingPunches(..) => 50,
             Drunk => 20,
             VeryDrunk => 40,
             SetOnFire => 40,
@@ -251,8 +268,11 @@ impl Command {
             DisableControl(ref control) => control.cost(),
             ModVehicle(ref m) => m.cost(),
             Levitate => 25,
+            LevitateEntities => 50,
             Eject => 50,
             SlowDownTime => 25,
+            MakeFireProof(..) => 50,
+            FuelLeakage => 10,
             Raw(..) => 0,
         }
     }
@@ -297,8 +317,9 @@ impl fmt::Display for Command {
             ),
             SpawnEnemy(1) => write!(fmt, "spawning an enemy monkaS"),
             SpawnEnemy(n) => write!(fmt, "spawning {} enemies monkaS", n),
-            ExplodingBullets => write!(fmt, "enabling exploding bullets CurseLit"),
-            ExplodingPunches => write!(fmt, "enabling exploding punches CurseLit"),
+            ExplodingBullets(..) => write!(fmt, "enabling exploding bullets CurseLit"),
+            FireAmmo(..) => write!(fmt, "enabling fire ammo CurseLit"),
+            ExplodingPunches(..) => write!(fmt, "enabling exploding punches CurseLit"),
             Drunk => write!(fmt, "making them drunk"),
             VeryDrunk => write!(fmt, "making them VERY drunk"),
             SetOnFire => write!(fmt, "setting them on fire"),
@@ -311,8 +332,11 @@ impl fmt::Display for Command {
             }
             ModVehicle(ref m) => write!(fmt, "adding {} mod to their current vehicle", m.display()),
             Levitate => write!(fmt, "causing them to levitate"),
+            LevitateEntities => write!(fmt, "causing other things to levitate"),
             Eject => write!(fmt, "causing them to eject"),
             SlowDownTime => write!(fmt, "causing time to slow down"),
+            MakeFireProof(..) => write!(fmt, "making them fire proof"),
+            FuelLeakage => write!(fmt, "slowly leaking all their fuel"),
             Raw(..) => write!(fmt, "sending a raw command"),
         }
     }
@@ -467,6 +491,7 @@ impl Handler {
                 Command::DisableControl(control)
             }
             Some("eject") => Command::Eject,
+            Some("leak-fuel") => Command::FuelLeakage,
             _ => {
                 ctx.respond(format!(
                     "Available punishments are: \
@@ -489,7 +514,8 @@ impl Handler {
                      {c} make-peds-aggressive,
                      {c} close-parachute,
                      {c} disable-control,
-                     {c} eject. \
+                     {c} eject,
+                     {c} leak-fuel. \
                      See !chaos% for more details.",
                     c = ctx.alias.unwrap_or("!gtav punish"),
                 ));
@@ -573,14 +599,15 @@ impl Handler {
             }
             Some("superspeed") => {
                 self.play_theme_song(ctx, "gtav/superspeed");
-                Command::SuperSpeed(10f32)
+                Command::SuperSpeed(30f32)
             }
-            Some("superswim") => Command::SuperSwim(10f32),
-            Some("superjump") => Command::SuperJump(10f32),
-            Some("invincibility") => Command::Invincibility(10f32),
+            Some("superswim") => Command::SuperSwim(30f32),
+            Some("superjump") => Command::SuperJump(30f32),
+            Some("invincibility") => Command::Invincibility(30f32),
             Some("ammo") => Command::GiveAmmo,
-            Some("exploding-bullets") => Command::ExplodingBullets,
-            Some("exploding-punches") => Command::ExplodingPunches,
+            Some("exploding-bullets") => Command::ExplodingBullets(30f32),
+            Some("fire-ammo") => Command::FireAmmo(30f32),
+            Some("exploding-punches") => Command::ExplodingPunches(30f32),
             Some("matrix-slam") => Command::MatrixSlam,
             Some("mod-vehicle") => {
                 let m = match ctx.next().and_then(VehicleMod::from_id) {
@@ -606,7 +633,9 @@ impl Handler {
                 Command::ModVehicle(m)
             }
             Some("levitate") => Command::Levitate,
+            Some("levitate-entities") => Command::LevitateEntities,
             Some("slow-down-time") => Command::SlowDownTime,
+            Some("fire-proof") => Command::MakeFireProof(30f32),
             _ => {
                 ctx.respond(format!(
                     "Available rewards are: \
@@ -624,11 +653,14 @@ impl Handler {
                      {c} invincibility, \
                      {c} ammo, \
                      {c} exploding-bullets, \
+                     {c} fire-ammo, \
                      {c} exploding-punches, \
                      {c} matrix-slam, \
                      {c} mod-vehicle, \
                      {c} levitate, \
-                     {c} slow-down-time. \
+                     {c} levitate-entities, \
+                     {c} slow-down-time, \
+                     {c} fire-proof. \
                      See !chaos% for more details.",
                     c = ctx.alias.unwrap_or("!gtav reward"),
                 ));
