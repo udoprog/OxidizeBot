@@ -43,6 +43,8 @@ http://localhost:12345/redirect
 
 This is where the bot will be running while it is receiving tokens.
 
+[config.toml.example]: config.toml.example
+
 ## Settings
 
 SetMod is moving towards storing settings in the database.
