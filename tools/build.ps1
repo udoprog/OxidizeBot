@@ -1,9 +1,30 @@
 param (
-    [Parameter(Mandatory=$true)] [string]$release,
-    [Parameter(Mandatory=$true)] [string]$version
+    [string]$release,
+    [string]$version
 )
 
-cargo build --release --bin setmod-bot
+if (!$version) {
+    $version = $env:APPVEYOR_REPO_TAG_NAME
+}
+
+if (!$version) {
+    Write-Output "Testing..."
+    & cmd /c 'cargo build --all 2>&1'
+    & cmd /c 'cargo test --all 2>&1'
+    exit
+}
+
+if (!$release) {
+    if (!($version -match '^(\d+)\.(\d+)\.\d+$')) {
+        throw "bad version: $version"
+    }
+
+    $maj = $matches[1]
+    $min = $matches[2]
+    $release = "$maj.$min"
+}
+
+& cmd /c 'cargo build --release --bin setmod-bot 2>&1'
 
 $dest="setmod-$release"
 $target="target/$dest"

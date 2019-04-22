@@ -1,5 +1,8 @@
 # setmod
 
+[![Build Status](https://travis-ci.org/udoprog/setmod.svg?branch=master)](https://travis-ci.org/udoprog/setmod)
+[![Build status](https://ci.appveyor.com/api/projects/status/cxagsq3idti252a4/branch/master?svg=true)](https://ci.appveyor.com/project/udoprog/setmod/branch/master)
+
 This is a high performance Twitch Bot written in Rust.
 
 ## Building on 64-bit Windows

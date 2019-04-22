@@ -6,14 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.6...HEAD
+
+## [0.2.6]
+
+### Changed
 - `!song promote` now moves the promoted song to the front of the queue instead of swapping positions with the first song in the queue. ([#30])
 
 ### Added
 - Import/Export for PhantomBot points.
 - gtav: Add vehicle by name from https://bit.ly/gtavvehicles
+- gtav: more commands
 
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.4...HEAD
+[0.2.6]: https://github.com/udoprog/setmod/compare/0.2.5...0.2.6
 [#30]: https://github.com/udoprog/setmod/issues/30
 
 ## [0.2.5]

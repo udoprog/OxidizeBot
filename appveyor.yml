@@ -1,0 +1,36 @@
+image: Visual Studio 2017
+
+environment:
+  matrix:
+    - channel: stable
+      target: x86_64-pc-windows-msvc
+
+install:
+  - curl -sSf -o rustup-init.exe https://win.rustup.rs
+  - rustup-init.exe --default-host %target% --default-toolchain %channel% -y
+  - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin
+  - rustc -Vv
+  - cargo -V
+
+build_script:
+  - ps: .\tools\build.ps1
+
+artifacts:
+  - path: target\*.zip
+    name: setmod
+
+branches:
+  only:
+    - master
+    - /\d+\.\d+\.\d+/
+
+deploy:
+  release: $(appveyor_repo_tag_name)
+  provider: GitHub
+  auth_token:
+    secure: QlcWMc/7j2eVy1J8j0CFm3tUev+ZC6zXh7SrP2aFuE1trzhtf0IDbx2eTnYzta0h
+  artifact: /.*\.zip/
+  draft: false
+  prerelease: false
+  on:
+    APPVEYOR_REPO_TAG: true
