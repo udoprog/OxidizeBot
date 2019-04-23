@@ -23,14 +23,25 @@ branches:
   only:
     - master
     - /\d+\.\d+\.\d+/
+    - /point-\d+\.\d+/
 
 deploy:
-  release: $(appveyor_repo_tag_name)
-  provider: GitHub
-  auth_token:
-    secure: QlcWMc/7j2eVy1J8j0CFm3tUev+ZC6zXh7SrP2aFuE1trzhtf0IDbx2eTnYzta0h
-  artifact: /.*\.zip/
-  draft: false
-  prerelease: false
-  on:
-    APPVEYOR_REPO_TAG: true
+  - release: $(appveyor_repo_tag_name)
+    provider: GitHub
+    auth_token:
+      secure: QlcWMc/7j2eVy1J8j0CFm3tUev+ZC6zXh7SrP2aFuE1trzhtf0IDbx2eTnYzta0h
+    artifact: /.*\.zip/
+    draft: false
+    prerelease: false
+    on:
+      APPVEYOR_REPO_TAG: true
+  - release: point-0.2
+    description: "Point releases directly from GitHub for 0.2"
+    provider: GitHub
+    auth_token:
+      secure: QlcWMc/7j2eVy1J8j0CFm3tUev+ZC6zXh7SrP2aFuE1trzhtf0IDbx2eTnYzta0h
+    artifact: /.*\.zip/
+    draft: false
+    prerelease: true
+    on:
+      branch: point-0.2
