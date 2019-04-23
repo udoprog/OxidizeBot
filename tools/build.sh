@@ -25,7 +25,7 @@ if [[ -z $arch ]]; then
     exit 1
 fi
 
-package=setmod-$TRAVIS_OS_NAME-$arch-$version
+package=setmod-$version-$TRAVIS_OS_NAME-$arch
 dest=setmod-$maj.$min
 
 cargo build --release --bin setmod-bot

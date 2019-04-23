@@ -1,27 +1,14 @@
-param (
-    [string]$release,
-    [string]$version
-)
-
-if (!$version) {
+if ($env:APPVEYOR_REPO_TAG_NAME -match '^(\d+\.\d+)\.\d+$') {
+    $release = $matches[1]
     $version = $env:APPVEYOR_REPO_TAG_NAME
-}
-
-if (!$version) {
+} elseif ($env:APPVEYOR_REPO_BRANCH -match '^point-(\d+\.\d+)$') {
+    $release = $matches[1]
+    $version=Get-Date -UFormat '%Y%m%d-%H%M%S'
+} else {
     Write-Output "Testing..."
     & cmd /c 'cargo build --all 2>&1'
     & cmd /c 'cargo test --all 2>&1'
     exit
-}
-
-if (!$release) {
-    if (!($version -match '^(\d+)\.(\d+)\.\d+$')) {
-        throw "bad version: $version"
-    }
-
-    $maj = $matches[1]
-    $min = $matches[2]
-    $release = "$maj.$min"
 }
 
 & cmd /c 'cargo build --release --bin setmod-bot 2>&1'
