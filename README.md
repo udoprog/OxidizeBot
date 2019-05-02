@@ -60,6 +60,12 @@ After this, you build the project using cargo:
 cargo build --release
 ```
 
+If you want to build and run the project in one go, there is a helper script in `tools/setmod.ps1` that you can run from anywhere in a powershell terminal, like this:
+
+```
+C:\setmod\> C:\Projects\setmod\tools\setmod.ps1
+```
+
 ## Settings
 
 SetMod is moving towards storing settings in the database.
