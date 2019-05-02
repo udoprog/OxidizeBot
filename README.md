@@ -13,13 +13,16 @@ If you use an archive, you can unpack it in any directory.
 
 It is suggested that you run the bot through `setmod.ps1` since that will run the bot in a loop in case it crashes or is shut down through Twitch.
 
+Before the bot can run, you need to set it up.
+See the next section.
+
 ## Setting Up
 
 Two configuration files are neccessary.
 
 First, `config.toml`. You can use the [config.toml.example] as a base which should be included in your distribution.
 
-Second, `secrets.yml` which specifies client secrets for your bot.
+Second, `secrets.yml` which specifies secrets for your bot. **This file is very sensitive**, you must avoid sharing this file with anyone.
 
 ```yaml
 spotify::oauth2:
