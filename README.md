@@ -22,7 +22,7 @@ Two configuration files are neccessary.
 
 First, `config.toml`. You can use the [config.toml.example] as a base which should be included in your distribution.
 
-Second, `secrets.yml` which specifies secrets for your bot. **This file is very sensitive**, you must avoid sharing this file with anyone.
+Second, `secrets.yml` which specifies secrets for your bot. **This file is very sensitive**, you must avoid sharing it with anyone.
 
 ```yaml
 spotify::oauth2:
