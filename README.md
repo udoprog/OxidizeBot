@@ -12,6 +12,7 @@ You can download an archive from [releases](https://github.com/udoprog/setmod/re
 If you use an archive, you can unpack it in any directory.
 
 It is suggested that you run the bot through `setmod.ps1` since that will run the bot in a loop in case it crashes or is shut down through Twitch.
+On Windows, this can be done by right clicking and selecting `Run with PowerShell`.
 
 Before the bot can run, you need to set it up.
 See the next section.
