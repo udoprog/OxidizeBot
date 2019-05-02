@@ -5,17 +5,15 @@
 
 This is a high performance Twitch Bot written in Rust.
 
-## Building on 64-bit Windows
+## Installing and Running
 
-You'll need Rust and a working compiler: https://rustup.rs/
+You can download an archive from [releases](https://github.com/udoprog/setmod/releases) or [build the project yourself](#building).
 
-After this, you build the project using cargo:
+If you use an archive, you can unpack it in any directory.
 
-```
-cargo build --release
-```
+It is suggested that you run the bot through `setmod.ps1` since that will run the bot in a loop in case it crashes or is shut down through Twitch.
 
-## Configuration
+## Setting Up
 
 Two configuration files are neccessary.
 
@@ -47,6 +45,16 @@ http://localhost:12345/redirect
 This is where the bot will be running while it is receiving tokens.
 
 [config.toml.example]: config.toml.example
+
+## Building
+
+You'll need Rust and a working compiler: https://rustup.rs/
+
+After this, you build the project using cargo:
+
+```
+cargo build --release
+```
 
 ## Settings
 
