@@ -763,7 +763,7 @@ impl PlayerClient {
                 }
 
                 // NB: moderator is allowed to violate max queue length.
-                if !is_moderator && len > max_queue_length as usize {
+                if !is_moderator && len >= max_queue_length as usize {
                     return Err(AddTrackError::QueueFull);
                 }
 
