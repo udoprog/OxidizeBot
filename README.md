@@ -115,6 +115,7 @@ Secret things which are stored in the database, like tokens.
 
 All admin commands are restricted to **moderators**.
 
+* `!admin version` - Responds with the current version of the setmod-bot package.
 * `!admin refresh-mods` - Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running.
 * `!admin shutdown` - Cause the mod to cleanly shut down, and hopefully being restarted by the management process.
 
