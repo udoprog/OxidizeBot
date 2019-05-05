@@ -50,6 +50,9 @@ template = [
   "{{#if user~}}Request by: @{{user~}}{{/if}}",
 ]
 
+# How frequently information on the current song should be updated.
+update_interval = "1s"
+
 [themes]
 blimp = {track = "spotify:track:7JczDg05i29N5C3VMZKIVA"}
 setup = {track = "spotify:track:2fZpKgrcAlWzWYwQeFG43O", offset = "00:14"}
