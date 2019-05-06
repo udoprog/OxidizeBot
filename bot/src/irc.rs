@@ -137,6 +137,11 @@ impl Irc<'_> {
         let mut handlers = module::Handlers::default();
         let mut futures = Vec::<BoxFuture<(), failure::Error>>::new();
 
+        futures.push(Box::new(refresh_mods_future(
+            sender.clone(),
+            irc_config.channel.clone(),
+        )));
+
         let stream_info = {
             let interval = time::Duration::from_secs(30);
             let (stream_info, future) =
@@ -796,6 +801,22 @@ pub struct CommandVars<'a> {
     name: &'a str,
     target: &'a str,
     count: i32,
+}
+
+// Future to refresh moderators every 5 minutes.
+fn refresh_mods_future(
+    sender: Sender,
+    channel: Arc<String>,
+) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
+    let interval = timer::Interval::new_interval(time::Duration::from_secs(60 * 5));
+
+    interval
+        .map_err(|_| failure::format_err!("failed to refresh mods"))
+        .for_each(move |_| {
+            log::trace!("refreshing mods");
+            sender.privmsg(channel.as_str(), "/mods");
+            Ok(())
+        })
 }
 
 /// Parse the `room_mods` message.
