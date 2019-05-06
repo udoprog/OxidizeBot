@@ -62,7 +62,6 @@ impl<'a> Iterator for QueryPairs<'a> {
     type Item = (PercentDecode<'a>, Option<PercentDecode<'a>>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        use std::mem;
         use url::percent_encoding::percent_decode;
 
         while !self.query.is_empty() {

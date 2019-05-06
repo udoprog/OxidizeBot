@@ -114,7 +114,7 @@ impl Database {
                     .optional()?
                     .unwrap_or_default();
 
-                if balance <= amount && !override_balance {
+                if balance < amount && !override_balance {
                     return Err(BalanceTransferError::NoBalance);
                 }
 
