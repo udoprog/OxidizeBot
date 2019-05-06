@@ -225,6 +225,7 @@ pub fn run(
         queue: queue.clone(),
         sidelined: Default::default(),
         fallback_items,
+        fallback_queue: Default::default(),
         pop_front: None,
     };
 
@@ -1190,11 +1191,38 @@ pub struct Mixer {
     sidelined: VecDeque<Song>,
     /// Items to fall back to when there are no more songs in queue.
     fallback_items: Vec<Arc<Item>>,
+    /// Items ordered in the reverse way they are meant to be played.
+    fallback_queue: VecDeque<Arc<Item>>,
     /// Future associated with popping the front control.
     pop_front: Option<PopFrontFuture>,
 }
 
 impl Mixer {
+    /// The minimum size of the fallback queue.
+    const FALLBACK_QUEUE_SIZE: usize = 10;
+
+    /// Get next song to play.
+    ///
+    /// Will shuffle all fallback items and add them to a queue to avoid playing the same song twice.
+    fn next_fallback_item(&mut self) -> Option<Song> {
+        use rand::seq::SliceRandom;
+
+        if self.fallback_items.is_empty() {
+            return None;
+        }
+
+        let mut rng = rand::thread_rng();
+
+        while self.fallback_queue.len() < Self::FALLBACK_QUEUE_SIZE {
+            let mut extension = self.fallback_items.clone();
+            extension.shuffle(&mut rng);
+            self.fallback_queue.extend(extension);
+        }
+
+        let item = self.fallback_queue.pop_front()?;
+        Some(Song::new(item, Default::default()))
+    }
+
     /// Get the next song that should be played.
     ///
     /// This takes into account:
@@ -1204,8 +1232,6 @@ impl Mixer {
     ///
     /// Finally, if there are any songs to fall back to.
     fn next_song(&mut self) -> Option<Song> {
-        use rand::Rng;
-
         if let Some(song) = self.sidelined.pop_front() {
             return Some(song);
         }
@@ -1221,16 +1247,7 @@ impl Mixer {
             return None;
         }
 
-        let mut rng = rand::thread_rng();
-        let n = rng.gen_range(0, self.fallback_items.len());
-
-        // Pick a random item to play.
-        if let Some(item) = self.fallback_items.get(n) {
-            return Some(Song::new(item.clone(), Default::default()));
-        }
-
-        log::warn!("failed to get random song #{}: out-of-index", n);
-        return None;
+        self.next_fallback_item()
     }
 }
 
