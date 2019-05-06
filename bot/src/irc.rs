@@ -685,10 +685,12 @@ impl Handler {
                 let tags = Self::tags(&m);
 
                 match tags.msg_id {
+                    Some("no_mods") => {
+                        self.moderators.clear();
+                    }
                     // Response to /mods request.
                     Some("room_mods") => {
                         self.moderators = parse_room_mods(message);
-                        return Ok(());
                     }
                     _ => {
                         log::info!("unhandled notice: {:?}", m);
