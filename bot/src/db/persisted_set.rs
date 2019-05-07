@@ -16,29 +16,27 @@ pub trait Backend: Clone + Send + Sync {
     fn remove(&self, channel: &str, kind: &str, value: String) -> Result<bool, failure::Error>;
 }
 
-#[derive(Debug, Clone)]
-pub struct PersistedSet<B, T>
+#[derive(Clone)]
+pub struct PersistedSet<T>
 where
-    B: Backend,
     T: hash::Hash + cmp::Eq,
 {
     inner: Arc<RwLock<HashMap<String, HashSet<T>>>>,
     kind: &'static str,
-    backend: B,
+    db: db::Database,
     marker: marker::PhantomData<T>,
 }
 
-impl<B, T> PersistedSet<B, T>
+impl<T> PersistedSet<T>
 where
-    B: Backend,
     T: Clone + str::FromStr + hash::Hash + cmp::Eq + fmt::Display,
     <T as str::FromStr>::Err: error::Error + Send + Sync + 'static,
 {
     /// Construct a new commands store with a backend.
-    pub fn load(backend: B, kind: &'static str) -> Result<PersistedSet<B, T>, failure::Error> {
+    pub fn load(db: db::Database, kind: &'static str) -> Result<PersistedSet<T>, failure::Error> {
         let mut inner = HashMap::<String, HashSet<T>>::new();
 
-        for v in backend.list(kind)? {
+        for v in db.list(kind)? {
             let value = str::parse::<T>(&v.value)
                 .with_context(|_| format_err!("failed to deserialize {:?}", v))?;
             inner.entry(v.channel).or_default().insert(value);
@@ -47,7 +45,7 @@ where
         Ok(PersistedSet {
             inner: Arc::new(RwLock::new(inner)),
             kind,
-            backend,
+            db,
             marker: marker::PhantomData,
         })
     }
@@ -63,7 +61,7 @@ where
         let values = inner.entry(channel.to_string()).or_default();
 
         if !values.contains(&value) {
-            self.backend.insert(channel, self.kind, value.to_string())?;
+            self.db.insert(channel, self.kind, value.to_string())?;
             values.insert(value);
         }
 
@@ -81,7 +79,7 @@ where
             }
 
             let value = value.to_string();
-            self.backend.remove(channel, self.kind, value)?;
+            self.db.remove(channel, self.kind, value)?;
         }
 
         Ok(true)

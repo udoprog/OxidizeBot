@@ -103,7 +103,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     let settings = db.settings();
 
-    let _domain_whitelist = db::PersistedSet::<_, String>::load(db.clone(), "whitelisted-domain")?;
+    let _domain_whitelist = db::PersistedSet::<String>::load(db.clone(), "whitelisted-domain")?;
 
     let commands = db::Commands::load(db.clone())?;
     let aliases = db::Aliases::load(db.clone())?;
