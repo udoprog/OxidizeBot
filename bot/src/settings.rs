@@ -75,9 +75,9 @@ impl Settings {
     }
 
     /// Insert the given setting.
-    pub fn set<T>(&self, key: &str, value: &T) -> Result<(), failure::Error>
+    pub fn set<T>(&self, key: &str, value: T) -> Result<(), failure::Error>
     where
-        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
+        T: serde::Serialize,
     {
         let value = serde_json::to_value(value)?;
         self.set_json(key, value)

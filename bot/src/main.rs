@@ -128,7 +128,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
                     aliases.edit(irc.channel.as_str(), &alias.r#match, &alias.replace)?;
                 }
 
-                settings.set("migration/aliases-migrated", &true)?;
+                settings.set("migration/aliases-migrated", true)?;
             }
         }
     }
@@ -170,7 +170,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             log::error!("failed to open browser: {}", e);
         }
 
-        settings.set("first-run", &false)?;
+        settings.set("first-run", false)?;
     }
 
     log::info!("Listening on: {}", web::URL);
