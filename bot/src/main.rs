@@ -149,10 +149,12 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     let (web, future) = web::setup(
         web_root,
+        config.irc.as_ref(),
         global_bus.clone(),
         after_streams.clone(),
         db.clone(),
         settings.clone(),
+        promotions.clone(),
     )?;
 
     // NB: spawn the web server on a separate thread because it's needed for the synchronous authentication flow below.

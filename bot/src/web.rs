@@ -1,4 +1,7 @@
-use crate::{bus, db, player, settings, spotify, utils::BoxFuture};
+use crate::{
+    bus, db, irc, player, settings, spotify,
+    utils::{self, BoxFuture},
+};
 use futures::{future, stream, sync::oneshot, Future, Sink as _, Stream as _};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
@@ -90,9 +93,20 @@ impl Oauth2Redirect {
     }
 }
 
+#[derive(serde::Serialize)]
+pub struct Current {
+    channel: Arc<String>,
+}
+
 #[derive(serde::Deserialize)]
 pub struct PutSetting {
     value: serde_json::Value,
+}
+
+#[derive(serde::Deserialize)]
+pub struct PutPromotion {
+    frequency: utils::Duration,
+    template: String,
 }
 
 /// API to manage device.
@@ -103,6 +117,7 @@ struct Api {
     after_streams: db::AfterStreams,
     db: db::Database,
     settings: settings::Settings,
+    promotions: db::Promotions,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -261,15 +276,45 @@ impl Api {
                 .and_then(|balances| Ok(warp::reply::json(&balances))),
         )
     }
+
+    /// Get the list of all promotions.
+    fn promotions(&self, channel: &str) -> Result<impl warp::Reply, failure::Error> {
+        let promotions = self.promotions.list(channel);
+        Ok(warp::reply::json(&promotions))
+    }
+
+    /// Edit the given promotion by key.
+    fn edit_promotion(
+        &self,
+        channel: &str,
+        name: &str,
+        frequency: utils::Duration,
+        template: &str,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        self.promotions.edit(channel, name, frequency, template)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Delete the given promotion by key.
+    fn delete_promotion(
+        &self,
+        channel: &str,
+        name: &str,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        self.promotions.delete(channel, name)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
 }
 
 /// Set up the web endpoint.
 pub fn setup(
     web_root: Option<&Path>,
+    irc: Option<&irc::Config>,
     bus: Arc<bus::Bus>,
     after_streams: db::AfterStreams,
     db: db::Database,
     settings: settings::Settings,
+    promotions: db::Promotions,
 ) -> Result<(Server, BoxFuture<(), failure::Error>), failure::Error> {
     let addr: SocketAddr = str::parse(&format!("0.0.0.0:12345"))?;
 
@@ -292,6 +337,7 @@ pub fn setup(
         after_streams,
         db,
         settings,
+        promotions,
     };
 
     let api = {
@@ -380,6 +426,66 @@ pub fn setup(
                 let api = api.clone();
                 move || api.export_balances().map_err(warp::reject::custom)
             }))
+            .boxed();
+
+        let route = route
+            .or(warp::get2()
+                .and(path!("promotions" / String).and(warp::filters::path::end()))
+                .and_then({
+                    let api = api.clone();
+                    move |channel: String| {
+                        api.promotions(channel.as_str())
+                            .map_err(warp::reject::custom)
+                    }
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::delete2()
+                .and(path!("promotion" / String / String).and(warp::filters::path::end()))
+                .and_then({
+                    let api = api.clone();
+                    move |channel: String, name: String| {
+                        api.delete_promotion(channel.as_str(), name.as_str())
+                            .map_err(warp::reject::custom)
+                    }
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::put2()
+                .and(path!("promotion" / String / String).and(warp::filters::path::end()))
+                .and(warp::body::json())
+                .and_then({
+                    let api = api.clone();
+                    move |channel: String, name: String, body: PutPromotion| {
+                        api.edit_promotion(
+                            channel.as_str(),
+                            name.as_str(),
+                            body.frequency,
+                            body.template.as_str(),
+                        )
+                        .map_err(warp::reject::custom)
+                    }
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::get2()
+                .and(path!("current").and(warp::filters::path::end()))
+                .and_then({
+                    let channel = irc.map(|irc| irc.channel.clone());
+
+                    move || match channel.as_ref() {
+                        Some(channel) => {
+                            let current = Current {
+                                channel: channel.clone(),
+                            };
+                            Ok(warp::reply::json(&current))
+                        }
+                        None => Err(warp::reject::not_found()),
+                    }
+                }))
             .boxed();
 
         warp::path("api").and(route)

@@ -299,7 +299,7 @@ impl Promotions {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Key {
     pub channel: String,
     pub name: String,
@@ -314,7 +314,7 @@ impl Key {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Promotion {
     pub key: Key,
     pub frequency: utils::Duration,

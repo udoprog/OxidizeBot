@@ -63,6 +63,15 @@ impl<'de> serde::Deserialize<'de> for Template {
     }
 }
 
+impl serde::Serialize for Template {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.source.serialize(serializer)
+    }
+}
+
 impl Template {
     pub fn compile(s: impl AsRef<str>) -> Result<Template, failure::Error> {
         let source = s.as_ref();
