@@ -312,7 +312,7 @@ impl Flow {
         self: Arc<Self>,
         what: &str,
     ) -> BoxFuture<(Arc<RwLock<Token>>, TokenRefreshFuture), failure::Error> {
-        let future = self.clone().token_from_state_path(what.to_string());
+        let future = self.clone().token_from_settings(what.to_string());
 
         let future = future
             .and_then::<_, BoxFuture<(Arc<RwLock<Token>>, TokenRefreshFuture), failure::Error>>({
@@ -362,8 +362,8 @@ impl Flow {
         })
     }
 
-    /// Load a token from the current state path.
-    fn token_from_state_path(
+    /// Load a token from settings.
+    fn token_from_settings(
         self: Arc<Self>,
         what: String,
     ) -> BoxFuture<Option<Token>, failure::Error> {
