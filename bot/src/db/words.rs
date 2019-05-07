@@ -52,30 +52,24 @@ pub trait Backend: Clone + Send + Sync {
     fn delete(&self, word: &str) -> Result<bool, failure::Error>;
 }
 
-#[derive(Debug, Clone)]
-pub struct Words<B>
-where
-    B: Backend,
-{
+#[derive(Clone)]
+pub struct Words {
     inner: Arc<RwLock<Inner>>,
-    backend: B,
+    db: db::Database,
 }
 
-impl<B> Words<B>
-where
-    B: Backend,
-{
+impl Words {
     /// Load all words from the backend.
-    pub fn load(backend: B) -> Result<Words<B>, failure::Error> {
+    pub fn load(db: db::Database) -> Result<Words, failure::Error> {
         let mut inner = Inner::default();
 
-        for word in backend.list()? {
+        for word in db.list()? {
             inner.insert(&word.word, word.why.as_ref().map(|s| s.as_str()))?;
         }
 
         Ok(Words {
             inner: Arc::new(RwLock::new(inner)),
-            backend,
+            db,
         })
     }
 
@@ -96,7 +90,7 @@ where
 
     /// Insert a word into the bad words list.
     pub fn edit(&self, word: &str, why: Option<&str>) -> Result<(), failure::Error> {
-        self.backend.edit(word, why)?;
+        self.db.edit(word, why)?;
         let mut inner = self.inner.write();
         inner.insert(word, why)?;
         Ok(())
@@ -104,7 +98,7 @@ where
 
     /// Remove a word from the bad words list.
     pub fn delete(&self, word: &str) -> Result<bool, failure::Error> {
-        if !self.backend.delete(word)? {
+        if !self.db.delete(word)? {
             return Ok(false);
         }
 

@@ -73,7 +73,7 @@ pub struct Irc<'a> {
     pub commands: db::Commands,
     pub aliases: db::Aliases,
     pub promotions: db::Promotions,
-    pub bad_words: db::Words<db::Database>,
+    pub bad_words: db::Words,
     pub after_streams: db::AfterStreams,
     pub global_bus: Arc<bus::Bus>,
     pub modules: &'a [Box<dyn module::Module>],
@@ -422,7 +422,7 @@ struct Handler {
     /// All registered commands.
     commands: db::Commands,
     /// Bad words.
-    bad_words: db::Words<db::Database>,
+    bad_words: db::Words,
     /// For sending notifications.
     global_bus: Arc<bus::Bus>,
     /// Aliases.

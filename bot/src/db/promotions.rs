@@ -35,7 +35,7 @@ trait Backend: Clone + Send + Sync {
     fn bump_promoted_at(&self, from: &Key, now: &DateTime<Utc>) -> Result<bool, failure::Error>;
 }
 
-impl Backend for super::Database {
+impl Backend for db::Database {
     fn edit(
         &self,
         key: &Key,
@@ -232,19 +232,19 @@ impl Promotions {
     }
 
     /// Try to rename the promotion.
-    pub fn rename(&self, channel: &str, from: &str, to: &str) -> Result<(), super::RenameError> {
+    pub fn rename(&self, channel: &str, from: &str, to: &str) -> Result<(), db::RenameError> {
         let from = Key::new(channel, from);
         let to = Key::new(channel, to);
 
         let mut inner = self.inner.write();
 
         if inner.contains_key(&to) {
-            return Err(super::RenameError::Conflict);
+            return Err(db::RenameError::Conflict);
         }
 
         let promotion = match inner.remove(&from) {
             Some(promotion) => promotion,
-            None => return Err(super::RenameError::Missing),
+            None => return Err(db::RenameError::Missing),
         };
 
         let promotion = Promotion {

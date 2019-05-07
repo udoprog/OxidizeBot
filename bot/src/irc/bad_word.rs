@@ -3,7 +3,7 @@ use failure::format_err;
 
 /// Handler for the !badword command.
 pub struct BadWord {
-    pub bad_words: db::Words<db::Database>,
+    pub bad_words: db::Words,
 }
 
 impl command::Handler for BadWord {
