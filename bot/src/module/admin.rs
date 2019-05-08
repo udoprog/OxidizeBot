@@ -24,8 +24,8 @@ impl command::Handler for Handler {
                     ctx.respond("Already called shutdown...");
                 }
             }
-            // Get or set a setting.
-            Some("setting") => {
+            // Get or set settings.
+            Some("settings") => {
                 let key = match ctx.next() {
                     Some(key) => key,
                     None => {
@@ -38,7 +38,7 @@ impl command::Handler for Handler {
                 };
 
                 if key.starts_with("secrets/") {
-                    ctx.respond("Cannot set the value of a secret!");
+                    ctx.respond("Cannot access secrets through chat!");
                     return Ok(());
                 }
 
@@ -47,12 +47,32 @@ impl command::Handler for Handler {
                         let value = match self.settings.get::<Option<serde_json::Value>>(key)? {
                             Some(value) => value,
                             None => {
-                                ctx.respond("No such setting");
+                                let mut results = Vec::new();
+
+                                for (key, value) in self.settings.get_by_prefix(key)? {
+                                    // NB: security issue if this was present.
+                                    if key.starts_with("secrets/") {
+                                        continue;
+                                    }
+
+                                    results.push(format!(
+                                        "{} = {}",
+                                        key,
+                                        serde_json::to_string(&value)?
+                                    ));
+                                }
+
+                                if results.is_empty() {
+                                    ctx.respond("No such setting");
+                                } else {
+                                    ctx.respond(results.join(", "));
+                                }
+
                                 return Ok(());
                             }
                         };
 
-                        ctx.respond(serde_json::to_string(&value)?);
+                        ctx.respond(format!("{} = {}", key, serde_json::to_string(&value)?));
                     }
                     value => {
                         let value = match serde_json::from_str(value) {

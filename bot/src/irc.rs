@@ -607,10 +607,13 @@ impl Handler {
     pub fn handle<'local>(&mut self, m: &'local Message) -> Result<(), failure::Error> {
         match m.command {
             Command::PRIVMSG(ref source, ref message) => {
-                self.idle.seen();
-
                 let tags = Self::tags(&m);
                 let user = self.as_user(tags.clone(), m)?;
+
+                // only non-moderators and non-streamer bumps the idle counter.
+                if !self.moderators.contains(user.name) || user.name != self.streamer {
+                    self.idle.seen();
+                }
 
                 let mut it = utils::Words::new(message);
 

@@ -46,6 +46,32 @@ impl Settings {
         }
     }
 
+    /// Get a setting by prefix.
+    pub fn get_by_prefix(
+        &self,
+        prefix: &str,
+    ) -> Result<Vec<(String, serde_json::Value)>, failure::Error> {
+        use self::db::schema::settings::dsl;
+        let c = self.db.pool.lock();
+
+        let results = dsl::settings
+            .select((dsl::key, dsl::value))
+            .load::<(String, String)>(&*c)?;
+
+        let mut out = Vec::new();
+
+        for (key, value) in results {
+            if !key.starts_with(prefix) {
+                continue;
+            }
+
+            let value = serde_json::from_str(value.as_str())?;
+            out.push((key, value));
+        }
+
+        return Ok(out);
+    }
+
     /// Get the value of the given key from the database.
     pub fn get<T>(&self, key: &str) -> Result<Option<T>, failure::Error>
     where
