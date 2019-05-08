@@ -463,6 +463,18 @@ impl command::Handler for Handler {
                 ctx.check_moderator()?;
                 self.player.pause()?;
             }
+            Some("detach") => {
+                ctx.check_moderator()?;
+
+                match self.player.clear_device() {
+                    Some(_) => {
+                        ctx.respond("Detached player");
+                    }
+                    None => {
+                        ctx.respond("No player configured");
+                    }
+                }
+            }
             Some("length") => {
                 let (count, duration) = self.player.length();
 

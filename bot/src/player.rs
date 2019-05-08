@@ -621,8 +621,13 @@ impl PlayerClient {
     /// External call to set device.
     ///
     /// Should always notify the player to change.
-    pub fn set_device(&self, device: spotify::Device) {
+    pub fn set_device(&self, device: spotify::Device) -> Option<spotify::Device> {
         self.device.set_device(Some(device))
+    }
+
+    /// Clear the current device.
+    pub fn clear_device(&self) -> Option<spotify::Device> {
+        self.device.set_device(None)
     }
 
     /// Send the given command.

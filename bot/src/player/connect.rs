@@ -189,8 +189,7 @@ impl Stream for ConnectPlayer {
             {
                 Async::NotReady => (),
                 Async::Ready(None) => failure::bail!("configuration received ended"),
-                Async::Ready(Some(ConfigurationEvent::SetDevice(device))) => {
-                    *self.device.write() = device;
+                Async::Ready(Some(ConfigurationEvent::DeviceChanged)) => {
                     return Ok(Async::Ready(Some(Event::DeviceChanged)));
                 }
             }
@@ -223,8 +222,8 @@ fn handle_future(
 }
 
 pub enum ConfigurationEvent {
-    /// Set the device, boolean indicates if we should notify the bus of the changes or not.
-    SetDevice(Option<spotify::Device>),
+    /// Indicate that the current device has been changed.
+    DeviceChanged,
 }
 
 #[derive(Clone)]
@@ -246,12 +245,16 @@ impl ConnectDevice {
     }
 
     /// Set which device to perform playback from.
-    pub fn set_device(&self, device: Option<spotify::Device>) {
+    pub fn set_device(&self, device: Option<spotify::Device>) -> Option<spotify::Device> {
+        let old = std::mem::replace(&mut *self.device.write(), device);
+
         if let Err(_) = self
             .config_tx
-            .unbounded_send(ConfigurationEvent::SetDevice(device))
+            .unbounded_send(ConfigurationEvent::DeviceChanged)
         {
             log::error!("failed to configure device");
         }
+
+        return old;
     }
 }

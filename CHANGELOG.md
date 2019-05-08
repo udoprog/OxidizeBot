@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Setting for controlling player feedback in chat (`player/chat-feedback`).
 - Setting for controlling overlay update interval (`player/song-update-interval`).
 - `!admin settings` for reading and writing settings through chat.
+- `!song detach` to detach the current player, preventing it from playing back until it has been attached again.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.6...HEAD
 [#32]: https://github.com/udoprog/setmod/issues/32
