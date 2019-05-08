@@ -283,6 +283,9 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         modules.push(Box::new(module::command_admin::Module::load(&module)?));
     }
 
+    let module = module::admin::Config::default();
+    modules.push(Box::new(module::admin::Module::load(&module)?));
+
     let module = module::alias_admin::Config::default();
     modules.push(Box::new(module::alias_admin::Module::load(&module)?));
 

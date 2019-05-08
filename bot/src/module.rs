@@ -31,6 +31,7 @@ impl Handlers {
     }
 }
 
+pub mod admin;
 pub mod alias_admin;
 pub mod command_admin;
 mod countdown;

@@ -22,7 +22,6 @@ use std::{fmt, sync::Arc, time};
 use tokio::timer;
 use tokio_threadpool::ThreadPool;
 
-mod admin;
 mod after_stream;
 mod bad_word;
 mod clip;
@@ -266,8 +265,6 @@ impl Irc<'_> {
                 },
             );
         }
-
-        handlers.insert("admin", admin::Admin {});
 
         futures.push(Box::new(send_future.map_err(failure::Error::from)));
 
