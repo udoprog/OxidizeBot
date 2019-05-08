@@ -24,8 +24,8 @@ impl command::Handler for Handler {
                     ctx.respond("Already called shutdown...");
                 }
             }
-            // Get the value of a setting.
-            Some("get") => {
+            // Get or set a setting.
+            Some("setting") => {
                 let key = match ctx.next() {
                     Some(key) => key,
                     None => {
@@ -33,42 +33,6 @@ impl command::Handler for Handler {
                             "Expected: {p} <key>",
                             p = ctx.alias.unwrap_or("!admin get")
                         ));
-                        return Ok(());
-                    }
-                };
-
-                if key.starts_with("secrets/") {
-                    ctx.respond("Cannot get the value of a secret!");
-                    return Ok(());
-                }
-
-                let value = match self.settings.get::<Option<serde_json::Value>>(key)? {
-                    Some(value) => value,
-                    None => {
-                        ctx.respond("No such setting");
-                        return Ok(());
-                    }
-                };
-
-                ctx.respond(serde_json::to_string(&value)?);
-            }
-            // Set the value of a setting.
-            Some("set") => {
-                let key = match ctx.next() {
-                    Some(key) => key,
-                    None => {
-                        ctx.respond(format!(
-                            "Expected: {p} <key>",
-                            p = ctx.alias.unwrap_or("!admin get")
-                        ));
-                        return Ok(());
-                    }
-                };
-
-                let value = match serde_json::from_str(ctx.rest()) {
-                    Ok(value) => value,
-                    Err(_) => {
-                        ctx.respond("Value must be valid JSON");
                         return Ok(());
                     }
                 };
@@ -78,8 +42,31 @@ impl command::Handler for Handler {
                     return Ok(());
                 }
 
-                self.settings.set_json(key, value)?;
-                ctx.respond(format!("Updated the {} setting", key));
+                match ctx.rest().trim() {
+                    "" => {
+                        let value = match self.settings.get::<Option<serde_json::Value>>(key)? {
+                            Some(value) => value,
+                            None => {
+                                ctx.respond("No such setting");
+                                return Ok(());
+                            }
+                        };
+
+                        ctx.respond(serde_json::to_string(&value)?);
+                    }
+                    value => {
+                        let value = match serde_json::from_str(value) {
+                            Ok(value) => value,
+                            Err(_) => {
+                                ctx.respond("Value must be valid JSON");
+                                return Ok(());
+                            }
+                        };
+
+                        self.settings.set_json(key, value)?;
+                        ctx.respond(format!("Updated the {} setting", key));
+                    }
+                }
             }
             _ => {
                 ctx.respond(format!(
@@ -87,8 +74,7 @@ impl command::Handler for Handler {
                      {p} refresh-mods, \
                      {p} version, \
                      {p} shutdown, \
-                     {p} get, \
-                     {p} set.",
+                     {p} setting.",
                     p = ctx.alias.unwrap_or("!admin"),
                 ));
             }
