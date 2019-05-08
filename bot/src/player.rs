@@ -200,6 +200,21 @@ pub fn run(
         None => None,
     };
 
+    let settings = settings.scoped(&["player"]);
+
+    let (song_update_interval_stream, song_update_interval) = settings.init_and_stream(
+        "song-update-interval",
+        utils::Duration::seconds(1),
+        settings::Type::Duration,
+    )?;
+
+    let song_update_interval = match song_update_interval.is_empty() {
+        true => None,
+        false => Some(tokio_timer::Interval::new_interval(
+            song_update_interval.as_std(),
+        )),
+    };
+
     let sync_player_interval = if !config.sync_player_interval.is_empty() {
         Some(Box::new(
             tokio_timer::Interval::new_interval(config.sync_player_interval.as_std())
@@ -245,11 +260,11 @@ pub fn run(
         current_song: parent_config.current_song.clone(),
         echo_current_song: config.echo_current_song,
         current_song_update,
+        song_update_interval,
+        song_update_interval_stream,
         sync_player_interval,
         global_bus,
     };
-
-    let settings = settings.scoped(&["player"]);
 
     let max_songs_per_user = settings.sync_var(
         core,
@@ -1285,6 +1300,10 @@ pub struct PlaybackFuture {
     echo_current_song: bool,
     /// Optional stream indicating when current song should update.
     current_song_update: Option<tokio_timer::Interval>,
+    /// Optional stream indicating that we want to send a song update on the global bus.
+    song_update_interval: Option<tokio_timer::Interval>,
+    /// Stream for when song update interval is updated.
+    song_update_interval_stream: settings::Stream<utils::Duration>,
     /// Interval at which to call remote service to see that we are still in sync.
     sync_player_interval: Option<SyncIntervalStream>,
     /// Notifier to use when sending song updates.
@@ -1532,6 +1551,47 @@ impl PlaybackFuture {
             }
         }
     }
+
+    /// Handle global song updates.
+    fn handle_global_song_updates(&mut self) -> Result<bool, failure::Error> {
+        use futures::Async::*;
+
+        match self
+            .song_update_interval_stream
+            .poll()
+            .map_err(|()| failure::format_err!("stream failed"))?
+        {
+            NotReady => (),
+            Ready(None) => failure::bail!("song updates interval config stream ended"),
+            Ready(Some(value)) => {
+                self.song_update_interval = match value.is_empty() {
+                    true => None,
+                    false => Some(tokio_timer::Interval::new_interval(value.as_std())),
+                };
+
+                return Ok(true);
+            }
+        }
+
+        if let Some(song_update_interval) = self.song_update_interval.as_mut() {
+            match song_update_interval.poll()? {
+                NotReady => (),
+                Ready(None) => failure::bail!("song updates ended"),
+                Ready(Some(_)) => {
+                    let song = self.song.read();
+
+                    if self.is_playing {
+                        self.global_bus
+                            .send(bus::Message::song_progress(song.as_ref()));
+                    }
+
+                    return Ok(true);
+                }
+            }
+        }
+
+        Ok(false)
+    }
 }
 
 impl Future for PlaybackFuture {
@@ -1563,16 +1623,14 @@ impl Future for PlaybackFuture {
                     Ready(None) => failure::bail!("current song updates ended"),
                     Ready(Some(_)) => {
                         let song = self.song.read();
-
-                        if self.is_playing {
-                            self.global_bus
-                                .send(bus::Message::song_progress(song.as_ref()));
-                        }
-
                         self.current_song(song.as_ref());
                         continue;
                     }
                 }
+            }
+
+            if self.handle_global_song_updates()? {
+                continue;
             }
 
             // pop is in progress, make sure that happens before anything else.

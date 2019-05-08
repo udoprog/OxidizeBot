@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `!admin version` to check current setmod-bot package version. ([#32])
+- Setting for controlling player feedback in chat (`player/chat-feedback`).
+- Setting for controlling overlay update interval (`player/song-update-interval`).
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.6...HEAD
 [#32]: https://github.com/udoprog/setmod/issues/32

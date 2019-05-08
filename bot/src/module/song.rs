@@ -545,10 +545,14 @@ impl module::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
+        let chat_feedback =
+            settings.sync_var(core, "song/chat-feedback", true, settings::Type::Bool)?;
+
         futures.push(Box::new(player_feedback_loop(
             irc_config,
             self.player.clone(),
             sender.clone(),
+            chat_feedback,
         )));
 
         let request_reward =
@@ -620,6 +624,7 @@ fn player_feedback_loop(
     config: &irc::Config,
     player: player::PlayerClient,
     sender: irc::Sender,
+    chat_feedback: Arc<RwLock<bool>>,
 ) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
     player
         .add_rx()
@@ -630,7 +635,7 @@ fn player_feedback_loop(
             move |e| {
                 match e {
                     player::Event::Playing(echo, item) => {
-                        if !echo {
+                        if !echo || !*chat_feedback.read() {
                             return Ok(());
                         }
 
@@ -644,6 +649,10 @@ fn player_feedback_loop(
                         sender.privmsg(channel.as_str(), message);
                     }
                     player::Event::Pausing => {
+                        if !*chat_feedback.read() {
+                            return Ok(());
+                        }
+
                         sender.privmsg(channel.as_str(), "Pausing playback.");
                     }
                     player::Event::Empty => {
