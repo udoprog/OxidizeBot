@@ -117,7 +117,10 @@ All admin commands are restricted to **moderators**.
 
 * `!admin version` - Responds with the current version of the setmod-bot package.
 * `!admin refresh-mods` - Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running.
-* `!admin settings` - Read and write settings through chat.
+* `!admin settings <key>` - Read the value of a setting.
+* `!admin settings <key> <value>` - Write the value of a setting.
+* `!admin push` - Push a value to a setting which is a collection.
+* `!admin delete <key> <value>` - Delete a value from a settings which is a collection.
 * `!admin shutdown` - Cause the mod to cleanly shut down, and hopefully being restarted by the management process.
 
 ## Bad Words

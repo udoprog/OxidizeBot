@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `!admin settings` for reading and writing settings through chat.
 - `!song detach` to detach the current player, preventing it from playing back until it has been attached again. ([#27])
 - Confirmation response when performing `!song open` and `!song close`. ([#36])
+- `!admin push <key> <value>` to insert values into settings which are collections.
+- `!admin delete <key> <value>` to delete values from settings which are collections.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.6...HEAD
 [#27]: https://github.com/udoprog/setmod/issues/27
