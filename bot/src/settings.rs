@@ -2,7 +2,7 @@
 
 use crate::db;
 use diesel::prelude::*;
-use futures::{sync::mpsc, Async, Poll, Stream as FuturesStream};
+use futures::{sync::mpsc, Async, Future as _, Poll, Stream as _};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -273,13 +273,16 @@ impl Settings {
 
         let value = Arc::new(RwLock::new(value));
 
-        core.runtime().executor().spawn(stream.for_each({
+        let future = stream.for_each({
             let value = value.clone();
 
             move |update| {
                 *value.write() = update;
-                Ok(())
             }
+        });
+
+        core.runtime().executor().spawn(future.map_err(|e| {
+            log::error!("sync_var update future failed: {}", e);
         }));
 
         Ok(value)
@@ -378,6 +381,36 @@ pub struct Stream<T> {
     rx: mpsc::UnboundedReceiver<Event<serde_json::Value>>,
 }
 
+/// A future that calls a function for each settings update.
+pub struct ForEach<T, F> {
+    stream: Stream<T>,
+    f: F,
+}
+
+impl<T, F> futures::Future for ForEach<T, F>
+where
+    F: Fn(T),
+    T: Clone + serde::de::DeserializeOwned,
+{
+    type Item = ();
+    type Error = StreamError;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        (self.f)(futures::try_ready!(self.stream.poll()));
+        Ok(Async::NotReady)
+    }
+}
+
+impl<T> Stream<T> {
+    /// Convert the stream into a future that is driven to completion, calling the given function for each value.
+    fn for_each<F>(self, f: F) -> ForEach<T, F>
+    where
+        F: Fn(T),
+    {
+        ForEach { stream: self, f: f }
+    }
+}
+
 impl<T> Drop for Stream<T> {
     fn drop(&mut self) {
         if self.subscriptions.write().remove(&self.key).is_some() {
@@ -391,34 +424,46 @@ impl<T> Drop for Stream<T> {
     }
 }
 
-impl<T> futures::Stream for Stream<T>
+#[derive(Debug, err_derive::Error)]
+pub enum StreamError {
+    #[error(display = "update stream errored")]
+    UpdateStreamErrored,
+    #[error(display = "update stream ended")]
+    UpdateStreamEnded,
+}
+
+impl<T> futures::Future for Stream<T>
 where
     T: Clone + serde::de::DeserializeOwned,
 {
     type Item = T;
-    type Error = ();
+    type Error = StreamError;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            let n = match futures::try_ready!(self.rx.poll()) {
-                Some(e) => match e {
-                    Event::Clear => Some(self.default.clone()),
-                    Event::Set(value) => {
-                        let value = match serde_json::from_value(value) {
-                            Ok(value) => value,
-                            Err(e) => {
-                                log::warn!("bad value for key: {}: {}", self.key, e);
-                                continue;
-                            }
-                        };
-
-                        Some(value)
-                    }
-                },
-                None => None,
+            let update = match self.rx.poll() {
+                Err(()) => return Err(StreamError::UpdateStreamErrored),
+                Ok(Async::NotReady) => return Ok(Async::NotReady),
+                Ok(Async::Ready(None)) => return Err(StreamError::UpdateStreamEnded),
+                Ok(Async::Ready(Some(update))) => update,
             };
 
-            return Ok(Async::Ready(n));
+            let value = match update {
+                Event::Clear => self.default.clone(),
+                Event::Set(value) => {
+                    let value = match serde_json::from_value(value) {
+                        Ok(value) => value,
+                        Err(e) => {
+                            log::warn!("bad value for key: {}: {}", self.key, e);
+                            continue;
+                        }
+                    };
+
+                    value
+                }
+            };
+
+            return Ok(Async::Ready(value));
         }
     }
 }

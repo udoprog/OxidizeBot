@@ -278,8 +278,7 @@ impl Irc<'_> {
             settings.set("migration/whitelisted-hosts-migrated", true)?;
         }
 
-        let whitelisted_hosts = settings.sync_var(
-            core,
+        let (whitelisted_hosts_stream, whitelisted_hosts) = settings.init_and_stream(
             "irc/whitelisted-hosts",
             HashSet::<String>::new(),
             settings::Type::set(settings::Type::String),
@@ -306,6 +305,7 @@ impl Irc<'_> {
 
         futures.push(Box::new(IrcFuture {
             handler,
+            whitelisted_hosts_stream,
             client_stream: client.stream(),
         }));
 
@@ -424,7 +424,7 @@ struct Handler {
     /// Moderators.
     moderators: HashSet<String>,
     /// Whitelisted hosts for links.
-    whitelisted_hosts: Arc<RwLock<HashSet<String>>>,
+    whitelisted_hosts: HashSet<String>,
     /// All registered commands.
     commands: db::Commands,
     /// Bad words.
@@ -601,11 +601,9 @@ impl Handler {
 
     /// Check if the given iterator has URLs that need to be
     fn has_bad_link(&mut self, message: &str) -> bool {
-        let hosts = self.whitelisted_hosts.read();
-
         for url in utils::Urls::new(message) {
             if let Some(host) = url.host_str() {
-                if !hosts.contains(host) {
+                if !self.whitelisted_hosts.contains(host) {
                     return true;
                 }
             }
@@ -724,6 +722,7 @@ impl Handler {
 
 struct IrcFuture {
     handler: Handler,
+    whitelisted_hosts_stream: settings::Stream<HashSet<String>>,
     client_stream: client::ClientStream,
 }
 
@@ -752,6 +751,11 @@ impl Future for IrcFuture {
 
                     not_ready = false;
                 }
+            }
+
+            if let Async::Ready(whitelisted_hosts) = self.whitelisted_hosts_stream.poll()? {
+                self.handler.whitelisted_hosts = whitelisted_hosts;
+                not_ready = false;
             }
 
             if not_ready {

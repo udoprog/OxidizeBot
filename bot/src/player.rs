@@ -1561,21 +1561,13 @@ impl PlaybackFuture {
     fn handle_global_song_updates(&mut self) -> Result<bool, failure::Error> {
         use futures::Async::*;
 
-        match self
-            .song_update_interval_stream
-            .poll()
-            .map_err(|()| failure::format_err!("stream failed"))?
-        {
-            NotReady => (),
-            Ready(None) => failure::bail!("song updates interval config stream ended"),
-            Ready(Some(value)) => {
-                self.song_update_interval = match value.is_empty() {
-                    true => None,
-                    false => Some(tokio_timer::Interval::new_interval(value.as_std())),
-                };
+        if let Ready(value) = self.song_update_interval_stream.poll()? {
+            self.song_update_interval = match value.is_empty() {
+                true => None,
+                false => Some(tokio_timer::Interval::new_interval(value.as_std())),
+            };
 
-                return Ok(true);
-            }
+            return Ok(true);
         }
 
         if let Some(song_update_interval) = self.song_update_interval.as_mut() {

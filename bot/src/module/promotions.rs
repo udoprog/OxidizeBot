@@ -190,20 +190,11 @@ impl Future for PromotionFuture {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            let mut setting_not_ready = false;
-            let mut interval_not_ready = false;
+            let mut not_ready = true;
 
-            let rx = match self.setting.poll() {
-                Ok(rx) => rx,
-                Err(_) => failure::bail!("rx queue errored"),
-            };
-
-            match rx {
-                Async::NotReady => setting_not_ready = true,
-                Async::Ready(None) => failure::bail!("rx queue ended"),
-                Async::Ready(Some(interval)) => {
-                    self.interval = tokio_timer::Interval::new_interval(interval.as_std());
-                }
+            if let Async::Ready(interval) = self.setting.poll()? {
+                self.interval = tokio_timer::Interval::new_interval(interval.as_std());
+                not_ready = false;
             }
 
             let interval = match self.interval.poll() {
@@ -212,7 +203,7 @@ impl Future for PromotionFuture {
             };
 
             match interval {
-                Async::NotReady => interval_not_ready = true,
+                Async::NotReady => (),
                 Async::Ready(None) => failure::bail!("interval queue ended"),
                 Async::Ready(Some(_)) => {
                     if self.idle.is_idle() {
@@ -231,10 +222,12 @@ impl Future for PromotionFuture {
 
                         Ok(())
                     }));
+
+                    not_ready = false;
                 }
             }
 
-            if setting_not_ready && interval_not_ready {
+            if not_ready {
                 return Ok(Async::NotReady);
             }
         }
