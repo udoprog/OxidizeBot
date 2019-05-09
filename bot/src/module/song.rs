@@ -258,12 +258,12 @@ impl command::Handler for Handler {
                     "" => None,
                     other => Some(other.to_string()),
                 });
-                ctx.user.as_owned_user().respond("Closed player from further requests.");
+                ctx.respond("Closed player from further requests.");
             }
             Some("open") => {
                 ctx.check_moderator()?;
                 self.player.open();
-                ctx.user.as_owned_user().respond("Opened player for requests.");
+                ctx.respond("Opened player for requests.");
             }
             Some("list") => {
                 if let Some(api_url) = ctx.api_url {
