@@ -103,8 +103,6 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     let settings = db.settings();
 
-    let _domain_whitelist = db::PersistedSet::<String>::load(db.clone(), "whitelisted-domain")?;
-
     let commands = db::Commands::load(db.clone())?;
     let aliases = db::Aliases::load(db.clone())?;
     let bad_words = db::Words::load(db.clone())?;
@@ -131,6 +129,12 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
                 settings.set("migration/aliases-migrated", true)?;
             }
         }
+    }
+
+    if !config.whitelisted_hosts.is_empty() {
+        log::warn!("# DEPRECATION WARNING");
+        log::warn!("The `whitelisted_hosts` section in the configuration is now deprecated.");
+        log::warn!("Please remove it in favor of the irc/whitelisted-hosts setting");
     }
 
     if let Some(path) = config.bad_words.as_ref() {

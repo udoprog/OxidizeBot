@@ -58,7 +58,14 @@ export default class Settings extends React.Component {
     this.api.settings()
       .then(data => {
         data = data.map(d => {
-          switch (d.type) {
+          if (typeof d !== "object" || d.type === null) {
+            return {
+              key: d.key,
+              value: new types.Raw(d.value),
+            };
+          }
+
+          switch (d.type.id) {
             case "duration":
               return {
                 key: d.key,

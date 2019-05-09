@@ -15,7 +15,7 @@ impl command::Handler for Handler {
                 ctx.privmsg("/mods");
             }
             Some("version") => {
-                ctx.respond(format!("Bot Version {}", env!("CARGO_PKG_VERSION")));
+                ctx.respond(format!("Bot Version {}", crate::VERSION));
             }
             Some("shutdown") => {
                 if ctx.shutdown.shutdown() {
@@ -24,23 +24,60 @@ impl command::Handler for Handler {
                     ctx.respond("Already called shutdown...");
                 }
             }
-            // Get or set settings.
-            Some("settings") => {
-                let key = match ctx.next() {
+            // Insert a value into a setting.
+            Some("push") => {
+                let key = match key(&mut ctx, "!admin insert") {
                     Some(key) => key,
-                    None => {
-                        ctx.respond(format!(
-                            "Expected: {p} <key>",
-                            p = ctx.alias.unwrap_or("!admin get")
-                        ));
+                    None => return Ok(()),
+                };
+
+                let mut values = self
+                    .settings
+                    .get::<Vec<serde_json::Value>>(key)?
+                    .unwrap_or_default();
+
+                let value = match serde_json::from_str(ctx.rest()) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        ctx.respond("Value must be valid JSON");
                         return Ok(());
                     }
                 };
 
-                if key.starts_with("secrets/") {
-                    ctx.respond("Cannot access secrets through chat!");
-                    return Ok(());
-                }
+                values.push(value);
+                self.settings.set(key, values)?;
+                ctx.respond(format!("Updated the {} setting", key));
+            }
+            // Delete a value from a setting.
+            Some("delete") => {
+                let key = match key(&mut ctx, "!admin delete") {
+                    Some(key) => key,
+                    None => return Ok(()),
+                };
+
+                let mut values = self
+                    .settings
+                    .get::<Vec<serde_json::Value>>(key)?
+                    .unwrap_or_default();
+
+                let value = match serde_json::from_str::<serde_json::Value>(ctx.rest()) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        ctx.respond("Value must be valid JSON");
+                        return Ok(());
+                    }
+                };
+
+                values.retain(|v| v != &value);
+                self.settings.set(key, values)?;
+                ctx.respond(format!("Updated the {} setting", key));
+            }
+            // Get or set settings.
+            Some("settings") => {
+                let key = match key(&mut ctx, "!admin settings") {
+                    Some(key) => key,
+                    None => return Ok(()),
+                };
 
                 match ctx.rest().trim() {
                     "" => {
@@ -102,6 +139,28 @@ impl command::Handler for Handler {
 
         Ok(())
     }
+}
+
+/// Extract a settings key from the context.
+fn key<'a>(ctx: &mut command::Context<'a, '_>, prefix: &str) -> Option<&'a str> {
+    let key = match ctx.next() {
+        Some(key) => key,
+        None => {
+            ctx.respond(format!(
+                "Expected: {p} <key>",
+                p = ctx.alias.unwrap_or(prefix)
+            ));
+
+            return None;
+        }
+    };
+
+    if key.starts_with("secrets/") {
+        ctx.respond("Cannot access secrets through chat!");
+        return None;
+    }
+
+    Some(key)
 }
 
 pub struct Module {}

@@ -424,6 +424,7 @@ where
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "id")]
 pub enum Type {
     #[serde(rename = "duration")]
     Duration,
@@ -433,4 +434,15 @@ pub enum Type {
     U32,
     #[serde(rename = "string")]
     String,
+    #[serde(rename = "set")]
+    Set { value: Box<Type> },
+}
+
+impl Type {
+    /// Construct a set with the specified inner value.
+    pub fn set(value: Type) -> Type {
+        Type::Set {
+            value: Box::new(value),
+        }
+    }
 }

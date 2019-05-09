@@ -8,6 +8,7 @@ use failure::{format_err, ResultExt as _};
 use futures::{
     future::{self, Future},
     stream::Stream,
+    Async, Poll,
 };
 use hashbrown::HashSet;
 use irc::{
@@ -268,12 +269,28 @@ impl Irc<'_> {
 
         futures.push(Box::new(send_future.map_err(failure::Error::from)));
 
-        let mut handler = Handler {
+        if !settings
+            .get::<bool>("migration/whitelisted-hosts-migrated")?
+            .unwrap_or_default()
+        {
+            log::warn!("Performing a one time migration of aliases from configuration.");
+            settings.set("irc/whitelisted-hosts", &config.whitelisted_hosts)?;
+            settings.set("migration/whitelisted-hosts-migrated", true)?;
+        }
+
+        let whitelisted_hosts = settings.sync_var(
+            core,
+            "irc/whitelisted-hosts",
+            HashSet::<String>::new(),
+            settings::Type::set(settings::Type::String),
+        )?;
+
+        let handler = Handler {
             streamer: config.streamer.clone(),
             channel: irc_config.channel.clone(),
             sender: sender.clone(),
             moderators: HashSet::default(),
-            whitelisted_hosts: config.whitelisted_hosts.clone(),
+            whitelisted_hosts,
             commands,
             bad_words,
             global_bus,
@@ -287,18 +304,10 @@ impl Irc<'_> {
             idle,
         };
 
-        futures.push(Box::new(
-            client
-                .stream()
-                .map_err(failure::Error::from)
-                .and_then(move |m| handler.handle(&m))
-                // handle any errors.
-                .or_else(|e| {
-                    utils::log_err("failed to process message", e);
-                    Ok(())
-                })
-                .for_each(|_| Ok(())),
-        ));
+        futures.push(Box::new(IrcFuture {
+            handler,
+            client_stream: client.stream(),
+        }));
 
         Ok(future::join_all(futures).map(|_| ()))
     }
@@ -415,7 +424,7 @@ struct Handler {
     /// Moderators.
     moderators: HashSet<String>,
     /// Whitelisted hosts for links.
-    whitelisted_hosts: HashSet<String>,
+    whitelisted_hosts: Arc<RwLock<HashSet<String>>>,
     /// All registered commands.
     commands: db::Commands,
     /// Bad words.
@@ -592,9 +601,11 @@ impl Handler {
 
     /// Check if the given iterator has URLs that need to be
     fn has_bad_link(&mut self, message: &str) -> bool {
+        let hosts = self.whitelisted_hosts.read();
+
         for url in utils::Urls::new(message) {
             if let Some(host) = url.host_str() {
-                if !self.whitelisted_hosts.contains(host) {
+                if !hosts.contains(host) {
                     return true;
                 }
             }
@@ -708,6 +719,45 @@ impl Handler {
         }
 
         Ok(())
+    }
+}
+
+struct IrcFuture {
+    handler: Handler,
+    client_stream: client::ClientStream,
+}
+
+impl Future for IrcFuture {
+    type Item = ();
+    type Error = failure::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        loop {
+            let mut not_ready = true;
+
+            let m = self
+                .client_stream
+                .poll()
+                .with_context(|_| failure::format_err!("failed to poll for IRC message"))?;
+
+            match m {
+                Async::NotReady => (),
+                Async::Ready(None) => {
+                    failure::bail!("irc stream ended");
+                }
+                Async::Ready(Some(m)) => {
+                    if let Err(e) = self.handler.handle(&m) {
+                        log::error!("failed to handle message: {}", e);
+                    }
+
+                    not_ready = false;
+                }
+            }
+
+            if not_ready {
+                return Ok(Async::NotReady);
+            }
+        }
     }
 }
 
