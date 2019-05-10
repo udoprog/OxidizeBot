@@ -31,18 +31,15 @@ impl command::Handler for Handler {
                     None => return Ok(()),
                 };
 
+                let value = match self.value_in_set(&mut ctx, key) {
+                    Some(ty) => ty,
+                    None => return Ok(()),
+                };
+
                 let mut values = self
                     .settings
                     .get::<Vec<serde_json::Value>>(key)?
                     .unwrap_or_default();
-
-                let value = match serde_json::from_str(ctx.rest()) {
-                    Ok(value) => value,
-                    Err(_) => {
-                        ctx.respond("Value must be valid JSON");
-                        return Ok(());
-                    }
-                };
 
                 values.push(value);
                 self.settings.set(key, values)?;
@@ -55,18 +52,15 @@ impl command::Handler for Handler {
                     None => return Ok(()),
                 };
 
+                let value = match self.value_in_set(&mut ctx, key) {
+                    Some(ty) => ty,
+                    None => return Ok(()),
+                };
+
                 let mut values = self
                     .settings
                     .get::<Vec<serde_json::Value>>(key)?
                     .unwrap_or_default();
-
-                let value = match serde_json::from_str::<serde_json::Value>(ctx.rest()) {
-                    Ok(value) => value,
-                    Err(_) => {
-                        ctx.respond("Value must be valid JSON");
-                        return Ok(());
-                    }
-                };
 
                 values.retain(|v| v != &value);
                 self.settings.set(key, values)?;
@@ -112,6 +106,14 @@ impl command::Handler for Handler {
                         ctx.respond(format!("{} = {}", key, serde_json::to_string(&value)?));
                     }
                     value => {
+                        let schema = match self.settings.schema.lookup(key) {
+                            Some(schema) => schema,
+                            None => {
+                                ctx.respond("No such setting");
+                                return Ok(());
+                            }
+                        };
+
                         let value = match serde_json::from_str(value) {
                             Ok(value) => value,
                             Err(_) => {
@@ -119,6 +121,11 @@ impl command::Handler for Handler {
                                 return Ok(());
                             }
                         };
+
+                        if !schema.ty.is_compatible_with_json(&value) {
+                            ctx.respond(format!("Expected a {} argument", schema.ty));
+                            return Ok(());
+                        }
 
                         self.settings.set_json(key, value)?;
                         ctx.respond(format!("Updated the {} setting", key));
@@ -138,6 +145,46 @@ impl command::Handler for Handler {
         }
 
         Ok(())
+    }
+}
+
+impl Handler {
+    /// Get a value that corresponds with the given set.
+    fn value_in_set(
+        &mut self,
+        ctx: &mut command::Context<'_, '_>,
+        key: &str,
+    ) -> Option<serde_json::Value> {
+        let schema = match self.settings.schema.lookup(key) {
+            Some(schema) => schema,
+            None => {
+                ctx.respond("No such setting");
+                return None;
+            }
+        };
+
+        let ty = match schema.ty {
+            settings::Type::Set { value } => value,
+            other => {
+                ctx.respond(format!("Configuration is a {}, but expected a set", other));
+                return None;
+            }
+        };
+
+        let value = match serde_json::from_str(ctx.rest()) {
+            Ok(value) => value,
+            Err(_) => {
+                ctx.respond("Value must be valid JSON");
+                return None;
+            }
+        };
+
+        if !ty.is_compatible_with_json(&value) {
+            ctx.respond(format!("Expected a {} argument", ty));
+            return None;
+        }
+
+        Some(value)
     }
 }
 

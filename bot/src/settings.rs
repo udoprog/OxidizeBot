@@ -5,7 +5,7 @@ use diesel::prelude::*;
 use futures::{sync::mpsc, Async, Future as _, Poll, Stream as _};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 use tokio_core::reactor::Core;
 
 const SEPARATOR: &'static str = "/";
@@ -32,9 +32,10 @@ pub struct Setting {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SchemaType {
     /// Documentation for this type.
-    doc: String,
+    pub doc: String,
     /// The type.
-    r#type: Type,
+    #[serde(rename = "type")]
+    pub ty: Type,
 }
 
 const SCHEMA: &'static [u8] = include_bytes!("settings.yaml");
@@ -68,7 +69,7 @@ pub struct Settings {
     /// Maps setting prefixes to subscriptions.
     subscriptions: Subscriptions,
     /// Schema for every corresponding type.
-    schema: Arc<Schema>,
+    pub schema: Arc<Schema>,
 }
 
 impl Settings {
@@ -514,7 +515,7 @@ pub enum Type {
     #[serde(rename = "bool")]
     Bool,
     #[serde(rename = "number")]
-    U32,
+    Number,
     #[serde(rename = "string")]
     String,
     #[serde(rename = "set")]
@@ -526,6 +527,39 @@ impl Type {
     pub fn set(value: Type) -> Type {
         Type::Set {
             value: Box::new(value),
+        }
+    }
+
+    /// Test if JSON value is compatible with the current type.
+    pub fn is_compatible_with_json(&self, other: &serde_json::Value) -> bool {
+        use self::Type::*;
+        use serde_json::Value;
+
+        match (self, other) {
+            (Raw, _) => true,
+            (Duration, Value::Number(..)) => true,
+            (Bool, Value::Bool(..)) => true,
+            (Number, Value::Number(..)) => true,
+            (String, Value::String(..)) => true,
+            (Set { ref value }, Value::Array(ref values)) => {
+                values.iter().all(|v| value.is_compatible_with_json(v))
+            }
+            _ => false,
+        }
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use self::Type::*;
+
+        match *self {
+            Raw => write!(fmt, "any"),
+            Duration => write!(fmt, "number"),
+            Bool => write!(fmt, "bool"),
+            Number => write!(fmt, "number"),
+            String => write!(fmt, "string"),
+            Set { ref value } => write!(fmt, "Array<{}>", value),
         }
     }
 }
