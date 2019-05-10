@@ -1,4 +1,4 @@
-use crate::{command, currency, db, irc, module, player, settings, utils};
+use crate::{command, currency, db, irc, module, player, utils};
 use failure::format_err;
 use futures::{sync::mpsc, Future as _, Stream as _};
 use parking_lot::RwLock;
@@ -820,26 +820,13 @@ impl super::Module for Module {
             .ok_or_else(|| format_err!("currency required for !gtav module"))?
             .clone();
 
-        let cooldown = settings.sync_var(
-            core,
-            "gtav/cooldown",
-            self.cooldown.clone(),
-            settings::Type::Duration,
-        )?;
+        let cooldown = settings.sync_var(core, "gtav/cooldown", self.cooldown.clone())?;
 
-        let prefix = settings.sync_var(
-            core,
-            "gtav/chat-prefix",
-            String::from("ChaosMod: "),
-            settings::Type::String,
-        )?;
-        let other_percentage = settings.sync_var(core, "gtav/other%", 100, settings::Type::U32)?;
-        let punish_percentage =
-            settings.sync_var(core, "gtav/punish%", 100, settings::Type::U32)?;
-        let reward_percentage =
-            settings.sync_var(core, "gtav/reward%", 100, settings::Type::U32)?;
-        let success_feedback =
-            settings.sync_var(core, "gtav/success-feedback", false, settings::Type::Bool)?;
+        let prefix = settings.sync_var(core, "gtav/chat-prefix", String::from("ChaosMod: "))?;
+        let other_percentage = settings.sync_var(core, "gtav/other%", 100)?;
+        let punish_percentage = settings.sync_var(core, "gtav/punish%", 100)?;
+        let reward_percentage = settings.sync_var(core, "gtav/reward%", 100)?;
+        let success_feedback = settings.sync_var(core, "gtav/success-feedback", false)?;
 
         let (tx, rx) = mpsc::unbounded();
 

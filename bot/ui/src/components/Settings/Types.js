@@ -1,9 +1,42 @@
 import React from "react";
-import {Form} from "react-bootstrap";
+import {Form, Button, InputGroup} from "react-bootstrap";
+import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+
+/**
+ * Decode the given type and value.
+ *
+ * @param {object} type the type to decode
+ * @param {any} value the value to decode
+ */
+export function decode(type) {
+  if (type === null) {
+    return RawType;
+  }
+
+  switch (type.id) {
+    case "duration":
+      return DurationType;
+    case "bool":
+      return BooleanType;
+    case "string":
+      return StringType;
+    case "number":
+      return NumberType;
+    case "set":
+      let value = decode(type.value);
+      return new SetType(value);
+    default:
+      return RawType;
+  }
+}
 
 const DURATION_REGEX = /^((\d+)h)?((\d+)m)?((\d+)s)?$/;
 
 class EditDuration {
+  constructor(value) {
+    this.value = value;
+  }
+
   validate() {
     return DURATION_REGEX.test(this.value);
   }
@@ -19,6 +52,16 @@ class EditDuration {
         onChange(this);
       }
     } />
+  }
+}
+
+class DurationType {
+  static default() {
+    return new Duration(0, 0, 1);
+  }
+
+  static construct(data) {
+    return Duration.parse(data);
   }
 }
 
@@ -58,6 +101,10 @@ export class Duration {
     }
 
     return new Duration(hours, minutes, seconds);
+  }
+
+  render() {
+    return <code>{this.toString()}</code>;
   }
 
   edit() {
@@ -110,12 +157,22 @@ class EditNumber {
   }
 
   control(isValid, onChange) {
-    return <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.value} onChange={
+    return <Form.Control size="sm" type="number" isInvalid={!isValid} value={this.value} onChange={
       e => {
         this.value = e.target.value;
         onChange(this);
       }
     } />
+  }
+}
+
+class NumberType {
+  static default() {
+    return new Number(0);
+  }
+
+  static construct(data) {
+    return new Number(data);
   }
 }
 
@@ -125,13 +182,11 @@ export class Number {
   }
 
   static parse(input) {
-    let data = JSON.parse(input);
+    return new Number(parseInt(input));
+  }
 
-    if (typeof data !== "number") {
-      throw new Error("expected number");
-    }
-
-    return new Number(data);
+  render() {
+    return this.toString();
   }
 
   edit() {
@@ -157,54 +212,65 @@ class EditBoolean {
   }
 
   validate() {
-    switch (this.value) {
-      case "true":
-      case "false":
-        return true;
-      default:
-        return false;
-    }
+    return true;
   }
 
   save() {
-    return Boolean.parse(this.value);
+    return new Boolean(this.value);
   }
 
   control(isValid, onChange) {
-    return <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.value} onChange={
-      e => {
-        this.value = e.target.value;
-        onChange(this);
-      }
-    } />
+    if (this.value) {
+      return <Button size="sm" variant="success" isInvalid={!isValid} onClick={
+        e => {
+          this.value = false
+          onChange(this);
+        }
+      }>Enabled</Button>;
+    } else {
+      return <Button size="sm" variant="danger" isInvalid={!isValid} onClick={
+        e => {
+          this.value = true
+          onChange(this);
+        }
+      }>Disabled</Button>;
+    }
+  }
+}
+
+export class BooleanType {
+  static default() {
+    return new Boolean(false);
+  }
+
+  static construct(data) {
+    return new Boolean(data);
   }
 }
 
 export class Boolean {
-  constructor(data) {
-    this.data = data;
+  constructor(value) {
+    this.value = value;
   }
 
-  static parse(input) {
-    let data = JSON.parse(input);
-
-    if (typeof data !== "boolean") {
-      throw new Error("expected boolean");
+  render() {
+    if (this.value) {
+      return <Button size="sm" variant="success" disabled>Enabled</Button>;
+    } else {
+      return <Button size="sm" variant="danger" disabled>Disabled</Button>;
     }
-
-    return new Boolean(data);
   }
 
   edit() {
-    return new EditBoolean(this.toString());
+    return new EditBoolean(this.value);
   }
 
   serialize() {
-    return this.data;
+    return this.value;
   }
 
   toString() {
-    return this.data.toString();
+    return this.value.toString();
   }
 }
 
@@ -218,7 +284,7 @@ class EditString {
   }
 
   save() {
-    return String.parse(this.value);
+    return new String(this.value);
   }
 
   control(isValid, onChange) {
@@ -231,17 +297,23 @@ class EditString {
   }
 }
 
+export class StringType {
+  static default() {
+    return new String("");
+  }
+
+  static construct(data) {
+    return new String(data);
+  }
+}
+
 export class String {
   constructor(data) {
     this.data = data;
   }
 
-  static parse(input) {
-    if (typeof input !== "string") {
-      throw new Error("expected string");
-    }
-
-    return new String(data);
+  render() {
+    return <code>{this.toString()}</code>;
   }
 
   edit() {
@@ -289,6 +361,16 @@ class EditRaw {
   }
 }
 
+export class RawType {
+  static default() {
+    return new Raw({});
+  }
+
+  static construct(data) {
+    return new Raw(data);
+  }
+}
+
 export class Raw {
   constructor(data) {
     this.data = data;
@@ -296,6 +378,10 @@ export class Raw {
 
   static parse(data) {
     return new Raw(JSON.parse(data))
+  }
+
+  render() {
+    return <code>{this.toString()}</code>;
   }
 
   edit() {
@@ -308,5 +394,95 @@ export class Raw {
 
   toString() {
     return JSON.stringify(this.data);
+  }
+}
+
+
+class EditSet {
+  constructor(values, type) {
+    this.values = values;
+    this.type = type;
+  }
+
+  validate() {
+    return true;
+  }
+
+  save() {
+    return new Set(this.values.map(v => v.save()), this.type);
+  }
+
+  control(isValid, onChange) {
+    let add = e => {
+      this.values.push(this.type.default().edit());
+      onChange(this);
+    };
+
+    let remove = key => _ => {
+      this.values.splice(key, 1);
+      onChange(this);
+    };
+
+    return (
+      <div>
+        {this.values.map((v, key) => {
+          let isValid = v.validate();
+
+          let e = v.control(isValid, v => {
+            onChange(this);
+          });
+
+          return (
+            <InputGroup key={key} className="mb-1">
+              {e}
+              <InputGroup.Append>
+                <Button size="sm" variant="danger" onClick={remove(key)}><FontAwesomeIcon icon="minus" /></Button>
+              </InputGroup.Append>
+            </InputGroup>
+          );
+        })}
+
+        <div>
+          <Button size="sm" variant="primary" onClick={add}><FontAwesomeIcon icon="plus" /></Button>
+        </div>
+      </div>
+    );
+  }
+}
+
+export class SetType {
+  constructor(value) {
+    this.value = value;
+  }
+
+  default() {
+    return new Set([], this.value);
+  }
+
+  construct(data) {
+    return new Set(data.map(d => this.value.construct(d)), this.value);
+  }
+}
+
+export class Set {
+  constructor(values, type) {
+    this.values = values;
+    this.type = type;
+  }
+
+  render() {
+    return (
+      <div>
+        {this.values.map((v, key) => <div key={key}>{v.render()}</div>)}
+      </div>
+    );
+  }
+
+  edit() {
+    return new EditSet(this.values.map(v => v.edit()), this.type);
+  }
+
+  serialize() {
+    return this.values.map(v => v.serialize());
   }
 }

@@ -101,7 +101,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     let db = db::Database::open(database_url, Arc::clone(&thread_pool))?;
 
-    let settings = db.settings();
+    let settings = db.settings()?;
 
     let commands = db::Commands::load(db.clone())?;
     let aliases = db::Aliases::load(db.clone())?;

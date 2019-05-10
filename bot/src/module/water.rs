@@ -1,4 +1,4 @@
-use crate::{command, config, currency, db, module, settings, stream_info, utils};
+use crate::{command, config, currency, db, module, stream_info, utils};
 use chrono::{DateTime, Utc};
 use failure::format_err;
 use futures::Future as _;
@@ -170,8 +170,7 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
-        let reward_multiplier =
-            settings.sync_var(core, "water/reward%", 100, settings::Type::U32)?;
+        let reward_multiplier = settings.sync_var(core, "water/reward%", 100)?;
 
         let currency = currency
             .ok_or_else(|| format_err!("currency required for !swearjar module"))?

@@ -178,6 +178,14 @@ body {
 
 .settings {
   &-key {
-    white-space: nowrap;
+    &-name {
+      font-weight: bold;
+      white-space: nowrap;
+    }
+
+    &-doc {
+      white-space: normal;
+      font-size: 80%;
+    }
   }
 }

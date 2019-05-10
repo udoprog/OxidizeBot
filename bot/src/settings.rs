@@ -11,7 +11,7 @@ use tokio_core::reactor::Core;
 const SEPARATOR: &'static str = "/";
 
 type EventSender = mpsc::UnboundedSender<Event<serde_json::Value>>;
-type Subscriptions = Arc<RwLock<HashMap<String, (Type, EventSender)>>>;
+type Subscriptions = Arc<RwLock<HashMap<String, EventSender>>>;
 
 /// Update events for a given key.
 #[derive(Clone)]
@@ -22,27 +22,61 @@ pub enum Event<T> {
     Set(T),
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Setting {
+    schema: SchemaType,
+    key: String,
+    value: serde_json::Value,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SchemaType {
+    /// Documentation for this type.
+    doc: String,
+    /// The type.
+    r#type: Type,
+}
+
+const SCHEMA: &'static [u8] = include_bytes!("settings.yaml");
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct Schema {
+    types: HashMap<String, SchemaType>,
+}
+
+impl Schema {
+    /// Load schema from the given set of bytes.
+    pub fn load_static() -> Result<Schema, failure::Error> {
+        Ok(serde_yaml::from_slice(SCHEMA)?)
+    }
+
+    /// Lookup the given type by key.
+    pub fn lookup(&self, key: &str) -> Option<SchemaType> {
+        self.types.get(key).cloned()
+    }
+
+    /// Test if schema contains the given key.
+    pub fn contains(&self, key: &str) -> bool {
+        self.types.contains_key(key)
+    }
+}
+
 /// A container for settings from which we can subscribe for updates.
 #[derive(Clone)]
 pub struct Settings {
     db: db::Database,
     /// Maps setting prefixes to subscriptions.
     subscriptions: Subscriptions,
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct Setting {
-    #[serde(rename = "type")]
-    ty: Option<Type>,
-    key: String,
-    value: serde_json::Value,
+    /// Schema for every corresponding type.
+    schema: Arc<Schema>,
 }
 
 impl Settings {
-    pub fn new(db: db::Database) -> Self {
+    pub fn new(db: db::Database, schema: Schema) -> Self {
         Self {
             db,
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            schema: Arc::new(schema),
         }
     }
 
@@ -116,7 +150,7 @@ impl Settings {
         {
             let subscriptions = self.subscriptions.read();
 
-            if let Some((_, sub)) = subscriptions.get(key) {
+            if let Some(sub) = subscriptions.get(key) {
                 if let Err(_) = sub.unbounded_send(Event::Set(value.clone())) {
                     log::error!("failed to send message to subscription on: {}", key);
                 }
@@ -157,7 +191,6 @@ impl Settings {
         let c = self.db.pool.lock();
 
         let mut settings = Vec::new();
-        let subscriptions = self.subscriptions.read();
 
         for (key, value) in dsl::settings
             .select((dsl::key, dsl::value))
@@ -166,13 +199,14 @@ impl Settings {
         {
             let value = serde_json::from_str(&value)?;
 
-            let ty = match subscriptions.get(&key) {
-                Some((ty, _)) => Some(ty.clone()),
-                None => None,
+            let schema = match self.schema.lookup(&key) {
+                Some(schema) => schema,
+                // NB: skip over unknown keys.
+                None => continue,
             };
 
             settings.push(Setting {
-                ty,
+                schema,
                 key: key.to_string(),
                 value,
             });
@@ -188,7 +222,7 @@ impl Settings {
         {
             let subscriptions = self.subscriptions.read();
 
-            if let Some((_, sub)) = subscriptions.get(key) {
+            if let Some(sub) = subscriptions.get(key) {
                 if let Err(_) = sub.unbounded_send(Event::Clear) {
                     log::error!("failed to send message to subscription on: {}", key);
                 }
@@ -217,16 +251,22 @@ impl Settings {
     }
 
     /// Subscribe for events on the given key.
-    pub fn stream<T>(&self, key: &str, default: T, ty: Type) -> Stream<T>
+    pub fn stream<T>(&self, key: &str, default: T) -> Stream<T>
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
         let (tx, rx) = mpsc::unbounded();
 
-        let mut subscriptions = self.subscriptions.write();
+        if !self.schema.contains(key) {
+            panic!("no schema registered for key `{}`", key);
+        }
 
-        if subscriptions.insert(key.to_string(), (ty, tx)).is_some() {
-            panic!("already a subscription for key: {}", key);
+        {
+            let mut subscriptions = self.subscriptions.write();
+
+            if subscriptions.insert(key.to_string(), tx).is_some() {
+                panic!("already a subscription for key: {}", key);
+            }
         }
 
         Stream {
@@ -242,7 +282,6 @@ impl Settings {
         &self,
         key: &str,
         default: T,
-        ty: Type,
     ) -> Result<(Stream<T>, T), failure::Error>
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
@@ -255,7 +294,7 @@ impl Settings {
             }
         };
 
-        Ok((self.stream(key, default, ty), value))
+        Ok((self.stream(key, default), value))
     }
 
     /// Get a synchronized variable for the given configuration key.
@@ -264,12 +303,11 @@ impl Settings {
         core: &mut Core,
         key: &str,
         default: T,
-        ty: Type,
     ) -> Result<Arc<RwLock<T>>, failure::Error>
     where
         T: 'static + Send + Sync + Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
-        let (stream, value) = self.init_and_stream(key, default, ty)?;
+        let (stream, value) = self.init_and_stream(key, default)?;
 
         let value = Arc::new(RwLock::new(value));
 
@@ -318,11 +356,11 @@ impl ScopedSettings {
     }
 
     /// Subscribe for events on the given key.
-    pub fn stream<T>(&self, key: &str, default: T, ty: Type) -> Stream<T>
+    pub fn stream<T>(&self, key: &str, default: T) -> Stream<T>
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
-        self.settings.stream(&self.scope(key), default, ty)
+        self.settings.stream(&self.scope(key), default)
     }
 
     fn scope(&self, key: &str) -> String {
@@ -336,12 +374,11 @@ impl ScopedSettings {
         &self,
         key: &str,
         default: T,
-        ty: Type,
     ) -> Result<(Stream<T>, T), failure::Error>
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
-        self.settings.init_and_stream(&self.scope(key), default, ty)
+        self.settings.init_and_stream(&self.scope(key), default)
     }
 
     /// Get a synchronized variable for the given configuration key.
@@ -350,12 +387,11 @@ impl ScopedSettings {
         core: &mut Core,
         key: &str,
         default: T,
-        ty: Type,
     ) -> Result<Arc<RwLock<T>>, failure::Error>
     where
         T: 'static + Send + Sync + Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
-        self.settings.sync_var(core, &self.scope(key), default, ty)
+        self.settings.sync_var(core, &self.scope(key), default)
     }
 
     /// Scope the settings a bit more.
@@ -468,9 +504,11 @@ where
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "id")]
 pub enum Type {
+    #[serde(rename = "raw")]
+    Raw,
     #[serde(rename = "duration")]
     Duration,
     #[serde(rename = "bool")]

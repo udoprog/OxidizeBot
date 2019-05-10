@@ -1,6 +1,4 @@
-use crate::{
-    command, currency, db, irc, module, player, settings, track_id, utils, utils::BoxFuture,
-};
+use crate::{command, currency, db, irc, module, player, track_id, utils, utils::BoxFuture};
 use futures::{future, Future, Stream as _};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -559,8 +557,7 @@ impl module::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
-        let chat_feedback =
-            settings.sync_var(core, "song/chat-feedback", true, settings::Type::Bool)?;
+        let chat_feedback = settings.sync_var(core, "song/chat-feedback", true)?;
 
         futures.push(Box::new(player_feedback_loop(
             irc_config,
@@ -569,8 +566,7 @@ impl module::Module for Module {
             chat_feedback,
         )));
 
-        let request_reward =
-            settings.sync_var(core, "song/request-reward", 0, settings::Type::U32)?;
+        let request_reward = settings.sync_var(core, "song/request-reward", 0)?;
 
         handlers.insert(
             "song",

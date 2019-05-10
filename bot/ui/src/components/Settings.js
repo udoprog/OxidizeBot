@@ -58,39 +58,13 @@ export default class Settings extends React.Component {
     this.api.settings()
       .then(data => {
         data = data.map(d => {
-          if (typeof d !== "object" || d.type === null) {
-            return {
-              key: d.key,
-              value: new types.Raw(d.value),
-            };
-          }
+          let type = types.decode(d.schema.type);
+          let value = type.construct(d.value);
 
-          switch (d.type.id) {
-            case "duration":
-              return {
-                key: d.key,
-                value: types.Duration.parse(d.value),
-              };
-            case "boolean":
-              return {
-                key: d.key,
-                value: new types.Boolean(d.value),
-              };
-            case "string":
-              return {
-                key: d.key,
-                value: new types.String(d.value),
-              };
-            case "number":
-              return {
-                key: d.key,
-                value: new types.Number(d.value),
-              };
-            default:
-              return {
-                key: d.key,
-                value: new types.Raw(d.value),
-              };
+          return {
+            key: d.key,
+            value: value,
+            doc: d.schema.doc,
           }
         });
 
@@ -199,12 +173,12 @@ export default class Settings extends React.Component {
 
                 let buttons = (
                   <ButtonGroup>
-                    <Button size="sm" variant="danger" className="action" onClick={() => this.setState({
+                    <Button size="sm" variant="danger" className="action" disabled={this.state.loading} onClick={() => this.setState({
                       deleteKey: setting.key,
                     })}>
                       <FontAwesomeIcon icon="trash" />
                     </Button>
-                    <Button size="sm" variant="info" className="action" onClick={() => this.setState({
+                    <Button size="sm" variant="info" className="action" disabled={this.state.loading} onClick={() => this.setState({
                       editKey: setting.key,
                       editValue: setting.value.edit(),
                     })}>
@@ -218,7 +192,7 @@ export default class Settings extends React.Component {
                 if (isSecret) {
                   value = <b title="Secret value, only showed when editing">****</b>;
                 } else {
-                  value = <code>{setting.value.toString()}</code>;
+                  value = setting.value.render();
                 }
 
                 if (this.state.deleteKey === setting.key) {
@@ -274,7 +248,10 @@ export default class Settings extends React.Component {
 
                 return (
                   <tr key={id}>
-                    <td className="settings-key">{setting.key}</td>
+                    <td className="settings-key">
+                      <div className="settings-key-name mb-1">{setting.key}</div>
+                      <div className="settings-key-doc">{setting.doc}</div>
+                    </td>
                     <td>{value}</td>
                     <td align="right">{buttons}</td>
                   </tr>
@@ -287,7 +264,7 @@ export default class Settings extends React.Component {
     }
 
     return (
-      <div>
+      <div className="settings">
         <h2>
           Settings
           {refresh}

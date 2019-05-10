@@ -77,8 +77,11 @@ impl Database {
     }
 
     /// Access settings from the database.
-    pub fn settings(&self) -> crate::settings::Settings {
-        crate::settings::Settings::new(self.clone())
+    pub fn settings(&self) -> Result<crate::settings::Settings, failure::Error> {
+        Ok(crate::settings::Settings::new(
+            self.clone(),
+            crate::settings::Schema::load_static()?,
+        ))
     }
 
     /// Add (or subtract) from the balance for a single user.

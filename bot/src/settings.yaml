@@ -1,0 +1,67 @@
+types:
+  first-run:
+    doc: Indicates whether the bot has run at least once.
+    type: {id: bool}
+  gtav/chat-prefix:
+    doc: Prefix to use when announcing effects.
+    type: {id: string}
+  gtav/cooldown:
+    doc: Global cooldown between each effect.
+    type: {id: duration}
+  gtav/other%:
+    doc: Other effect cost scaling. A value of 100 means 100%.
+    type: {id: number}
+  gtav/punish%:
+    doc: Punishment scaling. A value of 100 means 100%.
+    type: {id: number}
+  gtav/reward%:
+    doc: Reward cost scaling. A value of 100 means 100%.
+    type: {id: number}
+  gtav/success-feedback:
+    doc: If we should have chat feedback on successful commands.
+    type: {id: bool}
+  irc/idle-detection/threshold:
+    doc: How many messages must be received before the channel is no longer considered idle.
+    type: {id: number}
+  irc/viewer-reward%:
+    doc: Scaling for viewer rewards. 100 means 100%.
+    type: {id: number}
+  irc/whitelisted-hosts:
+    doc: Hosts that are whitelisted for linking to in chat.
+    type: {id: set, value: {id: string}}
+  migration/aliases-migrated:
+    doc: If aliases have been migrated from the configuration file.
+    type: {id: bool}
+  migration/whitelisted-hosts-migrated:
+    doc: If whitelisted hosts have been migrated from the configuration file.
+    type: {id: bool}
+  player/max-queue-length:
+    doc: The maximum queue length permitted in the player.
+    type: {id: number}
+  player/max-songs-per-user:
+    doc: The maximum number of songs that can be requested per user.
+    type: {id: number}
+  player/song-update-interval:
+    doc: The interval at which song updates are visible. Used in the Overlay.
+    type: {id: duration}
+  promotions/frequency:
+    doc: The highest frequency at which promotions are posted.
+    type: {id: duration}
+  secrets/oauth2/spotify/token:
+    doc: Stored token for Spotify authentication.
+    type: {id: raw}
+  secrets/oauth2/twitch-bot/token:
+    doc: Stored token for Twitch Bot authentication.
+    type: {id: raw}
+  secrets/oauth2/twitch-streamer/token:
+    doc: Stored token for Twitch Streamer authentication.
+    type: {id: raw}
+  song/chat-feedback:
+    doc: If song feedback is visible in chat or not.
+    type: {id: bool}
+  song/request-reward:
+    doc: Fixed reward that anyone gets for requesting songs.
+    type: {id: number}
+  water/reward%:
+    doc: Reward scaling for doing a water reminder. A value of 100 means 100%.
+    type: {id: number}

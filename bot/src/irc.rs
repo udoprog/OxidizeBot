@@ -150,8 +150,7 @@ impl Irc<'_> {
             stream_info
         };
 
-        let threshold =
-            settings.sync_var(core, "irc/idle-detection/threshold", 5, settings::Type::U32)?;
+        let threshold = settings.sync_var(core, "irc/idle-detection/threshold", 5)?;
 
         let idle = idle::Idle::new(threshold);
 
@@ -192,8 +191,7 @@ impl Irc<'_> {
             let reward = 10;
             let interval = 60 * 10;
 
-            let reward_percentage =
-                settings.sync_var(core, "irc/viewer-reward%", 100, settings::Type::U32)?;
+            let reward_percentage = settings.sync_var(core, "irc/viewer-reward%", 100)?;
 
             let future = reward_loop(
                 irc_config,
@@ -278,11 +276,8 @@ impl Irc<'_> {
             settings.set("migration/whitelisted-hosts-migrated", true)?;
         }
 
-        let (whitelisted_hosts_stream, whitelisted_hosts) = settings.init_and_stream(
-            "irc/whitelisted-hosts",
-            HashSet::<String>::new(),
-            settings::Type::set(settings::Type::String),
-        )?;
+        let (whitelisted_hosts_stream, whitelisted_hosts) =
+            settings.init_and_stream("irc/whitelisted-hosts", HashSet::<String>::new())?;
 
         let handler = Handler {
             streamer: config.streamer.clone(),

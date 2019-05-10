@@ -202,11 +202,8 @@ pub fn run(
 
     let settings = settings.scoped(&["player"]);
 
-    let (song_update_interval_stream, song_update_interval) = settings.init_and_stream(
-        "song-update-interval",
-        utils::Duration::seconds(1),
-        settings::Type::Duration,
-    )?;
+    let (song_update_interval_stream, song_update_interval) =
+        settings.init_and_stream("song-update-interval", utils::Duration::seconds(1))?;
 
     let song_update_interval = match song_update_interval.is_empty() {
         true => None,
@@ -266,19 +263,10 @@ pub fn run(
         global_bus,
     };
 
-    let max_songs_per_user = settings.sync_var(
-        core,
-        "max-songs-per-user",
-        config.max_songs_per_user,
-        settings::Type::U32,
-    )?;
+    let max_songs_per_user =
+        settings.sync_var(core, "max-songs-per-user", config.max_songs_per_user)?;
 
-    let max_queue_length = settings.sync_var(
-        core,
-        "max-queue-length",
-        config.max_queue_length,
-        settings::Type::U32,
-    )?;
+    let max_queue_length = settings.sync_var(core, "max-queue-length", config.max_queue_length)?;
 
     let player = Player {
         device: device.clone(),

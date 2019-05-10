@@ -149,11 +149,8 @@ impl super::Module for Module {
             },
         );
 
-        let (setting, frequency) = settings.init_and_stream(
-            "promotions/frequency",
-            self.frequency.clone(),
-            settings::Type::Duration,
-        )?;
+        let (setting, frequency) =
+            settings.init_and_stream("promotions/frequency", self.frequency.clone())?;
 
         let promotions = promotions.clone();
         let sender = sender.clone();

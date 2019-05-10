@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix off-by-one check in currency transfer (`!currency give <user> <amount>`).
 - Only non-moderator and non-streamer chat bumps the idle counter.
 - URL whitelist is now stored in a setting `irc/whitelisted-hosts` ([#37]).
+- Massively improved settings and schema management.
 
 ### Added
 - `!admin version` to check current setmod-bot package version. ([#32])
