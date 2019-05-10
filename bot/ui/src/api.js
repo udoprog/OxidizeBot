@@ -71,6 +71,8 @@ export class Api {
    * @param {string} key the key of the setting to delete.
    */
   deleteSetting(key) {
+    key = settingsKey(key);
+
     return this.fetch(`setting/${key}`, {
       method: "DELETE",
     });
@@ -83,6 +85,8 @@ export class Api {
    * @param {any} value the value to edit
    */
   editSetting(key, value) {
+    key = settingsKey(key);
+
     return this.fetch(`setting/${key}`, {
       method: "PUT",
       headers: {
@@ -113,4 +117,13 @@ export class Api {
       body: JSON.stringify(balances),
     });
   }
+}
+
+/**
+ * Encode the URI for a settings key.
+ *
+ * @param {string} key
+ */
+function settingsKey(key) {
+  return key;
 }

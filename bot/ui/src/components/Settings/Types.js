@@ -1,19 +1,32 @@
 import React from "react";
+import {Form} from "react-bootstrap";
 
 const DURATION_REGEX = /^((\d+)h)?((\d+)m)?((\d+)s)?$/;
+
+class EditDuration {
+  validate() {
+    return DURATION_REGEX.test(this.value);
+  }
+
+  save() {
+    return Duration.parse(this.value);
+  }
+
+  control(isValid, onChange) {
+    return <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.value} onChange={
+      e => {
+        this.value = e.target.value;
+        onChange(this);
+      }
+    } />
+  }
+}
 
 export class Duration {
   constructor(hours, minutes, seconds) {
     this.hours = hours;
     this.minutes = minutes;
     this.seconds = seconds;
-  }
-
-  /**
-   * Validate the input.
-   */
-  static validate(text) {
-    return DURATION_REGEX.test(text);
   }
 
   /**
@@ -25,7 +38,7 @@ export class Duration {
     let m = DURATION_REGEX.exec(input);
 
     if (!m) {
-      throw new Error(`bad duration: ${input}`);
+      return null;
     }
 
     let hours = 0;
@@ -45,6 +58,10 @@ export class Duration {
     }
 
     return new Duration(hours, minutes, seconds);
+  }
+
+  edit() {
+    return new EditDuration(this.toString());
   }
 
   /**
@@ -77,19 +94,34 @@ export class Duration {
 
     return s;
   }
+}
 
-  type() {
-    return Duration;
+class EditNumber {
+  constructor(value) {
+    this.value = value;
+  }
+
+  validate() {
+    return !isNaN(parseInt(this.value));
+  }
+
+  save() {
+    return Number.parse(this.value);
+  }
+
+  control(isValid, onChange) {
+    return <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.value} onChange={
+      e => {
+        this.value = e.target.value;
+        onChange(this);
+      }
+    } />
   }
 }
 
 export class Number {
   constructor(data) {
     this.data = data;
-  }
-
-  static validate(text) {
-    return !isNaN(parseInt(text));
   }
 
   static parse(input) {
@@ -100,6 +132,10 @@ export class Number {
     }
 
     return new Number(data);
+  }
+
+  edit() {
+    return new EditNumber(this.toString());
   }
 
   serialize() {
@@ -115,19 +151,38 @@ export class Number {
   }
 }
 
-export class Boolean {
-  constructor(data) {
-    this.data = data;
+class EditBoolean {
+  constructor(value) {
+    this.value = value;
   }
 
-  static validate(text) {
-    switch (text) {
+  validate() {
+    switch (this.value) {
       case "true":
       case "false":
         return true;
       default:
         return false;
     }
+  }
+
+  save() {
+    return Boolean.parse(this.value);
+  }
+
+  control(isValid, onChange) {
+    return <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.value} onChange={
+      e => {
+        this.value = e.target.value;
+        onChange(this);
+      }
+    } />
+  }
+}
+
+export class Boolean {
+  constructor(data) {
+    this.data = data;
   }
 
   static parse(input) {
@@ -140,6 +195,10 @@ export class Boolean {
     return new Boolean(data);
   }
 
+  edit() {
+    return new EditBoolean(this.toString());
+  }
+
   serialize() {
     return this.data;
   }
@@ -147,19 +206,34 @@ export class Boolean {
   toString() {
     return this.data.toString();
   }
+}
 
-  type() {
-    return Raw;
+class EditString {
+  constructor(value) {
+    this.value = value;
+  }
+
+  validate() {
+    return true;
+  }
+
+  save() {
+    return String.parse(this.value);
+  }
+
+  control(isValid, onChange) {
+    return <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.value} onChange={
+      e => {
+        this.value = e.target.value;
+        onChange(this);
+      }
+    } />
   }
 }
 
 export class String {
   constructor(data) {
     this.data = data;
-  }
-
-  static validate(text) {
-    return true;
   }
 
   static parse(input) {
@@ -170,6 +244,10 @@ export class String {
     return new String(data);
   }
 
+  edit() {
+    return new EditString(this.toString());
+  }
+
   serialize() {
     return this.data;
   }
@@ -183,22 +261,45 @@ export class String {
   }
 }
 
-export class Raw {
-  constructor(data) {
-    this.data = data;
+class EditRaw {
+  constructor(value) {
+    this.value = value;
   }
 
-  static validate(text) {
+  validate() {
     try {
-      JSON.parse(text);
+      JSON.parse(this.value);
       return true;
     } catch(e) {
       return false;
     }
   }
 
+  save() {
+    return Raw.parse(this.value);
+  }
+
+  control(isValid, onChange) {
+    return <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.value} onChange={
+      e => {
+        this.value = e.target.value;
+        onChange(this);
+      }
+    } />
+  }
+}
+
+export class Raw {
+  constructor(data) {
+    this.data = data;
+  }
+
   static parse(data) {
     return new Raw(JSON.parse(data))
+  }
+
+  edit() {
+    return new EditRaw(this.toString());
   }
 
   serialize() {
@@ -207,9 +308,5 @@ export class Raw {
 
   toString() {
     return JSON.stringify(this.data);
-  }
-
-  type() {
-    return Raw;
   }
 }

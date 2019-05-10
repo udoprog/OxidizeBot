@@ -142,11 +142,10 @@ export default class Settings extends React.Component {
     this.setState({
       loading: true,
       editKey: null,
-      editType: null,
       editValue: null,
     });
 
-    this.api.editSetting(key, value)
+    this.api.editSetting(key, value.serialize())
       .then(() => {
         return this.list();
       },
@@ -207,8 +206,7 @@ export default class Settings extends React.Component {
                     </Button>
                     <Button size="sm" variant="info" className="action" onClick={() => this.setState({
                       editKey: setting.key,
-                      editType: setting.value.type(),
-                      editValue: setting.value.toString(),
+                      editValue: setting.value.edit(),
                     })}>
                       <FontAwesomeIcon icon="edit" />
                     </Button>
@@ -236,26 +234,28 @@ export default class Settings extends React.Component {
                 }
 
                 if (this.state.editKey === setting.key) {
-                  let isValid = this.state.editType.validate(this.state.editValue);
+                  let isValid = this.state.editValue.validate();
 
                   let save = (e) => {
                     e.preventDefault();
 
                     if (isValid) {
-                      let value = this.state.editType.parse(this.state.editValue);
-                      this.edit(this.state.editKey, value.serialize());
+                      let value = this.state.editValue.save();
+                      this.edit(this.state.editKey, value);
                     }
 
                     return false;
                   };
 
+                  let control = this.state.editValue.control(isValid, editValue => {
+                    this.setState({
+                      editValue
+                    });
+                  });
+
                   value = (
                     <Form onSubmit={e => save(e)}>
-                      <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.state.editValue} onChange={e => {
-                        this.setState({
-                          editValue: e.target.value,
-                        });
-                      }} />
+                      {control}
                     </Form>
                   );
 
