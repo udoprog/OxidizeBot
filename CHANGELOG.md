@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#33]: https://github.com/udoprog/setmod/issues/33
 [#35]: https://github.com/udoprog/setmod/issues/35
 [#36]: https://github.com/udoprog/setmod/issues/36
+[#37]: https://github.com/udoprog/setmod/issues/37
 
 ## [0.2.6]
 
