@@ -200,7 +200,7 @@ pub fn compact_duration(duration: time::Duration) -> String {
 
     parts.extend(match p.hours {
         0 => None,
-        n => Some(format!("{:02}H", n)),
+        n => Some(format!("{:02}h", n)),
     });
 
     parts.extend(match p.minutes {
