@@ -114,18 +114,16 @@ impl command::Handler for Handler {
                             }
                         };
 
-                        let value = match serde_json::from_str(value) {
+                        let value = match schema.ty.parse_as_json(value) {
                             Ok(value) => value,
-                            Err(_) => {
-                                ctx.respond("Value must be valid JSON");
+                            Err(e) => {
+                                ctx.respond(format!(
+                                    "Value is not a valid {} type: {}",
+                                    schema.ty, e
+                                ));
                                 return Ok(());
                             }
                         };
-
-                        if !schema.ty.is_compatible_with_json(&value) {
-                            ctx.respond(format!("Expected a {} argument", schema.ty));
-                            return Ok(());
-                        }
 
                         self.settings.set_json(key, value)?;
                         ctx.respond(format!("Updated the {} setting", key));
@@ -171,18 +169,13 @@ impl Handler {
             }
         };
 
-        let value = match serde_json::from_str(ctx.rest()) {
+        let value = match ty.parse_as_json(ctx.rest()) {
             Ok(value) => value,
-            Err(_) => {
-                ctx.respond("Value must be valid JSON");
+            Err(e) => {
+                ctx.respond(format!("Value is not a valid {} type: {}", ty, e));
                 return None;
             }
         };
-
-        if !ty.is_compatible_with_json(&value) {
-            ctx.respond(format!("Expected a {} argument", ty));
-            return None;
-        }
 
         Some(value)
     }

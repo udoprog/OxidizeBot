@@ -1,6 +1,6 @@
 //! Utilities for dealing with dynamic configuration and settings.
 
-use crate::db;
+use crate::{db, utils};
 use diesel::prelude::*;
 use futures::{sync::mpsc, Async, Future as _, Poll, Stream as _};
 use hashbrown::HashMap;
@@ -530,6 +530,42 @@ impl Type {
         }
     }
 
+    /// Parse the given string as the current type and convert into JSON.
+    pub fn parse_as_json(&self, s: &str) -> Result<serde_json::Value, failure::Error> {
+        use self::Type::*;
+        use serde_json::Value;
+
+        let value = match *self {
+            Raw => serde_json::from_str(s)?,
+            Duration => {
+                let d = str::parse::<utils::Duration>(s)?;
+                Value::String(d.to_string())
+            }
+            Bool => Value::Bool(str::parse::<bool>(s)?),
+            Number => {
+                let n = str::parse::<serde_json::Number>(s)?;
+                Value::Number(n)
+            }
+            String => Value::String(s.to_string()),
+            Set { ref value } => {
+                let json = serde_json::from_str(s)?;
+
+                match json {
+                    Value::Array(values) => {
+                        if !values.iter().all(|v| value.is_compatible_with_json(v)) {
+                            failure::bail!("expected {}", self);
+                        }
+
+                        Value::Array(values)
+                    }
+                    _ => failure::bail!("expected array"),
+                }
+            }
+        };
+
+        Ok(value)
+    }
+
     /// Test if JSON value is compatible with the current type.
     pub fn is_compatible_with_json(&self, other: &serde_json::Value) -> bool {
         use self::Type::*;
@@ -555,7 +591,7 @@ impl fmt::Display for Type {
 
         match *self {
             Raw => write!(fmt, "any"),
-            Duration => write!(fmt, "number"),
+            Duration => write!(fmt, "duration"),
             Bool => write!(fmt, "bool"),
             Number => write!(fmt, "number"),
             String => write!(fmt, "string"),

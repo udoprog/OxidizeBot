@@ -491,7 +491,7 @@ impl std::str::FromStr for Duration {
                     let n = str::parse::<u64>(&s[..i])?;
 
                     if n > 59 {
-                        failure::bail!("minute our of bounds 0-59");
+                        failure::bail!("minute out of bounds 0-59");
                     }
 
                     seconds += n * 60;
@@ -510,7 +510,7 @@ impl std::str::FromStr for Duration {
                 Some(i) => {
                     failure::bail!("bad suffix: {}", &s[i..]);
                 }
-                _ => failure::bail!("unexpected end-of-string"),
+                _ => failure::bail!("unexpected end"),
             }
         }
 

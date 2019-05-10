@@ -1,6 +1,14 @@
 import React from "react";
-import {Form, Button, InputGroup} from "react-bootstrap";
+import {Form, Button, InputGroup, Row, Col} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+
+function True() {
+  return <FontAwesomeIcon icon="check" />;
+}
+
+function False() {
+  return <FontAwesomeIcon icon="times" />;
+}
 
 /**
  * Decode the given type and value.
@@ -33,25 +41,59 @@ export function decode(type) {
 const DURATION_REGEX = /^((\d+)h)?((\d+)m)?((\d+)s)?$/;
 
 class EditDuration {
-  constructor(value) {
-    this.value = value;
+  constructor(hours, minutes, seconds) {
+    this.hours = hours;
+    this.minutes = minutes;
+    this.seconds = seconds;
   }
 
   validate() {
-    return DURATION_REGEX.test(this.value);
+    return this.minutes >= 0 && this.minutes < 60 && this.seconds >= 0 && this.seconds < 60;
   }
 
   save() {
-    return Duration.parse(this.value);
+    return new Duration(this.hours, this.minutes, this.seconds);
   }
 
-  control(isValid, onChange) {
-    return <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.value} onChange={
-      e => {
-        this.value = e.target.value;
-        onChange(this);
-      }
-    } />
+  control(_isValid, onChange) {
+    let hours = this.digitControl(this.hours, "h", value => this.hours = value, onChange, _ => true);
+    let minutes = this.digitControl(this.minutes, "m", value => this.minutes = value, onChange, value => value >= 0 && value < 60);
+    let seconds = this.digitControl(this.seconds, "s", value => this.seconds = value, onChange, value => value >= 0 && value < 60);
+
+    return (
+      <Row>
+        <Col>
+          {hours}
+        </Col>
+
+        <Col>
+          {minutes}
+        </Col>
+
+        <Col>
+          {seconds}
+        </Col>
+      </Row>
+    );
+  }
+
+  digitControl(value, suffix, set, onChange, validate) {
+    var isValid = validate(value);
+
+    return (
+      <InputGroup size="sm">
+        <Form.Control type="number" value={value} isInvalid={!isValid} onChange={
+          e => {
+            set(parseInt(e.target.value) || 0);
+            onChange(this);
+          }
+        } />
+
+        <InputGroup.Append>
+          <InputGroup.Text>{suffix}</InputGroup.Text>
+        </InputGroup.Append>
+      </InputGroup>
+    );
   }
 }
 
@@ -108,7 +150,7 @@ export class Duration {
   }
 
   edit() {
-    return new EditDuration(this.toString());
+    return new EditDuration(this.hours, this.minutes, this.seconds);
   }
 
   /**
@@ -219,21 +261,21 @@ class EditBoolean {
     return new Boolean(this.value);
   }
 
-  control(isValid, onChange) {
+  control(_isValid, onChange) {
     if (this.value) {
-      return <Button size="sm" variant="success" isInvalid={!isValid} onClick={
+      return <Button title="Toggle to false" size="sm" variant="success" onClick={
         e => {
           this.value = false
           onChange(this);
         }
-      }>Enabled</Button>;
+      }><True /></Button>;
     } else {
-      return <Button size="sm" variant="danger" isInvalid={!isValid} onClick={
+      return <Button title="Toggle to true" size="sm" variant="danger" onClick={
         e => {
           this.value = true
           onChange(this);
         }
-      }>Disabled</Button>;
+      }><False /></Button>;
     }
   }
 }
@@ -255,9 +297,9 @@ export class Boolean {
 
   render() {
     if (this.value) {
-      return <Button size="sm" variant="success" disabled>Enabled</Button>;
+      return <Button size="sm" variant="success" disabled><True /></Button>;
     } else {
-      return <Button size="sm" variant="danger" disabled>Disabled</Button>;
+      return <Button size="sm" variant="danger" disabled><False /></Button>;
     }
   }
 
@@ -287,8 +329,8 @@ class EditString {
     return new String(this.value);
   }
 
-  control(isValid, onChange) {
-    return <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.value} onChange={
+  control(_isValid, onChange) {
+    return <Form.Control size="sm" type="value" value={this.value} onChange={
       e => {
         this.value = e.target.value;
         onChange(this);
@@ -412,7 +454,7 @@ class EditSet {
     return new Set(this.values.map(v => v.save()), this.type);
   }
 
-  control(isValid, onChange) {
+  control(_isValid, onChange) {
     let add = e => {
       this.values.push(this.type.default().edit());
       onChange(this);

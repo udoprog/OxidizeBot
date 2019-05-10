@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Only non-moderator and non-streamer chat bumps the idle counter.
 - URL whitelist is now stored in a setting `irc/whitelisted-hosts` ([#37]).
 - Massively improved settings and schema management.
+- Settings are now parsed from chat, meaning they are validated and doesn't have to be JSON.
 
 ### Added
 - `!admin version` to check current setmod-bot package version. ([#32])

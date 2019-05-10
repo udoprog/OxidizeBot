@@ -35,7 +35,7 @@ export default class Settings extends React.Component {
       // set to the key of the setting currently being edited.
       editKey: null,
       // the value currently being edited.
-      editValue: null,
+      edit: null,
     };
   }
 
@@ -113,10 +113,21 @@ export default class Settings extends React.Component {
    * @param {string} value the new value to edit it to.
    */
   edit(key, value) {
-    this.setState({
-      loading: true,
-      editKey: null,
-      editValue: null,
+    this.setState(state => {
+      let data = state.data.map(setting => {
+        if (setting.key === key) {
+          return Object.assign(setting, { value });
+        }
+
+        return setting;
+      });
+
+      return {
+        data,
+        loading: true,
+        editKey: null,
+        edit: null,
+      };
     });
 
     this.api.editSetting(key, value.serialize())
@@ -180,7 +191,7 @@ export default class Settings extends React.Component {
                     </Button>
                     <Button size="sm" variant="info" className="action" disabled={this.state.loading} onClick={() => this.setState({
                       editKey: setting.key,
-                      editValue: setting.value.edit(),
+                      edit: setting.value.edit(),
                     })}>
                       <FontAwesomeIcon icon="edit" />
                     </Button>
@@ -207,23 +218,23 @@ export default class Settings extends React.Component {
                   />;
                 }
 
-                if (this.state.editKey === setting.key) {
-                  let isValid = this.state.editValue.validate();
+                if (this.state.editKey === setting.key && this.state.edit) {
+                  let isValid = this.state.edit.validate();
 
                   let save = (e) => {
                     e.preventDefault();
 
                     if (isValid) {
-                      let value = this.state.editValue.save();
+                      let value = this.state.edit.save();
                       this.edit(this.state.editKey, value);
                     }
 
                     return false;
                   };
 
-                  let control = this.state.editValue.control(isValid, editValue => {
+                  let control = this.state.edit.control(isValid, edit => {
                     this.setState({
-                      editValue
+                      edit
                     });
                   });
 
@@ -240,7 +251,7 @@ export default class Settings extends React.Component {
                     onCancel={() => {
                       this.setState({
                         editKey: null,
-                        editValue: null,
+                        edit: null,
                       })
                     }}
                   />;
