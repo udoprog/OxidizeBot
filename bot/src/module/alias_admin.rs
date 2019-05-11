@@ -1,4 +1,4 @@
-use crate::{command, db, module};
+use crate::{command, db, module, template};
 
 /// Handler for the !alias command.
 pub struct Handler {
@@ -10,6 +10,12 @@ impl command::Handler for Handler {
         ctx.check_moderator()?;
 
         match ctx.next() {
+            Some("clear-group") => {
+                command_clear_group!(ctx, self.aliases, "!alias clear-group", "alias")
+            }
+            Some("group") => command_group!(ctx, self.aliases, "!alias group", "alias"),
+            Some("enable") => command_enable!(ctx, self.aliases, "!alias enable", "alias"),
+            Some("disable") => command_disable!(ctx, self.aliases, "!alias disable", "alias"),
             Some("show") => {
                 let name = match ctx.next() {
                     Some(name) => name,
@@ -26,7 +32,7 @@ impl command::Handler for Handler {
                         ctx.respond(format!("{} -> {}", alias.key.name, alias.template));
                     }
                     None => {
-                        ctx.respond(format!("No alias named `{}`", name));
+                        ctx.respond(format!("No alias named `{}`.", name));
                     }
                 }
             }
@@ -54,22 +60,30 @@ impl command::Handler for Handler {
                     }
                 };
 
-                self.aliases.edit(ctx.user.target, name, ctx.rest())?;
-                ctx.respond("Edited alias.");
+                let template = match template::Template::compile(ctx.rest()) {
+                    Ok(template) => template,
+                    Err(e) => {
+                        ctx.respond(format!("Bad alias template: {}", e));
+                        return Ok(());
+                    }
+                };
+
+                self.aliases.edit(ctx.user.target, name, template)?;
+                ctx.respond("Edited alias");
             }
             Some("delete") => {
                 let name = match ctx.next() {
                     Some(name) => name,
                     None => {
-                        ctx.respond("Expected name.");
+                        ctx.respond("Expected: !alias delete <name>");
                         return Ok(());
                     }
                 };
 
                 if self.aliases.delete(ctx.user.target, name)? {
-                    ctx.respond(format!("Deleted alias `{}`.", name));
+                    ctx.respond(format!("Deleted alias `{}`", name));
                 } else {
-                    ctx.respond("No such alias.");
+                    ctx.respond("No such alias");
                 }
             }
             Some("rename") => {
@@ -82,12 +96,12 @@ impl command::Handler for Handler {
                 };
 
                 match self.aliases.rename(ctx.user.target, from, to) {
-                    Ok(()) => ctx.respond(format!("Renamed alias {} -> {}", from, to)),
+                    Ok(()) => ctx.respond(format!("Renamed alias {} -> {}.", from, to)),
                     Err(db::RenameError::Conflict) => {
-                        ctx.respond(format!("Already an alias named {}", to))
+                        ctx.respond(format!("Already an alias named `{}`.", to))
                     }
                     Err(db::RenameError::Missing) => {
-                        ctx.respond(format!("No such alias: {}", from))
+                        ctx.respond(format!("No alias named `{}`.", from))
                     }
                 }
             }

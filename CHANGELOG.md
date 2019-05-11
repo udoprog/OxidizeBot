@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confirmation response when performing `!song open` and `!song close`. ([#36])
 - `!admin push <key> <value>` to insert values into settings which are collections.
 - `!admin delete <key> <value>` to delete values from settings which are collections.
+- Group management and the ability to enable and disable commands (`!command`), aliases (`!alias`) and promotions (`!promo`).
+  * `!<thing> enable <name>` - Enable the given command.
+  * `!<thing> disable <name>` - Disable the given command.
+  * `!<thing> group <name>` - Get the current group.
+  * `!<thing> group <name> <group>` - Set the current group.
+  * `!<thing> clear-group <name>` - Remove from all groups.
+  * `!admin enable-group <group>` - Enable all commands, promotions, and aliases belonging to the specified group.
+  * `!admin disable-group <group>` - Disable all commands, promotions, and aliases belonging to the specified group.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.6...HEAD
 [#27]: https://github.com/udoprog/setmod/issues/27

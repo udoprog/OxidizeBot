@@ -1,4 +1,4 @@
-use crate::{command, db, module};
+use crate::{command, db, module, template};
 
 pub struct Handler {
     pub commands: db::Commands,
@@ -7,6 +7,12 @@ pub struct Handler {
 impl command::Handler for Handler {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         match ctx.next() {
+            Some("clear-group") => {
+                command_clear_group!(ctx, self.commands, "!command clear-group", "command")
+            }
+            Some("group") => command_group!(ctx, self.commands, "!command group", "command"),
+            Some("enable") => command_enable!(ctx, self.commands, "!command enable", "command"),
+            Some("disable") => command_disable!(ctx, self.commands, "!command disable", "command"),
             Some("list") => {
                 let mut names = self
                     .commands
@@ -33,7 +39,15 @@ impl command::Handler for Handler {
                     }
                 };
 
-                self.commands.edit(ctx.user.target, name, ctx.rest())?;
+                let template = match template::Template::compile(ctx.rest()) {
+                    Ok(template) => template,
+                    Err(e) => {
+                        ctx.respond(format!("Bad alias template: {}", e));
+                        return Ok(());
+                    }
+                };
+
+                self.commands.edit(ctx.user.target, name, template)?;
                 ctx.respond("Edited command.");
             }
             Some("delete") => {

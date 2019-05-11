@@ -4,33 +4,23 @@ use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-/// The db of a words store.
-pub trait Backend: Clone + Send + Sync {
-    /// List all commands in db.
-    fn list(&self) -> Result<Vec<db::models::Alias>, failure::Error>;
+/// Local database wrapper.
+#[derive(Clone)]
+struct Database(db::Database);
 
-    /// Insert or update an existing alias.
-    fn edit(&self, key: &Key, text: &str) -> Result<(), failure::Error>;
+impl Database {
+    private_database_group_fns!(aliases, Alias, Key);
 
-    /// Delete the given alias from the db.
-    fn delete(&self, key: &Key) -> Result<bool, failure::Error>;
-
-    /// Rename the given alias.
-    fn rename(&self, from_key: &Key, to_key: &Key) -> Result<bool, failure::Error>;
-}
-
-impl Backend for db::Database {
     fn edit(&self, key: &Key, text: &str) -> Result<(), failure::Error> {
         use db::schema::aliases::dsl;
+        let c = self.0.pool.lock();
 
-        let c = self.pool.lock();
         let filter =
             dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
-        let b = filter.clone().first::<db::models::Alias>(&*c).optional()?;
 
-        match b {
-            None => {
-                let alias = db::models::Alias {
+        match filter.clone().count().execute(&*c)? {
+            0 => {
+                let alias = db::models::InsertAlias {
                     channel: key.channel.to_string(),
                     name: key.name.to_string(),
                     text: text.to_string(),
@@ -40,10 +30,10 @@ impl Backend for db::Database {
                     .values(&alias)
                     .execute(&*c)?;
             }
-            Some(_) => {
-                diesel::update(filter)
-                    .set(dsl::text.eq(text))
-                    .execute(&*c)?;
+            _ => {
+                let mut set = db::models::UpdateAlias::default();
+                set.text = Some(text);
+                diesel::update(filter).set(&set).execute(&*c)?;
             }
         }
 
@@ -53,7 +43,7 @@ impl Backend for db::Database {
     fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
         use db::schema::aliases::dsl;
 
-        let c = self.pool.lock();
+        let c = self.0.pool.lock();
         let count = diesel::delete(
             dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
         )
@@ -62,16 +52,10 @@ impl Backend for db::Database {
         Ok(count == 1)
     }
 
-    fn list(&self) -> Result<Vec<db::models::Alias>, failure::Error> {
-        use db::schema::aliases::dsl;
-        let c = self.pool.lock();
-        Ok(dsl::aliases.load::<db::models::Alias>(&*c)?)
-    }
-
     fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error> {
         use db::schema::aliases::dsl;
 
-        let c = self.pool.lock();
+        let c = self.0.pool.lock();
         let count = diesel::update(
             dsl::aliases.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
         )
@@ -85,18 +69,21 @@ impl Backend for db::Database {
 #[derive(Clone)]
 pub struct Aliases {
     inner: Arc<RwLock<HashMap<Key, Arc<Alias>>>>,
-    db: db::Database,
+    db: Database,
 }
 
 impl Aliases {
+    database_group_fns!(Alias, Key);
+
     /// Construct a new commands store with a db.
     pub fn load(db: db::Database) -> Result<Aliases, failure::Error> {
         let mut inner = HashMap::new();
 
+        let db = Database(db);
+
         for alias in db.list()? {
-            let key = Key::new(alias.channel.as_str(), alias.name.as_str());
-            let template = template::Template::compile(alias.text)?;
-            inner.insert(key.clone(), Arc::new(Alias { key, template }));
+            let alias = Alias::from_db(alias)?;
+            inner.insert(alias.key.clone(), Arc::new(alias));
         }
 
         Ok(Aliases {
@@ -105,6 +92,7 @@ impl Aliases {
         })
     }
 
+    /// Lookup an alias based on a command prefix.
     pub fn lookup<'a>(&self, channel: &str, it: utils::Words<'a>) -> Option<(&'a str, String)> {
         let it = it.into_iter();
 
@@ -124,13 +112,20 @@ impl Aliases {
     }
 
     /// Insert a word into the bad words list.
-    pub fn edit(&self, channel: &str, name: &str, text: &str) -> Result<(), failure::Error> {
+    pub fn edit(
+        &self,
+        channel: &str,
+        name: &str,
+        template: template::Template,
+    ) -> Result<(), failure::Error> {
         let key = Key::new(channel, name);
-        let template = template::Template::compile(text)?;
-        self.db.edit(&key, text)?;
-        self.inner
-            .write()
-            .insert(key.clone(), Arc::new(Alias { key, template }));
+        self.db.edit(&key, template.source())?;
+        let mut inner = self.inner.write();
+
+        db_in_memory_update!(inner, key, |alias| {
+            alias.template = template;
+        });
+
         Ok(())
     }
 
@@ -192,10 +187,8 @@ impl Aliases {
             None => return Err(super::RenameError::Missing),
         };
 
-        let alias = Alias {
-            key: to_key.clone(),
-            template: alias.template.clone(),
-        };
+        let mut alias = (*alias).clone();
+        alias.key = to_key.clone();
 
         match self.db.rename(&from_key, &to_key) {
             Err(e) => {
@@ -212,7 +205,7 @@ impl Aliases {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 pub struct Key {
     pub channel: String,
     pub name: String,
@@ -227,13 +220,28 @@ impl Key {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Alias {
     pub key: Key,
     pub template: template::Template,
+    pub group: Option<String>,
+    pub disabled: bool,
 }
 
 impl Alias {
+    /// Convert a database alias into an in-memory alias.
+    pub fn from_db(alias: db::models::Alias) -> Result<Alias, failure::Error> {
+        let key = Key::new(alias.channel.as_str(), alias.name.as_str());
+        let template = template::Template::compile(alias.text)?;
+
+        Ok(Alias {
+            key,
+            template,
+            group: alias.group,
+            disabled: alias.disabled,
+        })
+    }
+
     /// Test if the given input matches and return the corresonding replacement if it does.
     pub fn matches<'a>(&self, mut it: utils::Words<'a>) -> Option<(&'a str, String)> {
         match it.next() {

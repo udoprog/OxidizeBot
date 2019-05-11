@@ -121,3 +121,17 @@ export function Spinner() {
     </div>
   );
 }
+
+/**
+ * Indicator that a value is true.
+ */
+export function True() {
+  return <FontAwesomeIcon icon="check" />;
+}
+
+/**
+ * Indicator that a value is falso.
+ */
+export function False() {
+  return <FontAwesomeIcon icon="times" />;
+}

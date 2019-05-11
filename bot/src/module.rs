@@ -31,6 +31,8 @@ impl Handlers {
     }
 }
 
+#[macro_use]
+mod macros;
 pub mod admin;
 pub mod alias_admin;
 pub mod command_admin;

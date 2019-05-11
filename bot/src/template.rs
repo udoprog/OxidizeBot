@@ -125,6 +125,11 @@ impl Template {
         }
     }
 
+    /// Access the source of the template.
+    pub fn source(&self) -> &str {
+        self.source.as_str()
+    }
+
     /// Render the template to the given output.
     fn render_internal(
         &self,

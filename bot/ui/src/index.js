@@ -11,7 +11,10 @@ import AfterStreams from "./components/AfterStreams.js";
 import Overlay from "./components/Overlay.js";
 import Settings from "./components/Settings.js";
 import ImportExport from "./components/ImportExport.js";
+import Commands from "./components/Commands.js";
 import '@fortawesome/fontawesome-free-solid'
+import Promotions from "./components/Promotions";
+import Aliases from "./components/Aliases";
 
 const RouteLayout = withRouter(props => <Layout {...props} />)
 
@@ -72,6 +75,126 @@ class ImportExportPage extends React.Component {
   }
 }
 
+class AliasesPage extends React.Component {
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      current: null,
+    };
+
+    this.api = new Api(utils.apiUrl());
+  }
+
+  componentWillMount() {
+    this.api.current().then(current => {
+      this.setState({current});
+    });
+  }
+
+  render() {
+    if (!this.state.current) {
+      return (
+        <RouteLayout>
+          <Row>
+            <Col>Loading Current User</Col>
+          </Row>
+        </RouteLayout>
+      );
+    }
+
+    return (
+      <RouteLayout>
+        <Row>
+          <Col>
+            <Aliases current={this.state.current} api={this.api} />
+          </Col>
+        </Row>
+      </RouteLayout>
+    );
+  }
+}
+
+class CommandsPage extends React.Component {
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      current: null,
+    };
+
+    this.api = new Api(utils.apiUrl());
+  }
+
+  componentWillMount() {
+    this.api.current().then(current => {
+      this.setState({current});
+    });
+  }
+
+  render() {
+    if (!this.state.current) {
+      return (
+        <RouteLayout>
+          <Row>
+            <Col>Loading Current User</Col>
+          </Row>
+        </RouteLayout>
+      );
+    }
+
+    return (
+      <RouteLayout>
+        <Row>
+          <Col>
+            <Commands current={this.state.current} api={this.api} />
+          </Col>
+        </Row>
+      </RouteLayout>
+    );
+  }
+}
+
+class PromotionsPage extends React.Component {
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      current: null,
+    };
+
+    this.api = new Api(utils.apiUrl());
+  }
+
+  componentWillMount() {
+    this.api.current().then(current => {
+      this.setState({current});
+    });
+  }
+
+  render() {
+    if (!this.state.current) {
+      return (
+        <RouteLayout>
+          <Row>
+            <Col>Loading Current User</Col>
+          </Row>
+        </RouteLayout>
+      );
+    }
+
+    return (
+      <RouteLayout>
+        <Row>
+          <Col>
+            <Promotions current={this.state.current} api={this.api} />
+          </Col>
+        </Row>
+      </RouteLayout>
+    );
+  }
+}
+
 class IndexPage extends React.Component {
   constructor(props) {
     super(props);
@@ -122,6 +245,9 @@ function Layout(props) {
             <Nav.Link as={Link} active={path === "/after-streams"} to="/after-streams">After Streams</Nav.Link>
             <Nav.Link as={Link} active={path === "/settings"} to="/settings">Settings</Nav.Link>
             <Nav.Link as={Link} active={path === "/import-export"} to="/import-export">Import / Export</Nav.Link>
+            <Nav.Link as={Link} active={path === "/aliases"} to="/aliases">Aliases</Nav.Link>
+            <Nav.Link as={Link} active={path === "/commands"} to="/commands">Commands</Nav.Link>
+            <Nav.Link as={Link} active={path === "/promotions"} to="/promotions">Promotions</Nav.Link>
             <Nav.Link as={Link} active={path === "/overlay"} to="/overlay" target="overlay">Overlay</Nav.Link>
           </Nav>
         </Navbar.Collapse>
@@ -141,6 +267,9 @@ function AppRouter() {
       <Route path="/after-streams" exact component={AfterStreamsPage} />
       <Route path="/settings" exact component={SettingsPage} />
       <Route path="/import-export" exact component={ImportExportPage} />
+      <Route path="/aliases" exact component={AliasesPage} />
+      <Route path="/commands" exact component={CommandsPage} />
+      <Route path="/promotions" exact component={PromotionsPage} />
       <Route path="/overlay/" component={Overlay} />
     </Router>
   );

@@ -1,8 +1,11 @@
-use crate::{command, module, settings};
+use crate::{command, db, module, settings};
 
 /// Handler for the !admin command.
 pub struct Handler {
     settings: settings::Settings,
+    aliases: db::Aliases,
+    commands: db::Commands,
+    promotions: db::Promotions,
 }
 
 impl command::Handler for Handler {
@@ -65,6 +68,42 @@ impl command::Handler for Handler {
                 values.retain(|v| v != &value);
                 self.settings.set(key, values)?;
                 ctx.respond(format!("Updated the {} setting", key));
+            }
+            Some("enable-group") => {
+                let group = match ctx.next() {
+                    Some(group) => group,
+                    None => {
+                        ctx.respond(format!(
+                            "Expected: {p} <group>",
+                            p = ctx.alias.unwrap_or("!alias enable-group")
+                        ));
+                        return Ok(());
+                    }
+                };
+
+                self.aliases.enable_group(ctx.user.target, group)?;
+                self.commands.enable_group(ctx.user.target, group)?;
+                self.promotions.enable_group(ctx.user.target, group)?;
+
+                ctx.respond(format!("Enabled group {}", group));
+            }
+            Some("disable-group") => {
+                let group = match ctx.next() {
+                    Some(group) => group,
+                    None => {
+                        ctx.respond(format!(
+                            "Expected: {p} <group>",
+                            p = ctx.alias.unwrap_or("!alias disable-group")
+                        ));
+                        return Ok(());
+                    }
+                };
+
+                self.aliases.disable_group(ctx.user.target, group)?;
+                self.commands.disable_group(ctx.user.target, group)?;
+                self.promotions.disable_group(ctx.user.target, group)?;
+
+                ctx.respond(format!("Disabled group {}", group));
             }
             // Get or set settings.
             Some("settings") => {
@@ -222,13 +261,21 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            handlers, settings, ..
+            handlers,
+            settings,
+            aliases,
+            commands,
+            promotions,
+            ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
         handlers.insert(
             "admin",
             Handler {
                 settings: settings.clone(),
+                aliases: aliases.clone(),
+                commands: commands.clone(),
+                promotions: promotions.clone(),
             },
         );
 

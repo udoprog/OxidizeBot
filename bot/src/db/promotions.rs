@@ -16,26 +16,13 @@ pub enum BumpError {
     Database(failure::Error),
 }
 
-/// The db of a words store.
-trait Backend: Clone + Send + Sync {
-    /// List all promos in db.
-    fn list(&self) -> Result<Vec<db::models::Promotion>, failure::Error>;
+/// Local database wrapper.
+#[derive(Clone)]
+struct Database(db::Database);
 
-    /// Insert or update an existing promotion.
-    fn edit(&self, key: &Key, frequency: utils::Duration, text: &str)
-        -> Result<(), failure::Error>;
+impl Database {
+    private_database_group_fns!(promotions, Promotion, Key);
 
-    /// Delete the given promotion from the db.
-    fn delete(&self, key: &Key) -> Result<bool, failure::Error>;
-
-    /// Rename the given promotion.
-    fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error>;
-
-    /// Bump when the given promotion was last run.
-    fn bump_promoted_at(&self, from: &Key, now: &DateTime<Utc>) -> Result<bool, failure::Error>;
-}
-
-impl Backend for db::Database {
     fn edit(
         &self,
         key: &Key,
@@ -44,7 +31,7 @@ impl Backend for db::Database {
     ) -> Result<(), failure::Error> {
         use db::schema::promotions::dsl;
 
-        let c = self.pool.lock();
+        let c = self.0.pool.lock();
         let filter =
             dsl::promotions.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
         let b = filter
@@ -62,6 +49,8 @@ impl Backend for db::Database {
                     frequency,
                     promoted_at: None,
                     text: text.to_string(),
+                    group: None,
+                    disabled: false,
                 };
 
                 diesel::insert_into(dsl::promotions)
@@ -69,9 +58,11 @@ impl Backend for db::Database {
                     .execute(&*c)?;
             }
             Some(_) => {
-                diesel::update(filter)
-                    .set((dsl::text.eq(text), dsl::frequency.eq(frequency)))
-                    .execute(&*c)?;
+                let mut set = db::models::UpdatePromotion::default();
+                set.text = Some(text);
+                set.frequency = Some(frequency);
+
+                diesel::update(filter).set(&set).execute(&*c)?;
             }
         }
 
@@ -81,7 +72,7 @@ impl Backend for db::Database {
     fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
         use db::schema::promotions::dsl;
 
-        let c = self.pool.lock();
+        let c = self.0.pool.lock();
         let count = diesel::delete(
             dsl::promotions.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
         )
@@ -89,16 +80,10 @@ impl Backend for db::Database {
         Ok(count == 1)
     }
 
-    fn list(&self) -> Result<Vec<db::models::Promotion>, failure::Error> {
-        use db::schema::promotions::dsl;
-        let c = self.pool.lock();
-        Ok(dsl::promotions.load::<db::models::Promotion>(&*c)?)
-    }
-
     fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error> {
         use db::schema::promotions::dsl;
 
-        let c = self.pool.lock();
+        let c = self.0.pool.lock();
         let count = diesel::update(
             dsl::promotions.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
         )
@@ -111,7 +96,7 @@ impl Backend for db::Database {
     fn bump_promoted_at(&self, from: &Key, now: &DateTime<Utc>) -> Result<bool, failure::Error> {
         use db::schema::promotions::dsl;
 
-        let c = self.pool.lock();
+        let c = self.0.pool.lock();
         let count = diesel::update(
             dsl::promotions.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
         )
@@ -125,34 +110,21 @@ impl Backend for db::Database {
 #[derive(Clone)]
 pub struct Promotions {
     inner: Arc<RwLock<HashMap<Key, Arc<Promotion>>>>,
-    db: db::Database,
+    db: Database,
 }
 
 impl Promotions {
+    database_group_fns!(Promotion, Key);
+
     /// Construct a new promos store with a db.
     pub fn load(db: db::Database) -> Result<Promotions, failure::Error> {
+        let db = Database(db);
+
         let mut inner = HashMap::new();
 
         for promotion in db.list()? {
-            let template = template::Template::compile(&promotion.text).with_context(|_| {
-                format_err!("failed to compile promotion `{:?}` from db", promotion)
-            })?;
-
-            let key = Key::new(promotion.channel.as_str(), promotion.name.as_str());
-            let frequency = utils::Duration::seconds(promotion.frequency as u64);
-            let promoted_at = promotion
-                .promoted_at
-                .map(|d| DateTime::<Utc>::from_utc(d, Utc));
-
-            inner.insert(
-                key.clone(),
-                Arc::new(Promotion {
-                    key,
-                    frequency,
-                    promoted_at,
-                    template,
-                }),
-            );
+            let promotion = Promotion::from_db(promotion)?;
+            inner.insert(promotion.key.clone(), Arc::new(promotion));
         }
 
         Ok(Promotions {
@@ -167,24 +139,19 @@ impl Promotions {
         channel: &str,
         name: &str,
         frequency: utils::Duration,
-        text: &str,
+        template: template::Template,
     ) -> Result<(), failure::Error> {
         let key = Key::new(channel, name);
 
-        let template = template::Template::compile(text)?;
-        self.db.edit(&key, frequency.clone(), text)?;
+        self.db.edit(&key, frequency.clone(), template.source())?;
 
         let mut inner = self.inner.write();
 
-        inner.insert(
-            key.clone(),
-            Arc::new(Promotion {
-                key,
-                frequency,
-                template,
-                promoted_at: None,
-            }),
-        );
+        db_in_memory_update!(inner, key, |p| {
+            p.frequency = frequency;
+            p.template = template;
+            p.promoted_at = None;
+        });
 
         Ok(())
     }
@@ -214,7 +181,7 @@ impl Promotions {
         None
     }
 
-    /// Get a list of all promos.
+    /// Get a list of all enabled promos.
     pub fn list(&self, channel: &str) -> Vec<Arc<Promotion>> {
         let inner = self.inner.read();
 
@@ -247,12 +214,8 @@ impl Promotions {
             None => return Err(db::RenameError::Missing),
         };
 
-        let promotion = Promotion {
-            key: to.clone(),
-            frequency: promotion.frequency.clone(),
-            template: promotion.template.clone(),
-            promoted_at: promotion.promoted_at,
-        };
+        let mut promotion = (*promotion).clone();
+        promotion.key = to.clone();
 
         match self.db.rename(&from, &to) {
             Err(e) => {
@@ -287,12 +250,8 @@ impl Promotions {
             .bump_promoted_at(&promotion.key, &now)
             .map_err(BumpError::Database)?;
 
-        let promotion = Promotion {
-            key: promotion.key.clone(),
-            frequency: promotion.frequency.clone(),
-            template: promotion.template.clone(),
-            promoted_at: Some(now),
-        };
+        let mut promotion = (*promotion).clone();
+        promotion.promoted_at = Some(now);
 
         inner.insert(promotion.key.clone(), Arc::new(promotion));
         Ok(())
@@ -314,15 +273,38 @@ impl Key {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Promotion {
     pub key: Key,
     pub frequency: utils::Duration,
     pub promoted_at: Option<DateTime<Utc>>,
     pub template: template::Template,
+    pub group: Option<String>,
+    pub disabled: bool,
 }
 
 impl Promotion {
+    pub fn from_db(promotion: db::models::Promotion) -> Result<Promotion, failure::Error> {
+        let template = template::Template::compile(&promotion.text).with_context(|_| {
+            format_err!("failed to compile promotion `{:?}` from db", promotion)
+        })?;
+
+        let key = Key::new(promotion.channel.as_str(), promotion.name.as_str());
+        let frequency = utils::Duration::seconds(promotion.frequency as u64);
+        let promoted_at = promotion
+            .promoted_at
+            .map(|d| DateTime::<Utc>::from_utc(d, Utc));
+
+        Ok(Promotion {
+            key,
+            frequency,
+            promoted_at,
+            template,
+            group: promotion.group,
+            disabled: promotion.disabled,
+        })
+    }
+
     /// Render the given promotion.
     pub fn render<T>(&self, data: &T) -> Result<String, failure::Error>
     where

@@ -27,7 +27,7 @@ pub mod settings;
 pub mod spotify;
 mod spotify_id;
 mod stream_info;
-mod template;
+pub mod template;
 mod themes;
 mod track_id;
 pub mod twitch;

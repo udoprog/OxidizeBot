@@ -189,3 +189,13 @@ body {
     }
   }
 }
+
+.command {
+  &-name {
+    font-family: monospace;
+  }
+
+  &-template {
+    font-family: monospace;
+  }
+}

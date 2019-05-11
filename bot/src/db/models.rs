@@ -1,6 +1,4 @@
-use super::schema::{
-    after_streams, aliases, bad_words, balances, commands, counters, promotions, set_values, songs,
-};
+use super::schema::{after_streams, aliases, bad_words, balances, commands, promotions, songs};
 use crate::player::TrackId;
 use chrono::NaiveDateTime;
 
@@ -24,30 +22,75 @@ impl Balance {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
 pub struct Command {
+    /// The channel the command belongs to.
     pub channel: String,
+    /// The name of the command.
     pub name: String,
     /// The number of times the counter has been invoked.
     pub count: i32,
+    /// The text of the command.
     pub text: String,
+    /// The group the promotion is part of, if any.
+    pub group: Option<String>,
+    /// If the command is disabled.
+    pub disabled: bool,
+}
+
+#[derive(Debug, Clone, Default, diesel::AsChangeset)]
+#[table_name = "commands"]
+pub struct UpdateCommand<'a> {
+    pub count: Option<i32>,
+    pub text: Option<&'a str>,
+    pub group: Option<&'a str>,
+    pub disabled: Option<bool>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
 #[table_name = "aliases"]
 pub struct Alias {
+    /// The channel the alias belongs to.
+    pub channel: String,
+    /// The name of the alias.
+    pub name: String,
+    /// The text of the alias.
+    pub text: String,
+    /// The group the promotion is part of, if any.
+    pub group: Option<String>,
+    /// If the promotion is disabled.
+    pub disabled: bool,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Insertable)]
+#[table_name = "aliases"]
+pub struct InsertAlias {
     pub channel: String,
     pub name: String,
     pub text: String,
 }
 
+#[derive(Debug, Clone, Default, diesel::AsChangeset)]
+#[table_name = "aliases"]
+pub struct UpdateAlias<'a> {
+    pub text: Option<&'a str>,
+    pub group: Option<&'a str>,
+    pub disabled: Option<bool>,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, diesel::Queryable)]
 pub struct AfterStream {
+    /// The unique identifier of the afterstream message.
     pub id: i32,
+    /// The channel the afterstream message belongs to.
     pub channel: Option<String>,
+    /// When the afterstream was added.
     pub added_at: NaiveDateTime,
+    /// The user that added the afterstream.
     pub user: String,
+    /// The text of the afterstream.
     pub text: String,
 }
 
+/// Insert model for afterstreams.
 #[derive(diesel::Insertable)]
 #[table_name = "after_streams"]
 pub struct InsertAfterStream {
@@ -60,17 +103,6 @@ pub struct InsertAfterStream {
 pub struct BadWord {
     pub word: String,
     pub why: Option<String>,
-}
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
-pub struct Counter {
-    pub channel: String,
-    /// The name of the counter.
-    pub name: String,
-    /// The number of times the counter has been invoked.
-    pub count: i32,
-    /// The text of the count. A mustache template.
-    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, diesel::Queryable)]
@@ -102,17 +134,11 @@ pub struct AddSong {
     pub user: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, diesel::Queryable, diesel::Insertable)]
-pub struct SetValue {
-    pub channel: String,
-    /// The kind of the value.
-    pub kind: String,
-    pub value: String,
-}
-
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
 pub struct Promotion {
+    /// The channel the promotion belongs to.
     pub channel: String,
+    /// The name of the promotion.
     pub name: String,
     /// The frequency in seconds at which the promotion is posted.
     pub frequency: i32,
@@ -120,4 +146,18 @@ pub struct Promotion {
     pub promoted_at: Option<NaiveDateTime>,
     /// The promotion template to run.
     pub text: String,
+    /// The group the promotion is part of, if any.
+    pub group: Option<String>,
+    /// If the promotion is disabled.
+    pub disabled: bool,
+}
+
+#[derive(Debug, Clone, Default, diesel::AsChangeset)]
+#[table_name = "promotions"]
+pub struct UpdatePromotion<'a> {
+    pub frequency: Option<i32>,
+    pub promoted_at: Option<&'a NaiveDateTime>,
+    pub text: Option<&'a str>,
+    pub group: Option<&'a str>,
+    pub disabled: Option<bool>,
 }

@@ -1,3 +1,5 @@
+#[macro_use]
+mod macros;
 mod after_streams;
 mod aliases;
 mod commands;

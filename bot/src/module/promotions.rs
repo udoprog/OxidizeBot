@@ -1,4 +1,4 @@
-use crate::{command, db, idle, irc, module, settings, utils};
+use crate::{command, db, idle, irc, module, settings, template, utils};
 use chrono::Utc;
 use futures::{future, Async, Future, Poll, Stream as _};
 use std::sync::Arc;
@@ -11,6 +11,14 @@ pub struct Handler {
 impl command::Handler for Handler {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         match ctx.next() {
+            Some("clear-group") => {
+                command_clear_group!(ctx, self.promotions, "!promo clear-group", "promotion")
+            }
+            Some("group") => command_group!(ctx, self.promotions, "!promo group", "promotion"),
+            Some("enable") => command_enable!(ctx, self.promotions, "!promo enable", "promotion"),
+            Some("disable") => {
+                command_disable!(ctx, self.promotions, "!promo disable", "promotion")
+            }
             Some("list") => {
                 let mut names = self
                     .promotions
@@ -51,8 +59,16 @@ impl command::Handler for Handler {
                     }
                 };
 
+                let template = match template::Template::compile(ctx.rest()) {
+                    Ok(template) => template,
+                    Err(e) => {
+                        ctx.respond(format!("Bad promotion template: {}", e));
+                        return Ok(());
+                    }
+                };
+
                 self.promotions
-                    .edit(ctx.user.target, name, frequency, ctx.rest())?;
+                    .edit(ctx.user.target, name, frequency, template)?;
                 ctx.respond("Edited promo.");
             }
             Some("delete") => {

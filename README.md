@@ -122,6 +122,8 @@ All admin commands are restricted to **moderators**.
 * `!admin push` - Push a value to a setting which is a collection.
 * `!admin delete <key> <value>` - Delete a value from a settings which is a collection.
 * `!admin shutdown` - Cause the mod to cleanly shut down, and hopefully being restarted by the management process.
+* `!admin enable-group <group>` - Enable all commands, aliases, and promotions part of the specified group.
+* `!admin disable-group <group>` - Disable all commands, aliases, and promotions part of the specified group.
 
 ## Bad Words
 
@@ -194,6 +196,9 @@ A command is the bot responding with a pre-defined message based on a template.
 Enabled commands:
 
 * `!command edit <name> <what>` - Set the command `<name>` to respond with `<what>` (**moderator**).
+* `!command clear-group <name>` - Clear the group for command `<name>` (**moderator**).
+* `!command group <name>` - Get the group the given command belongs to (**moderator**).
+* `!command group <name> <group>` - Set the command `<name>` to be in the group `<group>` (**moderator**).
 * `!command delete <name>` - Delete the command named `<name>` (**moderator**).
 * `!command rename <from> <to>` - Rename the command `<from>` to `<to>` (**moderator**).
 
@@ -216,6 +221,9 @@ This would allow us to invoke `!sr don't call me` and it would be processed as `
 Enabled commands:
 
 * `!alias edit <name> <what>` - Set the command `<name>` to alias to `<what>` (**moderator**).
+* `!alias clear-group <name>` - Clear the group for alias `<name>` (**moderator**).
+* `!alias group <name>` - Get the group the given alias belongs to (**moderator**).
+* `!alias group <name> <group>` - Set the alias `<name>` to be in the group `<group>` (**moderator**).
 * `!alias delete <name>` - Delete the command named `<name>` (**moderator**).
 * `!alias rename <from> <to>` - Rename the command `<from>` to `<to>` (**moderator**).
 
@@ -427,6 +435,9 @@ Enabled commands:
 * `!promo list` - List all available promotions.
 * `!promo edit <id> <frequency> <what>` - Set the promotion identified by `<id>` to send the message `<what>` every `<frequency>`.
   - Example: `!promo edit discord 30m Hey, did you know I have a Discord? Join it at http://example.com!`
+* `!promo clear-group <name>` - Clear the group for promotion `<name>` (**moderator**).
+* `!promo group <name>` - Get the group the given promotion belongs to (**moderator**).
+* `!promo group <name> <group>` - Set the promotion `<name>` to be in the group `<group>` (**moderator**).
 * `!promo delete <id>` - Delete the promotion with the given id.
 * `!promo rename <from> <to>` - Delete the promotion with the given id.
 

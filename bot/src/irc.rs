@@ -615,7 +615,7 @@ impl Handler {
                 let user = self.as_user(tags.clone(), m)?;
 
                 // only non-moderators and non-streamer bumps the idle counter.
-                if !self.moderators.contains(user.name) || user.name != self.streamer {
+                if !self.moderators.contains(user.name) && user.name != self.streamer {
                     self.idle.seen();
                 }
 

@@ -4,6 +4,10 @@ export class Api {
   }
 
   fetch(path, data = {}) {
+    if (path instanceof Array) {
+      path = encodePath(path);
+    }
+
     return fetch(`${this.url}/${path}`, data).then((r) => {
       if (!r.ok) {
         return r.text().then(text => {
@@ -117,6 +121,86 @@ export class Api {
       body: JSON.stringify(balances),
     });
   }
+
+  /**
+   * Get information on the current user.
+   */
+  current() {
+    return this.fetch("current");
+  }
+
+  aliases(channel) {
+    return this.fetch(["aliases", channel]);
+  }
+
+  /**
+   * Edit the disabled state of an alias.
+   *
+   * @param {object} key key of the alias to edit
+   * @param {bool} disabled set the alias disabled or not
+   */
+  aliasesEditDisabled(key, disabled) {
+    return this.fetch(["aliases", key.channel, key.name, "disabled"], {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({disabled}),
+    });
+  }
+
+  /**
+   * List all commands from a channel.
+   */
+  commands(channel) {
+    return this.fetch(["commands", channel]);
+  }
+
+  /**
+   * Edit the disabled state of a command.
+   *
+   * @param {object} key key of the command to edit
+   * @param {bool} disabled set the command disabled or not
+   */
+  commandsEditDisabled(key, disabled) {
+    return this.fetch(["commands", key.channel, key.name, "disabled"], {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({disabled}),
+    });
+  }
+
+  promotions(channel) {
+    return this.fetch(["promotions", channel]);
+  }
+
+  /**
+   * Edit the disabled state of a promotion.
+   *
+   * @param {object} key key of the promotion to edit
+   * @param {bool} disabled set the promotion disabled or not
+   */
+  promotionsEditDisabled(key, disabled) {
+    return this.fetch(["promotions", key.channel, key.name, "disabled"], {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({disabled}),
+    });
+  }
+}
+
+function encodePath(path) {
+  var out = [];
+
+  for (var part of path) {
+    out.push(encodeURIComponent(part));
+  }
+
+  return out.join("/");
 }
 
 /**
@@ -125,5 +209,12 @@ export class Api {
  * @param {string} key
  */
 function settingsKey(key) {
-  return key;
+  var parts = key.split("/");
+  var out = [];
+
+  for (var part of parts) {
+    out.push(encodeURIComponent(part));
+  }
+
+  return out.join("/");
 }

@@ -12,6 +12,8 @@ table! {
         name -> Text,
         count -> Integer,
         text -> Text,
+        group -> Nullable<Text>,
+        disabled -> Bool,
     }
 }
 
@@ -33,15 +35,6 @@ table! {
 }
 
 table! {
-    counters (channel, name) {
-        channel -> Text,
-        name -> Text,
-        count -> Integer,
-        text -> Text,
-    }
-}
-
-table! {
     songs (id) {
         id -> Integer,
         deleted -> Bool,
@@ -50,14 +43,6 @@ table! {
         promoted_at -> Nullable<Timestamp>,
         promoted_by -> Nullable<Text>,
         user -> Nullable<Text>,
-    }
-}
-
-table! {
-    set_values (channel, kind, value) {
-        channel -> Text,
-        kind -> Text,
-        value -> Text,
     }
 }
 
@@ -73,6 +58,8 @@ table! {
         channel -> Text,
         name -> Text,
         text -> Text,
+        group -> Nullable<Text>,
+        disabled -> Bool,
     }
 }
 
@@ -83,5 +70,7 @@ table! {
         frequency -> Integer,
         promoted_at -> Nullable<Timestamp>,
         text -> Text,
+        group -> Nullable<Text>,
+        disabled -> Bool,
     }
 }

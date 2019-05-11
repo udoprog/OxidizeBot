@@ -2,7 +2,7 @@ use failure::{format_err, ResultExt};
 use futures::{future, Future};
 use setmod_bot::{
     bus, config::Config, db, features::Feature, irc, module, player, secrets, setbac, spotify,
-    twitch, utils, web,
+    template, twitch, utils, web,
 };
 use std::{
     fs,
@@ -123,7 +123,8 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
                 log::warn!("Performing a one time migration of aliases from configuration.");
 
                 for alias in &config.aliases {
-                    aliases.edit(irc.channel.as_str(), &alias.r#match, &alias.replace)?;
+                    let template = template::Template::compile(&alias.replace)?;
+                    aliases.edit(irc.channel.as_str(), &alias.r#match, template)?;
                 }
 
                 settings.set("migration/aliases-migrated", true)?;
@@ -158,6 +159,8 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         after_streams.clone(),
         db.clone(),
         settings.clone(),
+        aliases.clone(),
+        commands.clone(),
         promotions.clone(),
     )?;
 
