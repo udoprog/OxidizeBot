@@ -1,6 +1,6 @@
 use tokio_core::reactor::Core;
 
-use crate::{bus, config, current_song, db, settings, spotify, themes::Themes, utils};
+use crate::{api, bus, config, current_song, db, settings, themes::Themes, utils};
 pub use crate::{spotify_id::SpotifyId, track_id::TrackId};
 
 use chrono::Utc;
@@ -16,8 +16,24 @@ use tokio_bus::{Bus, BusReader};
 use tokio_threadpool::{SpawnHandle, ThreadPool};
 
 mod connect;
+mod youtube;
 
-type SyncIntervalStream = utils::BoxStream<Option<spotify::FullPlayingContext>, failure::Error>;
+/// Event used by player integrations.
+#[derive(Debug)]
+pub enum IntegrationEvent {
+    /// We've reached the end of a track.
+    EndOfTrack,
+    /// Indicate that the current device changed.
+    DeviceChanged,
+    /// We've filtered a player event.
+    Filtered,
+    /// Indicate that we have successfully issued a playing command to the player.
+    Playing(Source),
+    /// Indicate that we have successfully issued a pause command to the player.
+    Pausing(Source),
+    /// Indicate that we have successfully issued a volume command to the player.
+    Volume(Source, u32),
+}
 
 /// The source of action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -26,27 +42,8 @@ pub enum Source {
     Automatic,
     /// Event was generated from user input. Broadcast feedback.
     Manual,
-}
-
-impl Source {
-    /// Perform a checked playback.
-    ///
-    /// Function returns false in case player is not configured and notifies the bus as appropriate.
-    pub fn checked(
-        self,
-        player: &mut self::connect::ConnectPlayer,
-        bus: &EventBus,
-        f: impl FnOnce(&mut self::connect::ConnectPlayerWithDevice),
-    ) {
-        match player.with_device() {
-            Ok(mut player) => f(&mut player),
-            Err(NotConfigured) if self == Source::Manual => {
-                bus.broadcast(Event::NotConfigured);
-            }
-            // do nothing in case it's not configured.
-            _ => (),
-        };
-    }
+    /// Event is associated with a player switch and probably should be ignored.
+    PlayerSwitch,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -86,10 +83,56 @@ fn default_max_songs_per_user() -> u32 {
     2
 }
 
+/// Information on a single track.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(tag = "type")]
+pub enum Track {
+    #[serde(rename = "spotify")]
+    Spotify { track: api::spotify::FullTrack },
+    #[serde(rename = "youtube")]
+    YouTube { video: api::youtube::Video },
+}
+
+impl Track {
+    /// Get artists involved as a string.
+    pub fn artists(&self) -> Option<String> {
+        match *self {
+            Track::Spotify { ref track } => utils::human_artists(&track.artists),
+            Track::YouTube { ref video } => {
+                video.snippet.as_ref().and_then(|s| s.channel_title.clone())
+            }
+        }
+    }
+
+    /// Get name of the track.
+    pub fn name(&self) -> String {
+        match *self {
+            Track::Spotify { ref track } => track.name.to_string(),
+            Track::YouTube { ref video } => video
+                .snippet
+                .as_ref()
+                .map(|s| s.title.as_str())
+                .unwrap_or("no name")
+                .to_string(),
+        }
+    }
+
+    /// Convert into JSON.
+    /// TODO: this is a hack to avoid breaking web API.
+    pub fn to_json(&self) -> Result<serde_json::Value, failure::Error> {
+        let json = match *self {
+            Track::Spotify { ref track } => serde_json::to_value(&track)?,
+            Track::YouTube { ref video } => serde_json::to_value(&video)?,
+        };
+
+        Ok(json)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Item {
     pub track_id: TrackId,
-    pub track: spotify::FullTrack,
+    pub track: Track,
     pub user: Option<String>,
     pub duration: Duration,
 }
@@ -97,10 +140,23 @@ pub struct Item {
 impl Item {
     /// Human readable version of playback item.
     pub fn what(&self) -> String {
-        if let Some(artists) = utils::human_artists(&self.track.artists) {
-            format!("\"{}\" by {}", self.track.name, artists)
-        } else {
-            format!("\"{}\"", self.track.name.to_string())
+        match self.track {
+            Track::Spotify { ref track } => {
+                if let Some(artists) = utils::human_artists(&track.artists) {
+                    format!("\"{}\" by {}", track.name, artists)
+                } else {
+                    format!("\"{}\"", track.name)
+                }
+            }
+            Track::YouTube { ref video } => match video.snippet.as_ref() {
+                Some(snippet) => match snippet.channel_title.as_ref() {
+                    Some(channel_title) => {
+                        format!("\"{}\" from \"{}\"", snippet.title, channel_title)
+                    }
+                    None => format!("\"{}\"", snippet.title),
+                },
+                None => String::from("*Some YouTube Video*"),
+            },
         }
     }
 }
@@ -125,21 +181,12 @@ pub enum Command {
     Inject(Source, Arc<Item>, Duration),
 }
 
-impl std::str::FromStr for TrackId {
-    type Err = failure::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        SpotifyId::from_base62(s)
-            .map(TrackId)
-            .map_err(|_| format_err!("failed to parse id"))
-    }
-}
-
 /// Run the player.
 pub fn run(
     core: &mut Core,
     db: db::Database,
-    spotify: Arc<spotify::Spotify>,
+    spotify: Arc<api::Spotify>,
+    youtube: Arc<api::YouTube>,
     parent_config: &config::Config,
     config: &Config,
     // For sending notifications.
@@ -147,7 +194,8 @@ pub fn run(
     // Settings abstraction.
     settings: settings::Settings,
 ) -> Result<(PlaybackFuture, Player), failure::Error> {
-    let (player, device) = connect::setup(spotify.clone())?;
+    let (connect_player, device) = connect::setup(spotify.clone())?;
+    let youtube_player = youtube::setup(global_bus.clone())?;
 
     let bus = Arc::new(RwLock::new(Bus::new(1024)));
 
@@ -163,13 +211,14 @@ pub fn run(
 
     // Add tracks from database.
     for song in db.list()? {
-        queue.push_back_queue(core.run(convert_item(
+        queue.push_back_queue(Arc::new(core.run(convert_item(
             &thread_pool,
             spotify.clone(),
+            youtube.clone(),
             song.user.clone(),
             song.track_id,
             None,
-        ))?);
+        ))?));
     }
 
     // Blank current song file if specified.
@@ -212,26 +261,10 @@ pub fn run(
         )),
     };
 
-    let sync_player_interval = if !config.sync_player_interval.is_empty() {
-        Some(Box::new(
-            tokio_timer::Interval::new_interval(config.sync_player_interval.as_std())
-                .map_err(|_| failure::format_err!("failed to run sync interval"))
-                .and_then({
-                    let spotify = spotify.clone();
-                    move |_| {
-                        log::trace!("Getting remote information on playback");
-                        spotify.me_player().map(Some)
-                    }
-                })
-                .or_else(|e| {
-                    log::error!("failed to call remote stream: {}", e);
-                    Ok(None::<Option<spotify::FullPlayingContext>>)
-                })
-                .filter_map(|v| v),
-        ) as SyncIntervalStream)
-    } else {
-        None
-    };
+    if !config.sync_player_interval.is_empty() {
+        log::warn!("### DEPRECATION WARNING");
+        log::warn!("[player] sync_player_interval - configuration has been deprecated since it was too unreliable.");
+    }
 
     let mixer = Mixer {
         queue: queue.clone(),
@@ -244,14 +277,14 @@ pub fn run(
     let (commands_tx, commands) = mpsc::unbounded();
 
     let future = PlaybackFuture {
-        player,
-        device: device.clone(),
+        connect_player,
+        youtube_player,
         commands,
         bus: EventBus { bus: bus.clone() },
         mixer,
         // NB: it is not considered paused _yet_.
         // When we issue the pause command below, we only queue up the command.
-        is_playing: true,
+        state: State::None,
         volume: Arc::clone(&volume),
         song: song.clone(),
         current_song: parent_config.current_song.clone(),
@@ -259,7 +292,6 @@ pub fn run(
         current_song_update,
         song_update_interval,
         song_update_interval_stream,
-        sync_player_interval,
         global_bus,
     };
 
@@ -274,6 +306,7 @@ pub fn run(
         max_queue_length: max_queue_length,
         max_songs_per_user: max_songs_per_user,
         spotify: spotify.clone(),
+        youtube: youtube.clone(),
         commands_tx,
         bus,
         volume: volume.clone(),
@@ -368,7 +401,7 @@ impl Song {
     }
 
     /// Convert a playback information into a Song struct.
-    pub fn from_playback(playback: &spotify::FullPlayingContext) -> Option<Self> {
+    pub fn from_playback(playback: &api::spotify::FullPlayingContext) -> Option<Self> {
         let progress_ms = playback.progress_ms.unwrap_or_default();
 
         let track = match playback.item.clone() {
@@ -386,7 +419,7 @@ impl Song {
 
         let item = Arc::new(Item {
             track_id,
-            track,
+            track: Track::Spotify { track },
             user: None,
             duration,
         });
@@ -442,13 +475,13 @@ impl Song {
     }
 
     /// Get serializable data for this item.
-    pub fn data(&self, is_playing: bool) -> Result<CurrentData<'_>, failure::Error> {
-        let artists = utils::human_artists(&self.item.track.artists);
+    pub fn data(&self, state: State) -> Result<CurrentData<'_>, failure::Error> {
+        let artists = self.item.track.artists();
 
         Ok(CurrentData {
-            paused: !is_playing,
+            paused: !state.is_playing(),
             track_id: &self.item.track_id,
-            name: self.item.track.name.to_string(),
+            name: self.item.track.name(),
             artists,
             user: self.item.user.as_ref().map(|s| s.as_str()),
             duration: utils::digital_duration(&self.item.duration),
@@ -457,8 +490,15 @@ impl Song {
     }
 
     /// Check if the song is currently playing.
-    pub fn is_playing(&self) -> bool {
-        self.started_at.is_some()
+    pub fn state(&self) -> State {
+        if self.started_at.is_some() {
+            return match self.item.track_id {
+                TrackId::Spotify(..) => State::Playing(PlayerKind::Spotify),
+                TrackId::YouTube(..) => State::Playing(PlayerKind::YouTube),
+            };
+        }
+
+        State::Paused
     }
 
     /// Set the started_at time to now.
@@ -510,7 +550,8 @@ pub struct Player {
     queue: Queue,
     max_queue_length: Arc<RwLock<u32>>,
     max_songs_per_user: Arc<RwLock<u32>>,
-    spotify: Arc<spotify::Spotify>,
+    spotify: Arc<api::Spotify>,
+    youtube: Arc<api::YouTube>,
     commands_tx: mpsc::UnboundedSender<Command>,
     bus: Arc<RwLock<Bus<Event>>>,
     volume: Arc<RwLock<u32>>,
@@ -532,6 +573,7 @@ impl Player {
             max_queue_length: self.max_queue_length.clone(),
             max_songs_per_user: self.max_songs_per_user.clone(),
             spotify: self.spotify.clone(),
+            youtube: self.youtube.clone(),
             commands_tx: self.commands_tx.clone(),
             bus: self.bus.clone(),
             volume: Arc::clone(&self.volume),
@@ -577,7 +619,8 @@ pub struct PlayerClient {
     thread_pool: Arc<ThreadPool>,
     max_queue_length: Arc<RwLock<u32>>,
     max_songs_per_user: Arc<RwLock<u32>>,
-    spotify: Arc<spotify::Spotify>,
+    spotify: Arc<api::Spotify>,
+    youtube: Arc<api::YouTube>,
     commands_tx: mpsc::UnboundedSender<Command>,
     bus: Arc<RwLock<Bus<Event>>>,
     /// Song volume.
@@ -597,24 +640,26 @@ impl PlayerClient {
     }
 
     /// Get the current device.
-    pub fn current_device(&self) -> Option<spotify::Device> {
+    pub fn current_device(&self) -> Option<api::spotify::Device> {
         self.device.current_device()
     }
 
     /// List all available devices.
-    pub fn list_devices(&self) -> impl Future<Item = Vec<spotify::Device>, Error = failure::Error> {
+    pub fn list_devices(
+        &self,
+    ) -> impl Future<Item = Vec<api::spotify::Device>, Error = failure::Error> {
         self.device.list_devices()
     }
 
     /// External call to set device.
     ///
     /// Should always notify the player to change.
-    pub fn set_device(&self, device: spotify::Device) -> Option<spotify::Device> {
+    pub fn set_device(&self, device: api::spotify::Device) -> Option<api::spotify::Device> {
         self.device.set_device(Some(device))
     }
 
     /// Clear the current device.
-    pub fn clear_device(&self) -> Option<spotify::Device> {
+    pub fn clear_device(&self) -> Option<api::spotify::Device> {
         self.device.set_device(None)
     }
 
@@ -697,7 +742,7 @@ impl PlayerClient {
             .search_track(q)
             .and_then(|page| match page.items.into_iter().next() {
                 Some(track) => match SpotifyId::from_base62(&track.id) {
-                    Ok(track_id) => Ok(Some(TrackId(track_id))),
+                    Ok(track_id) => Ok(Some(TrackId::Spotify(track_id))),
                     Err(_) => Err(failure::format_err!("search result returned malformed id")),
                 },
                 None => Ok(None),
@@ -719,13 +764,21 @@ impl PlayerClient {
         let fut = fut.and_then({
             let thread_pool = Arc::clone(&self.thread_pool);
             let spotify = Arc::clone(&self.spotify);
+            let youtube = Arc::clone(&self.youtube);
 
             move |theme| {
                 let duration = theme.end.clone().map(|o| o.as_duration());
 
-                convert_item(&thread_pool, spotify, None, theme.track.clone(), duration)
-                    .map(move |item| (item, theme))
-                    .map_err(|e| PlayThemeError::Error(e.into()))
+                convert_item(
+                    &thread_pool,
+                    spotify,
+                    youtube,
+                    None,
+                    theme.track.clone(),
+                    duration,
+                )
+                .map(move |item| (item, theme))
+                .map_err(|e| PlayThemeError::Error(e.into()))
             }
         });
 
@@ -733,6 +786,7 @@ impl PlayerClient {
             let commands_tx = self.commands_tx.clone();
 
             move |(item, theme)| {
+                let item = Arc::new(item);
                 let duration = theme.offset.as_duration();
 
                 commands_tx
@@ -750,6 +804,7 @@ impl PlayerClient {
         user: &str,
         track_id: TrackId,
         is_moderator: bool,
+        max_duration: Option<utils::Duration>,
     ) -> impl Future<Item = (usize, Arc<Item>), Error = AddTrackError> {
         // invariant checks
         let fut = future::lazy({
@@ -801,18 +856,35 @@ impl PlayerClient {
             let user = user.to_string();
             let thread_pool = Arc::clone(&self.thread_pool);
             let spotify = Arc::clone(&self.spotify);
+            let youtube = Arc::clone(&self.youtube);
 
             move |len| {
-                convert_item(&thread_pool, spotify, Some(user), track_id, None)
+                convert_item(&thread_pool, spotify, youtube, Some(user), track_id, None)
                     .map(move |item| (len, item))
                     .map_err(|e| AddTrackError::Error(e.into()))
             }
+        });
+
+        let fut = fut.map(move |(len, mut item)| {
+            if let Some(max_duration) = max_duration {
+                let max_duration = max_duration.as_std();
+
+                log::info!("seconds: {}", max_duration.as_secs());
+
+                if item.duration > max_duration {
+                    item.duration = max_duration;
+                }
+            }
+
+            (len, item)
         });
 
         let fut = fut.and_then({
             let queue = self.queue.clone();
 
             move |(len, item)| {
+                let item = Arc::new(item);
+
                 queue
                     .push_back(item.clone())
                     .map(move |_| (len, item))
@@ -974,12 +1046,8 @@ pub trait Backend: Clone + Send + Sync {
     /// Remove the song, but only log on issues.
     fn remove_song_log(&self, track_id: &TrackId) {
         match self.remove_song(track_id) {
-            Err(e) => log::warn!(
-                "{}: failed to remove song from database: {}",
-                track_id.to_base62(),
-                e
-            ),
-            Ok(false) => log::warn!("{}: no songs removed from database", track_id.to_base62()),
+            Err(e) => log::warn!("{}: failed to remove song from database: {}", track_id, e),
+            Ok(false) => log::warn!("{}: no songs removed from database", track_id),
             Ok(true) => {}
         }
     }
@@ -1005,11 +1073,7 @@ pub trait Backend: Clone + Send + Sync {
     fn promote_song_log(&self, user: &str, track_id: &TrackId) -> Option<bool> {
         match self.promote_song(user, track_id) {
             Err(e) => {
-                log::warn!(
-                    "failed to promote song `{}` in database: {}",
-                    track_id.to_base62(),
-                    e
-                );
+                log::warn!("failed to promote song `{}` in database: {}", track_id, e);
                 None
             }
             Ok(n) => Some(n),
@@ -1274,15 +1338,39 @@ impl EventBus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayerKind {
+    Spotify,
+    YouTube,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum State {
+    Playing(PlayerKind),
+    Paused,
+    // initial undefined state.
+    None,
+}
+
+impl State {
+    /// Check if the state is playing.
+    pub fn is_playing(self) -> bool {
+        match self {
+            State::Playing(..) => true,
+            _ => false,
+        }
+    }
+}
+
 /// Future associated with driving audio playback.
 pub struct PlaybackFuture {
-    player: self::connect::ConnectPlayer,
-    device: self::connect::ConnectDevice,
+    connect_player: self::connect::ConnectPlayer,
+    youtube_player: self::youtube::YouTubePlayer,
     commands: mpsc::UnboundedReceiver<Command>,
     bus: EventBus,
     mixer: Mixer,
     /// We are currently playing.
-    is_playing: bool,
+    state: State,
     /// Song volume.
     volume: Arc<RwLock<u32>>,
     /// Song that is currently loaded.
@@ -1297,18 +1385,17 @@ pub struct PlaybackFuture {
     song_update_interval: Option<tokio_timer::Interval>,
     /// Stream for when song update interval is updated.
     song_update_interval_stream: settings::Stream<utils::Duration>,
-    /// Interval at which to call remote service to see that we are still in sync.
-    sync_player_interval: Option<SyncIntervalStream>,
     /// Notifier to use when sending song updates.
     global_bus: Arc<bus::Bus>,
 }
 
 impl PlaybackFuture {
     /// Set the current song.
-    fn write_song(&self, song: Option<Song>) {
-        self.global_bus.send(bus::Message::song(song.as_ref()));
+    fn write_song(&self, song: Option<Song>) -> Result<(), failure::Error> {
+        self.global_bus.send(bus::Message::song(song.as_ref())?);
         self.current_song(song.as_ref());
         *self.song.write() = song;
+        Ok(())
     }
 
     /// Write current song. Log any errors.
@@ -1321,7 +1408,7 @@ impl PlaybackFuture {
         };
 
         let result = match song {
-            Some(song) => current_song.write(song, self.is_playing),
+            Some(song) => current_song.write(song, self.state),
             None => current_song.blank(),
         };
 
@@ -1334,178 +1421,245 @@ impl PlaybackFuture {
         }
     }
 
+    /// Update state if it is different from the expected kind and pause the corresponding player.
+    fn set_playing(&mut self, kind: PlayerKind) {
+        use self::PlayerKind::*;
+
+        // switched player
+        match self.state {
+            State::None => match kind {
+                Spotify => {
+                    self.youtube_player.pause(Source::PlayerSwitch);
+                }
+                YouTube => {
+                    self.connect_player.pause(Source::PlayerSwitch);
+                }
+            },
+            State::Playing(YouTube) if kind != YouTube => {
+                self.youtube_player.pause(Source::PlayerSwitch);
+            }
+            State::Playing(YouTube) if kind == YouTube => {
+                return;
+            }
+            State::Playing(Spotify) if kind != Spotify => {
+                self.connect_player.pause(Source::PlayerSwitch);
+            }
+            State::Playing(Spotify) if kind == Spotify => {
+                return;
+            }
+            _ => (),
+        }
+
+        self.state = State::Playing(kind);
+    }
+
+    /// Play the given song.
+    fn play_song(&mut self, source: Source, song: &Song) -> PlayerKind {
+        match song.item.track_id {
+            TrackId::Spotify(ref id) => {
+                self.connect_player.play(source, &song, id);
+                PlayerKind::Spotify
+            }
+            TrackId::YouTube(ref id) => {
+                self.youtube_player.play(source, &song, id);
+                PlayerKind::YouTube
+            }
+        }
+    }
+
+    /// Switch current song to the specified song.
+    fn switch_to_song(&mut self, source: Source, song: Song) {
+        let kind = self.play_song(source, &song);
+        self.set_playing(kind);
+        *self.song.write() = Some(song);
+    }
+
     /// Handle incoming command.
-    fn command(&mut self, command: Command) {
+    fn command(&mut self, command: Command) -> Result<(), failure::Error> {
         let command = match command {
-            Command::Toggle(source) if !self.is_playing => Command::Play(source),
-            Command::Toggle(source) if self.is_playing => Command::Pause(source),
+            Command::Toggle(source) if !self.state.is_playing() => Command::Play(source),
+            Command::Toggle(source) if self.state.is_playing() => Command::Pause(source),
             command => command,
         };
 
-        match command {
-            Command::Skip(source) => {
+        log::trace!(
+            "Processing: Command = {:?}, State = {:?}",
+            command,
+            self.state
+        );
+
+        match (command, self.state) {
+            (Command::Skip(source), _) => {
                 log::trace!("skipping song");
 
                 if let Some(song) = self.mixer.next_song() {
-                    if self.is_playing {
-                        source.checked(&mut self.player, &self.bus, |p| p.play(source, &song));
+                    if self.state.is_playing() {
+                        self.switch_to_song(source, song);
+                    } else {
+                        *self.song.write() = Some(song);
                     }
-
-                    *self.song.write() = Some(song);
                 } else {
-                    *self.song.write() = None;
-
                     if let Source::Manual = source {
                         self.bus.broadcast(Event::Empty);
                     }
 
-                    self.write_song(None);
+                    self.write_song(None)?;
                 }
             }
-            Command::Pause(source) if self.is_playing => {
-                log::trace!("pausing player");
-                source.checked(&mut self.player, &self.bus, |p| p.pause(source));
-                self.is_playing = false;
+            // initial pause
+            (Command::Pause(source), State::None) => {
+                self.connect_player.pause(source);
+                self.youtube_player.pause(source);
+                self.state = State::Paused;
             }
-            Command::Play(source) if !self.is_playing => {
+            (Command::Pause(source), State::Playing(kind)) => match kind {
+                PlayerKind::Spotify => {
+                    log::trace!("pausing spotify player");
+                    self.connect_player.pause(source);
+                    self.state = State::Paused;
+                }
+                PlayerKind::YouTube => {
+                    log::trace!("pausing youtube player");
+                    self.youtube_player.pause(source);
+                    self.state = State::Paused;
+                }
+            },
+            (Command::Play(source), State::Paused) => {
                 log::trace!("starting player");
 
-                if let Some(song) = self.song.read().as_ref() {
-                    source.checked(&mut self.player, &self.bus, |p| p.play(source, &song));
-                    self.is_playing = true;
-                    return;
+                let song = self.song.clone();
+
+                // resume an existing song
+                if let Some(song) = song.read().as_ref() {
+                    let kind = self.play_song(source, song);
+                    self.state = State::Playing(kind);
+                    return Ok(());
                 }
 
+                // play the next song in queue.
                 if let Some(song) = self.mixer.next_song() {
-                    source.checked(&mut self.player, &self.bus, |p| p.play(source, &song));
-                    *self.song.write() = Some(song);
-                    self.is_playing = true;
+                    self.switch_to_song(source, song);
                 } else {
                     if let Source::Manual = source {
                         self.bus.broadcast(Event::Empty);
                     }
 
-                    self.is_playing = false;
-                    self.write_song(None);
+                    self.state = State::Paused;
+                    self.write_song(None)?;
                 }
             }
-            Command::PlaySync { song } => {
-                log::trace!("synchronize the state of the player with the given song");
-                self.is_playing = song.as_ref().map(|p| p.is_playing()).unwrap_or_default();
-                self.player.play_sync(song.as_ref());
-                self.global_bus.send(bus::Message::song(song.as_ref()));
+            (Command::PlaySync { song }, _) => {
+                log::trace!("synchronize the state of the player with the current song");
+
+                if let Some(s) = song.as_ref() {
+                    match s.item.track_id {
+                        TrackId::Spotify(..) => {
+                            self.connect_player.play_sync(song.as_ref());
+                            self.set_playing(PlayerKind::Spotify);
+                        }
+                        // NB: doesn't make sense, there is no way to poll the youtube player.
+                        TrackId::YouTube(..) => {
+                            self.set_playing(PlayerKind::YouTube);
+                            log::warn!("youtube player doesn't support syncing");
+                            return Ok(());
+                        }
+                    }
+                }
+
+                self.global_bus.send(bus::Message::song(song.as_ref())?);
+                self.state = song.as_ref().map(|p| p.state()).unwrap_or(State::Paused);
                 *self.song.write() = song;
             }
             // queue was modified in some way
-            Command::Modified(source) => {
-                if self.is_playing && self.song.read().is_none() {
+            (Command::Modified(source), _) => {
+                if self.state.is_playing() && self.song.read().is_none() {
                     if let Some(song) = self.mixer.next_song() {
-                        source.checked(&mut self.player, &self.bus, |p| p.play(source, &song));
-                        *self.song.write() = Some(song);
+                        self.switch_to_song(source, song);
                     }
                 }
 
                 self.bus.broadcast(Event::Modified);
             }
-            Command::Volume(source, volume) => {
-                source.checked(&mut self.player, &self.bus, |p| p.volume(source, volume));
+            (Command::Volume(source, volume), _) => {
+                self.connect_player.volume(source, volume);
+                self.youtube_player.volume(source, volume);
                 *self.volume.write() = volume;
             }
-            Command::Inject(source, item, offset) => {
-                if !self.is_playing {
-                    log::warn!("tried to inject song, but player is not running");
-                    return;
-                }
-
+            (Command::Inject(source, item, offset), State::Playing(..)) => {
                 // store the currently playing song in the sidelined slot.
                 if let Some(mut song) = self.song.write().take() {
                     song.pause();
                     self.mixer.sidelined.push_back(song);
                 }
 
-                let song = Song::new(item, offset);
-                source.checked(&mut self.player, &self.bus, |p| p.play(source, &song));
-                *self.song.write() = Some(song);
+                self.switch_to_song(source, Song::new(item, offset));
             }
-            _ => {}
-        }
-    }
-
-    /// Synchronize playback with remote playback context.
-    fn sync_playback(
-        &mut self,
-        playback: Option<spotify::FullPlayingContext>,
-    ) -> Result<(), failure::Error> {
-        let playback = match playback {
-            Some(playback) => playback,
-            None => return Ok(()),
-        };
-
-        let device = match self.device.device.read().as_ref() {
-            Some(d) if d.id != playback.device.id => Some(playback.device.clone()),
-            Some(_) => None,
-            None => Some(playback.device.clone()),
-        };
-
-        let song = match Song::from_playback(&playback) {
-            Some(song) => {
-                let playing_differs = self.is_playing != song.is_playing();
-
-                match self.song.read().as_ref() {
-                    Some(s) if !s.is_same(&song) || playing_differs => Some(Some(song)),
-                    None => Some(Some(song)),
-                    Some(_) => None,
-                }
-            }
-            None if self.song.read().is_some() || self.is_playing => Some(None),
-            _ => None,
-        };
-
-        if let Some(song) = song {
-            self.global_bus.send(bus::Message::song(song.as_ref()));
-            self.player.play_sync(song.as_ref());
-            self.is_playing = song.as_ref().map(|s| s.is_playing()).unwrap_or_default();
-            *self.song.write() = song;
-        }
-
-        if let Some(device) = device {
-            *self.volume.write() = device.volume_percent;
-            *self.device.device.write() = Some(device);
+            _ => (),
         }
 
         Ok(())
     }
 
     /// Handle an event from the connect integration.
-    fn connect_event(&mut self, e: self::connect::Event) {
-        use self::connect::Event::*;
+    fn handle_player_event(&mut self, e: IntegrationEvent) -> Result<(), failure::Error> {
+        use self::IntegrationEvent::*;
+
+        log::trace!(
+            "Processing: IntegrationEvent = {:?}, State = {:?}",
+            e,
+            self.state
+        );
 
         match e {
             EndOfTrack => {
                 log::trace!("Song ended, loading next song...");
 
                 if let Some(song) = self.mixer.next_song() {
-                    Source::Manual.checked(&mut self.player, &self.bus, |p| {
-                        p.play(Source::Manual, &song)
-                    });
-
-                    *self.song.write() = Some(song);
+                    match song.item.track_id {
+                        TrackId::Spotify(ref id) => {
+                            self.connect_player.play(Source::Manual, &song, id);
+                            self.set_playing(PlayerKind::Spotify);
+                            *self.song.write() = Some(song);
+                        }
+                        TrackId::YouTube(ref id) => {
+                            self.youtube_player.play(Source::Manual, &song, id);
+                            self.set_playing(PlayerKind::YouTube);
+                            *self.song.write() = Some(song);
+                        }
+                    }
                 } else {
                     self.bus.broadcast(Event::Empty);
-                    self.write_song(None);
+                    self.write_song(None)?;
                 }
             }
             DeviceChanged => {
-                if self.is_playing {
-                    let volume = *self.volume.read();
+                if !self.state.is_playing() {
+                    return Ok(());
+                }
 
-                    if let Some(song) = self.song.write().as_mut() {
-                        song.pause();
+                let volume = *self.volume.read();
 
-                        if let Ok(mut player) = self.player.with_device() {
-                            player.play(Source::Automatic, &song);
-                            player.volume(Source::Automatic, volume);
-                        }
+                let song = self.song.clone();
+                let mut song = song.write();
+
+                let song = match song.as_mut() {
+                    Some(song) => song,
+                    None => return Ok(()),
+                };
+
+                // pause so that it can get unpaused later.
+                song.pause();
+
+                match song.item.track_id {
+                    TrackId::Spotify(ref id) => {
+                        self.connect_player.play(Source::Automatic, &song, id);
+                        self.connect_player.volume(Source::Automatic, volume);
+                        self.set_playing(PlayerKind::Spotify);
+                    }
+                    TrackId::YouTube(ref id) => {
+                        self.youtube_player.play(Source::Automatic, &song, id);
+                        self.youtube_player.volume(Source::Automatic, volume);
+                        self.set_playing(PlayerKind::YouTube);
                     }
                 }
             }
@@ -1513,6 +1667,7 @@ impl PlaybackFuture {
                 let mut song = self.song.write();
 
                 if let Some(song) = song.as_mut() {
+                    log::info!("marking track as playing: {}", song.item.track_id);
                     song.play();
 
                     if let Source::Manual = source {
@@ -1521,28 +1676,35 @@ impl PlaybackFuture {
                     }
                 }
 
-                self.global_bus.send(bus::Message::song(song.as_ref()));
+                self.global_bus.send(bus::Message::song(song.as_ref())?);
                 self.current_song(song.as_ref());
             }
             Pausing(source) => {
-                let mut song = self.song.write();
+                match source {
+                    Source::PlayerSwitch => (),
+                    _ => {
+                        let mut song = self.song.write();
 
-                if let Some(song) = song.as_mut() {
-                    song.pause();
+                        if let Some(song) = song.as_mut() {
+                            song.pause();
+                        }
+
+                        self.current_song(song.as_ref());
+                        self.global_bus.send(bus::Message::song(song.as_ref())?);
+                    }
                 }
 
                 if let Source::Manual = source {
                     self.bus.broadcast(Event::Pausing);
                 }
-
-                self.global_bus.send(bus::Message::song(song.as_ref()));
-                self.current_song(song.as_ref());
             }
             Volume(..) => {}
             other => {
                 log::trace!("player event: {:?}", other);
             }
         }
+
+        Ok(())
     }
 
     /// Handle global song updates.
@@ -1565,9 +1727,15 @@ impl PlaybackFuture {
                 Ready(Some(_)) => {
                     let song = self.song.read();
 
-                    if self.is_playing {
+                    if self.state.is_playing() {
                         self.global_bus
                             .send(bus::Message::song_progress(song.as_ref()));
+
+                        if let Some(song) = song.as_ref() {
+                            if let TrackId::YouTube(ref id) = song.item.track_id {
+                                self.youtube_player.tick(song, id);
+                            }
+                        }
                     }
 
                     return Ok(true);
@@ -1587,21 +1755,6 @@ impl Future for PlaybackFuture {
         use futures::Async::*;
 
         loop {
-            if let Some(sync_player_interval) = self.sync_player_interval.as_mut() {
-                match sync_player_interval.poll() {
-                    Err(e) => {
-                        log::warn!("failed to get remote player state: {}", e);
-                        continue;
-                    }
-                    Ok(NotReady) => (),
-                    Ok(Ready(None)) => failure::bail!("sync interval ended"),
-                    Ok(Ready(Some(playback))) => {
-                        self.sync_playback(playback)?;
-                        continue;
-                    }
-                }
-            }
-
             if let Some(current_song_update) = self.current_song_update.as_mut() {
                 match current_song_update.poll()? {
                     NotReady => (),
@@ -1630,12 +1783,24 @@ impl Future for PlaybackFuture {
             }
 
             if let Ready(event) = self
-                .player
+                .connect_player
                 .poll()
                 .map_err(|_| format_err!("event stream errored"))?
             {
-                let event = event.ok_or_else(|| format_err!("events stream ended"))?;
-                self.connect_event(event);
+                let event =
+                    event.ok_or_else(|| format_err!("connect player event stream ended"))?;
+                self.handle_player_event(event)?;
+                continue;
+            }
+
+            if let Ready(event) = self
+                .youtube_player
+                .poll()
+                .map_err(|_| format_err!("event stream errored"))?
+            {
+                let event =
+                    event.ok_or_else(|| format_err!("connect player event stream ended"))?;
+                self.handle_player_event(event)?;
                 continue;
             }
 
@@ -1645,7 +1810,7 @@ impl Future for PlaybackFuture {
                 .map_err(|_| format_err!("events stream errored"))?
             {
                 let command = command.ok_or_else(|| format_err!("command stream ended"))?;
-                self.command(command);
+                self.command(command)?;
                 continue;
             }
 
@@ -1657,7 +1822,7 @@ impl Future for PlaybackFuture {
 /// Convert a playlist into items.
 fn playlist_to_items(
     core: &mut Core,
-    spotify: Arc<spotify::Spotify>,
+    spotify: Arc<api::Spotify>,
     playlist: &str,
 ) -> Result<Vec<Arc<Item>>, failure::Error> {
     let mut items = Vec::new();
@@ -1667,7 +1832,7 @@ fn playlist_to_items(
     for playlist_track in core.run(spotify.page_as_stream(playlist.tracks).concat2())? {
         let track = playlist_track.track;
 
-        let track_id = TrackId(
+        let track_id = TrackId::Spotify(
             SpotifyId::from_base62(&track.id)
                 .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
         );
@@ -1676,7 +1841,7 @@ fn playlist_to_items(
 
         items.push(Arc::new(Item {
             track_id,
-            track,
+            track: Track::Spotify { track },
             user: None,
             duration,
         }));
@@ -1688,14 +1853,14 @@ fn playlist_to_items(
 /// Convert all songs of a user into items.
 fn songs_to_items(
     core: &mut Core,
-    spotify: Arc<spotify::Spotify>,
+    spotify: Arc<api::Spotify>,
 ) -> Result<Vec<Arc<Item>>, failure::Error> {
     let mut items = Vec::new();
 
     for added_song in core.run(spotify.my_tracks_stream().concat2())? {
         let track = added_song.track;
 
-        let track_id = TrackId(
+        let track_id = TrackId::Spotify(
             SpotifyId::from_base62(&track.id)
                 .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
         );
@@ -1704,7 +1869,7 @@ fn songs_to_items(
 
         items.push(Arc::new(Item {
             track_id,
-            track,
+            track: Track::Spotify { track },
             user: None,
             duration,
         }));
@@ -1716,26 +1881,91 @@ fn songs_to_items(
 /// Converts a track into an Item.
 fn convert_item(
     thread_pool: &ThreadPool,
-    spotify: Arc<spotify::Spotify>,
+    spotify: Arc<api::Spotify>,
+    youtube: Arc<api::YouTube>,
     user: Option<String>,
     track_id: TrackId,
     duration: Option<Duration>,
-) -> impl Future<Item = Arc<Item>, Error = failure::Error> {
-    let track_id_string = track_id.0.to_base62();
+) -> impl Future<Item = Item, Error = failure::Error> {
+    let future: utils::BoxFuture<Item, failure::Error> = match track_id {
+        TrackId::Spotify(ref id) => {
+            let track_id_string = id.to_base62();
 
-    thread_pool
-        .spawn_handle(future::lazy(move || spotify.track(&track_id_string)))
-        .map(move |track| {
-            let duration = match duration {
-                Some(duration) => duration,
-                None => Duration::from_millis(track.duration_ms.into()),
-            };
+            Box::new(spotify.track(&track_id_string).map(move |track| {
+                let duration = match duration {
+                    Some(duration) => duration,
+                    None => Duration::from_millis(track.duration_ms.into()),
+                };
 
-            Arc::new(Item {
-                track_id,
-                track,
-                user,
-                duration,
-            })
-        })
+                Item {
+                    track_id,
+                    track: Track::Spotify { track },
+                    user,
+                    duration,
+                }
+            }))
+        }
+        TrackId::YouTube(ref id) => Box::new(
+            youtube
+                .videos_by_id(id, "contentDetails,snippet")
+                .and_then::<_, Result<Item, failure::Error>>({
+                    let id = id.to_string();
+
+                    move |video| {
+                        let video = match video {
+                            Some(video) => video,
+                            None => failure::bail!("no video found for id `{}`", id),
+                        };
+
+                        let content_details = video.content_details.as_ref().ok_or_else(|| {
+                            failure::format_err!("video does not have content details")
+                        })?;
+
+                        let duration = parse_youtube_duration(&content_details.duration)?;
+
+                        Ok(Item {
+                            track_id,
+                            track: Track::YouTube { video },
+                            user,
+                            duration,
+                        })
+                    }
+                }),
+        ),
+    };
+
+    return thread_pool.spawn_handle(future);
+
+    fn parse_youtube_duration(duration: &str) -> Result<Duration, failure::Error> {
+        let duration = duration.trim_start_matches("PT");
+
+        let (duration, hours) = match duration.find('H') {
+            Some(index) => {
+                let hours = str::parse::<u64>(&duration[..index])?;
+                (&duration[(index + 1)..], hours)
+            }
+            None => (duration, 0u64),
+        };
+
+        let (duration, minutes) = match duration.find('M') {
+            Some(index) => {
+                let minutes = str::parse::<u64>(&duration[..index])?;
+                (&duration[(index + 1)..], minutes)
+            }
+            None => (duration, 0u64),
+        };
+
+        let (_, mut seconds) = match duration.find('S') {
+            Some(index) => {
+                let seconds = str::parse::<u64>(&duration[..index])?;
+                (&duration[(index + 1)..], seconds)
+            }
+            None => (duration, 0u64),
+        };
+
+        seconds += minutes * 60;
+        seconds += hours * 3600;
+
+        Ok(Duration::from_secs(seconds))
+    }
 }

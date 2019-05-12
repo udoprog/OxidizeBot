@@ -387,8 +387,6 @@ impl player::Backend for Database {
         use self::schema::songs::dsl;
         let c = self.pool.lock();
 
-        let track_id = track_id.to_base62();
-
         let ids: Vec<i32> = dsl::songs
             .select(dsl::id)
             .filter(dsl::deleted.eq(false).and(dsl::track_id.eq(&track_id)))
@@ -407,8 +405,6 @@ impl player::Backend for Database {
     fn promote_song(&self, user: &str, track_id: &player::TrackId) -> Result<bool, failure::Error> {
         use self::schema::songs::dsl;
         let c = self.pool.lock();
-
-        let track_id = track_id.to_base62();
 
         let ids: Vec<i32> = dsl::songs
             .select(dsl::id)

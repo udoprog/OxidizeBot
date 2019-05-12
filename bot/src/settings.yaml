@@ -56,12 +56,24 @@ types:
   secrets/oauth2/twitch-streamer/token:
     doc: Stored token for Twitch Streamer authentication.
     type: {id: raw}
+  secrets/oauth2/youtube/token:
+    doc: Stored token for YouTube authentication.
+    type: {id: raw}
   song/chat-feedback:
     doc: If song feedback is visible in chat or not.
     type: {id: bool}
   song/request-reward:
     doc: Fixed reward that anyone gets for requesting songs.
     type: {id: number}
+  song/youtube-support:
+    doc: If we accept YouTube song requests (Experimental).
+    type: {id: bool}
+  song/spotify-max-duration:
+    doc: The longest duration we will accept for a Spotify songs. Any longer will be capped.
+    type: {id: duration}
+  song/youtube-max-duration:
+    doc: The longest duration we will accept for a YouTube video. Any longer will be capped.
+    type: {id: duration}
   water/reward%:
     doc: Reward scaling for doing a water reminder. A value of 100 means 100%.
     type: {id: number}

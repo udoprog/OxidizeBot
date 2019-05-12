@@ -1,5 +1,5 @@
 //! Stream currency configuration.
-use crate::{db, twitch};
+use crate::{api, db};
 use futures::Future;
 use hashbrown::HashSet;
 use std::sync::Arc;
@@ -11,7 +11,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn into_currency(self, db: db::Database, twitch: twitch::Twitch) -> Currency {
+    pub fn into_currency(self, db: db::Database, twitch: api::Twitch) -> Currency {
         Currency {
             name: Arc::new(self.name),
             db,
@@ -25,7 +25,7 @@ impl Config {
 pub struct Currency {
     pub name: Arc<String>,
     db: db::Database,
-    twitch: twitch::Twitch,
+    twitch: api::Twitch,
 }
 
 impl Currency {

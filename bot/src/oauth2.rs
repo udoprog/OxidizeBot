@@ -15,6 +15,12 @@ use std::{
 use tokio::timer;
 use url::Url;
 
+static YOUTUBE_CLIENT_ID: &'static str =
+    "520353465977-filfj4j326v5vvd4do07riej30ekin70.apps.googleusercontent.com";
+static YOUTUBE_CLIENT_SECRET: &'static str = "8Rcs45nQEmruNey4-Egx7S7C";
+
+pub type AuthPair = (Arc<RwLock<Token>>, TokenRefreshFuture);
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SecretsConfig {
     pub client_id: Arc<String>,
@@ -27,6 +33,8 @@ pub enum Type {
     Twitch,
     #[serde(rename = "spotify")]
     Spotify,
+    #[serde(rename = "youtube")]
+    YouTube,
 }
 
 impl Type {
@@ -39,6 +47,7 @@ impl Type {
         match self {
             Type::Twitch => self.refresh_and_save_token_impl::<TwitchTokenResponse>(flow, token),
             Type::Spotify => self.refresh_and_save_token_impl::<BasicTokenResponse>(flow, token),
+            Type::YouTube => self.refresh_and_save_token_impl::<BasicTokenResponse>(flow, token),
         }
     }
 
@@ -47,12 +56,15 @@ impl Type {
         self,
         flow: Arc<Flow>,
         received_token: web::ReceivedToken,
-    ) -> BoxFuture<(Arc<RwLock<Token>>, TokenRefreshFuture), failure::Error> {
+    ) -> BoxFuture<AuthPair, failure::Error> {
         match self {
             Type::Twitch => Box::new(
                 self.exchange_and_save_token_impl::<TwitchTokenResponse>(flow, received_token),
             ),
             Type::Spotify => Box::new(
+                self.exchange_and_save_token_impl::<BasicTokenResponse>(flow, received_token),
+            ),
+            Type::YouTube => Box::new(
                 self.exchange_and_save_token_impl::<BasicTokenResponse>(flow, received_token),
             ),
         }
@@ -105,7 +117,7 @@ impl Type {
         self,
         flow: Arc<Flow>,
         received_token: web::ReceivedToken,
-    ) -> impl Future<Item = (Arc<RwLock<Token>>, TokenRefreshFuture), Error = failure::Error>
+    ) -> impl Future<Item = AuthPair, Error = failure::Error>
     where
         T: TokenResponse,
     {
@@ -137,6 +149,16 @@ impl Type {
     }
 }
 
+enum Secrets {
+    /// Dynamic secrets configuration.
+    Config(Arc<SecretsConfig>),
+    /// Static secrets configuration.
+    Static {
+        client_id: &'static str,
+        client_secret: &'static str,
+    },
+}
+
 /// Setup a Twitch authentication flow.
 pub fn twitch(
     web: web::Server,
@@ -147,7 +169,7 @@ pub fn twitch(
     Ok(FlowBuilder {
         ty: Type::Twitch,
         web,
-        secrets_config,
+        secrets: Secrets::Config(secrets_config),
         redirect_url: RedirectUrl::new(Url::parse(&redirect_url)?),
         auth_url: AuthUrl::new(Url::parse("https://id.twitch.tv/oauth2/authorize")?),
         token_url: Some(TokenUrl::new(Url::parse(
@@ -155,6 +177,7 @@ pub fn twitch(
         )?)),
         scopes: Default::default(),
         settings: Default::default(),
+        extra_params: Default::default(),
     })
 }
 
@@ -168,7 +191,7 @@ pub fn spotify(
     Ok(FlowBuilder {
         ty: Type::Spotify,
         web,
-        secrets_config,
+        secrets: Secrets::Config(secrets_config),
         redirect_url: RedirectUrl::new(Url::parse(&redirect_url)?),
         auth_url: AuthUrl::new(Url::parse("https://accounts.spotify.com/authorize")?),
         token_url: Some(TokenUrl::new(Url::parse(
@@ -176,6 +199,29 @@ pub fn spotify(
         )?)),
         scopes: Default::default(),
         settings: Default::default(),
+        extra_params: Default::default(),
+    })
+}
+
+/// Setup a YouTube AUTH flow.
+pub fn youtube(web: web::Server) -> Result<FlowBuilder, failure::Error> {
+    let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
+
+    Ok(FlowBuilder {
+        ty: Type::YouTube,
+        web,
+        secrets: Secrets::Static {
+            client_id: YOUTUBE_CLIENT_ID,
+            client_secret: YOUTUBE_CLIENT_SECRET,
+        },
+        redirect_url: RedirectUrl::new(Url::parse(&redirect_url)?),
+        auth_url: AuthUrl::new(Url::parse("https://accounts.google.com/o/oauth2/v2/auth")?),
+        token_url: Some(TokenUrl::new(Url::parse(
+            "https://www.googleapis.com/oauth2/v4/token",
+        )?)),
+        scopes: Default::default(),
+        settings: Default::default(),
+        extra_params: vec![(String::from("access_type"), String::from("offline"))],
     })
 }
 
@@ -247,12 +293,13 @@ impl Token {
 pub struct FlowBuilder {
     ty: Type,
     web: web::Server,
-    secrets_config: Arc<SecretsConfig>,
+    secrets: Secrets,
     redirect_url: RedirectUrl,
     auth_url: AuthUrl,
     token_url: Option<TokenUrl>,
     scopes: Vec<String>,
     settings: Option<settings::ScopedSettings>,
+    extra_params: Vec<(String, String)>,
 }
 
 impl FlowBuilder {
@@ -271,11 +318,20 @@ impl FlowBuilder {
 
     /// Convert into an authentication flow.
     pub fn build(self) -> Result<Arc<Flow>, failure::Error> {
-        let secrets_config = self.secrets_config;
+        let secrets_config = match self.secrets {
+            Secrets::Config(config) => config,
+            Secrets::Static {
+                client_id,
+                client_secret,
+            } => Arc::new(SecretsConfig {
+                client_id: Arc::new(client_id.to_string()),
+                client_secret: client_secret.to_string(),
+            }),
+        };
 
         let mut client = Client::new(
-            ClientId::new(secrets_config.client_id.as_str().to_string()),
-            Some(ClientSecret::new(secrets_config.client_secret.clone())),
+            ClientId::new(secrets_config.client_id.to_string()),
+            Some(ClientSecret::new(secrets_config.client_secret.to_string())),
             self.auth_url,
             self.token_url,
         );
@@ -293,6 +349,7 @@ impl FlowBuilder {
             client: Arc::new(client),
             settings: Arc::new(self.settings.clone()),
             scopes: Arc::new(self.scopes),
+            extra_params: Arc::new(self.extra_params),
         }))
     }
 }
@@ -304,33 +361,30 @@ pub struct Flow {
     client: Arc<Client>,
     settings: Arc<Option<settings::ScopedSettings>>,
     scopes: Arc<Vec<String>>,
+    extra_params: Arc<Vec<(String, String)>>,
 }
 
 impl Flow {
     /// Execute the flow.
-    pub fn execute(
-        self: Arc<Self>,
-        what: &str,
-    ) -> BoxFuture<(Arc<RwLock<Token>>, TokenRefreshFuture), failure::Error> {
+    pub fn execute(self: Arc<Self>, what: &str) -> BoxFuture<AuthPair, failure::Error> {
         let future = self.clone().token_from_settings(what.to_string());
 
-        let future = future
-            .and_then::<_, BoxFuture<(Arc<RwLock<Token>>, TokenRefreshFuture), failure::Error>>({
-                let what = what.to_string();
-                let flow = self.clone();
+        let future = future.and_then::<_, BoxFuture<AuthPair, failure::Error>>({
+            let what = what.to_string();
+            let flow = self.clone();
 
-                move |token| match token {
-                    Some(token) => {
-                        let token = Arc::new(RwLock::new(token));
+            move |token| match token {
+                Some(token) => {
+                    let token = Arc::new(RwLock::new(token));
 
-                        return Box::new(future::ok((
-                            token.clone(),
-                            TokenRefreshFuture::new(flow, token),
-                        )));
-                    }
-                    None => Box::new(flow.request_new_token(what)),
+                    return Box::new(future::ok((
+                        token.clone(),
+                        TokenRefreshFuture::new(flow, token),
+                    )));
                 }
-            });
+                None => Box::new(flow.request_new_token(what)),
+            }
+        });
 
         Box::new(future)
     }
@@ -339,8 +393,12 @@ impl Flow {
     fn request_new_token(
         self: Arc<Self>,
         what: String,
-    ) -> impl Future<Item = (Arc<RwLock<Token>>, TokenRefreshFuture), Error = failure::Error> {
-        let (auth_url, csrf_token) = self.client.authorize_url(CsrfToken::new_random);
+    ) -> impl Future<Item = AuthPair, Error = failure::Error> {
+        let (mut auth_url, csrf_token) = self.client.authorize_url(CsrfToken::new_random);
+
+        for (key, value) in self.extra_params.iter() {
+            auth_url.query_pairs_mut().append_pair(key, value);
+        }
 
         let future =
             self.web

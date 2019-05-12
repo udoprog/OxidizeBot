@@ -1,7 +1,7 @@
 import React from "react";
 import {Form, Button, InputGroup, Row, Col} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {True, False} from "../../utils.js";
+import {True, False} from "../../utils";
 
 /**
  * Decode the given type and value.

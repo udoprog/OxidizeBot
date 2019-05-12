@@ -11,6 +11,9 @@ pub struct Handler {
     pub player: player::PlayerClient,
     pub request_help_cooldown: utils::Cooldown,
     pub request_reward: Arc<RwLock<u32>>,
+    pub youtube_support: Arc<RwLock<bool>>,
+    pub spotify_max_duration: Arc<RwLock<utils::Duration>>,
+    pub youtube_max_duration: Arc<RwLock<utils::Duration>>,
     pub currency: Option<Arc<currency::Currency>>,
 }
 
@@ -23,22 +26,28 @@ impl Handler {
             return Ok(());
         }
 
+        let youtube_support = *self.youtube_support.read();
+
         let track_id_future: BoxFuture<Option<player::TrackId>, failure::Error> =
-            match player::TrackId::parse(q) {
-                Ok(track_id) => Box::new(future::ok(Some(track_id))),
+            match player::TrackId::parse_with_urls(q) {
+                Ok(track_id) => {
+                    if !youtube_support && track_id.is_youtube() {
+                        let e =
+                            format!("YouTube song requests are currently not enabled, sorry :(");
+                        self.request_help(ctx, Some(e.as_str()));
+                        return Ok(());
+                    }
+
+                    Box::new(future::ok(Some(track_id)))
+                }
                 Err(e) => {
                     match e {
-                        track_id::ParseTrackIdError::BadUri(_) => (),
-                        ref e if e.is_bad_host_youtube() => {
-                            self.request_help(
-                                ctx,
-                                Some("Can't request songs from YouTube, sorry :("),
-                            );
-                            return Ok(());
-                        }
+                        // NB: fall back to searching.
+                        track_id::ParseTrackIdError::MissingUriPrefix => (),
+                        // show other errors.
                         e => {
                             log::warn!("bad song request by {}: {}", ctx.user.name, e);
-                            let e = format!("{}, sorry :(", e);
+                            let e = format!("{} :(", e);
                             self.request_help(ctx, Some(e.as_str()));
                             return Ok(());
                         }
@@ -71,9 +80,16 @@ impl Handler {
                 let is_moderator = ctx.is_moderator();
                 let user = ctx.user.as_owned_user();
                 let player = self.player.clone();
+                let spotify_max_duration = self.spotify_max_duration.clone();
+                let youtube_max_duration = self.youtube_max_duration.clone();
 
                 move |track_id| {
-                    player.add_track(&user.name, track_id, is_moderator).then(move |result| {
+                    let max_duration = match track_id {
+                        player::TrackId::Spotify(_) => Some(spotify_max_duration.read().clone()),
+                        player::TrackId::YouTube(_) => Some(youtube_max_duration.read().clone()),
+                    };
+
+                    player.add_track(&user.name, track_id, is_moderator, max_duration).then(move |result| {
                         match result {
                             Ok((pos, item)) => return Ok((pos, item)),
                             Err(player::AddTrackError::PlayerClosed(reason)) => {
@@ -298,18 +314,20 @@ impl command::Handler for Handler {
 
                     if let Some(name) = current.item.user.as_ref() {
                         ctx.respond(format!(
-                            "Current song: {}, requested by {} - {elapsed} / {duration}.",
+                            "Current song: {}, requested by {} - {elapsed} / {duration} - {url}",
                             current.item.what(),
                             name,
                             elapsed = elapsed,
                             duration = duration,
+                            url = current.item.track_id.url(),
                         ));
                     } else {
                         ctx.respond(format!(
-                            "Current song: {} - {elapsed} / {duration}",
+                            "Current song: {} - {elapsed} / {duration} - {url}",
                             current.item.what(),
                             elapsed = elapsed,
                             duration = duration,
+                            url = current.item.track_id.url(),
                         ));
                     }
                 }
@@ -567,6 +585,19 @@ impl module::Module for Module {
         )));
 
         let request_reward = settings.sync_var(core, "song/request-reward", 0)?;
+        let youtube_support = settings.sync_var(core, "song/youtube-support", false)?;
+
+        let spotify_max_duration = settings.sync_var(
+            core,
+            "song/spotify-max-duration",
+            utils::Duration::seconds(60 * 10),
+        )?;
+
+        let youtube_max_duration = settings.sync_var(
+            core,
+            "song/youtube-max-duration",
+            utils::Duration::seconds(60 * 10),
+        )?;
 
         handlers.insert(
             "song",
@@ -575,6 +606,9 @@ impl module::Module for Module {
                 request_help_cooldown: self.help_cooldown.clone(),
                 player: self.player.clone(),
                 request_reward,
+                youtube_support,
+                spotify_max_duration,
+                youtube_max_duration,
                 currency: currency.cloned().map(Arc::new),
             },
         );

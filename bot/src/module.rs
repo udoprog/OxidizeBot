@@ -1,6 +1,4 @@
-use crate::{
-    command, config, currency, db, idle, irc, player, settings, stream_info, twitch, utils,
-};
+use crate::{api, command, config, currency, db, idle, irc, player, settings, stream_info, utils};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -69,7 +67,7 @@ pub struct HookContext<'a> {
     pub promotions: &'a db::Promotions,
     pub handlers: &'a mut Handlers,
     pub currency: Option<&'a currency::Currency>,
-    pub twitch: &'a twitch::Twitch,
+    pub twitch: &'a api::Twitch,
     pub futures: &'a mut Vec<utils::BoxFuture<(), failure::Error>>,
     pub stream_info: &'a Arc<RwLock<stream_info::StreamInfo>>,
     pub sender: &'a irc::Sender,

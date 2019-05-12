@@ -1,3 +1,5 @@
+$title-fonts: "monospace";
+
 html, body {
   margin: 0;
   height: 100%;
@@ -114,8 +116,16 @@ body {
   cursor: pointer;
 }
 
+.loading {
+  font-size: 200%;
+  font-family: monospace;
+  text-align: center;
+}
+
 .spinner {
-  margin: 100px auto 0;
+  margin: 0 auto;
+  margin-top: 10px;
+  margin-bottom: 10px;
   width: 70px;
   text-align: center;
 
@@ -197,5 +207,22 @@ body {
 
   &-template {
     font-family: monospace;
+  }
+}
+
+.player {
+  &-loading {
+    text-align: center;
+    font-size: 200%;
+  }
+
+  &-not-loaded {
+    text-align: center;
+    font-size: 200%;
+  }
+
+  &-embedded {
+    display: block;
+    margin: 0 auto;
   }
 }

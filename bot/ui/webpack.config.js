@@ -34,6 +34,11 @@ module.exports = {
         secure: false,
         ws: true,
       },
+      '/ws/player': {
+        target: 'ws://localhost:12345/ws/player',
+        secure: false,
+        ws: true,
+      },
       '/api': {
         target: 'http://localhost:12345',
         secure: false,

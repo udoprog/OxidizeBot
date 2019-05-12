@@ -1,4 +1,4 @@
-use crate::{command, config, currency, db, module, twitch, utils};
+use crate::{api, command, config, currency, db, module, utils};
 use failure::format_err;
 use futures::Future as _;
 use hashbrown::HashSet;
@@ -7,7 +7,7 @@ pub struct Handler {
     reward: i64,
     db: db::Database,
     currency: currency::Currency,
-    twitch: twitch::Twitch,
+    twitch: api::Twitch,
     cooldown: utils::Cooldown,
 }
 

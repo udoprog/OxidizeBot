@@ -1,4 +1,4 @@
-//! SetBac API helpers.
+//! setbac.tv API helpers.
 
 use crate::{oauth2, player, utils};
 use failure::format_err;
@@ -183,8 +183,10 @@ pub struct Item {
     /// Artists of the song.
     #[serde(default)]
     artists: Option<String>,
-    /// Spotify ID of the song.
+    /// Track ID of the song.
     track_id: String,
+    /// URL of the song.
+    track_url: String,
     /// User who requested the song.
     #[serde(default)]
     user: Option<String>,
@@ -195,9 +197,10 @@ pub struct Item {
 impl From<Arc<player::Item>> for Item {
     fn from(i: Arc<player::Item>) -> Self {
         Item {
-            name: i.track.name.clone(),
-            artists: utils::human_artists(&i.track.artists),
-            track_id: i.track_id.to_base62(),
+            name: i.track.name(),
+            artists: i.track.artists(),
+            track_id: i.track_id.to_string(),
+            track_url: i.track_id.url(),
             user: i.user.clone(),
             duration: utils::compact_duration(i.duration.clone()),
         }

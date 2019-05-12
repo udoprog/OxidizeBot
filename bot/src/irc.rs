@@ -1,7 +1,7 @@
 use crate::{
-    bus, command, config, currency, db,
+    api, bus, command, config, currency, db,
     features::{Feature, Features},
-    idle, module, oauth2, player, settings, stream_info, twitch, utils,
+    idle, module, oauth2, player, settings, stream_info, utils,
     utils::BoxFuture,
 };
 use failure::{format_err, ResultExt as _};
@@ -64,8 +64,8 @@ fn default_cooldown() -> utils::Cooldown {
 pub struct Irc<'a> {
     pub core: &'a mut tokio_core::reactor::Core,
     pub db: db::Database,
-    pub streamer_twitch: twitch::Twitch,
-    pub bot_twitch: twitch::Twitch,
+    pub streamer_twitch: api::Twitch,
+    pub bot_twitch: api::Twitch,
     pub config: &'a config::Config,
     pub irc_config: &'a Config,
     pub currency: Option<currency::Currency>,

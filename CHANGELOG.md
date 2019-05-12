@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * `!<thing> clear-group <name>` - Remove from all groups.
   * `!admin enable-group <group>` - Enable all commands, promotions, and aliases belonging to the specified group.
   * `!admin disable-group <group>` - Disable all commands, promotions, and aliases belonging to the specified group.
+- Experimental support for requesting YouTube songs and associated settings.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.6...HEAD
 [#27]: https://github.com/udoprog/setmod/issues/27

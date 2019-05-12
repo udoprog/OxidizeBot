@@ -16,6 +16,8 @@ pub struct Config {
     #[serde(default)]
     pub spotify: Oauth2Config<SpotifyDefaults>,
     #[serde(default)]
+    pub youtube: YouTubeOauth2Config,
+    #[serde(default)]
     pub database_url: Option<String>,
     #[serde(default)]
     pub bad_words: Option<RelativePathBuf>,
@@ -67,6 +69,22 @@ impl Oauth2Defaults for SpotifyDefaults {
         secrets_config: Arc<crate::oauth2::SecretsConfig>,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
         crate::oauth2::spotify(web, secrets_config)
+    }
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct YouTubeOauth2Config;
+
+impl YouTubeOauth2Config {
+    /// Construct a new flow builder with the given configuration.
+    pub fn new_flow_builder(
+        &self,
+        web: web::Server,
+        name: &str,
+        settings: &settings::ScopedSettings,
+    ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
+        let settings = settings.scoped(&[name]);
+        Ok(crate::oauth2::youtube(web)?.with_settings(settings.clone()))
     }
 }
 

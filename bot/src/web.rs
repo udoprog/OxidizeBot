@@ -1,5 +1,5 @@
 use crate::{
-    bus, db, irc, player, settings, spotify, template,
+    api, bus, db, irc, player, settings, template,
     utils::{self, BoxFuture},
 };
 use futures::{future, stream, sync::oneshot, Future, Sink as _, Stream as _};
@@ -223,12 +223,12 @@ impl Api {
         return Box::new(future);
 
         /// Convert a spotify device into a string.
-        fn device_to_string(device: &spotify::DeviceType) -> &'static str {
+        fn device_to_string(device: &api::spotify::DeviceType) -> &'static str {
             match *device {
-                spotify::DeviceType::Computer => "Computer",
-                spotify::DeviceType::Smartphone => "Smart Phone",
-                spotify::DeviceType::Speaker => "Speaker",
-                spotify::DeviceType::Unknown => "Unknown",
+                api::spotify::DeviceType::Computer => "Computer",
+                api::spotify::DeviceType::Smartphone => "Smart Phone",
+                api::spotify::DeviceType::Speaker => "Speaker",
+                api::spotify::DeviceType::Unknown => "Unknown",
             }
         }
 
@@ -735,37 +735,71 @@ pub fn setup(
     };
 
     let ws = {
-        let route = warp::path!("overlay")
+        let overlay = warp::path!("overlay")
             .and(warp::ws2())
-            .map(move |ws: warp::ws::Ws2| {
+            .map({
                 let bus = bus.clone();
 
-                ws.on_upgrade(move |websocket| {
-                    let (tx, _) = websocket.split();
+                move |ws: warp::ws::Ws2| {
+                    let bus = bus.clone();
 
-                    let rx = stream::iter_ok(bus.latest()).chain(bus.add_rx());
+                    ws.on_upgrade(move |websocket| {
+                        let (tx, _) = websocket.split();
 
-                    rx.map_err(|_| failure::format_err!("failed to receive notification"))
-                        .and_then(|n| {
-                            serde_json::to_string(&n)
-                                .map(warp::filters::ws::Message::text)
-                                .map_err(failure::Error::from)
-                        })
-                        .forward(
-                            tx.sink_map_err(|e| failure::format_err!("error from sink: {}", e)),
-                        )
-                        .map(|_| ())
-                        .map_err(|e| {
-                            log::error!("websocket error: {}", e);
-                        })
-                })
+                        let rx = stream::iter_ok(bus.latest()).chain(bus.add_rx());
+
+                        rx.map_err(|_| failure::format_err!("failed to receive notification"))
+                            .and_then(|n| {
+                                serde_json::to_string(&n)
+                                    .map(warp::filters::ws::Message::text)
+                                    .map_err(failure::Error::from)
+                            })
+                            .forward(
+                                tx.sink_map_err(|e| failure::format_err!("error from sink: {}", e)),
+                            )
+                            .map(|_| ())
+                            .map_err(|e| {
+                                log::error!("websocket error: {}", e);
+                            })
+                    })
+                }
+            })
+            .boxed();
+
+        let player = warp::path!("player")
+            .and(warp::ws2())
+            .map({
+                let bus = bus.clone();
+
+                move |ws: warp::ws::Ws2| {
+                    let bus = bus.clone();
+
+                    ws.on_upgrade(move |websocket| {
+                        let (tx, _) = websocket.split();
+
+                        let rx = stream::iter_ok(bus.latest()).chain(bus.add_rx());
+
+                        rx.map_err(|_| failure::format_err!("failed to receive notification"))
+                            .and_then(|n| {
+                                serde_json::to_string(&n)
+                                    .map(warp::filters::ws::Message::text)
+                                    .map_err(failure::Error::from)
+                            })
+                            .forward(
+                                tx.sink_map_err(|e| failure::format_err!("error from sink: {}", e)),
+                            )
+                            .map(|_| ())
+                            .map_err(|e| {
+                                log::error!("websocket error: {}", e);
+                            })
+                    })
+                }
             })
             .boxed();
 
         warp::get2()
             .and(warp::path("ws"))
-            .and(route)
-            .recover(recover)
+            .and(overlay.or(player).recover(recover))
     };
 
     let routes = oauth2_redirect.recover(recover);

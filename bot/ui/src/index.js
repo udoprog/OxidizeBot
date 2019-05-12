@@ -4,7 +4,7 @@ import {Api} from "./api.js";
 import React from "react";
 import ReactDOM from "react-dom";
 import { BrowserRouter as Router, Route, Link, withRouter} from "react-router-dom";
-import {Container, Row, Col, Navbar, Nav} from "react-bootstrap";
+import {Container, Row, Col, Navbar, Nav, NavDropdown} from "react-bootstrap";
 import Authentication from "./components/Authentication.js";
 import Devices from "./components/Devices.js";
 import AfterStreams from "./components/AfterStreams.js";
@@ -15,6 +15,7 @@ import Commands from "./components/Commands.js";
 import '@fortawesome/fontawesome-free-solid'
 import Promotions from "./components/Promotions";
 import Aliases from "./components/Aliases";
+import YouTube from "./components/YouTube";
 
 const RouteLayout = withRouter(props => <Layout {...props} />)
 
@@ -96,9 +97,10 @@ class AliasesPage extends React.Component {
     if (!this.state.current) {
       return (
         <RouteLayout>
-          <Row>
-            <Col>Loading Current User</Col>
-          </Row>
+          <div className="loading">
+            Loading Current User
+            <utils.Spinner />
+          </div>
         </RouteLayout>
       );
     }
@@ -136,9 +138,10 @@ class CommandsPage extends React.Component {
     if (!this.state.current) {
       return (
         <RouteLayout>
-          <Row>
-            <Col>Loading Current User</Col>
-          </Row>
+          <div className="loading">
+            Loading Current User
+            <utils.Spinner />
+          </div>
         </RouteLayout>
       );
     }
@@ -176,9 +179,10 @@ class PromotionsPage extends React.Component {
     if (!this.state.current) {
       return (
         <RouteLayout>
-          <Row>
-            <Col>Loading Current User</Col>
-          </Row>
+          <div className="loading">
+            Loading Current User
+            <utils.Spinner />
+          </div>
         </RouteLayout>
       );
     }
@@ -242,13 +246,24 @@ function Layout(props) {
         <Navbar.Collapse id="basic-navbar-nav">
           <Nav className="mr-auto">
             <Nav.Link as={Link} active={path === "/"} to="/">Home</Nav.Link>
-            <Nav.Link as={Link} active={path === "/after-streams"} to="/after-streams">After Streams</Nav.Link>
-            <Nav.Link as={Link} active={path === "/settings"} to="/settings">Settings</Nav.Link>
-            <Nav.Link as={Link} active={path === "/import-export"} to="/import-export">Import / Export</Nav.Link>
-            <Nav.Link as={Link} active={path === "/aliases"} to="/aliases">Aliases</Nav.Link>
-            <Nav.Link as={Link} active={path === "/commands"} to="/commands">Commands</Nav.Link>
-            <Nav.Link as={Link} active={path === "/promotions"} to="/promotions">Promotions</Nav.Link>
+
+            <NavDropdown title="Internal">
+              <NavDropdown.Item as={Link} active={path === "/settings"} to="/settings">Settings</NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/import-export"} to="/import-export">Import / Export</NavDropdown.Item>
+            </NavDropdown>
+
+            <NavDropdown title="Chat">
+              <NavDropdown.Item as={Link} active={path === "/after-streams"} to="/after-streams">After Streams</NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/aliases"} to="/aliases">Aliases</NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/commands"} to="/commands">Commands</NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/promotions"} to="/promotions">Promotions</NavDropdown.Item>
+            </NavDropdown>
+
             <Nav.Link as={Link} active={path === "/overlay"} to="/overlay" target="overlay">Overlay</Nav.Link>
+
+            <NavDropdown title="Experimental">
+              <NavDropdown.Item as={Link} active={path === "/player"} to="/player" target="player">YouTube Player</NavDropdown.Item>
+            </NavDropdown>
           </Nav>
         </Navbar.Collapse>
       </Navbar>
@@ -271,6 +286,7 @@ function AppRouter() {
       <Route path="/commands" exact component={CommandsPage} />
       <Route path="/promotions" exact component={PromotionsPage} />
       <Route path="/overlay/" component={Overlay} />
+      <Route path="/player" component={YouTube} />
     </Router>
   );
 }

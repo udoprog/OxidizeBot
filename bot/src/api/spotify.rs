@@ -78,29 +78,29 @@ impl Spotify {
     /// Set player volume.
     pub fn me_player_volume(
         &self,
-        device_id: &str,
+        device_id: Option<&str>,
         volume: f32,
-    ) -> impl Future<Item = (), Error = failure::Error> {
+    ) -> impl Future<Item = bool, Error = failure::Error> {
         let volume = u32::min(100, (volume * 100f32).round() as u32).to_string();
 
         self.request(Method::PUT, &["me", "player", "volume"])
-            .query_param("device_id", device_id)
+            .optional_query_param("device_id", device_id)
             .query_param("volume_percent", &volume)
             .header(header::ACCEPT, "application/json")
             .header(header::CONTENT_LENGTH, "0")
-            .execute_empty()
+            .execute_empty_not_found()
     }
 
     /// Start playing a track.
     pub fn me_player_pause(
         &self,
-        device_id: &str,
-    ) -> impl Future<Item = (), Error = failure::Error> {
+        device_id: Option<&str>,
+    ) -> impl Future<Item = bool, Error = failure::Error> {
         self.request(Method::PUT, &["me", "player", "pause"])
-            .query_param("device_id", device_id)
+            .optional_query_param("device_id", device_id)
             .header(header::CONTENT_LENGTH, "0")
             .header(header::ACCEPT, "application/json")
-            .execute_empty()
+            .execute_empty_not_found()
     }
 
     /// Information on the current playback.
@@ -114,10 +114,10 @@ impl Spotify {
     /// Start playing a track.
     pub fn me_player_play(
         &self,
-        device_id: &str,
+        device_id: Option<&str>,
         track_uri: Option<&str>,
         position_ms: Option<u64>,
-    ) -> impl Future<Item = (), Error = failure::Error> {
+    ) -> impl Future<Item = bool, Error = failure::Error> {
         let request = Request {
             uris: track_uri.into_iter().map(|s| s.to_string()).collect(),
             position_ms,
@@ -125,11 +125,12 @@ impl Spotify {
 
         let r = self
             .request(Method::PUT, &["me", "player", "play"])
-            .query_param("device_id", device_id)
+            .optional_query_param("device_id", device_id)
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json");
 
-        return serialize(&request).and_then(move |body| r.body(Body::from(body)).execute_empty());
+        return serialize(&request)
+            .and_then(move |body| r.body(Body::from(body)).execute_empty_not_found());
 
         #[derive(serde::Serialize)]
         struct Request {
@@ -341,7 +342,7 @@ impl RequestBuilder {
     }
 
     /// Execute the request, expecting nothing back.
-    pub fn execute_empty(self) -> impl Future<Item = (), Error = failure::Error> {
+    pub fn execute_empty_not_found(self) -> impl Future<Item = bool, Error = failure::Error> {
         let token = self.token.read();
         let access_token = token.access_token().to_string();
 
@@ -364,6 +365,11 @@ impl RequestBuilder {
                 body.concat2().map_err(Into::into).and_then(move |body| {
                     let status = res.status();
 
+                    if status == StatusCode::NOT_FOUND {
+                        log::trace!("not found: {}", String::from_utf8_lossy(body.as_ref()));
+                        return Ok(false);
+                    }
+
                     if !status.is_success() {
                         failure::bail!(
                             "bad response: {}: {}",
@@ -373,7 +379,7 @@ impl RequestBuilder {
                     }
 
                     log::trace!("response: {}", String::from_utf8_lossy(body.as_ref()));
-                    Ok(())
+                    Ok(true)
                 })
             })
     }
@@ -393,6 +399,15 @@ impl RequestBuilder {
     /// Add a query parameter.
     pub fn query_param(mut self, key: &str, value: &str) -> Self {
         self.url.query_pairs_mut().append_pair(key, value);
+        self
+    }
+
+    /// Add a query parameter.
+    pub fn optional_query_param(mut self, key: &str, value: Option<&str>) -> Self {
+        if let Some(value) = value {
+            self.url.query_pairs_mut().append_pair(key, value);
+        }
+
         self
     }
 }

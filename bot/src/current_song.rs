@@ -45,9 +45,9 @@ impl CurrentSong {
     }
 
     /// Write the current song to a path.
-    pub fn write(&self, song: &player::Song, paused: bool) -> Result<(), failure::Error> {
+    pub fn write(&self, song: &player::Song, state: player::State) -> Result<(), failure::Error> {
         let mut f = self.create_or_truncate()?;
-        let data = song.data(paused)?;
+        let data = song.data(state)?;
         self.template.render(&mut f, &data)?;
         Ok(())
     }
@@ -56,9 +56,9 @@ impl CurrentSong {
     pub fn write_to_string(
         &self,
         song: &player::Song,
-        paused: bool,
+        state: player::State,
     ) -> Result<String, failure::Error> {
-        let data = song.data(paused)?;
+        let data = song.data(state)?;
         self.template.render_to_string(&data)
     }
 

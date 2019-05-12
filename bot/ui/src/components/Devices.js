@@ -147,7 +147,6 @@ export default class Authentication extends React.Component {
                     <td width="24" title="Switch to device">
                       <FontAwesomeIcon
                         icon="play"
-                        size="24"
                         className="clickable"
                         onClick={() => this.pickDevice(d.id)} />
                     </td>

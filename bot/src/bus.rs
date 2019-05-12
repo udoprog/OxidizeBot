@@ -1,4 +1,4 @@
-use crate::{player, spotify};
+use crate::player;
 use failure::format_err;
 use futures::{future, Async, Future, Poll, Stream};
 use hashbrown::HashMap;
@@ -145,7 +145,22 @@ impl Stream for BusHandler {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "type")]
+pub enum YouTubeEvent {
+    /// Play a new song.
+    #[serde(rename = "play")]
+    Play {
+        video_id: String,
+        elapsed: u64,
+        duration: u64,
+    },
+    /// Pause the player.
+    #[serde(rename = "pause")]
+    Pause,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
 pub enum Message {
     #[serde(rename = "firework")]
@@ -154,15 +169,24 @@ pub enum Message {
     Ping,
     /// Progress of current song.
     #[serde(rename = "song/progress")]
-    SongProgress { elapsed: u64, duration: u64 },
+    SongProgress {
+        track_id: Option<player::TrackId>,
+        elapsed: u64,
+        duration: u64,
+    },
     #[serde(rename = "song/current")]
     SongCurrent {
-        track: Option<spotify::FullTrack>,
+        track_id: Option<player::TrackId>,
+        track: Option<player::Track>,
         user: Option<String>,
         is_playing: bool,
         elapsed: u64,
         duration: u64,
     },
+    #[serde(rename = "youtube/current")]
+    YouTubeCurrent { event: YouTubeEvent },
+    #[serde(rename = "youtube/volume")]
+    YouTubeVolume { volume: u32 },
 }
 
 impl Message {
@@ -172,6 +196,7 @@ impl Message {
             Some(song) => song,
             None => {
                 return Message::SongProgress {
+                    track_id: None,
                     elapsed: 0,
                     duration: 0,
                 }
@@ -179,33 +204,36 @@ impl Message {
         };
 
         Message::SongProgress {
+            track_id: Some(song.item.track_id.clone()),
             elapsed: song.elapsed().as_secs(),
             duration: song.duration().as_secs(),
         }
     }
 
     /// Construct a message that the given song is running.
-    pub fn song(song: Option<&player::Song>) -> Self {
+    pub fn song(song: Option<&player::Song>) -> Result<Self, failure::Error> {
         let song = match song {
             Some(song) => song,
             None => {
-                return Message::SongCurrent {
+                return Ok(Message::SongCurrent {
+                    track_id: None,
                     track: None,
                     user: None,
                     is_playing: false,
                     elapsed: 0,
                     duration: 0,
-                }
+                })
             }
         };
 
-        Message::SongCurrent {
+        Ok(Message::SongCurrent {
+            track_id: Some(song.item.track_id.clone()),
             track: Some(song.item.track.clone()),
             user: song.item.user.clone(),
-            is_playing: song.is_playing(),
+            is_playing: song.state().is_playing(),
             elapsed: song.elapsed().as_secs(),
             duration: song.duration().as_secs(),
-        }
+        })
     }
 
     /// Whether a message should be cached or not and under what key.
@@ -215,6 +243,8 @@ impl Message {
         match *self {
             SongProgress { .. } => Some("song/progress"),
             SongCurrent { .. } => Some("song/current"),
+            YouTubeCurrent { .. } => Some("youtube/current"),
+            YouTubeVolume { .. } => Some("youtube/volume"),
             _ => None,
         }
     }

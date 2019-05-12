@@ -1,4 +1,4 @@
-use crate::{command, stream_info, twitch, utils, utils::BoxFuture};
+use crate::{api, command, stream_info, utils, utils::BoxFuture};
 use failure::format_err;
 use futures::{future, Future as _};
 use parking_lot::RwLock;
@@ -8,7 +8,7 @@ use std::sync::Arc;
 pub struct Clip {
     pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
     pub clip_cooldown: utils::Cooldown,
-    pub twitch: twitch::Twitch,
+    pub twitch: api::Twitch,
 }
 
 impl command::Handler for Clip {
@@ -44,7 +44,11 @@ impl command::Handler for Clip {
             move |result| {
                 let result = match result {
                     Ok(Some(clip)) => {
-                        user.respond(format!("Created clip at {}/{}", twitch::CLIPS_URL, clip.id));
+                        user.respond(format!(
+                            "Created clip at {}/{}",
+                            api::twitch::CLIPS_URL,
+                            clip.id
+                        ));
 
                         if let Some(_title) = title {
                             log::warn!("can't update title right now :(")

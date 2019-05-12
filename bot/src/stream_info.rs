@@ -1,4 +1,4 @@
-use crate::{twitch, utils::BoxFuture};
+use crate::{api, utils::BoxFuture};
 use failure::format_err;
 use futures::{try_ready, Async, Future, Poll, Stream as _};
 use parking_lot::RwLock;
@@ -7,8 +7,8 @@ use tokio::timer;
 
 #[derive(Debug, Default)]
 pub struct StreamInfo {
-    pub stream: Option<twitch::Stream>,
-    pub user: Option<twitch::User>,
+    pub stream: Option<api::twitch::Stream>,
+    pub user: Option<api::twitch::User>,
     pub title: Option<String>,
     pub game: Option<String>,
 }
@@ -17,7 +17,7 @@ pub struct StreamInfo {
 pub fn setup(
     streamer: &str,
     interval: time::Duration,
-    twitch: twitch::Twitch,
+    twitch: api::Twitch,
 ) -> (Arc<RwLock<StreamInfo>>, StreamInfoFuture) {
     let info = Arc::new(RwLock::new(StreamInfo::default()));
 
@@ -37,9 +37,9 @@ enum State {
     FetchInfo(
         BoxFuture<
             (
-                Option<twitch::User>,
-                Option<twitch::Stream>,
-                twitch::Channel,
+                Option<api::twitch::User>,
+                Option<api::twitch::Stream>,
+                api::twitch::Channel,
             ),
             failure::Error,
         >,
@@ -49,7 +49,7 @@ enum State {
 /// Future associated with reloading stream information.
 pub struct StreamInfoFuture {
     streamer: String,
-    twitch: twitch::Twitch,
+    twitch: api::Twitch,
     interval: timer::Interval,
     state: State,
     info: Arc<RwLock<StreamInfo>>,

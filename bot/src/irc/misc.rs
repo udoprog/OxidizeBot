@@ -1,6 +1,6 @@
 //! module for misc smaller commands.
 
-use crate::{command, irc, stream_info, twitch, utils};
+use crate::{api, command, irc, stream_info, utils};
 use chrono::Utc;
 use futures::Future;
 use parking_lot::RwLock;
@@ -48,7 +48,7 @@ impl command::Handler for Uptime {
 /// Handler for the `!title` command.
 pub struct Title {
     pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
-    pub twitch: twitch::Twitch,
+    pub twitch: api::Twitch,
 }
 
 impl Title {
@@ -73,7 +73,7 @@ impl Title {
         let twitch = self.twitch.clone();
         let title = title.to_string();
 
-        let mut request = twitch::UpdateChannelRequest::default();
+        let mut request = api::twitch::UpdateChannelRequest::default();
         request.channel.status = Some(title);
 
         twitch
@@ -108,7 +108,7 @@ impl command::Handler for Title {
 /// Handler for the `!title` command.
 pub struct Game {
     pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
-    pub twitch: twitch::Twitch,
+    pub twitch: api::Twitch,
 }
 
 impl Game {
@@ -133,7 +133,7 @@ impl Game {
         let twitch = self.twitch.clone();
         let game = game.to_string();
 
-        let mut request = twitch::UpdateChannelRequest::default();
+        let mut request = api::twitch::UpdateChannelRequest::default();
         request.channel.game = Some(game);
 
         twitch

@@ -9,6 +9,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+static SPOTIFY_TRACK_URL: &'static str = "https://open.spotify.com/track";
 static GITHUB_URL: &'static str = "https://github.com/udoprog/setmod";
 
 pub fn setup(
@@ -259,8 +260,12 @@ impl Server {
                 move |(update, auth)| {
                     let mut players = players.write().expect("poisoned");
                     let player = players.entry(auth.login).or_insert_with(Default::default);
-                    player.current = update.current;
-                    player.items = update.items;
+                    player.current = update.current.map(Item::into_player_item);
+                    player.items = update
+                        .items
+                        .into_iter()
+                        .map(Item::into_player_item)
+                        .collect();
                     json_ok(&ResponseBody {})
                 }
             });
@@ -311,8 +316,24 @@ impl Server {
 
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 struct Player {
-    current: Option<Item>,
-    items: Vec<Item>,
+    current: Option<PlayerItem>,
+    items: Vec<PlayerItem>,
+}
+
+#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct PlayerItem {
+    /// Name of the song.
+    name: String,
+    /// Artists of the song.
+    #[serde(default)]
+    artists: Option<String>,
+    /// The URL of a track.
+    track_url: String,
+    /// User who requested the song.
+    #[serde(default)]
+    user: Option<String>,
+    /// Length of the song.
+    duration: String,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -322,6 +343,8 @@ pub struct Item {
     /// Artists of the song.
     #[serde(default)]
     artists: Option<String>,
+    /// The URL of a track.
+    track_url: Option<String>,
     /// Spotify ID of the song.
     track_id: String,
     /// User who requested the song.
@@ -329,6 +352,22 @@ pub struct Item {
     user: Option<String>,
     /// Length of the song.
     duration: String,
+}
+
+impl Item {
+    pub fn into_player_item(self) -> PlayerItem {
+        let track_id = self.track_id;
+
+        PlayerItem {
+            name: self.name,
+            artists: self.artists,
+            track_url: self
+                .track_url
+                .unwrap_or_else(|| format!("{}/{}", SPOTIFY_TRACK_URL, track_id)),
+            user: self.user,
+            duration: self.duration,
+        }
+    }
 }
 
 #[derive(Debug, Default, serde::Serialize)]

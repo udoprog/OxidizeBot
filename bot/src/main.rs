@@ -1,8 +1,8 @@
 use failure::{format_err, ResultExt};
 use futures::{future, Future};
 use setmod_bot::{
-    bus, config::Config, db, features::Feature, irc, module, player, secrets, setbac, spotify,
-    template, twitch, utils, web,
+    api, bus, config::Config, db, features::Feature, irc, module, oauth2, player, secrets,
+    template, utils, web,
 };
 use std::{
     fs,
@@ -182,7 +182,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     log::info!("Listening on: {}", web::URL);
 
-    let mut tokens = vec![];
+    let mut tokens: Vec<utils::BoxFuture<Option<oauth2::AuthPair>, failure::Error>> = vec![];
 
     let token_settings = settings.scoped(&["secrets", "oauth2"]);
 
@@ -199,7 +199,19 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             ])
             .build()?;
 
-        flow.execute("Authorize Spotify")
+        Box::new(flow.execute("Authorize Spotify").map(Some))
+    });
+
+    tokens.push({
+        let flow = config
+            .youtube
+            .new_flow_builder(web.clone(), "youtube", &token_settings)?
+            .with_scopes(vec![String::from(
+                "https://www.googleapis.com/auth/youtube.readonly",
+            )])
+            .build()?;
+
+        Box::new(flow.execute("Authorize YouTube").map(Some))
     });
 
     tokens.push({
@@ -212,7 +224,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             ])
             .build()?;
 
-        flow.execute("Authorize as Streamer")
+        Box::new(flow.execute("Authorize as Streamer").map(Some))
     });
 
     if config.irc.is_some() {
@@ -227,29 +239,37 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             ])
             .build()?;
 
-        tokens.push(flow.execute("Authorize as Bot"));
-    };
+        tokens.push(Box::new(flow.execute("Authorize as Bot").map(Some)));
+    }
 
     let results = core.run(future::join_all(tokens))?;
+    let mut results = results.into_iter();
 
-    let mut it = results.into_iter();
-
-    let (spotify_token, future) = it
+    let (spotify_token, future) = results
         .next()
-        .ok_or_else(|| format_err!("expected spotify token"))?;
+        .and_then(|r| r)
+        .ok_or_else(|| format_err!("Expected Spotify token"))?;
     futures.push(Box::new(future));
 
-    let (streamer_token, future) = it
+    let (youtube_token, future) = results
         .next()
-        .ok_or_else(|| format_err!("expected streamer token"))?;
+        .and_then(|r| r)
+        .ok_or_else(|| format_err!("Expected YouTube token"))?;
+    futures.push(Box::new(future));
+
+    let (streamer_token, future) = results
+        .next()
+        .and_then(|r| r)
+        .ok_or_else(|| format_err!("Expected Twitch Streamer token"))?;
     futures.push(Box::new(future));
 
     futures.push(Box::new(global_bus.clone().listen()));
 
     let (shutdown, shutdown_rx) = utils::Shutdown::new();
 
-    let spotify = Arc::new(spotify::Spotify::new(spotify_token.clone())?);
-    let twitch = twitch::Twitch::new(streamer_token.clone())?;
+    let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
+    let spotify = Arc::new(api::Spotify::new(spotify_token.clone())?);
+    let twitch = api::Twitch::new(streamer_token.clone())?;
 
     let player = match config.player.as_ref() {
         // Only setup if the song feature is enabled.
@@ -258,6 +278,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
                 &mut core,
                 db.clone(),
                 spotify.clone(),
+                youtube.clone(),
                 &config,
                 player,
                 global_bus.clone(),
@@ -267,7 +288,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             futures.push(Box::new(future));
 
             if let Some(api_url) = config.api_url.as_ref() {
-                futures.push(Box::new(setbac::run_update(
+                futures.push(Box::new(api::setbac::run_update(
                     api_url,
                     &player,
                     streamer_token.clone(),
@@ -297,10 +318,10 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     modules.push(Box::new(module::alias_admin::Module::load(&module)?));
 
     if let Some(irc_config) = config.irc.as_ref() {
-        let (bot_token, future) = it
+        let (bot_token, future) = results
             .next()
-            .ok_or_else(|| format_err!("expected streamer token"))?;
-
+            .and_then(|r| r)
+            .ok_or_else(|| format_err!("Expected Twitch Bot token"))?;
         futures.push(Box::new(future));
 
         let currency = config
@@ -312,7 +333,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             core: &mut core,
             db: db,
             streamer_twitch: twitch.clone(),
-            bot_twitch: twitch::Twitch::new(bot_token.clone())?,
+            bot_twitch: api::Twitch::new(bot_token.clone())?,
             config: &config,
             currency,
             irc_config,

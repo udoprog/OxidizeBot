@@ -2,6 +2,34 @@ import Websocket from "react-websocket";
 import React from "react";
 import {formatDuration, percentage, pickArtist, pickAlbumArt, websocketUrl} from "../utils.js";
 
+/**
+ * Pick the image best suited for album art.
+ */
+export function pickYouTubeAlbumArt(thumbnails, smaller) {
+  let smallest = null;
+
+  for (let key in thumbnails) {
+    let thumbnail = thumbnails[key];
+
+    if (smallest === null) {
+      smallest = thumbnail;
+      continue;
+    }
+
+    if (smallest.width > thumbnail.width) {
+      smallest = thumbnail;
+    }
+  }
+
+  if (smallest.width > smaller) {
+    let factor = smaller / smallest.width;
+    smallest.width *= factor;
+    smallest.height *= factor;
+  }
+
+  return smallest;
+}
+
 class CurrentSong extends React.Component {
   constructor(props) {
     super(props);
@@ -12,9 +40,9 @@ class CurrentSong extends React.Component {
 
     if (this.props.requestBy !== null) {
       requestBy = (
-        <span class="request">
-          <span class="request-by">request by</span>
-          <span class="request-user">{this.props.requestBy}</span>
+        <span className="request">
+          <span className="request-by">request by</span>
+          <span className="request-user">{this.props.requestBy}</span>
         </span>
       );
     }
@@ -48,7 +76,7 @@ class CurrentSong extends React.Component {
     let trackName = "Unknown Track";
 
     if (this.props.track) {
-      trackName = this.props.track.name;
+      trackName = this.props.track;
     }
 
     let artistName = "Unknown Artist";
@@ -121,8 +149,6 @@ export default class Overlay extends React.Component {
 
     switch (data.type) {
       case "song/current":
-        console.log(data.track.artists[0].name);
-
         let update = {
           requestBy: data.user,
           elapsed: data.elapsed,
@@ -130,9 +156,32 @@ export default class Overlay extends React.Component {
         };
 
         if (data.track) {
-          update.track = data.track;
-          update.artist = pickArtist(data.track.artists);
-          update.albumArt = pickAlbumArt(data.track.album.images, 64);
+          switch (data.track.type) {
+            case "spotify":
+              let track = data.track.track;
+              update.track = track.name;
+              update.artist = pickArtist(track.artists);
+              update.albumArt = pickAlbumArt(track.album.images, 64);
+              break;
+            case "youtube":
+              let video = data.track.video;
+
+              if (video.snippet) {
+                update.artist = {
+                  name: `channel: ${video.snippet.channelTitle}`,
+                };
+                update.track = video.snippet.title;
+                update.albumArt = pickYouTubeAlbumArt(video.snippet.thumbnails, 64);
+              } else {
+                update.track = null;
+                update.albumArt = null;
+                update.artist = null;
+              }
+
+              break;
+            default:
+              break;
+          }
         }
 
         this.setState(update);

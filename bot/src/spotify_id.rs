@@ -22,13 +22,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-use std::str;
+use std::{fmt, str};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct SpotifyId(u128);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct SpotifyIdError;
+
+impl fmt::Display for SpotifyIdError {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "bad spotify id")
+    }
+}
 
 const BASE62_DIGITS: &'static [u8] =
     b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -62,5 +68,30 @@ impl SpotifyId {
         }
 
         str::from_utf8(&data).unwrap().to_owned()
+    }
+}
+
+impl fmt::Display for SpotifyId {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "{}", self.to_base62())
+    }
+}
+
+impl serde::Serialize for SpotifyId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_base62().serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for SpotifyId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        SpotifyId::from_base62(&s).map_err(serde::de::Error::custom)
     }
 }
