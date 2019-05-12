@@ -58,7 +58,7 @@ fn main() -> Result<(), failure::Error> {
     setup_logs(root).context("failed to setup logs")?;
 
     match try_main(&root, web_root, &config) {
-        Err(e) => utils::log_err("bot crashed", e),
+        Err(e) => setmod_bot::log_err!(e, "bot crashed"),
         Ok(()) => log::info!("bot was shut down"),
     }
 

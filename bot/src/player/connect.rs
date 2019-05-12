@@ -1,7 +1,4 @@
-use crate::{
-    spotify,
-    utils::{self, BoxFuture},
-};
+use crate::{spotify, utils::BoxFuture};
 use failure::format_err;
 use futures::{sync::mpsc, Async, Future, Poll, Stream};
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
@@ -171,7 +168,7 @@ impl Stream for ConnectPlayer {
                 match future.poll() {
                     Ok(Async::NotReady) => (),
                     Err(e) => {
-                        utils::log_err("failed to issue volume command", e);
+                        log_err!(e, "failed to issue volume command");
                     }
                     Ok(Async::Ready(())) => {
                         let kind = *kind;
@@ -212,7 +209,7 @@ fn handle_future(
         Ok(Async::Ready(())) => Some(*kind),
         Ok(Async::NotReady) => return None,
         Err(e) => {
-            utils::log_err(format!("failed to issue {what}", what = what), e);
+            log_err!(e, "failed to issue {what}", what = what);
             None
         }
     };

@@ -62,7 +62,7 @@ impl Handler {
         });
 
         let future = future.map_err(|e| {
-            utils::log_err("failed to add track", e);
+            log_err!(e, "failed to add track");
             ()
         });
 
@@ -115,7 +115,7 @@ impl Handler {
                             }
                             Err(player::AddTrackError::Error(e)) => {
                                 user.respond("There was a problem adding your song :(");
-                                utils::log_err("failed to add song", e);
+                                log_err!(e, "failed to add song");
                             }
                         }
 
@@ -159,7 +159,7 @@ impl Handler {
                         Ok(())
                     }
                     Err(e) => {
-                        utils::log_err("failed to reward user for song request", e);
+                        log_err!(e, "failed to reward user for song request");
                         Ok(())
                     }
                 });
@@ -225,7 +225,7 @@ impl command::Handler for Handler {
                             }
                             Err(player::PlayThemeError::Error(e)) => {
                                 user.respond("There was a problem adding your song :(");
-                                utils::log_err("failed to add song", e);
+                                log_err!(e, "failed to add song");
                             }
                         }
 

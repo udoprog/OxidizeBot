@@ -67,7 +67,7 @@ impl command::Handler for Handler {
                 })
                 // handle any errors.
                 .or_else(|e| {
-                    utils::log_err("failed to reward users for !swearjar", e);
+                    log_err!(e, "failed to reward users for !swearjar");
                     Ok(())
                 }),
         );

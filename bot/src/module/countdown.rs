@@ -170,14 +170,14 @@ impl Current {
     /// Attempt to write an update and log on errors.
     fn write_log(&mut self) {
         if let Err(e) = self.write() {
-            utils::log_err(format!("failed to write: {}", self.path.display()), e);
+            log_err!(e, "failed to write: {}", self.path.display());
         }
     }
 
     /// Attempt to clear the file and log on errors.
     fn clear_log(&mut self) {
         if let Err(e) = self.clear() {
-            utils::log_err(format!("failed to clear: {}", self.path.display()), e);
+            log_err!(e, "failed to clear: {}", self.path.display());
         }
     }
 }

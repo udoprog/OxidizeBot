@@ -67,7 +67,7 @@ impl command::Handler for Clip {
         });
 
         ctx.spawn(future.map_err(|e| {
-            utils::log_err("error when posting clip", e);
+            log_err!(e, "error when posting clip");
         }));
 
         Ok(())

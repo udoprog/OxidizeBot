@@ -83,7 +83,7 @@ impl Title {
                 Ok(())
             })
             .or_else(|e| {
-                utils::log_err("failed to update title", e);
+                log_err!(e, "failed to update title");
                 Ok(())
             })
     }
@@ -143,7 +143,7 @@ impl Game {
                 Ok(())
             })
             .or_else(|e| {
-                utils::log_err("failed to update game", e);
+                log_err!(e, "failed to update game");
                 Ok(())
             })
     }

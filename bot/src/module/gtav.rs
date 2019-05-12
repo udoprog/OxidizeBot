@@ -728,7 +728,7 @@ impl command::Handler for Handler {
             self.db
                 .balance_add(ctx.user.target, ctx.user.name, -(cost as i64))
                 .or_else(|e| {
-                    utils::log_err("failed to modify balance of user", e);
+                    log_err!(e, "failed to modify balance of user");
                     Ok(())
                 }),
         );

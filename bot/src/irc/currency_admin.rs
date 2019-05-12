@@ -1,4 +1,4 @@
-use crate::{command, currency, db, utils};
+use crate::{command, currency, db};
 use futures::Future as _;
 
 /// Handler for the !admin command.
@@ -122,7 +122,7 @@ impl command::Handler for Handler {
                             "Failed to give {currency}, sorry :(",
                             currency = currency.name
                         ));
-                        utils::log_err("failed to modify currency: {}", e);
+                        log_err!(e, "failed to modify currency");
                         Ok(())
                     }
                 });
@@ -187,7 +187,7 @@ impl command::Handler for Handler {
                             }
                             Err(e) => {
                                 user.respond("failed to boost user, sorry :(");
-                                utils::log_err("failed to modify currency: {}", e);
+                                log_err!(e, "failed to modify currency");
                                 Ok(())
                             }
                         }),
@@ -241,7 +241,7 @@ impl command::Handler for Handler {
                                 }
                                 Err(e) => {
                                     user.respond("failed to windfall :(");
-                                    utils::log_err("failed to windfall", e);
+                                    log_err!(e, "failed to windfall");
                                     Ok(())
                                 }
                             }

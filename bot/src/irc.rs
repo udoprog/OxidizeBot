@@ -351,7 +351,7 @@ fn reward_loop(
         })
         // handle any errors.
         .or_else(|e| {
-            utils::log_err("failed to reward users", e);
+            log_err!(e, "failed to reward users");
             Ok(())
         })
         .for_each(|_| Ok(()))
@@ -385,7 +385,7 @@ impl Sender {
             limiter.lock().wait();
 
             if let Err(e) = client.send(m) {
-                utils::log_err("failed to send message", e.into());
+                log_err!(e, "failed to send message");
             }
 
             Ok(())
@@ -563,7 +563,7 @@ impl Handler {
                             self.sender.privmsg(target, &why);
                         }
                         Err(e) => {
-                            utils::log_err("failed to render response", e);
+                            log_err!(e, "failed to render response");
                         }
                     }
                 }
@@ -652,7 +652,7 @@ impl Handler {
                         let command = &command[1..];
 
                         if let Err(e) = self.process_command(command, user, &mut it, alias) {
-                            utils::log_err("failed to process command", e);
+                            log_err!(e, "failed to process command");
                         }
                     }
                 }

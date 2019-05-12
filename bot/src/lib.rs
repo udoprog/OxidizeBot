@@ -9,6 +9,8 @@ extern crate warp;
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
+#[macro_use]
+mod macros;
 pub mod bus;
 mod command;
 pub mod config;

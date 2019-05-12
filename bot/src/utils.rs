@@ -587,17 +587,6 @@ impl<'de> serde::Deserialize<'de> for Cooldown {
     }
 }
 
-/// Helper to log an error and all it's causes.
-pub fn log_err(what: impl fmt::Display, e: failure::Error) {
-    log::error!("{}: {}", what, e);
-    log::error!("backtrace: {}", e.backtrace());
-
-    for cause in e.iter_causes() {
-        log::error!("caused by: {}", cause);
-        log::error!("backtrace: {}", e.backtrace());
-    }
-}
-
 /// Helper to handle shutdowns.
 #[derive(Clone)]
 pub struct Shutdown {
