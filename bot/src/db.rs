@@ -8,7 +8,7 @@ mod promotions;
 pub(crate) mod schema;
 mod words;
 
-use crate::player;
+use crate::{player, utils};
 
 pub use self::{
     after_streams::{AfterStream, AfterStreams},
@@ -421,6 +421,29 @@ impl player::Backend for Database {
             .execute(&*c)?;
 
         Ok(count == 1)
+    }
+
+    fn last_song_within(
+        &self,
+        track_id: &player::TrackId,
+        duration: utils::Duration,
+    ) -> Result<Option<models::Song>, failure::Error> {
+        use self::schema::songs::dsl;
+        let c = self.pool.lock();
+
+        let since = match Utc::now().checked_sub_signed(duration.as_chrono()) {
+            Some(since) => since,
+            None => failure::bail!("duration too long"),
+        };
+
+        let since = since.naive_utc();
+
+        let song = dsl::songs
+            .filter(dsl::added_at.gt(&since).and(dsl::track_id.eq(&track_id)))
+            .first::<models::Song>(&*c)
+            .optional()?;
+
+        Ok(song)
     }
 }
 

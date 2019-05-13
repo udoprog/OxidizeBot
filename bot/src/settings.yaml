@@ -35,6 +35,9 @@ types:
   migration/whitelisted-hosts-migrated:
     doc: If whitelisted hosts have been migrated from the configuration file.
     type: {id: bool}
+  player/duplicate-duration:
+    doc: The minimum amount of time that has to have been passed to allow adding a song that has already been queued.
+    type: {id: duration}
   player/detached:
     doc: If the player is detached, in that it can no longer control the music.
     type: {id: bool}

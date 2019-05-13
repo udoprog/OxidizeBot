@@ -3,7 +3,7 @@ use tokio_core::reactor::Core;
 use crate::{api, bus, config, current_song, db, settings, themes::Themes, utils};
 pub use crate::{spotify_id::SpotifyId, track_id::TrackId};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use failure::format_err;
 use futures::{future, sync::mpsc, Future, Poll, Stream};
 use parking_lot::RwLock;
@@ -313,6 +313,9 @@ pub fn run(
         global_bus,
     };
 
+    let duplicate_duration =
+        settings.sync_var(core, "duplicate-duration", utils::Duration::default())?;
+
     let max_songs_per_user =
         settings.sync_var(core, "max-songs-per-user", config.max_songs_per_user)?;
 
@@ -321,8 +324,9 @@ pub fn run(
     let player = Player {
         device: device.clone(),
         queue,
-        max_queue_length: max_queue_length,
-        max_songs_per_user: max_songs_per_user,
+        max_queue_length,
+        max_songs_per_user,
+        duplicate_duration,
         spotify: spotify.clone(),
         youtube: youtube.clone(),
         commands_tx,
@@ -577,6 +581,7 @@ pub struct Player {
     queue: Queue,
     max_queue_length: Arc<RwLock<u32>>,
     max_songs_per_user: Arc<RwLock<u32>>,
+    duplicate_duration: Arc<RwLock<utils::Duration>>,
     spotify: Arc<api::Spotify>,
     youtube: Arc<api::YouTube>,
     commands_tx: mpsc::UnboundedSender<Command>,
@@ -599,6 +604,7 @@ impl Player {
             thread_pool: Arc::new(ThreadPool::new()),
             max_queue_length: self.max_queue_length.clone(),
             max_songs_per_user: self.max_songs_per_user.clone(),
+            duplicate_duration: self.duplicate_duration.clone(),
             spotify: self.spotify.clone(),
             youtube: self.youtube.clone(),
             commands_tx: self.commands_tx.clone(),
@@ -646,6 +652,7 @@ pub struct PlayerClient {
     thread_pool: Arc<ThreadPool>,
     max_queue_length: Arc<RwLock<u32>>,
     max_songs_per_user: Arc<RwLock<u32>>,
+    duplicate_duration: Arc<RwLock<utils::Duration>>,
     spotify: Arc<api::Spotify>,
     youtube: Arc<api::YouTube>,
     commands_tx: mpsc::UnboundedSender<Command>,
@@ -835,17 +842,19 @@ impl PlayerClient {
     ) -> impl Future<Item = (usize, Arc<Item>), Error = AddTrackError> {
         // invariant checks
         let fut = future::lazy({
-            let queue = self.queue.queue.clone();
+            let queue = self.queue.clone();
             let max_queue_length = *self.max_queue_length.read();
             let max_songs_per_user = *self.max_songs_per_user.read();
+            let duplicate_duration = self.duplicate_duration.read().clone();
             let closed = self.closed.clone();
             let user = user.to_string();
             let track_id = track_id.clone();
 
             move || {
-                let q = queue.read();
+                // NB: immediate access to the queue.
+                let queue_inner = queue.queue.read();
 
-                let len = q.len();
+                let len = queue_inner.len();
 
                 if !is_moderator {
                     if let Some(reason) = closed.read().as_ref() {
@@ -858,9 +867,24 @@ impl PlayerClient {
                     return Err(AddTrackError::QueueFull);
                 }
 
+                if !is_moderator && !duplicate_duration.is_empty() {
+                    if let Some(last) = queue
+                        .last_song_within(&track_id, duplicate_duration.clone())
+                        .map_err(AddTrackError::Error)?
+                    {
+                        let added_at = DateTime::from_utc(last.added_at, Utc);
+
+                        return Err(AddTrackError::Duplicate(
+                            added_at,
+                            last.user,
+                            duplicate_duration.as_std(),
+                        ));
+                    }
+                }
+
                 let mut user_count = 0;
 
-                for (index, i) in q.iter().enumerate() {
+                for (index, i) in queue_inner.iter().enumerate() {
                     if i.track_id == track_id {
                         return Err(AddTrackError::QueueContainsTrack(index));
                     }
@@ -1056,6 +1080,8 @@ pub enum AddTrackError {
     TooManyUserTracks(u32),
     /// Player has been closed from adding more tracks to the queue with an optional reason.
     PlayerClosed(Option<Arc<String>>),
+    /// Duplicate song that was added at the specified time by the specified user.
+    Duplicate(DateTime<Utc>, Option<String>, Duration),
     /// Other generic error happened.
     Error(failure::Error),
 }
@@ -1107,6 +1133,13 @@ pub trait Backend: Clone + Send + Sync {
 
     /// Promote the track with the given ID.
     fn promote_song(&self, user: &str, track_id: &TrackId) -> Result<bool, failure::Error>;
+
+    /// Test if the song has been played within a given duration.
+    fn last_song_within(
+        &self,
+        track_id: &TrackId,
+        duration: utils::Duration,
+    ) -> Result<Option<db::models::Song>, failure::Error>;
 }
 
 /// The playback queue.
@@ -1125,6 +1158,15 @@ impl Queue {
             queue: Arc::new(RwLock::new(Default::default())),
             thread_pool: Arc::new(ThreadPool::new()),
         }
+    }
+
+    /// Check ifa song has been queued within the specified period of time.
+    pub fn last_song_within(
+        &self,
+        track_id: &TrackId,
+        duration: utils::Duration,
+    ) -> Result<Option<db::models::Song>, failure::Error> {
+        self.db.last_song_within(track_id, duration)
     }
 
     /// Get the front of the queue.

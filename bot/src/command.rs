@@ -62,9 +62,14 @@ impl<'a, 'm> Context<'a, 'm> {
         self.thread_pool.spawn(future);
     }
 
+    /// Test if streamer.
+    pub fn is_streamer(&self) -> bool {
+        self.user.name == self.streamer
+    }
+
     /// Test if moderator.
     pub fn is_moderator(&self) -> bool {
-        self.moderators.contains(self.user.name)
+        self.moderators.contains(self.user.name) || self.is_streamer()
     }
 
     /// Check that the given user is a moderator.

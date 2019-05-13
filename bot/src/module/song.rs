@@ -1,4 +1,5 @@
 use crate::{command, currency, db, irc, module, player, track_id, utils, utils::BoxFuture};
+use chrono::Utc;
 use futures::{future, Future, Stream as _};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -128,6 +129,35 @@ impl Handler {
                             }
                             Err(player::AddTrackError::QueueFull) => {
                                 user.respond("Player is full, try again later!");
+                            }
+                            Err(player::AddTrackError::Duplicate(when, who, limit)) => {
+                                let duration = Utc::now().signed_duration_since(when);
+
+                                let duration = match duration.to_std() {
+                                    Err(_) => None,
+                                    Ok(duration) => Some(utils::compact_duration(duration)),
+                                };
+
+                                let limit = utils::compact_duration(limit);
+
+                                let who = match who {
+                                    Some(ref who) if *who == user.name => String::from(" by you"),
+                                    Some(ref who) => format!(" by {}", who),
+                                    None => String::from(""),
+                                };
+
+                                let duration = match duration {
+                                    Some(duration) => format!(" {} ago", duration),
+                                    None => String::from(" not too long ago"),
+                                };
+
+                                user.respond(format!(
+                                    "That song was requested{who}{duration}, \
+                                    you have to wait at least {limit} between duplicate requests!",
+                                    who = who,
+                                    duration = duration,
+                                    limit = limit,
+                                ));
                             }
                             Err(player::AddTrackError::Error(e)) => {
                                 user.respond("There was a problem adding your song :(");

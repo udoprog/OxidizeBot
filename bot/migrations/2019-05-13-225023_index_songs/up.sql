@@ -1,0 +1,1 @@
+CREATE INDEX idx_songs_added_at_id ON songs(added_at, id);
