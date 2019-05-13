@@ -34,6 +34,11 @@ impl YouTubePlayer {
         self.bus.send(bus::Message::YouTubeCurrent { event });
     }
 
+    /// Detach the player, cancelling any timed events or effects.
+    pub fn detach(&mut self) {
+        self.timeout = None;
+    }
+
     pub fn play(&mut self, source: super::Source, song: &player::Song, video_id: &str) {
         let event = bus::YouTubeEvent::Play {
             video_id: video_id.to_string(),
@@ -87,15 +92,8 @@ impl Stream for YouTubePlayer {
             }
         }
 
-        let event = self
-            .rx
-            .poll()
-            .map_err(|_| failure::format_err!("failed to receive event"))?;
-
-        match event {
-            Async::NotReady => (),
-            Async::Ready(Some(e)) => return Ok(Async::Ready(Some(e))),
-            Async::Ready(None) => failure::bail!("event queue ended"),
+        if let Some(e) = try_infinite_empty!(self.rx.poll()) {
+            return Ok(Async::Ready(Some(e)));
         }
 
         Ok(Async::NotReady)

@@ -35,6 +35,9 @@ types:
   migration/whitelisted-hosts-migrated:
     doc: If whitelisted hosts have been migrated from the configuration file.
     type: {id: bool}
+  player/detached:
+    doc: If the player is detached, in that it can no longer control the music.
+    type: {id: bool}
   player/max-queue-length:
     doc: The maximum queue length permitted in the player.
     type: {id: number}

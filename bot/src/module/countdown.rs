@@ -1,5 +1,4 @@
 use crate::{command, config, module, template, utils};
-use failure::format_err;
 use futures::{sync::mpsc, Async, Future, Poll, Stream};
 use std::{fs, path::PathBuf, time};
 use tokio::timer;
@@ -187,20 +186,18 @@ impl Stream for Current {
     type Error = failure::Error;
 
     fn poll(&mut self) -> Poll<Option<()>, failure::Error> {
-        match self.interval.poll()? {
-            Async::Ready(None) => failure::bail!("interval timer ended"),
-            Async::Ready(Some(_)) => {
-                self.elapsed += utils::Duration::seconds(1);
+        if let Some(_) = try_infinite!(self.interval.poll()) {
+            self.elapsed += utils::Duration::seconds(1);
 
-                if self.elapsed >= self.duration {
-                    return Ok(Async::Ready(None));
-                }
-
-                self.write()?;
-                Ok(Async::Ready(Some(())))
+            if self.elapsed >= self.duration {
+                return Ok(Async::Ready(None));
             }
-            Async::NotReady => Ok(Async::NotReady),
+
+            self.write()?;
+            return Ok(Async::Ready(Some(())));
         }
+
+        Ok(Async::NotReady)
     }
 }
 
@@ -212,38 +209,28 @@ impl Future for CountdownFuture {
         loop {
             let mut not_ready = true;
 
-            match self
-                .receiver
-                .poll()
-                .map_err(|_| format_err!("failed to poll receiver"))?
-            {
-                Async::Ready(None) => failure::bail!("receiver queue ended"),
-                Async::Ready(Some(e)) => {
-                    match e {
-                        Event::Set(duration, template) => {
-                            let mut current = Current {
-                                duration,
-                                template,
-                                elapsed: Default::default(),
-                                interval: timer::Interval::new_interval(time::Duration::from_secs(
-                                    1,
-                                )),
-                                path: self.path.clone(),
-                            };
+            if let Some(e) = try_infinite_empty!(self.receiver.poll()) {
+                match e {
+                    Event::Set(duration, template) => {
+                        let mut current = Current {
+                            duration,
+                            template,
+                            elapsed: Default::default(),
+                            interval: timer::Interval::new_interval(time::Duration::from_secs(1)),
+                            path: self.path.clone(),
+                        };
 
-                            current.write_log();
-                            self.current = Some(current);
-                        }
-                        Event::Clear => {
-                            if let Some(mut current) = self.current.take() {
-                                current.clear_log();
-                            }
+                        current.write_log();
+                        self.current = Some(current);
+                    }
+                    Event::Clear => {
+                        if let Some(mut current) = self.current.take() {
+                            current.clear_log();
                         }
                     }
-
-                    not_ready = false;
                 }
-                Async::NotReady => (),
+
+                not_ready = false;
             }
 
             if let Some(current) = self.current.as_mut() {

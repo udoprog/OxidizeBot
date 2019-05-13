@@ -205,28 +205,15 @@ impl Future for PromotionFuture {
         loop {
             let mut not_ready = true;
 
-            if let Async::Ready(interval) = self.setting.poll()? {
-                if let Some(interval) = interval {
-                    self.interval = tokio_timer::Interval::new_interval(interval.as_std());
-                }
-
+            if let Some(interval) = try_infinite!(self.setting.poll()) {
+                self.interval = tokio_timer::Interval::new_interval(interval.as_std());
                 not_ready = false;
             }
 
-            let interval = match self.interval.poll() {
-                Ok(interval) => interval,
-                Err(_) => failure::bail!("interval queue errored"),
-            };
-
-            match interval {
-                Async::NotReady => (),
-                Async::Ready(None) => failure::bail!("interval queue ended"),
-                Async::Ready(Some(_)) => {
-                    if self.idle.is_idle() {
-                        log::trace!("channel is too idle to send a promotion");
-                        continue;
-                    }
-
+            if let Some(_) = try_infinite!(self.interval.poll()) {
+                if self.idle.is_idle() {
+                    log::trace!("channel is too idle to send a promotion");
+                } else {
                     let promotions = self.promotions.clone();
                     let sender = self.sender.clone();
                     let channel = self.channel.clone();
@@ -238,9 +225,9 @@ impl Future for PromotionFuture {
 
                         Ok(())
                     }));
-
-                    not_ready = false;
                 }
+
+                not_ready = false;
             }
 
             if not_ready {

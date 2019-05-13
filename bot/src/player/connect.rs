@@ -1,5 +1,4 @@
 use crate::{api, player, track_id::SpotifyId, utils::BoxFuture};
-use failure::format_err;
 use futures::{sync::mpsc, Async, Future, Poll, Stream};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -57,6 +56,11 @@ impl ConnectPlayer {
             Some(song) if song.state().is_playing() => Some(timer::Delay::new(song.deadline())),
             _ => None,
         };
+    }
+
+    /// Detach the player, cancelling any timed events or effects.
+    pub fn detach(&mut self) {
+        self.timeout = None;
     }
 
     /// Play the specified song.
@@ -163,15 +167,11 @@ impl Stream for ConnectPlayer {
                 }
             }
 
-            match self
-                .config_rx
-                .poll()
-                .map_err(|_| format_err!("failed to receive configuration event"))?
-            {
-                Async::NotReady => (),
-                Async::Ready(None) => failure::bail!("configuration received ended"),
-                Async::Ready(Some(ConfigurationEvent::DeviceChanged)) => {
-                    return Ok(Async::Ready(Some(DeviceChanged)));
+            if let Some(e) = try_infinite_empty!(self.config_rx.poll()) {
+                match e {
+                    ConfigurationEvent::DeviceChanged => {
+                        return Ok(Async::Ready(Some(DeviceChanged)))
+                    }
                 }
             }
 

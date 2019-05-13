@@ -181,6 +181,19 @@ pub enum Command {
     Inject(Source, Arc<Item>, Duration),
 }
 
+impl Command {
+    /// Get the source of a command.
+    pub fn source(&self) -> Source {
+        use self::Command::*;
+
+        match *self {
+            Skip(source) | Toggle(source) | Pause(source) | Play(source) | Modified(source)
+            | Volume(source, ..) | Inject(source, ..) => source,
+            PlaySync { .. } => Source::Automatic,
+        }
+    }
+}
+
 /// Run the player.
 pub fn run(
     core: &mut Core,
@@ -276,6 +289,8 @@ pub fn run(
 
     let (commands_tx, commands) = mpsc::unbounded();
 
+    let (detached_stream, detached) = settings.init_and_stream("detached", false)?;
+
     let future = PlaybackFuture {
         connect_player,
         youtube_player,
@@ -286,6 +301,8 @@ pub fn run(
         // When we issue the pause command below, we only queue up the command.
         state: State::None,
         player: PlayerKind::None,
+        detached,
+        detached_stream,
         volume: Arc::clone(&volume),
         song: song.clone(),
         current_song: parent_config.current_song.clone(),
@@ -355,13 +372,18 @@ pub struct NotConfigured;
 /// Events emitted by the player.
 #[derive(Debug, Clone)]
 pub enum Event {
+    /// Player is empty.
     Empty,
+    /// Player is playing the given song.
     Playing(bool, Arc<Item>),
+    /// Player is pausing.
     Pausing,
     /// queue was modified in some way.
     Modified,
     /// player has not been configured.
     NotConfigured,
+    /// Player is detached.
+    Detached,
 }
 
 /// Information on current song.
@@ -1377,6 +1399,10 @@ pub struct PlaybackFuture {
     state: State,
     /// Current player kind.
     player: PlayerKind,
+    /// Player is detached.
+    detached: bool,
+    /// Stream of settings if the player is detached.
+    detached_stream: settings::Stream<bool>,
     /// Song volume.
     volume: Arc<RwLock<u32>>,
     /// Song that is currently loaded.
@@ -1455,33 +1481,58 @@ impl PlaybackFuture {
     }
 
     /// Play the given song.
-    fn play_song(&mut self, source: Source, song: &Song) -> PlayerKind {
+    fn play_song(&mut self, source: Source, song: &Song) {
         match song.item.track_id {
             TrackId::Spotify(ref id) => {
                 self.connect_player.play(source, &song, id);
-                PlayerKind::Spotify
+                self.set_playing(PlayerKind::Spotify);
             }
             TrackId::YouTube(ref id) => {
                 self.youtube_player.play(source, &song, id);
-                PlayerKind::YouTube
+                self.set_playing(PlayerKind::YouTube);
             }
         }
     }
 
     /// Switch current song to the specified song.
     fn switch_to_song(&mut self, source: Source, song: Song) {
-        let kind = self.play_song(source, &song);
-        self.set_playing(kind);
+        self.play_song(source, &song);
         *self.song.write() = Some(song);
+    }
+
+    /// Detach the player.
+    fn detach(&mut self) -> Result<(), failure::Error> {
+        self.connect_player.detach();
+        self.youtube_player.detach();
+
+        // store the currently playing song in the sidelined slot.
+        if let Some(mut song) = self.song.write().take() {
+            song.pause();
+            self.mixer.sidelined.push_back(song);
+        }
+
+        self.write_song(None)?;
+        self.player = PlayerKind::None;
+        self.state = State::None;
+        Ok(())
     }
 
     /// Handle incoming command.
     fn command(&mut self, command: Command) -> Result<(), failure::Error> {
-        let command = match command {
-            Command::Toggle(source) if !self.state.is_playing() => Command::Play(source),
-            Command::Toggle(source) if self.state.is_playing() => Command::Pause(source),
-            command => command,
-        };
+        if self.detached {
+            log::trace!(
+                "Ignoring: Command = {:?}, State = {:?}, Player = {:?}",
+                command,
+                self.state,
+                self.player,
+            );
+
+            if let Source::Manual = command.source() {
+                self.bus.broadcast(Event::Detached);
+            }
+
+            return Ok(());
+        }
 
         log::trace!(
             "Processing: Command = {:?}, State = {:?}, Player = {:?}",
@@ -1489,6 +1540,12 @@ impl PlaybackFuture {
             self.state,
             self.player,
         );
+
+        let command = match command {
+            Command::Toggle(source) if !self.state.is_playing() => Command::Play(source),
+            Command::Toggle(source) if self.state.is_playing() => Command::Pause(source),
+            command => command,
+        };
 
         match (command, self.state) {
             (Command::Skip(source), _) => {
@@ -1530,15 +1587,14 @@ impl PlaybackFuture {
                 }
                 _ => (),
             },
-            (Command::Play(source), State::Paused) => {
+            (Command::Play(source), State::Paused) | (Command::Play(source), State::None) => {
                 log::trace!("starting player");
 
                 let song = self.song.clone();
 
                 // resume an existing song
                 if let Some(song) = song.read().as_ref() {
-                    let kind = self.play_song(source, song);
-                    self.set_playing(kind);
+                    self.play_song(source, song);
                     return Ok(());
                 }
 
@@ -1611,6 +1667,17 @@ impl PlaybackFuture {
     fn handle_player_event(&mut self, e: IntegrationEvent) -> Result<(), failure::Error> {
         use self::IntegrationEvent::*;
 
+        if self.detached {
+            log::trace!(
+                "Ignoring: IntegrationEvent = {:?}, State = {:?}, Player = {:?}",
+                e,
+                self.state,
+                self.player,
+            );
+
+            return Ok(());
+        }
+
         log::trace!(
             "Processing: IntegrationEvent = {:?}, State = {:?}, Player = {:?}",
             e,
@@ -1623,18 +1690,7 @@ impl PlaybackFuture {
                 log::trace!("Song ended, loading next song...");
 
                 if let Some(song) = self.mixer.next_song() {
-                    match song.item.track_id {
-                        TrackId::Spotify(ref id) => {
-                            self.connect_player.play(Source::Manual, &song, id);
-                            self.set_playing(PlayerKind::Spotify);
-                            *self.song.write() = Some(song);
-                        }
-                        TrackId::YouTube(ref id) => {
-                            self.youtube_player.play(Source::Manual, &song, id);
-                            self.set_playing(PlayerKind::YouTube);
-                            *self.song.write() = Some(song);
-                        }
-                    }
+                    self.switch_to_song(Source::Manual, song);
                 } else {
                     self.bus.broadcast(Event::Empty);
                     self.write_song(None)?;
@@ -1714,43 +1770,37 @@ impl PlaybackFuture {
 
     /// Handle global song updates.
     fn handle_global_song_updates(&mut self) -> Result<bool, failure::Error> {
-        use futures::Async::*;
+        let mut not_ready = true;
 
-        if let Ready(value) = self.song_update_interval_stream.poll()? {
-            if let Some(value) = value {
-                self.song_update_interval = match value.is_empty() {
-                    true => None,
-                    false => Some(tokio_timer::Interval::new_interval(value.as_std())),
-                };
-            }
+        if let Some(value) = try_infinite!(self.song_update_interval_stream.poll()) {
+            self.song_update_interval = match value.is_empty() {
+                true => None,
+                false => Some(tokio_timer::Interval::new_interval(value.as_std())),
+            };
 
-            return Ok(true);
+            not_ready = false;
         }
 
         if let Some(song_update_interval) = self.song_update_interval.as_mut() {
-            match song_update_interval.poll()? {
-                NotReady => (),
-                Ready(None) => failure::bail!("song updates ended"),
-                Ready(Some(_)) => {
-                    let song = self.song.read();
+            if let Some(_) = try_infinite!(song_update_interval.poll()) {
+                let song = self.song.read();
 
-                    if self.state.is_playing() {
-                        self.global_bus
-                            .send(bus::Message::song_progress(song.as_ref()));
+                if self.state.is_playing() {
+                    self.global_bus
+                        .send(bus::Message::song_progress(song.as_ref()));
 
-                        if let Some(song) = song.as_ref() {
-                            if let TrackId::YouTube(ref id) = song.item.track_id {
-                                self.youtube_player.tick(song, id);
-                            }
+                    if let Some(song) = song.as_ref() {
+                        if let TrackId::YouTube(ref id) = song.item.track_id {
+                            self.youtube_player.tick(song, id);
                         }
                     }
-
-                    return Ok(true);
                 }
+
+                not_ready = false;
             }
         }
 
-        Ok(false)
+        Ok(not_ready)
     }
 }
 
@@ -1759,69 +1809,58 @@ impl Future for PlaybackFuture {
     type Error = failure::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        use futures::Async::*;
+        use futures::Async;
 
         loop {
+            let mut not_ready = true;
+
+            if let Some(update) = try_infinite!(self.detached_stream.poll()) {
+                if update {
+                    self.detach()?;
+                }
+
+                self.detached = update;
+                not_ready = false;
+            }
+
             if let Some(current_song_update) = self.current_song_update.as_mut() {
-                match current_song_update.poll()? {
-                    NotReady => (),
-                    Ready(None) => failure::bail!("current song updates ended"),
-                    Ready(Some(_)) => {
-                        let song = self.song.read();
-                        self.current_song(song.as_ref());
-                        continue;
-                    }
+                if let Some(_) = try_infinite!(current_song_update.poll()) {
+                    let song = self.song.read();
+                    self.current_song(song.as_ref());
+                    not_ready = false;
                 }
             }
 
-            if self.handle_global_song_updates()? {
-                continue;
+            if !self.handle_global_song_updates()? {
+                not_ready = false;
             }
 
             // pop is in progress, make sure that happens before anything else.
-            if let Some(pop_front) = self.mixer.pop_front.as_mut() {
+            if let Some(mut pop_front) = self.mixer.pop_front.take() {
                 match pop_front.poll()? {
-                    NotReady => (),
-                    Ready(_) => {
-                        self.mixer.pop_front = None;
-                        continue;
-                    }
+                    Async::NotReady => self.mixer.pop_front = Some(pop_front),
+                    Async::Ready(_) => not_ready = false,
                 }
             }
 
-            if let Ready(event) = self
-                .connect_player
-                .poll()
-                .map_err(|_| format_err!("event stream errored"))?
-            {
-                let event =
-                    event.ok_or_else(|| format_err!("connect player event stream ended"))?;
+            if let Some(event) = try_infinite!(self.connect_player.poll()) {
                 self.handle_player_event(event)?;
-                continue;
+                not_ready = false;
             }
 
-            if let Ready(event) = self
-                .youtube_player
-                .poll()
-                .map_err(|_| format_err!("event stream errored"))?
-            {
-                let event =
-                    event.ok_or_else(|| format_err!("connect player event stream ended"))?;
+            if let Some(event) = try_infinite!(self.youtube_player.poll()) {
                 self.handle_player_event(event)?;
-                continue;
+                not_ready = false;
             }
 
-            if let Ready(command) = self
-                .commands
-                .poll()
-                .map_err(|_| format_err!("events stream errored"))?
-            {
-                let command = command.ok_or_else(|| format_err!("command stream ended"))?;
+            if let Some(command) = try_infinite_empty!(self.commands.poll()) {
                 self.command(command)?;
-                continue;
+                not_ready = false;
             }
 
-            return Ok(NotReady);
+            if not_ready {
+                return Ok(Async::NotReady);
+            }
         }
     }
 }

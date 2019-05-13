@@ -13,3 +13,26 @@ macro_rules! log_err {
         }
     }};
 }
+
+/// Helper macro to handle the result of polling an infinite stream.
+#[macro_export]
+macro_rules! try_infinite {
+    ($expr:expr) => {
+        match $expr {
+            Err(e) => return Err(e.into()),
+            Ok(a) => match a {
+                futures::Async::NotReady => None,
+                futures::Async::Ready(None) => failure::bail!("stream ended unexpectedly"),
+                futures::Async::Ready(Some(v)) => Some(v),
+            },
+        }
+    };
+}
+
+/// Helper macro to handle the result of polling an infinite stream that can error with a unit.
+#[macro_export]
+macro_rules! try_infinite_empty {
+    ($expr:expr) => {
+        try_infinite!($expr.map_err(|()| failure::format_err!("stream unexpectedly errored")))
+    };
+}
