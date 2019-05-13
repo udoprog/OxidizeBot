@@ -74,40 +74,26 @@ SetMod is moving towards storing settings in the database.
 
 These settings are stored as slash-separated strings, like `player/max-songs-per-user`.
 
-The available settings are:
+You can find all available settings and their types in [`settings.yaml`](bot/src/settings.yaml).
 
-#### `first-run`
+When the bot is running, you can find all settings under `Internal -> Settings`.
 
-Indicates if the bit has run before or not.
-This is used to determine whether the bot should do first time behavior on startup (like opening the browser).
+## YouTube Player
 
-#### `irc/idle-detection/threshold`
+setmod has support for playing YouTube videos.
 
-Determines how many messages must bee seen to not consider the channel idle.
+This is enabled through the `song/youtube-support` setting and requires you to run the YouTube Player in the web UI.
 
-Idle detection is used by the `!promo` feature.
+This can be embedded in OBS with the following Custom CSS:
 
-#### `migration/aliases-migrated`
+```css
+body {
+  background-color: rgba(0, 0, 0, 0);
+  .overlay-hidden { display: none };
+}
+```
 
-Indicates if `[[aliases]]` has been migrated from the configuration file.
-
-This setting can be removed if you remove the `[[aliases]]` section from the configuration file.
-
-#### `player/max-queue-length`
-
-The max queue length permitted by the player.
-
-#### `player/max-songs-per-user`
-
-The max number of songs permitted by non-mod users.
-
-#### `promotions/frequency`
-
-The frequency at which to run promotions.
-
-#### `secrets/*`
-
-Secret things which are stored in the database, like tokens.
+This will cause the player to disappear while it is not playing anything.
 
 ## Built-in Commands
 

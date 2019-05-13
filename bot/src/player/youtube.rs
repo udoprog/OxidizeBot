@@ -53,6 +53,13 @@ impl YouTubePlayer {
         self.send(player::IntegrationEvent::Pausing(source));
     }
 
+    pub fn stop(&mut self) {
+        let event = bus::YouTubeEvent::Stop;
+        self.bus.send(bus::Message::YouTubeCurrent { event });
+        self.timeout = None;
+        self.send(player::IntegrationEvent::Stopping);
+    }
+
     pub fn volume(&mut self, source: super::Source, volume: u32) {
         self.bus.send(bus::Message::YouTubeVolume { volume });
         self.send(player::IntegrationEvent::Volume(source, volume));

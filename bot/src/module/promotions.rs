@@ -206,7 +206,10 @@ impl Future for PromotionFuture {
             let mut not_ready = true;
 
             if let Async::Ready(interval) = self.setting.poll()? {
-                self.interval = tokio_timer::Interval::new_interval(interval.as_std());
+                if let Some(interval) = interval {
+                    self.interval = tokio_timer::Interval::new_interval(interval.as_std());
+                }
+
                 not_ready = false;
             }
 

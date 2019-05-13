@@ -158,6 +158,9 @@ pub enum YouTubeEvent {
     /// Pause the player.
     #[serde(rename = "pause")]
     Pause,
+    /// Stop the player.
+    #[serde(rename = "stop")]
+    Stop,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

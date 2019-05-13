@@ -147,7 +147,11 @@ impl RequestBuilder {
                         );
                     }
 
-                    log::trace!("response: {}", String::from_utf8_lossy(body.as_ref()));
+                    if log::log_enabled!(log::Level::Trace) {
+                        let response = String::from_utf8_lossy(body.as_ref());
+                        log::trace!("response: {}", response);
+                    }
+
                     serde_json::from_slice(body.as_ref()).map_err(Into::into)
                 })
             })

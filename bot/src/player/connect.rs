@@ -16,6 +16,7 @@ pub fn setup(spotify: Arc<api::Spotify>) -> Result<(ConnectPlayer, ConnectDevice
         device: device.clone(),
         play: None,
         pause: None,
+        stop: None,
         volume: None,
         timeout: None,
         config_rx,
@@ -39,6 +40,8 @@ pub struct ConnectPlayer {
     play: Option<(super::Source, BoxFuture<bool, failure::Error>)>,
     /// Last pause command.
     pause: Option<(super::Source, BoxFuture<bool, failure::Error>)>,
+    /// Last stop command.
+    stop: Option<(BoxFuture<bool, failure::Error>)>,
     /// Last volume command.
     volume: Option<(super::Source, BoxFuture<bool, failure::Error>, u32)>,
     /// Timeout for end of song.
@@ -83,6 +86,14 @@ impl ConnectPlayer {
         self.timeout = None;
     }
 
+    pub fn stop(&mut self) {
+        let device = self.device.read();
+        let device_id = device.as_ref().map(|d| d.id.as_str());
+
+        self.stop = Some(Box::new(self.spotify.me_player_pause(device_id)));
+        self.timeout = None;
+    }
+
     pub fn volume(&mut self, kind: super::Source, volume: u32) {
         let device = self.device.read();
         let device_id = device.as_ref().map(|d| d.id.as_str());
@@ -122,20 +133,31 @@ impl Stream for ConnectPlayer {
                 return Ok(Async::Ready(Some(Pausing(kind))));
             }
 
-            if let Some((kind, future, volume)) = self.volume.as_mut() {
-                match future.poll() {
-                    Ok(Async::NotReady) => (),
-                    Err(e) => {
-                        log_err!(e, "failed to issue volume command");
-                    }
+            if let Some(mut stop) = self.stop.take() {
+                match stop.poll() {
+                    Err(e) => log_err!(e, "failed to issue stop command"),
+                    Ok(Async::NotReady) => self.stop = Some(stop),
                     Ok(Async::Ready(found)) => {
                         if !found {
                             log::warn!("no playing device found");
                         }
 
-                        let kind = *kind;
-                        let volume = *volume;
-                        self.volume = None;
+                        return Ok(Async::Ready(Some(Stopping)));
+                    }
+                }
+            }
+
+            if let Some(mut volume) = self.volume.take() {
+                match volume.1.poll() {
+                    Err(e) => log_err!(e, "failed to issue volume command"),
+                    Ok(Async::NotReady) => self.volume = Some(volume),
+                    Ok(Async::Ready(found)) => {
+                        if !found {
+                            log::warn!("no playing device found");
+                        }
+
+                        let kind = volume.0;
+                        let volume = volume.2;
                         return Ok(Async::Ready(Some(Volume(kind, volume))));
                     }
                 }

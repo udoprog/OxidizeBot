@@ -31,6 +31,8 @@ pub enum IntegrationEvent {
     Playing(Source),
     /// Indicate that we have successfully issued a pause command to the player.
     Pausing(Source),
+    /// Indicate that a player has been stoped because of a switch.
+    Stopping,
     /// Indicate that we have successfully issued a volume command to the player.
     Volume(Source, u32),
 }
@@ -42,8 +44,6 @@ pub enum Source {
     Automatic,
     /// Event was generated from user input. Broadcast feedback.
     Manual,
-    /// Event is associated with a player switch and probably should be ignored.
-    PlayerSwitch,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -285,6 +285,7 @@ pub fn run(
         // NB: it is not considered paused _yet_.
         // When we issue the pause command below, we only queue up the command.
         state: State::None,
+        player: PlayerKind::None,
         volume: Arc::clone(&volume),
         song: song.clone(),
         current_song: parent_config.current_song.clone(),
@@ -491,14 +492,18 @@ impl Song {
 
     /// Check if the song is currently playing.
     pub fn state(&self) -> State {
-        if self.started_at.is_some() {
-            return match self.item.track_id {
-                TrackId::Spotify(..) => State::Playing(PlayerKind::Spotify),
-                TrackId::YouTube(..) => State::Playing(PlayerKind::YouTube),
-            };
+        match self.started_at.is_some() {
+            true => State::Playing,
+            false => State::Paused,
         }
+    }
 
-        State::Paused
+    /// Get the player kind for the current song.
+    pub fn player(&self) -> PlayerKind {
+        match self.item.track_id {
+            TrackId::Spotify(..) => PlayerKind::Spotify,
+            TrackId::YouTube(..) => PlayerKind::YouTube,
+        }
     }
 
     /// Set the started_at time to now.
@@ -868,8 +873,6 @@ impl PlayerClient {
         let fut = fut.map(move |(len, mut item)| {
             if let Some(max_duration) = max_duration {
                 let max_duration = max_duration.as_std();
-
-                log::info!("seconds: {}", max_duration.as_secs());
 
                 if item.duration > max_duration {
                     item.duration = max_duration;
@@ -1342,11 +1345,12 @@ impl EventBus {
 pub enum PlayerKind {
     Spotify,
     YouTube,
+    None,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
-    Playing(PlayerKind),
+    Playing,
     Paused,
     // initial undefined state.
     None,
@@ -1356,7 +1360,7 @@ impl State {
     /// Check if the state is playing.
     pub fn is_playing(self) -> bool {
         match self {
-            State::Playing(..) => true,
+            State::Playing => true,
             _ => false,
         }
     }
@@ -1371,6 +1375,8 @@ pub struct PlaybackFuture {
     mixer: Mixer,
     /// We are currently playing.
     state: State,
+    /// Current player kind.
+    player: PlayerKind,
     /// Song volume.
     volume: Arc<RwLock<u32>>,
     /// Song that is currently loaded.
@@ -1421,36 +1427,31 @@ impl PlaybackFuture {
         }
     }
 
-    /// Update state if it is different from the expected kind and pause the corresponding player.
-    fn set_playing(&mut self, kind: PlayerKind) {
+    /// Update current player.
+    fn set_current_player(&mut self, player: PlayerKind) {
         use self::PlayerKind::*;
 
-        // switched player
-        match self.state {
-            State::None => match kind {
-                Spotify => {
-                    self.youtube_player.pause(Source::PlayerSwitch);
-                }
-                YouTube => {
-                    self.connect_player.pause(Source::PlayerSwitch);
-                }
-            },
-            State::Playing(YouTube) if kind != YouTube => {
-                self.youtube_player.pause(Source::PlayerSwitch);
+        match (self.player, player) {
+            (Spotify, Spotify) => (),
+            (Spotify, _) => self.connect_player.stop(),
+            (YouTube, YouTube) => (),
+            (YouTube, _) => self.youtube_player.stop(),
+            (None, YouTube) => {
+                self.connect_player.stop();
             }
-            State::Playing(YouTube) if kind == YouTube => {
-                return;
-            }
-            State::Playing(Spotify) if kind != Spotify => {
-                self.connect_player.pause(Source::PlayerSwitch);
-            }
-            State::Playing(Spotify) if kind == Spotify => {
-                return;
+            (None, Spotify) => {
+                self.youtube_player.stop();
             }
             _ => (),
         }
 
-        self.state = State::Playing(kind);
+        self.player = player;
+    }
+
+    /// Update state if it is different from the expected kind and pause the corresponding player.
+    fn set_playing(&mut self, player: PlayerKind) {
+        self.set_current_player(player);
+        self.state = State::Playing;
     }
 
     /// Play the given song.
@@ -1483,9 +1484,10 @@ impl PlaybackFuture {
         };
 
         log::trace!(
-            "Processing: Command = {:?}, State = {:?}",
+            "Processing: Command = {:?}, State = {:?}, Player = {:?}",
             command,
-            self.state
+            self.state,
+            self.player,
         );
 
         match (command, self.state) {
@@ -1496,6 +1498,7 @@ impl PlaybackFuture {
                     if self.state.is_playing() {
                         self.switch_to_song(source, song);
                     } else {
+                        self.set_current_player(song.player());
                         *self.song.write() = Some(song);
                     }
                 } else {
@@ -1504,6 +1507,8 @@ impl PlaybackFuture {
                     }
 
                     self.write_song(None)?;
+                    self.set_current_player(PlayerKind::None);
+                    self.state = State::Paused;
                 }
             }
             // initial pause
@@ -1512,7 +1517,7 @@ impl PlaybackFuture {
                 self.youtube_player.pause(source);
                 self.state = State::Paused;
             }
-            (Command::Pause(source), State::Playing(kind)) => match kind {
+            (Command::Pause(source), State::Playing) => match self.player {
                 PlayerKind::Spotify => {
                     log::trace!("pausing spotify player");
                     self.connect_player.pause(source);
@@ -1523,6 +1528,7 @@ impl PlaybackFuture {
                     self.youtube_player.pause(source);
                     self.state = State::Paused;
                 }
+                _ => (),
             },
             (Command::Play(source), State::Paused) => {
                 log::trace!("starting player");
@@ -1532,7 +1538,7 @@ impl PlaybackFuture {
                 // resume an existing song
                 if let Some(song) = song.read().as_ref() {
                     let kind = self.play_song(source, song);
-                    self.state = State::Playing(kind);
+                    self.set_playing(kind);
                     return Ok(());
                 }
 
@@ -1564,10 +1570,11 @@ impl PlaybackFuture {
                             return Ok(());
                         }
                     }
+                } else {
+                    self.state = State::Paused;
+                    self.set_current_player(PlayerKind::None);
                 }
 
-                self.global_bus.send(bus::Message::song(song.as_ref())?);
-                self.state = song.as_ref().map(|p| p.state()).unwrap_or(State::Paused);
                 *self.song.write() = song;
             }
             // queue was modified in some way
@@ -1585,7 +1592,7 @@ impl PlaybackFuture {
                 self.youtube_player.volume(source, volume);
                 *self.volume.write() = volume;
             }
-            (Command::Inject(source, item, offset), State::Playing(..)) => {
+            (Command::Inject(source, item, offset), State::Playing) => {
                 // store the currently playing song in the sidelined slot.
                 if let Some(mut song) = self.song.write().take() {
                     song.pause();
@@ -1605,9 +1612,10 @@ impl PlaybackFuture {
         use self::IntegrationEvent::*;
 
         log::trace!(
-            "Processing: IntegrationEvent = {:?}, State = {:?}",
+            "Processing: IntegrationEvent = {:?}, State = {:?}, Player = {:?}",
             e,
-            self.state
+            self.state,
+            self.player,
         );
 
         match e {
@@ -1667,7 +1675,7 @@ impl PlaybackFuture {
                 let mut song = self.song.write();
 
                 if let Some(song) = song.as_mut() {
-                    log::info!("marking track as playing: {}", song.item.track_id);
+                    log::trace!("marking track as playing: {}", song.item.track_id);
                     song.play();
 
                     if let Source::Manual = source {
@@ -1679,20 +1687,17 @@ impl PlaybackFuture {
                 self.global_bus.send(bus::Message::song(song.as_ref())?);
                 self.current_song(song.as_ref());
             }
+            // A player stopped due to a switch.
+            Stopping => (),
             Pausing(source) => {
-                match source {
-                    Source::PlayerSwitch => (),
-                    _ => {
-                        let mut song = self.song.write();
+                let mut song = self.song.write();
 
-                        if let Some(song) = song.as_mut() {
-                            song.pause();
-                        }
-
-                        self.current_song(song.as_ref());
-                        self.global_bus.send(bus::Message::song(song.as_ref())?);
-                    }
+                if let Some(song) = song.as_mut() {
+                    song.pause();
                 }
+
+                self.current_song(song.as_ref());
+                self.global_bus.send(bus::Message::song(song.as_ref())?);
 
                 if let Source::Manual = source {
                     self.bus.broadcast(Event::Pausing);
@@ -1712,10 +1717,12 @@ impl PlaybackFuture {
         use futures::Async::*;
 
         if let Ready(value) = self.song_update_interval_stream.poll()? {
-            self.song_update_interval = match value.is_empty() {
-                true => None,
-                false => Some(tokio_timer::Interval::new_interval(value.as_std())),
-            };
+            if let Some(value) = value {
+                self.song_update_interval = match value.is_empty() {
+                    true => None,
+                    false => Some(tokio_timer::Interval::new_interval(value.as_std())),
+                };
+            }
 
             return Ok(true);
         }
@@ -1905,33 +1912,41 @@ fn convert_item(
                 }
             }))
         }
-        TrackId::YouTube(ref id) => Box::new(
-            youtube
-                .videos_by_id(id, "contentDetails,snippet")
-                .and_then::<_, Result<Item, failure::Error>>({
-                    let id = id.to_string();
+        TrackId::YouTube(ref id) => {
+            let video_info = youtube.get_video_info(id);
+            let by_id = youtube.videos_by_id(id, "contentDetails,snippet");
 
-                    move |video| {
-                        let video = match video {
-                            Some(video) => video,
-                            None => failure::bail!("no video found for id `{}`", id),
-                        };
+            Box::new(
+                video_info
+                    .join(by_id)
+                    .and_then::<_, Result<Item, failure::Error>>({
+                        let id = id.to_string();
 
-                        let content_details = video.content_details.as_ref().ok_or_else(|| {
-                            failure::format_err!("video does not have content details")
-                        })?;
+                        move |(video_info, video)| {
+                            log::trace!("info = {:?}", video_info);
 
-                        let duration = parse_youtube_duration(&content_details.duration)?;
+                            let video = match video {
+                                Some(video) => video,
+                                None => failure::bail!("no video found for id `{}`", id),
+                            };
 
-                        Ok(Item {
-                            track_id,
-                            track: Track::YouTube { video },
-                            user,
-                            duration,
-                        })
-                    }
-                }),
-        ),
+                            let content_details =
+                                video.content_details.as_ref().ok_or_else(|| {
+                                    failure::format_err!("video does not have content details")
+                                })?;
+
+                            let duration = parse_youtube_duration(&content_details.duration)?;
+
+                            Ok(Item {
+                                track_id,
+                                track: Track::YouTube { video },
+                                user,
+                                duration,
+                            })
+                        }
+                    }),
+            )
+        }
     };
 
     return thread_pool.spawn_handle(future);

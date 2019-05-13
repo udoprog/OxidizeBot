@@ -152,6 +152,11 @@ impl Settings {
             let subscriptions = self.subscriptions.read();
 
             if let Some(sub) = subscriptions.get(key) {
+                if log::log_enabled!(log::Level::Trace) {
+                    let level = serde_json::to_string(&value)?;
+                    log::trace!("send: {} = {}", key, level);
+                }
+
                 if let Err(_) = sub.unbounded_send(Event::Set(value.clone())) {
                     log::error!("failed to send message to subscription on: {}", key);
                 }
@@ -306,22 +311,32 @@ impl Settings {
         default: T,
     ) -> Result<Arc<RwLock<T>>, failure::Error>
     where
-        T: 'static + Send + Sync + Clone + serde::Serialize + serde::de::DeserializeOwned,
+        T: 'static
+            + fmt::Debug
+            + Send
+            + Sync
+            + Clone
+            + serde::Serialize
+            + serde::de::DeserializeOwned,
     {
         let (stream, value) = self.init_and_stream(key, default)?;
 
         let value = Arc::new(RwLock::new(value));
 
         let future = stream.for_each({
+            let key = key.to_string();
             let value = value.clone();
 
             move |update| {
+                log::trace!("Updating: {} = {:?}", key, value);
                 *value.write() = update;
+                Ok(())
             }
         });
 
-        core.runtime().executor().spawn(future.map_err(|e| {
+        core.runtime().executor().spawn(future.or_else(|e| {
             log::error!("sync_var update future failed: {}", e);
+            Ok(())
         }));
 
         Ok(value)
@@ -390,7 +405,13 @@ impl ScopedSettings {
         default: T,
     ) -> Result<Arc<RwLock<T>>, failure::Error>
     where
-        T: 'static + Send + Sync + Clone + serde::Serialize + serde::de::DeserializeOwned,
+        T: 'static
+            + fmt::Debug
+            + Send
+            + Sync
+            + Clone
+            + serde::Serialize
+            + serde::de::DeserializeOwned,
     {
         self.settings.sync_var(core, &self.scope(key), default)
     }
@@ -418,36 +439,6 @@ pub struct Stream<T> {
     rx: mpsc::UnboundedReceiver<Event<serde_json::Value>>,
 }
 
-/// A future that calls a function for each settings update.
-pub struct ForEach<T, F> {
-    stream: Stream<T>,
-    f: F,
-}
-
-impl<T, F> futures::Future for ForEach<T, F>
-where
-    F: Fn(T),
-    T: Clone + serde::de::DeserializeOwned,
-{
-    type Item = ();
-    type Error = StreamError;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        (self.f)(futures::try_ready!(self.stream.poll()));
-        Ok(Async::NotReady)
-    }
-}
-
-impl<T> Stream<T> {
-    /// Convert the stream into a future that is driven to completion, calling the given function for each value.
-    fn for_each<F>(self, f: F) -> ForEach<T, F>
-    where
-        F: Fn(T),
-    {
-        ForEach { stream: self, f: f }
-    }
-}
-
 impl<T> Drop for Stream<T> {
     fn drop(&mut self) {
         if self.subscriptions.write().remove(&self.key).is_some() {
@@ -469,14 +460,16 @@ pub enum StreamError {
     UpdateStreamEnded,
 }
 
-impl<T> futures::Future for Stream<T>
+impl<T> futures::Stream for Stream<T>
 where
     T: Clone + serde::de::DeserializeOwned,
 {
     type Item = T;
     type Error = StreamError;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        log::trace!("polling stream: {}", self.key);
+
         loop {
             let update = match self.rx.poll() {
                 Err(()) => return Err(StreamError::UpdateStreamErrored),
@@ -500,7 +493,7 @@ where
                 }
             };
 
-            return Ok(Async::Ready(value));
+            return Ok(Async::Ready(Some(value)));
         }
     }
 }

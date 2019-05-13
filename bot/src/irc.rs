@@ -749,7 +749,10 @@ impl Future for IrcFuture {
             }
 
             if let Async::Ready(whitelisted_hosts) = self.whitelisted_hosts_stream.poll()? {
-                self.handler.whitelisted_hosts = whitelisted_hosts;
+                if let Some(whitelisted_hosts) = whitelisted_hosts {
+                    self.handler.whitelisted_hosts = whitelisted_hosts;
+                }
+
                 not_ready = false;
             }
 

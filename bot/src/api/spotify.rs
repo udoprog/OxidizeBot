@@ -325,6 +325,11 @@ impl RequestBuilder {
                         return Ok(None);
                     }
 
+                    if log::log_enabled!(log::Level::Trace) {
+                        let response = String::from_utf8_lossy(body.as_ref());
+                        log::trace!("response: {}", response);
+                    }
+
                     match serde_json::from_slice(body.as_ref()) {
                         Ok(body) => Ok(Some(body)),
                         Err(e) => {
