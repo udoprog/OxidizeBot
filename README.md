@@ -87,10 +87,8 @@ This is enabled through the `song/youtube-support` setting and requires you to r
 This can be embedded in OBS with the following Custom CSS:
 
 ```css
-body {
-  background-color: rgba(0, 0, 0, 0);
-  .overlay-hidden { display: none };
-}
+body { background-color: rgba(0, 0, 0, 0); }
+.overlay-hidden { display: none };
 ```
 
 This will cause the player to disappear while it is not playing anything.
