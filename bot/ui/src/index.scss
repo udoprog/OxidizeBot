@@ -188,6 +188,9 @@ body {
 
 .settings {
   &-key {
+    width: 300px;
+    overflow: hidden;
+
     &-name {
       font-weight: bold;
       white-space: nowrap;

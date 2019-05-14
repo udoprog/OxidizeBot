@@ -1,6 +1,6 @@
 import React from "react";
 import {Spinner} from "../utils.js";
-import {Form, Button, Alert, Table, ButtonGroup} from "react-bootstrap";
+import {Form, Button, Alert, Table, ButtonGroup, Row, Col} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import * as types from "./Settings/Types.js";
 
@@ -34,8 +34,10 @@ export default class Settings extends React.Component {
       deleteKey: null,
       // set to the key of the setting currently being edited.
       editKey: null,
-      // the value currently being edited.
+      // the controller for the edit.
       edit: null,
+      // the value currrently being edited.
+      editValue: null,
     };
   }
 
@@ -59,11 +61,12 @@ export default class Settings extends React.Component {
       .then(data => {
         data = data.map(d => {
           let type = types.decode(d.schema.type);
-          let value = type.construct(d.value);
+          let {control, value} = type.construct(d.value);
 
           return {
             key: d.key,
-            value: value,
+            control,
+            value,
             doc: d.schema.doc,
           }
         });
@@ -112,11 +115,11 @@ export default class Settings extends React.Component {
    * @param {string} key key of the setting to edit.
    * @param {string} value the new value to edit it to.
    */
-  edit(key, value) {
+  edit(key, {control, value}) {
     this.setState(state => {
       let data = state.data.map(setting => {
         if (setting.key === key) {
-          return Object.assign(setting, { value });
+          return Object.assign(setting, {control, value});
         }
 
         return setting;
@@ -127,10 +130,11 @@ export default class Settings extends React.Component {
         loading: true,
         editKey: null,
         edit: null,
+        editValue: null,
       };
     });
 
-    this.api.editSetting(key, value.serialize())
+    this.api.editSetting(key, control.serialize(value))
       .then(() => {
         return this.list();
       },
@@ -171,16 +175,43 @@ export default class Settings extends React.Component {
       } else {
         content = (
           <Table responsive="sm">
-            <thead>
-              <tr>
-                <th>Key</th>
-                <th width="99%">Value</th>
-                <th></th>
-              </tr>
-            </thead>
             <tbody>
               {this.state.data.map((setting, id) => {
                 let isSecret = setting.key.startsWith(SECRET_PREFIX);
+
+                let editButton = null;
+                // onChange handler used for things which support immediate editing.
+                let renderOnChange = null;
+
+                if (setting.control.hasEditControl()) {
+                  let edit = () => {
+                    let {edit, editValue} = setting.control.edit(setting.value);
+
+                    this.setState({
+                      editKey: setting.key,
+                      edit,
+                      editValue,
+                    });
+                  };
+
+                  editButton = (
+                    <Button size="sm" variant="info" className="action" disabled={this.state.loading} onClick={edit}>
+                      <FontAwesomeIcon icon="edit" />
+                    </Button>
+                  );
+
+                  renderOnChange = null;
+                } else {
+                  editButton = (
+                    <Button size="sm" variant="info" className="action" disabled={true}>
+                      <FontAwesomeIcon icon="edit" />
+                    </Button>
+                  );
+
+                  renderOnChange = value => {
+                    this.edit(setting.key, {control: setting.control, value});
+                  };
+                }
 
                 let buttons = (
                   <ButtonGroup>
@@ -189,12 +220,7 @@ export default class Settings extends React.Component {
                     })}>
                       <FontAwesomeIcon icon="trash" />
                     </Button>
-                    <Button size="sm" variant="info" className="action" disabled={this.state.loading} onClick={() => this.setState({
-                      editKey: setting.key,
-                      edit: setting.value.edit(),
-                    })}>
-                      <FontAwesomeIcon icon="edit" />
-                    </Button>
+                    {editButton}
                   </ButtonGroup>
                 );
 
@@ -203,7 +229,7 @@ export default class Settings extends React.Component {
                 if (isSecret) {
                   value = <b title="Secret value, only showed when editing">****</b>;
                 } else {
-                  value = setting.value.render();
+                  value = setting.control.render(setting.value, renderOnChange);
                 }
 
                 if (this.state.deleteKey === setting.key) {
@@ -219,23 +245,21 @@ export default class Settings extends React.Component {
                 }
 
                 if (this.state.editKey === setting.key && this.state.edit) {
-                  let isValid = this.state.edit.validate();
+                  let isValid = this.state.edit.validate(this.state.editValue);
 
                   let save = (e) => {
                     e.preventDefault();
 
                     if (isValid) {
-                      let value = this.state.edit.save();
+                      let value = this.state.edit.save(this.state.editValue);
                       this.edit(this.state.editKey, value);
                     }
 
                     return false;
                   };
 
-                  let control = this.state.edit.control(isValid, edit => {
-                    this.setState({
-                      edit
-                    });
+                  let control = this.state.edit.control(isValid, this.state.editValue, editValue => {
+                    this.setState({editValue});
                   });
 
                   value = (
@@ -259,12 +283,15 @@ export default class Settings extends React.Component {
 
                 return (
                   <tr key={id}>
-                    <td className="settings-key">
-                      <div className="settings-key-name mb-1">{setting.key}</div>
-                      <div className="settings-key-doc">{setting.doc}</div>
+                    <td colSpan="3" className="d-flex">
+                      <div className="settings-key p-1" lg="3">
+                        <div className="settings-key-name mb-1">{setting.key}</div>
+                        <div className="settings-key-doc">{setting.doc}</div>
+                      </div>
+
+                      <div className="flex-grow-1 p-1">{value}</div>
+                      <div className="p-1">{buttons}</div>
                     </td>
-                    <td>{value}</td>
-                    <td align="right">{buttons}</td>
                   </tr>
                 );
               })}

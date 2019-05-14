@@ -3,6 +3,16 @@ import {Form, Button, InputGroup, Row, Col} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {True, False} from "../../utils";
 
+class Base {
+  edit() {
+    throw new Error("missing edit() implementation");
+  }
+
+  hasEditControl() {
+    return true;
+  }
+}
+
 /**
  * Decode the given type and value.
  *
@@ -34,31 +44,35 @@ export function decode(type) {
 const DURATION_REGEX = /^((\d+)d)?((\d+)h)?((\d+)m)?((\d+)s)?$/;
 
 class EditDuration {
-  constructor(days, hours, minutes, seconds) {
-    this.days = days;
-    this.hours = hours;
-    this.minutes = minutes;
-    this.seconds = seconds;
-  }
-
-  validate() {
+  validate(value) {
     return (
-      this.days >= 0 &&
-      this.hours >= 0 && this.hours < 24 &&
-      this.minutes >= 0 && this.minutes < 60 &&
-      this.seconds >= 0 && this.seconds < 60
+      value.days >= 0 &&
+      value.hours >= 0 && value.hours < 24 &&
+      value.minutes >= 0 && value.minutes < 60 &&
+      value.seconds >= 0 && value.seconds < 60
     );
   }
 
-  save() {
-    return new Duration(this.days, this.hours, this.minutes, this.seconds);
+  save(value) {
+    return {
+      control: new Duration(),
+      value: Object.assign(value, {}),
+    };
   }
 
-  control(_isValid, onChange) {
-    let days = this.digitControl(this.days, "d", value => this.days = value, onChange, _ => true);
-    let hours = this.digitControl(this.hours, "h", value => this.hours = value, onChange, v => v >= 0 && v < 24);
-    let minutes = this.digitControl(this.minutes, "m", value => this.minutes = value, onChange, v => v >= 0 && v < 60);
-    let seconds = this.digitControl(this.seconds, "s", value => this.seconds = value, onChange, v => v >= 0 && v < 60);
+  control(_isValid, value, onChange) {
+    let days = this.digitControl(
+      value.days, "d", v => onChange(Object.assign(value, {days: v})), _ => true
+    );
+    let hours = this.digitControl(
+      value.hours, "h", v => onChange(Object.assign(value, {hours: v})), v => v >= 0 && v < 24
+    );
+    let minutes = this.digitControl(
+      value.minutes, "m", v => onChange(Object.assign(value, {minutes: v})), v => v >= 0 && v < 60
+    );
+    let seconds = this.digitControl(
+      value.seconds, "s", v => onChange(Object.assign(value, {seconds: v})), v => v >= 0 && v < 60
+    );
 
     return (
       <Row>
@@ -81,15 +95,14 @@ class EditDuration {
     );
   }
 
-  digitControl(value, suffix, set, onChange, validate) {
+  digitControl(value, suffix, onChange, validate) {
     var isValid = validate(value);
 
     return (
       <InputGroup size="sm">
         <Form.Control type="number" value={value} isInvalid={!isValid} onChange={
           e => {
-            set(parseInt(e.target.value) || 0);
-            onChange(this);
+            onChange(parseInt(e.target.value) || 0);
           }
         } />
 
@@ -103,7 +116,7 @@ class EditDuration {
 
 class DurationType {
   static default() {
-    return new Duration(0, 0, 0, 1);
+    return {days: 0, hours: 0, minutes: 0, seconds: 1};
   }
 
   static construct(data) {
@@ -111,14 +124,7 @@ class DurationType {
   }
 }
 
-export class Duration {
-  constructor(days, hours, minutes, seconds) {
-    this.days = days;
-    this.hours = hours;
-    this.minutes = minutes;
-    this.seconds = seconds;
-  }
-
+export class Duration extends Base {
   /**
    * Parse the given duration.
    *
@@ -152,48 +158,54 @@ export class Duration {
       seconds = parseInt(m[8]);
     }
 
-    return new Duration(days, hours, minutes, seconds);
+    return {
+      control: new Duration(),
+      value: {days, hours, minutes, seconds},
+    };
   }
 
-  render() {
-    return <code>{this.toString()}</code>;
+  render(value) {
+    return <code>{this.convertToString(value)}</code>;
   }
 
-  edit() {
-    return new EditDuration(this.days, this.hours, this.minutes, this.seconds);
+  edit(editValue) {
+    return {
+      edit: new EditDuration(),
+      editValue,
+    };
   }
 
   /**
    * Serialize to remote representation.
    */
-  serialize() {
-    return this.toString();
+  serialize(value) {
+    return this.convertToString(value);
   }
 
   /**
    * Convert the duration into a string.
    */
-  toString() {
+  convertToString(value) {
     let nothing = true;
     let s = "";
 
-    if (this.days > 0) {
+    if (value.days > 0) {
       nothing = false;
-      s += `${this.days}d`;
+      s += `${value.days}d`;
     }
 
-    if (this.hours > 0) {
+    if (value.hours > 0) {
       nothing = false;
-      s += `${this.hours}h`;
+      s += `${value.hours}h`;
     }
 
-    if (this.minutes > 0) {
+    if (value.minutes > 0) {
       nothing = false;
-      s += `${this.minutes}m`;
+      s += `${value.minutes}m`;
     }
 
-    if (this.seconds > 0 || nothing) {
-      s += `${this.seconds}s`;
+    if (value.seconds > 0 || nothing) {
+      s += `${value.seconds}s`;
     }
 
     return s;
@@ -201,23 +213,21 @@ export class Duration {
 }
 
 class EditNumber {
-  constructor(value) {
-    this.value = value;
+  validate(value) {
+    return true;
   }
 
-  validate() {
-    return !isNaN(parseInt(this.value));
+  save(value) {
+    return {
+      control: new Number(),
+      value,
+    };
   }
 
-  save() {
-    return Number.parse(this.value);
-  }
-
-  control(isValid, onChange) {
-    return <Form.Control size="sm" type="number" isInvalid={!isValid} value={this.value} onChange={
+  control(isValid, value, onChange) {
+    return <Form.Control size="sm" type="number" isInvalid={!isValid} value={value} onChange={
       e => {
-        this.value = e.target.value;
-        onChange(this);
+        onChange(parseInt(e.target.value) || 0);
       }
     } />
   }
@@ -225,168 +235,116 @@ class EditNumber {
 
 class NumberType {
   static default() {
-    return new Number(0);
+    return 0;
   }
 
   static construct(data) {
-    return new Number(data);
+    return {
+      control: new Number(),
+      value: data,
+    };
   }
 }
 
-export class Number {
-  constructor(data) {
-    this.data = data;
-  }
-
+export class Number extends Base {
   static parse(input) {
-    return new Number(parseInt(input));
+    return {
+      render: new Number(),
+      value: parseInt(input) || 0,
+    };
   }
 
-  render() {
-    return this.toString();
+  render(value) {
+    return value.toString();
   }
 
-  edit() {
-    return new EditNumber(this.toString());
+  edit(editValue) {
+    return {
+      edit: new EditNumber(),
+      editValue,
+    };
   }
 
-  serialize() {
-    return this.data;
-  }
-
-  toString() {
-    return this.data.toString();
-  }
-
-  type() {
-    return Number;
-  }
-}
-
-class EditBoolean {
-  constructor(value) {
-    this.value = value;
-  }
-
-  validate() {
-    return true;
-  }
-
-  save() {
-    return new Boolean(this.value);
-  }
-
-  control(_isValid, onChange) {
-    if (this.value) {
-      return <Button title="Toggle to false" size="sm" variant="success" onClick={
-        e => {
-          this.value = false
-          onChange(this);
-        }
-      }><True /></Button>;
-    } else {
-      return <Button title="Toggle to true" size="sm" variant="danger" onClick={
-        e => {
-          this.value = true
-          onChange(this);
-        }
-      }><False /></Button>;
-    }
+  serialize(value) {
+    return value;
   }
 }
 
 export class BooleanType {
   static default() {
-    return new Boolean(false);
+    return false;
   }
 
-  static construct(data) {
-    return new Boolean(data);
+  static construct(value) {
+    return {
+      control: new Boolean(),
+      value,
+    };
   }
 }
 
-export class Boolean {
-  constructor(value) {
-    this.value = value;
-  }
-
-  render() {
-    if (this.value) {
-      return <Button size="sm" variant="success" disabled><True /></Button>;
+export class Boolean extends Base {
+  render(value, onChange) {
+    if (value) {
+      return <Button title="Toggle to false" size="sm" variant="success" onClick={() => onChange(false)}><True /></Button>;
     } else {
-      return <Button size="sm" variant="danger" disabled><False /></Button>;
+      return <Button title="Toggle to true" size="sm" variant="danger" onClick={() => onChange(true)}><False /></Button>;
     }
   }
 
-  edit() {
-    return new EditBoolean(this.value);
+  hasEditControl() {
+    return false;
   }
 
-  serialize() {
-    return this.value;
-  }
-
-  toString() {
-    return this.value.toString();
+  serialize(value) {
+    return value;
   }
 }
 
 class EditString {
-  constructor(value) {
-    this.value = value;
-  }
-
-  validate() {
+  validate(value) {
     return true;
   }
 
-  save() {
-    return new String(this.value);
+  save(value) {
+    return {
+      control: new String(),
+      value,
+    };
   }
 
-  control(_isValid, onChange) {
-    return <Form.Control size="sm" type="value" value={this.value} onChange={
-      e => {
-        this.value = e.target.value;
-        onChange(this);
-      }
-    } />
+  control(_isValid, value, onChange) {
+    return <Form.Control size="sm" type="value" value={value} onChange={e => onChange(e.target.value)} />
   }
 }
 
 export class StringType {
   static default() {
-    return new String("");
+    return "";
   }
 
-  static construct(data) {
-    return new String(data);
+  static construct(value) {
+    return {
+      control: new String(),
+      value,
+    };
   }
 }
 
-export class String {
-  constructor(data) {
-    this.data = data;
+export class String extends Base {
+  render(value) {
+    return <code>{value}</code>;
   }
 
-  render() {
-    return <code>{this.toString()}</code>;
+  edit(editValue) {
+    return {
+      edit: new EditString(),
+      editValue,
+    };
   }
 
-  edit() {
-    return new EditString(this.toString());
-  }
-
-  serialize() {
-    return this.data;
-  }
-
-  toString() {
-    return this.data.toString();
-  }
-
-  type() {
-    return Raw;
+  serialize(value) {
+    return value;
   }
 }
 
@@ -395,24 +353,26 @@ class EditRaw {
     this.value = value;
   }
 
-  validate() {
+  validate(value) {
     try {
-      JSON.parse(this.value);
+      JSON.parse(value);
       return true;
     } catch(e) {
       return false;
     }
   }
 
-  save() {
-    return Raw.parse(this.value);
+  save(value) {
+    return {
+      control: new Raw(),
+      value,
+    };
   }
 
-  control(isValid, onChange) {
-    return <Form.Control size="sm" type="value" isInvalid={!isValid} value={this.value} onChange={
+  control(isValid, value, onChange) {
+    return <Form.Control size="sm" type="value" isInvalid={!isValid} value={value} onChange={
       e => {
-        this.value = e.target.value;
-        onChange(this);
+        onChange(e.target.value);
       }
     } />
   }
@@ -420,78 +380,82 @@ class EditRaw {
 
 export class RawType {
   static default() {
-    return new Raw({});
+    return {};
   }
 
-  static construct(data) {
-    return new Raw(data);
+  static construct(value) {
+    return {
+      control: new Raw(),
+      value,
+    };
   }
 }
 
-export class Raw {
-  constructor(data) {
-    this.data = data;
-  }
-
+export class Raw extends Base {
   static parse(data) {
     return new Raw(JSON.parse(data))
   }
 
-  render() {
-    return <code>{this.toString()}</code>;
+  render(data) {
+    return <code>{JSON.stringify(data)}</code>;
   }
 
-  edit() {
-    return new EditRaw(this.toString());
+  edit(data) {
+    return {
+      edit: new EditRaw(),
+      editValue: JSON.stringify(data),
+    };
   }
 
-  serialize() {
-    return this.data;
-  }
-
-  toString() {
-    return JSON.stringify(this.data);
+  serialize(data) {
+    return data;
   }
 }
 
-
 class EditSet {
-  constructor(values, type) {
-    this.values = values;
+  constructor(type) {
     this.type = type;
   }
 
-  validate() {
-    return true;
+  validate(values) {
+    return values.every((({edit, editValue}) => edit.validate(editValue)));
   }
 
-  save() {
-    return new Set(this.values.map(v => v.save()), this.type);
+  save(values) {
+    return {
+      control: new Set(this.type),
+      value: values.map(({edit, editValue}) => edit.save(editValue)),
+    };
   }
 
-  control(_isValid, onChange) {
-    let add = e => {
-      this.values.push(this.type.default().edit());
-      onChange(this);
+  control(_isValid, values, onChange) {
+    let add = () => {
+      let newValues = values.slice();
+      let {control, value} = this.type.construct(this.type.default());
+      newValues.push(control.edit(value));
+      onChange(newValues);
     };
 
     let remove = key => _ => {
-      this.values.splice(key, 1);
-      onChange(this);
+      let newValues = values.slice();
+      newValues.splice(key, 1);
+      onChange(newValues);
     };
 
     return (
       <div>
-        {this.values.map((v, key) => {
-          let isValid = v.validate();
+        {values.map(({edit, editValue}, key) => {
+          let isValid = edit.validate(editValue);
 
-          let e = v.control(isValid, v => {
-            onChange(this);
+          let control = edit.control(isValid, editValue, v => {
+            let newValues = values.slice();
+            newValues[key].editValue = v;
+            onChange(newValues);
           });
 
           return (
             <InputGroup key={key} className="mb-1">
-              {e}
+              {control}
               <InputGroup.Append>
                 <Button size="sm" variant="danger" onClick={remove(key)}><FontAwesomeIcon icon="minus" /></Button>
               </InputGroup.Append>
@@ -508,38 +472,44 @@ class EditSet {
 }
 
 export class SetType {
-  constructor(value) {
-    this.value = value;
-  }
-
-  default() {
-    return new Set([], this.value);
-  }
-
-  construct(data) {
-    return new Set(data.map(d => this.value.construct(d)), this.value);
-  }
-}
-
-export class Set {
-  constructor(values, type) {
-    this.values = values;
+  constructor(type) {
     this.type = type;
   }
 
-  render() {
+  default() {
+    return [];
+  }
+
+  construct(value) {
+    return {
+      control: new Set(this.type),
+      value: value.map(v => this.type.construct(v)),
+    };
+  }
+}
+
+export class Set extends Base {
+  constructor(type) {
+    super();
+    this.type = type;
+  }
+
+  render(values) {
     return (
       <div>
-        {this.values.map((v, key) => <div key={key}>{v.render()}</div>)}
+        {values.map(({control, value}, key) => <div key={key}>{control.render(value)}</div>)}
       </div>
     );
   }
 
-  edit() {
-    return new EditSet(this.values.map(v => v.edit()), this.type);
+  edit(values) {
+    return {
+      edit: new EditSet(this.type),
+      editValue: values.map(({control, value}) => control.edit(value)),
+    };
   }
 
-  serialize() {
-    return this.values.map(v => v.serialize());
+  serialize(values) {
+    return values.map(({control, value}) => control.serialize(value));
   }
 }
