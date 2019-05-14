@@ -187,6 +187,11 @@ body {
 }
 
 .settings {
+  &-group {
+    font-size: 150%;
+    font-weight: bold;
+  }
+
   &-key {
     width: 300px;
     overflow: hidden;
