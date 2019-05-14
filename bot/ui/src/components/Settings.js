@@ -1,6 +1,6 @@
 import React from "react";
 import {Spinner} from "../utils.js";
-import {Form, Button, Alert, Table, ButtonGroup, Row, Col} from "react-bootstrap";
+import {Form, Button, Alert, Table, ButtonGroup, InputGroup} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import * as types from "./Settings/Types.js";
 
@@ -71,6 +71,8 @@ export default class Settings extends React.Component {
       edit: null,
       // the value currrently being edited.
       editValue: null,
+      // current filter being applied to filter visible settings.
+      filter: "",
     };
   }
 
@@ -177,6 +179,18 @@ export default class Settings extends React.Component {
           error: `failed to edit setting: ${e}`,
         });
       });
+  }
+
+  filtered(data) {
+    if (!this.state.filter) {
+      return data;
+    }
+
+    let filter = this.state.filter.toLowerCase();
+
+    return data.filter(d => {
+      return d.key.toLowerCase().indexOf(filter) != -1;
+    });
   }
 
   renderSetting(setting, keyOverride = null) {
@@ -326,7 +340,7 @@ export default class Settings extends React.Component {
           </Alert>
         );
       } else {
-        let {order, groups, def} = partition(this.state.data);
+        let {order, groups, def} = partition(this.filtered(this.state.data));
 
         content = (
           <div>
@@ -355,6 +369,33 @@ export default class Settings extends React.Component {
       }
     }
 
+    let filterOnChange = e => {
+      this.setState({filter: e.target.value});
+    };
+
+    let clearFilter = () => {
+      this.setState({filter: ""});
+    };
+
+    let clear = null;
+
+    if (!!this.state.filter) {
+      clear = (
+        <InputGroup.Append>
+          <Button variant="primary" onClick={clearFilter}>Clear Filter</Button>
+        </InputGroup.Append>
+      );
+    }
+
+    let filter = (
+      <Form className="mt-4 mb-4">
+        <InputGroup>
+          <Form.Control value={this.state.filter} placeholder="Filter Settings" onChange={filterOnChange}></Form.Control>
+          {clear}
+        </InputGroup>
+      </Form>
+    );
+
     return (
       <div className="settings">
         <h2>
@@ -362,6 +403,7 @@ export default class Settings extends React.Component {
           {refresh}
         </h2>
         {error}
+        {filter}
         {content}
         {loading}
       </div>
