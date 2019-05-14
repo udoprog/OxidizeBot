@@ -31,30 +31,41 @@ export function decode(type) {
   }
 }
 
-const DURATION_REGEX = /^((\d+)h)?((\d+)m)?((\d+)s)?$/;
+const DURATION_REGEX = /^((\d+)d)?((\d+)h)?((\d+)m)?((\d+)s)?$/;
 
 class EditDuration {
-  constructor(hours, minutes, seconds) {
+  constructor(days, hours, minutes, seconds) {
+    this.days = days;
     this.hours = hours;
     this.minutes = minutes;
     this.seconds = seconds;
   }
 
   validate() {
-    return this.minutes >= 0 && this.minutes < 60 && this.seconds >= 0 && this.seconds < 60;
+    return (
+      this.days >= 0 &&
+      this.hours >= 0 && this.hours < 24 &&
+      this.minutes >= 0 && this.minutes < 60 &&
+      this.seconds >= 0 && this.seconds < 60
+    );
   }
 
   save() {
-    return new Duration(this.hours, this.minutes, this.seconds);
+    return new Duration(this.days, this.hours, this.minutes, this.seconds);
   }
 
   control(_isValid, onChange) {
-    let hours = this.digitControl(this.hours, "h", value => this.hours = value, onChange, _ => true);
-    let minutes = this.digitControl(this.minutes, "m", value => this.minutes = value, onChange, value => value >= 0 && value < 60);
-    let seconds = this.digitControl(this.seconds, "s", value => this.seconds = value, onChange, value => value >= 0 && value < 60);
+    let days = this.digitControl(this.days, "d", value => this.days = value, onChange, _ => true);
+    let hours = this.digitControl(this.hours, "h", value => this.hours = value, onChange, v => v >= 0 && v < 24);
+    let minutes = this.digitControl(this.minutes, "m", value => this.minutes = value, onChange, v => v >= 0 && v < 60);
+    let seconds = this.digitControl(this.seconds, "s", value => this.seconds = value, onChange, v => v >= 0 && v < 60);
 
     return (
       <Row>
+        <Col>
+          {days}
+        </Col>
+
         <Col>
           {hours}
         </Col>
@@ -92,7 +103,7 @@ class EditDuration {
 
 class DurationType {
   static default() {
-    return new Duration(0, 0, 1);
+    return new Duration(0, 0, 0, 1);
   }
 
   static construct(data) {
@@ -101,7 +112,8 @@ class DurationType {
 }
 
 export class Duration {
-  constructor(hours, minutes, seconds) {
+  constructor(days, hours, minutes, seconds) {
+    this.days = days;
     this.hours = hours;
     this.minutes = minutes;
     this.seconds = seconds;
@@ -119,23 +131,28 @@ export class Duration {
       return null;
     }
 
+    let days = 0;
     let hours = 0;
     let minutes = 0;
     let seconds = 0;
 
     if (!!m[2]) {
-      hours = parseInt(m[2]);
+      days = parseInt(m[2]);
     }
 
     if (!!m[4]) {
-      minutes = parseInt(m[4]);
+      hours = parseInt(m[4]);
     }
 
     if (!!m[6]) {
-      seconds = parseInt(m[6]);
+      minutes = parseInt(m[6]);
     }
 
-    return new Duration(hours, minutes, seconds);
+    if (!!m[8]) {
+      seconds = parseInt(m[8]);
+    }
+
+    return new Duration(days, hours, minutes, seconds);
   }
 
   render() {
@@ -143,7 +160,7 @@ export class Duration {
   }
 
   edit() {
-    return new EditDuration(this.hours, this.minutes, this.seconds);
+    return new EditDuration(this.days, this.hours, this.minutes, this.seconds);
   }
 
   /**
@@ -159,6 +176,11 @@ export class Duration {
   toString() {
     let nothing = true;
     let s = "";
+
+    if (this.days > 0) {
+      nothing = false;
+      s += `${this.days}d`;
+    }
 
     if (this.hours > 0) {
       nothing = false;
