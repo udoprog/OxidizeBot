@@ -34,7 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * `!admin disable-group <group>` - Disable all commands, promotions, and aliases belonging to the specified group.
 - Experimental support for requesting YouTube songs and associated settings.
 - `player/duplicate-duration` to enforce a minimum duration between requesting duplicates songs.
-- Added `song/youtube/min-currency`, and `song/spotify/min-currency` for a minimum currency limit to request songs.
+- Added `song/*/min-currency`, for a minimum currency limit to request songs.
+- Added `song/*/subscriber-only` and `song/subscriber-only` to limit song requests to subscribers only.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.6...HEAD
 [#27]: https://github.com/udoprog/setmod/issues/27

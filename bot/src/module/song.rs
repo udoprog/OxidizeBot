@@ -16,11 +16,13 @@ pub struct Handler {
     pub request_help_cooldown: utils::Cooldown,
     pub subscriber_only: Arc<RwLock<bool>>,
     pub request_reward: Arc<RwLock<u32>>,
-    pub youtube_support: Arc<RwLock<bool>>,
     pub spotify_max_duration: Arc<RwLock<utils::Duration>>,
     pub spotify_min_currency: Arc<RwLock<u32>>,
+    pub spotify_subscriber_only: Arc<RwLock<bool>>,
+    pub youtube_support: Arc<RwLock<bool>>,
     pub youtube_max_duration: Arc<RwLock<utils::Duration>>,
     pub youtube_min_currency: Arc<RwLock<u32>>,
+    pub youtube_subscriber_only: Arc<RwLock<bool>>,
     pub currency: Option<Arc<currency::Currency>>,
 }
 
@@ -35,8 +37,8 @@ impl Handler {
 
         let youtube_support = *self.youtube_support.read();
 
-        let future: BoxFuture<Option<player::TrackId>, failure::Error> =
-            match player::TrackId::parse_with_urls(q) {
+        let future: BoxFuture<Option<track_id::TrackId>, failure::Error> =
+            match track_id::TrackId::parse_with_urls(q) {
                 Ok(track_id) => {
                     if !youtube_support && track_id.is_youtube() {
                         let e =
@@ -82,18 +84,28 @@ impl Handler {
         let future = future.and_then({
             let stream_info = self.stream_info.clone();
             let subscriber_only = self.subscriber_only.clone();
+            let youtube_subscriber_only = self.youtube_subscriber_only.clone();
+            let spotify_subscriber_only = self.spotify_subscriber_only.clone();
             let user = ctx.user.as_owned_user();
             let is_moderator = ctx.is_moderator();
 
             move |track_id| {
-                let subscriber_only = *subscriber_only.read();
+                let (track_type, by_track_id) = match track_id {
+                    track_id::TrackId::Spotify(..) => ("Spotify", *spotify_subscriber_only.read()),
+                    track_id::TrackId::YouTube(..) => ("YouTube", *youtube_subscriber_only.read()),
+                };
+
+                let subscriber_only = by_track_id || *subscriber_only.read();
 
                 if !subscriber_only || is_moderator {
                     return Ok(track_id);
                 }
 
                 if !stream_info.read().is_subscriber(&user.name) {
-                    user.respond("You must be a subscriber to request songs, sorry :(");
+                    user.respond(format!(
+                        "You must be a subscriber for {} requests, sorry :(",
+                        track_type
+                    ));
                     return Err(None);
                 }
 
@@ -665,26 +677,23 @@ impl module::Module for Module {
             chat_feedback,
         )));
 
-        let subscriber_only = settings.sync_var(core, "song/subscriber-only", true)?;
+        let subscriber_only = settings.sync_var(core, "song/subscriber-only", false)?;
 
         let request_reward = settings.sync_var(core, "song/request-reward", 0)?;
-        let youtube_support = settings.sync_var(core, "song/youtube/support", false)?;
 
-        let spotify_max_duration = settings.sync_var(
-            core,
-            "song/spotify/max-duration",
-            utils::Duration::seconds(60 * 10),
-        )?;
+        let spotify = settings.scoped(vec!["song", "spotify"]);
+        let spotify_max_duration =
+            spotify.sync_var(core, "max-duration", utils::Duration::seconds(60 * 10))?;
 
-        let spotify_min_currency = settings.sync_var(core, "song/spotify/min-currency", 60)?;
+        let spotify_min_currency = spotify.sync_var(core, "min-currency", 60)?;
+        let spotify_subscriber_only = spotify.sync_var(core, "subscriber-only", false)?;
 
-        let youtube_max_duration = settings.sync_var(
-            core,
-            "song/youtube/max-duration",
-            utils::Duration::seconds(60 * 10),
-        )?;
-
-        let youtube_min_currency = settings.sync_var(core, "song/youtube/min-currency", 60)?;
+        let youtube = settings.scoped(vec!["song", "youtube"]);
+        let youtube_support = youtube.sync_var(core, "support", false)?;
+        let youtube_max_duration =
+            youtube.sync_var(core, "max-duration", utils::Duration::seconds(60 * 10))?;
+        let youtube_min_currency = youtube.sync_var(core, "min-currency", 60)?;
+        let youtube_subscriber_only = youtube.sync_var(core, "subscriber-only", true)?;
 
         handlers.insert(
             "song",
@@ -695,11 +704,13 @@ impl module::Module for Module {
                 player: self.player.clone(),
                 subscriber_only,
                 request_reward,
-                youtube_support,
                 spotify_max_duration,
                 spotify_min_currency,
+                spotify_subscriber_only,
+                youtube_support,
                 youtube_max_duration,
                 youtube_min_currency,
+                youtube_subscriber_only,
                 currency: currency.cloned().map(Arc::new),
             },
         );
