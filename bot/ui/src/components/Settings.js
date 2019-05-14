@@ -19,8 +19,8 @@ function partition(data) {
       continue;
     }
 
-    let rest = p.splice(1).join('/');
-    let g = p[0];
+    let rest = p[p.length - 1];
+    let g = p.slice(0, p.length - 1).join('/');
 
     let group = groups[g] || [];
 

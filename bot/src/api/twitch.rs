@@ -1,6 +1,6 @@
 //! Twitch API helpers.
 
-use crate::oauth2;
+use crate::{oauth2, utils};
 use chrono::{DateTime, Utc};
 use futures::{future, Future, Stream as _};
 use parking_lot::RwLock;
@@ -132,6 +132,29 @@ impl Twitch {
             .map(|data| data.data.into_iter().next())
     }
 
+    /// Get information on a user.
+    pub fn stream_subscriptions(
+        &self,
+        broadcaster_id: &str,
+        user_ids: Vec<String>,
+    ) -> Paged<Subscription> {
+        let mut request = self
+            .new_api(Method::GET, &["subscriptions"])
+            .query_param("broadcaster_id", broadcaster_id);
+
+        for user_id in user_ids {
+            request = request.query_param("user_id", &user_id);
+        }
+
+        let copied = request.clone_without_body();
+        let initial = request.execute::<Page<Subscription>>();
+
+        Paged {
+            request: copied,
+            page: Some(Box::new(initial)),
+        }
+    }
+
     /// Create a clip for the given broadcaster.
     pub fn create_clip(
         &self,
@@ -237,6 +260,52 @@ impl Twitch {
     }
 }
 
+/// A response that is paged as a stream of requests.
+pub struct Paged<T> {
+    request: RequestBuilder,
+    page: Option<utils::BoxFuture<Page<T>, failure::Error>>,
+}
+
+impl<T> futures::Stream for Paged<T>
+where
+    T: 'static + Send + serde::de::DeserializeOwned,
+{
+    type Item = Vec<T>;
+    type Error = failure::Error;
+
+    fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
+        use futures::Async;
+
+        if let Some(mut page) = self.page.take() {
+            match page.poll()? {
+                Async::NotReady => {
+                    self.page = Some(page);
+                    return Ok(Async::NotReady);
+                }
+                Async::Ready(page) => {
+                    let Page { data, pagination } = page;
+
+                    if data.is_empty() {
+                        return Ok(Async::Ready(None));
+                    }
+
+                    if let Some(cursor) = pagination.and_then(|p| p.cursor) {
+                        let req = self
+                            .request
+                            .clone_without_body()
+                            .query_param("after", &cursor);
+                        self.page = Some(Box::new(req.execute()));
+                    }
+
+                    return Ok(Async::Ready(Some(data)));
+                }
+            }
+        }
+
+        Ok(Async::Ready(None))
+    }
+}
+
 struct RequestBuilder {
     token: Arc<RwLock<oauth2::Token>>,
     client: Client,
@@ -249,6 +318,19 @@ struct RequestBuilder {
 }
 
 impl RequestBuilder {
+    /// Clone the request but discard the body since it's not cloneable.
+    pub fn clone_without_body(&self) -> RequestBuilder {
+        RequestBuilder {
+            token: self.token.clone(),
+            client: self.client.clone(),
+            url: self.url.clone(),
+            method: self.method.clone(),
+            headers: self.headers.clone(),
+            body: None,
+            use_bearer: self.use_bearer,
+        }
+    }
+
     /// Execute the request.
     pub fn execute<T>(self) -> impl Future<Item = T, Error = failure::Error>
     where
@@ -257,6 +339,7 @@ impl RequestBuilder {
         let token = self.token.read();
         let access_token = token.access_token().to_string();
 
+        log::trace!("request: {}: {}", self.method, self.url);
         let mut r = self.client.request(self.method, self.url);
 
         if let Some(body) = self.body {
@@ -353,6 +436,17 @@ pub struct User {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct Subscription {
+    pub broadcaster_id: String,
+    pub broadcaster_name: String,
+    pub is_gift: bool,
+    pub tier: String,
+    pub plan_name: String,
+    pub user_id: String,
+    pub user_name: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct StreamInfo {
     pub started_at: DateTime<Utc>,
     pub title: String,
@@ -419,14 +513,13 @@ pub struct Clip {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Pagination {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    cursor: Option<String>,
+    pub cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Page<T> {
-    data: Vec<T>,
-    pagination: Pagination,
+    pub data: Vec<T>,
+    pub pagination: Option<Pagination>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

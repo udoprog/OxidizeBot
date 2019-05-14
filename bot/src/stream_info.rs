@@ -1,6 +1,7 @@
 use crate::{api, utils::BoxFuture};
 use failure::format_err;
-use futures::{try_ready, Async, Future, Poll, Stream as _};
+use futures::{future, try_ready, Async, Future, Poll, Stream as _};
+use hashbrown::HashSet;
 use parking_lot::RwLock;
 use std::{sync::Arc, time};
 use tokio::timer;
@@ -11,6 +12,15 @@ pub struct StreamInfo {
     pub user: Option<api::twitch::User>,
     pub title: Option<String>,
     pub game: Option<String>,
+    pub subs: Vec<api::twitch::Subscription>,
+    pub subs_set: HashSet<String>,
+}
+
+impl StreamInfo {
+    /// Check if a name is a subscriber.
+    pub fn is_subscriber(&self, name: &str) -> bool {
+        self.subs_set.contains(name)
+    }
 }
 
 /// Set up a reward loop.
@@ -32,18 +42,16 @@ pub fn setup(
     (info, future)
 }
 
+struct Fetch {
+    user: Option<api::twitch::User>,
+    subs: Vec<api::twitch::Subscription>,
+    stream: Option<api::twitch::Stream>,
+    channel: api::twitch::Channel,
+}
+
 enum State {
     Interval,
-    FetchInfo(
-        BoxFuture<
-            (
-                Option<api::twitch::User>,
-                Option<api::twitch::Stream>,
-                api::twitch::Channel,
-            ),
-            failure::Error,
-        >,
-    ),
+    FetchInfo(BoxFuture<Fetch, failure::Error>),
 }
 
 /// Future associated with reloading stream information.
@@ -54,6 +62,8 @@ pub struct StreamInfoFuture {
     state: State,
     info: Arc<RwLock<StreamInfo>>,
 }
+
+type SubscriptionsFuture = BoxFuture<Vec<api::twitch::Subscription>, failure::Error>;
 
 impl Future for StreamInfoFuture {
     type Item = ();
@@ -69,14 +79,49 @@ impl Future for StreamInfoFuture {
                 {
                     None => failure::bail!("interval stream ended"),
                     Some(_) => {
-                        let user = self.twitch.user_by_login(self.streamer.as_str());
+                        let user = self.twitch.user_by_login(self.streamer.as_str()).and_then({
+                            let twitch = self.twitch.clone();
+
+                            move |user| {
+                                let subs: SubscriptionsFuture = match user.as_ref() {
+                                    Some(user) => Box::new(
+                                        twitch
+                                            .stream_subscriptions(&user.id, vec![])
+                                            .concat2()
+                                            .or_else(|e| {
+                                                log_err!(e, "failed to get subscriptions");
+                                                Ok(vec![])
+                                            }),
+                                    ),
+                                    None => Box::new(future::ok(vec![])),
+                                };
+
+                                future::ok(user).join(subs)
+                            }
+                        });
+
                         let stream = self.twitch.stream_by_login(self.streamer.as_str());
                         let channel = self.twitch.channel_by_login(self.streamer.as_str());
-                        self.state = State::FetchInfo(Box::new(user.join3(stream, channel)));
+
+                        let future =
+                            user.join3(stream, channel)
+                                .map(|((user, subs), stream, channel)| Fetch {
+                                    user,
+                                    subs,
+                                    stream,
+                                    channel,
+                                });
+
+                        self.state = State::FetchInfo(Box::new(future));
                     }
                 },
                 State::FetchInfo(ref mut future) => {
-                    let (user, stream, channel) = match future.poll() {
+                    let Fetch {
+                        user,
+                        subs,
+                        stream,
+                        channel,
+                    } = match future.poll() {
                         Ok(Async::Ready(v)) => v,
                         Ok(Async::NotReady) => return Ok(Async::NotReady),
                         Err(e) => {
@@ -91,6 +136,12 @@ impl Future for StreamInfoFuture {
                     info.stream = stream;
                     info.title = Some(channel.status);
                     info.game = channel.game;
+                    info.subs = subs;
+                    info.subs_set = info
+                        .subs
+                        .iter()
+                        .map(|s| s.user_name.to_lowercase())
+                        .collect();
 
                     self.state = State::Interval;
                 }

@@ -143,7 +143,7 @@ impl Irc<'_> {
         )));
 
         let stream_info = {
-            let interval = time::Duration::from_secs(30);
+            let interval = time::Duration::from_secs(60 * 5);
             let (stream_info, future) =
                 stream_info::setup(config.streamer.as_str(), interval, streamer_twitch.clone());
             futures.push(Box::new(future));
@@ -166,6 +166,7 @@ impl Irc<'_> {
                 handlers: &mut handlers,
                 currency: self.currency.as_ref(),
                 twitch: &bot_twitch,
+                streamer_twitch: &streamer_twitch,
                 futures: &mut futures,
                 stream_info: &stream_info,
                 sender: &sender,

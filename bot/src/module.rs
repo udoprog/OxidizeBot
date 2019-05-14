@@ -68,6 +68,7 @@ pub struct HookContext<'a> {
     pub handlers: &'a mut Handlers,
     pub currency: Option<&'a currency::Currency>,
     pub twitch: &'a api::Twitch,
+    pub streamer_twitch: &'a api::Twitch,
     pub futures: &'a mut Vec<utils::BoxFuture<(), failure::Error>>,
     pub stream_info: &'a Arc<RwLock<stream_info::StreamInfo>>,
     pub sender: &'a irc::Sender,

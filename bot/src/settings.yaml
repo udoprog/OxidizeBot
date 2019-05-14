@@ -65,17 +65,23 @@ types:
   secrets/oauth2/youtube/token:
     doc: Stored token for YouTube authentication.
     type: {id: raw}
+  song/subscriber-only:
+    doc: If only subscribers can request songs.
+    type: {id: bool}
   song/chat-feedback:
     doc: If song feedback is visible in chat or not.
     type: {id: bool}
   song/request-reward:
     doc: Fixed reward that anyone gets for requesting songs.
     type: {id: number}
+  song/spotify/min-currency:
+    doc: The minimum amount of stream currency required to request Spotify songs.
+    type: {id: number}
   song/spotify/max-duration:
     doc: The longest duration we will accept for a Spotify songs. Any longer will be capped.
     type: {id: duration}
   song/youtube/min-currency:
-    doc: The minimum amount of stream currency required to request Spotify songs.
+    doc: The minimum amount of stream currency required to request YouTube songs.
     type: {id: number}
   song/youtube/support:
     doc: If we accept YouTube song requests (Experimental).

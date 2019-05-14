@@ -221,6 +221,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             .with_scopes(vec![
                 String::from("channel_editor"),
                 String::from("channel_read"),
+                String::from("channel:read:subscriptions"),
             ])
             .build()?;
 

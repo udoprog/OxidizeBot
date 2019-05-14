@@ -1,4 +1,6 @@
-use crate::{command, currency, db, irc, module, player, track_id, utils, utils::BoxFuture};
+use crate::{
+    command, currency, db, irc, module, player, stream_info, track_id, utils, utils::BoxFuture,
+};
 use chrono::Utc;
 use futures::{future, Future, Stream as _};
 use parking_lot::RwLock;
@@ -9,8 +11,10 @@ const EXAMPLE_SEARCH: &'static str = "queen we will rock you";
 /// Handler for the `!song` command.
 pub struct Handler {
     pub db: db::Database,
+    pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
     pub player: player::PlayerClient,
     pub request_help_cooldown: utils::Cooldown,
+    pub subscriber_only: Arc<RwLock<bool>>,
     pub request_reward: Arc<RwLock<u32>>,
     pub youtube_support: Arc<RwLock<bool>>,
     pub spotify_max_duration: Arc<RwLock<utils::Duration>>,
@@ -31,7 +35,7 @@ impl Handler {
 
         let youtube_support = *self.youtube_support.read();
 
-        let track_id_future: BoxFuture<Option<player::TrackId>, failure::Error> =
+        let future: BoxFuture<Option<player::TrackId>, failure::Error> =
             match player::TrackId::parse_with_urls(q) {
                 Ok(track_id) => {
                     if !youtube_support && track_id.is_youtube() {
@@ -61,21 +65,40 @@ impl Handler {
                 }
             };
 
-        let future = track_id_future.and_then({
+        let future = future.map_err(Some);
+
+        let future = future.and_then({
             let user = ctx.user.as_owned_user();
 
             move |track_id| match track_id {
                 None => {
                     user.respond("Could not find a track matching your request, sorry :(");
-                    return Err(failure::format_err!("bad track in request"));
+                    return Err(None);
                 }
                 Some(track_id) => return Ok(track_id),
             }
         });
 
-        let future = future.map_err(|e| {
-            log_err!(e, "failed to add track");
-            ()
+        let future = future.and_then({
+            let stream_info = self.stream_info.clone();
+            let subscriber_only = self.subscriber_only.clone();
+            let user = ctx.user.as_owned_user();
+            let is_moderator = ctx.is_moderator();
+
+            move |track_id| {
+                let subscriber_only = *subscriber_only.read();
+
+                if !subscriber_only || is_moderator {
+                    return Ok(track_id);
+                }
+
+                if !stream_info.read().is_subscriber(&user.name) {
+                    user.respond("You must be a subscriber to request songs, sorry :(");
+                    return Err(None);
+                }
+
+                Ok(track_id)
+            }
         });
 
         let future = future
@@ -187,15 +210,27 @@ impl Handler {
                                 ));
                             }
                             Err(player::AddTrackError::Error(e)) => {
-                                user.respond("There was a problem adding your song :(");
-                                log_err!(e, "failed to add song");
+                                return Err(Some(e));
                             }
                         }
 
-                        Err(())
+                        Err(None)
                     })
                 }
             });
+
+        let future = future.map_err({
+            let user = ctx.user.as_owned_user();
+
+            move |e| {
+                if let Some(e) = e {
+                    user.respond("There was a problem adding your song :(");
+                    log_err!(e, "error when adding song");
+                }
+
+                ()
+            }
+        });
 
         let future = future.and_then::<_, BoxFuture<(), ()>>({
             let currency = self.currency.clone();
@@ -611,6 +646,7 @@ impl module::Module for Module {
         module::HookContext {
             core,
             db,
+            stream_info,
             irc_config,
             handlers,
             futures,
@@ -628,6 +664,8 @@ impl module::Module for Module {
             sender.clone(),
             chat_feedback,
         )));
+
+        let subscriber_only = settings.sync_var(core, "song/subscriber-only", true)?;
 
         let request_reward = settings.sync_var(core, "song/request-reward", 0)?;
         let youtube_support = settings.sync_var(core, "song/youtube/support", false)?;
@@ -652,8 +690,10 @@ impl module::Module for Module {
             "song",
             Handler {
                 db: db.clone(),
+                stream_info: stream_info.clone(),
                 request_help_cooldown: self.help_cooldown.clone(),
                 player: self.player.clone(),
+                subscriber_only,
                 request_reward,
                 youtube_support,
                 spotify_max_duration,
