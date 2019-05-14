@@ -82,7 +82,7 @@ When the bot is running, you can find all settings under `Internal -> Settings`.
 
 setmod has support for playing YouTube videos.
 
-This is enabled through the `song/youtube-support` setting and requires you to run the YouTube Player in the web UI.
+This is enabled through the `song/youtube/support` setting and requires you to run the YouTube Player in the web UI.
 
 This can be embedded in OBS with the following Custom CSS:
 

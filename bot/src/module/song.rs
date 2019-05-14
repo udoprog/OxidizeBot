@@ -14,7 +14,9 @@ pub struct Handler {
     pub request_reward: Arc<RwLock<u32>>,
     pub youtube_support: Arc<RwLock<bool>>,
     pub spotify_max_duration: Arc<RwLock<utils::Duration>>,
+    pub spotify_min_currency: Arc<RwLock<u32>>,
     pub youtube_max_duration: Arc<RwLock<utils::Duration>>,
+    pub youtube_min_currency: Arc<RwLock<u32>>,
     pub currency: Option<Arc<currency::Currency>>,
 }
 
@@ -82,7 +84,10 @@ impl Handler {
                 let user = ctx.user.as_owned_user();
                 let player = self.player.clone();
                 let spotify_max_duration = self.spotify_max_duration.clone();
+                let spotify_min_currency = self.spotify_min_currency.clone();
                 let youtube_max_duration = self.youtube_max_duration.clone();
+                let youtube_min_currency = self.youtube_min_currency.clone();
+                let currency = self.currency.clone();
 
                 move |track_id| {
                     let max_duration = match track_id {
@@ -90,7 +95,16 @@ impl Handler {
                         player::TrackId::YouTube(_) => Some(youtube_max_duration.read().clone()),
                     };
 
-                    player.add_track(&user.name, track_id, is_moderator, max_duration).then(move |result| {
+                    let min_currency = match track_id {
+                        player::TrackId::Spotify(_) => Some(spotify_min_currency.read().clone() as i64),
+                        player::TrackId::YouTube(_) => Some(youtube_min_currency.read().clone() as i64),
+                    };
+
+                    let request = player.add_track(
+                        &user.target, &user.name, track_id, is_moderator, max_duration, min_currency
+                    );
+
+                    request.then(move |result| {
                         match result {
                             Ok((pos, item)) => return Ok((pos, item)),
                             Err(player::AddTrackError::PlayerClosed(reason)) => {
@@ -157,6 +171,19 @@ impl Handler {
                                     who = who,
                                     duration = duration,
                                     limit = limit,
+                                ));
+                            }
+                            Err(player::AddTrackError::NotEnoughCurrency { balance, required }) => {
+                                let currency = match currency {
+                                    Some(currency) => currency.name.to_string(),
+                                    None => String::from("currency"),
+                                };
+
+                                user.respond(format!(
+                                    "You don't have enough {currency} to request songs. Need {required}, but you have {balance}, sorry :(",
+                                    currency = currency,
+                                    required = required,
+                                    balance = balance,
                                 ));
                             }
                             Err(player::AddTrackError::Error(e)) => {
@@ -603,19 +630,23 @@ impl module::Module for Module {
         )));
 
         let request_reward = settings.sync_var(core, "song/request-reward", 0)?;
-        let youtube_support = settings.sync_var(core, "song/youtube-support", false)?;
+        let youtube_support = settings.sync_var(core, "song/youtube/support", false)?;
 
         let spotify_max_duration = settings.sync_var(
             core,
-            "song/spotify-max-duration",
+            "song/spotify/max-duration",
             utils::Duration::seconds(60 * 10),
         )?;
 
+        let spotify_min_currency = settings.sync_var(core, "song/spotify/min-currency", 60)?;
+
         let youtube_max_duration = settings.sync_var(
             core,
-            "song/youtube-max-duration",
+            "song/youtube/max-duration",
             utils::Duration::seconds(60 * 10),
         )?;
+
+        let youtube_min_currency = settings.sync_var(core, "song/youtube/min-currency", 60)?;
 
         handlers.insert(
             "song",
@@ -626,7 +657,9 @@ impl module::Module for Module {
                 request_reward,
                 youtube_support,
                 spotify_max_duration,
+                spotify_min_currency,
                 youtube_max_duration,
+                youtube_min_currency,
                 currency: currency.cloned().map(Arc::new),
             },
         );

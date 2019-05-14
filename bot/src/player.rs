@@ -324,6 +324,7 @@ pub fn run(
     let player = Player {
         device: device.clone(),
         queue,
+        db: db.clone(),
         max_queue_length,
         max_songs_per_user,
         duplicate_duration,
@@ -579,6 +580,7 @@ pub struct CurrentData<'a> {
 pub struct Player {
     device: self::connect::ConnectDevice,
     queue: Queue,
+    db: db::Database,
     max_queue_length: Arc<RwLock<u32>>,
     max_songs_per_user: Arc<RwLock<u32>>,
     duplicate_duration: Arc<RwLock<utils::Duration>>,
@@ -600,6 +602,7 @@ impl Player {
     pub fn client(&self) -> PlayerClient {
         PlayerClient {
             device: self.device.clone(),
+            db: self.db.clone(),
             queue: self.queue.clone(),
             thread_pool: Arc::new(ThreadPool::new()),
             max_queue_length: self.max_queue_length.clone(),
@@ -648,6 +651,7 @@ impl Player {
 #[derive(Clone)]
 pub struct PlayerClient {
     device: self::connect::ConnectDevice,
+    db: db::Database,
     queue: Queue,
     thread_pool: Arc<ThreadPool>,
     max_queue_length: Arc<RwLock<u32>>,
@@ -835,18 +839,22 @@ impl PlayerClient {
     /// Returns the item added.
     pub fn add_track(
         &self,
+        channel: &str,
         user: &str,
         track_id: TrackId,
         is_moderator: bool,
         max_duration: Option<utils::Duration>,
+        min_currency: Option<i64>,
     ) -> impl Future<Item = (usize, Arc<Item>), Error = AddTrackError> {
         // invariant checks
         let fut = future::lazy({
+            let db = self.db.clone();
             let queue = self.queue.clone();
             let max_queue_length = *self.max_queue_length.read();
             let max_songs_per_user = *self.max_songs_per_user.read();
             let duplicate_duration = self.duplicate_duration.read().clone();
             let closed = self.closed.clone();
+            let channel = channel.to_string();
             let user = user.to_string();
             let track_id = track_id.clone();
 
@@ -860,25 +868,39 @@ impl PlayerClient {
                     if let Some(reason) = closed.read().as_ref() {
                         return Err(AddTrackError::PlayerClosed(reason.clone()));
                     }
-                }
 
-                // NB: moderator is allowed to violate max queue length.
-                if !is_moderator && len >= max_queue_length as usize {
-                    return Err(AddTrackError::QueueFull);
-                }
+                    // NB: moderator is allowed to violate max queue length.
+                    if len >= max_queue_length as usize {
+                        return Err(AddTrackError::QueueFull);
+                    }
 
-                if !is_moderator && !duplicate_duration.is_empty() {
-                    if let Some(last) = queue
-                        .last_song_within(&track_id, duplicate_duration.clone())
-                        .map_err(AddTrackError::Error)?
-                    {
-                        let added_at = DateTime::from_utc(last.added_at, Utc);
+                    if !duplicate_duration.is_empty() {
+                        if let Some(last) = queue
+                            .last_song_within(&track_id, duplicate_duration.clone())
+                            .map_err(AddTrackError::Error)?
+                        {
+                            let added_at = DateTime::from_utc(last.added_at, Utc);
 
-                        return Err(AddTrackError::Duplicate(
-                            added_at,
-                            last.user,
-                            duplicate_duration.as_std(),
-                        ));
+                            return Err(AddTrackError::Duplicate(
+                                added_at,
+                                last.user,
+                                duplicate_duration.as_std(),
+                            ));
+                        }
+                    }
+
+                    if let Some(min_currency) = min_currency {
+                        let balance = db
+                            .balance_of(channel.as_str(), user.as_str())
+                            .map_err(AddTrackError::Error)?
+                            .unwrap_or_default();
+
+                        if balance < min_currency {
+                            return Err(AddTrackError::NotEnoughCurrency {
+                                balance,
+                                required: min_currency,
+                            });
+                        }
                     }
                 }
 
@@ -1082,6 +1104,8 @@ pub enum AddTrackError {
     PlayerClosed(Option<Arc<String>>),
     /// Duplicate song that was added at the specified time by the specified user.
     Duplicate(DateTime<Utc>, Option<String>, Duration),
+    /// Not enough currency to request songs.
+    NotEnoughCurrency { required: i64, balance: i64 },
     /// Other generic error happened.
     Error(failure::Error),
 }

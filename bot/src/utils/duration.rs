@@ -88,8 +88,8 @@ impl fmt::Display for Duration {
 
         if s > 3_600u64 * 24u64 {
             nothing = false;
-            write!(fmt, "{}d", s / 3_600u64 * 24u64)?;
-            s = s % 3_600u64 * 24u64;
+            write!(fmt, "{}d", s / (3_600u64 * 24u64))?;
+            s = s % (3_600u64 * 24u64);
         }
 
         if s > 3_600u64 {
