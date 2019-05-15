@@ -11,33 +11,42 @@ struct Database(db::Database);
 impl Database {
     private_database_group_fns!(aliases, Alias, Key);
 
-    fn edit(&self, key: &Key, text: &str) -> Result<(), failure::Error> {
+    fn edit(&self, key: &Key, text: &str) -> Result<Option<db::models::Alias>, failure::Error> {
         use db::schema::aliases::dsl;
         let c = self.0.pool.lock();
 
         let filter =
             dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
 
-        match filter.clone().count().execute(&*c)? {
-            0 => {
-                let alias = db::models::InsertAlias {
+        let first = filter.clone().first::<db::models::Alias>(&*c).optional()?;
+
+        match first {
+            None => {
+                let alias = db::models::Alias {
                     channel: key.channel.to_string(),
                     name: key.name.to_string(),
                     text: text.to_string(),
+                    group: None,
+                    disabled: false,
                 };
 
                 diesel::insert_into(dsl::aliases)
                     .values(&alias)
                     .execute(&*c)?;
+                Ok(Some(alias))
             }
-            _ => {
+            Some(alias) => {
                 let mut set = db::models::UpdateAlias::default();
                 set.text = Some(text);
                 diesel::update(filter).set(&set).execute(&*c)?;
+
+                if alias.disabled {
+                    return Ok(None);
+                }
+
+                Ok(Some(alias))
             }
         }
-
-        Ok(())
     }
 
     fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
@@ -119,12 +128,24 @@ impl Aliases {
         template: template::Template,
     ) -> Result<(), failure::Error> {
         let key = Key::new(channel, name);
-        self.db.edit(&key, template.source())?;
+
         let mut inner = self.inner.write();
 
-        db_in_memory_update!(inner, key, |alias| {
-            alias.template = template;
-        });
+        if let Some(alias) = self.db.edit(&key, template.source())? {
+            log::info!("inserting alias in-memory");
+
+            inner.insert(
+                key.clone(),
+                Arc::new(Alias {
+                    key,
+                    template,
+                    group: alias.group,
+                    disabled: alias.disabled,
+                }),
+            );
+        } else {
+            inner.remove(&key);
+        }
 
         Ok(())
     }

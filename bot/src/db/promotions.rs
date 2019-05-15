@@ -28,7 +28,7 @@ impl Database {
         key: &Key,
         frequency: utils::Duration,
         text: &str,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<Option<db::models::Promotion>, failure::Error> {
         use db::schema::promotions::dsl;
 
         let c = self.0.pool.lock();
@@ -56,17 +56,23 @@ impl Database {
                 diesel::insert_into(dsl::promotions)
                     .values(&command)
                     .execute(&*c)?;
+
+                Ok(None)
             }
-            Some(_) => {
+            Some(promotion) => {
                 let mut set = db::models::UpdatePromotion::default();
                 set.text = Some(text);
                 set.frequency = Some(frequency);
 
                 diesel::update(filter).set(&set).execute(&*c)?;
+
+                if promotion.disabled {
+                    return Ok(None);
+                }
+
+                Ok(Some(promotion))
             }
         }
-
-        Ok(())
     }
 
     fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
@@ -143,15 +149,25 @@ impl Promotions {
     ) -> Result<(), failure::Error> {
         let key = Key::new(channel, name);
 
-        self.db.edit(&key, frequency.clone(), template.source())?;
-
         let mut inner = self.inner.write();
 
-        db_in_memory_update!(inner, key, |p| {
-            p.frequency = frequency;
-            p.template = template;
-            p.promoted_at = None;
-        });
+        if let Some(promotion) = self.db.edit(&key, frequency.clone(), template.source())? {
+            let promoted_at = promotion.promoted_at.map(|d| DateTime::from_utc(d, Utc));
+
+            inner.insert(
+                key.clone(),
+                Arc::new(Promotion {
+                    key,
+                    frequency,
+                    promoted_at,
+                    template,
+                    group: promotion.group,
+                    disabled: promotion.disabled,
+                }),
+            );
+        } else {
+            inner.remove(&key);
+        }
 
         Ok(())
     }

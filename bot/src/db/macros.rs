@@ -189,14 +189,3 @@ macro_rules! private_database_group_fns {
         }
     }
 }
-
-/// Helper macro to deal with in-memory upserts which are synced with the database.
-macro_rules! db_in_memory_update {
-    ($inner:expr, $key:expr, |$thing:ident| $update:block) => {{
-        if let hashbrown::hash_map::Entry::Occupied(mut e) = $inner.entry($key.clone()) {
-            let mut $thing = (**e.get()).clone();
-            $update;
-            e.insert(Arc::new($thing));
-        }
-    }};
-}

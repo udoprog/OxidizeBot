@@ -64,6 +64,7 @@ fn default_cooldown() -> utils::Cooldown {
 pub struct Irc<'a> {
     pub core: &'a mut tokio_core::reactor::Core,
     pub db: db::Database,
+    pub youtube: Arc<api::YouTube>,
     pub streamer_twitch: api::Twitch,
     pub bot_twitch: api::Twitch,
     pub config: &'a config::Config,
@@ -90,6 +91,7 @@ impl Irc<'_> {
         let Irc {
             core,
             db,
+            youtube,
             streamer_twitch,
             bot_twitch,
             config,
@@ -165,6 +167,7 @@ impl Irc<'_> {
                 promotions: &promotions,
                 handlers: &mut handlers,
                 currency: self.currency.as_ref(),
+                youtube: &youtube,
                 twitch: &bot_twitch,
                 streamer_twitch: &streamer_twitch,
                 futures: &mut futures,

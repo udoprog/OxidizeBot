@@ -15,15 +15,19 @@ struct Database(db::Database);
 impl Database {
     private_database_group_fns!(commands, Command, Key);
 
-    fn edit(&self, key: &Key, text: &str) -> Result<(), failure::Error> {
+    fn edit(&self, key: &Key, text: &str) -> Result<Option<db::models::Command>, failure::Error> {
         use db::schema::commands::dsl;
         let c = self.0.pool.lock();
 
         let filter =
             dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
 
-        match filter.clone().count().execute(&*c)? {
-            0 => {
+        match filter
+            .clone()
+            .first::<db::models::Command>(&*c)
+            .optional()?
+        {
+            None => {
                 let command = db::models::Command {
                     channel: key.channel.to_string(),
                     name: key.name.to_string(),
@@ -36,16 +40,20 @@ impl Database {
                 diesel::insert_into(dsl::commands)
                     .values(&command)
                     .execute(&*c)?;
+                return Ok(Some(command));
             }
-            _ => {
+            Some(command) => {
                 let mut set = db::models::UpdateCommand::default();
                 set.text = Some(text);
-
                 diesel::update(filter).set(&set).execute(&*c)?;
+
+                if command.disabled {
+                    return Ok(None);
+                }
+
+                return Ok(Some(command));
             }
         }
-
-        Ok(())
     }
 
     fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
@@ -119,14 +127,26 @@ impl Commands {
         template: template::Template,
     ) -> Result<(), failure::Error> {
         let key = Key::new(channel, name);
-        self.db.edit(&key, template.source())?;
 
         let mut inner = self.inner.write();
 
-        db_in_memory_update!(inner, key, |c| {
-            c.vars = template.vars();
-            c.template = template;
-        });
+        if let Some(command) = self.db.edit(&key, template.source())? {
+            let vars = template.vars();
+
+            inner.insert(
+                key.clone(),
+                Arc::new(Command {
+                    key,
+                    count: Arc::new(AtomicUsize::new(command.count as usize)),
+                    template,
+                    vars,
+                    group: command.group,
+                    disabled: command.disabled,
+                }),
+            );
+        } else {
+            inner.remove(&key);
+        }
 
         Ok(())
     }

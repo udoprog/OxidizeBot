@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - URL whitelist is now stored in a setting `irc/whitelisted-hosts` ([#37]).
 - Massively improved settings and schema management.
 - Settings are now parsed from chat, meaning they are validated and doesn't have to be JSON.
+- `!song request` can now search for YouTube videos through `!song request youtube:<query>`.
 
 ### Added
 - `!admin version` to check current setmod-bot package version. ([#32])

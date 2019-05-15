@@ -774,19 +774,40 @@ impl PlayerClient {
     }
 
     /// Search for a track.
-    pub fn search_track(
-        &self,
-        q: &str,
-    ) -> impl Future<Item = Option<TrackId>, Error = failure::Error> {
-        self.spotify
-            .search_track(q)
-            .and_then(|page| match page.items.into_iter().next() {
+    pub fn search_track(&self, q: &str) -> utils::BoxFuture<Option<TrackId>, failure::Error> {
+        if q.starts_with("youtube:") {
+            let q = q.trim_start_matches("youtube:");
+
+            return Box::new(self.youtube.search(q).and_then(|results| {
+                let result = results.items.into_iter().filter(|r| match r.id.kind {
+                    api::youtube::Kind::Video => true,
+                    _ => false,
+                });
+
+                let mut result = result.flat_map(|r| r.id.video_id);
+
+                match result.next() {
+                    Some(id) => Ok(Some(TrackId::YouTube(id))),
+                    None => Ok(None),
+                }
+            }));
+        }
+
+        let q = if q.starts_with("spotify:") {
+            q.trim_start_matches("spotify:")
+        } else {
+            q
+        };
+
+        Box::new(self.spotify.search_track(q).and_then(
+            |page| match page.items.into_iter().next() {
                 Some(track) => match SpotifyId::from_base62(&track.id) {
                     Ok(track_id) => Ok(Some(TrackId::Spotify(track_id))),
                     Err(_) => Err(failure::format_err!("search result returned malformed id")),
                 },
                 None => Ok(None),
-            })
+            },
+        ))
     }
 
     /// Play a theme track.

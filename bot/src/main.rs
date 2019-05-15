@@ -336,6 +336,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         let future = irc::Irc {
             core: &mut core,
             db: db,
+            youtube: youtube.clone(),
             streamer_twitch: twitch.clone(),
             bot_twitch: api::Twitch::new(bot_token.clone())?,
             config: &config,

@@ -67,6 +67,7 @@ pub struct HookContext<'a> {
     pub promotions: &'a db::Promotions,
     pub handlers: &'a mut Handlers,
     pub currency: Option<&'a currency::Currency>,
+    pub youtube: &'a Arc<api::YouTube>,
     pub twitch: &'a api::Twitch,
     pub streamer_twitch: &'a api::Twitch,
     pub futures: &'a mut Vec<utils::BoxFuture<(), failure::Error>>,

@@ -67,6 +67,18 @@ impl YouTube {
             .map(|videos| videos.and_then(|v| v.items.into_iter().next()))
     }
 
+    /// Search YouTube.
+    pub fn search(&self, q: &str) -> impl Future<Item = SearchResults, Error = failure::Error> {
+        self.v3(Method::GET, &["search"])
+            .query_param("part", "snippet")
+            .query_param("q", q)
+            .json()
+            .and_then(|result| match result {
+                Some(result) => Ok(result),
+                None => failure::bail!("got empty response"),
+            })
+    }
+
     /// Get video info of a video.
     pub fn get_video_info(
         &self,
@@ -193,6 +205,44 @@ pub struct Videos {
     pub page_info: PageInfo,
     #[serde(default)]
     pub items: Vec<Video>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub enum Kind {
+    #[serde(rename = "youtube#channel")]
+    Channel,
+    #[serde(rename = "youtube#video")]
+    Video,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Id {
+    pub kind: Kind,
+    pub video_id: Option<String>,
+    pub channel_id: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResult {
+    pub kind: String,
+    pub etag: String,
+    pub id: Id,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResults {
+    pub kind: String,
+    pub etag: String,
+    pub next_page_token: Option<String>,
+    pub region_code: Option<String>,
+    pub page_info: PageInfo,
+    #[serde(default)]
+    pub items: Vec<SearchResult>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
