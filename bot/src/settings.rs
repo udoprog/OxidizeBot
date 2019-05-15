@@ -509,6 +509,8 @@ pub enum Type {
     Bool,
     #[serde(rename = "number")]
     Number,
+    #[serde(rename = "percentage")]
+    Percentage,
     #[serde(rename = "string")]
     String,
     #[serde(rename = "set")]
@@ -536,6 +538,10 @@ impl Type {
             }
             Bool => Value::Bool(str::parse::<bool>(s)?),
             Number => {
+                let n = str::parse::<serde_json::Number>(s)?;
+                Value::Number(n)
+            }
+            Percentage => {
                 let n = str::parse::<serde_json::Number>(s)?;
                 Value::Number(n)
             }
@@ -569,6 +575,7 @@ impl Type {
             (Duration, Value::Number(..)) => true,
             (Bool, Value::Bool(..)) => true,
             (Number, Value::Number(..)) => true,
+            (Percentage, Value::Number(..)) => true,
             (String, Value::String(..)) => true,
             (Set { ref value }, Value::Array(ref values)) => {
                 values.iter().all(|v| value.is_compatible_with_json(v))
@@ -587,6 +594,7 @@ impl fmt::Display for Type {
             Duration => write!(fmt, "duration"),
             Bool => write!(fmt, "bool"),
             Number => write!(fmt, "number"),
+            Percentage => write!(fmt, "percentage"),
             String => write!(fmt, "string"),
             Set { ref value } => write!(fmt, "Array<{}>", value),
         }

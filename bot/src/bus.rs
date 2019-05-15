@@ -12,21 +12,35 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
+pub trait Message: 'static + Clone + Send + Sync + serde::Serialize {
+    /// The ID of a bussed message.
+    fn id(&self) -> Option<&'static str>;
+}
+
 pub type Reader<T> = tokio_bus::BusReader<T>;
 
-struct Inner {
-    bus: tokio_bus::Bus<Message>,
-    /// Latest instance of all messages.
-    latest: HashMap<&'static str, Message>,
+struct Inner<T>
+where
+    T: Message,
+{
+    bus: tokio_bus::Bus<T>,
+    /// Latest instances of all messages.
+    latest: HashMap<&'static str, T>,
 }
 
 /// Bus system.
-pub struct Bus {
-    bus: Mutex<Inner>,
+pub struct Bus<T>
+where
+    T: Message,
+{
+    bus: Mutex<Inner<T>>,
     address: SocketAddr,
 }
 
-impl Bus {
+impl<T> Bus<T>
+where
+    T: Message,
+{
     /// Create a new notifier.
     pub fn new() -> Self {
         Bus {
@@ -39,10 +53,10 @@ impl Bus {
     }
 
     /// Send a message to the bus.
-    pub fn send(&self, m: Message) {
+    pub fn send(&self, m: T) {
         let mut inner = self.bus.lock();
 
-        if let Some(key) = m.cache() {
+        if let Some(key) = m.id() {
             inner.latest.insert(key, m.clone());
         }
 
@@ -52,13 +66,13 @@ impl Bus {
     }
 
     /// Get the latest messages received.
-    pub fn latest(&self) -> Vec<Message> {
+    pub fn latest(&self) -> Vec<T> {
         let inner = self.bus.lock();
         inner.latest.values().cloned().collect()
     }
 
     /// Create a receiver of the bus.
-    pub fn add_rx(self: Arc<Self>) -> Reader<Message> {
+    pub fn add_rx(self: Arc<Self>) -> Reader<T> {
         self.bus.lock().bus.add_rx()
     }
 
@@ -88,21 +102,27 @@ impl Bus {
     }
 }
 
-enum BusHandlerState {
+enum BusHandlerState<T> {
     Receiving,
-    Serialize(Message),
+    Serialize(T),
     Send(io::WriteAll<WriteHalf<TcpStream>, String>),
 }
 
 /// Handles reading messages of a buss and writing them to a TcpStream.
-struct BusHandler {
+struct BusHandler<T>
+where
+    T: Message,
+{
     writer: Option<WriteHalf<TcpStream>>,
-    rx: tokio_bus::BusReader<Message>,
-    state: BusHandlerState,
+    rx: tokio_bus::BusReader<T>,
+    state: BusHandlerState<T>,
 }
 
-impl BusHandler {
-    pub fn new(writer: WriteHalf<TcpStream>, rx: tokio_bus::BusReader<Message>) -> Self {
+impl<T> BusHandler<T>
+where
+    T: Message,
+{
+    pub fn new(writer: WriteHalf<TcpStream>, rx: tokio_bus::BusReader<T>) -> Self {
         Self {
             writer: Some(writer),
             rx,
@@ -111,7 +131,10 @@ impl BusHandler {
     }
 }
 
-impl Stream for BusHandler {
+impl<T> Stream for BusHandler<T>
+where
+    T: Message,
+{
     type Item = ();
     type Error = failure::Error;
 
@@ -163,9 +186,32 @@ pub enum YouTubeEvent {
     Stop,
 }
 
+/// Events for driving the YouTube player.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
-pub enum Message {
+pub enum YouTube {
+    #[serde(rename = "youtube/current")]
+    YouTubeCurrent { event: YouTubeEvent },
+    #[serde(rename = "youtube/volume")]
+    YouTubeVolume { volume: u32 },
+}
+
+impl Message for YouTube {
+    /// Whether a message should be cached or not and under what key.
+    fn id(&self) -> Option<&'static str> {
+        use self::YouTube::*;
+
+        match *self {
+            YouTubeCurrent { .. } => Some("youtube/current"),
+            YouTubeVolume { .. } => Some("youtube/volume"),
+        }
+    }
+}
+
+/// Messages that go on the global bus.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "type")]
+pub enum Global {
     #[serde(rename = "firework")]
     Firework,
     #[serde(rename = "ping")]
@@ -186,19 +232,28 @@ pub enum Message {
         elapsed: u64,
         duration: u64,
     },
-    #[serde(rename = "youtube/current")]
-    YouTubeCurrent { event: YouTubeEvent },
-    #[serde(rename = "youtube/volume")]
-    YouTubeVolume { volume: u32 },
 }
 
-impl Message {
+impl Message for Global {
+    /// Whether a message should be cached or not and under what key.
+    fn id(&self) -> Option<&'static str> {
+        use self::Global::*;
+
+        match *self {
+            SongProgress { .. } => Some("song/progress"),
+            SongCurrent { .. } => Some("song/current"),
+            _ => None,
+        }
+    }
+}
+
+impl Global {
     /// Construct a message about song progress.
     pub fn song_progress(song: Option<&player::Song>) -> Self {
         let song = match song {
             Some(song) => song,
             None => {
-                return Message::SongProgress {
+                return Global::SongProgress {
                     track_id: None,
                     elapsed: 0,
                     duration: 0,
@@ -206,7 +261,7 @@ impl Message {
             }
         };
 
-        Message::SongProgress {
+        Global::SongProgress {
             track_id: Some(song.item.track_id.clone()),
             elapsed: song.elapsed().as_secs(),
             duration: song.duration().as_secs(),
@@ -218,7 +273,7 @@ impl Message {
         let song = match song {
             Some(song) => song,
             None => {
-                return Ok(Message::SongCurrent {
+                return Ok(Global::SongCurrent {
                     track_id: None,
                     track: None,
                     user: None,
@@ -229,7 +284,7 @@ impl Message {
             }
         };
 
-        Ok(Message::SongCurrent {
+        Ok(Global::SongCurrent {
             track_id: Some(song.item.track_id.clone()),
             track: Some(song.item.track.clone()),
             user: song.item.user.clone(),
@@ -237,18 +292,5 @@ impl Message {
             elapsed: song.elapsed().as_secs(),
             duration: song.duration().as_secs(),
         })
-    }
-
-    /// Whether a message should be cached or not and under what key.
-    pub fn cache(&self) -> Option<&'static str> {
-        use self::Message::*;
-
-        match *self {
-            SongProgress { .. } => Some("song/progress"),
-            SongCurrent { .. } => Some("song/current"),
-            YouTubeCurrent { .. } => Some("youtube/current"),
-            YouTubeVolume { .. } => Some("youtube/volume"),
-            _ => None,
-        }
     }
 }

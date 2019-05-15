@@ -1,5 +1,10 @@
 $title-fonts: "monospace";
 
+#index {
+  width: 100%;
+  height: 100%;
+}
+
 html, body {
   margin: 0;
   height: 100%;
@@ -218,7 +223,12 @@ body {
   }
 }
 
-.player {
+body.youtube-body {
+  background-color: black;
+  color: white;
+}
+
+.youtube {
   &-container {
     iframe {
       position: absolute;
@@ -235,12 +245,9 @@ body {
   }
 
   &-not-loaded {
-    text-align: center;
-    font-size: 200%;
-  }
-
-  &-embedded {
-    display: block;
-    margin: 0 auto;
+    &-obs {
+      color: white;
+      background-color: #333;
+    }
   }
 }

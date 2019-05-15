@@ -262,7 +262,7 @@ function Layout(props) {
             <Nav.Link as={Link} active={path === "/overlay"} to="/overlay" target="overlay">Overlay</Nav.Link>
 
             <NavDropdown title="Experimental">
-              <NavDropdown.Item as={Link} active={path === "/player"} to="/player" target="player">YouTube Player</NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/youtube"} to="/youtube" target="youtube">YouTube Player</NavDropdown.Item>
             </NavDropdown>
           </Nav>
         </Navbar.Collapse>
@@ -286,7 +286,7 @@ function AppRouter() {
       <Route path="/commands" exact component={CommandsPage} />
       <Route path="/promotions" exact component={PromotionsPage} />
       <Route path="/overlay/" component={Overlay} />
-      <Route path="/player" component={YouTube} />
+      <Route path="/youtube" component={YouTube} />
     </Router>
   );
 }

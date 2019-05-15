@@ -9,14 +9,14 @@ types:
     doc: Global cooldown between each effect.
     type: {id: duration}
   gtav/other%:
-    doc: Other effect cost scaling. A value of 100 means 100%.
-    type: {id: number}
+    doc: Other effect cost scaling.
+    type: {id: percentage}
   gtav/punish%:
-    doc: Punishment scaling. A value of 100 means 100%.
-    type: {id: number}
+    doc: Punishment scaling.
+    type: {id: percentage}
   gtav/reward%:
-    doc: Reward cost scaling. A value of 100 means 100%.
-    type: {id: number}
+    doc: Reward cost scaling.
+    type: {id: percentage}
   gtav/success-feedback:
     doc: If we should have chat feedback on successful commands.
     type: {id: bool}
@@ -24,8 +24,8 @@ types:
     doc: How many messages must be received before the channel is no longer considered idle.
     type: {id: number}
   irc/viewer-reward%:
-    doc: Scaling for viewer rewards. 100 means 100%.
-    type: {id: number}
+    doc: Scaling for viewer rewards.
+    type: {id: percentage}
   irc/whitelisted-hosts:
     doc: Hosts that are whitelisted for linking to in chat.
     type: {id: set, value: {id: string}}
@@ -99,5 +99,5 @@ types:
     doc: If only subscribers can request songs from YouTube.
     type: {id: bool}
   water/reward%:
-    doc: Reward scaling for doing a water reminder. A value of 100 means 100%.
-    type: {id: number}
+    doc: Reward scaling for doing a water reminder.
+    type: {id: percentage}

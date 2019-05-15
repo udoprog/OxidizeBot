@@ -1,6 +1,6 @@
 import React from "react";
 import {Spinner} from "../utils.js";
-import {Form, Button, Alert, Table, ButtonGroup, InputGroup} from "react-bootstrap";
+import {Form, Button, Alert, Table, ButtonGroup, InputGroup, Row, Col} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import * as types from "./Settings/Types.js";
 
@@ -63,8 +63,6 @@ export default class Settings extends React.Component {
       loading: false,
       error: null,
       data: null,
-      // set to the key of the setting currently being deleted.
-      deleteKey: null,
       // set to the key of the setting currently being edited.
       editKey: null,
       // the controller for the edit.
@@ -117,29 +115,6 @@ export default class Settings extends React.Component {
           loading: false,
           error: `failed to request after streams: ${e}`,
           data: null,
-        });
-      });
-  }
-
-  /**
-   * Delete the given setting.
-   *
-   * @param {string} key key of the setting to delete.
-   */
-  delete(key) {
-    this.setState({
-      loading: true,
-      deleteKey: null
-    });
-
-    this.api.deleteSetting(key)
-      .then(() => {
-        return this.list();
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to delete setting: ${e}`,
         });
       });
   }
@@ -219,12 +194,6 @@ export default class Settings extends React.Component {
 
       renderOnChange = null;
     } else {
-      editButton = (
-        <Button size="sm" variant="info" className="action" disabled={true}>
-          <FontAwesomeIcon icon="edit" />
-        </Button>
-      );
-
       renderOnChange = value => {
         this.edit(setting.key, {control: setting.control, value});
       };
@@ -232,11 +201,6 @@ export default class Settings extends React.Component {
 
     let buttons = (
       <ButtonGroup>
-        <Button size="sm" variant="danger" className="action" disabled={this.state.loading} onClick={() => this.setState({
-          deleteKey: setting.key,
-        })}>
-          <FontAwesomeIcon icon="trash" />
-        </Button>
         {editButton}
       </ButtonGroup>
     );
@@ -247,18 +211,6 @@ export default class Settings extends React.Component {
       value = <b title="Secret value, only showed when editing">****</b>;
     } else {
       value = setting.control.render(setting.value, renderOnChange);
-    }
-
-    if (this.state.deleteKey === setting.key) {
-      buttons = <ConfirmButtons
-        what="deletion"
-        onConfirm={() => this.delete(this.state.deleteKey)}
-        onCancel={() => {
-          this.setState({
-            deleteKey: null,
-          })
-        }}
-      />;
     }
 
     if (this.state.editKey === setting.key && this.state.edit) {
@@ -300,14 +252,20 @@ export default class Settings extends React.Component {
 
     return (
       <tr key={setting.key}>
-        <td className="d-flex">
-          <div className="settings-key p-1" lg="3">
-            <div className="settings-key-name mb-1">{keyOverride || setting.key}</div>
-            <div className="settings-key-doc">{setting.doc}</div>
-          </div>
+        <td>
+          <Row>
+            <Col lg="3" className="settings-key mb-1">
+              <div className="settings-key-name mb-1">{keyOverride || setting.key}</div>
+              <div className="settings-key-doc">{setting.doc}</div>
+            </Col>
 
-          <div className="flex-grow-1 p-1">{value}</div>
-          <div className="p-1">{buttons}</div>
+            <Col lg="9">
+              <div className="d-flex align-items-center">
+                <div className="flex-fill align-middle">{value}</div>
+                <div className="ml-3">{buttons}</div>
+              </div>
+            </Col>
+          </Row>
         </td>
       </tr>
     );
@@ -344,19 +302,20 @@ export default class Settings extends React.Component {
 
         content = (
           <div>
-            <Table responsive="sm">
+            <Table className="mb-0">
               <tbody>
                 {def.map(s => this.renderSetting(s))}
               </tbody>
             </Table>
+
             {order.map(name => {
               let group = groups[name];
 
               return (
-                <Table key={name} responsive="sm">
+                <Table className="mb-0" key={name}>
                   <tbody>
                     <tr>
-                      <td className="settings-group">{name}</td>
+                      <th className="settings-group">{name}</th>
                     </tr>
 
                     {group.map(({short, data}) => this.renderSetting(data, short))}

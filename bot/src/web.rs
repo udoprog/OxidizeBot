@@ -425,7 +425,8 @@ impl Api {
 pub fn setup(
     web_root: Option<&Path>,
     irc: Option<&irc::Config>,
-    bus: Arc<bus::Bus>,
+    global_bus: Arc<bus::Bus<bus::Global>>,
+    youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     after_streams: db::AfterStreams,
     db: db::Database,
     settings: settings::Settings,
@@ -734,77 +735,18 @@ pub fn setup(
         warp::path("api").and(route)
     };
 
-    let ws = {
-        let overlay = warp::path!("overlay")
-            .and(warp::ws2())
-            .map({
-                let bus = bus.clone();
+    let ws_overlay = warp::get2()
+        .and(warp::path!("ws" / "overlay"))
+        .and(send_bus(global_bus).recover(recover));
 
-                move |ws: warp::ws::Ws2| {
-                    let bus = bus.clone();
-
-                    ws.on_upgrade(move |websocket| {
-                        let (tx, _) = websocket.split();
-
-                        let rx = stream::iter_ok(bus.latest()).chain(bus.add_rx());
-
-                        rx.map_err(|_| failure::format_err!("failed to receive notification"))
-                            .and_then(|n| {
-                                serde_json::to_string(&n)
-                                    .map(warp::filters::ws::Message::text)
-                                    .map_err(failure::Error::from)
-                            })
-                            .forward(
-                                tx.sink_map_err(|e| failure::format_err!("error from sink: {}", e)),
-                            )
-                            .map(|_| ())
-                            .map_err(|e| {
-                                log::error!("websocket error: {}", e);
-                            })
-                    })
-                }
-            })
-            .boxed();
-
-        let player = warp::path!("player")
-            .and(warp::ws2())
-            .map({
-                let bus = bus.clone();
-
-                move |ws: warp::ws::Ws2| {
-                    let bus = bus.clone();
-
-                    ws.on_upgrade(move |websocket| {
-                        let (tx, _) = websocket.split();
-
-                        let rx = stream::iter_ok(bus.latest()).chain(bus.add_rx());
-
-                        rx.map_err(|_| failure::format_err!("failed to receive notification"))
-                            .and_then(|n| {
-                                serde_json::to_string(&n)
-                                    .map(warp::filters::ws::Message::text)
-                                    .map_err(failure::Error::from)
-                            })
-                            .forward(
-                                tx.sink_map_err(|e| failure::format_err!("error from sink: {}", e)),
-                            )
-                            .map(|_| ())
-                            .map_err(|e| {
-                                log::error!("websocket error: {}", e);
-                            })
-                    })
-                }
-            })
-            .boxed();
-
-        warp::get2()
-            .and(warp::path("ws"))
-            .and(overlay.or(player).recover(recover))
-    };
+    let ws_youtube = warp::get2()
+        .and(warp::path!("ws" / "youtube"))
+        .and(send_bus(youtube_bus).recover(recover));
 
     let routes = oauth2_redirect.recover(recover);
     let routes = routes.or(api.recover(recover));
-    let routes = routes.or(ws.recover(recover));
+    let routes = routes.or(ws_youtube.recover(recover));
+    let routes = routes.or(ws_overlay.recover(recover));
 
     let server_future = if let Some(web_root) = web_root {
         let app = warp::get2()
@@ -945,4 +887,40 @@ impl Server {
 pub struct ReceivedToken {
     pub code: String,
     pub state: String,
+}
+
+/// Connecting a bus to a websocket connection.
+fn send_bus<T>(bus: Arc<bus::Bus<T>>) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
+where
+    T: bus::Message,
+{
+    warp::ws2()
+        .map({
+            let bus = bus.clone();
+
+            move |ws: warp::ws::Ws2| {
+                let bus = bus.clone();
+
+                ws.on_upgrade(move |websocket| {
+                    let (tx, _) = websocket.split();
+
+                    let rx = stream::iter_ok(bus.latest()).chain(bus.add_rx());
+
+                    rx.map_err(|_| failure::format_err!("failed to receive notification"))
+                        .and_then(|n| {
+                            serde_json::to_string(&n)
+                                .map(warp::filters::ws::Message::text)
+                                .map_err(failure::Error::from)
+                        })
+                        .forward(
+                            tx.sink_map_err(|e| failure::format_err!("error from sink: {}", e)),
+                        )
+                        .map(|_| ())
+                        .map_err(|e| {
+                            log::error!("websocket error: {}", e);
+                        })
+                })
+            }
+        })
+        .boxed()
 }

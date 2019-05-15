@@ -29,13 +29,8 @@ module.exports = {
   devServer: {
     historyApiFallback: true,
     proxy: {
-      '/ws/overlay': {
-        target: 'ws://localhost:12345/ws/overlay',
-        secure: false,
-        ws: true,
-      },
-      '/ws/player': {
-        target: 'ws://localhost:12345/ws/player',
+      '/ws/*': {
+        target: 'ws://localhost:12345',
         secure: false,
         ws: true,
       },

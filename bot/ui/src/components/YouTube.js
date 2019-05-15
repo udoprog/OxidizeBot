@@ -4,6 +4,11 @@ import {Button, Table} from "react-bootstrap";
 import {websocketUrl} from "../utils.js";
 import Websocket from "react-websocket";
 
+const OBS_CSS = [
+  "body.youtube-body { background-color: rgba(0, 0, 0, 0); }",
+  ".overlay-hidden { display: none }"
+]
+
 export default class YouTube extends React.Component {
   constructor(props) {
     super(props);
@@ -116,6 +121,10 @@ export default class YouTube extends React.Component {
     firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
   }
 
+  componentWillMount() {
+    document.body.classList.add('youtube-body');
+  }
+
   componentWillUnmount() {
     let scripts = document.getElementsByTagName('script');
 
@@ -126,6 +135,7 @@ export default class YouTube extends React.Component {
     }
 
     delete window.onYouTubeIframeAPIReady;
+    document.body.classList.remove('youtube-body');
   }
 
   render() {
@@ -137,30 +147,42 @@ export default class YouTube extends React.Component {
     if (this.state.loading) {
       loading = (
         <div className="player-loading">
-          Loading Player
           <Spinner />
         </div>
       );
     } else {
-      ws = <Websocket url={websocketUrl("ws/overlay")} onMessage={this.handleData.bind(this)} />;
+      ws = <Websocket url={websocketUrl("ws/youtube")} onMessage={this.handleData.bind(this)} />;
     }
 
     var noVideo = null;
 
     if (this.state.stopped) {
       playerStyle.display = "none";
-      noVideo = <div className="overlay-hidden player-not-loaded"><em>No Video Loaded</em></div>;
+      noVideo = (
+        <div className="overlay-hidden youtube-not-loaded p-4 container">
+          <h1>No Video Loaded</h1>
+
+          <p>
+            If you want to embed this into OBS, please add the following Custom CSS:
+          </p>
+
+          <pre className="youtube-not-loaded-obs"><code>
+            {OBS_CSS.join("\n")}
+          </code></pre>
+        </div>
+      );
     }
 
     return (
-      <div>
+      <div id="youtube">
         {ws}
-        {loading}
 
         {noVideo}
 
-        <div className="player-container" style={playerStyle}>
-          <div ref={this.playerRef} className="player-embedded"></div>
+        {loading}
+
+        <div className="youtube-container" style={playerStyle}>
+          <div ref={this.playerRef} className="youtube-embedded"></div>
         </div>
       </div>
     );

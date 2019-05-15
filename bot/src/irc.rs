@@ -75,7 +75,7 @@ pub struct Irc<'a> {
     pub promotions: db::Promotions,
     pub bad_words: db::Words,
     pub after_streams: db::AfterStreams,
-    pub global_bus: Arc<bus::Bus>,
+    pub global_bus: Arc<bus::Bus<bus::Global>>,
     pub modules: &'a [Box<dyn module::Module>],
     pub shutdown: utils::Shutdown,
     pub settings: settings::Settings,
@@ -426,7 +426,7 @@ struct Handler {
     /// Bad words.
     bad_words: db::Words,
     /// For sending notifications.
-    global_bus: Arc<bus::Bus>,
+    global_bus: Arc<bus::Bus<bus::Global>>,
     /// Aliases.
     aliases: db::Aliases,
     /// Enabled features.
@@ -475,7 +475,7 @@ impl Handler {
         match command {
             "ping" => {
                 user.respond("What do you want?");
-                self.global_bus.send(bus::Message::Ping);
+                self.global_bus.send(bus::Global::Ping);
             }
             other => {
                 if let Some(handler) = self.handlers.get_mut(other) {

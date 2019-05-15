@@ -146,6 +146,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     };
 
     let global_bus = Arc::new(bus::Bus::new());
+    let youtube_bus = Arc::new(bus::Bus::new());
 
     let mut core = Core::new()?;
 
@@ -156,6 +157,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         web_root,
         config.irc.as_ref(),
         global_bus.clone(),
+        youtube_bus.clone(),
         after_streams.clone(),
         db.clone(),
         settings.clone(),
@@ -283,6 +285,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
                 &config,
                 player,
                 global_bus.clone(),
+                youtube_bus.clone(),
                 settings.clone(),
             )?;
 

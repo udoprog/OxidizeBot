@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::timer;
 
 /// Setup a player.
-pub fn setup(bus: Arc<bus::Bus>) -> Result<YouTubePlayer, failure::Error> {
+pub fn setup(bus: Arc<bus::Bus<bus::YouTube>>) -> Result<YouTubePlayer, failure::Error> {
     let (tx, rx) = sync::mpsc::unbounded();
     Ok(YouTubePlayer {
         bus,
@@ -15,7 +15,7 @@ pub fn setup(bus: Arc<bus::Bus>) -> Result<YouTubePlayer, failure::Error> {
 }
 
 pub struct YouTubePlayer {
-    bus: Arc<bus::Bus>,
+    bus: Arc<bus::Bus<bus::YouTube>>,
     tx: sync::mpsc::UnboundedSender<player::IntegrationEvent>,
     rx: sync::mpsc::UnboundedReceiver<player::IntegrationEvent>,
     /// Timeout for end of song.
@@ -31,7 +31,7 @@ impl YouTubePlayer {
             duration: song.duration().as_secs(),
         };
 
-        self.bus.send(bus::Message::YouTubeCurrent { event });
+        self.bus.send(bus::YouTube::YouTubeCurrent { event });
     }
 
     /// Detach the player, cancelling any timed events or effects.
@@ -46,27 +46,27 @@ impl YouTubePlayer {
             duration: song.duration().as_secs(),
         };
 
-        self.bus.send(bus::Message::YouTubeCurrent { event });
+        self.bus.send(bus::YouTube::YouTubeCurrent { event });
         self.timeout = Some(timer::Delay::new(song.deadline()));
         self.send(player::IntegrationEvent::Playing(source));
     }
 
     pub fn pause(&mut self, source: super::Source) {
         let event = bus::YouTubeEvent::Pause;
-        self.bus.send(bus::Message::YouTubeCurrent { event });
+        self.bus.send(bus::YouTube::YouTubeCurrent { event });
         self.timeout = None;
         self.send(player::IntegrationEvent::Pausing(source));
     }
 
     pub fn stop(&mut self) {
         let event = bus::YouTubeEvent::Stop;
-        self.bus.send(bus::Message::YouTubeCurrent { event });
+        self.bus.send(bus::YouTube::YouTubeCurrent { event });
         self.timeout = None;
         self.send(player::IntegrationEvent::Stopping);
     }
 
     pub fn volume(&mut self, source: super::Source, volume: u32) {
-        self.bus.send(bus::Message::YouTubeVolume { volume });
+        self.bus.send(bus::YouTube::YouTubeVolume { volume });
         self.send(player::IntegrationEvent::Volume(source, volume));
     }
 

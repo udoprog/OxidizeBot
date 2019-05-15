@@ -33,6 +33,8 @@ export function decode(type) {
       return StringType;
     case "number":
       return NumberType;
+    case "percentage":
+      return PercentageType;
     case "set":
       let value = decode(type.value);
       return new SetType(value);
@@ -75,7 +77,7 @@ class EditDuration {
     );
 
     return (
-      <Row>
+      <Form.Row>
         <Col>
           {days}
         </Col>
@@ -91,7 +93,7 @@ class EditDuration {
         <Col>
           {seconds}
         </Col>
-      </Row>
+      </Form.Row>
     );
   }
 
@@ -214,7 +216,7 @@ export class Duration extends Base {
 
 class EditNumber {
   validate(value) {
-    return true;
+    return !isNaN(parseInt(value));
   }
 
   save(value) {
@@ -227,7 +229,7 @@ class EditNumber {
   control(isValid, value, onChange) {
     return <Form.Control size="sm" type="number" isInvalid={!isValid} value={value} onChange={
       e => {
-        onChange(parseInt(e.target.value) || 0);
+        onChange(e.target.value);
       }
     } />
   }
@@ -261,7 +263,78 @@ export class Number extends Base {
   edit(editValue) {
     return {
       edit: new EditNumber(),
-      editValue,
+      editValue: editValue.toString(),
+    };
+  }
+
+  serialize(value) {
+    return value;
+  }
+}
+
+class EditPercentage {
+  validate(value) {
+    let n = parseInt(value);
+
+    if (isNaN(n)) {
+      return false;
+    }
+
+    return n >= 0;
+  }
+
+  save(value) {
+    return {
+      control: new Percentage(),
+      value: parseInt(value) || 0,
+    };
+  }
+
+  control(isValid, value, onChange) {
+    return (
+      <InputGroup size="sm">
+        <Form.Control type="number" isInvalid={!isValid} value={value} onChange={
+          e => {
+            onChange(e.target.value);
+          }
+        } />
+        <InputGroup.Append>
+          <InputGroup.Text>%</InputGroup.Text>
+        </InputGroup.Append>
+      </InputGroup>
+    );
+  }
+}
+
+class PercentageType {
+  static default() {
+    return 0;
+  }
+
+  static construct(data) {
+    return {
+      control: new Percentage(),
+      value: data,
+    };
+  }
+}
+
+export class Percentage extends Base {
+  static parse(input) {
+    return {
+      render: new Percentage(),
+      value: parseInt(input) || 0,
+    };
+  }
+
+  render(value) {
+    return `${value}%`;
+  }
+
+  edit(editValue) {
+    return {
+      edit: new EditPercentage(),
+      editValue: editValue.toString(),
     };
   }
 
@@ -392,10 +465,6 @@ export class RawType {
 }
 
 export class Raw extends Base {
-  static parse(data) {
-    return new Raw(JSON.parse(data))
-  }
-
   render(data) {
     return <code>{JSON.stringify(data)}</code>;
   }

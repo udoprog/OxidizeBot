@@ -203,12 +203,14 @@ pub fn run(
     parent_config: &config::Config,
     config: &Config,
     // For sending notifications.
-    global_bus: Arc<bus::Bus>,
+    global_bus: Arc<bus::Bus<bus::Global>>,
+    // For sending YouTube player updates.
+    youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     // Settings abstraction.
     settings: settings::Settings,
 ) -> Result<(PlaybackFuture, Player), failure::Error> {
     let (connect_player, device) = connect::setup(spotify.clone())?;
-    let youtube_player = youtube::setup(global_bus.clone())?;
+    let youtube_player = youtube::setup(youtube_bus.clone())?;
 
     let bus = Arc::new(RwLock::new(Bus::new(1024)));
 
@@ -1484,13 +1486,13 @@ pub struct PlaybackFuture {
     /// Stream for when song update interval is updated.
     song_update_interval_stream: settings::Stream<utils::Duration>,
     /// Notifier to use when sending song updates.
-    global_bus: Arc<bus::Bus>,
+    global_bus: Arc<bus::Bus<bus::Global>>,
 }
 
 impl PlaybackFuture {
     /// Set the current song.
     fn write_song(&self, song: Option<Song>) -> Result<(), failure::Error> {
-        self.global_bus.send(bus::Message::song(song.as_ref())?);
+        self.global_bus.send(bus::Global::song(song.as_ref())?);
         self.current_song(song.as_ref());
         *self.song.write() = song;
         Ok(())
@@ -1806,7 +1808,7 @@ impl PlaybackFuture {
                     }
                 }
 
-                self.global_bus.send(bus::Message::song(song.as_ref())?);
+                self.global_bus.send(bus::Global::song(song.as_ref())?);
                 self.current_song(song.as_ref());
             }
             // A player stopped due to a switch.
@@ -1819,7 +1821,7 @@ impl PlaybackFuture {
                 }
 
                 self.current_song(song.as_ref());
-                self.global_bus.send(bus::Message::song(song.as_ref())?);
+                self.global_bus.send(bus::Global::song(song.as_ref())?);
 
                 if let Source::Manual = source {
                     self.bus.broadcast(Event::Pausing);
@@ -1853,7 +1855,7 @@ impl PlaybackFuture {
 
                 if self.state.is_playing() {
                     self.global_bus
-                        .send(bus::Message::song_progress(song.as_ref()));
+                        .send(bus::Global::song_progress(song.as_ref()));
 
                     if let Some(song) = song.as_ref() {
                         if let TrackId::YouTube(ref id) = song.item.track_id {
