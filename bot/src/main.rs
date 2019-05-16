@@ -33,9 +33,38 @@ fn opts() -> clap::App<'static, 'static> {
         )
 }
 
+fn default_log_config() -> Result<log4rs::config::Config, failure::Error> {
+    use log::LevelFilter;
+    use log4rs::{
+        append::console::ConsoleAppender,
+        config::{Appender, Config, Logger, Root},
+    };
+
+    let stdout = ConsoleAppender::builder().build();
+
+    let config = Config::builder()
+        .appender(Appender::builder().build("stdout", Box::new(stdout)))
+        .logger(Logger::builder().build("setmod", LevelFilter::Warn))
+        .build(Root::builder().appender("stdout").build(LevelFilter::Warn))?;
+
+    Ok(config)
+}
+
 /// Configure logging.
 fn setup_logs(root: &Path) -> Result<(), failure::Error> {
-    log4rs::init_file(root.join("log4rs.yaml"), Default::default())?;
+    let file = root.join("log4rs.yaml");
+
+    if !file.is_file() {
+        let config = default_log_config()?;
+        log4rs::init_config(config)?;
+        log::warn!(
+            "Using default since log configuration is missing: {}",
+            file.display()
+        );
+    } else {
+        log4rs::init_file(file, Default::default())?;
+    }
+
     Ok(())
 }
 
