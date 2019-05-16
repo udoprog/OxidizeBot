@@ -124,6 +124,290 @@ pub struct PutCommand {
     template: template::Template,
 }
 
+/// Aliases endpoint.
+#[derive(Clone)]
+struct Aliases(db::Aliases);
+
+impl Aliases {
+    fn route(aliases: db::Aliases) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+        let api = Aliases(aliases);
+
+        let list = warp::get2()
+            .and(path!("aliases" / Fragment).and(warp::filters::path::end()))
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment| api.list(channel.as_str()).map_err(warp::reject::custom)
+            });
+
+        let delete = warp::delete2()
+            .and(path!("aliases" / Fragment / Fragment).and(warp::filters::path::end()))
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment, name: Fragment| {
+                    api.delete(channel.as_str(), name.as_str())
+                        .map_err(warp::reject::custom)
+                }
+            });
+
+        let edit = warp::put2()
+            .and(path!("aliases" / Fragment / Fragment).and(warp::filters::path::end()))
+            .and(warp::body::json())
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment, name: Fragment, body: PutAlias| {
+                    api.edit(channel.as_str(), name.as_str(), body.template)
+                        .map_err(warp::reject::custom)
+                }
+            });
+
+        let edit_disabled = warp::post2()
+            .and(
+                path!("aliases" / Fragment / Fragment / "disabled").and(warp::filters::path::end()),
+            )
+            .and(warp::body::json())
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment, name: Fragment, body: DisabledBody| {
+                    api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
+                        .map_err(warp::reject::custom)
+                }
+            });
+
+        list.or(delete).or(edit).or(edit_disabled).boxed()
+    }
+
+    /// Get the list of all aliases.
+    fn list(&self, channel: &str) -> Result<impl warp::Reply, failure::Error> {
+        let aliases = self.0.list_all(channel)?;
+        Ok(warp::reply::json(&aliases))
+    }
+
+    /// Edit the given alias by key.
+    fn edit(
+        &self,
+        channel: &str,
+        name: &str,
+        template: template::Template,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        self.0.edit(channel, name, template)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Set the given alias's disabled status.
+    fn edit_disabled(
+        &self,
+        channel: &str,
+        name: &str,
+        disabled: bool,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        if disabled {
+            self.0.disable(channel, name)?;
+        } else {
+            self.0.enable(channel, name)?;
+        }
+
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Delete the given alias by key.
+    fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, failure::Error> {
+        self.0.delete(channel, name)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+}
+
+/// Commands endpoint.
+#[derive(Clone)]
+struct Commands(db::Commands);
+
+impl Commands {
+    fn route(commands: db::Commands) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+        let api = Commands(commands);
+
+        let list = warp::get2()
+            .and(path!("commands" / Fragment).and(warp::filters::path::end()))
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment| api.list(channel.as_str()).map_err(warp::reject::custom)
+            });
+
+        let delete = warp::delete2()
+            .and(path!("commands" / Fragment / Fragment).and(warp::filters::path::end()))
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment, name: Fragment| {
+                    api.delete(channel.as_str(), name.as_str())
+                        .map_err(warp::reject::custom)
+                }
+            });
+
+        let edit_disabled = warp::post2()
+            .and(
+                path!("commands" / Fragment / Fragment / "disabled")
+                    .and(warp::filters::path::end()),
+            )
+            .and(warp::body::json())
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment, name: Fragment, body: DisabledBody| {
+                    api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
+                        .map_err(warp::reject::custom)
+                }
+            });
+
+        let edit = warp::put2()
+            .and(path!("commands" / Fragment / Fragment).and(warp::filters::path::end()))
+            .and(warp::body::json())
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment, name: Fragment, body: PutCommand| {
+                    api.edit(channel.as_str(), name.as_str(), body.template)
+                        .map_err(warp::reject::custom)
+                }
+            });
+
+        list.or(delete).or(edit).or(edit_disabled).boxed()
+    }
+
+    /// Get the list of all commands.
+    fn list(&self, channel: &str) -> Result<impl warp::Reply, failure::Error> {
+        let commands = self.0.list_all(channel)?;
+        Ok(warp::reply::json(&commands))
+    }
+
+    /// Edit the given command by key.
+    fn edit(
+        &self,
+        channel: &str,
+        name: &str,
+        template: template::Template,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        self.0.edit(channel, name, template)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Set the given command's disabled status.
+    fn edit_disabled(
+        &self,
+        channel: &str,
+        name: &str,
+        disabled: bool,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        if disabled {
+            self.0.disable(channel, name)?;
+        } else {
+            self.0.enable(channel, name)?;
+        }
+
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Delete the given command by key.
+    fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, failure::Error> {
+        self.0.delete(channel, name)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+}
+
+/// Promotions endpoint.
+#[derive(Clone)]
+struct Promotions(db::Promotions);
+
+impl Promotions {
+    fn route(promotions: db::Promotions) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+        let api = Promotions(promotions);
+
+        let list = warp::get2()
+            .and(path!("promotions" / Fragment).and(warp::filters::path::end()))
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment| api.list(channel.as_str()).map_err(warp::reject::custom)
+            });
+
+        let delete = warp::delete2()
+            .and(path!("promotions" / Fragment / Fragment).and(warp::filters::path::end()))
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment, name: Fragment| {
+                    api.delete(channel.as_str(), name.as_str())
+                        .map_err(warp::reject::custom)
+                }
+            });
+
+        let edit = warp::put2()
+            .and(path!("promotions" / Fragment / Fragment).and(warp::filters::path::end()))
+            .and(warp::body::json())
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment, name: Fragment, body: PutPromotion| {
+                    api.edit(
+                        channel.as_str(),
+                        name.as_str(),
+                        body.frequency,
+                        body.template,
+                    )
+                    .map_err(warp::reject::custom)
+                }
+            });
+
+        let edit_disabled = warp::post2()
+            .and(
+                path!("promotions" / Fragment / Fragment / "disabled")
+                    .and(warp::filters::path::end()),
+            )
+            .and(warp::body::json())
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment, name: Fragment, body: DisabledBody| {
+                    api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
+                        .map_err(warp::reject::custom)
+                }
+            });
+
+        list.or(delete).or(edit).or(edit_disabled).boxed()
+    }
+
+    /// Get the list of all promotions.
+    fn list(&self, channel: &str) -> Result<impl warp::Reply, failure::Error> {
+        let promotions = self.0.list_all(channel)?;
+        Ok(warp::reply::json(&promotions))
+    }
+
+    /// Edit the given promotion by key.
+    fn edit(
+        &self,
+        channel: &str,
+        name: &str,
+        frequency: utils::Duration,
+        template: template::Template,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        self.0.edit(channel, name, frequency, template)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Set the given promotion's disabled status.
+    fn edit_disabled(
+        &self,
+        channel: &str,
+        name: &str,
+        disabled: bool,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        if disabled {
+            self.0.disable(channel, name)?;
+        } else {
+            self.0.enable(channel, name)?;
+        }
+
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Delete the given promotion by key.
+    fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, failure::Error> {
+        self.0.delete(channel, name)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+}
+
 /// API to manage device.
 #[derive(Clone)]
 struct Api {
@@ -132,9 +416,6 @@ struct Api {
     after_streams: db::AfterStreams,
     db: db::Database,
     settings: settings::Settings,
-    promotions: db::Promotions,
-    aliases: db::Aliases,
-    commands: db::Commands,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -293,132 +574,6 @@ impl Api {
                 .and_then(|balances| Ok(warp::reply::json(&balances))),
         )
     }
-
-    /// Get the list of all aliases.
-    fn aliases(&self, channel: &str) -> Result<impl warp::Reply, failure::Error> {
-        let aliases = self.aliases.list_all(channel)?;
-        Ok(warp::reply::json(&aliases))
-    }
-
-    /// Edit the given alias by key.
-    fn edit_alias(
-        &self,
-        channel: &str,
-        name: &str,
-        template: template::Template,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        self.aliases.edit(channel, name, template)?;
-        Ok(warp::reply::json(&EMPTY))
-    }
-
-    /// Set the given alias's disabled status.
-    fn edit_alias_disabled(
-        &self,
-        channel: &str,
-        name: &str,
-        disabled: bool,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        if disabled {
-            self.aliases.disable(channel, name)?;
-        } else {
-            self.aliases.enable(channel, name)?;
-        }
-
-        Ok(warp::reply::json(&EMPTY))
-    }
-
-    /// Delete the given alias by key.
-    fn delete_alias(&self, channel: &str, name: &str) -> Result<impl warp::Reply, failure::Error> {
-        self.aliases.delete(channel, name)?;
-        Ok(warp::reply::json(&EMPTY))
-    }
-
-    /// Get the list of all commands.
-    fn commands(&self, channel: &str) -> Result<impl warp::Reply, failure::Error> {
-        let commands = self.commands.list_all(channel)?;
-        Ok(warp::reply::json(&commands))
-    }
-
-    /// Edit the given command by key.
-    fn edit_command(
-        &self,
-        channel: &str,
-        name: &str,
-        template: template::Template,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        self.commands.edit(channel, name, template)?;
-        Ok(warp::reply::json(&EMPTY))
-    }
-
-    /// Set the given command's disabled status.
-    fn edit_command_disabled(
-        &self,
-        channel: &str,
-        name: &str,
-        disabled: bool,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        if disabled {
-            self.commands.disable(channel, name)?;
-        } else {
-            self.commands.enable(channel, name)?;
-        }
-
-        Ok(warp::reply::json(&EMPTY))
-    }
-
-    /// Delete the given command by key.
-    fn delete_command(
-        &self,
-        channel: &str,
-        name: &str,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        self.commands.delete(channel, name)?;
-        Ok(warp::reply::json(&EMPTY))
-    }
-
-    /// Get the list of all promotions.
-    fn promotions(&self, channel: &str) -> Result<impl warp::Reply, failure::Error> {
-        let promotions = self.promotions.list_all(channel)?;
-        Ok(warp::reply::json(&promotions))
-    }
-
-    /// Edit the given promotion by key.
-    fn edit_promotion(
-        &self,
-        channel: &str,
-        name: &str,
-        frequency: utils::Duration,
-        template: template::Template,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        self.promotions.edit(channel, name, frequency, template)?;
-        Ok(warp::reply::json(&EMPTY))
-    }
-
-    /// Set the given promotion's disabled status.
-    fn edit_promotion_disabled(
-        &self,
-        channel: &str,
-        name: &str,
-        disabled: bool,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        if disabled {
-            self.promotions.disable(channel, name)?;
-        } else {
-            self.promotions.enable(channel, name)?;
-        }
-
-        Ok(warp::reply::json(&EMPTY))
-    }
-
-    /// Delete the given promotion by key.
-    fn delete_promotion(
-        &self,
-        channel: &str,
-        name: &str,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        self.promotions.delete(channel, name)?;
-        Ok(warp::reply::json(&EMPTY))
-    }
 }
 
 /// Set up the web endpoint.
@@ -455,9 +610,6 @@ pub fn setup(
         after_streams,
         db,
         settings,
-        aliases,
-        commands,
-        promotions,
     };
 
     let api = {
@@ -552,167 +704,9 @@ pub fn setup(
             }))
             .boxed();
 
-        let route = route
-            .or(warp::get2()
-                .and(path!("aliases" / Fragment).and(warp::filters::path::end()))
-                .and_then({
-                    let api = api.clone();
-                    move |channel: Fragment| {
-                        api.aliases(channel.as_str()).map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::delete2()
-                .and(path!("aliases" / Fragment / Fragment).and(warp::filters::path::end()))
-                .and_then({
-                    let api = api.clone();
-                    move |channel: Fragment, name: Fragment| {
-                        api.delete_alias(channel.as_str(), name.as_str())
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::put2()
-                .and(path!("aliases" / Fragment / Fragment).and(warp::filters::path::end()))
-                .and(warp::body::json())
-                .and_then({
-                    let api = api.clone();
-                    move |channel: Fragment, name: Fragment, body: PutAlias| {
-                        api.edit_alias(channel.as_str(), name.as_str(), body.template)
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::post2()
-                .and(
-                    path!("aliases" / Fragment / Fragment / "disabled")
-                        .and(warp::filters::path::end()),
-                )
-                .and(warp::body::json())
-                .and_then({
-                    let api = api.clone();
-                    move |channel: Fragment, name: Fragment, body: DisabledBody| {
-                        api.edit_alias_disabled(channel.as_str(), name.as_str(), body.disabled)
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::get2()
-                .and(path!("commands" / Fragment).and(warp::filters::path::end()))
-                .and_then({
-                    let api = api.clone();
-                    move |channel: Fragment| {
-                        api.commands(channel.as_str()).map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::delete2()
-                .and(path!("commands" / Fragment / Fragment).and(warp::filters::path::end()))
-                .and_then({
-                    let api = api.clone();
-                    move |channel: Fragment, name: Fragment| {
-                        api.delete_command(channel.as_str(), name.as_str())
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::post2()
-                .and(
-                    path!("commands" / Fragment / Fragment / "disabled")
-                        .and(warp::filters::path::end()),
-                )
-                .and(warp::body::json())
-                .and_then({
-                    let api = api.clone();
-                    move |channel: Fragment, name: Fragment, body: DisabledBody| {
-                        api.edit_command_disabled(channel.as_str(), name.as_str(), body.disabled)
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::put2()
-                .and(path!("commands" / Fragment / Fragment).and(warp::filters::path::end()))
-                .and(warp::body::json())
-                .and_then({
-                    let api = api.clone();
-                    move |channel: Fragment, name: Fragment, body: PutCommand| {
-                        api.edit_command(channel.as_str(), name.as_str(), body.template)
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::get2()
-                .and(path!("promotions" / Fragment).and(warp::filters::path::end()))
-                .and_then({
-                    let api = api.clone();
-                    move |channel: Fragment| {
-                        api.promotions(channel.as_str())
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::delete2()
-                .and(path!("promotions" / Fragment / Fragment).and(warp::filters::path::end()))
-                .and_then({
-                    let api = api.clone();
-                    move |channel: Fragment, name: Fragment| {
-                        api.delete_promotion(channel.as_str(), name.as_str())
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::put2()
-                .and(path!("promotions" / Fragment / Fragment).and(warp::filters::path::end()))
-                .and(warp::body::json())
-                .and_then({
-                    let api = api.clone();
-                    move |channel: Fragment, name: Fragment, body: PutPromotion| {
-                        api.edit_promotion(
-                            channel.as_str(),
-                            name.as_str(),
-                            body.frequency,
-                            body.template,
-                        )
-                        .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::post2()
-                .and(
-                    path!("promotions" / Fragment / Fragment / "disabled")
-                        .and(warp::filters::path::end()),
-                )
-                .and(warp::body::json())
-                .and_then({
-                    let api = api.clone();
-                    move |channel: Fragment, name: Fragment, body: DisabledBody| {
-                        api.edit_promotion_disabled(channel.as_str(), name.as_str(), body.disabled)
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
+        let route = route.or(Aliases::route(aliases));
+        let route = route.or(Commands::route(commands));
+        let route = route.or(Promotions::route(promotions));
 
         let route = route
             .or(warp::get2()
