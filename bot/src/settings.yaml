@@ -50,6 +50,12 @@ types:
   player/song-update-interval:
     doc: The interval at which song updates are visible. Used in the Overlay.
     type: {id: duration}
+  player/spotify/volume-scale:
+    doc: Scaling to apply to volume. A value of 50% would mean that that would effectively be the maximum volume.
+    type: {id: percentage}
+  player/youtube/volume-scale:
+    doc: Scaling to apply to volume. A value of 50% would mean that that would effectively be the maximum volume.
+    type: {id: percentage}
   promotions/frequency:
     doc: The highest frequency at which promotions are posted.
     type: {id: duration}

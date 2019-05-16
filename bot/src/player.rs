@@ -209,8 +209,11 @@ pub fn run(
     // Settings abstraction.
     settings: settings::Settings,
 ) -> Result<(PlaybackFuture, Player), failure::Error> {
-    let (connect_player, device) = connect::setup(spotify.clone())?;
-    let youtube_player = youtube::setup(youtube_bus.clone())?;
+    let settings = settings.scoped(&["player"]);
+
+    let (connect_player, device) =
+        connect::setup(core, spotify.clone(), settings.scoped(&["spotify"]))?;
+    let youtube_player = youtube::setup(core, youtube_bus.clone(), settings.scoped(&["youtube"]))?;
 
     let bus = Arc::new(RwLock::new(Bus::new(1024)));
 
@@ -263,8 +266,6 @@ pub fn run(
         Some(update_interval) => Some(tokio_timer::Interval::new_interval(update_interval.clone())),
         None => None,
     };
-
-    let settings = settings.scoped(&["player"]);
 
     let (song_update_interval_stream, song_update_interval) =
         settings.init_and_stream("song-update-interval", utils::Duration::seconds(1))?;

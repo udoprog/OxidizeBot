@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added the ability to scale the maximum volume of a player by a percentage using the following settings:
+  * `player/spotify/volume-scale`
+  * `player/youtube/volume-scale`
+
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.7...master
+
 ## [0.2.7]
 
 ### Changed

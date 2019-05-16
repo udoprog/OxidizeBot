@@ -1,12 +1,19 @@
-use crate::{api, player, track_id::SpotifyId, utils::BoxFuture};
+use crate::{api, player, settings::ScopedSettings, track_id::SpotifyId, utils::BoxFuture};
 use futures::{sync::mpsc, Async, Future, Poll, Stream};
 use parking_lot::RwLock;
 use std::sync::Arc;
 use tokio::timer;
+use tokio_core::reactor::Core;
 
 /// Setup a player.
-pub fn setup(spotify: Arc<api::Spotify>) -> Result<(ConnectPlayer, ConnectDevice), failure::Error> {
+pub fn setup(
+    core: &mut Core,
+    spotify: Arc<api::Spotify>,
+    settings: ScopedSettings,
+) -> Result<(ConnectPlayer, ConnectDevice), failure::Error> {
     let device = Arc::new(RwLock::new(None));
+
+    let volume_scale = settings.sync_var(core, "volume-scale", 100)?;
 
     let (config_tx, config_rx) = mpsc::unbounded();
 
@@ -19,6 +26,7 @@ pub fn setup(spotify: Arc<api::Spotify>) -> Result<(ConnectPlayer, ConnectDevice
         volume: None,
         timeout: None,
         config_rx,
+        volume_scale,
     };
 
     // Configuration interface.
@@ -47,6 +55,8 @@ pub struct ConnectPlayer {
     timeout: Option<timer::Delay>,
     /// Receiver for configuration events.
     config_rx: mpsc::UnboundedReceiver<ConfigurationEvent>,
+    /// Scale to use for volume.
+    volume_scale: Arc<RwLock<u32>>,
 }
 
 impl ConnectPlayer {
@@ -99,6 +109,8 @@ impl ConnectPlayer {
     }
 
     pub fn volume(&mut self, kind: super::Source, volume: u32) {
+        let volume = (volume * *self.volume_scale.read()) / 100u32;
+
         let device = self.device.read();
         let device_id = device.as_ref().map(|d| d.id.as_str());
 

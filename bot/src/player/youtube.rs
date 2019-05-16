@@ -1,16 +1,26 @@
-use crate::{bus, player};
+use crate::{bus, player, settings::ScopedSettings};
 use futures::{sync, Async, Poll, Stream};
+use parking_lot::RwLock;
 use std::sync::Arc;
 use tokio::timer;
+use tokio_core::reactor::Core;
 
 /// Setup a player.
-pub fn setup(bus: Arc<bus::Bus<bus::YouTube>>) -> Result<YouTubePlayer, failure::Error> {
+pub fn setup(
+    core: &mut Core,
+    bus: Arc<bus::Bus<bus::YouTube>>,
+    settings: ScopedSettings,
+) -> Result<YouTubePlayer, failure::Error> {
     let (tx, rx) = sync::mpsc::unbounded();
+
+    let volume_scale = settings.sync_var(core, "volume-scale", 100)?;
+
     Ok(YouTubePlayer {
         bus,
         tx,
         rx,
         timeout: None,
+        volume_scale,
     })
 }
 
@@ -20,6 +30,7 @@ pub struct YouTubePlayer {
     rx: sync::mpsc::UnboundedReceiver<player::IntegrationEvent>,
     /// Timeout for end of song.
     timeout: Option<timer::Delay>,
+    volume_scale: Arc<RwLock<u32>>,
 }
 
 impl YouTubePlayer {
@@ -66,6 +77,7 @@ impl YouTubePlayer {
     }
 
     pub fn volume(&mut self, source: super::Source, volume: u32) {
+        let volume = (volume * *self.volume_scale.read()) / 100u32;
         self.bus.send(bus::YouTube::YouTubeVolume { volume });
         self.send(player::IntegrationEvent::Volume(source, volume));
     }
