@@ -1,5 +1,8 @@
 streamer = "setbac"
-bad_words = "bad_words.yml"
+
+# Load a list of bad words from the given configuration file.
+#bad_words = "bad_words.yml"
+
 database_url = "database.sql"
 
 whitelisted_hosts = [
