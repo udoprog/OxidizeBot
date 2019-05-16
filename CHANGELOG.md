@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7]
+
 ### Changed
 - `!song request` no longer allows one extra request to enter the queue. ([#33])
 - Avoid playing the same songs over and over ([#35]).
@@ -45,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [#35]: https://github.com/udoprog/setmod/issues/35
 [#36]: https://github.com/udoprog/setmod/issues/36
 [#37]: https://github.com/udoprog/setmod/issues/37
+
+[0.2.7]: https://github.com/udoprog/setmod/compare/0.2.6...0.2.7
 
 ## [0.2.6]
 
