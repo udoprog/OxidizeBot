@@ -1,4 +1,6 @@
-use super::schema::{after_streams, aliases, bad_words, balances, commands, promotions, songs};
+use super::schema::{
+    after_streams, aliases, bad_words, balances, commands, promotions, songs, themes,
+};
 use crate::player::TrackId;
 use chrono::NaiveDateTime;
 
@@ -158,6 +160,34 @@ pub struct UpdatePromotion<'a> {
     pub frequency: Option<i32>,
     pub promoted_at: Option<&'a NaiveDateTime>,
     pub text: Option<&'a str>,
+    pub group: Option<&'a str>,
+    pub disabled: Option<bool>,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
+pub struct Theme {
+    /// The channel the theme belongs to.
+    pub channel: String,
+    /// The name of the theme.
+    pub name: String,
+    /// If track id of the theme.
+    pub track_id: TrackId,
+    /// The start of the theme in seconds.
+    pub start: i32,
+    /// The end of the theme in seconds.
+    pub end: Option<i32>,
+    /// The group the theme is part of, if any.
+    pub group: Option<String>,
+    /// If the theme is disabled.
+    pub disabled: bool,
+}
+
+#[derive(Debug, Clone, Default, diesel::AsChangeset)]
+#[table_name = "themes"]
+pub struct UpdateTheme<'a> {
+    pub track_id: Option<&'a TrackId>,
+    pub start: Option<i32>,
+    pub end: i32,
     pub group: Option<&'a str>,
     pub disabled: Option<bool>,
 }

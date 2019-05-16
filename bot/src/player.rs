@@ -1,6 +1,6 @@
 use tokio_core::reactor::Core;
 
-use crate::{api, bus, config, current_song, db, settings, themes::Themes, utils};
+use crate::{api, bus, config, current_song, db, settings, utils};
 pub use crate::{spotify_id::SpotifyId, track_id::TrackId};
 
 use chrono::{DateTime, Utc};
@@ -202,12 +202,10 @@ pub fn run(
     youtube: Arc<api::YouTube>,
     parent_config: &config::Config,
     config: &Config,
-    // For sending notifications.
     global_bus: Arc<bus::Bus<bus::Global>>,
-    // For sending YouTube player updates.
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
-    // Settings abstraction.
     settings: settings::Settings,
+    themes: db::Themes,
 ) -> Result<(PlaybackFuture, Player), failure::Error> {
     let settings = settings.scoped(&["player"]);
 
@@ -337,7 +335,7 @@ pub fn run(
         bus,
         volume: volume.clone(),
         song: song.clone(),
-        themes: parent_config.themes.clone(),
+        themes: themes.clone(),
         closed: closed.clone(),
     };
 
@@ -592,10 +590,10 @@ pub struct Player {
     commands_tx: mpsc::UnboundedSender<Command>,
     bus: Arc<RwLock<Bus<Event>>>,
     volume: Arc<RwLock<u32>>,
-    /// Song song that is loaded.
+    /// The current song that is loaded.
     song: Arc<RwLock<Option<Song>>>,
     /// Theme songs.
-    themes: Arc<Themes>,
+    themes: db::Themes,
     /// Player is closed for more requests.
     closed: Arc<RwLock<Option<Option<Arc<String>>>>>,
 }
@@ -669,7 +667,7 @@ pub struct PlayerClient {
     /// Song song that is loaded.
     song: Arc<RwLock<Option<Song>>>,
     /// Theme songs.
-    themes: Arc<Themes>,
+    themes: db::Themes,
     /// Player is closed for more requests.
     closed: Arc<RwLock<Option<Option<Arc<String>>>>>,
 }
@@ -812,12 +810,17 @@ impl PlayerClient {
     }
 
     /// Play a theme track.
-    pub fn play_theme(&self, name: &str) -> impl Future<Item = (), Error = PlayThemeError> {
+    pub fn play_theme(
+        &self,
+        channel: &str,
+        name: &str,
+    ) -> impl Future<Item = (), Error = PlayThemeError> {
         let fut = future::lazy({
             let themes = self.themes.clone();
+            let channel = channel.to_string();
             let name = name.to_string();
 
-            move || match themes.lookup(&name) {
+            move || match themes.get(&channel, &name) {
                 Some(theme) => Ok(theme),
                 None => Err(PlayThemeError::NoSuchTheme),
             }
@@ -836,7 +839,7 @@ impl PlayerClient {
                     spotify,
                     youtube,
                     None,
-                    theme.track.clone(),
+                    theme.track_id.clone(),
                     duration,
                 )
                 .map(move |item| (item, theme))
@@ -849,7 +852,7 @@ impl PlayerClient {
 
             move |(item, theme)| {
                 let item = Arc::new(item);
-                let duration = theme.offset.as_duration();
+                let duration = theme.start.as_duration();
 
                 commands_tx
                     .unbounded_send(Command::Inject(Source::Manual, item, duration))
@@ -2021,14 +2024,14 @@ fn convert_item(
     youtube: Arc<api::YouTube>,
     user: Option<String>,
     track_id: TrackId,
-    duration: Option<Duration>,
+    duration_override: Option<Duration>,
 ) -> impl Future<Item = Item, Error = failure::Error> {
     let future: utils::BoxFuture<Item, failure::Error> = match track_id {
         TrackId::Spotify(ref id) => {
             let track_id_string = id.to_base62();
 
             Box::new(spotify.track(&track_id_string).map(move |track| {
-                let duration = match duration {
+                let duration = match duration_override {
                     Some(duration) => duration,
                     None => Duration::from_millis(track.duration_ms.into()),
                 };

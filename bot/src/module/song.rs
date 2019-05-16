@@ -334,7 +334,7 @@ impl command::Handler for Handler {
                     }
                 };
 
-                let future = self.player.play_theme(name).then({
+                let future = self.player.play_theme(&ctx.user.target, name).then({
                     let user = ctx.user.as_owned_user();
 
                     move |r| {

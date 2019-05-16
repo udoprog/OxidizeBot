@@ -6,6 +6,7 @@ mod commands;
 pub(crate) mod models;
 mod promotions;
 pub(crate) mod schema;
+mod themes;
 mod words;
 
 use crate::{player, utils};
@@ -15,6 +16,7 @@ pub use self::{
     aliases::{Alias, Aliases},
     commands::{Command, Commands},
     promotions::{Promotion, Promotions},
+    themes::{Theme, Themes},
     words::{Word, Words},
 };
 

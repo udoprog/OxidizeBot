@@ -366,7 +366,7 @@ impl Handler {
     /// Play the specified theme song.
     fn play_theme_song(&mut self, ctx: &mut command::Context<'_, '_>, id: &str) {
         if let Some(player) = self.player.as_ref() {
-            ctx.spawn(player.play_theme(id).then(|result| {
+            ctx.spawn(player.play_theme(ctx.user.target, id).then(|result| {
                 match result {
                     Ok(()) => {}
                     Err(player::PlayThemeError::NoSuchTheme) => {

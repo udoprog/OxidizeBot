@@ -29,7 +29,6 @@ pub mod settings;
 mod spotify_id;
 mod stream_info;
 pub mod template;
-mod themes;
 mod track_id;
 pub mod utils;
 pub mod web;

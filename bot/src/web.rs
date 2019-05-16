@@ -1,5 +1,6 @@
 use crate::{
     api, bus, db, irc, player, settings, template,
+    track_id::TrackId,
     utils::{self, BoxFuture},
 };
 use futures::{future, stream, sync::oneshot, Future, Sink as _, Stream as _};
@@ -103,25 +104,9 @@ pub struct PutSetting {
     value: serde_json::Value,
 }
 
-#[derive(serde::Deserialize)]
-pub struct PutPromotion {
-    frequency: utils::Duration,
-    template: template::Template,
-}
-
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct DisabledBody {
     disabled: bool,
-}
-
-#[derive(serde::Deserialize)]
-pub struct PutAlias {
-    template: template::Template,
-}
-
-#[derive(serde::Deserialize)]
-pub struct PutCommand {
-    template: template::Template,
 }
 
 /// Aliases endpoint.
@@ -173,7 +158,12 @@ impl Aliases {
                 }
             });
 
-        list.or(delete).or(edit).or(edit_disabled).boxed()
+        return list.or(delete).or(edit).or(edit_disabled).boxed();
+
+        #[derive(serde::Deserialize)]
+        pub struct PutAlias {
+            template: template::Template,
+        }
     }
 
     /// Get the list of all aliases.
@@ -266,7 +256,12 @@ impl Commands {
                 }
             });
 
-        list.or(delete).or(edit).or(edit_disabled).boxed()
+        return list.or(delete).or(edit).or(edit_disabled).boxed();
+
+        #[derive(serde::Deserialize)]
+        pub struct PutCommand {
+            template: template::Template,
+        }
     }
 
     /// Get the list of all commands.
@@ -364,7 +359,13 @@ impl Promotions {
                 }
             });
 
-        list.or(delete).or(edit).or(edit_disabled).boxed()
+        return list.or(delete).or(edit).or(edit_disabled).boxed();
+
+        #[derive(serde::Deserialize)]
+        pub struct PutPromotion {
+            frequency: utils::Duration,
+            template: template::Template,
+        }
     }
 
     /// Get the list of all promotions.
@@ -382,6 +383,101 @@ impl Promotions {
         template: template::Template,
     ) -> Result<impl warp::Reply, failure::Error> {
         self.0.edit(channel, name, frequency, template)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Set the given promotion's disabled status.
+    fn edit_disabled(
+        &self,
+        channel: &str,
+        name: &str,
+        disabled: bool,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        if disabled {
+            self.0.disable(channel, name)?;
+        } else {
+            self.0.enable(channel, name)?;
+        }
+
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Delete the given promotion by key.
+    fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, failure::Error> {
+        self.0.delete(channel, name)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+}
+
+/// Themes endpoint.
+#[derive(Clone)]
+struct Themes(db::Themes);
+
+impl Themes {
+    fn route(themes: db::Themes) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+        let api = Themes(themes);
+
+        let list = warp::get2()
+            .and(path!("themes" / Fragment).and(warp::filters::path::end()))
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment| api.list(channel.as_str()).map_err(warp::reject::custom)
+            });
+
+        let delete = warp::delete2()
+            .and(path!("themes" / Fragment / Fragment).and(warp::filters::path::end()))
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment, name: Fragment| {
+                    api.delete(channel.as_str(), name.as_str())
+                        .map_err(warp::reject::custom)
+                }
+            });
+
+        let edit = warp::put2()
+            .and(path!("themes" / Fragment / Fragment).and(warp::filters::path::end()))
+            .and(warp::body::json())
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment, name: Fragment, body: PutTheme| {
+                    api.edit(channel.as_str(), name.as_str(), body.track_id)
+                        .map_err(warp::reject::custom)
+                }
+            });
+
+        let edit_disabled = warp::post2()
+            .and(path!("themes" / Fragment / Fragment / "disabled").and(warp::filters::path::end()))
+            .and(warp::body::json())
+            .and_then({
+                let api = api.clone();
+                move |channel: Fragment, name: Fragment, body: DisabledBody| {
+                    api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
+                        .map_err(warp::reject::custom)
+                }
+            });
+
+        return list.or(delete).or(edit).or(edit_disabled).boxed();
+
+        #[derive(serde::Deserialize)]
+        pub struct PutTheme {
+            track_id: TrackId,
+        }
+    }
+
+    /// Get the list of all promotions.
+    fn list(&self, channel: &str) -> Result<impl warp::Reply, failure::Error> {
+        let promotions = self.0.list_all(channel)?;
+        Ok(warp::reply::json(&promotions))
+    }
+
+    /// Edit the given promotion by key.
+    fn edit(
+        &self,
+        channel: &str,
+        name: &str,
+        track_id: TrackId,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        self.0.edit(channel, name, track_id)?;
         Ok(warp::reply::json(&EMPTY))
     }
 
@@ -588,6 +684,7 @@ pub fn setup(
     aliases: db::Aliases,
     commands: db::Commands,
     promotions: db::Promotions,
+    themes: db::Themes,
 ) -> Result<(Server, BoxFuture<(), failure::Error>), failure::Error> {
     let addr: SocketAddr = str::parse(&format!("0.0.0.0:12345"))?;
 
@@ -707,6 +804,7 @@ pub fn setup(
         let route = route.or(Aliases::route(aliases));
         let route = route.or(Commands::route(commands));
         let route = route.or(Promotions::route(promotions));
+        let route = route.or(Themes::route(themes));
 
         let route = route
             .or(warp::get2()

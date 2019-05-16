@@ -6,6 +6,7 @@ pub struct Handler {
     aliases: db::Aliases,
     commands: db::Commands,
     promotions: db::Promotions,
+    themes: db::Themes,
 }
 
 impl command::Handler for Handler {
@@ -84,6 +85,7 @@ impl command::Handler for Handler {
                 self.aliases.enable_group(ctx.user.target, group)?;
                 self.commands.enable_group(ctx.user.target, group)?;
                 self.promotions.enable_group(ctx.user.target, group)?;
+                self.themes.enable_group(ctx.user.target, group)?;
 
                 ctx.respond(format!("Enabled group {}", group));
             }
@@ -102,6 +104,7 @@ impl command::Handler for Handler {
                 self.aliases.disable_group(ctx.user.target, group)?;
                 self.commands.disable_group(ctx.user.target, group)?;
                 self.promotions.disable_group(ctx.user.target, group)?;
+                self.themes.disable_group(ctx.user.target, group)?;
 
                 ctx.respond(format!("Disabled group {}", group));
             }
@@ -267,6 +270,7 @@ impl super::Module for Module {
             aliases,
             commands,
             promotions,
+            themes,
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
@@ -277,6 +281,7 @@ impl super::Module for Module {
                 aliases: aliases.clone(),
                 commands: commands.clone(),
                 promotions: promotions.clone(),
+                themes: themes.clone(),
             },
         );
 

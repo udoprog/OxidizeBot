@@ -39,6 +39,7 @@ mod gtav;
 mod promotions;
 pub mod song;
 mod swearjar;
+pub mod theme_admin;
 mod water;
 
 #[derive(Debug, serde::Deserialize)]
@@ -65,6 +66,7 @@ pub struct HookContext<'a> {
     pub commands: &'a db::Commands,
     pub aliases: &'a db::Aliases,
     pub promotions: &'a db::Promotions,
+    pub themes: &'a db::Themes,
     pub handlers: &'a mut Handlers,
     pub currency: Option<&'a currency::Currency>,
     pub youtube: &'a Arc<api::YouTube>,

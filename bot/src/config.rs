@@ -1,7 +1,8 @@
 use crate::{
-    currency, current_song, features, irc, module, player, secrets, settings, themes, web,
+    currency, current_song, features, irc, module, player, secrets, settings, track_id::TrackId,
+    utils::Offset, web,
 };
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 use relative_path::RelativePathBuf;
 use std::{marker, sync::Arc};
 
@@ -26,7 +27,7 @@ pub struct Config {
     pub secrets: Option<RelativePathBuf>,
     /// Themes that can be played.
     #[serde(default)]
-    pub themes: Arc<themes::Themes>,
+    pub themes: Themes,
     /// Player configuration file.
     #[serde(default)]
     pub player: Option<player::Config>,
@@ -148,4 +149,19 @@ where
             marker: Default::default(),
         }
     }
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Themes {
+    pub themes: HashMap<String, Arc<Theme>>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct Theme {
+    pub track: TrackId,
+    #[serde(default)]
+    pub offset: Offset,
+    #[serde(default)]
+    pub end: Option<Offset>,
 }

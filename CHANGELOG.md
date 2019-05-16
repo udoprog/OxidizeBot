@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Themes are not stored in the database, accessible through the `!theme` command and the web UI.
+
 ### Added
 - Added the ability to scale the maximum volume of a player by a percentage using the following settings:
   * `player/spotify/volume-scale`

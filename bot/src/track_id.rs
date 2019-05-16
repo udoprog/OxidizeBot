@@ -4,7 +4,9 @@ use std::fmt;
 static YOUTUBE_URL: &'static str = "https://youtu.be";
 static SPOTIFY_URL: &'static str = "https://open.spotify.com/track";
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, diesel::FromSqlRow, diesel::AsExpression)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, diesel::FromSqlRow, diesel::AsExpression,
+)]
 #[sql_type = "diesel::sql_types::Text"]
 pub enum TrackId {
     /// A Spotify track.

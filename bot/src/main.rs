@@ -132,11 +132,12 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     let settings = db.settings()?;
 
-    let commands = db::Commands::load(db.clone())?;
-    let aliases = db::Aliases::load(db.clone())?;
     let bad_words = db::Words::load(db.clone())?;
     let after_streams = db::AfterStreams::load(db.clone())?;
+    let commands = db::Commands::load(db.clone())?;
+    let aliases = db::Aliases::load(db.clone())?;
     let promotions = db::Promotions::load(db.clone())?;
+    let themes = db::Themes::load(db.clone())?;
 
     // TODO: remove this migration next major release.
     if let Some(irc) = config.irc.as_ref() {
@@ -159,12 +160,38 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
                 settings.set("migration/aliases-migrated", true)?;
             }
         }
+
+        if !config.themes.themes.is_empty() {
+            log::warn!("# DEPRECATION WARNING");
+            log::warn!("The [themes] section in the configuration is now deprecated.");
+            log::warn!("Please remove it in favor of storing theme in the database.");
+
+            if !settings
+                .get::<bool>("migration/themes-migrated")?
+                .unwrap_or_default()
+            {
+                log::warn!("Performing a one time migration of themes from configuration.");
+
+                for (name, theme) in &config.themes.themes {
+                    let track_id = theme.track.clone();
+                    themes.edit(irc.channel.as_str(), name.as_str(), track_id)?;
+                    themes.edit_duration(
+                        irc.channel.as_str(),
+                        name.as_str(),
+                        theme.offset.clone(),
+                        theme.end.clone(),
+                    )?;
+                }
+
+                settings.set("migration/themes-migrated", true)?;
+            }
+        }
     }
 
     if !config.whitelisted_hosts.is_empty() {
         log::warn!("# DEPRECATION WARNING");
         log::warn!("The `whitelisted_hosts` section in the configuration is now deprecated.");
-        log::warn!("Please remove it in favor of the irc/whitelisted-hosts setting");
+        log::warn!("Please remove it in favor of the irc/whitelisted-hosts setting.");
     }
 
     if let Some(path) = config.bad_words.as_ref() {
@@ -193,6 +220,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         aliases.clone(),
         commands.clone(),
         promotions.clone(),
+        themes.clone(),
     )?;
 
     // NB: spawn the web server on a separate thread because it's needed for the synchronous authentication flow below.
@@ -316,6 +344,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
                 global_bus.clone(),
                 youtube_bus.clone(),
                 settings.clone(),
+                themes.clone(),
             )?;
 
             futures.push(Box::new(future));
@@ -350,6 +379,9 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     let module = module::alias_admin::Config::default();
     modules.push(Box::new(module::alias_admin::Module::load(&module)?));
 
+    let module = module::theme_admin::Config::default();
+    modules.push(Box::new(module::theme_admin::Module::load(&module)?));
+
     if let Some(irc_config) = config.irc.as_ref() {
         let (bot_token, future) = results
             .next()
@@ -375,6 +407,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             commands,
             aliases,
             promotions,
+            themes,
             bad_words,
             after_streams,
             global_bus,

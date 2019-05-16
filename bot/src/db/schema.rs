@@ -74,3 +74,15 @@ table! {
         disabled -> Bool,
     }
 }
+
+table! {
+    themes (channel, name) {
+        channel -> Text,
+        name -> Text,
+        track_id -> Text,
+        start -> Integer,
+        end -> Nullable<Integer>,
+        group -> Nullable<Text>,
+        disabled -> Bool,
+    }
+}

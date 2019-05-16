@@ -1,6 +1,6 @@
 use crate::api;
 use parking_lot::Mutex;
-use std::{borrow, mem, sync::Arc, time};
+use std::{borrow, fmt, mem, sync::Arc, time};
 use url::percent_encoding::PercentDecode;
 
 mod duration;
@@ -339,31 +339,33 @@ fn is_url_character(c: char) -> bool {
 /// An offset with millisecond precision.
 ///
 /// Stored field is in milliseconds.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Offset(u32);
 
 impl std::str::FromStr for Offset {
     type Err = failure::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut it = s.split(':').rev();
+        let (s, ms) = match s.rfind('.') {
+            Some(i) => (&s[..i], str::parse::<u32>(&s[(i + 1)..])?),
+            None => (s, 0),
+        };
 
-        let seconds: Option<u32> = it.next().map(str::parse).transpose()?;
-        let minutes: Option<u32> = it.next().map(str::parse).transpose()?;
+        let (s, seconds) = match s.rfind(':') {
+            Some(i) => (&s[..i], str::parse::<u32>(&s[(i + 1)..])? * 1_000),
+            None => ("", str::parse::<u32>(s)? * 1_000),
+        };
 
-        let seconds = match seconds {
-            Some(seconds) => seconds.checked_mul(1000),
-            None => None,
-        }
-        .unwrap_or_default();
+        let minutes = match s {
+            "" => 0,
+            s => str::parse::<u32>(s)? * 60_000,
+        };
 
-        let minutes = match minutes {
-            Some(minutes) => minutes.checked_mul(1000 * 60),
-            None => None,
-        }
-        .unwrap_or_default();
-
-        Ok(Offset(seconds.checked_add(minutes).unwrap_or_default()))
+        Ok(Offset(
+            ms.checked_add(seconds)
+                .and_then(|t| t.checked_add(minutes))
+                .unwrap_or_default(),
+        ))
     }
 }
 
@@ -372,14 +374,50 @@ impl<'de> serde::Deserialize<'de> for Offset {
     where
         D: serde::Deserializer<'de>,
     {
-        str::parse(&String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+        let s = String::deserialize(deserializer)?;
+        str::parse(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+impl serde::Serialize for Offset {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
     }
 }
 
 impl Offset {
+    /// An offset from milliseconds.
+    pub fn milliseconds(ms: u32) -> Self {
+        Offset(ms)
+    }
+
+    /// Convert to seconds.
+    pub fn as_milliseconds(&self) -> u32 {
+        self.0
+    }
+
     /// Treat offset as duration.
     pub fn as_duration(&self) -> time::Duration {
         time::Duration::from_millis(self.0 as u64)
+    }
+}
+
+impl fmt::Display for Offset {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let rest = self.0;
+        let ms = rest % 1_000;
+        let rest = rest / 1_000;
+        let seconds = rest % 60;
+        let minutes = rest / 60;
+
+        if ms > 0 {
+            write!(fmt, "{:02}:{:02}.{:03}", minutes, seconds, ms)
+        } else {
+            write!(fmt, "{:02}:{:02}", minutes, seconds)
+        }
     }
 }
 
@@ -465,7 +503,19 @@ impl Shutdown {
 
 #[cfg(test)]
 mod tests {
-    use super::{TrimmedWords, Urls, Words};
+    use super::{Offset, TrimmedWords, Urls, Words};
+
+    #[test]
+    pub fn test_offset() -> Result<(), failure::Error> {
+        assert_eq!(Offset::milliseconds(1_000), str::parse::<Offset>("1")?);
+        assert_eq!(Offset::milliseconds(1_000), str::parse::<Offset>("01")?);
+        assert_eq!(Offset::milliseconds(61_000), str::parse::<Offset>("01:01")?);
+        assert_eq!(
+            Offset::milliseconds(61_123),
+            str::parse::<Offset>("01:01.123")?
+        );
+        Ok(())
+    }
 
     #[test]
     pub fn test_trimmed_words() {

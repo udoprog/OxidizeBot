@@ -24,7 +24,7 @@
 
 use std::{fmt, str};
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SpotifyId(u128);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

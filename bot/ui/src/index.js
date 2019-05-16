@@ -15,6 +15,7 @@ import Commands from "./components/Commands.js";
 import '@fortawesome/fontawesome-free-solid'
 import Promotions from "./components/Promotions";
 import Aliases from "./components/Aliases";
+import Themes from "./components/Themes";
 import YouTube from "./components/YouTube";
 
 const RouteLayout = withRouter(props => <Layout {...props} />)
@@ -110,6 +111,47 @@ class AliasesPage extends React.Component {
         <Row>
           <Col>
             <Aliases current={this.state.current} api={this.api} />
+          </Col>
+        </Row>
+      </RouteLayout>
+    );
+  }
+}
+
+class ThemesPage extends React.Component {
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      current: null,
+    };
+
+    this.api = new Api(utils.apiUrl());
+  }
+
+  componentWillMount() {
+    this.api.current().then(current => {
+      this.setState({current});
+    });
+  }
+
+  render() {
+    if (!this.state.current) {
+      return (
+        <RouteLayout>
+          <div className="loading">
+            Loading Current User
+            <utils.Spinner />
+          </div>
+        </RouteLayout>
+      );
+    }
+
+    return (
+      <RouteLayout>
+        <Row>
+          <Col>
+            <Themes current={this.state.current} api={this.api} />
           </Col>
         </Row>
       </RouteLayout>
@@ -257,6 +299,7 @@ function Layout(props) {
               <NavDropdown.Item as={Link} active={path === "/aliases"} to="/aliases">Aliases</NavDropdown.Item>
               <NavDropdown.Item as={Link} active={path === "/commands"} to="/commands">Commands</NavDropdown.Item>
               <NavDropdown.Item as={Link} active={path === "/promotions"} to="/promotions">Promotions</NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/themes"} to="/themes">Themes</NavDropdown.Item>
             </NavDropdown>
 
             <Nav.Link as={Link} active={path === "/overlay"} to="/overlay" target="overlay">Overlay</Nav.Link>
@@ -285,6 +328,7 @@ function AppRouter() {
       <Route path="/aliases" exact component={AliasesPage} />
       <Route path="/commands" exact component={CommandsPage} />
       <Route path="/promotions" exact component={PromotionsPage} />
+      <Route path="/themes" exact component={ThemesPage} />
       <Route path="/overlay/" component={Overlay} />
       <Route path="/youtube" component={YouTube} />
     </Router>

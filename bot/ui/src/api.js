@@ -191,6 +191,26 @@ export class Api {
       body: JSON.stringify({disabled}),
     });
   }
+
+  themes(channel) {
+    return this.fetch(["themes", channel]);
+  }
+
+  /**
+   * Edit the disabled state of an theme.
+   *
+   * @param {object} key key of the theme to edit
+   * @param {bool} disabled set the theme disabled or not
+   */
+  themesEditDisabled(key, disabled) {
+    return this.fetch(["themes", key.channel, key.name, "disabled"], {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({disabled}),
+    });
+  }
 }
 
 function encodePath(path) {
