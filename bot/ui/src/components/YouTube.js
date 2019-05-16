@@ -9,6 +9,14 @@ const OBS_CSS = [
   ".overlay-hidden { display: none }"
 ]
 
+const UNSTARTED = -1;
+const ENDED = 0;
+const PLAYING = 1;
+const PAUSED = 2;
+const BUFFERING = 3;
+const VIDEO_CUED = 5;
+const SUGGESTED_QUALITY = "hd720";
+
 export default class YouTube extends React.Component {
   constructor(props) {
     super(props);
@@ -16,7 +24,6 @@ export default class YouTube extends React.Component {
     this.playerElement = null;
     this.player = null;
     this.playerRef = React.createRef();
-    this.currentId = null;
 
     this.state = {
       stopped: true,
@@ -24,7 +31,7 @@ export default class YouTube extends React.Component {
       loading: true,
       events: [],
       api: null,
-      videoId: 'M7lc1UVf-VE',
+      videoId: null,
     };
   }
 
@@ -42,21 +49,28 @@ export default class YouTube extends React.Component {
       case "youtube/current":
         switch (data.event.type) {
           case "play":
-            if (this.currentId !== data.event.video_id) {
-              let videoId = data.event.video_id;
-              this.player.loadVideoById({videoId});
-              this.player.seekTo(data.event.elapsed);
-              this.player.playVideo();
-              this.currentId = data.event.video_id;
-            } else if (this.state.paused || Math.abs(data.event.elapsed - this.player.getCurrentTime()) > 2) {
-              this.player.seekTo(data.event.elapsed);
-              this.player.playVideo();
-            }
-
-            this.setState({
+            let update = {
               stopped: false,
               paused: false,
-            });
+            };
+
+            if (this.state.videoId !== data.event.video_id) {
+              let videoId = data.event.video_id;
+              this.player.loadVideoById({videoId, suggestedQuality: SUGGESTED_QUALITY});
+              this.player.seekTo(data.event.elapsed);
+              this.player.playVideo();
+              update.videoId = data.event.video_id;
+            } else {
+              if (this.state.paused) {
+                this.player.playVideo();
+              }
+
+              if (Math.abs(data.event.elapsed - this.player.getCurrentTime()) > 2) {
+                this.player.seekTo(data.event.elapsed);
+              }
+            }
+
+            this.setState(update);
             break;
           case "pause":
             this.player.pauseVideo();
@@ -72,6 +86,7 @@ export default class YouTube extends React.Component {
             this.setState({
               stopped: true,
               paused: false,
+              videoId: null,
             });
             break;
           default:
@@ -95,14 +110,18 @@ export default class YouTube extends React.Component {
     }
 
     this.player = new YT.Player(this.playerRef.current, {
-      width: '100%',
-      height: '100%',
+      width: 1280,
+      height: 720,
       autoplay: false,
       events: {
         onReady: () => {
           this.setState({
             loading: false,
           });
+        },
+        onPlaybackQualityChange: e => {
+        },
+        onStateChange: e => {
         },
       }
     });
