@@ -12,6 +12,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use tokio::timer;
 use tokio_bus::{Bus, BusReader};
 use tokio_threadpool::{SpawnHandle, ThreadPool};
 
@@ -21,20 +22,8 @@ mod youtube;
 /// Event used by player integrations.
 #[derive(Debug)]
 pub enum IntegrationEvent {
-    /// We've reached the end of a track.
-    EndOfTrack,
     /// Indicate that the current device changed.
     DeviceChanged,
-    /// We've filtered a player event.
-    Filtered,
-    /// Indicate that we have successfully issued a playing command to the player.
-    Playing(Source),
-    /// Indicate that we have successfully issued a pause command to the player.
-    Pausing(Source),
-    /// Indicate that a player has been stoped because of a switch.
-    Stopping,
-    /// Indicate that we have successfully issued a volume command to the player.
-    Volume(Source, u32),
 }
 
 /// The source of action.
@@ -172,7 +161,7 @@ pub enum Command {
     /// Start playback.
     Play(Source),
     /// Start playback on a specific song state.
-    PlaySync { song: Option<Song> },
+    Sync { song: Option<Song> },
     /// The queue was modified.
     Modified(Source),
     /// Set the gain of the player.
@@ -189,7 +178,7 @@ impl Command {
         match *self {
             Skip(source) | Toggle(source) | Pause(source) | Play(source) | Modified(source)
             | Volume(source, ..) | Inject(source, ..) => source,
-            PlaySync { .. } => Source::Automatic,
+            Sync { .. } => Source::Automatic,
         }
     }
 }
@@ -312,6 +301,7 @@ pub fn run(
         song_update_interval,
         song_update_interval_stream,
         global_bus,
+        timeout: None,
     };
 
     let duplicate_duration =
@@ -632,7 +622,7 @@ impl Player {
 
     /// Synchronize playback with the given song.
     pub fn play_sync(&self, song: Option<Song>) -> Result<(), failure::Error> {
-        self.send(Command::PlaySync { song })
+        self.send(Command::Sync { song })
     }
 
     /// Update volume of the player.
@@ -1471,16 +1461,6 @@ pub enum State {
     None,
 }
 
-impl State {
-    /// Check if the state is playing.
-    pub fn is_playing(self) -> bool {
-        match self {
-            State::Playing => true,
-            _ => false,
-        }
-    }
-}
-
 /// Future associated with driving audio playback.
 pub struct PlaybackFuture {
     connect_player: self::connect::ConnectPlayer,
@@ -1512,13 +1492,20 @@ pub struct PlaybackFuture {
     song_update_interval_stream: settings::Stream<utils::Duration>,
     /// Notifier to use when sending song updates.
     global_bus: Arc<bus::Bus<bus::Global>>,
+    /// Timeout for end of song.
+    timeout: Option<timer::Delay>,
 }
 
 impl PlaybackFuture {
-    /// Set the current song.
+    /// Notify a change in the current song.
+    fn notify_song_change(&self, song: Option<&Song>) -> Result<(), failure::Error> {
+        self.global_bus.send(bus::Global::song(song)?);
+        self.write_current_song(song);
+        Ok(())
+    }
+
+    /// Write the current song.
     fn write_song(&self, song: Option<Song>) -> Result<(), failure::Error> {
-        self.global_bus.send(bus::Global::song(song.as_ref())?);
-        self.current_song(song.as_ref());
         *self.song.write() = song;
         Ok(())
     }
@@ -1526,7 +1513,7 @@ impl PlaybackFuture {
     /// Write current song. Log any errors.
     ///
     /// MUST NOT be called when self.song is locked.
-    fn current_song(&self, song: Option<&Song>) {
+    fn write_current_song(&self, song: Option<&Song>) {
         let current_song = match self.current_song.as_ref() {
             Some(current_song) => current_song,
             None => return,
@@ -1546,58 +1533,98 @@ impl PlaybackFuture {
         }
     }
 
-    /// Update current player.
-    fn set_current_player(&mut self, player: PlayerKind) {
+    /// Switch the current player and send the appropriate play commands.
+    fn switch_current_player(&mut self, player: PlayerKind) {
         use self::PlayerKind::*;
 
         match (self.player, player) {
             (Spotify, Spotify) => (),
-            (Spotify, _) => self.connect_player.stop(),
             (YouTube, YouTube) => (),
-            (YouTube, _) => self.youtube_player.stop(),
-            (None, YouTube) => {
-                self.connect_player.stop();
-            }
-            (None, Spotify) => {
-                self.youtube_player.stop();
-            }
-            _ => (),
+            (Spotify, _) | (None, YouTube) => self.connect_player.stop(),
+            (YouTube, _) | (None, Spotify) => self.youtube_player.stop(),
+            (None, None) => (),
         }
 
         self.player = player;
     }
 
-    /// Update state if it is different from the expected kind and pause the corresponding player.
-    fn set_playing(&mut self, player: PlayerKind) {
-        self.set_current_player(player);
-        self.state = State::Playing;
-    }
-
-    /// Play the given song.
-    fn play_song(&mut self, source: Source, song: &Song) {
-        match song.item.track_id {
-            TrackId::Spotify(ref id) => {
-                self.connect_player.play(source, &song, id);
-                self.set_playing(PlayerKind::Spotify);
+    /// Send a pause command to the appropriate player.
+    fn send_pause_command(&mut self) {
+        match self.player {
+            PlayerKind::Spotify => {
+                log::trace!("pausing spotify player");
+                self.connect_player.pause();
             }
-            TrackId::YouTube(ref id) => {
-                self.youtube_player.play(source, &song, id);
-                self.set_playing(PlayerKind::YouTube);
+            PlayerKind::YouTube => {
+                log::trace!("pausing youtube player");
+                self.youtube_player.pause();
             }
+            _ => (),
         }
     }
 
+    /// Play the given song.
+    fn send_play_command(&mut self, song: &Song) {
+        match song.item.track_id {
+            TrackId::Spotify(ref id) => self.connect_player.play(&song, id),
+            TrackId::YouTube(ref id) => self.youtube_player.play(&song, id),
+        }
+    }
+
+    /// Switch the player to the specified song without changing its state.
+    fn switch_to_song(&mut self, mut song: Option<Song>) -> Result<(), failure::Error> {
+        if let Some(song) = song.as_mut() {
+            song.pause();
+            self.switch_current_player(song.player());
+        } else {
+            self.switch_current_player(PlayerKind::None);
+        }
+
+        self.write_song(song)?;
+        Ok(())
+    }
+
     /// Switch current song to the specified song.
-    fn switch_to_song(&mut self, source: Source, song: Song) {
-        self.play_song(source, &song);
-        *self.song.write() = Some(song);
+    fn play_song(&mut self, source: Source, mut song: Song) -> Result<(), failure::Error> {
+        song.play();
+
+        if let Source::Manual = source {
+            self.bus
+                .broadcast(Event::Playing(self.echo_current_song, song.item.clone()));
+        }
+
+        self.timeout = Some(timer::Delay::new(song.deadline()));
+
+        self.send_play_command(&song);
+        self.switch_current_player(song.player());
+        self.notify_song_change(Some(&song))?;
+        self.write_song(Some(song))?;
+
+        self.state = State::Playing;
+        Ok(())
+    }
+
+    /// Resume playing a specific song.
+    fn resume_song(&mut self, source: Source, song: &mut Song) -> Result<(), failure::Error> {
+        song.play();
+
+        if let Source::Manual = source {
+            self.bus
+                .broadcast(Event::Playing(self.echo_current_song, song.item.clone()));
+        }
+
+        self.timeout = Some(timer::Delay::new(song.deadline()));
+
+        self.send_play_command(song);
+        self.switch_current_player(song.player());
+        self.notify_song_change(Some(song))?;
+
+        self.state = State::Playing;
+        Ok(())
     }
 
     /// Detach the player.
     fn detach(&mut self) -> Result<(), failure::Error> {
-        self.connect_player.detach();
-        self.youtube_player.detach();
-
         // store the currently playing song in the sidelined slot.
         if let Some(mut song) = self.song.write().take() {
             song.pause();
@@ -1607,6 +1634,7 @@ impl PlaybackFuture {
         self.write_song(None)?;
         self.player = PlayerKind::None;
         self.state = State::None;
+        self.timeout = None;
         Ok(())
     }
 
@@ -1644,101 +1672,93 @@ impl PlaybackFuture {
             (Command::Skip(source), _) => {
                 log::trace!("skipping song");
 
-                if let Some(song) = self.mixer.next_song() {
-                    if self.state.is_playing() {
-                        self.switch_to_song(source, song);
-                    } else {
-                        self.set_current_player(song.player());
-                        *self.song.write() = Some(song);
-                    }
-                } else {
-                    if let Source::Manual = source {
-                        self.bus.broadcast(Event::Empty);
-                    }
+                match (self.mixer.next_song(), self.state) {
+                    (Some(song), Playing) => self.play_song(source, song)?,
+                    (Some(song), _) => self.switch_to_song(Some(song))?,
+                    (None, _) => {
+                        if let Source::Manual = source {
+                            self.bus.broadcast(Event::Empty);
+                        }
 
-                    self.write_song(None)?;
-                    self.set_current_player(PlayerKind::None);
-                    self.state = State::Paused;
+                        self.switch_to_song(None)?;
+                        self.state = State::Paused;
+                    }
                 }
             }
             // initial pause
-            (Command::Pause(source), State::None) => {
-                self.connect_player.pause(source);
-                self.youtube_player.pause(source);
+            (Command::Pause(source), State::Playing) => {
+                log::trace!("pausing player");
+
+                self.send_pause_command();
+                self.timeout = None;
                 self.state = State::Paused;
+
+                let mut song = self.song.write();
+
+                if let Some(song) = song.as_mut() {
+                    song.pause();
+                }
+
+                if let Source::Manual = source {
+                    self.bus.broadcast(Event::Pausing);
+                }
+
+                self.notify_song_change(song.as_ref())?;
             }
-            (Command::Pause(source), State::Playing) => match self.player {
-                PlayerKind::Spotify => {
-                    log::trace!("pausing spotify player");
-                    self.connect_player.pause(source);
-                    self.state = State::Paused;
-                }
-                PlayerKind::YouTube => {
-                    log::trace!("pausing youtube player");
-                    self.youtube_player.pause(source);
-                    self.state = State::Paused;
-                }
-                _ => (),
-            },
             (Command::Play(source), State::Paused) | (Command::Play(source), State::None) => {
                 log::trace!("starting player");
 
                 let song = self.song.clone();
 
                 // resume an existing song
-                if let Some(song) = song.read().as_ref() {
-                    self.play_song(source, song);
+                if let Some(song) = song.write().as_mut() {
+                    self.resume_song(source, song)?;
                     return Ok(());
                 }
 
                 // play the next song in queue.
                 if let Some(song) = self.mixer.next_song() {
-                    self.switch_to_song(source, song);
+                    self.play_song(source, song)?;
                 } else {
                     if let Source::Manual = source {
                         self.bus.broadcast(Event::Empty);
                     }
 
-                    self.state = State::Paused;
                     self.write_song(None)?;
+                    self.state = State::Paused;
                 }
             }
-            (Command::PlaySync { song }, _) => {
+            (Command::Sync { song }, _) => {
                 log::trace!("synchronize the state of the player with the current song");
 
                 if let Some(s) = song.as_ref() {
-                    match s.item.track_id {
-                        TrackId::Spotify(..) => {
-                            self.connect_player.play_sync(song.as_ref());
-                            self.set_playing(PlayerKind::Spotify);
-                        }
-                        // NB: doesn't make sense, there is no way to poll the youtube player.
-                        TrackId::YouTube(..) => {
-                            self.set_playing(PlayerKind::YouTube);
-                            log::warn!("youtube player doesn't support syncing");
-                            return Ok(());
-                        }
+                    if s.state().is_playing() {
+                        self.timeout = Some(timer::Delay::new(s.deadline()));
                     }
+
+                    self.switch_current_player(s.player());
+                    self.state = State::Playing;
                 } else {
+                    self.timeout = None;
+                    self.switch_current_player(PlayerKind::None);
                     self.state = State::Paused;
-                    self.set_current_player(PlayerKind::None);
                 }
 
-                *self.song.write() = song;
+                self.write_song(song)?;
             }
             // queue was modified in some way
             (Command::Modified(source), _) => {
                 if self.state.is_playing() && self.song.read().is_none() {
                     if let Some(song) = self.mixer.next_song() {
-                        self.switch_to_song(source, song);
+                        self.play_song(source, song)?;
                     }
                 }
 
                 self.bus.broadcast(Event::Modified);
             }
-            (Command::Volume(source, volume), _) => {
-                self.connect_player.volume(source, volume);
-                self.youtube_player.volume(source, volume);
+            (Command::Volume(_, volume), _) => {
+                self.connect_player.volume(volume);
+                self.youtube_player.volume(volume);
                 *self.volume.write() = volume;
             }
             (Command::Inject(source, item, offset), State::Playing) => {
@@ -1748,9 +1768,28 @@ impl PlaybackFuture {
                     self.mixer.sidelined.push_back(song);
                 }
 
-                self.switch_to_song(source, Song::new(item, offset));
+                self.play_song(source, Song::new(item, offset))?;
             }
             _ => (),
+        }
+
+        Ok(())
+    }
+
+    /// We've reached the end of a track.
+    fn end_of_track(&mut self) -> Result<(), failure::Error> {
+        if self.detached {
+            log::warn!("End of track called even though we are detached");
+            return Ok(());
+        }
+
+        log::trace!("Song ended, loading next song...");
+
+        if let Some(song) = self.mixer.next_song() {
+            self.play_song(Source::Manual, song)?;
+        } else {
+            self.bus.broadcast(Event::Empty);
+            self.write_song(None)?;
         }
 
         Ok(())
@@ -1779,16 +1818,6 @@ impl PlaybackFuture {
         );
 
         match e {
-            EndOfTrack => {
-                log::trace!("Song ended, loading next song...");
-
-                if let Some(song) = self.mixer.next_song() {
-                    self.switch_to_song(Source::Manual, song);
-                } else {
-                    self.bus.broadcast(Event::Empty);
-                    self.write_song(None)?;
-                }
-            }
             DeviceChanged => {
                 if !self.state.is_playing() {
                     return Ok(());
@@ -1809,52 +1838,18 @@ impl PlaybackFuture {
 
                 match song.item.track_id {
                     TrackId::Spotify(ref id) => {
-                        self.connect_player.play(Source::Automatic, &song, id);
-                        self.connect_player.volume(Source::Automatic, volume);
-                        self.set_playing(PlayerKind::Spotify);
+                        self.connect_player.play(&song, id);
+                        self.connect_player.volume(volume);
+                        self.switch_current_player(PlayerKind::Spotify);
+                        self.state = State::Playing;
                     }
                     TrackId::YouTube(ref id) => {
-                        self.youtube_player.play(Source::Automatic, &song, id);
-                        self.youtube_player.volume(Source::Automatic, volume);
-                        self.set_playing(PlayerKind::YouTube);
+                        self.youtube_player.play(&song, id);
+                        self.youtube_player.volume(volume);
+                        self.switch_current_player(PlayerKind::YouTube);
+                        self.state = State::Playing;
                     }
                 }
-            }
-            Playing(source) => {
-                let mut song = self.song.write();
-
-                if let Some(song) = song.as_mut() {
-                    log::trace!("marking track as playing: {}", song.item.track_id);
-                    song.play();
-
-                    if let Source::Manual = source {
-                        self.bus
-                            .broadcast(Event::Playing(self.echo_current_song, song.item.clone()));
-                    }
-                }
-
-                self.global_bus.send(bus::Global::song(song.as_ref())?);
-                self.current_song(song.as_ref());
-            }
-            // A player stopped due to a switch.
-            Stopping => (),
-            Pausing(source) => {
-                let mut song = self.song.write();
-
-                if let Some(song) = song.as_mut() {
-                    song.pause();
-                }
-
-                self.current_song(song.as_ref());
-                self.global_bus.send(bus::Global::song(song.as_ref())?);
-
-                if let Source::Manual = source {
-                    self.bus.broadcast(Event::Pausing);
-                }
-            }
-            Volume(..) => {}
-            other => {
-                log::trace!("player event: {:?}", other);
             }
         }
 
@@ -1907,6 +1902,14 @@ impl Future for PlaybackFuture {
         loop {
             let mut not_ready = true;
 
+            if let Some(timeout) = self.timeout.as_mut() {
+                if let Async::Ready(()) = timeout.poll()? {
+                    self.timeout = None;
+                    self.end_of_track()?;
+                    not_ready = false;
+                }
+            }
+
             if let Some(update) = try_infinite!(self.detached_stream.poll()) {
                 if update {
                     self.detach()?;
@@ -1919,7 +1922,7 @@ impl Future for PlaybackFuture {
             if let Some(current_song_update) = self.current_song_update.as_mut() {
                 if let Some(_) = try_infinite!(current_song_update.poll()) {
                     let song = self.song.read();
-                    self.current_song(song.as_ref());
+                    self.write_current_song(song.as_ref());
                     not_ready = false;
                 }
             }
@@ -1937,11 +1940,6 @@ impl Future for PlaybackFuture {
             }
 
             if let Some(event) = try_infinite!(self.connect_player.poll()) {
-                self.handle_player_event(event)?;
-                not_ready = false;
-            }
-
-            if let Some(event) = try_infinite!(self.youtube_player.poll()) {
                 self.handle_player_event(event)?;
                 not_ready = false;
             }
