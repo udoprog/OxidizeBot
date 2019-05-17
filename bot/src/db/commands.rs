@@ -3,9 +3,12 @@ use diesel::prelude::*;
 use failure::{format_err, ResultExt as _};
 use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
+use std::{
+    fmt,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 /// Local database wrapper.
@@ -56,17 +59,6 @@ impl Database {
         }
     }
 
-    fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
-        use db::schema::commands::dsl;
-
-        let c = self.0.pool.lock();
-        let count = diesel::delete(
-            dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
-        )
-        .execute(&*c)?;
-        Ok(count == 1)
-    }
-
     fn increment(&self, key: &Key) -> Result<bool, failure::Error> {
         use db::schema::commands::dsl;
 
@@ -76,19 +68,6 @@ impl Database {
         )
         .set(dsl::count.eq(dsl::count + 1))
         .execute(&*c)?;
-        Ok(count == 1)
-    }
-
-    fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error> {
-        use db::schema::commands::dsl;
-
-        let c = self.0.pool.lock();
-        let count = diesel::update(
-            dsl::commands.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
-        )
-        .set((dsl::channel.eq(&to.channel), dsl::name.eq(&to.name)))
-        .execute(&*c)?;
-
         Ok(count == 1)
     }
 }
@@ -151,89 +130,10 @@ impl Commands {
         Ok(())
     }
 
-    /// Remove command.
-    pub fn delete(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
-        let key = Key::new(channel, name);
-
-        if !self.db.delete(&key)? {
-            return Ok(false);
-        }
-
-        self.inner.write().remove(&key);
-        Ok(true)
-    }
-
-    /// Test the given word.
-    pub fn get<'a>(&'a self, channel: &str, name: &str) -> Option<Arc<Command>> {
-        let key = Key::new(channel, name);
-
-        let inner = self.inner.read();
-
-        if let Some(command) = inner.get(&key) {
-            return Some(Arc::clone(command));
-        }
-
-        None
-    }
-
-    /// Get a list of all commands.
-    pub fn list(&self, channel: &str) -> Vec<Arc<Command>> {
-        let inner = self.inner.read();
-
-        let mut out = Vec::new();
-
-        for c in inner.values() {
-            if c.key.channel != channel {
-                continue;
-            }
-
-            out.push(Arc::clone(c));
-        }
-
-        out
-    }
-
     /// Increment the specified command.
     pub fn increment(&self, command: &Command) -> Result<(), failure::Error> {
         self.db.increment(&command.key)?;
         command.count.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }
-
-    /// Try to rename the command.
-    pub fn rename(&self, channel: &str, from: &str, to: &str) -> Result<(), super::RenameError> {
-        let from = Key::new(channel, from);
-        let to = Key::new(channel, to);
-
-        let mut inner = self.inner.write();
-
-        if inner.contains_key(&to) {
-            return Err(super::RenameError::Conflict);
-        }
-
-        let command = match inner.remove(&from) {
-            Some(command) => command,
-            None => return Err(super::RenameError::Missing),
-        };
-
-        let mut command = (*command).clone();
-        command.key = to.clone();
-
-        match self.db.rename(&from, &to) {
-            Err(e) => {
-                log::error!(
-                    "failed to rename command `{}` in database: {}",
-                    from.name,
-                    e
-                );
-            }
-            Ok(false) => {
-                log::warn!("command {} not renamed in database", from.name);
-            }
-            Ok(true) => (),
-        }
-
-        inner.insert(to, Arc::new(command));
         Ok(())
     }
 }
@@ -277,6 +177,8 @@ where
 }
 
 impl Command {
+    pub const NAME: &'static str = "command";
+
     /// Load a command from the database.
     pub fn from_db(command: db::models::Command) -> Result<Command, failure::Error> {
         let template = template::Template::compile(&command.text)
@@ -312,5 +214,17 @@ impl Command {
     /// Test if the rendered command has the given var.
     pub fn has_var(&self, var: &str) -> bool {
         self.vars.contains(var)
+    }
+}
+
+impl fmt::Display for Command {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            fmt,
+            "template = \"{template}\", group = {group}, disabled = {disabled}",
+            template = self.template,
+            group = self.group.as_ref().map(|g| g.as_str()).unwrap_or("*none*"),
+            disabled = self.disabled,
+        )
     }
 }

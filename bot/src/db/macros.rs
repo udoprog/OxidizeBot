@@ -8,7 +8,7 @@ macro_rules! database_group_fns {
             name: &str,
             group: Option<String>,
         ) -> Result<bool, failure::Error> {
-            let key = Key::new(channel, name);
+            let key = <$key>::new(channel, name);
 
             let mut inner = self.inner.write();
 
@@ -93,6 +93,91 @@ macro_rules! database_group_fns {
             }
 
             Ok(out)
+        }
+
+        /// Remove thing.
+        pub fn delete(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
+            let key = <$key>::new(channel, name);
+
+            if !self.db.delete(&key)? {
+                return Ok(false);
+            }
+
+            self.inner.write().remove(&key);
+            Ok(true)
+        }
+
+        /// Get the given thing by name.
+        pub fn get<'a>(&'a self, channel: &str, name: &str) -> Option<Arc<$thing>> {
+            let key = <$key>::new(channel, name);
+
+            let inner = self.inner.read();
+
+            if let Some(thing) = inner.get(&key) {
+                return Some(Arc::clone(thing));
+            }
+
+            None
+        }
+
+        /// Get the given thing by name directly from the database.
+        pub fn get_any<'a>(&'a self, channel: &str, name: &str) -> Result<Option<$thing>, failure::Error> {
+            let key = <$key>::new(channel, name);
+            let thing = match self.db.fetch(&key)? {
+                Some(thing) => thing,
+                None => return Ok(None),
+            };
+            Ok(Some(<$thing>::from_db(thing)?))
+        }
+
+        /// Get a list of all things.
+        pub fn list(&self, channel: &str) -> Vec<Arc<$thing>> {
+            let inner = self.inner.read();
+
+            let mut out = Vec::new();
+
+            for thing in inner.values() {
+                if thing.key.channel != channel {
+                    continue;
+                }
+
+                out.push(Arc::clone(thing));
+            }
+
+            out
+        }
+
+        /// Try to rename the thing.
+        pub fn rename(&self, channel: &str, from: &str, to: &str) -> Result<(), super::RenameError> {
+            let from_key = <$key>::new(channel, from);
+            let to_key = <$key>::new(channel, to);
+
+            let mut inner = self.inner.write();
+
+            if inner.contains_key(&to_key) {
+                return Err(super::RenameError::Conflict);
+            }
+
+            let thing = match inner.remove(&from_key) {
+                Some(thing) => thing,
+                None => return Err(super::RenameError::Missing),
+            };
+
+            let mut thing = (*thing).clone();
+            thing.key = to_key.clone();
+
+            match self.db.rename(&from_key, &to_key) {
+                Err(e) => {
+                    log::error!("failed to rename {what} `{}` in database: {}", from, e, what = <$thing>::NAME);
+                }
+                Ok(false) => {
+                    log::warn!("{what} {} not renamed in database", from, what = <$thing>::NAME);
+                }
+                Ok(true) => (),
+            }
+
+            inner.insert(to_key, Arc::new(thing));
+            Ok(())
         }
     };
 }
@@ -186,6 +271,32 @@ macro_rules! private_database_group_fns {
                 .optional()?;
 
             Ok(thing)
+        }
+
+        /// Delete a single thing.
+        fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
+            use db::schema::$module::dsl;
+
+            let c = self.0.pool.lock();
+            let count = diesel::delete(
+                dsl::$module.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+            )
+            .execute(&*c)?;
+            Ok(count == 1)
+        }
+
+        /// Rename one thing to another.
+        fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error> {
+            use db::schema::$module::dsl;
+
+            let c = self.0.pool.lock();
+            let count = diesel::update(
+                dsl::$module.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
+            )
+            .set((dsl::channel.eq(&to.channel), dsl::name.eq(&to.name)))
+            .execute(&*c)?;
+
+            Ok(count == 1)
         }
     }
 }

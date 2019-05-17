@@ -2,7 +2,7 @@ use crate::{db, track_id::TrackId, utils};
 use diesel::prelude::*;
 use hashbrown::{hash_map, HashMap};
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 /// Local database wrapper.
 #[derive(Clone)]
@@ -73,31 +73,6 @@ impl Database {
         .execute(&*c)?;
 
         Ok(())
-    }
-
-    fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
-        use db::schema::themes::dsl;
-
-        let c = self.0.pool.lock();
-        let count = diesel::delete(
-            dsl::themes.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
-        )
-        .execute(&*c)?;
-
-        Ok(count == 1)
-    }
-
-    fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error> {
-        use db::schema::themes::dsl;
-
-        let c = self.0.pool.lock();
-        let count = diesel::update(
-            dsl::themes.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
-        )
-        .set((dsl::name.eq(&to.name), dsl::name.eq(&to.channel)))
-        .execute(&*c)?;
-
-        Ok(count == 1)
     }
 }
 
@@ -179,81 +154,6 @@ impl Themes {
 
         Ok(())
     }
-
-    /// Remove theme.
-    pub fn delete(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
-        let key = Key::new(channel, name);
-
-        if !self.db.delete(&key)? {
-            return Ok(false);
-        }
-
-        self.inner.write().remove(&key);
-        Ok(true)
-    }
-
-    /// Get the given theme.
-    pub fn get<'a>(&'a self, channel: &str, name: &str) -> Option<Arc<Theme>> {
-        let key = Key::new(channel, name);
-
-        let inner = self.inner.read();
-
-        if let Some(theme) = inner.get(&key) {
-            return Some(Arc::clone(theme));
-        }
-
-        None
-    }
-
-    /// Get a list of all commands.
-    pub fn list(&self, channel: &str) -> Vec<Arc<Theme>> {
-        let inner = self.inner.read();
-
-        let mut out = Vec::new();
-
-        for c in inner.values() {
-            if c.key.channel != channel {
-                continue;
-            }
-
-            out.push(Arc::clone(c));
-        }
-
-        out
-    }
-
-    /// Try to rename the theme.
-    pub fn rename(&self, channel: &str, from: &str, to: &str) -> Result<(), super::RenameError> {
-        let from_key = Key::new(channel, from);
-        let to_key = Key::new(channel, to);
-
-        let mut inner = self.inner.write();
-
-        if inner.contains_key(&to_key) {
-            return Err(super::RenameError::Conflict);
-        }
-
-        let theme = match inner.remove(&from_key) {
-            Some(theme) => theme,
-            None => return Err(super::RenameError::Missing),
-        };
-
-        let mut theme = (*theme).clone();
-        theme.key = to_key.clone();
-
-        match self.db.rename(&from_key, &to_key) {
-            Err(e) => {
-                log::error!("failed to rename theme `{}` in database: {}", from, e);
-            }
-            Ok(false) => {
-                log::warn!("theme {} not renamed in database", from);
-            }
-            Ok(true) => (),
-        }
-
-        inner.insert(to_key, Arc::new(theme));
-        Ok(())
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
@@ -282,6 +182,8 @@ pub struct Theme {
 }
 
 impl Theme {
+    pub const NAME: &'static str = "theme";
+
     /// Convert a database theme into an in-memory theme.
     pub fn from_db(theme: db::models::Theme) -> Result<Theme, failure::Error> {
         let key = Key::new(theme.channel.as_str(), theme.name.as_str());
@@ -297,5 +199,19 @@ impl Theme {
             group: theme.group,
             disabled: theme.disabled,
         })
+    }
+}
+
+impl fmt::Display for Theme {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            fmt,
+            "track_id = {track_id}, start = {start}, end = {end}, group = {group}, disabled = {disabled}",
+            track_id = self.track_id,
+            start = self.start,
+            end = self.end.as_ref().map(|t| t.to_string()).unwrap_or(String::from("*none*")),
+            group = self.group.as_ref().map(|g| g.as_str()).unwrap_or("*none*"),
+            disabled = self.disabled,
+        )
     }
 }

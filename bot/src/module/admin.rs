@@ -169,7 +169,7 @@ impl command::Handler for Handler {
 
                         let value_string = serde_json::to_string(&value)?;
                         self.settings.set_json(key, value)?;
-                        ctx.respond(format!("Updated the {} = {}", key, value_string));
+                        ctx.respond(format!("Updated setting {} = {}", key, value_string));
                     }
                 }
             }

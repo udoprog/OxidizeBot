@@ -10,30 +10,9 @@ pub struct Handler {
 
 impl command::Handler for Handler {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
-        match ctx.next() {
-            Some("clear-group") => {
-                command_clear_group!(ctx, self.promotions, "!promo clear-group", "promotion")
-            }
-            Some("group") => command_group!(ctx, self.promotions, "!promo group", "promotion"),
-            Some("enable") => command_enable!(ctx, self.promotions, "!promo enable", "promotion"),
-            Some("disable") => {
-                command_disable!(ctx, self.promotions, "!promo disable", "promotion")
-            }
-            Some("list") => {
-                let mut names = self
-                    .promotions
-                    .list(ctx.user.target)
-                    .into_iter()
-                    .map(|c| c.key.name.to_string())
-                    .collect::<Vec<_>>();
+        let next = command_base!(ctx, self.promotions, "!promo", "promotion");
 
-                if names.is_empty() {
-                    ctx.respond("No custom promotions.");
-                } else {
-                    names.sort();
-                    ctx.respond(format!("Custom promotions: {}", names.join(", ")));
-                }
-            }
+        match next {
             Some("edit") => {
                 ctx.check_moderator()?;
 
@@ -71,46 +50,8 @@ impl command::Handler for Handler {
                     .edit(ctx.user.target, name, frequency, template)?;
                 ctx.respond("Edited promo.");
             }
-            Some("delete") => {
-                ctx.check_moderator()?;
-
-                let name = match ctx.next() {
-                    Some(name) => name,
-                    None => {
-                        ctx.respond("Expected name.");
-                        return Ok(());
-                    }
-                };
-
-                if self.promotions.delete(ctx.user.target, name)? {
-                    ctx.respond(format!("Deleted promo `{}`.", name));
-                } else {
-                    ctx.respond("No such promo.");
-                }
-            }
-            Some("rename") => {
-                ctx.check_moderator()?;
-
-                let (from, to) = match (ctx.next(), ctx.next()) {
-                    (Some(from), Some(to)) => (from, to),
-                    _ => {
-                        ctx.respond("Expected: !promo rename <from> <to>");
-                        return Ok(());
-                    }
-                };
-
-                match self.promotions.rename(ctx.user.target, from, to) {
-                    Ok(()) => ctx.respond(format!("Renamed promo {} -> {}", from, to)),
-                    Err(db::RenameError::Conflict) => {
-                        ctx.respond(format!("Already a promo named {}", to))
-                    }
-                    Err(db::RenameError::Missing) => {
-                        ctx.respond(format!("No such promo: {}", from))
-                    }
-                }
-            }
             None | Some(..) => {
-                ctx.respond("Expected: list, edit, or delete.");
+                ctx.respond("Expected: show, list, edit, delete, enable, disable, or group.");
             }
         }
 

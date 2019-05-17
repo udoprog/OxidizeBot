@@ -6,35 +6,19 @@ pub struct Handler {
 
 impl command::Handler for Handler {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
-        match ctx.next() {
-            Some("clear-group") => {
-                command_clear_group!(ctx, self.themes, "!theme clear-group", "theme")
-            }
-            Some("group") => command_group!(ctx, self.themes, "!theme group", "theme"),
-            Some("enable") => command_enable!(ctx, self.themes, "!theme enable", "theme"),
-            Some("disable") => command_disable!(ctx, self.themes, "!theme disable", "theme"),
-            Some("list") => {
-                let mut names = self
-                    .themes
-                    .list(ctx.user.target)
-                    .into_iter()
-                    .map(|c| c.key.name.to_string())
-                    .collect::<Vec<_>>();
+        let next = command_base!(ctx, self.themes, "!theme", "theme");
 
-                if names.is_empty() {
-                    ctx.respond("No custom themes.");
-                } else {
-                    names.sort();
-                    ctx.respond(format!("Custom themes: {}", names.join(", ")));
-                }
-            }
+        match next {
             Some("edit") => {
                 ctx.check_moderator()?;
 
                 let name = match ctx.next() {
                     Some(name) => name,
                     None => {
-                        ctx.respond("Expected name.");
+                        ctx.respond(format!(
+                            "Expected: {p} <name>",
+                            p = ctx.alias.unwrap_or("!theme edit")
+                        ));
                         return Ok(());
                     }
                 };
@@ -65,7 +49,10 @@ impl command::Handler for Handler {
                 let name = match ctx.next() {
                     Some(name) => name,
                     None => {
-                        ctx.respond("Expected name.");
+                        ctx.respond(format!(
+                            "Expected: {p} <name>",
+                            p = ctx.alias.unwrap_or("!theme edit-duration")
+                        ));
                         return Ok(());
                     }
                 };
@@ -102,46 +89,10 @@ impl command::Handler for Handler {
                     .edit_duration(ctx.user.target, name, start, end)?;
                 ctx.respond("Edited theme.");
             }
-            Some("delete") => {
-                ctx.check_moderator()?;
-
-                let name = match ctx.next() {
-                    Some(name) => name,
-                    None => {
-                        ctx.respond("Expected name.");
-                        return Ok(());
-                    }
-                };
-
-                if self.themes.delete(ctx.user.target, name)? {
-                    ctx.respond(format!("Deleted theme `{}`.", name));
-                } else {
-                    ctx.respond("No such theme.");
-                }
-            }
-            Some("rename") => {
-                ctx.check_moderator()?;
-
-                let (from, to) = match (ctx.next(), ctx.next()) {
-                    (Some(from), Some(to)) => (from, to),
-                    _ => {
-                        ctx.respond("Expected: !theme rename <from> <to>");
-                        return Ok(());
-                    }
-                };
-
-                match self.themes.rename(ctx.user.target, from, to) {
-                    Ok(()) => ctx.respond(format!("Renamed theme {} -> {}", from, to)),
-                    Err(db::RenameError::Conflict) => {
-                        ctx.respond(format!("Already a theme named {}", to))
-                    }
-                    Err(db::RenameError::Missing) => {
-                        ctx.respond(format!("No such theme: {}", from))
-                    }
-                }
-            }
             None | Some(..) => {
-                ctx.respond("Expected: list, edit, or delete.");
+                ctx.respond(
+                    "Expected: show, list, edit, edit-duration, delete, enable, disable, or group.",
+                );
             }
         }
 

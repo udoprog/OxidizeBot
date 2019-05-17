@@ -2,7 +2,7 @@ use crate::{db, template, utils};
 use diesel::prelude::*;
 use hashbrown::HashMap;
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 /// Local database wrapper.
 #[derive(Clone)]
@@ -47,31 +47,6 @@ impl Database {
                 Ok(Some(alias))
             }
         }
-    }
-
-    fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
-        use db::schema::aliases::dsl;
-
-        let c = self.0.pool.lock();
-        let count = diesel::delete(
-            dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
-        )
-        .execute(&*c)?;
-
-        Ok(count == 1)
-    }
-
-    fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error> {
-        use db::schema::aliases::dsl;
-
-        let c = self.0.pool.lock();
-        let count = diesel::update(
-            dsl::aliases.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
-        )
-        .set((dsl::name.eq(&to.name), dsl::name.eq(&to.channel)))
-        .execute(&*c)?;
-
-        Ok(count == 1)
     }
 }
 
@@ -149,81 +124,6 @@ impl Aliases {
 
         Ok(())
     }
-
-    /// Remove alias.
-    pub fn delete(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
-        let key = Key::new(channel, name);
-
-        if !self.db.delete(&key)? {
-            return Ok(false);
-        }
-
-        self.inner.write().remove(&key);
-        Ok(true)
-    }
-
-    /// Test the given word.
-    pub fn get<'a>(&'a self, channel: &str, name: &str) -> Option<Arc<Alias>> {
-        let key = Key::new(channel, name);
-
-        let inner = self.inner.read();
-
-        if let Some(alias) = inner.get(&key) {
-            return Some(Arc::clone(alias));
-        }
-
-        None
-    }
-
-    /// Get a list of all commands.
-    pub fn list(&self, channel: &str) -> Vec<Arc<Alias>> {
-        let inner = self.inner.read();
-
-        let mut out = Vec::new();
-
-        for c in inner.values() {
-            if c.key.channel != channel {
-                continue;
-            }
-
-            out.push(Arc::clone(c));
-        }
-
-        out
-    }
-
-    /// Try to rename the alias.
-    pub fn rename(&self, channel: &str, from: &str, to: &str) -> Result<(), super::RenameError> {
-        let from_key = Key::new(channel, from);
-        let to_key = Key::new(channel, to);
-
-        let mut inner = self.inner.write();
-
-        if inner.contains_key(&to_key) {
-            return Err(super::RenameError::Conflict);
-        }
-
-        let alias = match inner.remove(&from_key) {
-            Some(alias) => alias,
-            None => return Err(super::RenameError::Missing),
-        };
-
-        let mut alias = (*alias).clone();
-        alias.key = to_key.clone();
-
-        match self.db.rename(&from_key, &to_key) {
-            Err(e) => {
-                log::error!("failed to rename alias `{}` in database: {}", from, e);
-            }
-            Ok(false) => {
-                log::warn!("alias {} not renamed in database", from);
-            }
-            Ok(true) => (),
-        }
-
-        inner.insert(to_key, Arc::new(alias));
-        Ok(())
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
@@ -250,6 +150,8 @@ pub struct Alias {
 }
 
 impl Alias {
+    pub const NAME: &'static str = "alias";
+
     /// Convert a database alias into an in-memory alias.
     pub fn from_db(alias: db::models::Alias) -> Result<Alias, failure::Error> {
         let key = Key::new(alias.channel.as_str(), alias.name.as_str());
@@ -285,5 +187,17 @@ impl Alias {
         struct Data<'a> {
             rest: &'a str,
         }
+    }
+}
+
+impl fmt::Display for Alias {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            fmt,
+            "template = \"{template}\", group = {group}, disabled = {disabled}",
+            template = self.template,
+            group = self.group.as_ref().map(|g| g.as_str()).unwrap_or("*none*"),
+            disabled = self.disabled,
+        )
     }
 }

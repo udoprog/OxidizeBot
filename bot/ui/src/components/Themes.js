@@ -100,7 +100,7 @@ export default class Themes extends React.Component {
                 <th>Group</th>
                 <th>Start</th>
                 <th>End</th>
-                <th width="99%"></th>
+                <th width="99%">Track ID</th>
                 <th></th>
               </tr>
             </thead>
@@ -124,7 +124,7 @@ export default class Themes extends React.Component {
                     <td className="theme-group"><b>{c.group}</b></td>
                     <td className="theme-start">{c.start}</td>
                     <td className="theme-end">{c.end}</td>
-                    <td></td>
+                    <td className="theme-track-id">{c.track_id}</td>
                     <td>{disabled}</td>
                   </tr>
                 );
