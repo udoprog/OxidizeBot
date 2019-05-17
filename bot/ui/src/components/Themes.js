@@ -3,6 +3,20 @@ import React from "react";
 import {Button, Alert, Table} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 
+function trackUrl(trackId) {
+  if (trackId.startsWith("spotify:track:")) {
+    let id = trackId.split(":")[2];
+    return `https://open.spotify.com/track/${id}`;
+  }
+
+  if (trackId.startsWith("youtube:video:")) {
+    let id = trackId.split(":")[2];
+    return `https://youtu.be/${id}`;
+  }
+
+  return null;
+}
+
 export default class Themes extends React.Component {
   constructor(props) {
     super(props);
@@ -118,13 +132,21 @@ export default class Themes extends React.Component {
                   }}>Enabled</Button>;
                 }
 
+                let track = c.track_id;
+
+                let url = trackUrl(c.track_id);
+
+                if (!!url) {
+                  track = <a href={url} target="track">{c.track_id}</a>;
+                }
+
                 return (
                   <tr key={id}>
                     <td className="theme-name">{c.key.name}</td>
                     <td className="theme-group"><b>{c.group}</b></td>
                     <td className="theme-start">{c.start}</td>
                     <td className="theme-end">{c.end}</td>
-                    <td className="theme-track-id">{c.track_id}</td>
+                    <td className="theme-track-id">{track}</td>
                     <td>{disabled}</td>
                   </tr>
                 );
