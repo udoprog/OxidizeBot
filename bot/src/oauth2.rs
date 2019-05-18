@@ -23,7 +23,7 @@ pub type AuthPair = (Arc<RwLock<Token>>, TokenRefreshFuture);
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SecretsConfig {
-    pub client_id: Arc<String>,
+    pub client_id: String,
     client_secret: String,
 }
 
@@ -121,10 +121,12 @@ impl Type {
     where
         T: TokenResponse,
     {
+        let client_id = flow.secrets_config.client_id.to_string();
+
         let exchange = flow
             .client
             .exchange_code(AuthorizationCode::new(received_token.code))
-            .param("client_id", flow.secrets_config.client_id.as_str())
+            .param("client_id", client_id.as_str())
             .param("client_secret", flow.secrets_config.client_secret.as_str());
 
         exchange.execute::<T>().then(move |token_response| {
@@ -228,6 +230,8 @@ pub fn youtube(web: web::Server) -> Result<FlowBuilder, failure::Error> {
 /// A token that comes out of a token workflow.
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct TokenData {
+    /// Client ID that requested the token.
+    client_id: String,
     /// Store the known refresh token.
     refresh_token: RefreshToken,
     /// Access token.
@@ -242,8 +246,6 @@ pub struct TokenData {
 
 #[derive(Clone, Debug)]
 pub struct Token {
-    /// Associated secrets configuration.
-    secrets_config: Arc<SecretsConfig>,
     /// Serialized token data.
     data: TokenData,
 }
@@ -251,7 +253,7 @@ pub struct Token {
 impl Token {
     /// Get the client ID that requested the token.
     pub fn client_id(&self) -> &str {
-        self.secrets_config.client_id.as_str()
+        self.data.client_id.as_str()
     }
 
     /// Get the current access token.
@@ -324,7 +326,7 @@ impl FlowBuilder {
                 client_id,
                 client_secret,
             } => Arc::new(SecretsConfig {
-                client_id: Arc::new(client_id.to_string()),
+                client_id: client_id.to_string(),
                 client_secret: client_secret.to_string(),
             }),
         };
@@ -430,7 +432,7 @@ impl Flow {
             None => return Box::new(future::ok(None)),
         };
 
-        let data = match settings.get("token") {
+        let data = match settings.get::<TokenData>("token") {
             Ok(token) => token,
             Err(e) => {
                 log::warn!("failed to load saved token: {}", e);
@@ -443,10 +445,12 @@ impl Flow {
             None => return Box::new(future::ok(None)),
         };
 
-        let token = Token {
-            secrets_config: Arc::clone(&self.secrets_config),
-            data,
-        };
+        if data.client_id == self.secrets_config.client_id {
+            log::warn!("Not using stored token since it uses a different Client ID");
+            return Box::new(future::ok(None));
+        }
+
+        let token = Token { data };
 
         let expired = match token.expires_within(Duration::from_secs(60 * 10)) {
             Ok(expired) => expired,
@@ -484,6 +488,7 @@ impl Flow {
         let refreshed_at = Utc::now();
 
         let data = TokenData {
+            client_id: self.secrets_config.client_id.to_string(),
             refresh_token,
             access_token: token_response.access_token().clone(),
             refreshed_at: refreshed_at.clone(),
@@ -500,10 +505,7 @@ impl Flow {
                 .with_context(|_| failure::format_err!("failed to write token to"))?;
         }
 
-        Ok(Token {
-            secrets_config: Arc::clone(&self.secrets_config),
-            data,
-        })
+        Ok(Token { data })
     }
 }
 

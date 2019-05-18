@@ -288,7 +288,7 @@ impl Global {
             track_id: Some(song.item.track_id.clone()),
             track: Some(song.item.track.clone()),
             user: song.item.user.clone(),
-            is_playing: song.state().is_playing(),
+            is_playing: song.state() == player::State::Playing,
             elapsed: song.elapsed().as_secs(),
             duration: song.duration().as_secs(),
         })

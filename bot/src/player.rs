@@ -498,7 +498,7 @@ impl Song {
         let artists = self.item.track.artists();
 
         Ok(CurrentData {
-            paused: !state.is_playing(),
+            paused: state != State::Playing,
             track_id: &self.item.track_id,
             name: self.item.track.name(),
             artists,
@@ -1640,6 +1640,8 @@ impl PlaybackFuture {
 
     /// Handle incoming command.
     fn command(&mut self, command: Command) -> Result<(), failure::Error> {
+        use self::Command::*;
+
         if self.detached {
             log::trace!(
                 "Ignoring: Command = {:?}, State = {:?}, Player = {:?}",
@@ -1662,18 +1664,18 @@ impl PlaybackFuture {
             self.player,
         );
 
-        let command = match command {
-            Command::Toggle(source) if !self.state.is_playing() => Command::Play(source),
-            Command::Toggle(source) if self.state.is_playing() => Command::Pause(source),
-            command => command,
+        let command = match (command, self.state) {
+            (Toggle(source), State::Paused) | (Toggle(source), State::None) => Play(source),
+            (Toggle(source), State::Playing) => Pause(source),
+            (command, _) => command,
         };
 
         match (command, self.state) {
-            (Command::Skip(source), _) => {
+            (Skip(source), _) => {
                 log::trace!("skipping song");
 
                 match (self.mixer.next_song(), self.state) {
-                    (Some(song), Playing) => self.play_song(source, song)?,
+                    (Some(song), State::Playing) => self.play_song(source, song)?,
                     (Some(song), _) => self.switch_to_song(Some(song))?,
                     (None, _) => {
                         if let Source::Manual = source {
@@ -1686,7 +1688,7 @@ impl PlaybackFuture {
                 }
             }
             // initial pause
-            (Command::Pause(source), State::Playing) => {
+            (Pause(source), State::Playing) => {
                 log::trace!("pausing player");
 
                 self.send_pause_command();
@@ -1705,7 +1707,7 @@ impl PlaybackFuture {
 
                 self.notify_song_change(song.as_ref())?;
             }
-            (Command::Play(source), State::Paused) | (Command::Play(source), State::None) => {
+            (Play(source), State::Paused) | (Play(source), State::None) => {
                 log::trace!("starting player");
 
                 let song = self.song.clone();
@@ -1728,11 +1730,11 @@ impl PlaybackFuture {
                     self.state = State::Paused;
                 }
             }
-            (Command::Sync { song }, _) => {
+            (Sync { song }, _) => {
                 log::trace!("synchronize the state of the player with the current song");
 
                 if let Some(s) = song.as_ref() {
-                    if s.state().is_playing() {
+                    if let State::Playing = s.state() {
                         self.timeout = Some(timer::Delay::new(s.deadline()));
                     }
 
@@ -1747,8 +1749,8 @@ impl PlaybackFuture {
                 self.write_song(song)?;
             }
             // queue was modified in some way
-            (Command::Modified(source), _) => {
-                if self.state.is_playing() && self.song.read().is_none() {
+            (Modified(source), State::Playing) => {
+                if self.song.read().is_none() {
                     if let Some(song) = self.mixer.next_song() {
                         self.play_song(source, song)?;
                     }
@@ -1756,12 +1758,12 @@ impl PlaybackFuture {
 
                 self.bus.broadcast(Event::Modified);
             }
-            (Command::Volume(_, volume), _) => {
+            (Volume(_, volume), _) => {
                 self.connect_player.volume(volume);
                 self.youtube_player.volume(volume);
                 *self.volume.write() = volume;
             }
-            (Command::Inject(source, item, offset), State::Playing) => {
+            (Inject(source, item, offset), State::Playing) => {
                 // store the currently playing song in the sidelined slot.
                 if let Some(mut song) = self.song.write().take() {
                     song.pause();
@@ -1819,7 +1821,7 @@ impl PlaybackFuture {
 
         match e {
             DeviceChanged => {
-                if !self.state.is_playing() {
+                if self.state != State::Playing {
                     return Ok(());
                 }
 
@@ -1873,7 +1875,7 @@ impl PlaybackFuture {
             if let Some(_) = try_infinite!(song_update_interval.poll()) {
                 let song = self.song.read();
 
-                if self.state.is_playing() {
+                if let State::Playing = self.state {
                     self.global_bus
                         .send(bus::Global::song_progress(song.as_ref()));
 
