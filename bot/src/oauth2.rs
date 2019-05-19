@@ -391,7 +391,7 @@ pub struct Flow {
 impl Flow {
     /// Execute the flow.
     pub fn execute(self: Arc<Self>, what: &str) -> BoxFuture<AuthPair, failure::Error> {
-        let future = self.clone().token_from_settings(what.to_string());
+        let future = self.clone().token_from_settings(what);
 
         let future = future.and_then::<_, BoxFuture<AuthPair, failure::Error>>({
             let what = what.to_string();
@@ -449,7 +449,7 @@ impl Flow {
     /// Load a token from settings.
     fn token_from_settings(
         self: Arc<Self>,
-        what: String,
+        what: &str,
     ) -> BoxFuture<Option<Token>, failure::Error> {
         let settings = match self.settings.as_ref() {
             Some(settings) => settings,
@@ -469,8 +469,21 @@ impl Flow {
             None => return Box::new(future::ok(None)),
         };
 
+        self.stored_token(token, what)
+    }
+
+    /// Validate a token base on the current flow.
+    fn stored_token(
+        self: Arc<Self>,
+        token: Token,
+        what: &str,
+    ) -> BoxFuture<Option<Token>, failure::Error> {
         if token.client_id == self.secrets_config.client_id {
             log::warn!("Not using stored token since it uses a different Client ID");
+            return Box::new(future::ok(None));
+        }
+
+        if !token.has_scopes(&self.scopes) {
             return Box::new(future::ok(None));
         }
 
@@ -487,10 +500,6 @@ impl Flow {
                 log::warn!("Failed to refresh saved token: {}", e);
                 Ok(None)
             }));
-        }
-
-        if !token.has_scopes(&self.scopes) {
-            return Box::new(future::ok(None));
         }
 
         Box::new(future::ok(Some(token)))
@@ -604,55 +613,47 @@ impl Future for TokenRefreshFuture {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            if let Some(future) = self.refresh_future.as_mut() {
+            let mut not_ready = true;
+
+            if let Some(mut future) = self.refresh_future.take() {
                 match future.poll() {
-                    Ok(Async::NotReady) => {}
+                    Ok(Async::NotReady) => self.refresh_future = Some(future),
                     Ok(Async::Ready(())) => {
                         self.refresh_future = None;
-                        continue;
+                        not_ready = false;
                     }
                     Err(e) => {
                         log::warn!("failed to refresh token: {}", e);
                         self.refresh_future = None;
-                        continue;
+                        not_ready = false;
                     }
                 }
             }
 
-            let result = self
-                .interval
-                .poll()
-                .map_err(|_| format_err!("failed to poll interval"))?;
-
-            if let Async::Ready(result) = result {
-                result.ok_or_else(|| format_err!("end of interval stream"))?;
-
+            if let Some(_) = try_infinite!(self.interval.poll()) {
                 if self.refresh_future.is_some() {
                     return Err(format_err!("refresh already in progress"));
                 }
 
-                let flow = Arc::clone(&self.flow);
-                let sync_token = self.sync_token.clone();
-
-                let refresh_future = {
-                    let current = sync_token.read()?;
-
-                    if !current.expires_within(self.refresh_duration.clone())? {
-                        return Ok(Async::NotReady);
+                let refresh = match self.sync_token.token.read().as_ref() {
+                    Some(current) if current.expires_within(self.refresh_duration.clone())? => {
+                        Some(self.flow.clone().refresh(current))
                     }
-
-                    flow.refresh(&*current)
+                    _ => None,
                 };
 
-                let refresh_future = refresh_future.map(move |new_token| {
-                    *sync_token.token.write() = Some(new_token);
-                });
-
-                self.refresh_future = Some(Box::new(refresh_future));
-                continue;
+                if let Some(refresh) = refresh {
+                    let sync_token = self.sync_token.clone();
+                    self.refresh_future = Some(Box::new(refresh.map(move |token| {
+                        *sync_token.token.write() = Some(token);
+                    })));
+                    not_ready = false;
+                }
             }
 
-            return Ok(Async::NotReady);
+            if not_ready {
+                return Ok(Async::NotReady);
+            }
         }
     }
 }
