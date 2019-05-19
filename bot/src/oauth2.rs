@@ -7,7 +7,7 @@ use oauth2::{
     AccessToken, AuthUrl, AuthorizationCode, Client, ClientId, ClientSecret, CsrfToken,
     RedirectUrl, RefreshToken, RequestTokenError, Scope, TokenResponse, TokenUrl,
 };
-use parking_lot::RwLock;
+use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -19,11 +19,11 @@ static YOUTUBE_CLIENT_ID: &'static str =
     "520353465977-filfj4j326v5vvd4do07riej30ekin70.apps.googleusercontent.com";
 static YOUTUBE_CLIENT_SECRET: &'static str = "8Rcs45nQEmruNey4-Egx7S7C";
 
-pub type AuthPair = (Arc<RwLock<Token>>, TokenRefreshFuture);
+pub type AuthPair = (SyncToken, TokenRefreshFuture);
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SecretsConfig {
-    pub client_id: String,
+    client_id: String,
     client_secret: String,
 }
 
@@ -79,7 +79,7 @@ impl Type {
     where
         T: 'static + Send + TokenResponse,
     {
-        let refresh_token = token.data.refresh_token.clone();
+        let refresh_token = token.refresh_token.clone();
 
         let future = flow
             .client
@@ -145,8 +145,14 @@ impl Type {
             };
 
             let token = flow.save_token(refresh_token, token_response)?;
-            let token = Arc::new(RwLock::new(token));
-            Ok((token.clone(), TokenRefreshFuture::new(flow, token)))
+            let sync_token = SyncToken {
+                token: Arc::new(RwLock::new(Some(token))),
+            };
+
+            Ok((
+                sync_token.clone(),
+                TokenRefreshFuture::new(flow, sync_token),
+            ))
         })
     }
 }
@@ -229,7 +235,7 @@ pub fn youtube(web: web::Server) -> Result<FlowBuilder, failure::Error> {
 
 /// A token that comes out of a token workflow.
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
-pub struct TokenData {
+pub struct Token {
     /// Client ID that requested the token.
     client_id: String,
     /// Store the known refresh token.
@@ -244,29 +250,23 @@ pub struct TokenData {
     scopes: Vec<Scope>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Token {
-    /// Serialized token data.
-    data: TokenData,
-}
-
 impl Token {
     /// Get the client ID that requested the token.
     pub fn client_id(&self) -> &str {
-        self.data.client_id.as_str()
+        self.client_id.as_str()
     }
 
     /// Get the current access token.
     pub fn access_token(&self) -> &str {
-        self.data.access_token.secret().as_str()
+        self.access_token.secret().as_str()
     }
 
     /// Return `true` if the token expires within 30 minutes.
     pub fn expires_within(&self, within: Duration) -> Result<bool, failure::Error> {
-        let out = match self.data.expires_in.clone() {
+        let out = match self.expires_in.clone() {
             Some(expires_in) => {
                 let expires_in = chrono::Duration::seconds(expires_in as i64);
-                let diff = (self.data.refreshed_at + expires_in) - Utc::now();
+                let diff = (self.refreshed_at + expires_in) - Utc::now();
                 diff < chrono::Duration::from_std(within)?
             }
             None => true,
@@ -284,11 +284,33 @@ impl Token {
             .map(|s| s.to_string())
             .collect::<HashSet<String>>();
 
-        for s in &self.data.scopes {
+        for s in &self.scopes {
             scopes.remove(s.as_ref());
         }
 
         scopes.is_empty()
+    }
+}
+
+#[derive(Debug, err_derive::Error)]
+#[error(display = "Missing OAuth 2.0 Token")]
+pub struct MissingTokenError;
+
+#[derive(Clone, Debug)]
+pub struct SyncToken {
+    /// Serialized token token.
+    token: Arc<RwLock<Option<Token>>>,
+}
+
+impl SyncToken {
+    /// Read the synchronized token.
+    ///
+    /// This results in an error if there is no token to read.
+    pub fn read<'a>(&'a self) -> Result<MappedRwLockReadGuard<'a, Token>, MissingTokenError> {
+        match RwLockReadGuard::try_map(self.token.read(), Option::as_ref) {
+            Ok(guard) => Ok(guard),
+            Err(_) => Err(MissingTokenError),
+        }
     }
 }
 
@@ -377,11 +399,13 @@ impl Flow {
 
             move |token| match token {
                 Some(token) => {
-                    let token = Arc::new(RwLock::new(token));
+                    let sync_token = SyncToken {
+                        token: Arc::new(RwLock::new(Some(token))),
+                    };
 
                     return Box::new(future::ok((
-                        token.clone(),
-                        TokenRefreshFuture::new(flow, token),
+                        sync_token.clone(),
+                        TokenRefreshFuture::new(flow, sync_token),
                     )));
                 }
                 None => Box::new(flow.request_new_token(what)),
@@ -432,7 +456,7 @@ impl Flow {
             None => return Box::new(future::ok(None)),
         };
 
-        let data = match settings.get::<TokenData>("token") {
+        let token = match settings.get::<Token>("token") {
             Ok(token) => token,
             Err(e) => {
                 log::warn!("failed to load saved token: {}", e);
@@ -440,17 +464,15 @@ impl Flow {
             }
         };
 
-        let data = match data {
-            Some(data) => data,
+        let token = match token {
+            Some(token) => token,
             None => return Box::new(future::ok(None)),
         };
 
-        if data.client_id == self.secrets_config.client_id {
+        if token.client_id == self.secrets_config.client_id {
             log::warn!("Not using stored token since it uses a different Client ID");
             return Box::new(future::ok(None));
         }
-
-        let token = Token { data };
 
         let expired = match token.expires_within(Duration::from_secs(60 * 10)) {
             Ok(expired) => expired,
@@ -487,7 +509,7 @@ impl Flow {
     ) -> Result<Token, failure::Error> {
         let refreshed_at = Utc::now();
 
-        let data = TokenData {
+        let token = Token {
             client_id: self.secrets_config.client_id.to_string(),
             refresh_token,
             access_token: token_response.access_token().clone(),
@@ -501,11 +523,11 @@ impl Flow {
 
         if let Some(settings) = self.settings.as_ref() {
             settings
-                .set("token", &data)
+                .set("token", &token)
                 .with_context(|_| failure::format_err!("failed to write token to"))?;
         }
 
-        Ok(Token { data })
+        Ok(token)
     }
 }
 
@@ -552,7 +574,7 @@ impl TokenResponse for TwitchTokenResponse {
 /// Future used to drive token refreshes.
 pub struct TokenRefreshFuture {
     flow: Arc<Flow>,
-    token: Arc<RwLock<Token>>,
+    sync_token: SyncToken,
     interval: timer::Interval,
     refresh_duration: Duration,
     refresh_future: Option<BoxFuture<(), failure::Error>>,
@@ -560,7 +582,7 @@ pub struct TokenRefreshFuture {
 
 impl TokenRefreshFuture {
     /// Construct a new future for refreshing oauth tokens.
-    pub fn new(flow: Arc<Flow>, token: Arc<RwLock<Token>>) -> Self {
+    pub fn new(flow: Arc<Flow>, sync_token: SyncToken) -> Self {
         // check for expiration every 10 minutes.
         let check_duration = Duration::from_secs(10 * 60);
         // refresh if token expires within 30 minutes.
@@ -568,7 +590,7 @@ impl TokenRefreshFuture {
 
         Self {
             flow,
-            token,
+            sync_token,
             interval: timer::Interval::new(Instant::now(), check_duration),
             refresh_duration,
             refresh_future: None,
@@ -610,10 +632,10 @@ impl Future for TokenRefreshFuture {
                 }
 
                 let flow = Arc::clone(&self.flow);
-                let token = Arc::clone(&self.token);
+                let sync_token = self.sync_token.clone();
 
                 let refresh_future = {
-                    let current = token.read();
+                    let current = sync_token.read()?;
 
                     if !current.expires_within(self.refresh_duration.clone())? {
                         return Ok(Async::NotReady);
@@ -623,7 +645,7 @@ impl Future for TokenRefreshFuture {
                 };
 
                 let refresh_future = refresh_future.map(move |new_token| {
-                    *token.write() = new_token;
+                    *sync_token.token.write() = Some(new_token);
                 });
 
                 self.refresh_future = Some(Box::new(refresh_future));

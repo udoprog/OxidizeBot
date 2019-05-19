@@ -1,11 +1,11 @@
 //! Spotify API helpers.
 
 use crate::{oauth2, utils::BoxFuture};
+use bytes::Bytes;
 use futures::{future, Async, Future, Poll, Stream};
-use parking_lot::RwLock;
 use reqwest::{
     header,
-    r#async::{Body, Client, Decoder},
+    r#async::{Client, Decoder},
     Method, StatusCode, Url,
 };
 use rspotify::spotify::model::search;
@@ -29,12 +29,12 @@ const API_URL: &'static str = "https://api.spotify.com/v1";
 pub struct Spotify {
     client: Client,
     api_url: Url,
-    pub token: Arc<RwLock<oauth2::Token>>,
+    pub token: oauth2::SyncToken,
 }
 
 impl Spotify {
     /// Create a new API integration.
-    pub fn new(token: Arc<RwLock<oauth2::Token>>) -> Result<Spotify, failure::Error> {
+    pub fn new(token: oauth2::SyncToken) -> Result<Spotify, failure::Error> {
         Ok(Spotify {
             client: Client::new(),
             api_url: str::parse::<Url>(API_URL)?,
@@ -48,7 +48,7 @@ impl Spotify {
         url.path_segments_mut().expect("bad base").extend(path);
 
         RequestBuilder {
-            token: Arc::clone(&self.token),
+            token: self.token.clone(),
             client: self.client.clone(),
             url,
             method,
@@ -130,7 +130,7 @@ impl Spotify {
             .header(header::ACCEPT, "application/json");
 
         return serialize(&request)
-            .and_then(move |body| r.body(Body::from(body)).execute_empty_not_found());
+            .and_then(move |body| r.body(Bytes::from(body)).execute_empty_not_found());
 
         #[derive(serde::Serialize)]
         struct Request {
@@ -215,8 +215,8 @@ impl Spotify {
             Err(e) => future::err(failure::Error::from(e)),
         };
 
-        let token = Arc::clone(&self.token);
         let client = self.client.clone();
+        let token = self.token.clone();
 
         Some(url.and_then(move |url| {
             let request = RequestBuilder {
@@ -265,12 +265,12 @@ where
 }
 
 struct RequestBuilder {
-    token: Arc<RwLock<oauth2::Token>>,
+    token: oauth2::SyncToken,
     client: Client,
     url: Url,
     method: Method,
     headers: Vec<(header::HeaderName, String)>,
-    body: Option<Body>,
+    body: Option<Bytes>,
 }
 
 impl RequestBuilder {
@@ -281,7 +281,7 @@ impl RequestBuilder {
     {
         self.execute_optional().and_then(|result| match result {
             Some(body) => Ok(body),
-            None => Err(failure::format_err!("got empty responde from server")),
+            None => Err(failure::format_err!("got empty response from server")),
         })
     }
 
@@ -291,23 +291,23 @@ impl RequestBuilder {
     where
         T: serde::de::DeserializeOwned,
     {
-        let token = self.token.read();
-        let access_token = token.access_token().to_string();
+        let future = future::lazy(move || {
+            let mut r = self.client.request(self.method, self.url);
 
-        let mut r = self.client.request(self.method, self.url);
+            if let Some(body) = self.body {
+                r = r.body(body);
+            }
 
-        if let Some(body) = self.body {
-            r = r.body(body);
-        }
+            for (key, value) in self.headers {
+                r = r.header(key, value);
+            }
 
-        for (key, value) in self.headers {
-            r = r.header(key, value);
-        }
+            let access_token = self.token.read()?.access_token().to_string();
+            Ok(r.header(header::AUTHORIZATION, format!("Bearer {}", access_token)))
+        });
 
-        r.header(header::AUTHORIZATION, format!("Bearer {}", access_token))
-            .send()
-            .from_err()
-            .and_then(|mut res| {
+        future.and_then(move |request| {
+            request.send().from_err().and_then(|mut res| {
                 let body = mem::replace(res.body_mut(), Decoder::empty());
 
                 body.concat2().from_err().and_then(move |body| {
@@ -344,27 +344,39 @@ impl RequestBuilder {
                     }
                 })
             })
+        })
     }
 
     /// Execute the request, expecting nothing back.
     pub fn execute_empty_not_found(self) -> impl Future<Item = bool, Error = failure::Error> {
-        let token = self.token.read();
-        let access_token = token.access_token().to_string();
+        let RequestBuilder {
+            token,
+            client,
+            url,
+            method,
+            headers,
+            body,
+        } = self;
 
-        let mut r = self.client.request(self.method, self.url);
+        let future = future::lazy(move || {
+            let access_token = token.read()?.access_token().to_string();
 
-        if let Some(body) = self.body {
-            r = r.body(body);
-        }
+            let mut r = client.request(method, url);
 
-        for (key, value) in self.headers {
-            r = r.header(key, value);
-        }
+            if let Some(body) = body {
+                r = r.body(body);
+            }
 
-        r.header(header::AUTHORIZATION, format!("Bearer {}", access_token))
-            .send()
-            .map_err(Into::into)
-            .and_then(|mut res| {
+            for (key, value) in headers {
+                r = r.header(key, value);
+            }
+
+            let r = r.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
+            Ok(r)
+        });
+
+        future.and_then(move |request| {
+            request.send().map_err(Into::into).and_then(|mut res| {
                 let body = mem::replace(res.body_mut(), Decoder::empty());
 
                 body.concat2().map_err(Into::into).and_then(move |body| {
@@ -387,10 +399,11 @@ impl RequestBuilder {
                     Ok(true)
                 })
             })
+        })
     }
 
     /// Add a body to the request.
-    pub fn body(mut self, body: Body) -> Self {
+    pub fn body(mut self, body: Bytes) -> Self {
         self.body = Some(body);
         self
     }
@@ -418,9 +431,9 @@ impl RequestBuilder {
 }
 
 /// Serialize the given argument into a future.
-fn serialize<T: serde::Serialize>(value: &T) -> impl Future<Item = Body, Error = failure::Error> {
+fn serialize<T: serde::Serialize>(value: &T) -> impl Future<Item = Bytes, Error = failure::Error> {
     match serde_json::to_vec(value) {
-        Ok(body) => future::ok(Body::from(body)),
+        Ok(body) => future::ok(Bytes::from(body)),
         Err(e) => future::err(failure::Error::from(e)),
     }
 }

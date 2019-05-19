@@ -1,16 +1,16 @@
 //! Twitch API helpers.
 
 use crate::oauth2;
+use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures::{Future, Stream as _};
+use futures::{future, Future, Stream as _};
 use hashbrown::HashMap;
-use parking_lot::RwLock;
 use reqwest::{
     header,
-    r#async::{Body, Chunk, Client, Decoder},
+    r#async::{Chunk, Client, Decoder},
     Method, StatusCode, Url,
 };
-use std::{mem, sync::Arc};
+use std::mem;
 
 const V3_URL: &'static str = "https://www.googleapis.com/youtube/v3";
 const GET_VIDEO_INFO_URL: &'static str = "https://www.youtube.com/get_video_info";
@@ -21,12 +21,12 @@ pub struct YouTube {
     client: Client,
     v3_url: Url,
     get_video_info_url: Url,
-    token: Arc<RwLock<oauth2::Token>>,
+    token: oauth2::SyncToken,
 }
 
 impl YouTube {
     /// Create a new API integration.
-    pub fn new(token: Arc<RwLock<oauth2::Token>>) -> Result<YouTube, failure::Error> {
+    pub fn new(token: oauth2::SyncToken) -> Result<YouTube, failure::Error> {
         Ok(YouTube {
             client: Client::new(),
             v3_url: str::parse::<Url>(V3_URL)?,
@@ -45,7 +45,7 @@ impl YouTube {
         }
 
         RequestBuilder {
-            token: Arc::clone(&self.token),
+            token: self.token.clone(),
             client: self.client.clone(),
             url,
             method,
@@ -88,7 +88,7 @@ impl YouTube {
         url.query_pairs_mut().append_pair("video_id", video_id);
 
         let request = RequestBuilder {
-            token: Arc::clone(&self.token),
+            token: self.token.clone(),
             client: self.client.clone(),
             url,
             method: Method::GET,
@@ -110,57 +110,60 @@ impl YouTube {
 }
 
 struct RequestBuilder {
-    token: Arc<RwLock<oauth2::Token>>,
+    token: oauth2::SyncToken,
     client: Client,
     url: Url,
     method: Method,
     headers: Vec<(header::HeaderName, String)>,
-    body: Option<Body>,
+    body: Option<Bytes>,
 }
 
 impl RequestBuilder {
     /// Execute the request, providing the raw body as a response.
     pub fn raw(self) -> impl Future<Item = Option<Chunk>, Error = failure::Error> {
-        let token = self.token.read();
-        let access_token = token.access_token().to_string();
+        let future = future::lazy(move || {
+            let access_token = self.token.read()?.access_token().to_string();
+            let mut r = self.client.request(self.method, self.url);
 
-        let mut r = self.client.request(self.method, self.url);
+            if let Some(body) = self.body {
+                r = r.body(body);
+            }
 
-        if let Some(body) = self.body {
-            r = r.body(body);
-        }
+            for (key, value) in self.headers {
+                r = r.header(key, value);
+            }
 
-        for (key, value) in self.headers {
-            r = r.header(key, value);
-        }
+            r = r.header(header::ACCEPT, "application/json");
+            let r = r.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
+            Ok(r)
+        });
 
-        r = r.header(header::ACCEPT, "application/json");
-        r = r.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
+        future.and_then(move |request| {
+            request.send().map_err(Into::into).and_then(|mut res| {
+                let body = mem::replace(res.body_mut(), Decoder::empty());
 
-        r.send().map_err(Into::into).and_then(|mut res| {
-            let body = mem::replace(res.body_mut(), Decoder::empty());
+                body.concat2().map_err(Into::into).and_then(move |body| {
+                    let status = res.status();
 
-            body.concat2().map_err(Into::into).and_then(move |body| {
-                let status = res.status();
+                    if status == StatusCode::NOT_FOUND {
+                        return Ok(None);
+                    }
 
-                if status == StatusCode::NOT_FOUND {
-                    return Ok(None);
-                }
+                    if !status.is_success() {
+                        failure::bail!(
+                            "bad response: {}: {}",
+                            status,
+                            String::from_utf8_lossy(&body)
+                        );
+                    }
 
-                if !status.is_success() {
-                    failure::bail!(
-                        "bad response: {}: {}",
-                        status,
-                        String::from_utf8_lossy(&body)
-                    );
-                }
+                    if log::log_enabled!(log::Level::Trace) {
+                        let response = String::from_utf8_lossy(body.as_ref());
+                        log::trace!("response: {}", response);
+                    }
 
-                if log::log_enabled!(log::Level::Trace) {
-                    let response = String::from_utf8_lossy(body.as_ref());
-                    log::trace!("response: {}", response);
-                }
-
-                Ok(Some(body))
+                    Ok(Some(body))
+                })
             })
         })
     }

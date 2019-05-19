@@ -1,15 +1,15 @@
 //! Twitch API helpers.
 
 use crate::{oauth2, utils};
+use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use futures::{future, Future, Stream as _};
-use parking_lot::RwLock;
 use reqwest::{
     header,
-    r#async::{Body, Client, Decoder},
+    r#async::{Client, Decoder},
     Method, Url,
 };
-use std::{mem, sync::Arc};
+use std::mem;
 
 pub const CLIPS_URL: &'static str = "http://clips.twitch.tv";
 const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";
@@ -22,12 +22,12 @@ pub struct Twitch {
     client: Client,
     api_url: Url,
     gql_url: Url,
-    token: Arc<RwLock<oauth2::Token>>,
+    token: oauth2::SyncToken,
 }
 
 impl Twitch {
     /// Create a new API integration.
-    pub fn new(token: Arc<RwLock<oauth2::Token>>) -> Result<Twitch, failure::Error> {
+    pub fn new(token: oauth2::SyncToken) -> Result<Twitch, failure::Error> {
         Ok(Twitch {
             client: Client::new(),
             api_url: str::parse::<Url>(API_TWITCH_URL)?,
@@ -47,7 +47,7 @@ impl Twitch {
         }
 
         RequestBuilder {
-            token: Arc::clone(&self.token),
+            token: self.token.clone(),
             client: self.client.clone(),
             url,
             method,
@@ -68,7 +68,7 @@ impl Twitch {
         }
 
         RequestBuilder {
-            token: Arc::clone(&self.token),
+            token: self.token.clone(),
             client: self.client.clone(),
             url,
             method,
@@ -84,7 +84,7 @@ impl Twitch {
         url.path_segments_mut().expect("bad base").push("gql");
 
         RequestBuilder {
-            token: Arc::clone(&self.token),
+            token: self.token.clone(),
             client: self.client.clone(),
             url,
             method,
@@ -97,9 +97,9 @@ impl Twitch {
     /// Serialize the given argument into a future.
     fn serialize<T: serde::Serialize>(
         value: &T,
-    ) -> impl Future<Item = Body, Error = failure::Error> {
+    ) -> impl Future<Item = Bytes, Error = failure::Error> {
         match serde_json::to_vec(value) {
-            Ok(body) => future::ok(Body::from(body)),
+            Ok(body) => future::ok(Bytes::from(body)),
             Err(e) => future::err(failure::Error::from(e)),
         }
     }
@@ -307,12 +307,12 @@ where
 }
 
 struct RequestBuilder {
-    token: Arc<RwLock<oauth2::Token>>,
+    token: oauth2::SyncToken,
     client: Client,
     url: Url,
     method: Method,
     headers: Vec<(header::HeaderName, String)>,
-    body: Option<Body>,
+    body: Option<Bytes>,
     /// Use Bearer header instead of OAuth for access tokens.
     use_bearer: bool,
 }
@@ -336,30 +336,33 @@ impl RequestBuilder {
     where
         T: serde::de::DeserializeOwned,
     {
-        let token = self.token.read();
-        let access_token = token.access_token().to_string();
+        let future = future::lazy(move || {
+            let token = self.token.read()?;
+            let access_token = token.access_token().to_string();
 
-        log::trace!("request: {}: {}", self.method, self.url);
-        let mut r = self.client.request(self.method, self.url);
+            log::trace!("request: {}: {}", self.method, self.url);
+            let mut r = self.client.request(self.method, self.url);
 
-        if let Some(body) = self.body {
-            r = r.body(body);
-        }
+            if let Some(body) = self.body {
+                r = r.body(body);
+            }
 
-        for (key, value) in self.headers {
-            r = r.header(key, value);
-        }
+            for (key, value) in self.headers {
+                r = r.header(key, value);
+            }
 
-        if self.use_bearer {
-            r = r.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
-        } else {
-            r = r.header(header::AUTHORIZATION, format!("OAuth {}", access_token));
-        }
+            if self.use_bearer {
+                r = r.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
+            } else {
+                r = r.header(header::AUTHORIZATION, format!("OAuth {}", access_token));
+            }
 
-        r.header("Client-ID", token.client_id())
-            .send()
-            .map_err(Into::into)
-            .and_then(|mut res| {
+            let r = r.header("Client-ID", token.client_id());
+            Ok(r)
+        });
+
+        future.and_then(move |request| {
+            request.send().map_err(Into::into).and_then(|mut res| {
                 let body = mem::replace(res.body_mut(), Decoder::empty());
 
                 body.concat2().map_err(Into::into).and_then(move |body| {
@@ -381,10 +384,11 @@ impl RequestBuilder {
                     serde_json::from_slice(body.as_ref()).map_err(Into::into)
                 })
             })
+        })
     }
 
     /// Add a body to the request.
-    pub fn body(mut self, body: Body) -> Self {
+    pub fn body(mut self, body: Bytes) -> Self {
         self.body = Some(body);
         self
     }

@@ -49,6 +49,7 @@ webbrowser = "0.4"
 parking_lot = "0.7.1"
 err-derive = "0.1.5"
 percent-encoding = "1.0.1"
+bytes = "0.4.12"
 
 [build-dependencies]
 failure = "0.1"

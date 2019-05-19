@@ -3,7 +3,6 @@
 use crate::{oauth2, player, utils};
 use failure::format_err;
 use futures::{future, Future, Stream as _};
-use parking_lot::RwLock;
 use reqwest::{
     header,
     r#async::{Body, Client, Decoder},
@@ -15,7 +14,7 @@ use std::{mem, sync::Arc};
 pub fn run_update(
     api_url: &str,
     player: &player::Player,
-    token: Arc<RwLock<oauth2::Token>>,
+    token: oauth2::SyncToken,
 ) -> Result<impl Future<Item = (), Error = failure::Error>, failure::Error> {
     /* perform remote player update */
     let setbac = SetBac::new(token, api_url)?;
@@ -48,12 +47,12 @@ pub fn run_update(
 pub struct SetBac {
     client: Client,
     api_url: Url,
-    token: Arc<RwLock<oauth2::Token>>,
+    token: oauth2::SyncToken,
 }
 
 impl SetBac {
     /// Create a new API integration.
-    pub fn new(token: Arc<RwLock<oauth2::Token>>, api_url: &str) -> Result<SetBac, failure::Error> {
+    pub fn new(token: oauth2::SyncToken, api_url: &str) -> Result<SetBac, failure::Error> {
         Ok(SetBac {
             client: Client::new(),
             api_url: str::parse::<Url>(api_url)?,
@@ -67,7 +66,7 @@ impl SetBac {
         url.path_segments_mut().expect("bad base").extend(path);
 
         RequestBuilder {
-            token: Arc::clone(&self.token),
+            token: self.token.clone(),
             client: self.client.clone(),
             url,
             method,
@@ -102,7 +101,7 @@ impl SetBac {
 }
 
 struct RequestBuilder {
-    token: Arc<RwLock<oauth2::Token>>,
+    token: oauth2::SyncToken,
     client: Client,
     url: Url,
     method: Method,
@@ -116,24 +115,27 @@ impl RequestBuilder {
     where
         T: serde::de::DeserializeOwned,
     {
-        let token = self.token.read();
-        let access_token = token.access_token().to_string();
+        let future = future::lazy(move || {
+            let token = self.token.read()?;
+            let access_token = token.access_token().to_string();
 
-        let mut r = self.client.request(self.method, self.url);
+            let mut r = self.client.request(self.method, self.url);
 
-        if let Some(body) = self.body {
-            r = r.body(body);
-        }
+            if let Some(body) = self.body {
+                r = r.body(body);
+            }
 
-        for (key, value) in self.headers {
-            r = r.header(key, value);
-        }
+            for (key, value) in self.headers {
+                r = r.header(key, value);
+            }
 
-        r.header(header::AUTHORIZATION, format!("OAuth {}", access_token))
-            .header("Client-ID", token.client_id())
-            .send()
-            .map_err(Into::into)
-            .and_then(|mut res| {
+            let r = r.header(header::AUTHORIZATION, format!("OAuth {}", access_token));
+            let r = r.header("Client-ID", token.client_id());
+            Ok(r)
+        });
+
+        future.and_then(|request| {
+            request.send().map_err(Into::into).and_then(|mut res| {
                 let body = mem::replace(res.body_mut(), Decoder::empty());
 
                 body.concat2().map_err(Into::into).and_then(move |body| {
@@ -155,6 +157,7 @@ impl RequestBuilder {
                     serde_json::from_slice(body.as_ref()).map_err(Into::into)
                 })
             })
+        })
     }
 
     /// Add a body to the request.

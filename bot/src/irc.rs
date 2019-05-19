@@ -70,7 +70,7 @@ pub struct Irc<'a> {
     pub config: &'a config::Config,
     pub irc_config: &'a Config,
     pub currency: Option<currency::Currency>,
-    pub token: Arc<RwLock<oauth2::Token>>,
+    pub token: oauth2::SyncToken,
     pub commands: db::Commands,
     pub aliases: db::Aliases,
     pub promotions: db::Promotions,
@@ -112,7 +112,7 @@ impl Irc<'_> {
             ..
         } = self;
 
-        let access_token = token.read().access_token().to_string();
+        let access_token = token.read()?.access_token().to_string();
 
         let irc_client_config = client::data::config::Config {
             nickname: Some(irc_config.bot.clone()),
