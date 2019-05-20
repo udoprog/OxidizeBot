@@ -76,6 +76,8 @@ macro_rules! command_clear_group {
 /// Helper macro for constructing a build command.
 macro_rules! command_group {
     ($ctx:expr, $db:expr, $pfx:expr, $what:expr) => {{
+        $ctx.check_moderator()?;
+
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
@@ -145,6 +147,8 @@ macro_rules! command_list {
 
 macro_rules! command_delete {
     ($ctx:expr, $db:expr, $pfx:expr, $what:expr) => {{
+        $ctx.check_moderator()?;
+
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
@@ -166,6 +170,8 @@ macro_rules! command_delete {
 
 macro_rules! command_rename {
     ($ctx:expr, $db:expr, $pfx:expr, $what:expr) => {{
+        $ctx.check_moderator()?;
+
         let (from, to) = match ($ctx.next(), $ctx.next()) {
             (Some(from), Some(to)) => (from, to),
             _ => {

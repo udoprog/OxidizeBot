@@ -73,12 +73,10 @@ impl serde::Serialize for Template {
 }
 
 impl Template {
-    pub fn compile(s: impl AsRef<str>) -> Result<Template, failure::Error> {
-        let source = s.as_ref();
-
+    pub fn compile(s: &str) -> Result<Template, failure::Error> {
         Ok(Template {
-            source: source.to_string(),
-            template: handlebars::Template::compile(source)?,
+            source: s.to_string(),
+            template: handlebars::Template::compile(s)?,
         })
     }
 
@@ -143,6 +141,14 @@ impl Template {
         self.template
             .render(&*REGISTRY, &ctx, &mut render_context, output)
             .map_err(Into::into)
+    }
+}
+
+impl std::str::FromStr for Template {
+    type Err = failure::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::compile(s)
     }
 }
 

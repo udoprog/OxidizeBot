@@ -25,17 +25,7 @@ impl command::Handler for Handler {
             Some("show") => {
                 ctx.check_moderator()?;
 
-                let user = match ctx.next() {
-                    Some(user) => user,
-                    None => {
-                        ctx.respond(format!(
-                            "expected {c} <user> to show currency for the given user",
-                            c = ctx.alias.unwrap_or("!currency show"),
-                        ));
-                        return Ok(());
-                    }
-                };
-
+                let user = ctx_try!(ctx.next_str("<user>", "!currency show"));
                 let balance = self.db.balance_of(ctx.user.target, user)?.unwrap_or(0);
 
                 ctx.respond(format!(
@@ -46,31 +36,11 @@ impl command::Handler for Handler {
                 ));
             }
             Some("give") => {
-                let taker = match ctx.next() {
-                    Some(taker) => taker,
-                    None => {
-                        ctx.respond(format!(
-                            "expected {c} <user> <amount> to give {currency} to another viewer!",
-                            c = ctx.alias.unwrap_or("!currency give"),
-                            currency = self.currency.name,
-                        ));
-                        return Ok(());
-                    }
-                };
+                let taker =
+                    db::user_id(ctx_try!(ctx.next_str("<user> <amount>", "!currency give")));
+                let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>", "!currency give"));
 
-                let amount: i64 = match ctx.next().map(str::parse) {
-                    Some(Ok(amount)) => amount,
-                    None | Some(Err(_)) => {
-                        ctx.respond(format!(
-                            "expected {c} <user> <amount> to give {currency} to another viewer!",
-                            c = ctx.alias.unwrap_or("!currency give"),
-                            currency = self.currency.name,
-                        ));
-                        return Ok(());
-                    }
-                };
-
-                if ctx.user.is(taker) {
+                if ctx.user.is(&taker) {
                     ctx.respond("Giving to... yourself? But WHY?");
                     return Ok(());
                 }
@@ -90,7 +60,7 @@ impl command::Handler for Handler {
                 let transfer = self.db.balance_transfer(
                     &ctx.user.target,
                     &ctx.user.name,
-                    taker,
+                    &taker,
                     amount,
                     is_streamer,
                 );
@@ -132,32 +102,14 @@ impl command::Handler for Handler {
             Some("boost") => {
                 ctx.check_moderator()?;
 
-                let boosted_user = match ctx.next() {
-                    Some(boosted_user) => boosted_user.to_string(),
-                    None => {
-                        ctx.respond(format!(
-                            "expected {c} <user> <amount>",
-                            c = ctx.alias.unwrap_or("!currency boost")
-                        ));
-                        return Ok(());
-                    }
-                };
+                let boosted_user =
+                    db::user_id(ctx_try!(ctx.next_str("<user> <amount>", "!currency boost")));
+                let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>", "!currency boost"));
 
                 if !ctx.user.is(ctx.streamer) && ctx.user.is(&boosted_user) {
                     ctx.respond("You gonna have to play by the rules (or ask another mod) :(");
                     return Ok(());
                 }
-
-                let amount = match ctx.next().map(str::parse) {
-                    Some(Ok(amount)) => amount,
-                    None | Some(Err(_)) => {
-                        ctx.respond(format!(
-                            "expected {c} <user> <amount>",
-                            c = ctx.alias.unwrap_or("!currency boost")
-                        ));
-                        return Ok(());
-                    }
-                };
 
                 let user = ctx.user.as_owned_user();
                 let currency = self.currency.clone();
@@ -196,16 +148,7 @@ impl command::Handler for Handler {
             Some("windfall") => {
                 ctx.check_moderator()?;
 
-                let amount = match ctx.next().map(str::parse) {
-                    Some(Ok(amount)) => amount,
-                    None | Some(Err(_)) => {
-                        ctx.respond(format!(
-                            "expected {c} <user> <amount>",
-                            c = ctx.alias.unwrap_or("!currency boost")
-                        ));
-                        return Ok(());
-                    }
-                };
+                let amount: i64 = ctx_try!(ctx.next_parse("<amount>", "!currency windfall"));
 
                 ctx.spawn(
                     self.currency

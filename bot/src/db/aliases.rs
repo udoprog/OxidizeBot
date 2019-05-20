@@ -155,7 +155,7 @@ impl Alias {
     /// Convert a database alias into an in-memory alias.
     pub fn from_db(alias: db::models::Alias) -> Result<Alias, failure::Error> {
         let key = Key::new(alias.channel.as_str(), alias.name.as_str());
-        let template = template::Template::compile(alias.text)?;
+        let template = template::Template::compile(alias.text.as_str())?;
 
         Ok(Alias {
             key,

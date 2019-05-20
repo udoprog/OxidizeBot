@@ -16,33 +16,12 @@ pub struct Handler {
 
 impl command::Handler for Handler {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
-        ctx.check_moderator()?;
-
         match ctx.next() {
             Some("set") => {
-                let duration = match ctx.next() {
-                    Some(duration) => match str::parse::<utils::Duration>(duration) {
-                        Ok(duration) => duration,
-                        Err(_) => {
-                            ctx.respond("Countdown not added, Bad <duration> :(");
-                            return Ok(());
-                        }
-                    },
-                    None => {
-                        ctx.respond("Usage: !countdown <duration> <template>");
-                        return Ok(());
-                    }
-                };
+                ctx.check_moderator()?;
 
-                let template = ctx.rest();
-
-                let template = match template::Template::compile(template) {
-                    Ok(template) => template,
-                    Err(_) => {
-                        ctx.respond("Countdown not added, bad <template> :(");
-                        return Ok(());
-                    }
-                };
+                let duration = ctx_try!(ctx.next_parse("<duration> <template>", "!countdown set"));
+                let template = ctx_try!(ctx.rest_parse("<duration> <template>", "!countdown set"));
 
                 match self.sender.unbounded_send(Event::Set(duration, template)) {
                     Ok(()) => {
@@ -54,15 +33,19 @@ impl command::Handler for Handler {
                     }
                 }
             }
-            Some("clear") => match self.sender.unbounded_send(Event::Clear) {
-                Ok(()) => {
-                    ctx.respond("Countdown cleared!");
+            Some("clear") => {
+                ctx.check_moderator()?;
+
+                match self.sender.unbounded_send(Event::Clear) {
+                    Ok(()) => {
+                        ctx.respond("Countdown cleared!");
+                    }
+                    Err(_) => {
+                        ctx.respond("Could not clear countdown :(");
+                        return Ok(());
+                    }
                 }
-                Err(_) => {
-                    ctx.respond("Could not clear countdown :(");
-                    return Ok(());
-                }
-            },
+            }
             _ => {
                 ctx.respond("Expected: !countdown set <duration> <template>, or !countdown clear");
                 return Ok(());

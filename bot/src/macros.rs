@@ -36,3 +36,16 @@ macro_rules! try_infinite_empty {
         try_infinite!($expr.map_err(|()| failure::format_err!("stream unexpectedly errored")))
     };
 }
+
+/// Handle a context argument result.
+///
+/// Returns Ok(()) in case a context argument result is `None`.
+#[macro_export]
+macro_rules! ctx_try {
+    ($expr:expr) => {
+        match $expr {
+            Some(value) => value,
+            None => return Ok(()),
+        }
+    };
+}

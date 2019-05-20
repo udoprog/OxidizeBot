@@ -125,4 +125,86 @@ impl<'a, 'm> Context<'a, 'm> {
     pub fn rest(&self) -> &'m str {
         self.it.rest()
     }
+
+    /// Take the next parameter and parse as the given type.
+    pub fn next_parse_optional<T>(&mut self) -> Option<Option<T>>
+    where
+        T: std::str::FromStr,
+        T::Err: fmt::Display,
+    {
+        match self.next() {
+            Some(s) => match str::parse(s) {
+                Ok(v) => Some(Some(v)),
+                Err(e) => {
+                    self.respond(format!("Bad argument: {}: {}", s, e));
+                    None
+                }
+            },
+            None => Some(None),
+        }
+    }
+
+    /// Take the next parameter and parse as the given type.
+    pub fn next_parse<T, M>(&mut self, m: M, p: &str) -> Option<T>
+    where
+        T: std::str::FromStr,
+        T::Err: fmt::Display,
+        M: fmt::Display,
+    {
+        match self.next_parse_optional()? {
+            Some(value) => Some(value),
+            None => {
+                self.respond(format!(
+                    "Expected: {p} {m}",
+                    p = self.alias.unwrap_or(p),
+                    m = m
+                ));
+                None
+            }
+        }
+    }
+
+    /// Take the rest and parse as the given type.
+    pub fn rest_parse<T, M>(&mut self, m: M, p: &str) -> Option<T>
+    where
+        T: std::str::FromStr,
+        T::Err: fmt::Display,
+        M: fmt::Display,
+    {
+        match self.rest().trim() {
+            "" => {
+                self.respond(format!(
+                    "Expected: {p} {m}",
+                    p = self.alias.unwrap_or(p),
+                    m = m
+                ));
+                None
+            }
+            s => match str::parse(s) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    self.respond(format!("Bad argument: {}: {}", s, e));
+                    None
+                }
+            },
+        }
+    }
+
+    /// Take the next parameter.
+    pub fn next_str<M>(&mut self, m: M, p: &str) -> Option<&'m str>
+    where
+        M: fmt::Display,
+    {
+        match self.next() {
+            Some(s) => Some(s),
+            None => {
+                self.respond(format!(
+                    "Expected: {p} {m}",
+                    p = self.alias.unwrap_or(p),
+                    m = m
+                ));
+                None
+            }
+        }
+    }
 }

@@ -270,7 +270,7 @@ impl Database {
 }
 
 /// Convert a user display name into a user id.
-fn user_id(user: &str) -> String {
+pub fn user_id(user: &str) -> String {
     user.trim_start_matches('@').to_lowercase()
 }
 

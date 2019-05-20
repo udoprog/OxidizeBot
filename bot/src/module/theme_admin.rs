@@ -12,33 +12,8 @@ impl command::Handler for Handler {
             Some("edit") => {
                 ctx.check_moderator()?;
 
-                let name = match ctx.next() {
-                    Some(name) => name,
-                    None => {
-                        ctx.respond(format!(
-                            "Expected: {p} <name>",
-                            p = ctx.alias.unwrap_or("!theme edit")
-                        ));
-                        return Ok(());
-                    }
-                };
-
-                let track_id = match ctx.next() {
-                    Some(track_id) => match str::parse(track_id) {
-                        Ok(track_id) => track_id,
-                        Err(e) => {
-                            ctx.respond(format!("Bad track id: {}", e));
-                            return Ok(());
-                        }
-                    },
-                    None => {
-                        ctx.respond(format!(
-                            "Expected: {p} <track>",
-                            p = ctx.alias.unwrap_or("!theme edit")
-                        ));
-                        return Ok(());
-                    }
-                };
+                let name = ctx_try!(ctx.next_str("<name> <track-id>", "!theme edit"));
+                let track_id = ctx_try!(ctx.next_parse("<name> <track-id>", "!theme edit"));
 
                 self.themes.edit(ctx.user.target, name, track_id)?;
                 ctx.respond("Edited theme.");
@@ -46,44 +21,10 @@ impl command::Handler for Handler {
             Some("edit-duration") => {
                 ctx.check_moderator()?;
 
-                let name = match ctx.next() {
-                    Some(name) => name,
-                    None => {
-                        ctx.respond(format!(
-                            "Expected: {p} <name>",
-                            p = ctx.alias.unwrap_or("!theme edit-duration")
-                        ));
-                        return Ok(());
-                    }
-                };
-
-                let start = match ctx.next() {
-                    Some(start) => match str::parse(start) {
-                        Ok(start) => start,
-                        Err(e) => {
-                            ctx.respond(format!("Bad start: {}", e));
-                            return Ok(());
-                        }
-                    },
-                    None => {
-                        ctx.respond(format!(
-                            "Expected: {p} <start>",
-                            p = ctx.alias.unwrap_or("!theme edit")
-                        ));
-                        return Ok(());
-                    }
-                };
-
-                let end = match ctx.next() {
-                    Some(start) => match str::parse(start) {
-                        Ok(start) => Some(start),
-                        Err(e) => {
-                            ctx.respond(format!("Bad start: {}", e));
-                            return Ok(());
-                        }
-                    },
-                    None => None,
-                };
+                let name = ctx_try!(ctx.next_str("<name> <start> <end>", "!theme edit-duration"));
+                let start =
+                    ctx_try!(ctx.next_parse("<name> <start> <end>", "!theme edit-duration"));
+                let end = ctx_try!(ctx.next_parse_optional());
 
                 self.themes
                     .edit_duration(ctx.user.target, name, start, end)?;

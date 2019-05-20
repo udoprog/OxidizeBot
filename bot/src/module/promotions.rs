@@ -1,4 +1,4 @@
-use crate::{command, db, idle, irc, module, settings, template, utils};
+use crate::{command, db, idle, irc, module, settings, utils};
 use chrono::Utc;
 use futures::{future, Async, Future, Poll, Stream as _};
 use std::sync::Arc;
@@ -16,35 +16,11 @@ impl command::Handler for Handler {
             Some("edit") => {
                 ctx.check_moderator()?;
 
-                let name = match ctx.next() {
-                    Some(name) => name,
-                    None => {
-                        ctx.respond("Expected name.");
-                        return Ok(());
-                    }
-                };
-
-                let frequency = match ctx.next() {
-                    Some(frequency) => match str::parse::<utils::Duration>(frequency) {
-                        Ok(frequency) => frequency,
-                        Err(_) => {
-                            ctx.respond(format!("Bad <frequency>: {}", frequency));
-                            return Ok(());
-                        }
-                    },
-                    None => {
-                        ctx.respond("Expected frequency.");
-                        return Ok(());
-                    }
-                };
-
-                let template = match template::Template::compile(ctx.rest()) {
-                    Ok(template) => template,
-                    Err(e) => {
-                        ctx.respond(format!("Bad promotion template: {}", e));
-                        return Ok(());
-                    }
-                };
+                let name = ctx_try!(ctx.next_str("<name> <frequency> <template..>", "!promo edit"));
+                let frequency =
+                    ctx_try!(ctx.next_parse("<name> <frequency> <template..>", "!promo edit"));
+                let template =
+                    ctx_try!(ctx.rest_parse("<name> <frequency> <template..>", "!promo edit"));
 
                 self.promotions
                     .edit(ctx.user.target, name, frequency, template)?;

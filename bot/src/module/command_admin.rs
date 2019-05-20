@@ -1,4 +1,4 @@
-use crate::{command, db, module, template};
+use crate::{command, db, module};
 
 pub struct Handler {
     pub commands: db::Commands,
@@ -12,23 +12,10 @@ impl command::Handler for Handler {
             Some("edit") => {
                 ctx.check_moderator()?;
 
-                let name = match ctx.next() {
-                    Some(name) => name,
-                    None => {
-                        ctx.respond("Expected name.");
-                        return Ok(());
-                    }
-                };
-
-                let template = match template::Template::compile(ctx.rest()) {
-                    Ok(template) => template,
-                    Err(e) => {
-                        ctx.respond(format!("Bad alias template: {}", e));
-                        return Ok(());
-                    }
-                };
-
+                let name = ctx_try!(ctx.next_str("<name>", "!command edit"));
+                let template = ctx_try!(ctx.rest_parse("<name> <template>", "!command edit"));
                 self.commands.edit(ctx.user.target, name, template)?;
+
                 ctx.respond("Edited command.");
             }
             None | Some(..) => {
