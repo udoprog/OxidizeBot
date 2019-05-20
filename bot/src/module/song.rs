@@ -659,7 +659,7 @@ impl module::Module for Module {
             core,
             db,
             stream_info,
-            irc_config,
+            config,
             handlers,
             futures,
             sender,
@@ -671,7 +671,7 @@ impl module::Module for Module {
         let chat_feedback = settings.sync_var(core, "song/chat-feedback", true)?;
 
         futures.push(Box::new(player_feedback_loop(
-            irc_config,
+            config.irc.clone(),
             self.player.clone(),
             sender.clone(),
             chat_feedback,
@@ -767,7 +767,7 @@ fn display_songs(
 
 /// Notifications from the player.
 fn player_feedback_loop(
-    config: &irc::Config,
+    config: Arc<irc::Config>,
     player: player::PlayerClient,
     sender: irc::Sender,
     chat_feedback: Arc<RwLock<bool>>,
@@ -776,7 +776,7 @@ fn player_feedback_loop(
         .add_rx()
         .map_err(|e| failure::format_err!("failed to receive player update: {}", e))
         .for_each({
-            let channel = config.channel.to_string();
+            let channel = config.channel.clone();
 
             move |e| {
                 match e {

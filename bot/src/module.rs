@@ -61,7 +61,6 @@ pub enum Config {
 pub struct HookContext<'a> {
     pub core: &'a mut Core,
     pub config: &'a config::Config,
-    pub irc_config: &'a irc::Config,
     pub db: &'a db::Database,
     pub commands: &'a db::Commands,
     pub aliases: &'a db::Aliases,

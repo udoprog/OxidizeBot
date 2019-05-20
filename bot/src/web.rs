@@ -1,5 +1,5 @@
 use crate::{
-    api, bus, db, irc, player, settings, template,
+    api, bus, config, db, player, settings, template,
     track_id::TrackId,
     utils::{self, BoxFuture},
 };
@@ -675,7 +675,7 @@ impl Api {
 /// Set up the web endpoint.
 pub fn setup(
     web_root: Option<&Path>,
-    irc: Option<&irc::Config>,
+    config: Arc<config::Config>,
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     after_streams: db::AfterStreams,
@@ -809,18 +809,12 @@ pub fn setup(
         let route = route
             .or(warp::get2()
                 .and(path!("current").and(warp::filters::path::end()))
-                .and_then({
-                    let channel = irc.map(|irc| irc.channel.clone());
+                .and_then(move || {
+                    let current = Current {
+                        channel: config.irc.channel.clone(),
+                    };
 
-                    move || match channel.as_ref() {
-                        Some(channel) => {
-                            let current = Current {
-                                channel: channel.clone(),
-                            };
-                            Ok(warp::reply::json(&current))
-                        }
-                        None => Err(warp::reject::not_found()),
-                    }
+                    Ok::<_, warp::Rejection>(warp::reply::json(&current))
                 }))
             .boxed();
 

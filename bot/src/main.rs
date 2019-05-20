@@ -1,8 +1,8 @@
 use failure::{format_err, ResultExt};
 use futures::{future, Future};
 use setmod_bot::{
-    api, bus, config::Config, db, features::Feature, irc, module, oauth2, player, secrets,
-    template, utils, web,
+    api, bus, config, db, features::Feature, irc, module, oauth2, player, secrets, template, utils,
+    web,
 };
 use std::{
     fs,
@@ -99,14 +99,16 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
 
-    let config: Config = if config.is_file() {
-        fs::read_to_string(config)
-            .map_err(failure::Error::from)
-            .and_then(|s| toml::de::from_str(&s).map_err(failure::Error::from))
-            .with_context(|_| format_err!("failed to read configuration: {}", config.display()))?
-    } else {
-        Config::default()
-    };
+    if !config.is_file() {
+        failure::bail!("missing configuration: {}", config.display());
+    }
+
+    let config: config::Config = fs::read_to_string(config)
+        .map_err(failure::Error::from)
+        .and_then(|s| toml::de::from_str(&s).map_err(failure::Error::from))
+        .with_context(|_| format_err!("failed to read configuration: {}", config.display()))?;
+
+    let config = Arc::new(config);
 
     let secrets_path = match config.secrets.as_ref() {
         Some(secrets) => secrets.to_path(root),
@@ -140,51 +142,51 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     let themes = db::Themes::load(db.clone())?;
 
     // TODO: remove this migration next major release.
-    if let Some(irc) = config.irc.as_ref() {
-        if !config.aliases.is_empty() {
-            log::warn!("# DEPRECATION WARNING");
-            log::warn!("The [[aliases]] section in the configuration is now deprecated.");
-            log::warn!("Please remove it in favor of the !alias command which stores aliases in the database.");
+    if !config.aliases.is_empty() {
+        log::warn!("# DEPRECATION WARNING");
+        log::warn!("The [[aliases]] section in the configuration is now deprecated.");
+        log::warn!(
+            "Please remove it in favor of the !alias command which stores aliases in the database."
+        );
 
-            if !settings
-                .get::<bool>("migration/aliases-migrated")?
-                .unwrap_or_default()
-            {
-                log::warn!("Performing a one time migration of aliases from configuration.");
+        if !settings
+            .get::<bool>("migration/aliases-migrated")?
+            .unwrap_or_default()
+        {
+            log::warn!("Performing a one time migration of aliases from configuration.");
 
-                for alias in &config.aliases {
-                    let template = template::Template::compile(&alias.replace)?;
-                    aliases.edit(irc.channel.as_str(), &alias.r#match, template)?;
-                }
-
-                settings.set("migration/aliases-migrated", true)?;
+            for alias in &config.aliases {
+                let template = template::Template::compile(&alias.replace)?;
+                aliases.edit(config.irc.channel.as_str(), &alias.r#match, template)?;
             }
+
+            settings.set("migration/aliases-migrated", true)?;
         }
+    }
 
-        if !config.themes.themes.is_empty() {
-            log::warn!("# DEPRECATION WARNING");
-            log::warn!("The [themes] section in the configuration is now deprecated.");
-            log::warn!("Please remove it in favor of storing theme in the database.");
+    if !config.themes.themes.is_empty() {
+        log::warn!("# DEPRECATION WARNING");
+        log::warn!("The [themes] section in the configuration is now deprecated.");
+        log::warn!("Please remove it in favor of storing theme in the database.");
 
-            if !settings
-                .get::<bool>("migration/themes-migrated")?
-                .unwrap_or_default()
-            {
-                log::warn!("Performing a one time migration of themes from configuration.");
+        if !settings
+            .get::<bool>("migration/themes-migrated")?
+            .unwrap_or_default()
+        {
+            log::warn!("Performing a one time migration of themes from configuration.");
 
-                for (name, theme) in &config.themes.themes {
-                    let track_id = theme.track.clone();
-                    themes.edit(irc.channel.as_str(), name.as_str(), track_id)?;
-                    themes.edit_duration(
-                        irc.channel.as_str(),
-                        name.as_str(),
-                        theme.offset.clone(),
-                        theme.end.clone(),
-                    )?;
-                }
-
-                settings.set("migration/themes-migrated", true)?;
+            for (name, theme) in &config.themes.themes {
+                let track_id = theme.track.clone();
+                themes.edit(config.irc.channel.as_str(), name.as_str(), track_id)?;
+                themes.edit_duration(
+                    config.irc.channel.as_str(),
+                    name.as_str(),
+                    theme.offset.clone(),
+                    theme.end.clone(),
+                )?;
             }
+
+            settings.set("migration/themes-migrated", true)?;
         }
     }
 
@@ -211,7 +213,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     let (web, future) = web::setup(
         web_root,
-        config.irc.as_ref(),
+        config.clone(),
         global_bus.clone(),
         youtube_bus.clone(),
         after_streams.clone(),
@@ -241,85 +243,89 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     log::info!("Listening on: {}", web::URL);
 
-    let mut tokens: Vec<utils::BoxFuture<Option<oauth2::AuthPair>, failure::Error>> = vec![];
+    let mut tokens: Vec<utils::BoxFuture<oauth2::AuthPair, failure::Error>> = vec![];
 
     let token_settings = settings.scoped(&["secrets", "oauth2"]);
 
     tokens.push({
-        let flow = config
-            .spotify
-            .new_flow_builder(web.clone(), "spotify", &token_settings, &secrets)?
-            .with_scopes(vec![
-                String::from("playlist-read-collaborative"),
-                String::from("playlist-read-private"),
-                String::from("user-library-read"),
-                String::from("user-modify-playback-state"),
-                String::from("user-read-playback-state"),
-            ])
-            .build()?;
+        let flow = config::new_oauth2_flow::<config::Spotify>(
+            web.clone(),
+            "spotify",
+            &token_settings,
+            &secrets,
+        )?
+        .with_scopes(vec![
+            String::from("playlist-read-collaborative"),
+            String::from("playlist-read-private"),
+            String::from("user-library-read"),
+            String::from("user-modify-playback-state"),
+            String::from("user-read-playback-state"),
+        ])
+        .build()?;
 
-        Box::new(flow.execute("Authorize Spotify").map(Some))
+        Box::new(flow.execute("Authorize Spotify"))
     });
 
     tokens.push({
-        let flow = config
-            .youtube
-            .new_flow_builder(web.clone(), "youtube", &token_settings)?
+        let flow = oauth2::youtube(web.clone(), token_settings.scoped(&["youtube"]))?
             .with_scopes(vec![String::from(
                 "https://www.googleapis.com/auth/youtube.readonly",
             )])
             .build()?;
 
-        Box::new(flow.execute("Authorize YouTube").map(Some))
+        Box::new(flow.execute("Authorize YouTube"))
     });
 
     tokens.push({
-        let flow = config
-            .twitch
-            .new_flow_builder(web.clone(), "twitch-streamer", &token_settings, &secrets)?
-            .with_scopes(vec![
-                String::from("channel_editor"),
-                String::from("channel_read"),
-                String::from("channel:read:subscriptions"),
-            ])
-            .build()?;
+        let flow = config::new_oauth2_flow::<config::Twitch>(
+            web.clone(),
+            "twitch-streamer",
+            &token_settings,
+            &secrets,
+        )?
+        .with_scopes(vec![
+            String::from("channel_editor"),
+            String::from("channel_read"),
+            String::from("channel:read:subscriptions"),
+        ])
+        .build()?;
 
-        Box::new(flow.execute("Authorize as Streamer").map(Some))
+        Box::new(flow.execute("Authorize as Streamer"))
     });
 
-    if config.irc.is_some() {
-        let flow = config
-            .twitch
-            .new_flow_builder(web.clone(), "twitch-bot", &token_settings, &secrets)?
-            .with_scopes(vec![
-                String::from("channel:moderate"),
-                String::from("chat:edit"),
-                String::from("chat:read"),
-                String::from("clips:edit"),
-            ])
-            .build()?;
+    tokens.push({
+        let flow = config::new_oauth2_flow::<config::Twitch>(
+            web.clone(),
+            "twitch-bot",
+            &token_settings,
+            &secrets,
+        )?
+        .with_scopes(vec![
+            String::from("channel:moderate"),
+            String::from("chat:edit"),
+            String::from("chat:read"),
+            String::from("clips:edit"),
+        ])
+        .build()?;
 
-        tokens.push(Box::new(flow.execute("Authorize as Bot").map(Some)));
-    }
+        Box::new(flow.execute("Authorize as Bot"))
+    });
 
     let results = core.run(future::join_all(tokens))?;
     let mut results = results.into_iter();
 
     let (spotify_token, future) = results
         .next()
-        .and_then(|r| r)
         .ok_or_else(|| format_err!("Expected Spotify token"))?;
     futures.push(Box::new(future));
 
     let (youtube_token, future) = results
         .next()
-        .and_then(|r| r)
         .ok_or_else(|| format_err!("Expected YouTube token"))?;
     futures.push(Box::new(future));
 
     let (streamer_token, future) = results
         .next()
-        .and_then(|r| r)
         .ok_or_else(|| format_err!("Expected Twitch Streamer token"))?;
     futures.push(Box::new(future));
 
@@ -329,7 +335,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
     let spotify = Arc::new(api::Spotify::new(spotify_token.clone())?);
-    let twitch = api::Twitch::new(streamer_token.clone())?;
+    let streamer_twitch = api::Twitch::new(streamer_token.clone())?;
 
     let player = match config.player.as_ref() {
         // Only setup if the song feature is enabled.
@@ -382,44 +388,42 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     let module = module::theme_admin::Config::default();
     modules.push(Box::new(module::theme_admin::Module::load(&module)?));
 
-    if let Some(irc_config) = config.irc.as_ref() {
-        let (bot_token, future) = results
-            .next()
-            .and_then(|r| r)
-            .ok_or_else(|| format_err!("Expected Twitch Bot token"))?;
-        futures.push(Box::new(future));
+    let (bot_token, future) = results
+        .next()
+        .ok_or_else(|| format_err!("Expected Twitch Bot token"))?;
+    futures.push(Box::new(future));
 
-        let currency = config
-            .currency
-            .clone()
-            .map(|c| c.into_currency(db.clone(), twitch.clone()));
+    let currency = config
+        .currency
+        .clone()
+        .map(|c| c.into_currency(db.clone(), streamer_twitch.clone()));
 
-        let future = irc::Irc {
-            core: &mut core,
-            db: db,
-            youtube: youtube.clone(),
-            streamer_twitch: twitch.clone(),
-            bot_twitch: api::Twitch::new(bot_token.clone())?,
-            config: &config,
-            currency,
-            irc_config,
-            token: bot_token,
-            commands,
-            aliases,
-            promotions,
-            themes,
-            bad_words,
-            after_streams,
-            global_bus,
-            modules: &modules,
-            shutdown,
-            settings,
-            player: player.as_ref(),
-        }
-        .run()?;
+    let bot_twitch = api::Twitch::new(bot_token.clone())?;
 
-        futures.push(Box::new(future));
+    let future = irc::Irc {
+        core: &mut core,
+        db: db,
+        youtube,
+        streamer_twitch,
+        bot_twitch,
+        config,
+        currency,
+        token: bot_token,
+        commands,
+        aliases,
+        promotions,
+        themes,
+        bad_words,
+        after_streams,
+        global_bus,
+        modules: &modules,
+        shutdown,
+        settings,
+        player: player.as_ref(),
     }
+    .run()?;
+
+    futures.push(Box::new(future));
 
     let stuff = future::join_all(futures).map_err(|e| Some(e));
     let shutdown_rx = shutdown_rx

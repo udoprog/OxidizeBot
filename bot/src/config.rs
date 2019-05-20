@@ -4,20 +4,14 @@ use crate::{
 };
 use hashbrown::{HashMap, HashSet};
 use relative_path::RelativePathBuf;
-use std::{marker, sync::Arc};
+use std::sync::Arc;
 
-#[derive(Debug, Default, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct Config {
     /// The username of the streamer.
     /// TODO: get from twitch token.
     pub streamer: String,
-    pub irc: Option<irc::Config>,
-    #[serde(default)]
-    pub twitch: Oauth2Config<TwitchDefaults>,
-    #[serde(default)]
-    pub spotify: Oauth2Config<SpotifyDefaults>,
-    #[serde(default)]
-    pub youtube: YouTubeOauth2Config,
+    pub irc: Arc<irc::Config>,
     #[serde(default)]
     pub database_url: Option<String>,
     #[serde(default)]
@@ -60,95 +54,59 @@ pub struct DeprecatedAlias {
 }
 
 #[derive(Debug)]
-pub struct SpotifyDefaults;
+pub struct Spotify;
 
-impl Oauth2Defaults for SpotifyDefaults {
+impl OAuth2Params for Spotify {
     const SECRETS_KEY: &'static str = "spotify::oauth2";
 
     fn new_flow_builder(
         web: web::Server,
+        settings: settings::ScopedSettings,
         secrets_config: Arc<crate::oauth2::SecretsConfig>,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
-        crate::oauth2::spotify(web, secrets_config)
-    }
-}
-
-#[derive(Debug, Default, serde::Deserialize)]
-pub struct YouTubeOauth2Config;
-
-impl YouTubeOauth2Config {
-    /// Construct a new flow builder with the given configuration.
-    pub fn new_flow_builder(
-        &self,
-        web: web::Server,
-        name: &str,
-        settings: &settings::ScopedSettings,
-    ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
-        let settings = settings.scoped(&[name]);
-        Ok(crate::oauth2::youtube(web)?.with_settings(settings.clone()))
+        crate::oauth2::spotify(web, settings, secrets_config)
     }
 }
 
 #[derive(Debug)]
-pub struct TwitchDefaults;
+pub struct Twitch;
 
-impl Oauth2Defaults for TwitchDefaults {
+impl OAuth2Params for Twitch {
     const SECRETS_KEY: &'static str = "twitch::oauth2";
 
     fn new_flow_builder(
         web: web::Server,
+        settings: settings::ScopedSettings,
         secrets_config: Arc<crate::oauth2::SecretsConfig>,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
-        crate::oauth2::twitch(web, secrets_config)
+        crate::oauth2::twitch(web, settings, secrets_config)
     }
 }
 
 /// Define defaults for fields.
-pub trait Oauth2Defaults {
+pub trait OAuth2Params {
     const SECRETS_KEY: &'static str;
 
     fn new_flow_builder(
         web: web::Server,
+        settings: settings::ScopedSettings,
         secrets_config: Arc<crate::oauth2::SecretsConfig>,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error>;
 }
 
-#[derive(Debug, serde::Deserialize)]
-pub struct Oauth2Config<T>
+/// Create a new flow based on a statis configuration.
+pub fn new_oauth2_flow<T>(
+    web: web::Server,
+    name: &str,
+    settings: &settings::ScopedSettings,
+    secrets: &secrets::Secrets,
+) -> Result<crate::oauth2::FlowBuilder, failure::Error>
 where
-    T: Oauth2Defaults,
+    T: OAuth2Params,
 {
-    #[serde(default)]
-    marker: marker::PhantomData<T>,
-}
-
-impl<T> Oauth2Config<T>
-where
-    T: Oauth2Defaults,
-{
-    /// Construct a new flow builder with the given configuration.
-    pub fn new_flow_builder(
-        &self,
-        web: web::Server,
-        name: &str,
-        settings: &settings::ScopedSettings,
-        secrets: &secrets::Secrets,
-    ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
-        let secrets = secrets.load(T::SECRETS_KEY)?;
-        let settings = settings.scoped(&[name]);
-        Ok(T::new_flow_builder(web, secrets)?.with_settings(settings.clone()))
-    }
-}
-
-impl<T> Default for Oauth2Config<T>
-where
-    T: Oauth2Defaults,
-{
-    fn default() -> Oauth2Config<T> {
-        Oauth2Config {
-            marker: Default::default(),
-        }
-    }
+    let secrets = secrets.load(T::SECRETS_KEY)?;
+    let settings = settings.scoped(&[name]);
+    Ok(T::new_flow_builder(web, settings, secrets)?)
 }
 
 #[derive(Debug, Default, serde::Deserialize)]

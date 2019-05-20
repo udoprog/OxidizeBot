@@ -170,6 +170,7 @@ enum Secrets {
 /// Setup a Twitch authentication flow.
 pub fn twitch(
     web: web::Server,
+    settings: settings::ScopedSettings,
     secrets_config: Arc<SecretsConfig>,
 ) -> Result<FlowBuilder, failure::Error> {
     let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
@@ -184,7 +185,7 @@ pub fn twitch(
             "https://id.twitch.tv/oauth2/token",
         )?)),
         scopes: Default::default(),
-        settings: Default::default(),
+        settings,
         extra_params: Default::default(),
     })
 }
@@ -192,6 +193,7 @@ pub fn twitch(
 /// Setup a Spotify AUTH flow.
 pub fn spotify(
     web: web::Server,
+    settings: settings::ScopedSettings,
     secrets_config: Arc<SecretsConfig>,
 ) -> Result<FlowBuilder, failure::Error> {
     let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
@@ -206,13 +208,16 @@ pub fn spotify(
             "https://accounts.spotify.com/api/token",
         )?)),
         scopes: Default::default(),
-        settings: Default::default(),
+        settings,
         extra_params: Default::default(),
     })
 }
 
 /// Setup a YouTube AUTH flow.
-pub fn youtube(web: web::Server) -> Result<FlowBuilder, failure::Error> {
+pub fn youtube(
+    web: web::Server,
+    settings: settings::ScopedSettings,
+) -> Result<FlowBuilder, failure::Error> {
     let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
 
     Ok(FlowBuilder {
@@ -228,7 +233,7 @@ pub fn youtube(web: web::Server) -> Result<FlowBuilder, failure::Error> {
             "https://www.googleapis.com/oauth2/v4/token",
         )?)),
         scopes: Default::default(),
-        settings: Default::default(),
+        settings,
         extra_params: vec![(String::from("access_type"), String::from("offline"))],
     })
 }
@@ -322,7 +327,7 @@ pub struct FlowBuilder {
     auth_url: AuthUrl,
     token_url: Option<TokenUrl>,
     scopes: Vec<String>,
-    settings: Option<settings::ScopedSettings>,
+    settings: settings::ScopedSettings,
     extra_params: Vec<(String, String)>,
 }
 
@@ -330,14 +335,6 @@ impl FlowBuilder {
     /// Configure scopes for flow builder.
     pub fn with_scopes(self, scopes: Vec<String>) -> Self {
         Self { scopes, ..self }
-    }
-
-    /// Configure a local cache file for token.
-    pub fn with_settings(self, settings: settings::ScopedSettings) -> FlowBuilder {
-        FlowBuilder {
-            settings: Some(settings),
-            ..self
-        }
     }
 
     /// Convert into an authentication flow.
@@ -371,7 +368,7 @@ impl FlowBuilder {
             web: self.web.clone(),
             secrets_config,
             client: Arc::new(client),
-            settings: Arc::new(self.settings.clone()),
+            settings: self.settings.clone(),
             scopes: Arc::new(self.scopes),
             extra_params: Arc::new(self.extra_params),
         }))
@@ -383,7 +380,7 @@ pub struct Flow {
     web: web::Server,
     secrets_config: Arc<SecretsConfig>,
     client: Arc<Client>,
-    settings: Arc<Option<settings::ScopedSettings>>,
+    settings: settings::ScopedSettings,
     scopes: Arc<Vec<String>>,
     extra_params: Arc<Vec<(String, String)>>,
 }
@@ -451,12 +448,7 @@ impl Flow {
         self: Arc<Self>,
         what: &str,
     ) -> BoxFuture<Option<Token>, failure::Error> {
-        let settings = match self.settings.as_ref() {
-            Some(settings) => settings,
-            None => return Box::new(future::ok(None)),
-        };
-
-        let token = match settings.get::<Token>("token") {
+        let token = match self.settings.get::<Token>("token") {
             Ok(token) => token,
             Err(e) => {
                 log::warn!("failed to load saved token: {}", e);
@@ -530,11 +522,9 @@ impl Flow {
                 .unwrap_or_default(),
         };
 
-        if let Some(settings) = self.settings.as_ref() {
-            settings
-                .set("token", &token)
-                .with_context(|_| failure::format_err!("failed to write token to"))?;
-        }
+        self.settings
+            .set("token", &token)
+            .with_context(|_| failure::format_err!("failed to write token to"))?;
 
         Ok(token)
     }

@@ -67,8 +67,7 @@ pub struct Irc<'a> {
     pub youtube: Arc<api::YouTube>,
     pub streamer_twitch: api::Twitch,
     pub bot_twitch: api::Twitch,
-    pub config: &'a config::Config,
-    pub irc_config: &'a Config,
+    pub config: Arc<config::Config>,
     pub currency: Option<currency::Currency>,
     pub token: oauth2::SyncToken,
     pub commands: db::Commands,
@@ -96,7 +95,6 @@ impl Irc<'_> {
             streamer_twitch,
             bot_twitch,
             config,
-            irc_config,
             token,
             commands,
             aliases,
@@ -115,8 +113,8 @@ impl Irc<'_> {
         let access_token = token.read()?.access_token().to_string();
 
         let irc_client_config = client::data::config::Config {
-            nickname: Some(irc_config.bot.clone()),
-            channels: Some(vec![(*irc_config.channel).clone()]),
+            nickname: Some(config.irc.bot.clone()),
+            channels: Some(vec![(*config.irc.channel).clone()]),
             password: Some(format!("oauth:{}", access_token)),
             server: Some(String::from(SERVER)),
             port: Some(6697),
@@ -133,9 +131,9 @@ impl Irc<'_> {
         sender.cap_req(TWITCH_TAGS_CAP);
         sender.cap_req(TWITCH_COMMANDS_CAP);
 
-        if let Some(startup_message) = irc_config.startup_message.as_ref() {
+        if let Some(startup_message) = config.irc.startup_message.as_ref() {
             // greeting when bot joins
-            sender.privmsg(irc_config.channel.as_str(), startup_message);
+            sender.privmsg(config.irc.channel.as_str(), startup_message);
         }
 
         let mut handlers = module::Handlers::default();
@@ -143,7 +141,7 @@ impl Irc<'_> {
 
         futures.push(Box::new(refresh_mods_future(
             sender.clone(),
-            irc_config.channel.clone(),
+            config.irc.channel.clone(),
         )));
 
         let stream_info = {
@@ -161,8 +159,7 @@ impl Irc<'_> {
         for module in modules {
             let result = module.hook(module::HookContext {
                 core,
-                config,
-                irc_config,
+                config: &*config,
                 db: &db,
                 commands: &commands,
                 aliases: &aliases,
@@ -201,7 +198,7 @@ impl Irc<'_> {
             let reward_percentage = settings.sync_var(core, "irc/viewer-reward%", 100)?;
 
             let future = reward_loop(
-                irc_config,
+                &*config.irc,
                 reward,
                 interval,
                 sender.clone(),
@@ -256,7 +253,7 @@ impl Irc<'_> {
                 "clip",
                 clip::Clip {
                     stream_info: stream_info.clone(),
-                    clip_cooldown: irc_config.clip_cooldown.clone(),
+                    clip_cooldown: config.irc.clip_cooldown.clone(),
                     twitch: bot_twitch.clone(),
                 },
             );
@@ -266,7 +263,7 @@ impl Irc<'_> {
             handlers.insert(
                 "afterstream",
                 after_stream::AfterStream {
-                    cooldown: irc_config.afterstream_cooldown.clone(),
+                    cooldown: config.irc.afterstream_cooldown.clone(),
                     after_streams,
                 },
             );
@@ -288,7 +285,7 @@ impl Irc<'_> {
 
         let handler = Handler {
             streamer: config.streamer.clone(),
-            channel: irc_config.channel.clone(),
+            channel: config.irc.channel.clone(),
             sender: sender.clone(),
             moderators: HashSet::default(),
             whitelisted_hosts,
@@ -299,7 +296,7 @@ impl Irc<'_> {
             features: config.features.clone(),
             api_url: config.api_url.clone(),
             thread_pool: Arc::new(ThreadPool::new()),
-            moderator_cooldown: irc_config.moderator_cooldown.clone(),
+            moderator_cooldown: config.irc.moderator_cooldown.clone(),
             handlers,
             shutdown,
             idle,

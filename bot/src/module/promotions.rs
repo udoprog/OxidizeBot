@@ -93,7 +93,7 @@ impl super::Module for Module {
             promotions,
             futures,
             sender,
-            irc_config,
+            config,
             settings,
             idle,
             ..
@@ -111,7 +111,7 @@ impl super::Module for Module {
 
         let promotions = promotions.clone();
         let sender = sender.clone();
-        let channel = irc_config.channel.to_string();
+        let channel = config.irc.channel.clone();
 
         let interval = Interval::new_interval(frequency.as_std());
 
@@ -120,7 +120,7 @@ impl super::Module for Module {
             setting,
             promotions: promotions.clone(),
             sender: sender.clone(),
-            channel: channel.clone(),
+            channel,
             idle: idle.clone(),
         }));
 
@@ -134,7 +134,7 @@ struct PromotionFuture {
     setting: settings::Stream<utils::Duration>,
     promotions: db::Promotions,
     sender: irc::Sender,
-    channel: String,
+    channel: Arc<String>,
     idle: idle::Idle,
 }
 
@@ -160,7 +160,7 @@ impl Future for PromotionFuture {
                     let channel = self.channel.clone();
 
                     tokio::spawn(future::lazy(move || {
-                        if let Err(e) = promote(promotions, sender, &channel) {
+                        if let Err(e) = promote(promotions, sender, &*channel) {
                             log::error!("failed to send promotion: {}", e);
                         }
 
