@@ -1,8 +1,8 @@
 use failure::{format_err, ResultExt};
 use futures::{future, Future};
 use setmod_bot::{
-    api, bus, config, db, features::Feature, irc, module, oauth2, player, secrets, template, utils,
-    web,
+    api, bus, config, db, features::Feature, irc, module, oauth2, obs, player, secrets, template,
+    utils, web,
 };
 use std::{
     fs,
@@ -393,6 +393,14 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         .ok_or_else(|| format_err!("Expected Twitch Bot token"))?;
     futures.push(Box::new(future));
 
+    let mut obs = None;
+
+    if let Some(config) = config.obs.clone() {
+        let (client, future) = obs::setup(config)?;
+        futures.push(Box::new(future));
+        obs = Some(client);
+    }
+
     let currency = config
         .currency
         .clone()
@@ -420,6 +428,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         shutdown,
         settings,
         player: player.as_ref(),
+        obs,
     }
     .run()?;
 

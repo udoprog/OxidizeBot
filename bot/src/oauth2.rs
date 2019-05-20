@@ -470,7 +470,7 @@ impl Flow {
         token: Token,
         what: &str,
     ) -> BoxFuture<Option<Token>, failure::Error> {
-        if token.client_id == self.secrets_config.client_id {
+        if token.client_id != self.secrets_config.client_id {
             log::warn!("Not using stored token since it uses a different Client ID");
             return Box::new(future::ok(None));
         }

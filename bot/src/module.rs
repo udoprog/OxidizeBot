@@ -1,4 +1,6 @@
-use crate::{api, command, config, currency, db, idle, irc, player, settings, stream_info, utils};
+use crate::{
+    api, command, config, currency, db, idle, irc, obs, player, settings, stream_info, utils,
+};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -77,6 +79,7 @@ pub struct HookContext<'a> {
     pub settings: &'a settings::Settings,
     pub idle: &'a idle::Idle,
     pub player: Option<&'a player::Player>,
+    pub obs: Option<&'a obs::Obs>,
 }
 
 pub trait Module: 'static {

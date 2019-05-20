@@ -23,6 +23,7 @@ mod idle;
 pub mod irc;
 pub mod module;
 pub mod oauth2;
+pub mod obs;
 pub mod player;
 pub mod secrets;
 pub mod settings;

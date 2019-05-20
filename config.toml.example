@@ -30,6 +30,11 @@ moderator_cooldown = "5s"
 # whether to notify when viewers are rewarded with loyalty currency.
 notify_rewards = false
 
+# Support for connecting to OBS using obs-websocket.
+# Must be installed from:
+# https://github.com/Palakis/obs-websocket
+[obs]
+
 [currency]
 name = "thingies"
 

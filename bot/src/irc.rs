@@ -1,7 +1,7 @@
 use crate::{
     api, bus, command, config, currency, db,
     features::{Feature, Features},
-    idle, module, oauth2, player, settings, stream_info, utils,
+    idle, module, oauth2, obs, player, settings, stream_info, utils,
     utils::BoxFuture,
 };
 use failure::{format_err, ResultExt as _};
@@ -81,6 +81,7 @@ pub struct Irc<'a> {
     pub shutdown: utils::Shutdown,
     pub settings: settings::Settings,
     pub player: Option<&'a player::Player>,
+    pub obs: Option<obs::Obs>,
 }
 
 impl Irc<'_> {
@@ -95,6 +96,7 @@ impl Irc<'_> {
             streamer_twitch,
             bot_twitch,
             config,
+            currency,
             token,
             commands,
             aliases,
@@ -107,7 +109,7 @@ impl Irc<'_> {
             shutdown,
             settings,
             player,
-            ..
+            obs,
         } = self;
 
         let access_token = token.read()?.access_token().to_string();
@@ -166,7 +168,7 @@ impl Irc<'_> {
                 promotions: &promotions,
                 themes: &themes,
                 handlers: &mut handlers,
-                currency: self.currency.as_ref(),
+                currency: currency.as_ref(),
                 youtube: &youtube,
                 twitch: &bot_twitch,
                 streamer_twitch: &streamer_twitch,
@@ -176,6 +178,7 @@ impl Irc<'_> {
                 settings: &settings,
                 idle: &idle,
                 player,
+                obs: obs.as_ref(),
             });
 
             result.with_context(|_| {
@@ -183,7 +186,7 @@ impl Irc<'_> {
             })?;
         }
 
-        if let Some(currency) = self.currency.as_ref() {
+        if let Some(currency) = currency.as_ref() {
             handlers.insert(
                 &*currency.name,
                 currency_admin::Handler {
