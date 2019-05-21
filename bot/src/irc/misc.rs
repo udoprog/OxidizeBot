@@ -2,7 +2,6 @@
 
 use crate::{api, command, irc, stream_info, utils};
 use chrono::Utc;
-use futures::Future;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -65,28 +64,6 @@ impl Title {
             }
         }
     }
-
-    /// Handle the title update.
-    fn update(&mut self, user: irc::OwnedUser, title: &str) -> impl Future<Item = (), Error = ()> {
-        let channel_id = user.target.trim_start_matches('#');
-
-        let twitch = self.twitch.clone();
-        let title = title.to_string();
-
-        let mut request = api::twitch::UpdateChannelRequest::default();
-        request.channel.status = Some(title);
-
-        twitch
-            .update_channel(channel_id, &request)
-            .and_then(move |_| {
-                user.respond("Title updated!");
-                Ok(())
-            })
-            .or_else(|e| {
-                log_err!(e, "failed to update title");
-                Ok(())
-            })
-    }
 }
 
 impl command::Handler for Title {
@@ -97,8 +74,25 @@ impl command::Handler for Title {
             self.show(ctx.user);
         } else {
             ctx.check_moderator()?;
-            let future = self.update(ctx.user.as_owned_user(), rest);
-            ctx.spawn(future);
+
+            let twitch = self.twitch.clone();
+            let user = ctx.user.as_owned_user();
+            let title = rest.to_string();
+
+            ctx.spawn_async(async move {
+                let channel_id = user.target.trim_start_matches('#').to_string();
+                let mut request = api::twitch::UpdateChannelRequest::default();
+                request.channel.status = Some(title);
+
+                match twitch.update_channel(channel_id, request).await {
+                    Ok(()) => {
+                        user.respond("Title updated!");
+                    }
+                    Err(e) => {
+                        log_err!(e, "failed to update title");
+                    }
+                }
+            });
         }
 
         Ok(())
@@ -125,28 +119,6 @@ impl Game {
             }
         };
     }
-
-    /// Handle the game update.
-    fn update(&mut self, user: irc::OwnedUser, game: &str) -> impl Future<Item = (), Error = ()> {
-        let channel_id = user.target.trim_start_matches('#');
-
-        let twitch = self.twitch.clone();
-        let game = game.to_string();
-
-        let mut request = api::twitch::UpdateChannelRequest::default();
-        request.channel.game = Some(game);
-
-        twitch
-            .update_channel(channel_id, &request)
-            .and_then(move |_| {
-                user.respond("Game updated!");
-                Ok(())
-            })
-            .or_else(|e| {
-                log_err!(e, "failed to update game");
-                Ok(())
-            })
-    }
 }
 
 impl command::Handler for Game {
@@ -155,11 +127,29 @@ impl command::Handler for Game {
 
         if rest.is_empty() {
             self.show(ctx.user);
-        } else {
-            ctx.check_moderator()?;
-            let future = self.update(ctx.user.as_owned_user(), rest);
-            ctx.spawn(future);
+            return Ok(());
         }
+
+        ctx.check_moderator()?;
+
+        let twitch = self.twitch.clone();
+        let user = ctx.user.as_owned_user();
+        let game = rest.to_string();
+
+        ctx.spawn_async(async move {
+            let channel_id = user.target.trim_start_matches('#').to_string();
+            let mut request = api::twitch::UpdateChannelRequest::default();
+            request.channel.game = Some(game);
+
+            match twitch.update_channel(channel_id, request).await {
+                Ok(()) => {
+                    user.respond("Game updated!");
+                }
+                Err(e) => {
+                    log_err!(e, "failed to update game");
+                }
+            }
+        });
 
         Ok(())
     }

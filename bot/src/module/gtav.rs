@@ -1,6 +1,5 @@
-use crate::{command, currency, db, irc, module, player, utils};
+use crate::{command, currency, db, irc, module, player, prelude::*, utils};
 use failure::format_err;
-use futures::{sync::mpsc, Future as _, Stream as _};
 use parking_lot::RwLock;
 use std::{fmt, net::SocketAddr, sync::Arc};
 use tokio::net::UdpSocket;
@@ -366,19 +365,21 @@ impl Handler {
     /// Play the specified theme song.
     fn play_theme_song(&mut self, ctx: &mut command::Context<'_, '_>, id: &str) {
         if let Some(player) = self.player.as_ref() {
-            ctx.spawn(player.play_theme(ctx.user.target, id).then(|result| {
-                match result {
-                    Ok(()) => {}
+            let player = player.clone();
+            let target = ctx.user.target.to_string();
+            let id = id.to_string();
+
+            ctx.spawn_async(async move {
+                match player.play_theme(target, id.clone()).await {
+                    Ok(()) => (),
                     Err(player::PlayThemeError::NoSuchTheme) => {
-                        log::error!("you need to configure the theme `running90s`");
+                        log::error!("you need to configure the theme `{}`", id);
                     }
                     Err(player::PlayThemeError::Error(e)) => {
                         log::error!("error when playing theme: {}", e);
                     }
                 }
-
-                Ok(())
-            }));
+            });
         }
     }
 
@@ -724,14 +725,15 @@ impl command::Handler for Handler {
             return Ok(());
         }
 
-        ctx.spawn(
-            self.db
-                .balance_add(ctx.user.target, ctx.user.name, -(cost as i64))
-                .or_else(|e| {
-                    log_err!(e, "failed to modify balance of user");
-                    Ok(())
-                }),
-        );
+        let db = self.db.clone();
+        let target = ctx.user.target.to_string();
+        let name = ctx.user.name.to_string();
+
+        ctx.spawn_async(async move {
+            if let Err(e) = db.balance_add(target, name, -(cost as i64)).await {
+                log_err!(e, "failed to modify balance of user");
+            }
+        });
 
         if *self.success_feedback.read() {
             ctx.privmsg(format!(
@@ -806,7 +808,6 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            core,
             db,
             handlers,
             currency,
@@ -820,15 +821,15 @@ impl super::Module for Module {
             .ok_or_else(|| format_err!("currency required for !gtav module"))?
             .clone();
 
-        let cooldown = settings.sync_var(core, "gtav/cooldown", self.cooldown.clone())?;
+        let cooldown = settings.sync_var("gtav/cooldown", self.cooldown.clone())?;
 
-        let prefix = settings.sync_var(core, "gtav/chat-prefix", String::from("ChaosMod: "))?;
-        let other_percentage = settings.sync_var(core, "gtav/other%", 100)?;
-        let punish_percentage = settings.sync_var(core, "gtav/punish%", 100)?;
-        let reward_percentage = settings.sync_var(core, "gtav/reward%", 100)?;
-        let success_feedback = settings.sync_var(core, "gtav/success-feedback", false)?;
+        let prefix = settings.sync_var("gtav/chat-prefix", String::from("ChaosMod: "))?;
+        let other_percentage = settings.sync_var("gtav/other%", 100)?;
+        let punish_percentage = settings.sync_var("gtav/punish%", 100)?;
+        let reward_percentage = settings.sync_var("gtav/reward%", 100)?;
+        let success_feedback = settings.sync_var("gtav/success-feedback", false)?;
 
-        let (tx, rx) = mpsc::unbounded();
+        let (tx, mut rx) = mpsc::unbounded();
 
         handlers.insert(
             "gtav",
@@ -850,24 +851,23 @@ impl super::Module for Module {
         let mut socket = UdpSocket::bind(&str::parse::<SocketAddr>("127.0.0.1:0")?)?;
         socket.connect(&str::parse::<SocketAddr>("127.0.0.1:7291")?)?;
 
-        let future = rx.for_each(move |(user, id, command)| {
-            let message = format!("{} {} {}", user.name, id, command.command());
+        let future = async move {
+            while let Some((user, id, command)) = rx.next().await {
+                let message = format!("{} {} {}", user.name, id, command.command());
+                log::info!("sent: {}", message);
 
-            log::info!("sent: {}", message);
+                match socket.poll_send(message.as_bytes()) {
+                    Ok(_) => (),
+                    Err(e) => {
+                        log::error!("failed to send message: {}", e);
+                    }
+                }
+            }
 
-            socket
-                .poll_send(message.as_bytes())
-                .map(|_| ())
-                .or_else(|e| {
-                    log::error!("failed to send message: {}", e);
-                    Ok(())
-                })
-        });
+            Ok(())
+        };
 
-        futures.push(Box::new(
-            future.map_err(|_| failure::format_err!("udp socket sender failed")),
-        ));
-
+        futures.push(future.boxed());
         Ok(())
     }
 }

@@ -1,4 +1,5 @@
-#![recursion_limit = "128"]
+#![feature(async_await)]
+#![recursion_limit = "512"]
 
 #[macro_use]
 extern crate diesel;
@@ -25,11 +26,13 @@ pub mod module;
 pub mod oauth2;
 pub mod obs;
 pub mod player;
+pub mod prelude;
 pub mod secrets;
 pub mod settings;
 mod spotify_id;
 mod stream_info;
 pub mod template;
+mod timer;
 mod track_id;
 pub mod utils;
 pub mod web;

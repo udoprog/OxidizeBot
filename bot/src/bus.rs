@@ -1,16 +1,7 @@
-use crate::player;
-use failure::format_err;
-use futures::{future, Async, Future, Poll, Stream};
+use crate::{player, track_id::TrackId};
 use hashbrown::HashMap;
 use parking_lot::Mutex;
-use std::{
-    net::{Ipv4Addr, SocketAddr},
-    sync::Arc,
-};
-use tokio::{
-    io::{self, AsyncRead, WriteHalf},
-    net::{TcpListener, TcpStream},
-};
+use std::sync::Arc;
 
 pub trait Message: 'static + Clone + Send + Sync + serde::Serialize {
     /// The ID of a bussed message.
@@ -34,7 +25,6 @@ where
     T: Message,
 {
     bus: Mutex<Inner<T>>,
-    address: SocketAddr,
 }
 
 impl<T> Bus<T>
@@ -48,7 +38,6 @@ where
                 bus: tokio_bus::Bus::new(1024),
                 latest: HashMap::new(),
             }),
-            address: SocketAddr::new(Ipv4Addr::new(127, 0, 0, 1).into(), 4444),
         }
     }
 
@@ -74,97 +63,6 @@ where
     /// Create a receiver of the bus.
     pub fn add_rx(self: Arc<Self>) -> Reader<T> {
         self.bus.lock().bus.add_rx()
-    }
-
-    /// Listen for incoming connections and hand serialized bus messages to connected sockets.
-    pub fn listen(self: Arc<Self>) -> impl Future<Item = (), Error = failure::Error> {
-        let listener = future::result(TcpListener::bind(&self.address));
-
-        listener.from_err::<failure::Error>().and_then(|listener| {
-            listener
-                .incoming()
-                .from_err::<failure::Error>()
-                .and_then(move |s| {
-                    let (_, writer) = s.split();
-                    let rx = self.bus.lock().bus.add_rx();
-
-                    let handler = BusHandler::new(writer, rx)
-                        .map_err(|e| {
-                            log::error!("failed to process outgoing message: {}", e);
-                        })
-                        .for_each(|_| Ok(()));
-
-                    tokio::spawn(handler);
-                    Ok(())
-                })
-                .for_each(|_| Ok(()))
-        })
-    }
-}
-
-enum BusHandlerState<T> {
-    Receiving,
-    Serialize(T),
-    Send(io::WriteAll<WriteHalf<TcpStream>, String>),
-}
-
-/// Handles reading messages of a buss and writing them to a TcpStream.
-struct BusHandler<T>
-where
-    T: Message,
-{
-    writer: Option<WriteHalf<TcpStream>>,
-    rx: tokio_bus::BusReader<T>,
-    state: BusHandlerState<T>,
-}
-
-impl<T> BusHandler<T>
-where
-    T: Message,
-{
-    pub fn new(writer: WriteHalf<TcpStream>, rx: tokio_bus::BusReader<T>) -> Self {
-        Self {
-            writer: Some(writer),
-            rx,
-            state: BusHandlerState::Receiving,
-        }
-    }
-}
-
-impl<T> Stream for BusHandler<T>
-where
-    T: Message,
-{
-    type Item = ();
-    type Error = failure::Error;
-
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        use self::BusHandlerState::*;
-
-        loop {
-            self.state = match self.state {
-                Receiving => match self.rx.poll() {
-                    Ok(Async::Ready(Some(m))) => Serialize(m),
-                    Ok(Async::Ready(None)) => return Ok(Async::Ready(None)),
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Err(e) => return Err(failure::Error::from(e)),
-                },
-                Serialize(ref m) => match (serde_json::to_string(m), self.writer.take()) {
-                    (Ok(json), Some(writer)) => Send(io::write_all(writer, format!("{}\n", json))),
-                    (_, None) => return Err(format_err!("writer not available")),
-                    (Err(e), _) => return Err(failure::Error::from(e)),
-                },
-                Send(ref mut f) => match f.poll() {
-                    Ok(Async::Ready((writer, _))) => {
-                        self.writer = Some(writer);
-                        self.state = Receiving;
-                        continue;
-                    }
-                    Ok(Async::NotReady) => return Ok(Async::NotReady),
-                    Err(e) => return Err(failure::Error::from(e)),
-                },
-            }
-        }
     }
 }
 
@@ -219,13 +117,13 @@ pub enum Global {
     /// Progress of current song.
     #[serde(rename = "song/progress")]
     SongProgress {
-        track_id: Option<player::TrackId>,
+        track_id: Option<TrackId>,
         elapsed: u64,
         duration: u64,
     },
     #[serde(rename = "song/current")]
     SongCurrent {
-        track_id: Option<player::TrackId>,
+        track_id: Option<TrackId>,
         track: Option<player::Track>,
         user: Option<String>,
         is_playing: bool,

@@ -12,11 +12,10 @@ diesel = {version = "1.4.1", features = ["sqlite", "r2d2", "chrono"]}
 diesel_migrations = {version = "1.4.0"}
 eudex = "0.1.1"
 failure = "0.1"
-futures = "0.1.25"
 hashbrown = {version = "0.1.8", features = ["serde"]}
 hyper = "0.12.24"
 warp = "0.1.14"
-irc = {version = "0.13", git = "https://github.com/aatxe/irc", branch = "develop"}
+irc = {version = "0.13", git = "https://github.com/aatxe/irc", branch = "0.14"}
 log = "0.4.6"
 oauth2 = {version = "2.0.0-alpha.5", git = "https://github.com/udoprog/oauth2-rs", branch = "async"}
 ratelimit = "0.4.4"
@@ -29,9 +28,7 @@ serde_yaml = "0.8.8"
 serde_urlencoded = "0.5.5"
 toml = "0.4"
 tokio = "0.1.15"
-tokio-core = "0.1.17"
 tokio-threadpool = "0.1.11"
-tokio-timer = "0.2.10"
 url = "1.7.2"
 Inflector = "0.11.4"
 rspotify = "0.4.0"
@@ -52,6 +49,17 @@ percent-encoding = "1.0.1"
 bytes = "0.4.12"
 websocket = "0.22.4"
 uuid = { version = "0.7", features = ["serde", "v4"] }
+pin-utils = "0.1.0-alpha.4"
+
+[dependencies.futures01]
+package = "futures"
+version = "0.1.25"
+
+[dependencies.futures]
+package = "futures-preview"
+version = "0.3.0-alpha.16"
+features = ["nightly", "async-await", "compat"]
+git = "https://github.com/udoprog/futures-rs"
 
 [build-dependencies]
 failure = "0.1"

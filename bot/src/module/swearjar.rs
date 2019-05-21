@@ -1,6 +1,5 @@
-use crate::{api, command, config, currency, db, module, utils};
+use crate::{api, command, config, currency, db, module, prelude::*, utils};
 use failure::format_err;
-use futures::Future as _;
 use hashbrown::HashSet;
 
 pub struct Handler {
@@ -18,59 +17,49 @@ impl command::Handler for Handler {
             return Ok(());
         }
 
-        ctx.spawn(
-            self.twitch
-                .chatters(ctx.user.target)
-                .and_then(|chatters| {
-                    let mut u = HashSet::new();
-                    u.extend(chatters.viewers);
-                    u.extend(chatters.moderators);
+        let db = self.db.clone();
+        let twitch = self.twitch.clone();
+        let currency = self.currency.clone();
+        let sender = ctx.sender.clone();
+        let streamer = ctx.streamer.to_string();
+        let channel = ctx.user.target.to_string();
+        let reward = self.reward;
 
-                    if u.is_empty() {
-                        Err(format_err!("no chatters to reward"))
-                    } else {
-                        Ok(u)
-                    }
-                })
-                // update database.
-                .and_then({
-                    let channel = ctx.user.target.to_string();
-                    let db = self.db.clone();
-                    let reward = self.reward;
-                    let streamer = ctx.streamer.to_string();
+        let future = async move {
+            let chatters = twitch.chatters(channel.clone()).await?;
 
-                    move |u| {
-                        let total_reward = reward * u.len() as i64;
+            let mut u = HashSet::new();
+            u.extend(chatters.viewers);
+            u.extend(chatters.moderators);
 
-                        db.balance_add(channel.as_str(), streamer.as_str(), -total_reward)
-                            .and_then(move |_| {
-                                db.balances_increment(channel.as_str(), u, reward)
-                            })
-                            .map(move |_| total_reward)
-                    }
-                })
-                .map({
-                    let channel = ctx.user.target.to_string();
-                    let currency = self.currency.clone();
-                    let sender = ctx.sender.clone();
-                    let streamer = ctx.streamer.to_string();
+            if u.is_empty() {
+                failure::bail!("no chatters to reward");
+            }
 
-                    move |total_reward| {
-                        sender.privmsg(
-                            channel.as_str(),
-                            format!(
-                                "/me has taken {} {currency} from {streamer} and given it to the viewers for listening to their bad mouth!",
-                                total_reward, currency = currency.name, streamer = streamer,
-                            ),
-                        );
-                    }
-                })
-                // handle any errors.
-                .or_else(|e| {
-                    log_err!(e, "failed to reward users for !swearjar");
-                    Ok(())
-                }),
-        );
+            let total_reward = reward * u.len() as i64;
+
+            db.balance_add(channel.clone(), streamer.clone(), -total_reward)
+                .await?;
+
+            db.balances_increment(channel.clone(), u, reward).await?;
+
+            sender.privmsg(
+                channel.as_str(),
+                format!(
+                    "/me has taken {} {currency} from {streamer} and given it to the viewers for listening to their bad mouth!",
+                    total_reward, currency = currency.name, streamer = streamer,
+                ),
+            );
+
+            Ok(())
+        };
+
+        ctx.spawn_async(future.map(|result| match result {
+            Ok(()) => (),
+            Err(e) => {
+                log_err!(e, "failed to reward users for !swearjar");
+            }
+        }));
 
         Ok(())
     }

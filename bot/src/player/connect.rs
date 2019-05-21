@@ -1,28 +1,26 @@
-use crate::{api, player, settings::ScopedSettings, track_id::SpotifyId, utils::BoxFuture};
-use futures::{sync::mpsc, Async, Future, Poll, Stream};
+use crate::{api, player, prelude::*, settings::ScopedSettings, track_id::SpotifyId};
 use parking_lot::RwLock;
 use std::sync::Arc;
-use tokio_core::reactor::Core;
+use std::{
+    pin::Pin,
+    task::{Context, Poll},
+    time::Duration,
+};
 
 /// Setup a player.
 pub fn setup(
-    core: &mut Core,
     spotify: Arc<api::Spotify>,
     settings: ScopedSettings,
 ) -> Result<(ConnectPlayer, ConnectDevice), failure::Error> {
     let device = Arc::new(RwLock::new(None));
 
-    let volume_scale = settings.sync_var(core, "volume-scale", 100)?;
+    let volume_scale = settings.sync_var("volume-scale", 100)?;
 
     let (config_tx, config_rx) = mpsc::unbounded();
 
     let player = ConnectPlayer {
         spotify: spotify.clone(),
         device: device.clone(),
-        play: None,
-        pause: None,
-        stop: None,
-        volume: None,
         config_rx,
         volume_scale,
     };
@@ -41,14 +39,6 @@ pub struct ConnectPlayer {
     spotify: Arc<api::Spotify>,
     /// Currently configured device.
     device: Arc<RwLock<Option<api::spotify::Device>>>,
-    /// Last play command.
-    play: Option<BoxFuture<bool, failure::Error>>,
-    /// Last pause command.
-    pause: Option<BoxFuture<bool, failure::Error>>,
-    /// Last stop command.
-    stop: Option<(BoxFuture<bool, failure::Error>)>,
-    /// Last volume command.
-    volume: Option<BoxFuture<bool, failure::Error>>,
     /// Receiver for configuration events.
     config_rx: mpsc::UnboundedReceiver<ConfigurationEvent>,
     /// Scale to use for volume.
@@ -57,106 +47,84 @@ pub struct ConnectPlayer {
 
 impl ConnectPlayer {
     /// Play the specified song.
-    pub fn play(&mut self, song: &super::Song, spotify_id: &SpotifyId) {
-        let track_uri = format!("spotify:track:{}", spotify_id.to_base62());
+    pub async fn play(&self, elapsed: Duration, id: SpotifyId) {
+        let track_uri = format!("spotify:track:{}", id.to_base62());
+        let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
+        let result = self
+            .spotify
+            .clone()
+            .me_player_play(device_id, Some(track_uri), Some(elapsed.as_millis() as u64))
+            .await;
 
-        let device = self.device.read();
-        let device_id = device.as_ref().map(|d| d.id.as_str());
-
-        self.play = Some(Box::new(self.spotify.me_player_play(
-            device_id,
-            Some(track_uri.as_str()),
-            Some(song.elapsed().as_millis() as u64),
-        )));
+        match result {
+            Err(e) => log_err!(e, "failed to issue play command"),
+            Ok(true) => (),
+            Ok(false) => log::error!("no device configured"),
+        }
     }
 
-    pub fn pause(&mut self) {
-        let device = self.device.read();
-        let device_id = device.as_ref().map(|d| d.id.as_str());
-        self.pause = Some(Box::new(self.spotify.me_player_pause(device_id)));
+    pub async fn pause(&self) {
+        let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
+        let result = self.spotify.clone().me_player_pause(device_id).await;
+
+        match result {
+            Err(e) => log_err!(e, "failed to issue pause command"),
+            Ok(true) => (),
+            Ok(false) => log::error!("no device configured"),
+        }
     }
 
-    pub fn stop(&mut self) {
-        let device = self.device.read();
-        let device_id = device.as_ref().map(|d| d.id.as_str());
-        self.stop = Some(Box::new(self.spotify.me_player_pause(device_id)));
+    pub async fn stop(&self) {
+        let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
+        let result = self.spotify.clone().me_player_pause(device_id).await;
+
+        match result {
+            Err(e) => log_err!(e, "failed to issue stop command"),
+            Ok(true) => (),
+            Ok(false) => log::error!("no device configured"),
+        }
     }
 
-    pub fn volume(&mut self, volume: u32) {
+    pub async fn volume(&self, volume: u32) {
         let volume = (volume * *self.volume_scale.read()) / 100u32;
+        let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
+        let result = self
+            .spotify
+            .clone()
+            .me_player_volume(device_id, (volume as f32) / 100f32)
+            .await;
 
-        let device = self.device.read();
-        let device_id = device.as_ref().map(|d| d.id.as_str());
-
-        self.volume = Some(Box::new(
-            self.spotify
-                .me_player_volume(device_id, (volume as f32) / 100f32),
-        ));
+        match result {
+            Err(e) => log_err!(e, "failed to issue volume command"),
+            Ok(true) => (),
+            Ok(false) => log::error!("no device configured"),
+        }
     }
 }
 
 impl Stream for ConnectPlayer {
-    type Item = player::IntegrationEvent;
-    type Error = failure::Error;
+    type Item = Result<player::IntegrationEvent, failure::Error>;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, failure::Error> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use self::player::IntegrationEvent::*;
 
         loop {
-            if handle_future(&mut self.stop, "stop command") {
-                continue;
-            }
-
-            if handle_future(&mut self.play, "play command") {
-                continue;
-            }
-
-            if handle_future(&mut self.pause, "pause command") {
-                continue;
-            }
-
-            if handle_future(&mut self.volume, "volume command") {
-                continue;
-            }
-
-            if let Some(e) = try_infinite_empty!(self.config_rx.poll()) {
+            if let Poll::Ready(Some(e)) = Pin::new(&mut self.config_rx).poll_next(cx) {
                 match e {
                     ConfigurationEvent::DeviceChanged => {
-                        return Ok(Async::Ready(Some(DeviceChanged)))
+                        return Poll::Ready(Some(Ok(DeviceChanged)));
                     }
                 }
             }
 
-            return Ok(Async::NotReady);
+            return Poll::Pending;
         }
     }
 }
 
-fn handle_future(
-    future: &mut Option<impl Future<Item = bool, Error = failure::Error>>,
-    what: &'static str,
-) -> bool {
-    let mut f = match future.take() {
-        Some(future) => future,
-        None => return false,
-    };
-
-    match f.poll() {
-        Ok(Async::Ready(found)) => {
-            if !found {
-                log::warn!("no playing device found");
-            }
-
-            true
-        }
-        Ok(Async::NotReady) => {
-            *future = Some(f);
-            false
-        }
-        Err(e) => {
-            log_err!(e, "failed to issue {what}", what = what);
-            false
-        }
+impl stream::FusedStream for ConnectPlayer {
+    fn is_terminated(&self) -> bool {
+        false
     }
 }
 
@@ -179,10 +147,8 @@ impl ConnectDevice {
     }
 
     /// List all available devices.
-    pub fn list_devices(
-        &self,
-    ) -> impl Future<Item = Vec<api::spotify::Device>, Error = failure::Error> {
-        self.spotify.my_player_devices()
+    pub async fn list_devices(&self) -> Result<Vec<api::spotify::Device>, failure::Error> {
+        self.spotify.clone().my_player_devices().await
     }
 
     /// Set which device to perform playback from.

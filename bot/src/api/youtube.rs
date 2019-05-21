@@ -1,16 +1,15 @@
 //! Twitch API helpers.
 
-use crate::oauth2;
+use crate::{oauth2, prelude::*};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures::{future, Future, Stream as _};
 use hashbrown::HashMap;
 use reqwest::{
     header,
     r#async::{Chunk, Client, Decoder},
     Method, StatusCode, Url,
 };
-use std::mem;
+use std::{mem, sync::Arc};
 
 const V3_URL: &'static str = "https://www.googleapis.com/youtube/v3";
 const GET_VIDEO_INFO_URL: &'static str = "https://www.youtube.com/get_video_info";
@@ -55,37 +54,44 @@ impl YouTube {
     }
 
     /// Update the channel information.
-    pub fn videos_by_id(
-        &self,
-        video_id: &str,
-        part: &str,
-    ) -> impl Future<Item = Option<Video>, Error = failure::Error> {
-        self.v3(Method::GET, &["videos"])
-            .query_param("part", part)
-            .query_param("id", video_id)
+    pub async fn videos_by_id(
+        self: Arc<Self>,
+        video_id: String,
+        part: String,
+    ) -> Result<Option<Video>, failure::Error> {
+        let videos = self
+            .v3(Method::GET, &["videos"])
+            .query_param("part", part.as_str())
+            .query_param("id", video_id.as_str())
             .json::<Videos>()
-            .map(|videos| videos.and_then(|v| v.items.into_iter().next()))
+            .await?;
+
+        Ok(videos.and_then(|v| v.items.into_iter().next()))
     }
 
     /// Search YouTube.
-    pub fn search(&self, q: &str) -> impl Future<Item = SearchResults, Error = failure::Error> {
-        self.v3(Method::GET, &["search"])
+    pub async fn search(self: Arc<Self>, q: String) -> Result<SearchResults, failure::Error> {
+        let result = self
+            .v3(Method::GET, &["search"])
             .query_param("part", "snippet")
-            .query_param("q", q)
-            .json()
-            .and_then(|result| match result {
-                Some(result) => Ok(result),
-                None => failure::bail!("got empty response"),
-            })
+            .query_param("q", q.as_str())
+            .json::<SearchResults>()
+            .await?;
+
+        match result {
+            Some(result) => Ok(result),
+            None => failure::bail!("got empty response"),
+        }
     }
 
     /// Get video info of a video.
-    pub fn get_video_info(
-        &self,
-        video_id: &str,
-    ) -> impl Future<Item = Option<VideoInfo>, Error = failure::Error> {
+    pub async fn get_video_info(
+        self: Arc<Self>,
+        video_id: String,
+    ) -> Result<Option<VideoInfo>, failure::Error> {
         let mut url = self.get_video_info_url.clone();
-        url.query_pairs_mut().append_pair("video_id", video_id);
+        url.query_pairs_mut()
+            .append_pair("video_id", video_id.as_str());
 
         let request = RequestBuilder {
             token: self.token.clone(),
@@ -96,16 +102,16 @@ impl YouTube {
             body: None,
         };
 
-        request.raw().and_then(|body| {
-            let body = match body {
-                Some(body) => body,
-                None => return Ok(None),
-            };
+        let body = request.raw().await?;
 
-            let result: RawVideoInfo = serde_urlencoded::from_bytes(&body)?;
-            let result = result.into_decoded()?;
-            Ok(Some(result))
-        })
+        let body = match body {
+            Some(body) => body,
+            None => return Ok(None),
+        };
+
+        let result: RawVideoInfo = serde_urlencoded::from_bytes(&body)?;
+        let result = result.into_decoded()?;
+        Ok(Some(result))
     }
 }
 
@@ -120,67 +126,60 @@ struct RequestBuilder {
 
 impl RequestBuilder {
     /// Execute the request, providing the raw body as a response.
-    pub fn raw(self) -> impl Future<Item = Option<Chunk>, Error = failure::Error> {
-        let future = future::lazy(move || {
-            let access_token = self.token.read()?.access_token().to_string();
-            let mut r = self.client.request(self.method, self.url);
+    pub async fn raw(self) -> Result<Option<Chunk>, failure::Error> {
+        let access_token = self.token.read()?.access_token().to_string();
+        let mut req = self.client.request(self.method, self.url);
 
-            if let Some(body) = self.body {
-                r = r.body(body);
-            }
+        if let Some(body) = self.body {
+            req = req.body(body);
+        }
 
-            for (key, value) in self.headers {
-                r = r.header(key, value);
-            }
+        for (key, value) in self.headers {
+            req = req.header(key, value);
+        }
 
-            r = r.header(header::ACCEPT, "application/json");
-            let r = r.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
-            Ok(r)
-        });
+        req = req.header(header::ACCEPT, "application/json");
+        let req = req.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
+        let mut res = req.send().compat().await?;
 
-        future.and_then(move |request| {
-            request.send().map_err(Into::into).and_then(|mut res| {
-                let body = mem::replace(res.body_mut(), Decoder::empty());
+        let status = res.status();
 
-                body.concat2().map_err(Into::into).and_then(move |body| {
-                    let status = res.status();
+        if status == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
 
-                    if status == StatusCode::NOT_FOUND {
-                        return Ok(None);
-                    }
+        let body = mem::replace(res.body_mut(), Decoder::empty());
+        let body = body.compat().try_concat().await?;
 
-                    if !status.is_success() {
-                        failure::bail!(
-                            "bad response: {}: {}",
-                            status,
-                            String::from_utf8_lossy(&body)
-                        );
-                    }
+        if !status.is_success() {
+            failure::bail!(
+                "bad response: {}: {}",
+                status,
+                String::from_utf8_lossy(&body)
+            );
+        }
 
-                    if log::log_enabled!(log::Level::Trace) {
-                        let response = String::from_utf8_lossy(body.as_ref());
-                        log::trace!("response: {}", response);
-                    }
+        if log::log_enabled!(log::Level::Trace) {
+            let response = String::from_utf8_lossy(body.as_ref());
+            log::trace!("response: {}", response);
+        }
 
-                    Ok(Some(body))
-                })
-            })
-        })
+        Ok(Some(body))
     }
 
     /// Execute the request expecting a JSON response.
-    pub fn json<T>(self) -> impl Future<Item = Option<T>, Error = failure::Error>
+    pub async fn json<T>(self) -> Result<Option<T>, failure::Error>
     where
         T: serde::de::DeserializeOwned,
     {
-        self.raw().and_then(|body| {
-            let body = match body {
-                Some(body) => body,
-                None => return Ok(None),
-            };
+        let body = self.raw().await?;
 
-            serde_json::from_slice(body.as_ref()).map_err(Into::into)
-        })
+        let body = match body {
+            Some(body) => body,
+            None => return Ok(None),
+        };
+
+        serde_json::from_slice(body.as_ref()).map_err(Into::into)
     }
 
     /// Add a query parameter.

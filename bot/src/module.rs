@@ -1,10 +1,22 @@
 use crate::{
-    api, command, config, currency, db, idle, irc, obs, player, settings, stream_info, utils,
+    api, command, config, currency, db, idle, irc, obs, player, prelude::*, settings, stream_info,
 };
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::sync::Arc;
-use tokio_core::reactor::Core;
+
+#[macro_use]
+mod macros;
+pub mod admin;
+pub mod alias_admin;
+pub mod command_admin;
+mod countdown;
+mod gtav;
+mod promotions;
+pub mod song;
+mod swearjar;
+pub mod theme_admin;
+mod water;
 
 #[derive(Default)]
 pub struct Handlers {
@@ -31,19 +43,6 @@ impl Handlers {
     }
 }
 
-#[macro_use]
-mod macros;
-pub mod admin;
-pub mod alias_admin;
-pub mod command_admin;
-mod countdown;
-mod gtav;
-mod promotions;
-pub mod song;
-mod swearjar;
-pub mod theme_admin;
-mod water;
-
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "type")]
 pub enum Config {
@@ -61,7 +60,6 @@ pub enum Config {
 
 /// Context for a hook.
 pub struct HookContext<'a> {
-    pub core: &'a mut Core,
     pub config: &'a config::Config,
     pub db: &'a db::Database,
     pub commands: &'a db::Commands,
@@ -73,7 +71,7 @@ pub struct HookContext<'a> {
     pub youtube: &'a Arc<api::YouTube>,
     pub twitch: &'a api::Twitch,
     pub streamer_twitch: &'a api::Twitch,
-    pub futures: &'a mut Vec<utils::BoxFuture<(), failure::Error>>,
+    pub futures: &'a mut Vec<future::BoxFuture<'static, Result<(), failure::Error>>>,
     pub stream_info: &'a Arc<RwLock<stream_info::StreamInfo>>,
     pub sender: &'a irc::Sender,
     pub settings: &'a settings::Settings,
@@ -82,7 +80,7 @@ pub struct HookContext<'a> {
     pub obs: Option<&'a obs::Obs>,
 }
 
-pub trait Module: 'static {
+pub trait Module: Send + 'static {
     /// Type of the module as a string to help with diagnostics.
     fn ty(&self) -> &'static str;
 

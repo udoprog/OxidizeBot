@@ -1,8 +1,6 @@
 //! setbac.tv API helpers.
 
-use crate::{oauth2, player, utils};
-use failure::format_err;
-use futures::{future, Future, Stream as _};
+use crate::{oauth2, player, prelude::*, utils};
 use reqwest::{
     header,
     r#async::{Body, Client, Decoder},
@@ -11,20 +9,19 @@ use reqwest::{
 use std::{mem, sync::Arc};
 
 /// Run update loop shipping information to the remote server.
-pub fn run_update(
+pub fn run(
     api_url: &str,
     player: &player::Player,
     token: oauth2::SyncToken,
-) -> Result<impl Future<Item = (), Error = failure::Error>, failure::Error> {
+) -> Result<impl Future<Output = Result<(), failure::Error>>, failure::Error> {
     /* perform remote player update */
     let setbac = SetBac::new(token, api_url)?;
-
     let client = player.client();
 
-    Ok(player
-        .add_rx()
-        .map_err(|e| format_err!("setbac.tv update loop received error: {}", e))
-        .for_each(move |_| {
+    let mut rx = player.add_rx().compat();
+
+    Ok(async move {
+        while let Some(_) = rx.next().await {
             log::trace!("pushing remote player update");
 
             let mut update = PlayerUpdate::default();
@@ -35,11 +32,13 @@ pub fn run_update(
                 update.items.push(i.into());
             }
 
-            setbac.player_update(&update).or_else(|e| {
+            if let Err(e) = setbac.player_update(update).await {
                 log::error!("failed to perform remote player update: {}", e);
-                Ok(())
-            })
-        }))
+            }
+        }
+
+        Ok(())
+    })
 }
 
 /// API integration.
@@ -75,28 +74,17 @@ impl SetBac {
         }
     }
 
-    /// Serialize the given argument into a future.
-    fn serialize<T: serde::Serialize>(
-        value: &T,
-    ) -> impl Future<Item = Body, Error = failure::Error> {
-        match serde_json::to_vec(value) {
-            Ok(body) => future::ok(Body::from(body)),
-            Err(e) => future::err(failure::Error::from(e)),
-        }
-    }
-
     /// Update the channel information.
-    pub fn player_update(
-        &self,
-        request: &PlayerUpdate,
-    ) -> impl Future<Item = (), Error = failure::Error> {
+    pub async fn player_update(&self, request: PlayerUpdate) -> Result<(), failure::Error> {
+        let body = Body::from(serde_json::to_vec(&request)?);
+
         let req = self
             .request(Method::POST, &["api", "player"])
-            .header(header::CONTENT_TYPE, "application/json");
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(body);
 
-        Self::serialize(request)
-            .and_then(move |body| req.body(body).execute::<serde_json::Value>())
-            .and_then(|_| Ok(()))
+        let _ = req.execute::<serde_json::Value>().await?;
+        Ok(())
     }
 }
 
@@ -111,53 +99,49 @@ struct RequestBuilder {
 
 impl RequestBuilder {
     /// Execute the request.
-    pub fn execute<T>(self) -> impl Future<Item = T, Error = failure::Error>
+    pub async fn execute<T>(self) -> Result<T, failure::Error>
     where
         T: serde::de::DeserializeOwned,
     {
-        let future = future::lazy(move || {
+        let req = {
             let token = self.token.read()?;
             let access_token = token.access_token().to_string();
 
-            let mut r = self.client.request(self.method, self.url);
+            let mut req = self.client.request(self.method, self.url);
 
             if let Some(body) = self.body {
-                r = r.body(body);
+                req = req.body(body);
             }
 
             for (key, value) in self.headers {
-                r = r.header(key, value);
+                req = req.header(key, value);
             }
 
-            let r = r.header(header::AUTHORIZATION, format!("OAuth {}", access_token));
-            let r = r.header("Client-ID", token.client_id());
-            Ok(r)
-        });
+            let req = req.header(header::AUTHORIZATION, format!("OAuth {}", access_token));
+            let req = req.header("Client-ID", token.client_id());
+            req
+        };
 
-        future.and_then(|request| {
-            request.send().map_err(Into::into).and_then(|mut res| {
-                let body = mem::replace(res.body_mut(), Decoder::empty());
+        let mut res = req.send().compat().await?;
+        let body = mem::replace(res.body_mut(), Decoder::empty()).compat();
+        let body = body.try_concat().await?;
 
-                body.concat2().map_err(Into::into).and_then(move |body| {
-                    let status = res.status();
+        let status = res.status();
 
-                    if !status.is_success() {
-                        failure::bail!(
-                            "bad response: {}: {}",
-                            status,
-                            String::from_utf8_lossy(body.as_ref())
-                        );
-                    }
+        if !status.is_success() {
+            failure::bail!(
+                "bad response: {}: {}",
+                status,
+                String::from_utf8_lossy(body.as_ref())
+            );
+        }
 
-                    if log::log_enabled!(log::Level::Trace) {
-                        let response = String::from_utf8_lossy(body.as_ref());
-                        log::trace!("response: {}", response);
-                    }
+        if log::log_enabled!(log::Level::Trace) {
+            let response = String::from_utf8_lossy(body.as_ref());
+            log::trace!("response: {}", response);
+        }
 
-                    serde_json::from_slice(body.as_ref()).map_err(Into::into)
-                })
-            })
-        })
+        serde_json::from_slice(body.as_ref()).map_err(Into::into)
     }
 
     /// Add a body to the request.

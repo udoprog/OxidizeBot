@@ -1,9 +1,8 @@
 //! Twitch API helpers.
 
-use crate::{oauth2, utils};
+use crate::{oauth2, prelude::*};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use futures::{future, Future, Stream as _};
 use reqwest::{
     header,
     r#async::{Client, Decoder},
@@ -14,14 +13,12 @@ use std::mem;
 pub const CLIPS_URL: &'static str = "http://clips.twitch.tv";
 const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";
 const API_TWITCH_URL: &'static str = "https://api.twitch.tv";
-const GQL_TWITCH_URL: &'static str = "https://gql.twitch.tv/gql";
 
 /// API integration.
 #[derive(Clone, Debug)]
 pub struct Twitch {
     client: Client,
     api_url: Url,
-    gql_url: Url,
     token: oauth2::SyncToken,
 }
 
@@ -31,7 +28,6 @@ impl Twitch {
         Ok(Twitch {
             client: Client::new(),
             api_url: str::parse::<Url>(API_TWITCH_URL)?,
-            gql_url: str::parse::<Url>(GQL_TWITCH_URL)?,
             token,
         })
     }
@@ -78,58 +74,30 @@ impl Twitch {
         }
     }
 
-    /// Build request against GQL api.
-    fn gql(&self, method: Method) -> RequestBuilder {
-        let mut url = self.gql_url.clone();
-        url.path_segments_mut().expect("bad base").push("gql");
-
-        RequestBuilder {
-            token: self.token.clone(),
-            client: self.client.clone(),
-            url,
-            method,
-            headers: Vec::new(),
-            body: None,
-            use_bearer: false,
-        }
-    }
-
-    /// Serialize the given argument into a future.
-    fn serialize<T: serde::Serialize>(
-        value: &T,
-    ) -> impl Future<Item = Bytes, Error = failure::Error> {
-        match serde_json::to_vec(value) {
-            Ok(body) => future::ok(Bytes::from(body)),
-            Err(e) => future::err(failure::Error::from(e)),
-        }
-    }
-
     /// Update the channel information.
-    pub fn update_channel(
+    pub async fn update_channel(
         &self,
-        channel_id: &str,
-        request: &UpdateChannelRequest,
-    ) -> impl Future<Item = (), Error = failure::Error> {
+        channel_id: String,
+        request: UpdateChannelRequest,
+    ) -> Result<(), failure::Error> {
         let req = self
-            .v5(Method::PUT, &["channels", channel_id])
+            .v5(Method::PUT, &["channels", channel_id.as_str()])
             .header(header::CONTENT_TYPE, "application/json");
 
-        Self::serialize(request)
-            .and_then(move |body| req.body(body).execute::<serde_json::Value>())
-            .and_then(|_| Ok(()))
+        let body = Bytes::from(serde_json::to_vec(&request)?);
+        let _ = req.body(body).execute::<serde_json::Value>().await?;
+        Ok(())
     }
 
     /// Get information on a user.
-    pub fn user_by_login(
-        &self,
-        login: &str,
-    ) -> impl Future<Item = Option<User>, Error = failure::Error> {
-        let login = login.to_string();
-
-        self.new_api(Method::GET, &["users"])
+    pub async fn user_by_login(&self, login: String) -> Result<Option<User>, failure::Error> {
+        let data = self
+            .new_api(Method::GET, &["users"])
             .query_param("login", login.as_str())
             .execute::<Data<User>>()
-            .map(|data| data.data.into_iter().next())
+            .await?;
+
+        Ok(data.data.into_iter().next())
     }
 
     /// Get information on a user.
@@ -151,107 +119,61 @@ impl Twitch {
 
         Paged {
             request: copied,
-            page: Some(Box::new(initial)),
+            page: Some(initial.boxed()),
         }
     }
 
     /// Create a clip for the given broadcaster.
-    pub fn create_clip(
+    pub async fn create_clip(
         &self,
-        broadcaster_id: &str,
-    ) -> impl Future<Item = Option<Clip>, Error = failure::Error> {
-        return self
+        broadcaster_id: String,
+    ) -> Result<Option<Clip>, failure::Error> {
+        let data = self
             .new_api(Method::POST, &["clips"])
-            .query_param("broadcaster_id", broadcaster_id)
+            .query_param("broadcaster_id", broadcaster_id.as_str())
             .execute::<Data<Clip>>()
-            .map(|data| data.data.into_iter().next());
-    }
+            .await?;
 
-    /// Update the title of a clip.
-    pub fn update_clip_title(
-        &self,
-        clip_id: &str,
-        title: &str,
-    ) -> impl Future<Item = (), Error = failure::Error> {
-        let body = vec![Request {
-            operation_name: "ClipsTitleEdit_UpdateClip",
-            variables: Variables {
-                input: Input {
-                    title: title.to_string(),
-                    slug: clip_id.to_string(),
-                },
-            },
-        }];
-
-        let future = Self::serialize(&body);
-
-        let req = self.gql(Method::POST);
-
-        return future
-            .and_then(move |body| req.body(body).execute::<serde_json::Value>())
-            .map(|_| ());
-
-        #[derive(serde::Serialize)]
-        struct Request {
-            #[serde(rename = "operationName")]
-            operation_name: &'static str,
-            variables: Variables,
-        }
-
-        #[derive(serde::Serialize)]
-        struct Variables {
-            input: Input,
-        }
-
-        #[derive(serde::Serialize)]
-        struct Input {
-            title: String,
-            slug: String,
-        }
+        Ok(data.data.into_iter().next())
     }
 
     /// Get the channela associated with the current authentication.
-    pub fn channel(&self) -> impl Future<Item = Channel, Error = failure::Error> {
-        self.v5(Method::GET, &["channel"]).execute::<Channel>()
-    }
-
-    /// Get the channela associated with the current authentication.
-    pub fn channel_by_login(
-        &self,
-        login: &str,
-    ) -> impl Future<Item = Channel, Error = failure::Error> {
-        self.v5(Method::GET, &["channels", login])
+    pub async fn channel(&self) -> Result<Channel, failure::Error> {
+        self.v5(Method::GET, &["channel"])
             .execute::<Channel>()
+            .await
+    }
+
+    /// Get the channela associated with the current authentication.
+    pub async fn channel_by_login(&self, login: String) -> Result<Channel, failure::Error> {
+        self.v5(Method::GET, &["channels", login.as_str()])
+            .execute::<Channel>()
+            .await
     }
 
     /// Get stream information.
-    pub fn stream_by_login(
-        &self,
-        login: &str,
-    ) -> impl Future<Item = Option<Stream>, Error = failure::Error> {
-        return self
+    pub async fn stream_by_login(&self, login: String) -> Result<Option<Stream>, failure::Error> {
+        let data = self
             .new_api(Method::GET, &["streams"])
-            .query_param("user_login", login)
+            .query_param("user_login", login.as_str())
             .execute::<Page<Stream>>()
-            .map(|data| data.data.into_iter().next());
+            .await?;
+
+        Ok(data.data.into_iter().next())
     }
 
     /// Get chatters for the given channel using TMI.
-    pub fn chatters(&self, channel: &str) -> impl Future<Item = Chatters, Error = failure::Error> {
+    pub async fn chatters(&self, channel: String) -> Result<Chatters, failure::Error> {
         let channel = channel.trim_start_matches('#');
         let url = format!("{}/group/user/{}/chatters", TMI_TWITCH_URL, channel);
 
-        return self
-            .client
-            .get(&url)
-            .send()
-            .and_then(|mut res| mem::replace(res.body_mut(), Decoder::empty()).concat2())
-            .map_err(Into::into)
-            .and_then(|body| {
-                serde_json::from_slice::<Response>(body.as_ref())
-                    .map(|l| l.chatters)
-                    .map_err(Into::into)
-            });
+        let mut res = self.client.get(&url).send().compat().await?;
+        let body = mem::replace(res.body_mut(), Decoder::empty());
+        let body = body.compat().try_concat().await?;
+
+        return serde_json::from_slice::<Response>(body.as_ref())
+            .map(|l| l.chatters)
+            .map_err(Into::into);
 
         #[derive(serde::Deserialize)]
         struct Response {
@@ -263,46 +185,51 @@ impl Twitch {
 /// A response that is paged as a stream of requests.
 pub struct Paged<T> {
     request: RequestBuilder,
-    page: Option<utils::BoxFuture<Page<T>, failure::Error>>,
+    page: Option<future::BoxFuture<'static, Result<Page<T>, failure::Error>>>,
 }
 
 impl<T> futures::Stream for Paged<T>
 where
     T: 'static + Send + serde::de::DeserializeOwned,
 {
-    type Item = Vec<T>;
-    type Error = failure::Error;
+    type Item = Result<Vec<T>, failure::Error>;
 
-    fn poll(&mut self) -> futures::Poll<Option<Self::Item>, Self::Error> {
-        use futures::Async;
-
-        if let Some(mut page) = self.page.take() {
-            match page.poll()? {
-                Async::NotReady => {
-                    self.page = Some(page);
-                    return Ok(Async::NotReady);
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        if let Some(page) = self.as_mut().page.as_mut() {
+            match unsafe { Pin::new_unchecked(page) }.poll(cx) {
+                Poll::Pending => {
+                    return Poll::Pending;
                 }
-                Async::Ready(page) => {
-                    let Page { data, pagination } = page;
+                Poll::Ready(result) => {
+                    self.as_mut().page = None;
 
-                    if data.is_empty() {
-                        return Ok(Async::Ready(None));
+                    match result {
+                        Err(e) => {
+                            return Poll::Ready(Some(Err(e)));
+                        }
+                        Ok(page) => {
+                            let Page { data, pagination } = page;
+
+                            if data.is_empty() {
+                                return Poll::Ready(None);
+                            }
+
+                            if let Some(cursor) = pagination.and_then(|p| p.cursor) {
+                                let req = self
+                                    .request
+                                    .clone_without_body()
+                                    .query_param("after", &cursor);
+                                self.as_mut().page = Some(req.execute().boxed());
+                            }
+
+                            return Poll::Ready(Some(Ok(data)));
+                        }
                     }
-
-                    if let Some(cursor) = pagination.and_then(|p| p.cursor) {
-                        let req = self
-                            .request
-                            .clone_without_body()
-                            .query_param("after", &cursor);
-                        self.page = Some(Box::new(req.execute()));
-                    }
-
-                    return Ok(Async::Ready(Some(data)));
                 }
             }
         }
 
-        Ok(Async::Ready(None))
+        Poll::Ready(None)
     }
 }
 
@@ -332,59 +259,56 @@ impl RequestBuilder {
     }
 
     /// Execute the request.
-    pub fn execute<T>(self) -> impl Future<Item = T, Error = failure::Error>
+    pub async fn execute<T>(self) -> Result<T, failure::Error>
     where
         T: serde::de::DeserializeOwned,
     {
-        let future = future::lazy(move || {
+        // NB: scope to only lock the token over the request setup.
+        let req = {
             let token = self.token.read()?;
             let access_token = token.access_token().to_string();
 
             log::trace!("request: {}: {}", self.method, self.url);
-            let mut r = self.client.request(self.method, self.url);
+            let mut req = self.client.request(self.method, self.url);
 
             if let Some(body) = self.body {
-                r = r.body(body);
+                req = req.body(body);
             }
 
             for (key, value) in self.headers {
-                r = r.header(key, value);
+                req = req.header(key, value);
             }
 
             if self.use_bearer {
-                r = r.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
+                req = req.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
             } else {
-                r = r.header(header::AUTHORIZATION, format!("OAuth {}", access_token));
+                req = req.header(header::AUTHORIZATION, format!("OAuth {}", access_token));
             }
 
-            let r = r.header("Client-ID", token.client_id());
-            Ok(r)
-        });
+            req.header("Client-ID", token.client_id())
+        };
 
-        future.and_then(move |request| {
-            request.send().map_err(Into::into).and_then(|mut res| {
-                let body = mem::replace(res.body_mut(), Decoder::empty());
+        let mut res = req.send().compat().await?;
 
-                body.concat2().map_err(Into::into).and_then(move |body| {
-                    let status = res.status();
+        let body = mem::replace(res.body_mut(), Decoder::empty());
+        let body = body.compat().try_concat().await?;
 
-                    if !status.is_success() {
-                        failure::bail!(
-                            "bad response: {}: {}",
-                            status,
-                            String::from_utf8_lossy(body.as_ref())
-                        );
-                    }
+        let status = res.status();
 
-                    if log::log_enabled!(log::Level::Trace) {
-                        let response = String::from_utf8_lossy(body.as_ref());
-                        log::trace!("response: {}", response);
-                    }
+        if !status.is_success() {
+            failure::bail!(
+                "bad response: {}: {}",
+                status,
+                String::from_utf8_lossy(body.as_ref())
+            );
+        }
 
-                    serde_json::from_slice(body.as_ref()).map_err(Into::into)
-                })
-            })
-        })
+        if log::log_enabled!(log::Level::Trace) {
+            let response = String::from_utf8_lossy(body.as_ref());
+            log::trace!("response: {}", response);
+        }
+
+        serde_json::from_slice(body.as_ref()).map_err(Into::into)
     }
 
     /// Add a body to the request.

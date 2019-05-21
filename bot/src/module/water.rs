@@ -1,7 +1,6 @@
 use crate::{command, config, currency, db, module, stream_info, utils};
 use chrono::{DateTime, Utc};
 use failure::format_err;
-use futures::Future as _;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -79,13 +78,19 @@ impl command::Handler for Handler {
                     user = reward.user
                 ));
 
-                ctx.spawn(
-                    self.db
-                        .balance_add(ctx.user.target, reward.user.as_str(), -reward.amount)
-                        .map_err(|e| {
+                let db = self.db.clone();
+                let target = ctx.user.target.to_string();
+
+                ctx.spawn_async(async move {
+                    let op = db.balance_add(target, reward.user, -reward.amount);
+
+                    match op.await {
+                        Ok(()) => (),
+                        Err(e) => {
                             log::error!("failed to undo water from database: {}", e);
-                        }),
-                );
+                        }
+                    }
+                });
             }
             None => {
                 let (last, _) = match self.check_waters(&mut ctx) {
@@ -97,11 +102,12 @@ impl command::Handler for Handler {
                 let diff = now.clone() - last;
                 let amount = i64::max(0i64, diff.num_minutes());
                 let amount = (amount * *self.reward_multiplier.read() as i64) / 100i64;
+                let user = db::user_id(ctx.user.name);
 
                 self.waters.push((
                     now,
                     Some(Reward {
-                        user: ctx.user.name.to_string(),
+                        user: user.clone(),
                         amount,
                     }),
                 ));
@@ -113,13 +119,19 @@ impl command::Handler for Handler {
                     currency = self.currency.name
                 ));
 
-                ctx.spawn(
-                    self.db
-                        .balance_add(ctx.user.target, ctx.user.name, amount)
-                        .map_err(|e| {
-                            log::error!("failed to update water to database: {}", e);
-                        }),
-                );
+                let db = self.db.clone();
+                let target = ctx.user.target.to_string();
+
+                ctx.spawn_async(async move {
+                    let op = db.balance_add(target, user, amount);
+
+                    match op.await {
+                        Ok(()) => (),
+                        Err(e) => {
+                            log::error!("failed to undo water from database: {}", e);
+                        }
+                    }
+                });
             }
             Some(_) => {
                 ctx.respond("Expected: !water, or !water undo.");
@@ -161,7 +173,6 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            core,
             db,
             handlers,
             currency,
@@ -170,7 +181,7 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
-        let reward_multiplier = settings.sync_var(core, "water/reward%", 100)?;
+        let reward_multiplier = settings.sync_var("water/reward%", 100)?;
 
         let currency = currency
             .ok_or_else(|| format_err!("currency required for !swearjar module"))?

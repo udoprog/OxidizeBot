@@ -1,6 +1,5 @@
 //! Stream currency configuration.
 use crate::{api, db};
-use futures::Future;
 use hashbrown::HashSet;
 use std::sync::Arc;
 
@@ -30,30 +29,20 @@ pub struct Currency {
 
 impl Currency {
     /// Reward all users.
-    pub fn add_channel_all(
+    pub async fn add_channel_all(
         &self,
-        channel: &str,
+        channel: String,
         reward: i64,
-    ) -> impl Future<Item = usize, Error = failure::Error> {
-        self.twitch
-            .chatters(channel)
-            .and_then(|chatters| {
-                let mut u = HashSet::new();
-                u.extend(chatters.viewers);
-                u.extend(chatters.moderators);
-                u.extend(chatters.broadcaster);
-                Ok(u)
-            })
-            // update database.
-            .and_then({
-                let channel = channel.to_string();
-                let db = self.db.clone();
+    ) -> Result<usize, failure::Error> {
+        let chatters = self.twitch.chatters(channel.clone()).await?;
 
-                move |users| {
-                    let len = users.len();
-                    db.balances_increment(channel.as_str(), users, reward)
-                        .map(move |_| len)
-                }
-            })
+        let mut users = HashSet::new();
+        users.extend(chatters.viewers);
+        users.extend(chatters.moderators);
+        users.extend(chatters.broadcaster);
+
+        let len = users.len();
+        self.db.balances_increment(channel, users, reward).await?;
+        Ok(len)
     }
 }

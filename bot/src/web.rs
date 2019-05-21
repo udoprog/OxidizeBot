@@ -1,9 +1,6 @@
 use crate::{
-    api, bus, config, db, player, settings, template,
-    track_id::TrackId,
-    utils::{self, BoxFuture},
+    api, bus, config, db, player, prelude::*, settings, template, track_id::TrackId, utils,
 };
-use futures::{future, stream, sync::oneshot, Future, Sink as _, Stream as _};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::{fmt, net::SocketAddr, path::Path, sync::Arc};
@@ -522,26 +519,20 @@ pub struct Balance {
 
 impl Api {
     /// Handle request to set device.
-    fn set_device(&self, id: String) -> BoxFuture<impl warp::Reply, Error> {
+    async fn set_device(self, id: String) -> Result<impl warp::Reply, Error> {
         let player = match self.player.read().clone() {
             Some(player) => player,
-            None => return Box::new(future::err(Error::BadRequest)),
+            None => return Err(Error::BadRequest),
         };
 
-        let future = player.list_devices().from_err();
+        let devices = player.list_devices().await?;
 
-        let future = future.and_then({
-            move |devices| {
-                if let Some(device) = devices.iter().find(|d| d.id == id) {
-                    player.set_device(device.clone());
-                    return Ok(warp::reply::json(&EMPTY));
-                }
+        if let Some(device) = devices.iter().find(|d| d.id == id) {
+            player.set_device(device.clone());
+            return Ok(warp::reply::json(&EMPTY));
+        }
 
-                Err(Error::BadRequest)
-            }
-        });
-
-        Box::new(future)
+        Err(Error::BadRequest)
     }
 
     /// Get a list of things that need authentication.
@@ -560,44 +551,40 @@ impl Api {
     }
 
     /// Get a list of things that need authentication.
-    fn devices(&self) -> BoxFuture<impl warp::Reply, Error> {
+    async fn devices(self) -> Result<impl warp::Reply, Error> {
         let player = match self.player.read().clone() {
             Some(player) => player,
             None => {
                 let data = Devices::default();
-                return Box::new(future::ok(warp::reply::json(&data)));
+                return Ok(warp::reply::json(&data));
             }
         };
 
         let c = player.current_device();
-        let future = player.list_devices().from_err();
+        let data = player.list_devices().await?;
 
-        let future = future.map(move |data| {
-            let mut devices = Vec::new();
-            let mut current = None;
+        let mut devices = Vec::new();
+        let mut current = None;
 
-            for device in data {
-                let is_current = c.as_ref().map(|d| d.id == device.id).unwrap_or_default();
+        for device in data {
+            let is_current = c.as_ref().map(|d| d.id == device.id).unwrap_or_default();
 
-                let device = AudioDevice {
-                    name: device.name.to_string(),
-                    id: device.id.to_string(),
-                    is_current,
-                    r#type: device_to_string(&device._type).to_string(),
-                };
+            let device = AudioDevice {
+                name: device.name.to_string(),
+                id: device.id.to_string(),
+                is_current,
+                r#type: device_to_string(&device._type).to_string(),
+            };
 
-                if is_current {
-                    current = Some(device.clone());
-                }
-
-                devices.push(device);
+            if is_current {
+                current = Some(device.clone());
             }
 
-            let data = Devices { devices, current };
-            warp::reply::json(&data)
-        });
+            devices.push(device);
+        }
 
-        return Box::new(future);
+        let data = Devices { devices, current };
+        return Ok(warp::reply::json(&data));
 
         /// Convert a spotify device into a string.
         fn device_to_string(device: &api::spotify::DeviceType) -> &'static str {
@@ -651,24 +638,18 @@ impl Api {
     }
 
     /// Import balances.
-    fn import_balances(
-        &self,
+    async fn import_balances(
+        self,
         balances: Vec<db::models::Balance>,
-    ) -> BoxFuture<impl warp::Reply, failure::Error> {
-        Box::new(
-            self.db
-                .import_balances(balances)
-                .and_then(|_| Ok(warp::reply::json(&EMPTY))),
-        )
+    ) -> Result<impl warp::Reply, failure::Error> {
+        self.db.import_balances(balances).await?;
+        Ok(warp::reply::json(&EMPTY))
     }
 
     /// Export balances.
-    fn export_balances(&self) -> BoxFuture<impl warp::Reply, failure::Error> {
-        Box::new(
-            self.db
-                .export_balances()
-                .and_then(|balances| Ok(warp::reply::json(&balances))),
-        )
+    async fn export_balances(self) -> Result<impl warp::Reply, failure::Error> {
+        let balances = self.db.export_balances().await?;
+        Ok(warp::reply::json(&balances))
     }
 }
 
@@ -685,7 +666,13 @@ pub fn setup(
     commands: db::Commands,
     promotions: db::Promotions,
     themes: db::Themes,
-) -> Result<(Server, BoxFuture<(), failure::Error>), failure::Error> {
+) -> Result<
+    (
+        Server,
+        future::BoxFuture<'static, Result<(), failure::Error>>,
+    ),
+    failure::Error,
+> {
     let addr: SocketAddr = str::parse(&format!("0.0.0.0:12345"))?;
 
     let player = Arc::new(RwLock::new(None));
@@ -714,7 +701,13 @@ pub fn setup(
             .and(path!("device" / String))
             .and_then({
                 let api = api.clone();
-                move |id| api.set_device(id).map_err(warp::reject::custom)
+                move |id| {
+                    api.clone()
+                        .set_device(id)
+                        .map_err(warp::reject::custom)
+                        .boxed()
+                        .compat()
+                }
             })
             .boxed();
 
@@ -728,7 +721,13 @@ pub fn setup(
         let route = route
             .or(warp::get2().and(warp::path("devices")).and_then({
                 let api = api.clone();
-                move || api.devices().map_err(warp::reject::custom)
+                move || {
+                    api.clone()
+                        .devices()
+                        .map_err(warp::reject::custom)
+                        .boxed()
+                        .compat()
+                }
             }))
             .boxed();
 
@@ -789,7 +788,11 @@ pub fn setup(
                 .and_then({
                     let api = api.clone();
                     move |balances: Vec<db::models::Balance>| {
-                        api.import_balances(balances).map_err(warp::reject::custom)
+                        api.clone()
+                            .import_balances(balances)
+                            .map_err(warp::reject::custom)
+                            .boxed()
+                            .compat()
                     }
                 }))
             .boxed();
@@ -797,7 +800,13 @@ pub fn setup(
         let route = route
             .or(warp::get2().and(warp::path("balances")).and_then({
                 let api = api.clone();
-                move || api.export_balances().map_err(warp::reject::custom)
+                move || {
+                    api.clone()
+                        .export_balances()
+                        .map_err(warp::reject::custom)
+                        .boxed()
+                        .compat()
+                }
             }))
             .boxed();
 
@@ -848,7 +857,7 @@ pub fn setup(
             failure::format_err!("web service errored")
         });
 
-        Box::new(server_future) as BoxFuture<(), failure::Error>
+        server_future.compat().boxed()
     } else {
         let app = warp::get2().and(warp::path("main.js")).map(|| {
             use warp::http::Response;
@@ -863,7 +872,7 @@ pub fn setup(
             failure::format_err!("web service errored")
         });
 
-        Box::new(server_future) as BoxFuture<(), failure::Error>
+        server_future.compat().boxed()
     };
 
     let server = Server {
@@ -990,7 +999,7 @@ where
                 ws.on_upgrade(move |websocket| {
                     let (tx, _) = websocket.split();
 
-                    let rx = stream::iter_ok(bus.latest()).chain(bus.add_rx());
+                    let rx = stream01::iter_ok(bus.latest()).chain(bus.add_rx());
 
                     rx.map_err(|_| failure::format_err!("failed to receive notification"))
                         .and_then(|n| {

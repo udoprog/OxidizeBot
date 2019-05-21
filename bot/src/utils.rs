@@ -1,4 +1,4 @@
-use crate::api;
+use crate::{api, prelude::*};
 use parking_lot::Mutex;
 use std::{borrow, fmt, mem, sync::Arc, time};
 use url::percent_encoding::PercentDecode;
@@ -6,10 +6,6 @@ use url::percent_encoding::PercentDecode;
 mod duration;
 
 pub use self::duration::Duration;
-
-/// Helper type for futures.
-pub type BoxFuture<T, E> = Box<dyn futures::Future<Item = T, Error = E> + Send + 'static>;
-pub type BoxStream<T, E> = Box<dyn futures::Stream<Item = T, Error = E> + Send + 'static>;
 
 pub struct Urls<'a> {
     message: &'a str,
@@ -474,13 +470,13 @@ impl<'de> serde::Deserialize<'de> for Cooldown {
 /// Helper to handle shutdowns.
 #[derive(Clone)]
 pub struct Shutdown {
-    sender: Arc<Mutex<Option<futures::sync::oneshot::Sender<()>>>>,
+    sender: Arc<Mutex<Option<oneshot::Sender<()>>>>,
 }
 
 impl Shutdown {
     /// Construct a new shutdown handler.
-    pub fn new() -> (Self, futures::sync::oneshot::Receiver<()>) {
-        let (tx, rx) = futures::sync::oneshot::channel();
+    pub fn new() -> (Self, oneshot::Receiver<()>) {
+        let (tx, rx) = oneshot::channel();
         (
             Self {
                 sender: Arc::new(Mutex::new(Some(tx))),

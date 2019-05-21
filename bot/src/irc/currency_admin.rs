@@ -1,5 +1,4 @@
 use crate::{command, currency, db};
-use futures::Future as _;
 
 /// Handler for the !admin command.
 pub struct Handler {
@@ -53,51 +52,48 @@ impl command::Handler for Handler {
                     return Ok(());
                 }
 
+                let db = self.db.clone();
+                let currency = self.currency.clone();
+                let target = ctx.user.target.to_owned();
+                let giver = ctx.user.as_owned_user();
                 let is_streamer = ctx.user.is(ctx.streamer);
 
-                let currency = self.currency.clone();
+                ctx.spawn_async(async move {
+                    let result = db
+                        .balance_transfer(
+                            target,
+                            giver.name.clone(),
+                            taker.clone(),
+                            amount,
+                            is_streamer,
+                        )
+                        .await;
 
-                let transfer = self.db.balance_transfer(
-                    &ctx.user.target,
-                    &ctx.user.name,
-                    &taker,
-                    amount,
-                    is_streamer,
-                );
-
-                let giver = ctx.user.as_owned_user();
-                let taker = taker.to_string();
-
-                let future = transfer.then(move |r| match r {
-                    Ok(()) => {
-                        giver.respond(format!(
-                            "Gave {user} {amount} {currency}!",
-                            user = taker,
-                            amount = amount,
-                            currency = currency.name
-                        ));
-
-                        Ok(())
-                    }
-                    Err(db::BalanceTransferError::NoBalance) => {
-                        giver.respond(format!(
-                            "Not enough {currency} to transfer {amount}",
-                            currency = currency.name,
-                            amount = amount,
-                        ));
-                        Ok(())
-                    }
-                    Err(db::BalanceTransferError::Other(e)) => {
-                        giver.respond(format!(
-                            "Failed to give {currency}, sorry :(",
-                            currency = currency.name
-                        ));
-                        log_err!(e, "failed to modify currency");
-                        Ok(())
+                    match result {
+                        Ok(()) => {
+                            giver.respond(format!(
+                                "Gave {user} {amount} {currency}!",
+                                user = taker,
+                                amount = amount,
+                                currency = currency.name
+                            ));
+                        }
+                        Err(db::BalanceTransferError::NoBalance) => {
+                            giver.respond(format!(
+                                "Not enough {currency} to transfer {amount}",
+                                currency = currency.name,
+                                amount = amount,
+                            ));
+                        }
+                        Err(db::BalanceTransferError::Other(e)) => {
+                            giver.respond(format!(
+                                "Failed to give {currency}, sorry :(",
+                                currency = currency.name
+                            ));
+                            log_err!(e, "failed to modify currency");
+                        }
                     }
                 });
-
-                ctx.spawn(future);
             }
             Some("boost") => {
                 ctx.check_moderator()?;
@@ -111,85 +107,79 @@ impl command::Handler for Handler {
                     return Ok(());
                 }
 
+                let db = self.db.clone();
                 let user = ctx.user.as_owned_user();
                 let currency = self.currency.clone();
 
-                ctx.spawn(
-                    self.db
-                        .balance_add(&user.target, &boosted_user, amount)
-                        .then(move |r| match r {
-                            Ok(()) => {
-                                if amount >= 0 {
-                                    user.respond(format!(
-                                        "Gave {user} {amount} {currency}!",
-                                        user = boosted_user,
-                                        amount = amount,
-                                        currency = currency.name
-                                    ));
-                                } else {
-                                    user.respond(format!(
-                                        "Took away {amount} {currency} from {user}!",
-                                        user = boosted_user,
-                                        amount = -amount,
-                                        currency = currency.name
-                                    ));
-                                }
+                ctx.spawn_async(async move {
+                    let result = db
+                        .balance_add(user.target.clone(), boosted_user.clone(), amount)
+                        .await;
 
-                                Ok(())
+                    match result {
+                        Ok(()) => {
+                            if amount >= 0 {
+                                user.respond(format!(
+                                    "Gave {user} {amount} {currency}!",
+                                    user = boosted_user,
+                                    amount = amount,
+                                    currency = currency.name
+                                ));
+                            } else {
+                                user.respond(format!(
+                                    "Took away {amount} {currency} from {user}!",
+                                    user = boosted_user,
+                                    amount = -amount,
+                                    currency = currency.name
+                                ));
                             }
-                            Err(e) => {
-                                user.respond("failed to boost user, sorry :(");
-                                log_err!(e, "failed to modify currency");
-                                Ok(())
-                            }
-                        }),
-                );
+                        }
+                        Err(e) => {
+                            user.respond("failed to boost user, sorry :(");
+                            log_err!(e, "failed to modify currency");
+                        }
+                    }
+                });
             }
             Some("windfall") => {
                 ctx.check_moderator()?;
 
+                let user = ctx.user.as_owned_user();
                 let amount: i64 = ctx_try!(ctx.next_parse("<amount>", "!currency windfall"));
+                let currency = self.currency.clone();
+                let sender = ctx.sender.clone();
 
-                ctx.spawn(
-                    self.currency
-                        .add_channel_all(&ctx.user.target, amount)
-                        .then({
-                            let sender = ctx.sender.clone();
-                            let currency = self.currency.clone();
-                            let user = ctx.user.as_owned_user();
+                ctx.spawn_async(async move {
+                    let result = currency.add_channel_all(user.target.clone(), amount).await;
 
-                            move |r| match r {
-                                Ok(_) => {
-                                    if amount >= 0 {
-                                        sender.privmsg(
-                                            &user.target,
-                                            format!(
-                                                "/me gave {amount} {currency} to EVERYONE!",
-                                                amount = amount,
-                                                currency = currency.name
-                                            ),
-                                        );
-                                    } else {
-                                        sender.privmsg(
-                                            &user.target,
-                                            format!(
-                                                "/me took away {amount} {currency} from EVERYONE!",
-                                                amount = amount,
-                                                currency = currency.name
-                                            ),
-                                        );
-                                    }
-
-                                    Ok(())
-                                }
-                                Err(e) => {
-                                    user.respond("failed to windfall :(");
-                                    log_err!(e, "failed to windfall");
-                                    Ok(())
-                                }
+                    match result {
+                        Ok(_) => {
+                            if amount >= 0 {
+                                sender.privmsg(
+                                    &user.target,
+                                    format!(
+                                        "/me gave {amount} {currency} to EVERYONE!",
+                                        amount = amount,
+                                        currency = currency.name
+                                    ),
+                                );
+                            } else {
+                                sender.privmsg(
+                                    &user.target,
+                                    format!(
+                                        "/me took away {amount} {currency} from EVERYONE!",
+                                        amount = amount,
+                                        currency = currency.name
+                                    ),
+                                );
                             }
-                        }),
-                );
+                        }
+                        Err(e) => {
+                            user.respond("failed to windfall :(");
+                            log_err!(e, "failed to windfall");
+                        }
+                    }
+                });
             }
             Some(..) => {
                 if ctx.is_moderator() {

@@ -21,9 +21,9 @@ macro_rules! try_infinite {
         match $expr {
             Err(e) => return Err(e.into()),
             Ok(a) => match a {
-                futures::Async::NotReady => None,
-                futures::Async::Ready(None) => failure::bail!("stream ended unexpectedly"),
-                futures::Async::Ready(Some(v)) => Some(v),
+                futures01::Async::NotReady => None,
+                futures01::Async::Ready(None) => failure::bail!("stream ended unexpectedly"),
+                futures01::Async::Ready(Some(v)) => Some(v),
             },
         }
     };

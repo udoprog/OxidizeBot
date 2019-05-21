@@ -1,15 +1,12 @@
 use crate::{
     api, bus, command, config, currency, db,
     features::{Feature, Features},
-    idle, module, oauth2, obs, player, settings, stream_info, utils,
-    utils::BoxFuture,
+    idle, module, oauth2, obs, player,
+    prelude::*,
+    settings, stream_info, timer, utils,
 };
+use failure::Error;
 use failure::{format_err, ResultExt as _};
-use futures::{
-    future::{self, Future},
-    stream::Stream,
-    Async, Poll,
-};
 use hashbrown::HashSet;
 use irc::{
     client::{self, ext::ClientExt, Client, IrcClient, PackedIrcClient},
@@ -20,7 +17,6 @@ use irc::{
 };
 use parking_lot::{Mutex, RwLock};
 use std::{fmt, sync::Arc, time};
-use tokio::timer;
 use tokio_threadpool::ThreadPool;
 
 mod after_stream;
@@ -61,8 +57,7 @@ fn default_cooldown() -> utils::Cooldown {
 }
 
 /// Helper struct to construct IRC integration.
-pub struct Irc<'a> {
-    pub core: &'a mut tokio_core::reactor::Core,
+pub struct Irc {
     pub db: db::Database,
     pub youtube: Arc<api::YouTube>,
     pub streamer_twitch: api::Twitch,
@@ -77,20 +72,16 @@ pub struct Irc<'a> {
     pub bad_words: db::Words,
     pub after_streams: db::AfterStreams,
     pub global_bus: Arc<bus::Bus<bus::Global>>,
-    pub modules: &'a [Box<dyn module::Module>],
+    pub modules: Vec<Box<dyn module::Module>>,
     pub shutdown: utils::Shutdown,
     pub settings: settings::Settings,
-    pub player: Option<&'a player::Player>,
+    pub player: Option<player::Player>,
     pub obs: Option<obs::Obs>,
 }
 
-impl Irc<'_> {
-    pub fn run(
-        self,
-    ) -> Result<impl Future<Item = (), Error = failure::Error> + Send + 'static, failure::Error>
-    {
+impl Irc {
+    pub async fn run(self) -> Result<(), Error> {
         let Irc {
-            core,
             db,
             youtube,
             streamer_twitch,
@@ -124,9 +115,9 @@ impl Irc<'_> {
             ..client::data::config::Config::default()
         };
 
-        let client = IrcClient::new_future(core.handle(), &irc_client_config)?;
+        let client = IrcClient::new_future(irc_client_config)?;
 
-        let PackedIrcClient(client, send_future) = core.run(client)?;
+        let PackedIrcClient(client, send_future) = client.compat().await?;
         client.identify()?;
 
         let sender = Sender::new(client.clone());
@@ -139,28 +130,24 @@ impl Irc<'_> {
         }
 
         let mut handlers = module::Handlers::default();
-        let mut futures = Vec::<BoxFuture<(), failure::Error>>::new();
+        let mut futures = Vec::<future::BoxFuture<'static, Result<(), Error>>>::new();
 
-        futures.push(Box::new(refresh_mods_future(
-            sender.clone(),
-            config.irc.channel.clone(),
-        )));
+        futures.push(refresh_mods_future(sender.clone(), config.irc.channel.clone()).boxed());
 
         let stream_info = {
             let interval = time::Duration::from_secs(60 * 5);
             let (stream_info, future) =
-                stream_info::setup(config.streamer.as_str(), interval, streamer_twitch.clone());
-            futures.push(Box::new(future));
+                stream_info::setup(config.streamer.clone(), interval, streamer_twitch.clone());
+            futures.push(future.boxed());
             stream_info
         };
 
-        let threshold = settings.sync_var(core, "irc/idle-detection/threshold", 5)?;
+        let threshold = settings.sync_var("irc/idle-detection/threshold", 5)?;
 
         let idle = idle::Idle::new(threshold);
 
         for module in modules {
             let result = module.hook(module::HookContext {
-                core,
                 config: &*config,
                 db: &db,
                 commands: &commands,
@@ -177,7 +164,7 @@ impl Irc<'_> {
                 sender: &sender,
                 settings: &settings,
                 idle: &idle,
-                player,
+                player: player.as_ref(),
                 obs: obs.as_ref(),
             });
 
@@ -198,19 +185,19 @@ impl Irc<'_> {
             let reward = 10;
             let interval = 60 * 10;
 
-            let reward_percentage = settings.sync_var(core, "irc/viewer-reward%", 100)?;
+            let reward_percentage = settings.sync_var("irc/viewer-reward%", 100)?;
 
             let future = reward_loop(
-                &*config.irc,
+                config.irc.clone(),
                 reward,
                 interval,
                 sender.clone(),
-                currency,
-                &idle,
+                currency.clone(),
+                idle.clone(),
                 reward_percentage,
             );
 
-            futures.push(Box::new(future));
+            futures.push(future.boxed());
         }
 
         if config.features.test(Feature::Admin) {
@@ -272,7 +259,7 @@ impl Irc<'_> {
             );
         }
 
-        futures.push(Box::new(send_future.map_err(failure::Error::from)));
+        futures.push(send_future.compat().map_err(Error::from).boxed());
 
         if !settings
             .get::<bool>("migration/whitelisted-hosts-migrated")?
@@ -305,63 +292,51 @@ impl Irc<'_> {
             idle,
         };
 
-        futures.push(Box::new(IrcFuture {
-            handler,
-            whitelisted_hosts_stream,
-            client_stream: client.stream(),
-        }));
+        futures.push(
+            IrcFuture {
+                handler,
+                whitelisted_hosts_stream,
+                client_stream: client.stream().compat().boxed(),
+            }
+            .boxed(),
+        );
 
-        Ok(future::join_all(futures).map(|_| ()))
+        let _ = future::try_join_all(futures).await?;
+        Ok(())
     }
 }
 
 /// Set up a reward loop.
-fn reward_loop(
-    config: &Config,
+async fn reward_loop(
+    config: Arc<Config>,
     reward: i64,
     interval: u64,
     sender: Sender,
-    currency: &currency::Currency,
-    idle: &idle::Idle,
+    currency: currency::Currency,
+    idle: idle::Idle,
     reward_percentage: Arc<RwLock<u32>>,
-) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
-    // Add currency timer.
-    timer::Interval::new_interval(time::Duration::from_secs(interval))
-        .map_err(Into::into)
-        // fetch all users.
-        .and_then({
-            let channel = config.channel.to_string();
-            let currency = currency.clone();
+) -> Result<(), Error> {
+    let mut interval = timer::Interval::new_interval(time::Duration::from_secs(interval));
 
-            move |_| {
-                let reward = (reward * *reward_percentage.read() as i64) / 100i64;
-                log::trace!("running reward loop");
-                currency
-                    .add_channel_all(channel.as_str(), reward)
-                    .map(move |count| (count, reward))
-            }
-        })
-        .map({
-            let idle = idle.clone();
-            let notify_rewards = config.notify_rewards;
-            let channel = config.channel.to_string();
-            let currency = currency.clone();
+    while let Some(i) = interval.next().await {
+        let _ = i?;
 
-            move |(count, reward)| {
-                if notify_rewards && count > 0 && !idle.is_idle() {
-                    sender.privmsg(
-                        channel.as_str(),
-                        format!("/me has given {} {} to all viewers!", reward, currency.name),
-                    );
-                }
-            }
-        })
-        // handle any errors.
-        .or_else(|e| {
-            log_err!(e, "failed to reward users");
-            Ok(())
-        })
-        .for_each(|_| Ok(()))
+        log::trace!("running reward loop");
+
+        let reward = (reward * *reward_percentage.read() as i64) / 100i64;
+        let count = currency
+            .add_channel_all(config.channel.to_string(), reward)
+            .await?;
+
+        if config.notify_rewards && count > 0 && !idle.is_idle() {
+            sender.privmsg(
+                config.channel.as_str(),
+                format!("/me has given {} {} to all viewers!", reward, currency.name),
+            );
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -388,7 +363,7 @@ impl Sender {
         let m = m.into();
         let limiter = Arc::clone(&self.limiter);
 
-        self.thread_pool.spawn(future::lazy(move || {
+        self.thread_pool.spawn(future01::lazy(move || {
             limiter.lock().wait();
 
             if let Err(e) = client.send(m) {
@@ -453,7 +428,7 @@ struct Handler {
 
 impl Handler {
     /// Run as user.
-    fn as_user<'m>(&self, tags: Tags<'m>, m: &'m Message) -> Result<User<'m>, failure::Error> {
+    fn as_user<'m>(&self, tags: Tags<'m>, m: &'m Message) -> Result<User<'m>, Error> {
         let name = m
             .source_nickname()
             .ok_or_else(|| format_err!("expected user info"))?;
@@ -477,7 +452,7 @@ impl Handler {
         user: User<'m>,
         it: &mut utils::Words<'m>,
         alias: Option<(&str, &str)>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), Error> {
         match command {
             "ping" => {
                 user.respond("What do you want?");
@@ -530,11 +505,7 @@ impl Handler {
     }
 
     /// Delete the given message.
-    fn delete_message<'local>(
-        &mut self,
-        source: &str,
-        tags: Tags<'local>,
-    ) -> Result<(), failure::Error> {
+    fn delete_message<'local>(&mut self, source: &str, tags: Tags<'local>) -> Result<(), Error> {
         let id = match tags.id {
             Some(id) => id,
             None => return Ok(()),
@@ -615,7 +586,7 @@ impl Handler {
     }
 
     /// Handle the given command.
-    pub fn handle<'local>(&mut self, m: &'local Message) -> Result<(), failure::Error> {
+    pub fn handle<'local>(&mut self, m: &'local Message) -> Result<(), Error> {
         match m.command {
             Command::PRIVMSG(ref source, ref message) => {
                 let tags = Self::tags(&m);
@@ -725,46 +696,50 @@ impl Handler {
 struct IrcFuture {
     handler: Handler,
     whitelisted_hosts_stream: settings::Stream<HashSet<String>>,
-    client_stream: client::ClientStream,
+    client_stream: stream::BoxStream<'static, Result<Message, irc::error::IrcError>>,
+}
+
+impl IrcFuture {
+    pin_utils::unsafe_pinned!(whitelisted_hosts_stream: settings::Stream<HashSet<String>>);
+    pin_utils::unsafe_pinned!(
+        client_stream: stream::BoxStream<'static, Result<Message, irc::error::IrcError>>
+    );
 }
 
 impl Future for IrcFuture {
-    type Item = ();
-    type Error = failure::Error;
+    type Output = Result<(), Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         loop {
-            let mut not_ready = true;
+            let mut pending = true;
 
-            let m = self
-                .client_stream
-                .poll()
-                .with_context(|_| failure::format_err!("failed to poll for IRC message"))?;
-
-            match m {
-                Async::NotReady => (),
-                Async::Ready(None) => {
-                    failure::bail!("irc stream ended");
-                }
-                Async::Ready(Some(m)) => {
-                    if let Err(e) = self.handler.handle(&m) {
-                        log::error!("failed to handle message: {}", e);
-                    }
-
-                    not_ready = false;
-                }
-            }
-
-            if let Async::Ready(whitelisted_hosts) = self.whitelisted_hosts_stream.poll()? {
+            if let Poll::Ready(whitelisted_hosts) =
+                self.as_mut().whitelisted_hosts_stream().poll_next(cx)
+            {
                 if let Some(whitelisted_hosts) = whitelisted_hosts {
-                    self.handler.whitelisted_hosts = whitelisted_hosts;
+                    self.as_mut().handler.whitelisted_hosts = whitelisted_hosts;
                 }
 
-                not_ready = false;
+                pending = false;
             }
 
-            if not_ready {
-                return Ok(Async::NotReady);
+            if let Poll::Ready(result) = self.as_mut().client_stream().poll_next(cx)? {
+                match result {
+                    None => {
+                        return Poll::Ready(Err(failure::format_err!("irc stream ended")));
+                    }
+                    Some(m) => {
+                        if let Err(e) = self.as_mut().handler.handle(&m) {
+                            log::error!("failed to handle message: {}", e);
+                        }
+                    }
+                }
+
+                pending = false;
+            }
+
+            if pending {
+                return Poll::Pending;
             }
         }
     }
@@ -863,19 +838,16 @@ pub struct CommandVars<'a> {
 }
 
 // Future to refresh moderators every 5 minutes.
-fn refresh_mods_future(
-    sender: Sender,
-    channel: Arc<String>,
-) -> impl Future<Item = (), Error = failure::Error> + Send + 'static {
-    let interval = timer::Interval::new_interval(time::Duration::from_secs(60 * 5));
+async fn refresh_mods_future(sender: Sender, channel: Arc<String>) -> Result<(), failure::Error> {
+    let mut interval = timer::Interval::new_interval(time::Duration::from_secs(60 * 5));
 
-    interval
-        .map_err(|_| failure::format_err!("failed to refresh mods"))
-        .for_each(move |_| {
-            log::trace!("refreshing mods");
-            sender.privmsg(channel.as_str(), "/mods");
-            Ok(())
-        })
+    while let Some(i) = interval.next().await {
+        let _ = i?;
+        log::trace!("refreshing mods");
+        sender.privmsg(channel.as_str(), "/mods");
+    }
+
+    Ok(())
 }
 
 /// Parse the `room_mods` message.

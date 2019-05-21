@@ -1,12 +1,10 @@
 //! Utilities for dealing with dynamic configuration and settings.
 
-use crate::{db, utils};
+use crate::{db, prelude::*, utils};
 use diesel::prelude::*;
-use futures::{sync::mpsc, Async, Future as _, Poll, Stream as _};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::{fmt, sync::Arc};
-use tokio_core::reactor::Core;
 
 const SEPARATOR: &'static str = "/";
 
@@ -304,12 +302,7 @@ impl Settings {
     }
 
     /// Get a synchronized variable for the given configuration key.
-    pub fn sync_var<T>(
-        &self,
-        core: &mut Core,
-        key: &str,
-        default: T,
-    ) -> Result<Arc<RwLock<T>>, failure::Error>
+    pub fn sync_var<T>(&self, key: &str, default: T) -> Result<Arc<RwLock<T>>, failure::Error>
     where
         T: 'static
             + fmt::Debug
@@ -317,28 +310,25 @@ impl Settings {
             + Sync
             + Clone
             + serde::Serialize
-            + serde::de::DeserializeOwned,
+            + serde::de::DeserializeOwned
+            + std::marker::Unpin,
     {
-        let (stream, value) = self.init_and_stream(key, default)?;
+        let (mut stream, value) = self.init_and_stream(key, default)?;
 
         let value = Arc::new(RwLock::new(value));
 
-        let future = stream.for_each({
-            let key = key.to_string();
-            let value = value.clone();
+        let key = key.to_string();
+        let future_value = value.clone();
 
-            move |update| {
-                log::trace!("Updating: {} = {:?}", key, value);
-                *value.write() = update;
-                Ok(())
+        let future = async move {
+            while let Some(update) = stream.next().await {
+                log::trace!("Updating: {} = {:?}", key, update);
+                *future_value.write() = update;
             }
-        });
+        };
 
-        core.runtime().executor().spawn(future.or_else(|e| {
-            log::error!("sync_var update future failed: {}", e);
-            Ok(())
-        }));
-
+        // NB: we should do something with the future, but for now it is just a dummy future in tokio.
+        tokio::spawn(future.unit_error().boxed().compat());
         Ok(value)
     }
 }
@@ -398,12 +388,7 @@ impl ScopedSettings {
     }
 
     /// Get a synchronized variable for the given configuration key.
-    pub fn sync_var<T>(
-        &self,
-        core: &mut Core,
-        key: &str,
-        default: T,
-    ) -> Result<Arc<RwLock<T>>, failure::Error>
+    pub fn sync_var<T>(&self, key: &str, default: T) -> Result<Arc<RwLock<T>>, failure::Error>
     where
         T: 'static
             + fmt::Debug
@@ -411,9 +396,10 @@ impl ScopedSettings {
             + Sync
             + Clone
             + serde::Serialize
-            + serde::de::DeserializeOwned,
+            + serde::de::DeserializeOwned
+            + std::marker::Unpin,
     {
-        self.settings.sync_var(core, &self.scope(key), default)
+        self.settings.sync_var(&self.scope(key), default)
     }
 
     /// Scope the settings a bit more.
@@ -439,6 +425,10 @@ pub struct Stream<T> {
     rx: mpsc::UnboundedReceiver<Event<serde_json::Value>>,
 }
 
+impl<T> Stream<T> {
+    pin_utils::unsafe_pinned!(rx: mpsc::UnboundedReceiver<Event<serde_json::Value>>);
+}
+
 impl<T> Drop for Stream<T> {
     fn drop(&mut self) {
         if self.subscriptions.write().remove(&self.key).is_some() {
@@ -452,12 +442,10 @@ impl<T> Drop for Stream<T> {
     }
 }
 
-#[derive(Debug, err_derive::Error)]
-pub enum StreamError {
-    #[error(display = "update stream errored")]
-    UpdateStreamErrored,
-    #[error(display = "update stream ended")]
-    UpdateStreamEnded,
+impl<T> stream::FusedStream for Stream<T> {
+    fn is_terminated(&self) -> bool {
+        false
+    }
 }
 
 impl<T> futures::Stream for Stream<T>
@@ -465,26 +453,24 @@ where
     T: Clone + serde::de::DeserializeOwned,
 {
     type Item = T;
-    type Error = StreamError;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        log::trace!("polling stream: {}", self.key);
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        log::trace!("polling stream: {}", self.as_ref().key);
 
         loop {
-            let update = match self.rx.poll() {
-                Err(()) => return Err(StreamError::UpdateStreamErrored),
-                Ok(Async::NotReady) => return Ok(Async::NotReady),
-                Ok(Async::Ready(None)) => return Err(StreamError::UpdateStreamEnded),
-                Ok(Async::Ready(Some(update))) => update,
+            let update = match self.as_mut().rx().poll_next(cx) {
+                Poll::Ready(Some(update)) => update,
+                Poll::Ready(None) => return Poll::Ready(None),
+                Poll::Pending => return Poll::Pending,
             };
 
             let value = match update {
-                Event::Clear => self.default.clone(),
+                Event::Clear => self.as_ref().default.clone(),
                 Event::Set(value) => {
                     let value = match serde_json::from_value(value) {
                         Ok(value) => value,
                         Err(e) => {
-                            log::warn!("bad value for key: {}: {}", self.key, e);
+                            log::warn!("bad value for key: {}: {}", self.as_ref().key, e);
                             continue;
                         }
                     };
@@ -493,7 +479,7 @@ where
                 }
             };
 
-            return Ok(Async::Ready(Some(value)));
+            return Poll::Ready(Some(value));
         }
     }
 }

@@ -1,8 +1,7 @@
 //! Spotify API helpers.
 
-use crate::{oauth2, utils::BoxFuture};
+use crate::{oauth2, prelude::*};
 use bytes::Bytes;
-use futures::{future, Async, Future, Poll, Stream};
 use reqwest::{
     header,
     r#async::{Client, Decoder},
@@ -20,7 +19,12 @@ pub use rspotify::spotify::{
     },
     senum::DeviceType,
 };
-use std::{mem, sync::Arc};
+use std::{
+    mem,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 const API_URL: &'static str = "https://api.spotify.com/v1";
 
@@ -58,16 +62,20 @@ impl Spotify {
     }
 
     /// Get my playlists.
-    pub fn playlist(&self, id: &str) -> impl Future<Item = FullPlaylist, Error = failure::Error> {
-        return self.request(Method::GET, &["playlists", id]).execute();
+    pub async fn playlist(self: Arc<Self>, id: String) -> Result<FullPlaylist, failure::Error> {
+        self.request(Method::GET, &["playlists", id.as_str()])
+            .execute()
+            .await
     }
 
     /// Get my devices.
-    pub fn my_player_devices(&self) -> impl Future<Item = Vec<Device>, Error = failure::Error> {
-        return self
+    pub async fn my_player_devices(self: Arc<Self>) -> Result<Vec<Device>, failure::Error> {
+        let r = self
             .request(Method::GET, &["me", "player", "devices"])
             .execute::<Response>()
-            .map(|r| r.devices);
+            .await?;
+
+        return Ok(r.devices);
 
         #[derive(serde::Deserialize)]
         struct Response {
@@ -76,11 +84,11 @@ impl Spotify {
     }
 
     /// Set player volume.
-    pub fn me_player_volume(
-        &self,
-        device_id: Option<&str>,
+    pub async fn me_player_volume(
+        self: Arc<Self>,
+        device_id: Option<String>,
         volume: f32,
-    ) -> impl Future<Item = bool, Error = failure::Error> {
+    ) -> Result<bool, failure::Error> {
         let volume = u32::min(100, (volume * 100f32).round() as u32).to_string();
 
         self.request(Method::PUT, &["me", "player", "volume"])
@@ -89,37 +97,38 @@ impl Spotify {
             .header(header::ACCEPT, "application/json")
             .header(header::CONTENT_LENGTH, "0")
             .execute_empty_not_found()
+            .await
     }
 
     /// Start playing a track.
-    pub fn me_player_pause(
-        &self,
-        device_id: Option<&str>,
-    ) -> impl Future<Item = bool, Error = failure::Error> {
+    pub async fn me_player_pause(
+        self: Arc<Self>,
+        device_id: Option<String>,
+    ) -> Result<bool, failure::Error> {
         self.request(Method::PUT, &["me", "player", "pause"])
             .optional_query_param("device_id", device_id)
             .header(header::CONTENT_LENGTH, "0")
             .header(header::ACCEPT, "application/json")
             .execute_empty_not_found()
+            .await
     }
 
     /// Information on the current playback.
-    pub fn me_player(
-        &self,
-    ) -> impl Future<Item = Option<FullPlayingContext>, Error = failure::Error> {
+    pub async fn me_player(self: Arc<Self>) -> Result<Option<FullPlayingContext>, failure::Error> {
         self.request(Method::GET, &["me", "player"])
             .execute_optional()
+            .await
     }
 
     /// Start playing a track.
-    pub fn me_player_play(
-        &self,
-        device_id: Option<&str>,
-        track_uri: Option<&str>,
+    pub async fn me_player_play(
+        self: Arc<Self>,
+        device_id: Option<String>,
+        track_uri: Option<String>,
         position_ms: Option<u64>,
-    ) -> impl Future<Item = bool, Error = failure::Error> {
+    ) -> Result<bool, failure::Error> {
         let request = Request {
-            uris: track_uri.into_iter().map(|s| s.to_string()).collect(),
+            uris: track_uri.into_iter().collect(),
             position_ms,
         };
 
@@ -129,8 +138,8 @@ impl Spotify {
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json");
 
-        return serialize(&request)
-            .and_then(move |body| r.body(Bytes::from(body)).execute_empty_not_found());
+        let body = Bytes::from(serde_json::to_vec(&request)?);
+        return r.body(body).execute_empty_not_found().await;
 
         #[derive(serde::Serialize)]
         struct Request {
@@ -142,125 +151,114 @@ impl Spotify {
     }
 
     /// Get my playlists.
-    pub fn my_playlists(
-        &self,
-    ) -> impl Future<Item = Page<SimplifiedPlaylist>, Error = failure::Error> {
-        return self.request(Method::GET, &["me", "playlists"]).execute();
+    pub async fn my_playlists(self: Arc<Self>) -> Result<Page<SimplifiedPlaylist>, failure::Error> {
+        self.request(Method::GET, &["me", "playlists"])
+            .execute()
+            .await
     }
 
     /// Get my songs.
-    pub fn my_tracks(&self) -> impl Future<Item = Page<SavedTrack>, Error = failure::Error> {
-        return self.request(Method::GET, &["me", "tracks"]).execute();
+    pub async fn my_tracks(self: Arc<Self>) -> Result<Page<SavedTrack>, failure::Error> {
+        self.request(Method::GET, &["me", "tracks"]).execute().await
     }
 
     /// Get my songs.
-    pub fn my_tracks_stream(
-        self: Arc<Self>,
-    ) -> impl Stream<Item = Vec<SavedTrack>, Error = failure::Error> {
+    pub fn my_tracks_stream(self: Arc<Self>) -> PageStream<SavedTrack> {
         PageStream {
-            client: Arc::clone(&self),
-            next: Some(Box::new(
+            client: self.clone(),
+            next: Some(Box::pin(
                 self.request(Method::GET, &["me", "tracks"]).execute(),
             )),
         }
     }
 
     /// Get the full track by ID.
-    pub fn track(&self, id: &str) -> impl Future<Item = FullTrack, Error = failure::Error> {
-        return self.request(Method::GET, &["tracks", id]).execute();
+    pub async fn track(self: Arc<Self>, id: String) -> Result<FullTrack, failure::Error> {
+        self.request(Method::GET, &["tracks", id.as_str()])
+            .execute()
+            .await
     }
 
     /// Search for tracks.
-    pub fn search_track(
-        &self,
-        q: &str,
-    ) -> impl Future<Item = Page<FullTrack>, Error = failure::Error> {
-        return self
-            .request(Method::GET, &["search"])
+    pub async fn search_track(
+        self: Arc<Self>,
+        q: String,
+    ) -> Result<Page<FullTrack>, failure::Error> {
+        self.request(Method::GET, &["search"])
             .query_param("type", "track")
             .query_param("q", &q)
             .execute::<search::SearchTracks>()
-            .map(|r| r.tracks);
+            .await
+            .map(|r| r.tracks)
     }
 
     /// Convert a page object into a stream.
-    pub fn page_as_stream<T>(
-        self: Arc<Self>,
-        page: Page<T>,
-    ) -> impl Stream<Item = Vec<T>, Error = failure::Error>
+    pub fn page_as_stream<T>(self: Arc<Self>, page: Page<T>) -> PageStream<T>
     where
         T: 'static + Send + serde::de::DeserializeOwned,
     {
         PageStream {
-            client: Arc::clone(&self),
-            next: Some(Box::new(future::ok(page))),
+            client: self.clone(),
+            next: Some(future::ok(page).boxed()),
         }
     }
 
     /// Get the next page for a type.
-    pub fn next_page<T>(
-        &self,
-        page: &Page<T>,
-    ) -> Option<impl Future<Item = Page<T>, Error = failure::Error>>
+    pub async fn next_page<T>(self: Arc<Self>, next: String) -> Result<Page<T>, failure::Error>
     where
         T: serde::de::DeserializeOwned,
     {
-        let next = match page.next.as_ref() {
-            Some(next) => next,
-            None => return None,
-        };
-
-        let url = match str::parse::<Url>(next) {
-            Ok(url) => future::ok(url),
-            Err(e) => future::err(failure::Error::from(e)),
-        };
+        let url = str::parse::<Url>(next.as_str())?;
 
         let client = self.client.clone();
         let token = self.token.clone();
 
-        Some(url.and_then(move |url| {
-            let request = RequestBuilder {
-                token,
-                client,
-                url,
-                method: Method::GET,
-                headers: Vec::new(),
-                body: None,
-            };
+        let request = RequestBuilder {
+            token,
+            client,
+            url,
+            method: Method::GET,
+            headers: Vec::new(),
+            body: None,
+        };
 
-            request.execute()
-        }))
+        request.execute().await
     }
 }
 
-struct PageStream<T> {
+pub struct PageStream<T> {
     client: Arc<Spotify>,
-    next: Option<BoxFuture<Page<T>, failure::Error>>,
+    next: Option<future::BoxFuture<'static, Result<Page<T>, failure::Error>>>,
 }
 
-impl<T> Stream for PageStream<T>
+impl<T> TryStream for PageStream<T>
 where
     T: 'static + Send + serde::de::DeserializeOwned,
 {
-    type Item = Vec<T>;
+    type Ok = Vec<T>;
     type Error = failure::Error;
 
-    fn poll(&mut self) -> Poll<Option<Vec<T>>, failure::Error> {
-        let future = match self.next.as_mut() {
+    fn try_poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+    ) -> Poll<Option<Result<Self::Ok, Self::Error>>> {
+        let mut s = self.as_mut();
+
+        let future = match s.next.as_mut() {
             Some(future) => future,
-            None => return Ok(Async::Ready(None)),
+            None => return Poll::Ready(None),
         };
 
-        if let Async::Ready(page) = future.poll()? {
-            self.next = match self.client.next_page(&page) {
-                Some(future) => Some(Box::new(future)),
+        if let Poll::Ready(page) = future.as_mut().poll(cx)? {
+            self.as_mut().next = match page.next {
+                Some(next) => Some(s.client.clone().next_page(next).boxed()),
                 None => None,
             };
 
-            return Ok(Async::Ready(Some(page.items)));
+            return Poll::Ready(Some(Ok(page.items)));
         }
 
-        Ok(Async::NotReady)
+        Poll::Pending
     }
 }
 
@@ -275,80 +273,74 @@ struct RequestBuilder {
 
 impl RequestBuilder {
     /// Execute the request requiring content to be returned.
-    pub fn execute<T>(self) -> impl Future<Item = T, Error = failure::Error>
+    pub async fn execute<T>(self) -> Result<T, failure::Error>
     where
         T: serde::de::DeserializeOwned,
     {
-        self.execute_optional().and_then(|result| match result {
+        match self.execute_optional().await? {
             Some(body) => Ok(body),
             None => Err(failure::format_err!("got empty response from server")),
-        })
+        }
     }
 
     /// Execute the request, taking into account that the server might return 204 NO CONTENT, and treat it as
     /// `Option::None`
-    pub fn execute_optional<T>(self) -> impl Future<Item = Option<T>, Error = failure::Error>
+    pub async fn execute_optional<T>(self) -> Result<Option<T>, failure::Error>
     where
         T: serde::de::DeserializeOwned,
     {
-        let future = future::lazy(move || {
-            let mut r = self.client.request(self.method, self.url);
+        let mut req = self.client.request(self.method, self.url);
 
-            if let Some(body) = self.body {
-                r = r.body(body);
+        if let Some(body) = self.body {
+            req = req.body(body);
+        }
+
+        for (key, value) in self.headers {
+            req = req.header(key, value);
+        }
+
+        let access_token = self.token.read()?.access_token().to_string();
+        let req = req.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
+
+        let mut res = req.send().compat().await?;
+        let body = mem::replace(res.body_mut(), Decoder::empty());
+        let body = body.compat().try_concat().await?;
+
+        let status = res.status();
+
+        if !status.is_success() {
+            failure::bail!(
+                "bad response: {}: {}",
+                status,
+                String::from_utf8_lossy(body.as_ref())
+            );
+        }
+
+        if status == StatusCode::NO_CONTENT {
+            return Ok(None);
+        }
+
+        if log::log_enabled!(log::Level::Trace) {
+            let response = String::from_utf8_lossy(body.as_ref());
+            log::trace!("response: {}", response);
+        }
+
+        match serde_json::from_slice(body.as_ref()) {
+            Ok(body) => Ok(Some(body)),
+            Err(e) => {
+                log::trace!(
+                    "failed to deserialize: {}: {}: {}",
+                    status,
+                    e,
+                    String::from_utf8_lossy(body.as_ref())
+                );
+                Err(e.into())
             }
-
-            for (key, value) in self.headers {
-                r = r.header(key, value);
-            }
-
-            let access_token = self.token.read()?.access_token().to_string();
-            Ok(r.header(header::AUTHORIZATION, format!("Bearer {}", access_token)))
-        });
-
-        future.and_then(move |request| {
-            request.send().from_err().and_then(|mut res| {
-                let body = mem::replace(res.body_mut(), Decoder::empty());
-
-                body.concat2().from_err().and_then(move |body| {
-                    let status = res.status();
-
-                    if !status.is_success() {
-                        failure::bail!(
-                            "bad response: {}: {}",
-                            status,
-                            String::from_utf8_lossy(body.as_ref())
-                        );
-                    }
-
-                    if status == StatusCode::NO_CONTENT {
-                        return Ok(None);
-                    }
-
-                    if log::log_enabled!(log::Level::Trace) {
-                        let response = String::from_utf8_lossy(body.as_ref());
-                        log::trace!("response: {}", response);
-                    }
-
-                    match serde_json::from_slice(body.as_ref()) {
-                        Ok(body) => Ok(Some(body)),
-                        Err(e) => {
-                            log::trace!(
-                                "failed to deserialize: {}: {}: {}",
-                                status,
-                                e,
-                                String::from_utf8_lossy(body.as_ref())
-                            );
-                            Err(e.into())
-                        }
-                    }
-                })
-            })
-        })
+        }
     }
 
     /// Execute the request, expecting nothing back.
-    pub fn execute_empty_not_found(self) -> impl Future<Item = bool, Error = failure::Error> {
+    pub async fn execute_empty_not_found(self) -> Result<bool, failure::Error> {
         let RequestBuilder {
             token,
             client,
@@ -358,48 +350,44 @@ impl RequestBuilder {
             body,
         } = self;
 
-        let future = future::lazy(move || {
-            let access_token = token.read()?.access_token().to_string();
+        let access_token = token.read()?.access_token().to_string();
 
-            let mut r = client.request(method, url);
+        let mut r = client.request(method, url);
 
-            if let Some(body) = body {
-                r = r.body(body);
-            }
+        if let Some(body) = body {
+            r = r.body(body);
+        }
 
-            for (key, value) in headers {
-                r = r.header(key, value);
-            }
+        for (key, value) in headers {
+            r = r.header(key, value);
+        }
 
-            let r = r.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
-            Ok(r)
-        });
+        let request = r.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
 
-        future.and_then(move |request| {
-            request.send().map_err(Into::into).and_then(|mut res| {
-                let body = mem::replace(res.body_mut(), Decoder::empty());
+        let mut res = request.send().compat().await?;
+        let body = mem::replace(res.body_mut(), Decoder::empty());
+        let body = body.compat().try_concat().await?;
 
-                body.concat2().map_err(Into::into).and_then(move |body| {
-                    let status = res.status();
+        let status = res.status();
 
-                    if status == StatusCode::NOT_FOUND {
-                        log::trace!("not found: {}", String::from_utf8_lossy(body.as_ref()));
-                        return Ok(false);
-                    }
+        if status == StatusCode::NOT_FOUND {
+            log::trace!("not found: {}", String::from_utf8_lossy(body.as_ref()));
+            return Ok(false);
+        }
 
-                    if !status.is_success() {
-                        failure::bail!(
-                            "bad response: {}: {}",
-                            status,
-                            String::from_utf8_lossy(body.as_ref())
-                        );
-                    }
+        if !status.is_success() {
+            failure::bail!(
+                "bad response: {}: {}",
+                status,
+                String::from_utf8_lossy(body.as_ref())
+            );
+        }
 
-                    log::trace!("response: {}", String::from_utf8_lossy(body.as_ref()));
-                    Ok(true)
-                })
-            })
-        })
+        if log::log_enabled!(log::Level::Trace) {
+            log::trace!("response: {}", String::from_utf8_lossy(body.as_ref()));
+        }
+
+        Ok(true)
     }
 
     /// Add a body to the request.
@@ -421,19 +409,11 @@ impl RequestBuilder {
     }
 
     /// Add a query parameter.
-    pub fn optional_query_param(mut self, key: &str, value: Option<&str>) -> Self {
+    pub fn optional_query_param(mut self, key: &str, value: Option<String>) -> Self {
         if let Some(value) = value {
-            self.url.query_pairs_mut().append_pair(key, value);
+            self.url.query_pairs_mut().append_pair(key, value.as_str());
         }
 
         self
-    }
-}
-
-/// Serialize the given argument into a future.
-fn serialize<T: serde::Serialize>(value: &T) -> impl Future<Item = Bytes, Error = failure::Error> {
-    match serde_json::to_vec(value) {
-        Ok(body) => future::ok(Bytes::from(body)),
-        Err(e) => future::err(failure::Error::from(e)),
     }
 }

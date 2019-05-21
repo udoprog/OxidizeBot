@@ -1,15 +1,13 @@
-use crate::{bus, player, settings::ScopedSettings};
+use crate::{bus, settings::ScopedSettings};
 use parking_lot::RwLock;
-use std::sync::Arc;
-use tokio_core::reactor::Core;
+use std::{sync::Arc, time::Duration};
 
 /// Setup a player.
 pub fn setup(
-    core: &mut Core,
     bus: Arc<bus::Bus<bus::YouTube>>,
     settings: ScopedSettings,
 ) -> Result<YouTubePlayer, failure::Error> {
-    let volume_scale = settings.sync_var(core, "volume-scale", 100)?;
+    let volume_scale = settings.sync_var("volume-scale", 100)?;
 
     Ok(YouTubePlayer { bus, volume_scale })
 }
@@ -21,21 +19,21 @@ pub struct YouTubePlayer {
 
 impl YouTubePlayer {
     /// Update playback information.
-    pub fn tick(&mut self, song: &player::Song, video_id: &str) {
+    pub fn tick(&self, elapsed: Duration, duration: Duration, video_id: String) {
         let event = bus::YouTubeEvent::Play {
-            video_id: video_id.to_string(),
-            elapsed: song.elapsed().as_secs(),
-            duration: song.duration().as_secs(),
+            video_id,
+            elapsed: elapsed.as_secs(),
+            duration: duration.as_secs(),
         };
 
         self.bus.send(bus::YouTube::YouTubeCurrent { event });
     }
 
-    pub fn play(&mut self, song: &player::Song, video_id: &str) {
+    pub fn play(&mut self, elapsed: Duration, duration: Duration, video_id: String) {
         let event = bus::YouTubeEvent::Play {
-            video_id: video_id.to_string(),
-            elapsed: song.elapsed().as_secs(),
-            duration: song.duration().as_secs(),
+            video_id,
+            elapsed: elapsed.as_secs(),
+            duration: duration.as_secs(),
         };
 
         self.bus.send(bus::YouTube::YouTubeCurrent { event });

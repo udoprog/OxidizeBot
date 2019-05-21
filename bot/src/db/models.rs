@@ -1,7 +1,7 @@
 use super::schema::{
     after_streams, aliases, bad_words, balances, commands, promotions, songs, themes,
 };
-use crate::player::TrackId;
+use crate::track_id::TrackId;
 use chrono::NaiveDateTime;
 
 #[derive(serde::Serialize, serde::Deserialize, diesel::Queryable, diesel::Insertable)]

@@ -1,7 +1,5 @@
-use crate::{command, config, module, template, utils};
-use futures::{sync::mpsc, Async, Future, Poll, Stream};
+use crate::{command, config, module, prelude::*, template, timer, utils};
 use std::{fs, path::PathBuf, time};
-use tokio::timer;
 
 enum Event {
     /// Set the countdown.
@@ -85,24 +83,56 @@ impl super::Module for Module {
             handlers, futures, ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
-        let (sender, receiver) = mpsc::unbounded();
+        let (sender, mut receiver) = mpsc::unbounded();
 
         handlers.insert("countdown", Handler { sender });
 
-        futures.push(Box::new(CountdownFuture {
-            receiver,
-            path: self.path.clone(),
-            current: None,
-        }));
+        let path = self.path.clone();
 
+        let future = async move {
+            let mut current = Option::<Current>::None;
+
+            loop {
+                ::futures::select! {
+                    out = current.next() => {
+                        match out.transpose()? {
+                            Some(()) => if let Some(c) = current.as_mut() {
+                                c.write_log();
+                            },
+                            None => if let Some(mut c) = current.take() {
+                                c.clear_log();
+                            },
+                        }
+                    },
+                    event = receiver.next() => {
+                        match event {
+                            Some(Event::Set(duration, template)) => {
+                                let mut c = Current {
+                                    duration,
+                                    template,
+                                    elapsed: Default::default(),
+                                    interval: timer::Interval::new_interval(time::Duration::from_secs(1)),
+                                    path: path.clone(),
+                                };
+
+                                c.write_log();
+                                current = Some(c);
+                            }
+                            Some(Event::Clear) => {
+                                if let Some(mut c) = current.take() {
+                                    c.clear_log();
+                                }
+                            }
+                            None => (),
+                        }
+                    }
+                }
+            }
+        };
+
+        futures.push(future.boxed());
         Ok(())
     }
-}
-
-struct CountdownFuture {
-    receiver: mpsc::UnboundedReceiver<Event>,
-    path: PathBuf,
-    current: Option<Current>,
 }
 
 struct Current {
@@ -114,6 +144,8 @@ struct Current {
 }
 
 impl Current {
+    pin_utils::unsafe_pinned!(interval: timer::Interval);
+
     fn write(&mut self) -> Result<(), failure::Error> {
         let mut f = fs::File::create(&self.path)?;
         let remaining = self.duration.saturating_sub(self.elapsed.clone());
@@ -165,71 +197,25 @@ impl Current {
 }
 
 impl Stream for Current {
-    type Item = ();
-    type Error = failure::Error;
+    type Item = Result<(), failure::Error>;
 
-    fn poll(&mut self) -> Poll<Option<()>, failure::Error> {
-        if let Some(_) = try_infinite!(self.interval.poll()) {
-            self.elapsed += utils::Duration::seconds(1);
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        if let Poll::Ready(Some(_)) = self.as_mut().interval().poll_next(cx)? {
+            self.as_mut().elapsed += utils::Duration::seconds(1);
 
-            if self.elapsed >= self.duration {
-                return Ok(Async::Ready(None));
+            if self.as_ref().elapsed >= self.as_ref().duration {
+                return Poll::Ready(None);
             }
 
-            self.write()?;
-            return Ok(Async::Ready(Some(())));
+            return Poll::Ready(Some(Ok(())));
         }
 
-        Ok(Async::NotReady)
+        Poll::Pending
     }
 }
 
-impl Future for CountdownFuture {
-    type Item = ();
-    type Error = failure::Error;
-
-    fn poll(&mut self) -> Poll<(), failure::Error> {
-        loop {
-            let mut not_ready = true;
-
-            if let Some(e) = try_infinite_empty!(self.receiver.poll()) {
-                match e {
-                    Event::Set(duration, template) => {
-                        let mut current = Current {
-                            duration,
-                            template,
-                            elapsed: Default::default(),
-                            interval: timer::Interval::new_interval(time::Duration::from_secs(1)),
-                            path: self.path.clone(),
-                        };
-
-                        current.write_log();
-                        self.current = Some(current);
-                    }
-                    Event::Clear => {
-                        if let Some(mut current) = self.current.take() {
-                            current.clear_log();
-                        }
-                    }
-                }
-
-                not_ready = false;
-            }
-
-            if let Some(current) = self.current.as_mut() {
-                match current.poll()? {
-                    Async::Ready(None) => {
-                        current.clear_log();
-                        self.current = None;
-                    }
-                    Async::Ready(Some(())) => not_ready = false,
-                    Async::NotReady => (),
-                }
-            }
-
-            if not_ready {
-                return Ok(Async::NotReady);
-            }
-        }
+impl stream::FusedStream for Current {
+    fn is_terminated(&self) -> bool {
+        self.elapsed >= self.duration
     }
 }

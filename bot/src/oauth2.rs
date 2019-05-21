@@ -1,7 +1,7 @@
-use crate::{settings, utils::BoxFuture, web};
+use crate::{prelude::*, settings, timer, web};
 use chrono::{DateTime, Utc};
+use failure::Error;
 use failure::{format_err, ResultExt};
-use futures::{future, sync::oneshot, Async, Future, Poll, Stream as _};
 use oauth2::{
     basic::{BasicErrorField, BasicTokenResponse, BasicTokenType},
     AccessToken, AuthUrl, AuthorizationCode, Client, ClientId, ClientSecret, CsrfToken,
@@ -12,7 +12,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::timer;
 use url::Url;
 
 static YOUTUBE_CLIENT_ID: &'static str =
@@ -39,85 +38,88 @@ pub enum Type {
 
 impl Type {
     /// Refresh and save an updated version of the given token.
-    pub fn refresh_and_save_token(
+    pub async fn refresh_and_save_token(
         self,
         flow: Arc<Flow>,
-        token: &Token,
-    ) -> BoxFuture<Token, failure::Error> {
+        refresh_token: RefreshToken,
+    ) -> Result<Token, Error> {
         match self {
-            Type::Twitch => self.refresh_and_save_token_impl::<TwitchTokenResponse>(flow, token),
-            Type::Spotify => self.refresh_and_save_token_impl::<BasicTokenResponse>(flow, token),
-            Type::YouTube => self.refresh_and_save_token_impl::<BasicTokenResponse>(flow, token),
+            Type::Twitch => {
+                self.refresh_and_save_token_impl::<TwitchTokenResponse>(flow, refresh_token)
+                    .await
+            }
+            Type::Spotify => {
+                self.refresh_and_save_token_impl::<BasicTokenResponse>(flow, refresh_token)
+                    .await
+            }
+            Type::YouTube => {
+                self.refresh_and_save_token_impl::<BasicTokenResponse>(flow, refresh_token)
+                    .await
+            }
         }
     }
 
     /// Exchange and save a token based on a code.
-    pub fn exchange_and_save_token(
+    pub async fn exchange_and_save_token(
         self,
         flow: Arc<Flow>,
         received_token: web::ReceivedToken,
-    ) -> BoxFuture<AuthPair, failure::Error> {
+    ) -> Result<AuthPair, Error> {
         match self {
-            Type::Twitch => Box::new(
-                self.exchange_and_save_token_impl::<TwitchTokenResponse>(flow, received_token),
-            ),
-            Type::Spotify => Box::new(
-                self.exchange_and_save_token_impl::<BasicTokenResponse>(flow, received_token),
-            ),
-            Type::YouTube => Box::new(
-                self.exchange_and_save_token_impl::<BasicTokenResponse>(flow, received_token),
-            ),
+            Type::Twitch => {
+                self.exchange_and_save_token_impl::<TwitchTokenResponse>(flow, received_token)
+                    .await
+            }
+            Type::Spotify => {
+                self.exchange_and_save_token_impl::<BasicTokenResponse>(flow, received_token)
+                    .await
+            }
+            Type::YouTube => {
+                self.exchange_and_save_token_impl::<BasicTokenResponse>(flow, received_token)
+                    .await
+            }
         }
     }
 
     /// Inner, typed implementation of executing a refresh.
-    fn refresh_and_save_token_impl<T>(
+    async fn refresh_and_save_token_impl<T>(
         self,
         flow: Arc<Flow>,
-        token: &Token,
-    ) -> BoxFuture<Token, failure::Error>
+        refresh_token: RefreshToken,
+    ) -> Result<Token, Error>
     where
         T: 'static + Send + TokenResponse,
     {
-        let refresh_token = token.refresh_token.clone();
-
         let future = flow
             .client
             .exchange_refresh_token(&refresh_token)
             .param("client_id", flow.secrets_config.client_id.as_str())
             .param("client_secret", flow.secrets_config.client_secret.as_str())
-            .execute::<T>();
+            .execute::<T>()
+            .compat();
 
-        let future = future.then(|token_response| match token_response {
-            Ok(t) => Ok(t),
+        let token_response = match future.await {
+            Ok(t) => t,
             Err(RequestTokenError::Parse(_, res)) => {
                 log::error!("bad token response: {}", String::from_utf8_lossy(&res));
-                Err(format_err!("bad response from server"))
+                return Err(format_err!("bad response from server"));
             }
-            Err(e) => Err(failure::Error::from(e)),
-        });
+            Err(e) => return Err(Error::from(e)),
+        };
 
-        let future = future.and_then({
-            let flow = flow.clone();
+        let refresh_token = token_response
+            .refresh_token()
+            .map(|r| r.clone())
+            .unwrap_or(refresh_token);
 
-            move |token_response| {
-                let refresh_token = token_response
-                    .refresh_token()
-                    .map(|r| r.clone())
-                    .unwrap_or(refresh_token);
-
-                flow.save_token(refresh_token, token_response)
-            }
-        });
-
-        Box::new(future)
+        Ok(flow.save_token(refresh_token, token_response)?)
     }
 
-    fn exchange_and_save_token_impl<T>(
+    async fn exchange_and_save_token_impl<T>(
         self,
         flow: Arc<Flow>,
         received_token: web::ReceivedToken,
-    ) -> impl Future<Item = AuthPair, Error = failure::Error>
+    ) -> Result<AuthPair, Error>
     where
         T: TokenResponse,
     {
@@ -129,31 +131,31 @@ impl Type {
             .param("client_id", client_id.as_str())
             .param("client_secret", flow.secrets_config.client_secret.as_str());
 
-        exchange.execute::<T>().then(move |token_response| {
-            let token_response = match token_response {
-                Ok(t) => t,
-                Err(RequestTokenError::Parse(_, res)) => {
-                    log::error!("bad token response: {}", String::from_utf8_lossy(&res));
-                    return Err(format_err!("bad response from server"));
-                }
-                Err(e) => return Err(failure::Error::from(e)),
-            };
+        let token_response = exchange.execute::<T>().compat().await;
 
-            let refresh_token = match token_response.refresh_token() {
-                Some(refresh_token) => refresh_token.clone(),
-                None => failure::bail!("did not receive a refresh token from the service"),
-            };
+        let token_response = match token_response {
+            Ok(t) => t,
+            Err(RequestTokenError::Parse(_, res)) => {
+                log::error!("bad token response: {}", String::from_utf8_lossy(&res));
+                return Err(format_err!("bad response from server"));
+            }
+            Err(e) => return Err(Error::from(e)),
+        };
 
-            let token = flow.save_token(refresh_token, token_response)?;
-            let sync_token = SyncToken {
-                token: Arc::new(RwLock::new(Some(token))),
-            };
+        let refresh_token = match token_response.refresh_token() {
+            Some(refresh_token) => refresh_token.clone(),
+            None => failure::bail!("did not receive a refresh token from the service"),
+        };
 
-            Ok((
-                sync_token.clone(),
-                TokenRefreshFuture::new(flow, sync_token),
-            ))
-        })
+        let token = flow.save_token(refresh_token, token_response)?;
+        let sync_token = SyncToken {
+            token: Arc::new(RwLock::new(Some(token))),
+        };
+
+        Ok((
+            sync_token.clone(),
+            TokenRefreshFuture::new(flow, sync_token),
+        ))
     }
 }
 
@@ -172,7 +174,7 @@ pub fn twitch(
     web: web::Server,
     settings: settings::ScopedSettings,
     secrets_config: Arc<SecretsConfig>,
-) -> Result<FlowBuilder, failure::Error> {
+) -> Result<FlowBuilder, Error> {
     let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
 
     Ok(FlowBuilder {
@@ -195,7 +197,7 @@ pub fn spotify(
     web: web::Server,
     settings: settings::ScopedSettings,
     secrets_config: Arc<SecretsConfig>,
-) -> Result<FlowBuilder, failure::Error> {
+) -> Result<FlowBuilder, Error> {
     let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
 
     Ok(FlowBuilder {
@@ -214,10 +216,7 @@ pub fn spotify(
 }
 
 /// Setup a YouTube AUTH flow.
-pub fn youtube(
-    web: web::Server,
-    settings: settings::ScopedSettings,
-) -> Result<FlowBuilder, failure::Error> {
+pub fn youtube(web: web::Server, settings: settings::ScopedSettings) -> Result<FlowBuilder, Error> {
     let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
 
     Ok(FlowBuilder {
@@ -267,7 +266,7 @@ impl Token {
     }
 
     /// Return `true` if the token expires within 30 minutes.
-    pub fn expires_within(&self, within: Duration) -> Result<bool, failure::Error> {
+    pub fn expires_within(&self, within: Duration) -> Result<bool, Error> {
         let out = match self.expires_in.clone() {
             Some(expires_in) => {
                 let expires_in = chrono::Duration::seconds(expires_in as i64);
@@ -338,7 +337,7 @@ impl FlowBuilder {
     }
 
     /// Convert into an authentication flow.
-    pub fn build(self) -> Result<Arc<Flow>, failure::Error> {
+    pub fn build(self) -> Result<Arc<Flow>, Error> {
         let secrets_config = match self.secrets {
             Secrets::Config(config) => config,
             Secrets::Static {
@@ -387,119 +386,106 @@ pub struct Flow {
 
 impl Flow {
     /// Execute the flow.
-    pub fn execute(self: Arc<Self>, what: &str) -> BoxFuture<AuthPair, failure::Error> {
-        let future = self.clone().token_from_settings(what);
+    pub async fn execute(self: Arc<Self>, what: String) -> Result<AuthPair, Error> {
+        let token = self.clone().token_from_settings(what.clone()).await?;
 
-        let future = future.and_then::<_, BoxFuture<AuthPair, failure::Error>>({
-            let what = what.to_string();
-            let flow = self.clone();
+        match token {
+            Some(token) => {
+                let sync_token = SyncToken {
+                    token: Arc::new(RwLock::new(Some(token))),
+                };
 
-            move |token| match token {
-                Some(token) => {
-                    let sync_token = SyncToken {
-                        token: Arc::new(RwLock::new(Some(token))),
-                    };
-
-                    return Box::new(future::ok((
-                        sync_token.clone(),
-                        TokenRefreshFuture::new(flow, sync_token),
-                    )));
-                }
-                None => Box::new(flow.request_new_token(what)),
+                return Ok((
+                    sync_token.clone(),
+                    TokenRefreshFuture::new(self, sync_token),
+                ));
             }
-        });
-
-        Box::new(future)
+            None => self.request_new_token(what).await,
+        }
     }
 
     /// Request a new token.
-    fn request_new_token(
-        self: Arc<Self>,
-        what: String,
-    ) -> impl Future<Item = AuthPair, Error = failure::Error> {
+    async fn request_new_token(self: Arc<Self>, what: String) -> Result<AuthPair, Error> {
         let (mut auth_url, csrf_token) = self.client.authorize_url(CsrfToken::new_random);
 
         for (key, value) in self.extra_params.iter() {
             auth_url.query_pairs_mut().append_pair(key, value);
         }
 
-        let future =
-            self.web
-                .receive_token(auth_url, what.to_string(), csrf_token.secret().to_string());
+        let received = self
+            .web
+            .receive_token(auth_url, what.to_string(), csrf_token.secret().to_string())
+            .await;
 
-        let future = future
-            .map_err(|oneshot::Canceled| format_err!("token receive cancelled"))
-            .and_then(move |received_token| {
-                if *csrf_token.secret() != received_token.state {
-                    failure::bail!("CSRF Token Mismatch");
-                }
+        let received_token = match received {
+            Ok(received_token) => received_token,
+            Err(oneshot::Canceled) => failure::bail!("token received cancelled"),
+        };
 
-                Ok(received_token)
-            });
+        if *csrf_token.secret() != received_token.state {
+            failure::bail!("CSRF Token Mismatch");
+        }
 
-        future.and_then({
-            let flow = self.clone();
-            move |received_token| flow.ty.exchange_and_save_token(flow, received_token)
-        })
+        self.ty.exchange_and_save_token(self, received_token).await
     }
 
     /// Load a token from settings.
-    fn token_from_settings(
-        self: Arc<Self>,
-        what: &str,
-    ) -> BoxFuture<Option<Token>, failure::Error> {
+    async fn token_from_settings(self: Arc<Self>, what: String) -> Result<Option<Token>, Error> {
         let token = match self.settings.get::<Token>("token") {
             Ok(token) => token,
             Err(e) => {
                 log::warn!("failed to load saved token: {}", e);
-                return Box::new(future::ok(None));
+                return Ok(None);
             }
         };
 
         let token = match token {
             Some(token) => token,
-            None => return Box::new(future::ok(None)),
+            None => return Ok(None),
         };
 
-        self.stored_token(token, what)
+        self.stored_token(token, what).await
     }
 
     /// Validate a token base on the current flow.
-    fn stored_token(
+    async fn stored_token(
         self: Arc<Self>,
         token: Token,
-        what: &str,
-    ) -> BoxFuture<Option<Token>, failure::Error> {
+        what: String,
+    ) -> Result<Option<Token>, Error> {
         if token.client_id != self.secrets_config.client_id {
             log::warn!("Not using stored token since it uses a different Client ID");
-            return Box::new(future::ok(None));
+            return Ok(None);
         }
 
         if !token.has_scopes(&self.scopes) {
-            return Box::new(future::ok(None));
+            return Ok(None);
         }
 
         let expired = match token.expires_within(Duration::from_secs(60 * 10)) {
             Ok(expired) => expired,
-            Err(e) => return Box::new(future::err(e)),
+            Err(e) => return Err(e),
         };
 
         // try to refresh in case it has expired.
         if expired {
             log::info!("Attempting to refresh: {}", what);
 
-            return Box::new(self.refresh(&token).map(Some).or_else(|e| {
-                log::warn!("Failed to refresh saved token: {}", e);
-                Ok(None)
-            }));
+            return Ok(match self.refresh(token.refresh_token.clone()).await {
+                Ok(token) => Some(token),
+                Err(e) => {
+                    log::warn!("Failed to refresh saved token: {}", e);
+                    None
+                }
+            });
         }
 
-        Box::new(future::ok(Some(token)))
+        Ok(Some(token))
     }
 
     /// Refresh the token.
-    pub fn refresh(self: Arc<Self>, token: &Token) -> BoxFuture<Token, failure::Error> {
-        self.ty.refresh_and_save_token(self, token)
+    pub async fn refresh(self: Arc<Self>, refresh_token: RefreshToken) -> Result<Token, Error> {
+        self.ty.refresh_and_save_token(self, refresh_token).await
     }
 
     /// Save and return the given token.
@@ -507,7 +493,7 @@ impl Flow {
         &self,
         refresh_token: RefreshToken,
         token_response: impl TokenResponse,
-    ) -> Result<Token, failure::Error> {
+    ) -> Result<Token, Error> {
         let refreshed_at = Utc::now();
 
         let token = Token {
@@ -576,10 +562,12 @@ pub struct TokenRefreshFuture {
     sync_token: SyncToken,
     interval: timer::Interval,
     refresh_duration: Duration,
-    refresh_future: Option<BoxFuture<(), failure::Error>>,
+    refresh_future: Option<future::BoxFuture<'static, Result<Token, Error>>>,
 }
 
 impl TokenRefreshFuture {
+    pin_utils::unsafe_pinned!(interval: timer::Interval);
+
     /// Construct a new future for refreshing oauth tokens.
     pub fn new(flow: Arc<Flow>, sync_token: SyncToken) -> Self {
         // check for expiration every 10 minutes.
@@ -598,51 +586,49 @@ impl TokenRefreshFuture {
 }
 
 impl Future for TokenRefreshFuture {
-    type Item = ();
-    type Error = failure::Error;
+    type Output = Result<(), Error>;
 
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         loop {
-            let mut not_ready = true;
+            let mut pending = true;
 
-            if let Some(mut future) = self.refresh_future.take() {
-                match future.poll() {
-                    Ok(Async::NotReady) => self.refresh_future = Some(future),
-                    Ok(Async::Ready(())) => {
-                        self.refresh_future = None;
-                        not_ready = false;
-                    }
-                    Err(e) => {
-                        log::warn!("failed to refresh token: {}", e);
-                        self.refresh_future = None;
-                        not_ready = false;
+            if let Some(future) = self.as_mut().refresh_future.as_mut() {
+                if let Poll::Ready(result) = Pin::new(future).poll(cx) {
+                    match result {
+                        Ok(token) => {
+                            *self.as_ref().sync_token.token.write() = Some(token);
+                            self.as_mut().refresh_future = None;
+                            pending = false;
+                        }
+                        Err(e) => {
+                            log::warn!("failed to refresh token: {}", e);
+                            self.as_mut().refresh_future = None;
+                            pending = false;
+                        }
                     }
                 }
             }
 
-            if let Some(_) = try_infinite!(self.interval.poll()) {
+            if let Poll::Ready(Some(_)) = self.as_mut().interval().poll_next(cx)? {
                 if self.refresh_future.is_some() {
-                    return Err(format_err!("refresh already in progress"));
+                    return Poll::Ready(Err(format_err!("refresh already in progress")));
                 }
 
                 let refresh = match self.sync_token.token.read().as_ref() {
                     Some(current) if current.expires_within(self.refresh_duration.clone())? => {
-                        Some(self.flow.clone().refresh(current))
+                        Some(self.flow.clone().refresh(current.refresh_token.clone()))
                     }
                     _ => None,
                 };
 
                 if let Some(refresh) = refresh {
-                    let sync_token = self.sync_token.clone();
-                    self.refresh_future = Some(Box::new(refresh.map(move |token| {
-                        *sync_token.token.write() = Some(token);
-                    })));
-                    not_ready = false;
+                    self.as_mut().refresh_future = Some(refresh.boxed());
+                    pending = false;
                 }
             }
 
-            if not_ready {
-                return Ok(Async::NotReady);
+            if pending {
+                return Poll::Pending;
             }
         }
     }

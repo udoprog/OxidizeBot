@@ -1,15 +1,16 @@
+#![feature(async_await)]
+#![recursion_limit = "128"]
+
 use failure::{format_err, ResultExt};
-use futures::{future, Future};
 use setmod_bot::{
-    api, bus, config, db, features::Feature, irc, module, oauth2, obs, player, secrets, template,
-    utils, web,
+    api, bus, config, db, features::Feature, irc, module, oauth2, obs, player, prelude::*, secrets,
+    template, utils, web,
 };
 use std::{
     fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
-use tokio_core::reactor::Core;
 
 fn opts() -> clap::App<'static, 'static> {
     clap::App::new("SetMod Bot")
@@ -75,18 +76,22 @@ fn main() -> Result<(), failure::Error> {
     let config = m
         .value_of("config")
         .map(Path::new)
-        .unwrap_or(Path::new("config.toml"));
+        .unwrap_or(Path::new("config.toml"))
+        .to_owned();
 
     let root = config
         .parent()
-        .ok_or_else(|| format_err!("missing parent"))?;
+        .ok_or_else(|| format_err!("missing parent"))?
+        .to_owned();
 
     let web_root = m.value_of("web-root").map(PathBuf::from);
-    let web_root = web_root.as_ref().map(|p| p.as_path());
 
-    setup_logs(root).context("failed to setup logs")?;
+    setup_logs(&root).context("failed to setup logs")?;
 
-    match try_main(&root, web_root, &config) {
+    let mut runtime = tokio::runtime::Runtime::new()?;
+    let result = runtime.block_on(try_main(root, web_root, config).boxed().compat());
+
+    match result {
         Err(e) => setmod_bot::log_err!(e, "bot crashed"),
         Ok(()) => log::info!("bot was shut down"),
     }
@@ -94,7 +99,11 @@ fn main() -> Result<(), failure::Error> {
     Ok(())
 }
 
-fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), failure::Error> {
+async fn try_main(
+    root: PathBuf,
+    web_root: Option<PathBuf>,
+    config: PathBuf,
+) -> Result<(), failure::Error> {
     log::info!("Starting SetMod Version {}", setmod_bot::VERSION);
 
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
@@ -103,7 +112,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         failure::bail!("missing configuration: {}", config.display());
     }
 
-    let config: config::Config = fs::read_to_string(config)
+    let config: config::Config = fs::read_to_string(&config)
         .map_err(failure::Error::from)
         .and_then(|s| toml::de::from_str(&s).map_err(failure::Error::from))
         .with_context(|_| format_err!("failed to read configuration: {}", config.display()))?;
@@ -111,7 +120,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     let config = Arc::new(config);
 
     let secrets_path = match config.secrets.as_ref() {
-        Some(secrets) => secrets.to_path(root),
+        Some(secrets) => secrets.to_path(&root),
         None => root.join("secrets.yml"),
     };
 
@@ -197,7 +206,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     }
 
     if let Some(path) = config.bad_words.as_ref() {
-        let path = path.to_path(root);
+        let path = path.to_path(&root);
         bad_words
             .load_from_path(&path)
             .with_context(|_| format_err!("failed to load bad words from: {}", path.display()))?;
@@ -206,13 +215,10 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     let global_bus = Arc::new(bus::Bus::new());
     let youtube_bus = Arc::new(bus::Bus::new());
 
-    let mut core = Core::new()?;
-
-    let mut futures =
-        Vec::<Box<dyn Future<Item = (), Error = failure::Error> + Send + 'static>>::new();
+    let mut futures = Vec::<future::BoxFuture<'static, Result<(), failure::Error>>>::new();
 
     let (web, future) = web::setup(
-        web_root,
+        web_root.as_ref().map(|p| p.as_path()),
         config.clone(),
         global_bus.clone(),
         youtube_bus.clone(),
@@ -225,11 +231,17 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         themes.clone(),
     )?;
 
-    // NB: spawn the web server on a separate thread because it's needed for the synchronous authentication flow below.
-    core.runtime().executor().spawn(future.map_err(|e| {
+    let future = future.map_err(|e| {
         log::error!("Error in web server: {}", e);
         ()
-    }));
+    });
+
+    // NB: spawn the web server on a separate thread because it's needed for the synchronous authentication flow below.
+    tokio::spawn(future.boxed().compat())
+        .into_future()
+        .compat()
+        .await
+        .map_err(|_| failure::format_err!("failed to spawn web server"))?;
 
     if settings.get::<bool>("first-run")?.unwrap_or(true) {
         log::info!("Opening {} for the first time", web::URL);
@@ -243,7 +255,8 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     log::info!("Listening on: {}", web::URL);
 
-    let mut tokens: Vec<utils::BoxFuture<oauth2::AuthPair, failure::Error>> = vec![];
+    let mut tokens: Vec<future::BoxFuture<'static, Result<oauth2::AuthPair, failure::Error>>> =
+        vec![];
 
     let token_settings = settings.scoped(&["secrets", "oauth2"]);
 
@@ -263,7 +276,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         ])
         .build()?;
 
-        Box::new(flow.execute("Authorize Spotify"))
+        flow.execute(String::from("Authorize Spotify")).boxed()
     });
 
     tokens.push({
@@ -273,7 +286,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
             )])
             .build()?;
 
-        Box::new(flow.execute("Authorize YouTube"))
+        flow.execute(String::from("Authorize YouTube")).boxed()
     });
 
     tokens.push({
@@ -290,7 +303,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         ])
         .build()?;
 
-        Box::new(flow.execute("Authorize as Streamer"))
+        flow.execute(String::from("Authorize as Streamer")).boxed()
     });
 
     tokens.push({
@@ -308,28 +321,26 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         ])
         .build()?;
 
-        Box::new(flow.execute("Authorize as Bot"))
+        flow.execute(String::from("Authorize as Bot")).boxed()
     });
 
-    let results = core.run(future::join_all(tokens))?;
+    let results = future::try_join_all(tokens).await?;
     let mut results = results.into_iter();
 
     let (spotify_token, future) = results
         .next()
         .ok_or_else(|| format_err!("Expected Spotify token"))?;
-    futures.push(Box::new(future));
+    futures.push(future.boxed());
 
     let (youtube_token, future) = results
         .next()
         .ok_or_else(|| format_err!("Expected YouTube token"))?;
-    futures.push(Box::new(future));
+    futures.push(future.boxed());
 
     let (streamer_token, future) = results
         .next()
         .ok_or_else(|| format_err!("Expected Twitch Streamer token"))?;
-    futures.push(Box::new(future));
-
-    futures.push(Box::new(global_bus.clone().listen()));
+    futures.push(future.boxed());
 
     let (shutdown, shutdown_rx) = utils::Shutdown::new();
 
@@ -337,30 +348,26 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     let spotify = Arc::new(api::Spotify::new(spotify_token.clone())?);
     let streamer_twitch = api::Twitch::new(streamer_token.clone())?;
 
-    let player = match config.player.as_ref() {
+    let player = match config.player {
         // Only setup if the song feature is enabled.
-        Some(player) if config.features.test(Feature::Song) => {
+        Some(ref player) if config.features.test(Feature::Song) => {
             let (future, player) = player::run(
-                &mut core,
                 db.clone(),
                 spotify.clone(),
                 youtube.clone(),
                 &config,
-                player,
+                player.clone(),
                 global_bus.clone(),
                 youtube_bus.clone(),
                 settings.clone(),
                 themes.clone(),
-            )?;
+            )
+            .await?;
 
-            futures.push(Box::new(future));
+            futures.push(future.run().boxed());
 
             if let Some(api_url) = config.api_url.as_ref() {
-                futures.push(Box::new(api::setbac::run_update(
-                    api_url,
-                    &player,
-                    streamer_token.clone(),
-                )?));
+                futures.push(api::setbac::run(api_url, &player, streamer_token.clone())?.boxed());
             }
 
             web.set_player(player.client());
@@ -391,13 +398,13 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
     let (bot_token, future) = results
         .next()
         .ok_or_else(|| format_err!("Expected Twitch Bot token"))?;
-    futures.push(Box::new(future));
+    futures.push(future.boxed());
 
     let mut obs = None;
 
     if let Some(config) = config.obs.clone() {
         let (client, future) = obs::setup(config)?;
-        futures.push(Box::new(future));
+        futures.push(future.boxed());
         obs = Some(client);
     }
 
@@ -408,8 +415,7 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
 
     let bot_twitch = api::Twitch::new(bot_token.clone())?;
 
-    let future = irc::Irc {
-        core: &mut core,
+    let irc = irc::Irc {
         db: db,
         youtube,
         streamer_twitch,
@@ -424,25 +430,28 @@ fn try_main(root: &Path, web_root: Option<&Path>, config: &Path) -> Result<(), f
         bad_words,
         after_streams,
         global_bus,
-        modules: &modules,
+        modules,
         shutdown,
         settings,
-        player: player.as_ref(),
+        player,
         obs,
-    }
-    .run()?;
+    };
 
-    futures.push(Box::new(future));
+    futures.push(irc.run().boxed());
 
-    let stuff = future::join_all(futures).map_err(|e| Some(e));
-    let shutdown_rx = shutdown_rx
-        .map_err(|_| None)
-        .and_then::<_, Result<(), Option<failure::Error>>>(|_| Err(None));
+    let stuff = async move { future::try_join_all(futures).await.map_err(Some) };
 
-    let result = core.run(stuff.join(shutdown_rx).map(|_| ()));
+    let shutdown_rx = async move {
+        match shutdown_rx.await {
+            Ok(_) => Result::<(), Option<failure::Error>>::Err(None),
+            Err(_) => Result::<(), Option<failure::Error>>::Err(None),
+        }
+    };
+
+    let result = future::try_join(stuff, shutdown_rx).await;
 
     match result {
-        Ok(()) => Ok(()),
+        Ok(_) => Ok(()),
         Err(Some(e)) => Err(e),
         // Shutting down cleanly.
         Err(None) => {

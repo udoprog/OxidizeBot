@@ -1,8 +1,6 @@
-use crate::{command, db, idle, irc, module, settings, utils};
+use crate::{command, db, irc, module, prelude::*, timer, utils};
 use chrono::Utc;
-use futures::{future, Async, Future, Poll, Stream as _};
 use std::sync::Arc;
-use tokio_timer::Interval;
 
 pub struct Handler {
     pub promotions: db::Promotions,
@@ -82,75 +80,48 @@ impl super::Module for Module {
             },
         );
 
-        let (setting, frequency) =
+        let (mut setting, frequency) =
             settings.init_and_stream("promotions/frequency", self.frequency.clone())?;
 
         let promotions = promotions.clone();
         let sender = sender.clone();
         let channel = config.irc.channel.clone();
 
-        let interval = Interval::new_interval(frequency.as_std());
+        let mut interval = timer::Interval::new_interval(frequency.as_std());
+        let idle = idle.clone();
 
-        futures.push(Box::new(PromotionFuture {
-            interval,
-            setting,
-            promotions: promotions.clone(),
-            sender: sender.clone(),
-            channel,
-            idle: idle.clone(),
-        }));
-
-        Ok(())
-    }
-}
-
-struct PromotionFuture {
-    interval: tokio_timer::Interval,
-    // channel for configuration updates.
-    setting: settings::Stream<utils::Duration>,
-    promotions: db::Promotions,
-    sender: irc::Sender,
-    channel: Arc<String>,
-    idle: idle::Idle,
-}
-
-impl Future for PromotionFuture {
-    type Item = ();
-    type Error = failure::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        loop {
-            let mut not_ready = true;
-
-            if let Some(interval) = try_infinite!(self.setting.poll()) {
-                self.interval = tokio_timer::Interval::new_interval(interval.as_std());
-                not_ready = false;
-            }
-
-            if let Some(_) = try_infinite!(self.interval.poll()) {
-                if self.idle.is_idle() {
-                    log::trace!("channel is too idle to send a promotion");
-                } else {
-                    let promotions = self.promotions.clone();
-                    let sender = self.sender.clone();
-                    let channel = self.channel.clone();
-
-                    tokio::spawn(future::lazy(move || {
-                        if let Err(e) = promote(promotions, sender, &*channel) {
-                            log::error!("failed to send promotion: {}", e);
+        let future = async move {
+            loop {
+                // TODO: check that this actually works.
+                futures::select! {
+                    duration = setting.next() => {
+                        if let Some(duration) = duration {
+                            interval = timer::Interval::new_interval(duration.as_std());
                         }
+                    }
+                    _ = interval.next() => {
+                        if idle.is_idle() {
+                            log::trace!("channel is too idle to send a promotion");
+                        } else {
+                            let promotions = promotions.clone();
+                            let sender = sender.clone();
+                            let channel = channel.clone();
 
-                        Ok(())
-                    }));
+                            tokio::spawn(future01::lazy(move || {
+                                if let Err(e) = promote(promotions, sender, &*channel) {
+                                    log::error!("failed to send promotion: {}", e);
+                                }
+
+                                Ok(())
+                            }));
+                        }
+                    }
                 }
-
-                not_ready = false;
             }
+        };
 
-            if not_ready {
-                return Ok(Async::NotReady);
-            }
-        }
+        futures.push(future.boxed());
+        Ok(())
     }
 }
 

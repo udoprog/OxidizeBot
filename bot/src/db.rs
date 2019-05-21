@@ -9,7 +9,7 @@ pub(crate) mod schema;
 mod themes;
 mod words;
 
-use crate::{player, utils};
+use crate::{player, prelude::*, track_id::TrackId, utils};
 
 pub use self::{
     after_streams::{AfterStream, AfterStreams},
@@ -22,7 +22,7 @@ pub use self::{
 
 use chrono::Utc;
 use diesel::prelude::*;
-use futures::{future, Future};
+use failure::Error;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use tokio_threadpool::ThreadPool;
@@ -42,11 +42,11 @@ pub enum BalanceTransferError {
     #[error(display = "missing balance for transfer")]
     NoBalance,
     #[error(display = "other error: {}", _0)]
-    Other(failure::Error),
+    Other(Error),
 }
 
-impl From<failure::Error> for BalanceTransferError {
-    fn from(value: failure::Error) -> Self {
+impl From<Error> for BalanceTransferError {
+    fn from(value: Error) -> Self {
         BalanceTransferError::Other(value)
     }
 }
@@ -68,7 +68,7 @@ pub struct Database {
 
 impl Database {
     /// Find posts by users.
-    pub fn open(url: &str, thread_pool: Arc<ThreadPool>) -> Result<Database, failure::Error> {
+    pub fn open(url: &str, thread_pool: Arc<ThreadPool>) -> Result<Database, Error> {
         let pool = SqliteConnection::establish(url)?;
 
         // Run all migrations.
@@ -81,7 +81,7 @@ impl Database {
     }
 
     /// Access settings from the database.
-    pub fn settings(&self) -> Result<crate::settings::Settings, failure::Error> {
+    pub fn settings(&self) -> Result<crate::settings::Settings, Error> {
         Ok(crate::settings::Settings::new(
             self.clone(),
             crate::settings::Schema::load_static()?,
@@ -89,22 +89,21 @@ impl Database {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub fn balance_transfer(
+    pub async fn balance_transfer(
         &self,
-        channel: &str,
-        giver: &str,
-        taker: &str,
+        channel: String,
+        giver: String,
+        taker: String,
         amount: i64,
         override_balance: bool,
-    ) -> impl Future<Item = (), Error = BalanceTransferError> {
+    ) -> Result<(), BalanceTransferError> {
         use self::schema::balances::dsl;
 
-        let taker = user_id(taker);
-        let giver = user_id(giver);
-        let channel = String::from(channel);
+        let taker = user_id(&taker);
+        let giver = user_id(&giver);
         let pool = self.pool.clone();
 
-        return self.thread_pool.spawn_handle(future::lazy(move || {
+        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
             let c = pool.lock();
             let c = &*c;
 
@@ -128,33 +127,32 @@ impl Database {
                 Ok(())
             })
         }));
+
+        future.compat().await
     }
 
     /// Get balances for all users.
-    pub fn export_balances(
-        &self,
-    ) -> impl Future<Item = Vec<models::Balance>, Error = failure::Error> {
+    pub async fn export_balances(&self) -> Result<Vec<models::Balance>, Error> {
         use self::schema::balances::dsl;
 
         let pool = self.pool.clone();
 
-        self.thread_pool.spawn_handle(future::lazy(move || {
+        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
             let c = pool.lock();
             let balances = dsl::balances.load::<models::Balance>(&*c)?;
             Ok(balances)
-        }))
+        }));
+
+        future.compat().await
     }
 
     /// Import balances for all users.
-    pub fn import_balances(
-        &self,
-        balances: Vec<models::Balance>,
-    ) -> impl Future<Item = (), Error = failure::Error> {
+    pub async fn import_balances(&self, balances: Vec<models::Balance>) -> Result<(), Error> {
         use self::schema::balances::dsl;
 
         let pool = Arc::clone(&self.pool);
 
-        self.thread_pool.spawn_handle(future::lazy(move || {
+        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
             let c = pool.lock();
 
             for balance in balances {
@@ -183,11 +181,13 @@ impl Database {
             }
 
             Ok(())
-        }))
+        }));
+
+        future.compat().await
     }
 
     /// Find user balance.
-    pub fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i64>, failure::Error> {
+    pub fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i64>, Error> {
         use self::schema::balances::dsl;
 
         let user = user_id(user);
@@ -203,35 +203,35 @@ impl Database {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub fn balance_add(
+    pub async fn balance_add(
         &self,
-        channel: &str,
-        user: &str,
+        channel: String,
+        user: String,
         amount: i64,
-    ) -> impl Future<Item = (), Error = failure::Error> {
-        let user = user_id(user);
-        let channel = String::from(channel);
+    ) -> Result<(), Error> {
+        let user = user_id(&user);
         let pool = self.pool.clone();
 
-        self.thread_pool.spawn_handle(future::lazy(move || {
+        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
             let c = pool.lock();
             modify_balance(&*c, &channel, &user, amount)
-        }))
+        }));
+
+        future.compat().await
     }
 
     /// Add balance to users.
-    pub fn balances_increment<'a>(
+    pub async fn balances_increment(
         &self,
-        channel: &str,
+        channel: String,
         users: impl IntoIterator<Item = String> + Send + 'static,
         amount: i64,
-    ) -> impl Future<Item = (), Error = failure::Error> {
+    ) -> Result<(), Error> {
         use self::schema::balances::dsl;
 
-        let channel = String::from(channel);
         let pool = Arc::clone(&self.pool);
 
-        self.thread_pool.spawn_handle(future::lazy(move || {
+        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
             let c = pool.lock();
 
             for user in users {
@@ -265,7 +265,9 @@ impl Database {
             }
 
             Ok(())
-        }))
+        }));
+
+        future.compat().await
     }
 }
 
@@ -280,7 +282,7 @@ fn modify_balance(
     channel: &str,
     user: &str,
     amount: i64,
-) -> Result<(), failure::Error> {
+) -> Result<(), Error> {
     use self::schema::balances::dsl;
 
     let filter = dsl::balances.filter(dsl::channel.eq(channel).and(dsl::user.eq(user)));
@@ -311,14 +313,14 @@ fn modify_balance(
 
 impl words::Backend for Database {
     /// List all bad words.
-    fn list(&self) -> Result<Vec<models::BadWord>, failure::Error> {
+    fn list(&self) -> Result<Vec<models::BadWord>, Error> {
         use self::schema::bad_words::dsl;
         let c = self.pool.lock();
         Ok(dsl::bad_words.load::<models::BadWord>(&*c)?)
     }
 
     /// Insert a bad word into the database.
-    fn edit(&self, word: &str, why: Option<&str>) -> Result<(), failure::Error> {
+    fn edit(&self, word: &str, why: Option<&str>) -> Result<(), Error> {
         use self::schema::bad_words::dsl;
 
         let c = self.pool.lock();
@@ -347,7 +349,7 @@ impl words::Backend for Database {
         Ok(())
     }
 
-    fn delete(&self, word: &str) -> Result<bool, failure::Error> {
+    fn delete(&self, word: &str) -> Result<bool, Error> {
         use self::schema::bad_words::dsl;
 
         let c = self.pool.lock();
@@ -358,7 +360,7 @@ impl words::Backend for Database {
 }
 
 impl player::Backend for Database {
-    fn list(&self) -> Result<Vec<models::Song>, failure::Error> {
+    fn list(&self) -> Result<Vec<models::Song>, Error> {
         use self::schema::songs::dsl;
         let c = self.pool.lock();
         let songs = dsl::songs
@@ -368,7 +370,7 @@ impl player::Backend for Database {
         Ok(songs)
     }
 
-    fn push_back(&self, song: &models::AddSong) -> Result<(), failure::Error> {
+    fn push_back(&self, song: &models::AddSong) -> Result<(), Error> {
         use self::schema::songs::dsl;
         let c = self.pool.lock();
         diesel::insert_into(dsl::songs).values(song).execute(&*c)?;
@@ -376,7 +378,7 @@ impl player::Backend for Database {
     }
 
     /// Purge the given channel from songs.
-    fn song_purge(&self) -> Result<usize, failure::Error> {
+    fn song_purge(&self) -> Result<usize, Error> {
         use self::schema::songs::dsl;
         let c = self.pool.lock();
         Ok(diesel::update(dsl::songs.filter(dsl::deleted.eq(false)))
@@ -385,7 +387,7 @@ impl player::Backend for Database {
     }
 
     /// Remove the song at the given location.
-    fn remove_song(&self, track_id: &player::TrackId) -> Result<bool, failure::Error> {
+    fn remove_song(&self, track_id: &TrackId) -> Result<bool, Error> {
         use self::schema::songs::dsl;
         let c = self.pool.lock();
 
@@ -404,7 +406,7 @@ impl player::Backend for Database {
     }
 
     /// Promote the song with the given ID.
-    fn promote_song(&self, user: &str, track_id: &player::TrackId) -> Result<bool, failure::Error> {
+    fn promote_song(&self, user: &str, track_id: &TrackId) -> Result<bool, Error> {
         use self::schema::songs::dsl;
         let c = self.pool.lock();
 
@@ -427,9 +429,9 @@ impl player::Backend for Database {
 
     fn last_song_within(
         &self,
-        track_id: &player::TrackId,
+        track_id: &TrackId,
         duration: utils::Duration,
-    ) -> Result<Option<models::Song>, failure::Error> {
+    ) -> Result<Option<models::Song>, Error> {
         use self::schema::songs::dsl;
         let c = self.pool.lock();
 
