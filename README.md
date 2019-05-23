@@ -54,10 +54,18 @@ This is where the bot will be running while it is receiving tokens.
 
 You'll need Rust and a working compiler: https://rustup.rs/
 
+For now and until `async_await` is stable, you will need to use the _nightly_ rust compiler.
+This can be installed and configured by running:
+
+```
+rustup toolchain install nightly
+rustup default nightly
+```
+
 After this, you build the project using cargo:
 
 ```
-cargo build --release
+cargo +nightly build --release
 ```
 
 If you want to build and run the project in one go, there is a helper script in [`tools/setmod.ps1`] that you can run from anywhere in a powershell terminal, like this:
