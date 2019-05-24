@@ -1,10 +1,8 @@
 use crate::{api, command, stream_info, utils};
-use parking_lot::RwLock;
-use std::sync::Arc;
 
 /// Handler for the `!clip` command.
 pub struct Clip {
-    pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
+    pub stream_info: stream_info::StreamInfo,
     pub clip_cooldown: utils::Cooldown,
     pub twitch: api::Twitch,
 }
@@ -16,7 +14,7 @@ impl command::Handler for Clip {
             return Ok(());
         }
 
-        let stream_info = self.stream_info.read();
+        let stream_info = self.stream_info.data.read();
 
         let user_id = match stream_info.user.as_ref() {
             Some(user) => user.id.to_string(),

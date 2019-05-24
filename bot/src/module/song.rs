@@ -11,7 +11,7 @@ const EXAMPLE_SEARCH: &'static str = "queen we will rock you";
 /// Handler for the `!song` command.
 pub struct Handler {
     pub db: db::Database,
-    pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
+    pub stream_info: stream_info::StreamInfo,
     pub player: player::PlayerClient,
     pub request_help_cooldown: utils::Cooldown,
     pub subscriber_only: Arc<RwLock<bool>>,
@@ -101,7 +101,7 @@ impl Handler {
             let subscriber_only = subscriber_only_by_track || *subscriber_only.read();
 
             if subscriber_only && !is_moderator {
-                if !stream_info.read().is_subscriber(&user.name) {
+                if !stream_info.is_subscriber(&user.name) {
                     user.respond(format!(
                         "You must be a subscriber for {} requests, sorry :(",
                         track_type

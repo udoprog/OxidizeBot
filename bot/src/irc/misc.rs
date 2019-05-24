@@ -2,18 +2,17 @@
 
 use crate::{api, command, irc, stream_info, utils};
 use chrono::Utc;
-use parking_lot::RwLock;
-use std::sync::Arc;
 
 /// Handler for the `!uptime` command.
 pub struct Uptime {
-    pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
+    pub stream_info: stream_info::StreamInfo,
 }
 
 impl command::Handler for Uptime {
     fn handle<'m>(&mut self, ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
         let started_at = self
             .stream_info
+            .data
             .read()
             .stream
             .as_ref()
@@ -46,14 +45,14 @@ impl command::Handler for Uptime {
 
 /// Handler for the `!title` command.
 pub struct Title {
-    pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
+    pub stream_info: stream_info::StreamInfo,
     pub twitch: api::Twitch,
 }
 
 impl Title {
     /// Handle the title command.
     fn show(&mut self, user: irc::User<'_>) {
-        let title = self.stream_info.read().title.clone();
+        let title = self.stream_info.data.read().title.clone();
 
         match title {
             Some(title) => {
@@ -101,14 +100,14 @@ impl command::Handler for Title {
 
 /// Handler for the `!title` command.
 pub struct Game {
-    pub stream_info: Arc<RwLock<stream_info::StreamInfo>>,
+    pub stream_info: stream_info::StreamInfo,
     pub twitch: api::Twitch,
 }
 
 impl Game {
     /// Handle the game command.
     fn show(&mut self, user: irc::User<'_>) {
-        let game = self.stream_info.read().game.clone();
+        let game = self.stream_info.data.read().game.clone();
 
         match game {
             Some(game) => {

@@ -15,7 +15,7 @@ pub struct Handler {
     currency: currency::Currency,
     cooldown: utils::Cooldown,
     waters: Vec<(DateTime<Utc>, Option<Reward>)>,
-    stream_info: Arc<RwLock<stream_info::StreamInfo>>,
+    stream_info: stream_info::StreamInfo,
     reward_multiplier: Arc<RwLock<u32>>,
 }
 
@@ -30,6 +30,7 @@ impl Handler {
 
         let started_at = self
             .stream_info
+            .data
             .read()
             .stream
             .as_ref()

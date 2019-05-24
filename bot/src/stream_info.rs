@@ -1,11 +1,10 @@
-use crate::{api, prelude::*};
+use crate::{api, prelude::*, timer};
 use hashbrown::HashSet;
 use parking_lot::RwLock;
 use std::{sync::Arc, time};
-use tokio::timer;
 
 #[derive(Debug, Default)]
-pub struct StreamInfo {
+pub struct Data {
     pub stream: Option<api::twitch::Stream>,
     pub user: Option<api::twitch::User>,
     pub title: Option<String>,
@@ -14,10 +13,72 @@ pub struct StreamInfo {
     pub subs_set: HashSet<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct StreamInfo {
+    twitch: api::Twitch,
+    streamer: Arc<String>,
+    pub data: Arc<RwLock<Data>>,
+}
+
 impl StreamInfo {
     /// Check if a name is a subscriber.
     pub fn is_subscriber(&self, name: &str) -> bool {
-        self.subs_set.contains(name)
+        self.data.read().subs_set.contains(name)
+    }
+
+    /// Refresh the stream info.
+    pub async fn refresh(&self) {
+        let stream = self.twitch.stream_by_login(self.streamer.as_str());
+        let channel = self.twitch.channel_by_login(self.streamer.as_str());
+
+        let streamer = async {
+            let streamer = self.twitch.user_by_login(self.streamer.as_str()).await?;
+
+            let streamer = match streamer {
+                Some(streamer) => streamer,
+                None => return Ok((None, None)),
+            };
+
+            let subs = self
+                .twitch
+                .stream_subscriptions(&streamer.id, vec![])
+                .try_concat();
+
+            let subs = match subs.await {
+                Ok(subs) => Some(subs),
+                Err(e) => {
+                    log_err!(e, "failed to fetch subscriptions");
+                    None
+                }
+            };
+
+            Ok((Some(streamer), subs))
+        };
+
+        let result = future::try_join3(stream, channel, streamer).await;
+
+        let (stream, channel, (streamer, subs)) = match result {
+            Ok(result) => result,
+            Err(e) => {
+                log_err!(e, "failed to refresh stream info");
+                return;
+            }
+        };
+
+        let mut info = self.data.write();
+        info.user = streamer;
+        info.stream = stream;
+        info.title = Some(channel.status);
+        info.game = channel.game;
+
+        if let Some(subs) = subs {
+            info.subs = subs;
+            info.subs_set = info
+                .subs
+                .iter()
+                .map(|s| s.user_name.to_lowercase())
+                .collect();
+        }
     }
 }
 
@@ -26,67 +87,26 @@ pub fn setup(
     streamer: String,
     interval: time::Duration,
     twitch: api::Twitch,
-) -> (
-    Arc<RwLock<StreamInfo>>,
-    impl Future<Output = Result<(), failure::Error>>,
-) {
-    let info = Arc::new(RwLock::new(StreamInfo::default()));
+) -> (StreamInfo, impl Future<Output = Result<(), failure::Error>>) {
+    let stream_info = StreamInfo {
+        twitch,
+        streamer: Arc::new(streamer),
+        data: Default::default(),
+    };
 
-    let mut interval = timer::Interval::new(time::Instant::now(), interval).compat();
+    let stream_info = stream_info;
 
-    let future_info = info.clone();
+    let mut interval = timer::Interval::new(time::Instant::now(), interval);
+
+    let future_info = stream_info.clone();
 
     let future = async move {
-        while let Some(i) = interval.next().await {
-            let _ = i?;
-
-            let stream = twitch.stream_by_login(streamer.as_str());
-            let channel = twitch.channel_by_login(streamer.as_str());
-
-            let streamer = async {
-                let streamer = twitch.user_by_login(streamer.as_str()).await?;
-
-                let streamer = match streamer {
-                    Some(streamer) => streamer,
-                    None => return Ok((None, None)),
-                };
-
-                let subs = twitch
-                    .stream_subscriptions(&streamer.id, vec![])
-                    .try_concat();
-
-                let subs = match subs.await {
-                    Ok(subs) => Some(subs),
-                    Err(e) => {
-                        log_err!(e, "failed to fetch subscriptions");
-                        None
-                    }
-                };
-
-                Ok((Some(streamer), subs))
-            };
-
-            let (stream, channel, (streamer, subs)) =
-                future::try_join3(stream, channel, streamer).await?;
-
-            let mut info = future_info.write();
-            info.user = streamer;
-            info.stream = stream;
-            info.title = Some(channel.status);
-            info.game = channel.game;
-
-            if let Some(subs) = subs {
-                info.subs = subs;
-                info.subs_set = info
-                    .subs
-                    .iter()
-                    .map(|s| s.user_name.to_lowercase())
-                    .collect();
-            }
+        while let Some(_) = interval.next().await.transpose()? {
+            future_info.refresh().await;
         }
 
         Ok(())
     };
 
-    (info, future)
+    (stream_info, future)
 }
