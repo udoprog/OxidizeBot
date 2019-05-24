@@ -42,31 +42,47 @@ pub fn setup(
 
             let stream = twitch.stream_by_login(streamer.as_str());
             let channel = twitch.channel_by_login(streamer.as_str());
-            let streamer = twitch.user_by_login(streamer.as_str());
 
-            let (stream, channel, streamer) = future::try_join3(stream, channel, streamer).await?;
+            let streamer = async {
+                let streamer = twitch.user_by_login(streamer.as_str()).await?;
 
-            let subscriptions = match streamer.as_ref() {
-                Some(streamer) => {
-                    twitch
-                        .stream_subscriptions(&streamer.id, vec![])
-                        .try_concat()
-                        .await?
-                }
-                None => Default::default(),
+                let streamer = match streamer {
+                    Some(streamer) => streamer,
+                    None => return Ok((None, None)),
+                };
+
+                let subs = twitch
+                    .stream_subscriptions(&streamer.id, vec![])
+                    .try_concat();
+
+                let subs = match subs.await {
+                    Ok(subs) => Some(subs),
+                    Err(e) => {
+                        log_err!(e, "failed to fetch subscriptions");
+                        None
+                    }
+                };
+
+                Ok((Some(streamer), subs))
             };
+
+            let (stream, channel, (streamer, subs)) =
+                future::try_join3(stream, channel, streamer).await?;
 
             let mut info = future_info.write();
             info.user = streamer;
             info.stream = stream;
             info.title = Some(channel.status);
             info.game = channel.game;
-            info.subs = subscriptions;
-            info.subs_set = info
-                .subs
-                .iter()
-                .map(|s| s.user_name.to_lowercase())
-                .collect();
+
+            if let Some(subs) = subs {
+                info.subs = subs;
+                info.subs_set = info
+                    .subs
+                    .iter()
+                    .map(|s| s.user_name.to_lowercase())
+                    .collect();
+            }
         }
 
         Ok(())
