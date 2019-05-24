@@ -81,7 +81,7 @@ impl command::Handler for Handler {
                 let db = self.db.clone();
                 let target = ctx.user.target.to_string();
 
-                ctx.spawn_async(async move {
+                ctx.spawn(async move {
                     let op = db.balance_add(target, reward.user, -reward.amount);
 
                     match op.await {
@@ -122,7 +122,7 @@ impl command::Handler for Handler {
                 let db = self.db.clone();
                 let target = ctx.user.target.to_string();
 
-                ctx.spawn_async(async move {
+                ctx.spawn(async move {
                     let op = db.balance_add(target, user, amount);
 
                     match op.await {

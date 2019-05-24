@@ -54,7 +54,7 @@ impl command::Handler for Handler {
             Ok(())
         };
 
-        ctx.spawn_async(future.map(|result| match result {
+        ctx.spawn(future.map(|result| match result {
             Ok(()) => (),
             Err(e) => {
                 log_err!(e, "failed to reward users for !swearjar");

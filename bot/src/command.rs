@@ -54,7 +54,7 @@ pub struct Context<'a, 'm> {
 
 impl<'a, 'm> Context<'a, 'm> {
     /// Spawn the given future on the thread pool associated with the context.
-    pub fn spawn_async<F>(&self, future: F)
+    pub fn spawn<F>(&self, future: F)
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {

@@ -276,7 +276,7 @@ impl Handler {
             }
         });
 
-        ctx.spawn_async(future);
+        ctx.spawn(future);
         Ok(())
     }
 
@@ -315,7 +315,7 @@ impl command::Handler for Handler {
                 let player = self.player.clone();
                 let user = ctx.user.as_owned_user();
 
-                ctx.spawn_async(async move {
+                ctx.spawn(async move {
                     match player.play_theme(user.target.clone(), name).await {
                         Ok(()) => (),
                         Err(player::PlayThemeError::NoSuchTheme) => {

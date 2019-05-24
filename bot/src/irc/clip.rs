@@ -35,7 +35,7 @@ impl command::Handler for Clip {
         let twitch = self.twitch.clone();
         let user = ctx.user.as_owned_user();
 
-        let future = async move {
+        ctx.spawn(async move {
             match twitch.create_clip(user_id.as_str()).await {
                 Ok(Some(clip)) => {
                     user.respond(format!(
@@ -57,9 +57,8 @@ impl command::Handler for Clip {
                     log_err!(e, "error when posting clip");
                 }
             }
-        };
+        });
 
-        ctx.spawn_async(future);
         Ok(())
     }
 }

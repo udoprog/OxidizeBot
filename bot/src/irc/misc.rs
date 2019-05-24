@@ -79,7 +79,7 @@ impl command::Handler for Title {
             let user = ctx.user.as_owned_user();
             let title = rest.to_string();
 
-            ctx.spawn_async(async move {
+            ctx.spawn(async move {
                 let channel_id = user.target.trim_start_matches('#').to_string();
                 let mut request = api::twitch::UpdateChannelRequest::default();
                 request.channel.status = Some(title);
@@ -136,7 +136,7 @@ impl command::Handler for Game {
         let user = ctx.user.as_owned_user();
         let game = rest.to_string();
 
-        ctx.spawn_async(async move {
+        ctx.spawn(async move {
             let channel_id = user.target.trim_start_matches('#').to_string();
             let mut request = api::twitch::UpdateChannelRequest::default();
             request.channel.game = Some(game);

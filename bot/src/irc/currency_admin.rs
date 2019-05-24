@@ -58,7 +58,7 @@ impl command::Handler for Handler {
                 let giver = ctx.user.as_owned_user();
                 let is_streamer = ctx.user.is(ctx.streamer);
 
-                ctx.spawn_async(async move {
+                ctx.spawn(async move {
                     let result = db
                         .balance_transfer(
                             target,
@@ -111,7 +111,7 @@ impl command::Handler for Handler {
                 let user = ctx.user.as_owned_user();
                 let currency = self.currency.clone();
 
-                ctx.spawn_async(async move {
+                ctx.spawn(async move {
                     let result = db
                         .balance_add(user.target.clone(), boosted_user.clone(), amount)
                         .await;
@@ -149,7 +149,7 @@ impl command::Handler for Handler {
                 let currency = self.currency.clone();
                 let sender = ctx.sender.clone();
 
-                ctx.spawn_async(async move {
+                ctx.spawn(async move {
                     let result = currency.add_channel_all(user.target.clone(), amount).await;
 
                     match result {

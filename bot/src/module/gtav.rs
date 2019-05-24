@@ -369,7 +369,7 @@ impl Handler {
             let target = ctx.user.target.to_string();
             let id = id.to_string();
 
-            ctx.spawn_async(async move {
+            ctx.spawn(async move {
                 match player.play_theme(target, id.clone()).await {
                     Ok(()) => (),
                     Err(player::PlayThemeError::NoSuchTheme) => {
@@ -729,7 +729,7 @@ impl command::Handler for Handler {
         let target = ctx.user.target.to_string();
         let name = ctx.user.name.to_string();
 
-        ctx.spawn_async(async move {
+        ctx.spawn(async move {
             if let Err(e) = db.balance_add(target, name, -(cost as i64)).await {
                 log_err!(e, "failed to modify balance of user");
             }
