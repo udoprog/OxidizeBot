@@ -10,10 +10,6 @@ pub struct Interval {
 }
 
 impl Interval {
-    pin_utils::unsafe_pinned!(inner: Compat01As03<tokio::timer::Interval>);
-}
-
-impl Interval {
     /// Creates new `Interval` that yields with interval of `duration`.
     ///
     /// The function is shortcut for `Interval::new(Instant::now() + duration, duration)`.
@@ -49,8 +45,8 @@ impl Interval {
 impl Stream for Interval {
     type Item = Result<Instant, failure::Error>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        match self.inner().poll_next(cx) {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        match Pin::new(&mut self.inner).poll_next(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(result) => match result {
                 Some(result) => match result {

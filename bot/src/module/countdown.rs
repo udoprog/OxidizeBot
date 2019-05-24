@@ -144,8 +144,6 @@ struct Current {
 }
 
 impl Current {
-    pin_utils::unsafe_pinned!(interval: timer::Interval);
-
     fn write(&mut self) -> Result<(), failure::Error> {
         let mut f = fs::File::create(&self.path)?;
         let remaining = self.duration.saturating_sub(self.elapsed.clone());
@@ -200,7 +198,7 @@ impl Stream for Current {
     type Item = Result<(), failure::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        if let Poll::Ready(Some(_)) = self.as_mut().interval().poll_next(cx)? {
+        if let Poll::Ready(Some(_)) = Pin::new(&mut self.interval).poll_next(cx)? {
             self.as_mut().elapsed += utils::Duration::seconds(1);
 
             if self.as_ref().elapsed >= self.as_ref().duration {

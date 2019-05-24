@@ -270,10 +270,10 @@ impl Irc {
             settings.set("migration/whitelisted-hosts-migrated", true)?;
         }
 
-        let (whitelisted_hosts_stream, whitelisted_hosts) =
+        let (mut whitelisted_hosts_stream, whitelisted_hosts) =
             settings.init_and_stream("irc/whitelisted-hosts", HashSet::<String>::new())?;
 
-        let handler = Handler {
+        let mut handler = Handler {
             streamer: config.streamer.clone(),
             channel: config.irc.channel.clone(),
             sender: sender.clone(),
@@ -292,15 +292,28 @@ impl Irc {
             idle,
         };
 
-        futures.push(
-            IrcFuture {
-                handler,
-                whitelisted_hosts_stream,
-                client_stream: client.stream().compat().boxed(),
-            }
-            .boxed(),
-        );
+        let mut client_stream = client.stream().compat().fuse();
 
+        let future = async move {
+            loop {
+                futures::select! {
+                    update = whitelisted_hosts_stream.next() => {
+                        if let Some(update) = update {
+                            handler.whitelisted_hosts = update;
+                        }
+                    },
+                    message = client_stream.next() => {
+                        if let Some(m) = message.transpose()? {
+                            if let Err(e) = handler.handle(&m) {
+                                log::error!("failed to handle message: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        futures.push(future.boxed());
         let _ = future::try_join_all(futures).await?;
         Ok(())
     }
@@ -693,58 +706,6 @@ impl Handler {
     }
 }
 
-struct IrcFuture {
-    handler: Handler,
-    whitelisted_hosts_stream: settings::Stream<HashSet<String>>,
-    client_stream: stream::BoxStream<'static, Result<Message, irc::error::IrcError>>,
-}
-
-impl IrcFuture {
-    pin_utils::unsafe_pinned!(whitelisted_hosts_stream: settings::Stream<HashSet<String>>);
-    pin_utils::unsafe_pinned!(
-        client_stream: stream::BoxStream<'static, Result<Message, irc::error::IrcError>>
-    );
-}
-
-impl Future for IrcFuture {
-    type Output = Result<(), Error>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        loop {
-            let mut pending = true;
-
-            if let Poll::Ready(whitelisted_hosts) =
-                self.as_mut().whitelisted_hosts_stream().poll_next(cx)
-            {
-                if let Some(whitelisted_hosts) = whitelisted_hosts {
-                    self.as_mut().handler.whitelisted_hosts = whitelisted_hosts;
-                }
-
-                pending = false;
-            }
-
-            if let Poll::Ready(result) = self.as_mut().client_stream().poll_next(cx)? {
-                match result {
-                    None => {
-                        return Poll::Ready(Err(failure::format_err!("irc stream ended")));
-                    }
-                    Some(m) => {
-                        if let Err(e) = self.as_mut().handler.handle(&m) {
-                            log::error!("failed to handle message: {}", e);
-                        }
-                    }
-                }
-
-                pending = false;
-            }
-
-            if pending {
-                return Poll::Pending;
-            }
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct OwnedUser {
     tags: OwnedTags,
@@ -838,7 +799,7 @@ pub struct CommandVars<'a> {
 }
 
 // Future to refresh moderators every 5 minutes.
-async fn refresh_mods_future(sender: Sender, channel: Arc<String>) -> Result<(), failure::Error> {
+async fn refresh_mods_future(sender: Sender, channel: Arc<String>) -> Result<(), Error> {
     let mut interval = timer::Interval::new_interval(time::Duration::from_secs(60 * 5));
 
     while let Some(i) = interval.next().await {

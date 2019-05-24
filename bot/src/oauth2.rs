@@ -566,8 +566,6 @@ pub struct TokenRefreshFuture {
 }
 
 impl TokenRefreshFuture {
-    pin_utils::unsafe_pinned!(interval: timer::Interval);
-
     /// Construct a new future for refreshing oauth tokens.
     pub fn new(flow: Arc<Flow>, sync_token: SyncToken) -> Self {
         // check for expiration every 10 minutes.
@@ -609,7 +607,7 @@ impl Future for TokenRefreshFuture {
                 }
             }
 
-            if let Poll::Ready(Some(_)) = self.as_mut().interval().poll_next(cx)? {
+            if let Poll::Ready(Some(_)) = Pin::new(&mut self.interval).poll_next(cx)? {
                 if self.refresh_future.is_some() {
                     return Poll::Ready(Err(format_err!("refresh already in progress")));
                 }

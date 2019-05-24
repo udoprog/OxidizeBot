@@ -2,9 +2,10 @@
 
 use crate::{db, prelude::*, utils};
 use diesel::prelude::*;
+use futures::ready;
 use hashbrown::HashMap;
 use parking_lot::RwLock;
-use std::{fmt, sync::Arc};
+use std::{fmt, pin::Pin, sync::Arc};
 
 const SEPARATOR: &'static str = "/";
 
@@ -425,10 +426,6 @@ pub struct Stream<T> {
     rx: mpsc::UnboundedReceiver<Event<serde_json::Value>>,
 }
 
-impl<T> Stream<T> {
-    pin_utils::unsafe_pinned!(rx: mpsc::UnboundedReceiver<Event<serde_json::Value>>);
-}
-
 impl<T> Drop for Stream<T> {
     fn drop(&mut self) {
         if self.subscriptions.write().remove(&self.key).is_some() {
@@ -450,7 +447,7 @@ impl<T> stream::FusedStream for Stream<T> {
 
 impl<T> futures::Stream for Stream<T>
 where
-    T: Clone + serde::de::DeserializeOwned,
+    T: Unpin + Clone + serde::de::DeserializeOwned,
 {
     type Item = T;
 
@@ -458,10 +455,9 @@ where
         log::trace!("polling stream: {}", self.as_ref().key);
 
         loop {
-            let update = match self.as_mut().rx().poll_next(cx) {
-                Poll::Ready(Some(update)) => update,
-                Poll::Ready(None) => return Poll::Ready(None),
-                Poll::Pending => return Poll::Pending,
+            let update = match ready!(Pin::new(&mut self.rx).poll_next(cx)) {
+                Some(update) => update,
+                None => return Poll::Ready(None),
             };
 
             let value = match update {
