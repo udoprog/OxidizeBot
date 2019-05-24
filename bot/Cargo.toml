@@ -6,29 +6,29 @@ edition = "2018"
 license = "MIT/Apache-2.0"
 
 [dependencies]
-chrono = {version = "0.4.6", features = ["serde"]}
-clap = "2.32"
-diesel = {version = "1.4.1", features = ["sqlite", "r2d2", "chrono"]}
-diesel_migrations = {version = "1.4.0"}
+chrono = { version = "0.4.6", features = ["serde"] }
+clap = "2.33.0"
+diesel = { version = "1.4.2", features = ["sqlite", "r2d2", "chrono"] }
+diesel_migrations = "1.4.0"
 eudex = "0.1.1"
-failure = "0.1"
-hashbrown = {version = "0.1.8", features = ["serde"]}
-hyper = "0.12.24"
-warp = "0.1.14"
+failure = "0.1.5"
+hashbrown = { version = "0.3.0", features = ["serde"] }
+hyper = "0.12.29"
+warp = "0.1.15"
 irc = {version = "0.13", git = "https://github.com/aatxe/irc", branch = "0.14"}
 log = "0.4.6"
 oauth2 = {version = "2.0.0-alpha.5", git = "https://github.com/udoprog/oauth2-rs", branch = "async"}
 ratelimit = "0.4.4"
 rayon = "1.0.3"
-relative-path = {version = "0.4.0", features = ["serde"]}
-reqwest = "0.9.10"
-serde = {version = "1.0.88", features = ["rc"]}
-serde_json = "1.0.38"
-serde_yaml = "0.8.8"
+relative-path = { version = "0.4.0", features = ["serde"] }
+reqwest = "0.9.17"
+serde = { version = "1.0.91", features = ["rc"] }
+serde_json = "1.0.39"
+serde_yaml = "0.8.9"
 serde_urlencoded = "0.5.5"
-toml = "0.4"
-tokio = "0.1.15"
-tokio-threadpool = "0.1.11"
+toml = "0.5.1"
+tokio = "0.1.20"
+tokio-threadpool = "0.1.14"
 url = "1.7.2"
 Inflector = "0.11.4"
 rspotify = "0.4.0"
@@ -36,19 +36,19 @@ tokio-bus = "0.1.1"
 base64 = "0.10.1"
 rand = "0.6.5"
 fixed-map = "0.6.1"
-log4rs = "0.8.1"
+log4rs = "0.8.3"
 handlebars = "1.1.0"
 htmlescape = "0.3.1"
 lazy_static = "1.3.0"
 # set the bundled feature to use the bundled libsqlite3
 libsqlite3-sys = { version = "0.12.0", features = ["bundled", "unlock_notify"] }
-webbrowser = "0.4"
-parking_lot = "0.7.1"
+webbrowser = "0.5.1"
+parking_lot = "0.8.0"
 err-derive = "0.1.5"
 percent-encoding = "1.0.1"
 bytes = "0.4.12"
 websocket = "0.22.4"
-uuid = { version = "0.7", features = ["serde", "v4"] }
+uuid = { version = "0.7.4", features = ["serde", "v4"] }
 
 [dependencies.futures01]
 package = "futures"
@@ -61,4 +61,4 @@ features = ["nightly", "async-await", "compat"]
 git = "https://github.com/udoprog/futures-rs"
 
 [build-dependencies]
-failure = "0.1"
+failure = "0.1.5"
