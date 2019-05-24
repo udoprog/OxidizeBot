@@ -26,9 +26,12 @@ api_url = "https://setbac.tv"
 [irc]
 channel = "#setbac"
 bot = "setmod"
+# Cooldown to use between each moderator command.
 moderator_cooldown = "5s"
-# whether to notify when viewers are rewarded with loyalty currency.
+# Whether to notify when viewers are rewarded with loyalty currency.
 notify_rewards = false
+# Startup message to use when the bot initially connects.
+startup_message = "HeyGuys"
 
 # Support for connecting to OBS using obs-websocket.
 # Must be installed from:
