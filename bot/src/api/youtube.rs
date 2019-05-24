@@ -9,7 +9,7 @@ use reqwest::{
     r#async::{Chunk, Client, Decoder},
     Method, StatusCode, Url,
 };
-use std::{mem, sync::Arc};
+use std::mem;
 
 const V3_URL: &'static str = "https://www.googleapis.com/youtube/v3";
 const GET_VIDEO_INFO_URL: &'static str = "https://www.youtube.com/get_video_info";
@@ -54,39 +54,39 @@ impl YouTube {
     }
 
     /// Update the channel information.
-    pub async fn videos_by_id(
-        self: Arc<Self>,
+    pub fn videos_by_id(
+        &self,
         video_id: String,
         part: String,
-    ) -> Result<Option<Video>, failure::Error> {
-        let videos = self
+    ) -> impl Future<Output = Result<Option<Video>, failure::Error>> {
+        let req = self
             .v3(Method::GET, &["videos"])
             .query_param("part", part.as_str())
             .query_param("id", video_id.as_str())
-            .json::<Videos>()
-            .await?;
+            .json::<Videos>();
 
-        Ok(videos.and_then(|v| v.items.into_iter().next()))
+        async move { Ok(req.await?.and_then(|v| v.items.into_iter().next())) }
     }
 
     /// Search YouTube.
-    pub async fn search(self: Arc<Self>, q: String) -> Result<SearchResults, failure::Error> {
-        let result = self
+    pub fn search(&self, q: String) -> impl Future<Output = Result<SearchResults, failure::Error>> {
+        let req = self
             .v3(Method::GET, &["search"])
             .query_param("part", "snippet")
             .query_param("q", q.as_str())
-            .json::<SearchResults>()
-            .await?;
+            .json::<SearchResults>();
 
-        match result {
-            Some(result) => Ok(result),
-            None => failure::bail!("got empty response"),
+        async move {
+            match req.await? {
+                Some(result) => Ok(result),
+                None => failure::bail!("got empty response"),
+            }
         }
     }
 
     /// Get video info of a video.
     pub async fn get_video_info(
-        self: Arc<Self>,
+        &self,
         video_id: String,
     ) -> Result<Option<VideoInfo>, failure::Error> {
         let mut url = self.get_video_info_url.clone();

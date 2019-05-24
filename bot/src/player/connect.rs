@@ -52,7 +52,6 @@ impl ConnectPlayer {
         let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
         let result = self
             .spotify
-            .clone()
             .me_player_play(device_id, Some(track_uri), Some(elapsed.as_millis() as u64))
             .await;
 
@@ -65,7 +64,7 @@ impl ConnectPlayer {
 
     pub async fn pause(&self) {
         let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
-        let result = self.spotify.clone().me_player_pause(device_id).await;
+        let result = self.spotify.me_player_pause(device_id).await;
 
         match result {
             Err(e) => log_err!(e, "failed to issue pause command"),
@@ -76,7 +75,7 @@ impl ConnectPlayer {
 
     pub async fn stop(&self) {
         let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
-        let result = self.spotify.clone().me_player_pause(device_id).await;
+        let result = self.spotify.me_player_pause(device_id).await;
 
         match result {
             Err(e) => log_err!(e, "failed to issue stop command"),
@@ -90,7 +89,6 @@ impl ConnectPlayer {
         let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
         let result = self
             .spotify
-            .clone()
             .me_player_volume(device_id, (volume as f32) / 100f32)
             .await;
 
@@ -148,7 +146,7 @@ impl ConnectDevice {
 
     /// List all available devices.
     pub async fn list_devices(&self) -> Result<Vec<api::spotify::Device>, failure::Error> {
-        self.spotify.clone().my_player_devices().await
+        self.spotify.my_player_devices().await
     }
 
     /// Set which device to perform playback from.

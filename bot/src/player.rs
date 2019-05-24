@@ -321,7 +321,7 @@ pub async fn run(
         closed: closed.clone(),
     };
 
-    let p = match spotify.clone().me_player().await? {
+    let p = match spotify.me_player().await? {
         Some(p) => p,
         None => return Ok((future, player)),
     };
@@ -333,7 +333,7 @@ pub async fn run(
             *device.device.write() = Some(p.device);
         }
         None => {
-            let devices = spotify.clone().my_player_devices().await?;
+            let devices = spotify.my_player_devices().await?;
 
             for (i, d) in devices.iter().enumerate() {
                 log::info!("device #{}: {}", i, d.name)
@@ -757,7 +757,7 @@ impl PlayerClient {
     pub async fn search_track(&self, q: String) -> Result<Option<TrackId>, failure::Error> {
         if q.starts_with("youtube:") {
             let q = q.trim_start_matches("youtube:").to_string();
-            let results = self.youtube.clone().search(q).await?;
+            let results = self.youtube.search(q).await?;
 
             let result = results.items.into_iter().filter(|r| match r.id.kind {
                 api::youtube::Kind::Video => true,
@@ -774,7 +774,7 @@ impl PlayerClient {
             q
         };
 
-        let page = self.spotify.clone().search_track(q).await?;
+        let page = self.spotify.search_track(q).await?;
 
         match page.items.into_iter().next() {
             Some(track) => match SpotifyId::from_base62(&track.id) {
@@ -1861,7 +1861,7 @@ async fn playlist_to_items(
 ) -> Result<Vec<Arc<Item>>, failure::Error> {
     let mut items = Vec::new();
 
-    let playlist = spotify.clone().playlist(playlist).await?;
+    let playlist = spotify.playlist(playlist).await?;
 
     for playlist_track in spotify.page_as_stream(playlist.tracks).try_concat().await? {
         let track = playlist_track.track;
@@ -1920,14 +1920,14 @@ async fn convert_item(
     let (track, duration) = match track_id {
         TrackId::Spotify(ref id) => {
             let track_id_string = id.to_base62();
-            let track = spotify.clone().track(track_id_string).await?;
+            let track = spotify.track(track_id_string).await?;
             let duration = Duration::from_millis(track.duration_ms.into());
 
             (Track::Spotify { track }, duration)
         }
         TrackId::YouTube(ref id) => {
             let id = id.to_string();
-            let video_info = youtube.clone().get_video_info(id.clone());
+            let video_info = youtube.get_video_info(id.clone());
             let video = youtube
                 .clone()
                 .videos_by_id(id.clone(), String::from("contentDetails,snippet"));

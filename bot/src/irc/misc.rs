@@ -84,7 +84,7 @@ impl command::Handler for Title {
                 let mut request = api::twitch::UpdateChannelRequest::default();
                 request.channel.status = Some(title);
 
-                match twitch.update_channel(channel_id, request).await {
+                match twitch.update_channel(channel_id.as_str(), request).await {
                     Ok(()) => {
                         user.respond("Title updated!");
                     }
@@ -141,7 +141,7 @@ impl command::Handler for Game {
             let mut request = api::twitch::UpdateChannelRequest::default();
             request.channel.game = Some(game);
 
-            match twitch.update_channel(channel_id, request).await {
+            match twitch.update_channel(channel_id.as_str(), request).await {
                 Ok(()) => {
                     user.respond("Game updated!");
                 }

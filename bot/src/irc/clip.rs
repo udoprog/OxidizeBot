@@ -36,7 +36,7 @@ impl command::Handler for Clip {
         let user = ctx.user.as_owned_user();
 
         let future = async move {
-            match twitch.create_clip(user_id).await {
+            match twitch.create_clip(user_id.as_str()).await {
                 Ok(Some(clip)) => {
                     user.respond(format!(
                         "Created clip at {}/{}",

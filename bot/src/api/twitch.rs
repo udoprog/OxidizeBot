@@ -3,6 +3,7 @@
 use crate::{oauth2, prelude::*};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
+use failure::Error;
 use reqwest::{
     header,
     r#async::{Client, Decoder},
@@ -24,7 +25,7 @@ pub struct Twitch {
 
 impl Twitch {
     /// Create a new API integration.
-    pub fn new(token: oauth2::SyncToken) -> Result<Twitch, failure::Error> {
+    pub fn new(token: oauth2::SyncToken) -> Result<Twitch, Error> {
         Ok(Twitch {
             client: Client::new(),
             api_url: str::parse::<Url>(API_TWITCH_URL)?,
@@ -75,29 +76,30 @@ impl Twitch {
     }
 
     /// Update the channel information.
-    pub async fn update_channel(
+    pub fn update_channel(
         &self,
-        channel_id: String,
+        channel_id: &str,
         request: UpdateChannelRequest,
-    ) -> Result<(), failure::Error> {
+    ) -> impl Future<Output = Result<(), Error>> {
         let req = self
-            .v5(Method::PUT, &["channels", channel_id.as_str()])
+            .v5(Method::PUT, &["channels", channel_id])
             .header(header::CONTENT_TYPE, "application/json");
 
-        let body = Bytes::from(serde_json::to_vec(&request)?);
-        let _ = req.body(body).execute::<serde_json::Value>().await?;
-        Ok(())
+        async move {
+            let body = Bytes::from(serde_json::to_vec(&request)?);
+            let _ = req.body(body).execute::<serde_json::Value>().await?;
+            Ok(())
+        }
     }
 
     /// Get information on a user.
-    pub async fn user_by_login(&self, login: String) -> Result<Option<User>, failure::Error> {
-        let data = self
+    pub fn user_by_login(&self, login: &str) -> impl Future<Output = Result<Option<User>, Error>> {
+        let req = self
             .new_api(Method::GET, &["users"])
-            .query_param("login", login.as_str())
-            .execute::<Data<User>>()
-            .await?;
+            .query_param("login", login)
+            .execute::<Data<User>>();
 
-        Ok(data.data.into_iter().next())
+        async move { Ok(req.await?.data.into_iter().next()) }
     }
 
     /// Get information on a user.
@@ -124,46 +126,46 @@ impl Twitch {
     }
 
     /// Create a clip for the given broadcaster.
-    pub async fn create_clip(
+    pub fn create_clip(
         &self,
-        broadcaster_id: String,
-    ) -> Result<Option<Clip>, failure::Error> {
-        let data = self
+        broadcaster_id: &str,
+    ) -> impl Future<Output = Result<Option<Clip>, Error>> {
+        let req = self
             .new_api(Method::POST, &["clips"])
-            .query_param("broadcaster_id", broadcaster_id.as_str())
-            .execute::<Data<Clip>>()
-            .await?;
+            .query_param("broadcaster_id", broadcaster_id)
+            .execute::<Data<Clip>>();
 
-        Ok(data.data.into_iter().next())
+        async move { Ok(req.await?.data.into_iter().next()) }
     }
 
     /// Get the channela associated with the current authentication.
-    pub async fn channel(&self) -> Result<Channel, failure::Error> {
+    pub async fn channel(&self) -> Result<Channel, Error> {
         self.v5(Method::GET, &["channel"])
             .execute::<Channel>()
             .await
     }
 
     /// Get the channela associated with the current authentication.
-    pub async fn channel_by_login(&self, login: String) -> Result<Channel, failure::Error> {
-        self.v5(Method::GET, &["channels", login.as_str()])
+    pub fn channel_by_login(&self, login: &str) -> impl Future<Output = Result<Channel, Error>> {
+        self.v5(Method::GET, &["channels", login])
             .execute::<Channel>()
-            .await
     }
 
     /// Get stream information.
-    pub async fn stream_by_login(&self, login: String) -> Result<Option<Stream>, failure::Error> {
-        let data = self
+    pub fn stream_by_login(
+        &self,
+        login: &str,
+    ) -> impl Future<Output = Result<Option<Stream>, Error>> {
+        let req = self
             .new_api(Method::GET, &["streams"])
-            .query_param("user_login", login.as_str())
-            .execute::<Page<Stream>>()
-            .await?;
+            .query_param("user_login", login)
+            .execute::<Page<Stream>>();
 
-        Ok(data.data.into_iter().next())
+        async move { Ok(req.await?.data.into_iter().next()) }
     }
 
     /// Get chatters for the given channel using TMI.
-    pub async fn chatters(&self, channel: String) -> Result<Chatters, failure::Error> {
+    pub async fn chatters(&self, channel: String) -> Result<Chatters, Error> {
         let channel = channel.trim_start_matches('#');
         let url = format!("{}/group/user/{}/chatters", TMI_TWITCH_URL, channel);
 
@@ -185,14 +187,14 @@ impl Twitch {
 /// A response that is paged as a stream of requests.
 pub struct Paged<T> {
     request: RequestBuilder,
-    page: Option<future::BoxFuture<'static, Result<Page<T>, failure::Error>>>,
+    page: Option<future::BoxFuture<'static, Result<Page<T>, Error>>>,
 }
 
 impl<T> futures::Stream for Paged<T>
 where
     T: 'static + Send + serde::de::DeserializeOwned,
 {
-    type Item = Result<Vec<T>, failure::Error>;
+    type Item = Result<Vec<T>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         if let Some(page) = self.as_mut().page.as_mut() {
@@ -259,7 +261,7 @@ impl RequestBuilder {
     }
 
     /// Execute the request.
-    pub async fn execute<T>(self) -> Result<T, failure::Error>
+    pub async fn execute<T>(self) -> Result<T, Error>
     where
         T: serde::de::DeserializeOwned,
     {

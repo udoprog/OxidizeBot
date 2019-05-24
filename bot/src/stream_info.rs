@@ -40,9 +40,9 @@ pub fn setup(
         while let Some(i) = interval.next().await {
             let _ = i?;
 
-            let stream = twitch.stream_by_login(streamer.clone());
-            let channel = twitch.channel_by_login(streamer.clone());
-            let streamer = twitch.user_by_login(streamer.clone());
+            let stream = twitch.stream_by_login(streamer.as_str());
+            let channel = twitch.channel_by_login(streamer.as_str());
+            let streamer = twitch.user_by_login(streamer.as_str());
 
             let (stream, channel, streamer) = future::try_join3(stream, channel, streamer).await?;
 
