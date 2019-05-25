@@ -1,4 +1,6 @@
-use futures::{compat::Compat01As03, future::FusedFuture, stream::FusedStream, Future, Stream};
+use futures::{
+    compat::Compat01As03, future, ready, stream, Future, FutureExt as _, Stream, StreamExt as _,
+};
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -6,7 +8,7 @@ use std::{
 };
 
 pub struct Interval {
-    inner: Compat01As03<tokio::timer::Interval>,
+    inner: stream::Fuse<Compat01As03<tokio::timer::Interval>>,
 }
 
 impl Interval {
@@ -21,7 +23,7 @@ impl Interval {
     /// This function panics if `duration` is zero.
     pub fn new_interval(duration: Duration) -> Self {
         Self {
-            inner: Compat01As03::new(tokio::timer::Interval::new_interval(duration)),
+            inner: Compat01As03::new(tokio::timer::Interval::new_interval(duration)).fuse(),
         }
     }
 
@@ -37,7 +39,7 @@ impl Interval {
     /// This function panics if `duration` is zero.
     pub fn new(at: Instant, duration: Duration) -> Self {
         Self {
-            inner: Compat01As03::new(tokio::timer::Interval::new(at, duration)),
+            inner: Compat01As03::new(tokio::timer::Interval::new(at, duration)).fuse(),
         }
     }
 }
@@ -46,28 +48,21 @@ impl Stream for Interval {
     type Item = Result<Instant, failure::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        match Pin::new(&mut self.inner).poll_next(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(result) => match result {
-                Some(result) => match result {
-                    Ok(instant) => Poll::Ready(Some(Ok(instant))),
-                    Err(e) => Poll::Ready(Some(Err(e.into()))),
-                },
-                None => Poll::Ready(None),
-            },
-        }
+        Poll::Ready(match ready!(Pin::new(&mut self.inner).poll_next(cx)) {
+            Some(result) => Some(Ok(result?)),
+            None => None,
+        })
     }
 }
 
-impl FusedStream for Interval {
+impl stream::FusedStream for Interval {
     fn is_terminated(&self) -> bool {
-        false
+        self.inner.is_terminated()
     }
 }
 
 pub struct Delay {
-    terminated: bool,
-    inner: Compat01As03<tokio::timer::Delay>,
+    inner: future::Fuse<Compat01As03<tokio::timer::Delay>>,
 }
 
 impl Delay {
@@ -78,8 +73,7 @@ impl Delay {
     /// `Delay` should not be used for high-resolution timer use cases.
     pub fn new(deadline: Instant) -> Self {
         Self {
-            terminated: false,
-            inner: Compat01As03::new(tokio::timer::Delay::new(deadline)),
+            inner: Compat01As03::new(tokio::timer::Delay::new(deadline)).fuse(),
         }
     }
 }
@@ -88,21 +82,12 @@ impl Future for Delay {
     type Output = Result<(), failure::Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let poll = match Pin::new(&mut self.inner).poll(cx) {
-            Poll::Pending => return Poll::Pending,
-            Poll::Ready(result) => match result {
-                Ok(()) => Poll::Ready(Ok(())),
-                Err(e) => Poll::Ready(Err(e.into())),
-            },
-        };
-
-        self.as_mut().terminated = true;
-        poll
+        Pin::new(&mut self.inner).poll(cx).map_err(Into::into)
     }
 }
 
-impl FusedFuture for Delay {
+impl future::FusedFuture for Delay {
     fn is_terminated(&self) -> bool {
-        self.terminated
+        self.inner.is_terminated()
     }
 }
