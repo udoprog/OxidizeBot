@@ -28,6 +28,7 @@ pub mod oauth2;
 pub mod obs;
 pub mod player;
 pub mod prelude;
+pub mod scopes;
 pub mod secrets;
 pub mod settings;
 mod spotify_id;

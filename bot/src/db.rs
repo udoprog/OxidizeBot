@@ -80,12 +80,17 @@ impl Database {
         })
     }
 
+    /// Access scopes from the database.
+    pub fn scopes(&self, schema: crate::scopes::Schema) -> Result<crate::scopes::Scopes, Error> {
+        Ok(crate::scopes::Scopes::new(self.clone(), schema)?)
+    }
+
     /// Access settings from the database.
-    pub fn settings(&self) -> Result<crate::settings::Settings, Error> {
-        Ok(crate::settings::Settings::new(
-            self.clone(),
-            crate::settings::Schema::load_static()?,
-        ))
+    pub fn settings(
+        &self,
+        schema: crate::settings::Schema,
+    ) -> Result<crate::settings::Settings, Error> {
+        Ok(crate::settings::Settings::new(self.clone(), schema))
     }
 
     /// Add (or subtract) from the balance for a single user.

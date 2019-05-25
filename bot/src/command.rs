@@ -1,6 +1,11 @@
 //! Traits and shared plumbing for bot commands (e.g. `!uptime`)
 
-use crate::{irc, prelude::*, utils};
+use crate::{
+    irc,
+    prelude::*,
+    scopes::{Role, Scope, Scopes},
+    stream_info, utils,
+};
 use hashbrown::HashSet;
 use std::fmt;
 use tokio_threadpool::ThreadPool;
@@ -50,9 +55,42 @@ pub struct Context<'a, 'm> {
     pub it: &'a mut utils::Words<'m>,
     pub shutdown: &'a utils::Shutdown,
     pub alias: Alias<'a>,
+    pub stream_info: &'a stream_info::StreamInfo,
+    pub scopes: &'a Scopes,
 }
 
 impl<'a, 'm> Context<'a, 'm> {
+    /// Get a list of all roles the current requester belongs to.
+    pub fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
+        let mut roles = smallvec::SmallVec::new();
+
+        if self.is_moderator() {
+            roles.push(Role::Moderator);
+        }
+
+        if self.is_streamer() {
+            roles.push(Role::Streamer);
+        }
+
+        if self.is_subscriber() {
+            roles.push(Role::Subscriber);
+        }
+
+        roles.push(Role::Other);
+        roles
+    }
+
+    /// Test if the current user has the given scope.
+    pub fn has_scope(&self, scope: Scope) -> bool {
+        for role in self.roles() {
+            if self.scopes.test(scope, role) {
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// Spawn the given future on the thread pool associated with the context.
     pub fn spawn<F>(&self, future: F)
     where
@@ -70,6 +108,11 @@ impl<'a, 'm> Context<'a, 'm> {
     /// Test if moderator.
     pub fn is_moderator(&self) -> bool {
         self.moderators.contains(self.user.name) || self.is_streamer()
+    }
+
+    /// Test if subscriber.
+    pub fn is_subscriber(&self) -> bool {
+        self.stream_info.is_subscriber(self.user.name)
     }
 
     /// Check that the given user is a moderator.

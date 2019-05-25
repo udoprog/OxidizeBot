@@ -3,6 +3,7 @@ use crate::{
     features::{Feature, Features},
     idle, module, oauth2, obs, player,
     prelude::*,
+    scopes::Scopes,
     settings, stream_info, timer, utils,
 };
 use failure::{bail, format_err, Error, ResultExt as _};
@@ -76,6 +77,7 @@ pub struct Irc {
     pub settings: settings::Settings,
     pub player: Option<player::Player>,
     pub obs: Option<obs::Obs>,
+    pub scopes: Scopes,
 }
 
 impl Irc {
@@ -100,6 +102,7 @@ impl Irc {
             settings,
             player,
             obs,
+            scopes,
         } = self;
 
         loop {
@@ -299,6 +302,8 @@ impl Irc {
                 pong_timeout: &mut pong_timeout,
                 token: &token,
                 handler_shutdown: false,
+                stream_info: &stream_info,
+                scopes: &scopes,
             };
 
             let mut client_stream = client.stream().compat().fuse();
@@ -478,6 +483,10 @@ struct Handler<'a, 'to> {
     token: &'a oauth2::SyncToken,
     /// Force a shutdown.
     handler_shutdown: bool,
+    /// Stream information.
+    stream_info: &'a stream_info::StreamInfo,
+    /// Information about scopes.
+    scopes: &'a Scopes,
 }
 
 impl Handler<'_, '_> {
@@ -525,6 +534,8 @@ impl Handler<'_, '_> {
                         it,
                         shutdown: self.shutdown,
                         alias: command::Alias { alias },
+                        stream_info: &self.stream_info,
+                        scopes: &self.scopes,
                     };
 
                     handler.handle(ctx)?;

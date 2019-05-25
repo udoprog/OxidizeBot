@@ -193,8 +193,6 @@ pub fn run(
     settings: settings::Settings,
     themes: db::Themes,
 ) -> Result<(Player, impl Future<Output = Result<(), Error>>), Error> {
-    log::info!("Waiting for token to become ready");
-
     let settings = settings.scoped(&["player"]);
 
     let mut futures = utils::Futures::default();
@@ -290,6 +288,8 @@ pub fn run(
     // future to initialize the player future.
     // Yeah, I know....
     let future = async move {
+        log::trace!("Waiting for token to become ready");
+
         // NB: since we do some work when we initialize the player, wait until
         // Spotify and YouTube are at least initialy authenticated.
         future::try_join(

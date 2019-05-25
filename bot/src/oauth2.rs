@@ -367,7 +367,7 @@ impl SyncToken {
             rx
         };
 
-        log::info!("Waiting for token: {}", self.flow.what);
+        log::trace!("Waiting for token: {}", self.flow.what);
 
         match rx.await {
             Ok(()) => Ok(()),

@@ -1,5 +1,5 @@
 use crate::{
-    api, bus, config, db, player, prelude::*, settings, template, track_id::TrackId, utils,
+    api, bus, config, db, player, prelude::*, scopes, settings, template, track_id::TrackId, utils,
 };
 use hashbrown::HashMap;
 use parking_lot::RwLock;
@@ -99,6 +99,12 @@ pub struct Current {
 #[derive(serde::Deserialize)]
 pub struct PutSetting {
     value: serde_json::Value,
+}
+
+#[derive(serde::Deserialize)]
+pub struct PutScope {
+    scope: scopes::Scope,
+    role: scopes::Role,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -509,6 +515,7 @@ struct Api {
     after_streams: db::AfterStreams,
     db: db::Database,
     settings: settings::Settings,
+    scopes: scopes::Scopes,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -637,6 +644,30 @@ impl Api {
         Ok(warp::reply::json(&EMPTY))
     }
 
+    /// Get the list of all scopes in the bot.
+    fn scopes(&self) -> Result<impl warp::Reply, failure::Error> {
+        let scopes = self.scopes.list();
+        Ok(warp::reply::json(&scopes))
+    }
+
+    /// Delete a single scope assignment.
+    fn delete_scope(&self, scope: &str, role: &str) -> Result<impl warp::Reply, failure::Error> {
+        let scope = str::parse(scope)?;
+        let role = str::parse(role)?;
+        self.scopes.delete(scope, role)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Insert a single scope assignment.
+    fn insert_scope(
+        &self,
+        scope: scopes::Scope,
+        role: scopes::Role,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        self.scopes.insert(scope, role)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+
     /// Import balances.
     async fn import_balances(
         self,
@@ -662,6 +693,7 @@ pub fn setup(
     after_streams: db::AfterStreams,
     db: db::Database,
     settings: settings::Settings,
+    scopes: scopes::Scopes,
     aliases: db::Aliases,
     commands: db::Commands,
     promotions: db::Promotions,
@@ -694,6 +726,7 @@ pub fn setup(
         after_streams,
         db,
         settings,
+        scopes,
     };
 
     let api = {
@@ -779,6 +812,38 @@ pub fn setup(
                 let api = api.clone();
                 move || api.settings().map_err(warp::reject::custom)
             }))
+            .boxed();
+
+        let route = route
+            .or(warp::get2().and(warp::path("scopes")).and_then({
+                let api = api.clone();
+                move || api.scopes().map_err(warp::reject::custom)
+            }))
+            .boxed();
+
+        let route = route
+            .or(warp::put2()
+                .and(warp::path!("scopes"))
+                .and(warp::body::json())
+                .and_then({
+                    let api = api.clone();
+                    move |body: PutScope| {
+                        api.insert_scope(body.scope, body.role)
+                            .map_err(warp::reject::custom)
+                    }
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::delete2()
+                .and(warp::path!("scopes" / Fragment / Fragment))
+                .and_then({
+                    let api = api.clone();
+                    move |scope: Fragment, role: Fragment| {
+                        api.delete_scope(scope.as_str(), role.as_str())
+                            .map_err(warp::reject::custom)
+                    }
+                }))
             .boxed();
 
         let route = route

@@ -86,3 +86,10 @@ table! {
         disabled -> Bool,
     }
 }
+
+table! {
+    scopes (scope, role) {
+        scope -> Text,
+        role -> Text,
+    }
+}

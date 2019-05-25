@@ -1,0 +1,3 @@
+scopes:
+  player.detach:
+    doc: Scope required to attach or detach the music player.
