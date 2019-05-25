@@ -103,7 +103,7 @@ impl Irc {
         } = self;
 
         loop {
-            log::info!("Waiting for token to become ready");
+            log::trace!("Waiting for token to become ready");
             token.wait_until_ready().await?;
 
             let access_token = token.read()?.access_token().to_string();
@@ -336,7 +336,7 @@ impl Irc {
             match future::try_join(future, future::try_join_all(futures)).await {
                 Ok(((), _)) => break,
                 Err(e) => {
-                    log::warn!("IRC component crashed, reconnecting in 5 seconds: {}", e);
+                    log::warn!("IRC component errored, restarting in 5 seconds: {}", e);
                     timer::Delay::new(time::Instant::now() + time::Duration::from_secs(5)).await?;
                     continue;
                 }
@@ -716,7 +716,7 @@ impl Handler<'_, '_> {
                     _ => {}
                 }
 
-                log::info!(
+                log::trace!(
                     "Capability Acknowledged: {}",
                     what.as_ref().map(|w| w.as_str()).unwrap_or("*")
                 );
