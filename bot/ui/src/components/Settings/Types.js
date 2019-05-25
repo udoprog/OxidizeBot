@@ -4,6 +4,10 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {True, False} from "../../utils";
 
 class Base {
+  constructor(optional) {
+    this.optional = optional;
+  }
+
   edit() {
     throw new Error("missing edit() implementation");
   }
@@ -26,20 +30,20 @@ export function decode(type) {
 
   switch (type.id) {
     case "duration":
-      return DurationType;
+      return new DurationType(type.optional);
     case "bool":
-      return BooleanType;
+      return new BooleanType(type.optional);
     case "string":
-      return StringType;
+      return new StringType(type.optional);
     case "number":
-      return NumberType;
+      return new NumberType(type.optional);
     case "percentage":
-      return PercentageType;
+      return new PercentageType(type.optional);
     case "set":
       let value = decode(type.value);
-      return new SetType(value);
+      return new SetType(type.optional, value);
     default:
-      return RawType;
+      return new RawType(type.optional);
   }
 }
 
@@ -117,26 +121,34 @@ class EditDuration {
 }
 
 class DurationType {
-  static default() {
+  constructor(optional) {
+    this.optional = optional;
+  }
+
+  default() {
     return {days: 0, hours: 0, minutes: 0, seconds: 1};
   }
 
-  static construct(data) {
-    return Duration.parse(data);
+  construct(data) {
+    return Duration.parse(this.optional, data);
   }
 }
 
 export class Duration extends Base {
+  constructor(optional) {
+    super(optional);
+  }
+
   /**
    * Parse the given duration.
    *
    * @param {string} input input to parse.
    */
-  static parse(input) {
+  static parse(optional, input) {
     let m = DURATION_REGEX.exec(input);
 
     if (!m) {
-      return null;
+      throw new Error(`Bad duration: ${input}`);
     }
 
     let days = 0;
@@ -161,7 +173,7 @@ export class Duration extends Base {
     }
 
     return {
-      control: new Duration(),
+      control: new Duration(optional),
       value: {days, hours, minutes, seconds},
     };
   }
@@ -236,19 +248,27 @@ class EditNumber {
 }
 
 class NumberType {
-  static default() {
+  constructor(optional) {
+    this.optional = optional;
+  }
+
+  default() {
     return 0;
   }
 
-  static construct(data) {
+  construct(data) {
     return {
-      control: new Number(),
+      control: new Number(this.optional),
       value: data,
     };
   }
 }
 
 export class Number extends Base {
+  constructor(optional) {
+    super(optional);
+  }
+
   static parse(input) {
     return {
       render: new Number(),
@@ -307,19 +327,27 @@ class EditPercentage {
 }
 
 class PercentageType {
-  static default() {
+  constructor(optional) {
+    this.optional = optional;
+  }
+
+  default() {
     return 0;
   }
 
-  static construct(data) {
+  construct(data) {
     return {
-      control: new Percentage(),
+      control: new Percentage(this.optional),
       value: data,
     };
   }
 }
 
 export class Percentage extends Base {
+  constructor(optional) {
+    super(optional);
+  }
+
   static parse(input) {
     return {
       render: new Percentage(),
@@ -344,19 +372,27 @@ export class Percentage extends Base {
 }
 
 export class BooleanType {
-  static default() {
+  constructor(optional) {
+    this.optional = optional;
+  }
+
+  default() {
     return false;
   }
 
-  static construct(value) {
+  construct(value) {
     return {
-      control: new Boolean(),
+      control: new Boolean(this.optional),
       value,
     };
   }
 }
 
 export class Boolean extends Base {
+  constructor(optional) {
+    super(optional);
+  }
+
   render(value, onChange) {
     if (value) {
       return <Button title="Toggle to false" size="sm" variant="success" onClick={() => onChange(false)}><True /></Button>;
@@ -392,19 +428,27 @@ class EditString {
 }
 
 export class StringType {
-  static default() {
+  constructor(optional) {
+    this.optional = optional;
+  }
+
+  default() {
     return "";
   }
 
-  static construct(value) {
+  construct(value) {
     return {
-      control: new String(),
+      control: new String(this.optional),
       value,
     };
   }
 }
 
 export class String extends Base {
+  constructor(optional) {
+    super(optional);
+  }
+
   render(value) {
     return <code>{value}</code>;
   }
@@ -452,19 +496,27 @@ class EditRaw {
 }
 
 export class RawType {
-  static default() {
+  constructor(optional) {
+    this.optional = optional;
+  }
+
+  default() {
     return {};
   }
 
-  static construct(value) {
+  construct(value) {
     return {
-      control: new Raw(),
+      control: new Raw(this.optional),
       value,
     };
   }
 }
 
 export class Raw extends Base {
+  constructor(optional) {
+    super(optional);
+  }
+
   render(data) {
     return <code>{JSON.stringify(data)}</code>;
   }
@@ -541,7 +593,8 @@ class EditSet {
 }
 
 export class SetType {
-  constructor(type) {
+  constructor(optional, type) {
+    this.optional = optional;
     this.type = type;
   }
 
@@ -551,15 +604,15 @@ export class SetType {
 
   construct(value) {
     return {
-      control: new Set(this.type),
+      control: new Set(this.optional, this.type),
       value: value.map(v => this.type.construct(v)),
     };
   }
 }
 
 export class Set extends Base {
-  constructor(type) {
-    super();
+  constructor(optional, type) {
+    super(optional);
     this.type = type;
   }
 

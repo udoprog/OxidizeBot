@@ -481,8 +481,16 @@ where
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Type {
+    #[serde(default)]
+    pub optional: bool,
+    #[serde(flatten)]
+    pub kind: Kind,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "id")]
-pub enum Type {
+pub enum Kind {
     #[serde(rename = "raw")]
     Raw,
     #[serde(rename = "duration")]
@@ -501,18 +509,25 @@ pub enum Type {
 
 impl Type {
     /// Construct a set with the specified inner value.
-    pub fn set(value: Type) -> Type {
-        Type::Set {
-            value: Box::new(value),
+    pub fn set(ty: Type) -> Type {
+        Type {
+            optional: false,
+            kind: Kind::Set {
+                value: Box::new(ty),
+            },
         }
     }
 
     /// Parse the given string as the current type and convert into JSON.
     pub fn parse_as_json(&self, s: &str) -> Result<serde_json::Value, failure::Error> {
-        use self::Type::*;
+        use self::Kind::*;
         use serde_json::Value;
 
-        let value = match *self {
+        if self.optional && s == "null" {
+            return Ok(Value::Null);
+        }
+
+        let value = match self.kind {
             Raw => serde_json::from_str(s)?,
             Duration => {
                 let d = str::parse::<utils::Duration>(s)?;
@@ -549,10 +564,14 @@ impl Type {
 
     /// Test if JSON value is compatible with the current type.
     pub fn is_compatible_with_json(&self, other: &serde_json::Value) -> bool {
-        use self::Type::*;
+        use self::Kind::*;
         use serde_json::Value;
 
-        match (self, other) {
+        if self.optional && *other == Value::Null {
+            return true;
+        }
+
+        match (&self.kind, other) {
             (Raw, _) => true,
             (Duration, Value::Number(..)) => true,
             (Bool, Value::Bool(..)) => true,
@@ -569,16 +588,23 @@ impl Type {
 
 impl fmt::Display for Type {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use self::Type::*;
+        use self::Kind::*;
 
-        match *self {
-            Raw => write!(fmt, "any"),
-            Duration => write!(fmt, "duration"),
-            Bool => write!(fmt, "bool"),
-            Number => write!(fmt, "number"),
-            Percentage => write!(fmt, "percentage"),
-            String => write!(fmt, "string"),
-            Set { ref value } => write!(fmt, "Array<{}>", value),
+        match (self.optional, &self.kind) {
+            (false, Raw) => write!(fmt, "any"),
+            (true, Raw) => write!(fmt, "any?"),
+            (false, Duration) => write!(fmt, "duration"),
+            (true, Duration) => write!(fmt, "duration?"),
+            (false, Bool) => write!(fmt, "bool"),
+            (true, Bool) => write!(fmt, "bool?"),
+            (false, Number) => write!(fmt, "number"),
+            (true, Number) => write!(fmt, "number?"),
+            (false, Percentage) => write!(fmt, "percentage"),
+            (true, Percentage) => write!(fmt, "percentage?"),
+            (false, String) => write!(fmt, "string"),
+            (true, String) => write!(fmt, "string?"),
+            (false, Set { ref value }) => write!(fmt, "Array<{}>", value),
+            (true, Set { ref value }) => write!(fmt, "Array<{}>?", value),
         }
     }
 }

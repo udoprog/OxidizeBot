@@ -205,7 +205,10 @@ impl Handler {
         };
 
         let ty = match schema.ty {
-            settings::Type::Set { value } => value,
+            settings::Type {
+                kind: settings::Kind::Set { value },
+                ..
+            } => value,
             other => {
                 ctx.respond(format!("Configuration is a {}, but expected a set", other));
                 return None;

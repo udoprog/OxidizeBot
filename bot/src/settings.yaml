@@ -64,16 +64,16 @@ types:
     type: {id: duration}
   secrets/oauth2/spotify/token:
     doc: Stored token for Spotify authentication.
-    type: {id: raw}
+    type: {id: raw, optional: true}
   secrets/oauth2/twitch-bot/token:
     doc: Stored token for Twitch Bot authentication.
-    type: {id: raw}
+    type: {id: raw, optional: true}
   secrets/oauth2/twitch-streamer/token:
     doc: Stored token for Twitch Streamer authentication.
-    type: {id: raw}
+    type: {id: raw, optional: true}
   secrets/oauth2/youtube/token:
     doc: Stored token for YouTube authentication.
-    type: {id: raw}
+    type: {id: raw, optional: true}
   song/chat-feedback:
     doc: If song feedback is visible in chat or not.
     type: {id: bool}

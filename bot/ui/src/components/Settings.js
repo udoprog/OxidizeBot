@@ -63,6 +63,8 @@ export default class Settings extends React.Component {
       loading: false,
       error: null,
       data: null,
+      // set to the key of the setting currently being deleted.
+      deleteKey: null,
       // set to the key of the setting currently being edited.
       editKey: null,
       // the controller for the edit.
@@ -120,6 +122,29 @@ export default class Settings extends React.Component {
   }
 
   /**
+   * Delete the given setting.
+   *
+   * @param {string} key key of the setting to delete.
+   */
+  delete(key) {
+    this.setState({
+      loading: true,
+      deleteKey: null
+    });
+
+    this.api.deleteSetting(key)
+      .then(() => {
+        return this.list();
+      },
+      e => {
+        this.setState({
+          loading: false,
+          error: `failed to delete setting: ${e}`,
+        });
+      });
+  }
+
+  /**
    * Edit the given setting.
    *
    * @param {string} key key of the setting to edit.
@@ -171,9 +196,24 @@ export default class Settings extends React.Component {
   renderSetting(setting, keyOverride = null) {
     let isSecret = setting.key.startsWith(SECRET_PREFIX);
 
+    let deleteButton = null;
     let editButton = null;
     // onChange handler used for things which support immediate editing.
     let renderOnChange = null;
+
+    if (setting.control.optional) {
+      let del = () => {
+        this.setState({
+          deleteKey: setting.key,
+        });
+      };
+
+      deleteButton = (
+        <Button size="sm" variant="danger" className="action" disabled={this.state.loading} onClick={del}>
+          <FontAwesomeIcon icon="trash" />
+        </Button>
+      );
+    }
 
     if (setting.control.hasEditControl()) {
       let edit = () => {
@@ -201,6 +241,7 @@ export default class Settings extends React.Component {
 
     let buttons = (
       <ButtonGroup>
+        {deleteButton}
         {editButton}
       </ButtonGroup>
     );
@@ -211,6 +252,18 @@ export default class Settings extends React.Component {
       value = <b title="Secret value, only showed when editing">****</b>;
     } else {
       value = setting.control.render(setting.value, renderOnChange);
+    }
+
+    if (this.state.deleteKey === setting.key) {
+      buttons = <ConfirmButtons
+        what="deletion"
+        onConfirm={() => this.delete(this.state.deleteKey)}
+        onCancel={() => {
+          this.setState({
+            deleteKey: null,
+          })
+        }}
+      />;
     }
 
     if (this.state.editKey === setting.key && this.state.edit) {
@@ -260,7 +313,7 @@ export default class Settings extends React.Component {
             </Col>
 
             <Col lg="9">
-              <div className="d-flex align-items-center">
+              <div className="d-flex align-items-top">
                 <div className="flex-fill align-middle">{value}</div>
                 <div className="ml-3">{buttons}</div>
               </div>
