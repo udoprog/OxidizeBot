@@ -482,7 +482,7 @@ class EditRaw {
   save(value) {
     return {
       control: new Raw(),
-      value,
+      value: JSON.parse(value),
     };
   }
 
