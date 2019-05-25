@@ -4,7 +4,7 @@ use crate::{oauth2, player, prelude::*, utils};
 use reqwest::{
     header,
     r#async::{Body, Client, Decoder},
-    Method, Url,
+    Method, StatusCode, Url,
 };
 use std::{mem, sync::Arc};
 
@@ -127,6 +127,10 @@ impl RequestBuilder {
         let body = body.try_concat().await?;
 
         let status = res.status();
+
+        if status == StatusCode::UNAUTHORIZED {
+            self.token.force_refresh()?;
+        }
 
         if !status.is_success() {
             failure::bail!(

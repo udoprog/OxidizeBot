@@ -333,21 +333,14 @@ impl Irc {
                 }
             };
 
-            let futures = future::try_join_all(futures);
-            let futures = future::try_join(future, futures);
-
-            match futures.await {
-                Ok(((), results)) => {
-                    drop(results);
-                }
+            match future::try_join(future, future::try_join_all(futures)).await {
+                Ok(((), _)) => break,
                 Err(e) => {
                     log::warn!("IRC component crashed, reconnecting in 5 seconds: {}", e);
                     timer::Delay::new(time::Instant::now() + time::Duration::from_secs(5)).await?;
                     continue;
                 }
             }
-
-            break;
         }
 
         Ok(())

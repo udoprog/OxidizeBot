@@ -144,6 +144,10 @@ impl RequestBuilder {
 
         let status = res.status();
 
+        if status == StatusCode::UNAUTHORIZED {
+            self.token.force_refresh()?;
+        }
+
         if status == StatusCode::NOT_FOUND {
             return Ok(None);
         }

@@ -305,6 +305,10 @@ impl RequestBuilder {
 
         let status = res.status();
 
+        if status == StatusCode::UNAUTHORIZED {
+            self.token.force_refresh()?;
+        }
+
         if !status.is_success() {
             failure::bail!(
                 "bad response: {}: {}",

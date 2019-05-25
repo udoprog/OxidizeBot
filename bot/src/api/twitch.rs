@@ -7,7 +7,7 @@ use failure::Error;
 use reqwest::{
     header,
     r#async::{Client, Decoder},
-    Method, Url,
+    Method, StatusCode, Url,
 };
 use std::mem;
 
@@ -296,6 +296,10 @@ impl RequestBuilder {
         let body = body.compat().try_concat().await?;
 
         let status = res.status();
+
+        if status == StatusCode::UNAUTHORIZED {
+            self.token.force_refresh()?;
+        }
 
         if !status.is_success() {
             failure::bail!(
