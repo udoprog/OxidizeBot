@@ -1,4 +1,5 @@
 #![feature(async_await)]
+#![feature(arbitrary_self_types)]
 #![recursion_limit = "512"]
 
 #[macro_use]

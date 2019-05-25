@@ -1,7 +1,7 @@
 use crate::{prelude::*, settings, timer, web};
 use chrono::{DateTime, Utc};
 use failure::Error;
-use failure::{format_err, ResultExt};
+use failure::{bail, format_err, ResultExt};
 use oauth2::{
     basic::{BasicErrorField, BasicTokenResponse, BasicTokenType},
     AccessToken, AuthUrl, AuthorizationCode, Client, ClientId, ClientSecret, CsrfToken,
@@ -40,7 +40,7 @@ impl Type {
     /// Refresh and save an updated version of the given token.
     pub async fn refresh_and_save_token(
         self,
-        flow: Arc<Flow>,
+        flow: &Arc<Flow>,
         refresh_token: RefreshToken,
     ) -> Result<Token, Error> {
         match self {
@@ -84,7 +84,7 @@ impl Type {
     /// Inner, typed implementation of executing a refresh.
     async fn refresh_and_save_token_impl<T>(
         self,
-        flow: Arc<Flow>,
+        flow: &Arc<Flow>,
         refresh_token: RefreshToken,
     ) -> Result<Token, Error>
     where
@@ -144,7 +144,7 @@ impl Type {
 
         let refresh_token = match token_response.refresh_token() {
             Some(refresh_token) => refresh_token.clone(),
-            None => failure::bail!("did not receive a refresh token from the service"),
+            None => bail!("did not receive a refresh token from the service"),
         };
 
         let token = flow.save_token(refresh_token, token_response)?;
@@ -386,8 +386,8 @@ pub struct Flow {
 
 impl Flow {
     /// Execute the flow.
-    pub async fn execute(self: Arc<Self>, what: String) -> Result<AuthPair, Error> {
-        let token = self.clone().token_from_settings(what.clone()).await?;
+    pub async fn execute(self: Arc<Flow>, what: String) -> Result<AuthPair, Error> {
+        let token = self.token_from_settings(what.clone()).await?;
 
         match token {
             Some(token) => {
@@ -405,7 +405,7 @@ impl Flow {
     }
 
     /// Request a new token.
-    async fn request_new_token(self: Arc<Self>, what: String) -> Result<AuthPair, Error> {
+    async fn request_new_token(self: Arc<Flow>, what: String) -> Result<AuthPair, Error> {
         let (mut auth_url, csrf_token) = self.client.authorize_url(CsrfToken::new_random);
 
         for (key, value) in self.extra_params.iter() {
@@ -419,18 +419,18 @@ impl Flow {
 
         let received_token = match received {
             Ok(received_token) => received_token,
-            Err(oneshot::Canceled) => failure::bail!("token received cancelled"),
+            Err(oneshot::Canceled) => bail!("token received cancelled"),
         };
 
         if *csrf_token.secret() != received_token.state {
-            failure::bail!("CSRF Token Mismatch");
+            bail!("CSRF Token Mismatch");
         }
 
         self.ty.exchange_and_save_token(self, received_token).await
     }
 
     /// Load a token from settings.
-    async fn token_from_settings(self: Arc<Self>, what: String) -> Result<Option<Token>, Error> {
+    async fn token_from_settings(self: &Arc<Flow>, what: String) -> Result<Option<Token>, Error> {
         let token = match self.settings.get::<Token>("token") {
             Ok(token) => token,
             Err(e) => {
@@ -449,7 +449,7 @@ impl Flow {
 
     /// Validate a token base on the current flow.
     async fn stored_token(
-        self: Arc<Self>,
+        self: &Arc<Flow>,
         token: Token,
         what: String,
     ) -> Result<Option<Token>, Error> {
@@ -484,13 +484,13 @@ impl Flow {
     }
 
     /// Refresh the token.
-    pub async fn refresh(self: Arc<Self>, refresh_token: RefreshToken) -> Result<Token, Error> {
+    pub async fn refresh(self: &Arc<Flow>, refresh_token: RefreshToken) -> Result<Token, Error> {
         self.ty.refresh_and_save_token(self, refresh_token).await
     }
 
     /// Save and return the given token.
     fn save_token(
-        &self,
+        self: &Arc<Flow>,
         refresh_token: RefreshToken,
         token_response: impl TokenResponse,
     ) -> Result<Token, Error> {
@@ -562,10 +562,9 @@ pub struct TokenRefreshFuture {
     sync_token: SyncToken,
     interval: timer::Interval,
     refresh_duration: Duration,
-    refresh_future: Option<future::BoxFuture<'static, Result<Token, Error>>>,
 }
 
-impl TokenRefreshFuture {
+impl<'a> TokenRefreshFuture {
     /// Construct a new future for refreshing oauth tokens.
     pub fn new(flow: Arc<Flow>, sync_token: SyncToken) -> Self {
         // check for expiration every 10 minutes.
@@ -578,55 +577,33 @@ impl TokenRefreshFuture {
             sync_token,
             interval: timer::Interval::new(Instant::now(), check_duration),
             refresh_duration,
-            refresh_future: None,
         }
     }
-}
 
-impl Future for TokenRefreshFuture {
-    type Output = Result<(), Error>;
+    /// Drive the token refresh future
+    pub async fn run(mut self) -> Result<(), Error> {
+        let mut refresh_future = None;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         loop {
-            let mut pending = true;
+            futures::select! {
+                _ = self.interval.select_next_some() => {
+                    if refresh_future.as_ref().is_some() {
+                        bail!("refresh already in progress");
+                    }
 
-            if let Some(future) = self.as_mut().refresh_future.as_mut() {
-                if let Poll::Ready(result) = Pin::new(future).poll(cx) {
+                    refresh_future = match self.sync_token.token.read().as_ref() {
+                        Some(current) if current.expires_within(self.refresh_duration.clone())? => {
+                            Some(Box::pin(self.flow.refresh(current.refresh_token.clone())))
+                        }
+                        _ => None,
+                    };
+                }
+                result = refresh_future.current() => {
                     match result {
-                        Ok(token) => {
-                            *self.as_ref().sync_token.token.write() = Some(token);
-                            self.as_mut().refresh_future = None;
-                            pending = false;
-                        }
-                        Err(e) => {
-                            log::warn!("failed to refresh token: {}", e);
-                            self.as_mut().refresh_future = None;
-                            pending = false;
-                        }
+                        Ok(token) => *self.sync_token.token.write() = Some(token),
+                        Err(e) => log::warn!("failed to refresh token: {}", e),
                     }
                 }
-            }
-
-            if let Poll::Ready(Some(_)) = Pin::new(&mut self.interval).poll_next(cx)? {
-                if self.refresh_future.is_some() {
-                    return Poll::Ready(Err(format_err!("refresh already in progress")));
-                }
-
-                let refresh = match self.sync_token.token.read().as_ref() {
-                    Some(current) if current.expires_within(self.refresh_duration.clone())? => {
-                        Some(self.flow.clone().refresh(current.refresh_token.clone()))
-                    }
-                    _ => None,
-                };
-
-                if let Some(refresh) = refresh {
-                    self.as_mut().refresh_future = Some(refresh.boxed());
-                    pending = false;
-                }
-            }
-
-            if pending {
-                return Poll::Pending;
             }
         }
     }

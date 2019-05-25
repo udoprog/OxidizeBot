@@ -330,17 +330,17 @@ async fn try_main(
     let (spotify_token, future) = results
         .next()
         .ok_or_else(|| format_err!("Expected Spotify token"))?;
-    futures.push(future.boxed());
+    futures.push(future.run().boxed());
 
     let (youtube_token, future) = results
         .next()
         .ok_or_else(|| format_err!("Expected YouTube token"))?;
-    futures.push(future.boxed());
+    futures.push(future.run().boxed());
 
     let (streamer_token, future) = results
         .next()
         .ok_or_else(|| format_err!("Expected Twitch Streamer token"))?;
-    futures.push(future.boxed());
+    futures.push(future.run().boxed());
 
     let (shutdown, shutdown_rx) = utils::Shutdown::new();
 
@@ -398,7 +398,7 @@ async fn try_main(
     let (bot_token, future) = results
         .next()
         .ok_or_else(|| format_err!("Expected Twitch Bot token"))?;
-    futures.push(future.boxed());
+    futures.push(future.run().boxed());
 
     let mut obs = None;
 
