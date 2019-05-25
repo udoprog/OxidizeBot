@@ -593,7 +593,7 @@ impl<'a> TokenRefreshFuture {
 
                     refresh_future = match self.sync_token.token.read().as_ref() {
                         Some(current) if current.expires_within(self.refresh_duration.clone())? => {
-                            Some(Box::pin(self.flow.refresh(current.refresh_token.clone())))
+                            Some(self.flow.refresh(current.refresh_token.clone()))
                         }
                         _ => None,
                     };
