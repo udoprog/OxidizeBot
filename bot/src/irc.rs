@@ -5,8 +5,7 @@ use crate::{
     prelude::*,
     settings, stream_info, timer, utils,
 };
-use failure::Error;
-use failure::{format_err, ResultExt as _};
+use failure::{bail, format_err, Error, ResultExt as _};
 use hashbrown::HashSet;
 use irc::{
     client::{self, ext::ClientExt, Client, IrcClient, PackedIrcClient},
@@ -103,218 +102,254 @@ impl Irc {
             obs,
         } = self;
 
-        let access_token = token.read()?.access_token().to_string();
+        loop {
+            log::info!("Waiting for token to become ready");
+            token.wait_until_ready().await?;
 
-        let irc_client_config = client::data::config::Config {
-            nickname: Some(config.irc.bot.clone()),
-            channels: Some(vec![(*config.irc.channel).clone()]),
-            password: Some(format!("oauth:{}", access_token)),
-            server: Some(String::from(SERVER)),
-            port: Some(6697),
-            use_ssl: Some(true),
-            ..client::data::config::Config::default()
-        };
+            let access_token = token.read()?.access_token().to_string();
 
-        let client = IrcClient::new_future(irc_client_config)?;
+            let irc_client_config = client::data::config::Config {
+                nickname: Some(config.irc.bot.clone()),
+                channels: Some(vec![(*config.irc.channel).clone()]),
+                password: Some(format!("oauth:{}", access_token)),
+                server: Some(String::from(SERVER)),
+                port: Some(6697),
+                use_ssl: Some(true),
+                ..client::data::config::Config::default()
+            };
 
-        let PackedIrcClient(client, send_future) = client.compat().await?;
-        client.identify()?;
+            let client = IrcClient::new_future(irc_client_config)?;
 
-        let sender = Sender::new(client.clone());
-        sender.cap_req(TWITCH_TAGS_CAP);
-        sender.cap_req(TWITCH_COMMANDS_CAP);
+            let PackedIrcClient(client, send_future) = client.compat().await?;
+            client.identify()?;
 
-        if let Some(startup_message) = config.irc.startup_message.as_ref() {
-            // greeting when bot joins
-            sender.privmsg(config.irc.channel.as_str(), startup_message);
-        }
+            let sender = Sender::new(client.clone());
+            sender.cap_req(TWITCH_TAGS_CAP);
+            sender.cap_req(TWITCH_COMMANDS_CAP);
 
-        let mut handlers = module::Handlers::default();
-        let mut futures = Vec::<future::BoxFuture<'static, Result<(), Error>>>::new();
+            if let Some(startup_message) = config.irc.startup_message.as_ref() {
+                // greeting when bot joins
+                sender.privmsg(config.irc.channel.as_str(), startup_message);
+            }
 
-        futures.push(refresh_mods_future(sender.clone(), config.irc.channel.clone()).boxed());
+            let mut handlers = module::Handlers::default();
+            let mut futures = Vec::<future::BoxFuture<'static, Result<(), Error>>>::new();
 
-        let stream_info = {
-            let interval = time::Duration::from_secs(60 * 5);
-            let (stream_info, future) =
-                stream_info::setup(config.streamer.clone(), interval, streamer_twitch.clone());
-            futures.push(future.boxed());
-            stream_info
-        };
+            futures.push(refresh_mods_future(sender.clone(), config.irc.channel.clone()).boxed());
 
-        let threshold = settings.sync_var("irc/idle-detection/threshold", 5)?;
+            let stream_info = {
+                let interval = time::Duration::from_secs(60 * 5);
+                let (stream_info, future) =
+                    stream_info::setup(config.streamer.clone(), interval, streamer_twitch.clone());
+                futures.push(future.boxed());
+                stream_info
+            };
 
-        let idle = idle::Idle::new(threshold);
+            let threshold = settings.sync_var(&mut futures, "irc/idle-detection/threshold", 5)?;
 
-        for module in modules {
-            let result = module.hook(module::HookContext {
-                config: &*config,
-                db: &db,
-                commands: &commands,
-                aliases: &aliases,
-                promotions: &promotions,
-                themes: &themes,
-                handlers: &mut handlers,
-                currency: currency.as_ref(),
-                youtube: &youtube,
-                twitch: &bot_twitch,
-                streamer_twitch: &streamer_twitch,
-                futures: &mut futures,
-                stream_info: &stream_info,
-                sender: &sender,
-                settings: &settings,
-                idle: &idle,
-                player: player.as_ref(),
-                obs: obs.as_ref(),
-            });
+            let idle = idle::Idle::new(threshold);
 
-            result.with_context(|_| {
-                failure::format_err!("failed to initialize module: {}", module.ty())
-            })?;
-        }
+            for module in modules.iter() {
+                let result = module.hook(module::HookContext {
+                    config: &*config,
+                    db: &db,
+                    commands: &commands,
+                    aliases: &aliases,
+                    promotions: &promotions,
+                    themes: &themes,
+                    handlers: &mut handlers,
+                    currency: currency.as_ref(),
+                    youtube: &youtube,
+                    twitch: &bot_twitch,
+                    streamer_twitch: &streamer_twitch,
+                    futures: &mut futures,
+                    stream_info: &stream_info,
+                    sender: &sender,
+                    settings: &settings,
+                    idle: &idle,
+                    player: player.as_ref(),
+                    obs: obs.as_ref(),
+                });
 
-        if let Some(currency) = currency.as_ref() {
-            handlers.insert(
-                &*currency.name,
-                currency_admin::Handler {
-                    currency: currency.clone(),
-                    db: db.clone(),
-                },
-            );
+                result.with_context(|_| {
+                    format_err!("failed to initialize module: {}", module.ty())
+                })?;
+            }
 
-            let reward = 10;
-            let interval = 60 * 10;
-
-            let reward_percentage = settings.sync_var("irc/viewer-reward%", 100)?;
-
-            let future = reward_loop(
-                config.irc.clone(),
-                reward,
-                interval,
-                sender.clone(),
-                currency.clone(),
-                idle.clone(),
-                reward_percentage,
-            );
-
-            futures.push(future.boxed());
-        }
-
-        if config.features.test(Feature::Admin) {
-            handlers.insert(
-                "title",
-                misc::Title {
-                    stream_info: stream_info.clone(),
-                    twitch: streamer_twitch.clone(),
-                },
-            );
-
-            handlers.insert(
-                "game",
-                misc::Game {
-                    stream_info: stream_info.clone(),
-                    twitch: streamer_twitch.clone(),
-                },
-            );
-
-            handlers.insert(
-                "uptime",
-                misc::Uptime {
-                    stream_info: stream_info.clone(),
-                },
-            );
-        }
-
-        if config.features.test(Feature::BadWords) {
-            handlers.insert(
-                "badword",
-                bad_word::BadWord {
-                    bad_words: bad_words.clone(),
-                },
-            );
-        }
-
-        if config.features.test(Feature::EightBall) {
-            handlers.insert("8ball", eight_ball::EightBall {});
-        }
-
-        if config.features.test(Feature::Clip) {
-            handlers.insert(
-                "clip",
-                clip::Clip {
-                    stream_info: stream_info.clone(),
-                    clip_cooldown: config.irc.clip_cooldown.clone(),
-                    twitch: bot_twitch.clone(),
-                },
-            );
-        }
-
-        if config.features.test(Feature::AfterStream) {
-            handlers.insert(
-                "afterstream",
-                after_stream::AfterStream {
-                    cooldown: config.irc.afterstream_cooldown.clone(),
-                    after_streams,
-                },
-            );
-        }
-
-        futures.push(send_future.compat().map_err(Error::from).boxed());
-
-        if !settings
-            .get::<bool>("migration/whitelisted-hosts-migrated")?
-            .unwrap_or_default()
-        {
-            log::warn!("Performing a one time migration of aliases from configuration.");
-            settings.set("irc/whitelisted-hosts", &config.whitelisted_hosts)?;
-            settings.set("migration/whitelisted-hosts-migrated", true)?;
-        }
-
-        let (mut whitelisted_hosts_stream, whitelisted_hosts) =
-            settings.init_and_stream("irc/whitelisted-hosts", HashSet::<String>::new())?;
-
-        let mut handler = Handler {
-            streamer: config.streamer.clone(),
-            channel: config.irc.channel.clone(),
-            sender: sender.clone(),
-            moderators: HashSet::default(),
-            whitelisted_hosts,
-            commands,
-            bad_words,
-            global_bus,
-            aliases,
-            features: config.features.clone(),
-            api_url: config.api_url.clone(),
-            thread_pool: Arc::new(ThreadPool::new()),
-            moderator_cooldown: config.irc.moderator_cooldown.clone(),
-            handlers,
-            shutdown,
-            idle,
-        };
-
-        let mut client_stream = client.stream().compat().fuse();
-
-        let future = async move {
-            loop {
-                futures::select! {
-                    update = whitelisted_hosts_stream.next() => {
-                        if let Some(update) = update {
-                            handler.whitelisted_hosts = update;
-                        }
+            if let Some(currency) = currency.as_ref() {
+                handlers.insert(
+                    &*currency.name,
+                    currency_admin::Handler {
+                        currency: currency.clone(),
+                        db: db.clone(),
                     },
-                    message = client_stream.next() => {
-                        if let Some(m) = message.transpose()? {
-                            if let Err(e) = handler.handle(&m) {
-                                log::error!("failed to handle message: {}", e);
+                );
+
+                let reward = 10;
+                let interval = 60 * 10;
+
+                let reward_percentage =
+                    settings.sync_var(&mut futures, "irc/viewer-reward%", 100)?;
+
+                let future = reward_loop(
+                    config.irc.clone(),
+                    reward,
+                    interval,
+                    sender.clone(),
+                    currency.clone(),
+                    idle.clone(),
+                    reward_percentage,
+                );
+
+                futures.push(future.boxed());
+            }
+
+            if config.features.test(Feature::Admin) {
+                handlers.insert(
+                    "title",
+                    misc::Title {
+                        stream_info: stream_info.clone(),
+                        twitch: streamer_twitch.clone(),
+                    },
+                );
+
+                handlers.insert(
+                    "game",
+                    misc::Game {
+                        stream_info: stream_info.clone(),
+                        twitch: streamer_twitch.clone(),
+                    },
+                );
+
+                handlers.insert(
+                    "uptime",
+                    misc::Uptime {
+                        stream_info: stream_info.clone(),
+                    },
+                );
+            }
+
+            if config.features.test(Feature::BadWords) {
+                handlers.insert(
+                    "badword",
+                    bad_word::BadWord {
+                        bad_words: bad_words.clone(),
+                    },
+                );
+            }
+
+            if config.features.test(Feature::EightBall) {
+                handlers.insert("8ball", eight_ball::EightBall {});
+            }
+
+            if config.features.test(Feature::Clip) {
+                handlers.insert(
+                    "clip",
+                    clip::Clip {
+                        stream_info: stream_info.clone(),
+                        clip_cooldown: config.irc.clip_cooldown.clone(),
+                        twitch: bot_twitch.clone(),
+                    },
+                );
+            }
+
+            if config.features.test(Feature::AfterStream) {
+                handlers.insert(
+                    "afterstream",
+                    after_stream::AfterStream {
+                        cooldown: config.irc.afterstream_cooldown.clone(),
+                        after_streams: after_streams.clone(),
+                    },
+                );
+            }
+
+            futures.push(send_future.compat().map_err(Error::from).boxed());
+
+            if !settings
+                .get::<bool>("migration/whitelisted-hosts-migrated")?
+                .unwrap_or_default()
+            {
+                log::warn!("Performing a one time migration of aliases from configuration.");
+                settings.set("irc/whitelisted-hosts", &config.whitelisted_hosts)?;
+                settings.set("migration/whitelisted-hosts-migrated", true)?;
+            }
+
+            let (mut whitelisted_hosts_stream, whitelisted_hosts) =
+                settings.init_and_stream("irc/whitelisted-hosts", HashSet::<String>::new())?;
+
+            let mut pong_timeout = None;
+
+            let mut handler = Handler {
+                streamer: config.streamer.clone(),
+                channel: config.irc.channel.clone(),
+                sender: sender.clone(),
+                moderators: HashSet::default(),
+                whitelisted_hosts,
+                commands: &commands,
+                bad_words: &bad_words,
+                global_bus: &global_bus,
+                aliases: &aliases,
+                features: config.features.clone(),
+                api_url: config.api_url.clone(),
+                thread_pool: Arc::new(ThreadPool::new()),
+                moderator_cooldown: config.irc.moderator_cooldown.clone(),
+                handlers,
+                shutdown: &shutdown,
+                idle,
+                pong_timeout: &mut pong_timeout,
+                token: &token,
+                handler_shutdown: false,
+            };
+
+            let mut client_stream = client.stream().compat().fuse();
+            let mut ping_interval = timer::Interval::new_interval(time::Duration::from_secs(10));
+
+            let future = async move {
+                loop {
+                    futures::select! {
+                        _ = ping_interval.select_next_some() => {
+                            handler.send_ping()?;
+                        }
+                        timeout = handler.pong_timeout.current() => {
+                            bail!("server not responding");
+                        }
+                        update = whitelisted_hosts_stream.next() => {
+                            if let Some(update) = update {
+                                handler.whitelisted_hosts = update;
+                            }
+                        },
+                        message = client_stream.next() => {
+                            if let Some(m) = message.transpose()? {
+                                if let Err(e) = handler.handle(&m) {
+                                    log::error!("Failed to handle message: {}", e);
+                                }
+                            }
+
+                            if handler.handler_shutdown {
+                                bail!("handler forcibly shut down");
                             }
                         }
                     }
                 }
-            }
-        };
+            };
 
-        futures.push(future.boxed());
-        let _ = future::try_join_all(futures).await?;
+            let futures = future::try_join_all(futures);
+            let futures = future::try_join(future, futures);
+
+            match futures.await {
+                Ok(((), results)) => {
+                    drop(results);
+                }
+                Err(e) => {
+                    log::warn!("IRC component crashed, reconnecting in 5 seconds: {}", e);
+                    timer::Delay::new(time::Instant::now() + time::Duration::from_secs(5)).await?;
+                    continue;
+                }
+            }
+
+            break;
+        }
+
         Ok(())
     }
 }
@@ -370,6 +405,13 @@ impl Sender {
         }
     }
 
+    /// Send an immediate message, without taking rate limiting into account.
+    fn send_immediate(&self, m: impl Into<Message>) {
+        if let Err(e) = self.client.send(m) {
+            log_err!(e, "failed to send message");
+        }
+    }
+
     /// Send a message.
     fn send(&self, m: impl Into<Message>) {
         let client = self.client.clone();
@@ -404,7 +446,7 @@ impl Sender {
 }
 
 /// Handler for incoming messages.
-struct Handler {
+struct Handler<'a, 'to> {
     /// Current Streamer.
     streamer: String,
     /// Currench channel.
@@ -416,13 +458,13 @@ struct Handler {
     /// Whitelisted hosts for links.
     whitelisted_hosts: HashSet<String>,
     /// All registered commands.
-    commands: db::Commands,
+    commands: &'a db::Commands,
     /// Bad words.
-    bad_words: db::Words,
+    bad_words: &'a db::Words,
     /// For sending notifications.
-    global_bus: Arc<bus::Bus<bus::Global>>,
+    global_bus: &'a Arc<bus::Bus<bus::Global>>,
     /// Aliases.
-    aliases: db::Aliases,
+    aliases: &'a db::Aliases,
     /// Enabled features.
     features: Features,
     /// Configured API URL.
@@ -434,12 +476,18 @@ struct Handler {
     /// Handlers for specific commands like `!skip`.
     handlers: module::Handlers,
     /// Handler for shutting down the service.
-    shutdown: utils::Shutdown,
+    shutdown: &'a utils::Shutdown,
     /// Build idle detection.
     idle: idle::Idle,
+    /// Pong timeout currently running.
+    pong_timeout: &'to mut Option<timer::Delay>,
+    /// OAuth 2.0 Token used to authenticate with IRC.
+    token: &'a oauth2::SyncToken,
+    /// Force a shutdown.
+    handler_shutdown: bool,
 }
 
-impl Handler {
+impl Handler<'_, '_> {
     /// Run as user.
     fn as_user<'m>(&self, tags: Tags<'m>, m: &'m Message) -> Result<User<'m>, Error> {
         let name = m
@@ -482,7 +530,7 @@ impl Handler {
                         thread_pool: &self.thread_pool,
                         user,
                         it,
-                        shutdown: &self.shutdown,
+                        shutdown: self.shutdown,
                         alias: command::Alias { alias },
                     };
 
@@ -598,6 +646,18 @@ impl Handler {
         false
     }
 
+    /// Send a ping to the remote server.
+    fn send_ping(&mut self) -> Result<(), Error> {
+        self.sender
+            .send_immediate(Command::PING(String::from(SERVER), None));
+
+        *self.pong_timeout = Some(timer::Delay::new(
+            time::Instant::now() + time::Duration::from_secs(5),
+        ));
+
+        Ok(())
+    }
+
     /// Handle the given command.
     pub fn handle<'local>(&mut self, m: &'local Message) -> Result<(), Error> {
         match m.command {
@@ -675,8 +735,14 @@ impl Handler {
             Command::Response(..) => {
                 log::trace!("Response: {}", m);
             }
-            Command::PING(..) | Command::PONG(..) => {
-                // ignore
+            Command::PING(ref server, ref other) => {
+                log::trace!("Received PING, responding with PONG");
+                self.sender
+                    .send_immediate(Command::PONG(server.clone(), other.clone()));
+            }
+            Command::PONG(..) => {
+                log::trace!("Received PONG, clearing PING timeout");
+                *self.pong_timeout = None;
             }
             Command::Raw(..) => {
                 log::trace!("Raw: {:?}", m);
@@ -685,6 +751,10 @@ impl Handler {
                 let tags = Self::tags(&m);
 
                 match tags.msg_id {
+                    _ if message == "Login authentication failed" => {
+                        self.token.force_refresh()?;
+                        self.handler_shutdown = true;
+                    }
                     Some("no_mods") => {
                         self.moderators.clear();
                     }
@@ -692,7 +762,10 @@ impl Handler {
                     Some("room_mods") => {
                         self.moderators = parse_room_mods(message);
                     }
-                    _ => {
+                    Some(msg_id) => {
+                        log::info!("unhandled notice w/ msg_id: {:?}: {:?}", msg_id, m);
+                    }
+                    None => {
                         log::info!("unhandled notice: {:?}", m);
                     }
                 }

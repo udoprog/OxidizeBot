@@ -1,4 +1,6 @@
-use crate::{api, player, prelude::*, settings::ScopedSettings, track_id::SpotifyId};
+use crate::{
+    api, player, prelude::*, settings::ScopedSettings, track_id::SpotifyId, utils::Futures,
+};
 use parking_lot::RwLock;
 use std::sync::Arc;
 use std::{
@@ -9,12 +11,13 @@ use std::{
 
 /// Setup a player.
 pub fn setup(
+    futures: &mut Futures,
     spotify: Arc<api::Spotify>,
     settings: ScopedSettings,
 ) -> Result<(ConnectPlayer, ConnectDevice), failure::Error> {
     let device = Arc::new(RwLock::new(None));
 
-    let volume_scale = settings.sync_var("volume-scale", 100)?;
+    let volume_scale = settings.sync_var(futures, "volume-scale", 100)?;
 
     let (config_tx, config_rx) = mpsc::unbounded();
 

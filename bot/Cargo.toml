@@ -60,7 +60,7 @@ package = "futures-preview"
 version = "0.3.0-alpha.16"
 features = ["nightly", "async-await", "compat"]
 git = "https://github.com/udoprog/futures-rs"
-branch = "option-unpin"
+branch = "require-unpin"
 
 [build-dependencies]
 failure = "0.1.5"

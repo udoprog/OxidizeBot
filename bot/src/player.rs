@@ -4,7 +4,7 @@ use crate::{
 };
 
 use chrono::{DateTime, Utc};
-use failure::format_err;
+use failure::{bail, format_err, Error};
 use parking_lot::RwLock;
 use std::{
     collections::VecDeque,
@@ -106,7 +106,7 @@ impl Track {
 
     /// Convert into JSON.
     /// TODO: this is a hack to avoid breaking web API.
-    pub fn to_json(&self) -> Result<serde_json::Value, failure::Error> {
+    pub fn to_json(&self) -> Result<serde_json::Value, Error> {
         let json = match *self {
             Track::Spotify { ref track } => serde_json::to_value(&track)?,
             Track::YouTube { ref video } => serde_json::to_value(&video)?,
@@ -182,46 +182,33 @@ impl Command {
 }
 
 /// Run the player.
-pub async fn run(
+pub fn run(
     db: db::Database,
     spotify: Arc<api::Spotify>,
     youtube: Arc<api::YouTube>,
-    parent_config: &config::Config,
+    parent_config: Arc<config::Config>,
     config: Arc<Config>,
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     settings: settings::Settings,
     themes: db::Themes,
-) -> Result<(PlaybackFuture, Player), failure::Error> {
+) -> Result<(Player, impl Future<Output = Result<(), Error>>), Error> {
+    log::info!("Waiting for token to become ready");
+
     let settings = settings.scoped(&["player"]);
 
-    let (connect_player, device) = connect::setup(spotify.clone(), settings.scoped(&["spotify"]))?;
-    let youtube_player = youtube::setup(youtube_bus.clone(), settings.scoped(&["youtube"]))?;
+    let mut futures = utils::Futures::default();
+
+    let (connect_player, device) =
+        connect::setup(&mut futures, spotify.clone(), settings.scoped(&["spotify"]))?;
+    let youtube_player = youtube::setup(
+        &mut futures,
+        youtube_bus.clone(),
+        settings.scoped(&["youtube"]),
+    )?;
 
     let bus = Arc::new(RwLock::new(Bus::new(1024)));
-
     let queue = Queue::new(db.clone());
-
-    let fallback_items = match config.playlist.clone() {
-        Some(playlist) => playlist_to_items(spotify.clone(), playlist).await?,
-        None => songs_to_items(spotify.clone()).await?,
-    };
-
-    log::info!("Added {} fallback songs", fallback_items.len());
-
-    // Add tracks from database.
-    for song in db.list()? {
-        let item = convert_item(
-            spotify.clone(),
-            youtube.clone(),
-            song.user.clone(),
-            song.track_id,
-            None,
-        )
-        .await?;
-
-        queue.push_back_queue(Arc::new(item));
-    }
 
     // Blank current song file if specified.
     if let Some(current_song) = parent_config.current_song.as_ref() {
@@ -264,49 +251,26 @@ pub async fn run(
         log::warn!("[player] sync_player_interval - configuration has been deprecated since it was too unreliable.");
     }
 
-    let mixer = Mixer {
-        queue: queue.clone(),
-        sidelined: Default::default(),
-        fallback_items,
-        fallback_queue: Default::default(),
-    };
-
     let (commands_tx, commands) = mpsc::unbounded();
 
     let (detached_stream, detached) = settings.init_and_stream("detached", false)?;
 
-    let future = PlaybackFuture {
-        connect_player,
-        youtube_player,
-        commands,
-        bus: EventBus { bus: bus.clone() },
-        mixer,
-        // NB: it is not considered paused _yet_.
-        // When we issue the pause command below, we only queue up the command.
-        state: State::None,
-        player: PlayerKind::None,
-        detached,
-        detached_stream,
-        volume: Arc::clone(&volume),
-        song: song.clone(),
-        current_song: parent_config.current_song.clone(),
-        echo_current_song: config.echo_current_song,
-        current_song_update,
-        song_update_interval,
-        song_update_interval_stream,
-        global_bus,
-        timeout: None,
-    };
+    let duplicate_duration = settings.sync_var(
+        &mut futures,
+        "duplicate-duration",
+        utils::Duration::default(),
+    )?;
+    let max_songs_per_user = settings.sync_var(
+        &mut futures,
+        "max-songs-per-user",
+        config.max_songs_per_user,
+    )?;
+    let max_queue_length =
+        settings.sync_var(&mut futures, "max-queue-length", config.max_queue_length)?;
 
-    let duplicate_duration = settings.sync_var("duplicate-duration", utils::Duration::default())?;
-
-    let max_songs_per_user = settings.sync_var("max-songs-per-user", config.max_songs_per_user)?;
-
-    let max_queue_length = settings.sync_var("max-queue-length", config.max_queue_length)?;
-
-    let player = Player {
+    let parent_player = Player {
         device: device.clone(),
-        queue,
+        queue: queue.clone(),
         db: db.clone(),
         max_queue_length,
         max_songs_per_user,
@@ -314,45 +278,111 @@ pub async fn run(
         spotify: spotify.clone(),
         youtube: youtube.clone(),
         commands_tx,
-        bus,
+        bus: bus.clone(),
         volume: volume.clone(),
         song: song.clone(),
         themes: themes.clone(),
         closed: closed.clone(),
     };
 
-    let p = match spotify.me_player().await? {
-        Some(p) => p,
-        None => return Ok((future, player)),
+    let player = parent_player.client();
+
+    // future to initialize the player future.
+    // Yeah, I know....
+    let future = async move {
+        // NB: since we do some work when we initialize the player, wait until
+        // Spotify and YouTube are at least initialy authenticated.
+        future::try_join(
+            spotify.token.wait_until_ready(),
+            youtube.token.wait_until_ready(),
+        )
+        .await?;
+
+        let fallback_items = match config.playlist.clone() {
+            Some(playlist) => playlist_to_items(spotify.clone(), playlist).await?,
+            None => songs_to_items(spotify.clone()).await?,
+        };
+
+        log::info!("Added {} fallback songs", fallback_items.len());
+
+        // Add tracks from database.
+        for song in db.list()? {
+            let item = convert_item(
+                spotify.clone(),
+                youtube.clone(),
+                song.user.clone(),
+                song.track_id,
+                None,
+            )
+            .await?;
+
+            queue.push_back_queue(Arc::new(item));
+        }
+
+        let mixer = Mixer {
+            queue,
+            sidelined: Default::default(),
+            fallback_items,
+            fallback_queue: Default::default(),
+        };
+
+        let future = PlaybackFuture {
+            connect_player,
+            youtube_player,
+            commands,
+            bus: EventBus { bus },
+            mixer,
+            state: State::None,
+            player: PlayerKind::None,
+            detached,
+            detached_stream,
+            volume: Arc::clone(&volume),
+            song: song.clone(),
+            current_song: parent_config.current_song.clone(),
+            echo_current_song: config.echo_current_song,
+            current_song_update,
+            song_update_interval,
+            song_update_interval_stream,
+            global_bus,
+            timeout: None,
+        };
+
+        let p = match spotify.me_player().await? {
+            Some(p) => p,
+            None => return future.run().await,
+        };
+
+        match Song::from_playback(&p) {
+            Some(song) => {
+                player.play_sync(Some(song))?;
+                *volume.write() = p.device.volume_percent;
+                *device.device.write() = Some(p.device);
+            }
+            None => {
+                let devices = spotify.my_player_devices().await?;
+
+                for (i, d) in devices.iter().enumerate() {
+                    log::info!("device #{}: {}", i, d.name)
+                }
+
+                *device.device.write() = match config.device.as_ref() {
+                    Some(device) => devices.into_iter().find(|d| d.name == *device),
+                    None => devices.into_iter().next(),
+                };
+
+                player.pause_with_source(Source::Automatic)?;
+
+                if let Some(volume) = config.volume {
+                    player.volume_with_source(Source::Automatic, volume)?;
+                }
+            }
+        }
+
+        let futures = future::try_join_all(futures);
+        future::try_join(future.run(), futures).await.map(|_| ())
     };
 
-    match Song::from_playback(&p) {
-        Some(song) => {
-            player.play_sync(Some(song))?;
-            *volume.write() = p.device.volume_percent;
-            *device.device.write() = Some(p.device);
-        }
-        None => {
-            let devices = spotify.my_player_devices().await?;
-
-            for (i, d) in devices.iter().enumerate() {
-                log::info!("device #{}: {}", i, d.name)
-            }
-
-            *device.device.write() = match config.device.as_ref() {
-                Some(device) => devices.into_iter().find(|d| d.name == *device),
-                None => devices.into_iter().next(),
-            };
-
-            player.pause(Source::Automatic)?;
-
-            if let Some(volume) = config.volume {
-                player.volume(Source::Automatic, volume)?;
-            }
-        }
-    }
-
-    Ok((future, player))
+    Ok((parent_player, future))
 }
 
 /// Error value returned if a device has not been configured.
@@ -487,7 +517,7 @@ impl Song {
     }
 
     /// Get serializable data for this item.
-    pub fn data(&self, state: State) -> Result<CurrentData<'_>, failure::Error> {
+    pub fn data(&self, state: State) -> Result<CurrentData<'_>, Error> {
         let artists = self.item.track.artists();
 
         Ok(CurrentData {
@@ -607,28 +637,6 @@ impl Player {
     pub fn add_rx(&self) -> BusReader<Event> {
         self.bus.write().add_rx()
     }
-
-    /// Pause playback.
-    pub fn pause(&self, source: Source) -> Result<(), failure::Error> {
-        self.send(Command::Pause(source))
-    }
-
-    /// Synchronize playback with the given song.
-    pub fn play_sync(&self, song: Option<Song>) -> Result<(), failure::Error> {
-        self.send(Command::Sync { song })
-    }
-
-    /// Update volume of the player.
-    pub fn volume(&self, source: Source, volume: u32) -> Result<(), failure::Error> {
-        self.send(Command::Volume(source, u32::min(100u32, volume)))
-    }
-
-    /// Send the given command.
-    fn send(&self, command: Command) -> Result<(), failure::Error> {
-        self.commands_tx
-            .unbounded_send(command)
-            .map_err(|_| format_err!("failed to send command"))
-    }
 }
 
 /// All parts of a Player that can be shared between threads.
@@ -661,13 +669,18 @@ impl PlayerClient {
         self.bus.write().add_rx()
     }
 
+    /// Synchronize playback with the given song.
+    fn play_sync(&self, song: Option<Song>) -> Result<(), Error> {
+        self.send(Command::Sync { song })
+    }
+
     /// Get the current device.
     pub fn current_device(&self) -> Option<api::spotify::Device> {
         self.device.current_device()
     }
 
     /// List all available devices.
-    pub async fn list_devices(&self) -> Result<Vec<api::spotify::Device>, failure::Error> {
+    pub async fn list_devices(&self) -> Result<Vec<api::spotify::Device>, Error> {
         self.device.list_devices().await
     }
 
@@ -684,7 +697,7 @@ impl PlayerClient {
     }
 
     /// Send the given command.
-    fn send(&self, command: Command) -> Result<(), failure::Error> {
+    fn send(&self, command: Command) -> Result<(), Error> {
         self.commands_tx
             .unbounded_send(command)
             .map_err(|_| format_err!("failed to send command"))
@@ -714,28 +727,38 @@ impl PlayerClient {
     }
 
     /// Toggle playback.
-    pub fn toggle(&self) -> Result<(), failure::Error> {
+    pub fn toggle(&self) -> Result<(), Error> {
         self.send(Command::Toggle(Source::Manual))
     }
 
     /// Start playback.
-    pub fn play(&self) -> Result<(), failure::Error> {
+    pub fn play(&self) -> Result<(), Error> {
         self.send(Command::Play(Source::Manual))
     }
 
     /// Pause playback.
-    pub fn pause(&self) -> Result<(), failure::Error> {
-        self.send(Command::Pause(Source::Manual))
+    pub fn pause(&self) -> Result<(), Error> {
+        self.pause_with_source(Source::Manual)
+    }
+
+    /// Pause playback.
+    pub fn pause_with_source(&self, source: Source) -> Result<(), Error> {
+        self.send(Command::Pause(source))
     }
 
     /// Skip the current song.
-    pub fn skip(&self) -> Result<(), failure::Error> {
+    pub fn skip(&self) -> Result<(), Error> {
         self.send(Command::Skip(Source::Manual))
     }
 
     /// Update volume of the player.
-    pub fn volume(&self, volume: u32) -> Result<(), failure::Error> {
+    pub fn volume(&self, volume: u32) -> Result<(), Error> {
         self.send(Command::Volume(Source::Manual, u32::min(100u32, volume)))
+    }
+
+    /// Update volume of the player with a custom source.
+    pub fn volume_with_source(&self, source: Source, volume: u32) -> Result<(), Error> {
+        self.send(Command::Volume(source, u32::min(100u32, volume)))
     }
 
     /// Get the current volume.
@@ -754,7 +777,7 @@ impl PlayerClient {
     }
 
     /// Search for a track.
-    pub async fn search_track(&self, q: String) -> Result<Option<TrackId>, failure::Error> {
+    pub async fn search_track(&self, q: String) -> Result<Option<TrackId>, Error> {
         if q.starts_with("youtube:") {
             let q = q.trim_start_matches("youtube:").to_string();
             let results = self.youtube.search(q).await?;
@@ -779,7 +802,7 @@ impl PlayerClient {
         match page.items.into_iter().next() {
             Some(track) => match SpotifyId::from_base62(&track.id) {
                 Ok(track_id) => Ok(Some(TrackId::Spotify(track_id))),
-                Err(_) => failure::bail!("search result returned malformed id"),
+                Err(_) => bail!("search result returned malformed id"),
             },
             None => Ok(None),
         }
@@ -931,11 +954,11 @@ impl PlayerClient {
     }
 
     /// Remove the first track in the queue.
-    pub fn remove_first(&self) -> Result<Option<Arc<Item>>, failure::Error> {
+    pub fn remove_first(&self) -> Result<Option<Arc<Item>>, Error> {
         Ok(None)
     }
 
-    pub fn purge(&self) -> Result<Vec<Arc<Item>>, failure::Error> {
+    pub fn purge(&self) -> Result<Vec<Arc<Item>>, Error> {
         let purged = self.queue.purge()?;
 
         if !purged.is_empty() {
@@ -946,7 +969,7 @@ impl PlayerClient {
     }
 
     /// Remove the item at the given position.
-    pub fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, failure::Error> {
+    pub fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, Error> {
         let removed = self.queue.remove_at(n)?;
 
         if removed.is_some() {
@@ -957,7 +980,7 @@ impl PlayerClient {
     }
 
     /// Remove the first track in the queue.
-    pub fn remove_last(&self) -> Result<Option<Arc<Item>>, failure::Error> {
+    pub fn remove_last(&self) -> Result<Option<Arc<Item>>, Error> {
         let removed = self.queue.remove_last()?;
 
         if removed.is_some() {
@@ -968,7 +991,7 @@ impl PlayerClient {
     }
 
     /// Remove the last track by the given user.
-    pub fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, failure::Error> {
+    pub fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, Error> {
         let removed = self.queue.remove_last_by_user(user)?;
 
         if removed.is_some() {
@@ -1044,7 +1067,7 @@ pub enum PlayThemeError {
     /// No such theme song.
     NoSuchTheme,
     /// Other generic error happened.
-    Error(failure::Error),
+    Error(Error),
 }
 
 /// Error raised when trying to add track.
@@ -1062,16 +1085,16 @@ pub enum AddTrackError {
     /// Not enough currency to request songs.
     NotEnoughCurrency { required: i64, balance: i64 },
     /// Other generic error happened.
-    Error(failure::Error),
+    Error(Error),
 }
 
 /// The backend of a words store.
 pub trait Backend: Clone + Send + Sync {
     /// List all counters in backend.
-    fn list(&self) -> Result<Vec<db::models::Song>, failure::Error>;
+    fn list(&self) -> Result<Vec<db::models::Song>, Error>;
 
     /// Insert the given song into the backend.
-    fn push_back(&self, song: &db::models::AddSong) -> Result<(), failure::Error>;
+    fn push_back(&self, song: &db::models::AddSong) -> Result<(), Error>;
 
     /// Remove the song, but only log on issues.
     fn remove_song_log(&self, track_id: &TrackId) {
@@ -1083,7 +1106,7 @@ pub trait Backend: Clone + Send + Sync {
     }
 
     /// Remove the song with the given ID.
-    fn remove_song(&self, track_id: &TrackId) -> Result<bool, failure::Error>;
+    fn remove_song(&self, track_id: &TrackId) -> Result<bool, Error>;
 
     /// Purge the songs database, but only log on issues.
     fn song_purge_log(&self) -> Option<usize> {
@@ -1097,7 +1120,7 @@ pub trait Backend: Clone + Send + Sync {
     }
 
     /// Purge the songs database and return the number of items removed.
-    fn song_purge(&self) -> Result<usize, failure::Error>;
+    fn song_purge(&self) -> Result<usize, Error>;
 
     /// Purge the songs database, but only log on issues.
     fn promote_song_log(&self, user: &str, track_id: &TrackId) -> Option<bool> {
@@ -1111,14 +1134,14 @@ pub trait Backend: Clone + Send + Sync {
     }
 
     /// Promote the track with the given ID.
-    fn promote_song(&self, user: &str, track_id: &TrackId) -> Result<bool, failure::Error>;
+    fn promote_song(&self, user: &str, track_id: &TrackId) -> Result<bool, Error>;
 
     /// Test if the song has been played within a given duration.
     fn last_song_within(
         &self,
         track_id: &TrackId,
         duration: utils::Duration,
-    ) -> Result<Option<db::models::Song>, failure::Error>;
+    ) -> Result<Option<db::models::Song>, Error>;
 }
 
 /// The playback queue.
@@ -1144,7 +1167,7 @@ impl Queue {
         &self,
         track_id: &TrackId,
         duration: utils::Duration,
-    ) -> Result<Option<db::models::Song>, failure::Error> {
+    ) -> Result<Option<db::models::Song>, Error> {
         self.db.last_song_within(track_id, duration)
     }
 
@@ -1156,7 +1179,7 @@ impl Queue {
     /// Pop the front of the queue.
     pub fn pop_front(
         &self,
-    ) -> impl Future<Output = Result<Option<Arc<Item>>, failure::Error>> + Send + 'static {
+    ) -> impl Future<Output = Result<Option<Arc<Item>>, Error>> + Send + 'static {
         let db = self.db.clone();
         let queue = self.queue.clone();
 
@@ -1172,7 +1195,7 @@ impl Queue {
     }
 
     /// Push item to back of queue.
-    pub async fn push_back(&self, item: Arc<Item>) -> Result<(), failure::Error> {
+    pub async fn push_back(&self, item: Arc<Item>) -> Result<(), Error> {
         let db = self.db.clone();
         let queue = self.queue.clone();
 
@@ -1191,7 +1214,7 @@ impl Queue {
     }
 
     /// Purge the song queue.
-    pub fn purge(&self) -> Result<Vec<Arc<Item>>, failure::Error> {
+    pub fn purge(&self) -> Result<Vec<Arc<Item>>, Error> {
         let mut q = self.queue.write();
 
         if q.is_empty() {
@@ -1206,7 +1229,7 @@ impl Queue {
     }
 
     /// Remove the item at the given position.
-    pub fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, failure::Error> {
+    pub fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, Error> {
         let mut q = self.queue.write();
 
         if q.is_empty() {
@@ -1222,7 +1245,7 @@ impl Queue {
     }
 
     /// Remove the last element.
-    pub fn remove_last(&self) -> Result<Option<Arc<Item>>, failure::Error> {
+    pub fn remove_last(&self) -> Result<Option<Arc<Item>>, Error> {
         let mut q = self.queue.write();
 
         if q.is_empty() {
@@ -1238,7 +1261,7 @@ impl Queue {
     }
 
     /// Remove the last element by user.
-    pub fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, failure::Error> {
+    pub fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, Error> {
         let mut q = self.queue.write();
 
         if q.is_empty() {
@@ -1331,7 +1354,7 @@ impl Mixer {
     /// If there are any songs in the queue.
     ///
     /// Finally, if there are any songs to fall back to.
-    async fn next_song(&mut self) -> Result<Option<Song>, failure::Error> {
+    async fn next_song(&mut self) -> Result<Option<Song>, Error> {
         if let Some(song) = self.sidelined.pop_front() {
             return Ok(Some(song));
         }
@@ -1418,7 +1441,7 @@ pub struct PlaybackFuture {
 
 impl PlaybackFuture {
     /// Run the playback future.
-    pub async fn run(mut self) -> Result<(), failure::Error> {
+    pub async fn run(mut self) -> Result<(), Error> {
         loop {
             futures::select! {
                 timeout = self.timeout.current() => {
@@ -1479,14 +1502,14 @@ impl PlaybackFuture {
     }
 
     /// Notify a change in the current song.
-    fn notify_song_change(&self, song: Option<&Song>) -> Result<(), failure::Error> {
+    fn notify_song_change(&self, song: Option<&Song>) -> Result<(), Error> {
         self.global_bus.send(bus::Global::song(song)?);
         self.write_current_song(song);
         Ok(())
     }
 
     /// Write the current song.
-    fn write_song(&self, song: Option<Song>) -> Result<(), failure::Error> {
+    fn write_song(&self, song: Option<Song>) -> Result<(), Error> {
         *self.song.write() = song;
         Ok(())
     }
@@ -1555,7 +1578,7 @@ impl PlaybackFuture {
     }
 
     /// Switch the player to the specified song without changing its state.
-    async fn switch_to_song(&mut self, mut song: Option<Song>) -> Result<(), failure::Error> {
+    async fn switch_to_song(&mut self, mut song: Option<Song>) -> Result<(), Error> {
         if let Some(song) = song.as_mut() {
             song.pause();
             self.switch_current_player(song.player()).await;
@@ -1568,7 +1591,7 @@ impl PlaybackFuture {
     }
 
     /// Switch current song to the specified song.
-    async fn play_song(&mut self, source: Source, mut song: Song) -> Result<(), failure::Error> {
+    async fn play_song(&mut self, source: Source, mut song: Song) -> Result<(), Error> {
         song.play();
 
         if let Source::Manual = source {
@@ -1588,7 +1611,7 @@ impl PlaybackFuture {
     }
 
     /// Resume playing a specific song.
-    async fn resume_song(&mut self, source: Source, song: Song) -> Result<(), failure::Error> {
+    async fn resume_song(&mut self, source: Source, song: Song) -> Result<(), Error> {
         if let Source::Manual = source {
             self.bus
                 .broadcast(Event::Playing(self.echo_current_song, song.item.clone()));
@@ -1605,7 +1628,7 @@ impl PlaybackFuture {
     }
 
     /// Detach the player.
-    fn detach(&mut self) -> Result<(), failure::Error> {
+    fn detach(&mut self) -> Result<(), Error> {
         // store the currently playing song in the sidelined slot.
         if let Some(mut song) = self.song.write().take() {
             song.pause();
@@ -1620,7 +1643,7 @@ impl PlaybackFuture {
     }
 
     /// Handle incoming command.
-    async fn command(&mut self, command: Command) -> Result<(), failure::Error> {
+    async fn command(&mut self, command: Command) -> Result<(), Error> {
         use self::Command::*;
 
         if self.detached {
@@ -1772,7 +1795,7 @@ impl PlaybackFuture {
     }
 
     /// We've reached the end of a track.
-    async fn end_of_track(&mut self) -> Result<(), failure::Error> {
+    async fn end_of_track(&mut self) -> Result<(), Error> {
         if self.detached {
             log::warn!("End of track called even though we are detached");
             return Ok(());
@@ -1791,7 +1814,7 @@ impl PlaybackFuture {
     }
 
     /// Handle an event from the connect integration.
-    async fn handle_player_event(&mut self, e: IntegrationEvent) -> Result<(), failure::Error> {
+    async fn handle_player_event(&mut self, e: IntegrationEvent) -> Result<(), Error> {
         use self::IntegrationEvent::*;
 
         if self.detached {
@@ -1858,7 +1881,7 @@ impl PlaybackFuture {
 async fn playlist_to_items(
     spotify: Arc<api::Spotify>,
     playlist: String,
-) -> Result<Vec<Arc<Item>>, failure::Error> {
+) -> Result<Vec<Arc<Item>>, Error> {
     let mut items = Vec::new();
 
     let playlist = spotify.playlist(playlist).await?;
@@ -1885,7 +1908,7 @@ async fn playlist_to_items(
 }
 
 /// Convert all songs of a user into items.
-async fn songs_to_items(spotify: Arc<api::Spotify>) -> Result<Vec<Arc<Item>>, failure::Error> {
+async fn songs_to_items(spotify: Arc<api::Spotify>) -> Result<Vec<Arc<Item>>, Error> {
     let mut items = Vec::new();
 
     for added_song in spotify.my_tracks_stream().try_concat().await? {
@@ -1916,7 +1939,7 @@ async fn convert_item(
     user: Option<String>,
     track_id: TrackId,
     duration_override: Option<Duration>,
-) -> Result<Item, failure::Error> {
+) -> Result<Item, Error> {
     let (track, duration) = match track_id {
         TrackId::Spotify(ref id) => {
             let track_id_string = id.to_base62();
@@ -1937,7 +1960,7 @@ async fn convert_item(
 
             let video = match video {
                 Some(video) => video,
-                None => failure::bail!("no video found for id `{}`", id),
+                None => bail!("no video found for id `{}`", id),
             };
 
             let content_details = video
@@ -1962,7 +1985,7 @@ async fn convert_item(
         duration,
     });
 
-    fn parse_youtube_duration(duration: &str) -> Result<Duration, failure::Error> {
+    fn parse_youtube_duration(duration: &str) -> Result<Duration, Error> {
         let duration = duration.trim_start_matches("PT");
 
         let (duration, hours) = match duration.find('H') {

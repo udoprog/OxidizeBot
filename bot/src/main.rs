@@ -255,12 +255,9 @@ async fn try_main(
 
     log::info!("Listening on: {}", web::URL);
 
-    let mut tokens: Vec<future::BoxFuture<'static, Result<oauth2::AuthPair, failure::Error>>> =
-        vec![];
-
     let token_settings = settings.scoped(&["secrets", "oauth2"]);
 
-    tokens.push({
+    let (spotify_token, future) = {
         let flow = config::new_oauth2_flow::<config::Spotify>(
             web.clone(),
             "spotify",
@@ -274,22 +271,26 @@ async fn try_main(
             String::from("user-modify-playback-state"),
             String::from("user-read-playback-state"),
         ])
-        .build()?;
+        .build(String::from("Spotify"))?;
 
-        flow.execute(String::from("Authorize Spotify")).boxed()
-    });
+        flow.into_token()?
+    };
 
-    tokens.push({
+    futures.push(future.boxed());
+
+    let (youtube_token, future) = {
         let flow = oauth2::youtube(web.clone(), token_settings.scoped(&["youtube"]))?
             .with_scopes(vec![String::from(
                 "https://www.googleapis.com/auth/youtube.readonly",
             )])
-            .build()?;
+            .build(String::from("YouTube"))?;
 
-        flow.execute(String::from("Authorize YouTube")).boxed()
-    });
+        flow.into_token()?
+    };
 
-    tokens.push({
+    futures.push(future.boxed());
+
+    let (streamer_token, future) = {
         let flow = config::new_oauth2_flow::<config::Twitch>(
             web.clone(),
             "twitch-streamer",
@@ -301,12 +302,14 @@ async fn try_main(
             String::from("channel_read"),
             String::from("channel:read:subscriptions"),
         ])
-        .build()?;
+        .build(String::from("Twitch Streamer"))?;
 
-        flow.execute(String::from("Authorize as Streamer")).boxed()
-    });
+        flow.into_token()?
+    };
 
-    tokens.push({
+    futures.push(future.boxed());
+
+    let (bot_token, future) = {
         let flow = config::new_oauth2_flow::<config::Twitch>(
             web.clone(),
             "twitch-bot",
@@ -319,28 +322,12 @@ async fn try_main(
             String::from("chat:read"),
             String::from("clips:edit"),
         ])
-        .build()?;
+        .build(String::from("Twitch Bot"))?;
 
-        flow.execute(String::from("Authorize as Bot")).boxed()
-    });
+        flow.into_token()?
+    };
 
-    let results = future::try_join_all(tokens).await?;
-    let mut results = results.into_iter();
-
-    let (spotify_token, future) = results
-        .next()
-        .ok_or_else(|| format_err!("Expected Spotify token"))?;
-    futures.push(future.run().boxed());
-
-    let (youtube_token, future) = results
-        .next()
-        .ok_or_else(|| format_err!("Expected YouTube token"))?;
-    futures.push(future.run().boxed());
-
-    let (streamer_token, future) = results
-        .next()
-        .ok_or_else(|| format_err!("Expected Twitch Streamer token"))?;
-    futures.push(future.run().boxed());
+    futures.push(future.boxed());
 
     let (shutdown, shutdown_rx) = utils::Shutdown::new();
 
@@ -351,20 +338,19 @@ async fn try_main(
     let player = match config.player {
         // Only setup if the song feature is enabled.
         Some(ref player) if config.features.test(Feature::Song) => {
-            let (future, player) = player::run(
+            let (player, future) = player::run(
                 db.clone(),
                 spotify.clone(),
                 youtube.clone(),
-                &config,
+                config.clone(),
                 player.clone(),
                 global_bus.clone(),
                 youtube_bus.clone(),
                 settings.clone(),
                 themes.clone(),
-            )
-            .await?;
+            )?;
 
-            futures.push(future.run().boxed());
+            futures.push(future.boxed());
 
             if let Some(api_url) = config.api_url.as_ref() {
                 futures.push(api::setbac::run(api_url, &player, streamer_token.clone())?.boxed());
@@ -394,11 +380,6 @@ async fn try_main(
 
     let module = module::theme_admin::Config::default();
     modules.push(Box::new(module::theme_admin::Module::load(&module)?));
-
-    let (bot_token, future) = results
-        .next()
-        .ok_or_else(|| format_err!("Expected Twitch Bot token"))?;
-    futures.push(future.run().boxed());
 
     let mut obs = None;
 

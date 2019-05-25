@@ -5,7 +5,7 @@ use diesel::prelude::*;
 use futures::ready;
 use hashbrown::HashMap;
 use parking_lot::RwLock;
-use std::{fmt, pin::Pin, sync::Arc};
+use std::{fmt, marker, pin::Pin, sync::Arc};
 
 const SEPARATOR: &'static str = "/";
 
@@ -109,7 +109,7 @@ impl Settings {
     /// Get the value of the given key from the database.
     pub fn get<T>(&self, key: &str) -> Result<Option<T>, failure::Error>
     where
-        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
+        T: serde::Serialize + serde::de::DeserializeOwned,
     {
         use self::db::schema::settings::dsl;
         let c = self.db.pool.lock();
@@ -260,6 +260,17 @@ impl Settings {
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
+        Stream {
+            default,
+            option_stream: self.option_stream(key),
+        }
+    }
+
+    /// Subscribe for any events on the given key.
+    pub fn option_stream<T>(&self, key: &str) -> OptionStream<T>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned,
+    {
         let (tx, rx) = mpsc::unbounded();
 
         if !self.schema.contains(key) {
@@ -274,11 +285,11 @@ impl Settings {
             }
         }
 
-        Stream {
-            default,
+        OptionStream {
             subscriptions: self.subscriptions.clone(),
             key: key.to_string(),
             rx,
+            marker: marker::PhantomData,
         }
     }
 
@@ -302,8 +313,26 @@ impl Settings {
         Ok((self.stream(key, default), value))
     }
 
+    /// Initialize the value from the database.
+    pub fn init_and_option_stream<T>(
+        &self,
+        key: &str,
+    ) -> Result<(OptionStream<T>, Option<T>), failure::Error>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned,
+    {
+        let stream = self.option_stream(key);
+        let value = self.get::<T>(key)?;
+        Ok((stream, value))
+    }
+
     /// Get a synchronized variable for the given configuration key.
-    pub fn sync_var<T>(&self, key: &str, default: T) -> Result<Arc<RwLock<T>>, failure::Error>
+    pub fn sync_var<T>(
+        &self,
+        driver: &mut impl utils::Driver,
+        key: &str,
+        default: T,
+    ) -> Result<Arc<RwLock<T>>, failure::Error>
     where
         T: 'static
             + fmt::Debug
@@ -312,7 +341,7 @@ impl Settings {
             + Clone
             + serde::Serialize
             + serde::de::DeserializeOwned
-            + std::marker::Unpin,
+            + Unpin,
     {
         let (mut stream, value) = self.init_and_stream(key, default)?;
 
@@ -326,10 +355,11 @@ impl Settings {
                 log::trace!("Updating: {} = {:?}", key, update);
                 *future_value.write() = update;
             }
+
+            Ok(())
         };
 
-        // NB: we should do something with the future, but for now it is just a dummy future in tokio.
-        tokio::spawn(future.unit_error().boxed().compat());
+        driver.drive(future);
         Ok(value)
     }
 }
@@ -388,8 +418,24 @@ impl ScopedSettings {
         self.settings.init_and_stream(&self.scope(key), default)
     }
 
+    /// Initialize the value from the database.
+    pub fn init_and_option_stream<T>(
+        &self,
+        key: &str,
+    ) -> Result<(OptionStream<T>, Option<T>), failure::Error>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned,
+    {
+        self.settings.init_and_option_stream(&self.scope(key))
+    }
+
     /// Get a synchronized variable for the given configuration key.
-    pub fn sync_var<T>(&self, key: &str, default: T) -> Result<Arc<RwLock<T>>, failure::Error>
+    pub fn sync_var<T>(
+        &self,
+        driver: &mut impl utils::Driver,
+        key: &str,
+        default: T,
+    ) -> Result<Arc<RwLock<T>>, failure::Error>
     where
         T: 'static
             + fmt::Debug
@@ -398,9 +444,9 @@ impl ScopedSettings {
             + Clone
             + serde::Serialize
             + serde::de::DeserializeOwned
-            + std::marker::Unpin,
+            + Unpin,
     {
-        self.settings.sync_var(&self.scope(key), default)
+        self.settings.sync_var(driver, &self.scope(key), default)
     }
 
     /// Scope the settings a bit more.
@@ -421,12 +467,41 @@ impl ScopedSettings {
 /// Get updates for a specific setting.
 pub struct Stream<T> {
     default: T,
+    option_stream: OptionStream<T>,
+}
+
+impl<T> stream::FusedStream for Stream<T> {
+    fn is_terminated(&self) -> bool {
+        self.option_stream.is_terminated()
+    }
+}
+
+impl<T> futures::Stream for Stream<T>
+where
+    T: Unpin + Clone + serde::de::DeserializeOwned,
+{
+    type Item = T;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        Poll::Ready(Some(
+            match ready!(Pin::new(&mut self.option_stream).poll_next(cx)) {
+                Some(Some(update)) => update,
+                Some(None) => self.as_ref().default.clone(),
+                None => return Poll::Ready(None),
+            },
+        ))
+    }
+}
+
+/// Get updates for a specific setting.
+pub struct OptionStream<T> {
     subscriptions: Subscriptions,
     key: String,
     rx: mpsc::UnboundedReceiver<Event<serde_json::Value>>,
+    marker: marker::PhantomData<T>,
 }
 
-impl<T> Drop for Stream<T> {
+impl<T> Drop for OptionStream<T> {
     fn drop(&mut self) {
         if self.subscriptions.write().remove(&self.key).is_some() {
             return;
@@ -439,44 +514,38 @@ impl<T> Drop for Stream<T> {
     }
 }
 
-impl<T> stream::FusedStream for Stream<T> {
+impl<T> stream::FusedStream for OptionStream<T> {
     fn is_terminated(&self) -> bool {
         false
     }
 }
 
-impl<T> futures::Stream for Stream<T>
+impl<T> futures::Stream for OptionStream<T>
 where
-    T: Unpin + Clone + serde::de::DeserializeOwned,
+    T: Unpin + serde::de::DeserializeOwned,
 {
-    type Item = T;
+    type Item = Option<T>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         log::trace!("polling stream: {}", self.as_ref().key);
 
-        loop {
-            let update = match ready!(Pin::new(&mut self.rx).poll_next(cx)) {
-                Some(update) => update,
-                None => return Poll::Ready(None),
-            };
+        let update = match ready!(Pin::new(&mut self.rx).poll_next(cx)) {
+            Some(update) => update,
+            None => return Poll::Ready(None),
+        };
 
-            let value = match update {
-                Event::Clear => self.as_ref().default.clone(),
-                Event::Set(value) => {
-                    let value = match serde_json::from_value(value) {
-                        Ok(value) => value,
-                        Err(e) => {
-                            log::warn!("bad value for key: {}: {}", self.as_ref().key, e);
-                            continue;
-                        }
-                    };
-
-                    value
+        let value = Some(match update {
+            Event::Clear => None,
+            Event::Set(value) => match serde_json::from_value(value) {
+                Ok(value) => Some(value),
+                Err(e) => {
+                    log::warn!("bad value for key: {}: {}", self.as_ref().key, e);
+                    None
                 }
-            };
+            },
+        });
 
-            return Poll::Ready(Some(value));
-        }
+        Poll::Ready(value)
     }
 }
 

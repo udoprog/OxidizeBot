@@ -179,10 +179,11 @@ impl super::Module for Module {
             currency,
             stream_info,
             settings,
+            futures,
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
-        let reward_multiplier = settings.sync_var("water/reward%", 100)?;
+        let reward_multiplier = settings.sync_var(futures, "water/reward%", 100)?;
 
         let currency = currency
             .ok_or_else(|| format_err!("currency required for !swearjar module"))?

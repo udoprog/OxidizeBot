@@ -1,13 +1,14 @@
 use crate::{prelude::*, settings, timer, web};
 use chrono::{DateTime, Utc};
-use failure::Error;
-use failure::{bail, format_err, ResultExt};
+use failure::{bail, format_err, Error};
 use oauth2::{
     basic::{BasicErrorField, BasicTokenResponse, BasicTokenType},
     AccessToken, AuthUrl, AuthorizationCode, Client, ClientId, ClientSecret, CsrfToken,
     RedirectUrl, RefreshToken, RequestTokenError, Scope, TokenResponse, TokenUrl,
 };
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
+use std::collections::VecDeque;
+use std::fmt;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -18,12 +19,10 @@ static YOUTUBE_CLIENT_ID: &'static str =
     "520353465977-filfj4j326v5vvd4do07riej30ekin70.apps.googleusercontent.com";
 static YOUTUBE_CLIENT_SECRET: &'static str = "8Rcs45nQEmruNey4-Egx7S7C";
 
-pub type AuthPair = (SyncToken, TokenRefreshFuture);
-
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SecretsConfig {
     client_id: String,
-    client_secret: String,
+    client_secret: ClientSecret,
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
@@ -38,51 +37,51 @@ pub enum Type {
 
 impl Type {
     /// Refresh and save an updated version of the given token.
-    pub async fn refresh_and_save_token(
+    pub async fn refresh_token(
         self,
         flow: &Arc<Flow>,
         refresh_token: RefreshToken,
     ) -> Result<Token, Error> {
         match self {
             Type::Twitch => {
-                self.refresh_and_save_token_impl::<TwitchTokenResponse>(flow, refresh_token)
+                self.refresh_token_impl::<TwitchTokenResponse>(flow, refresh_token)
                     .await
             }
             Type::Spotify => {
-                self.refresh_and_save_token_impl::<BasicTokenResponse>(flow, refresh_token)
+                self.refresh_token_impl::<BasicTokenResponse>(flow, refresh_token)
                     .await
             }
             Type::YouTube => {
-                self.refresh_and_save_token_impl::<BasicTokenResponse>(flow, refresh_token)
+                self.refresh_token_impl::<BasicTokenResponse>(flow, refresh_token)
                     .await
             }
         }
     }
 
     /// Exchange and save a token based on a code.
-    pub async fn exchange_and_save_token(
+    pub async fn exchange_token(
         self,
-        flow: Arc<Flow>,
+        flow: &Arc<Flow>,
         received_token: web::ReceivedToken,
-    ) -> Result<AuthPair, Error> {
+    ) -> Result<Token, Error> {
         match self {
             Type::Twitch => {
-                self.exchange_and_save_token_impl::<TwitchTokenResponse>(flow, received_token)
+                self.exchange_token_impl::<TwitchTokenResponse>(flow, received_token)
                     .await
             }
             Type::Spotify => {
-                self.exchange_and_save_token_impl::<BasicTokenResponse>(flow, received_token)
+                self.exchange_token_impl::<BasicTokenResponse>(flow, received_token)
                     .await
             }
             Type::YouTube => {
-                self.exchange_and_save_token_impl::<BasicTokenResponse>(flow, received_token)
+                self.exchange_token_impl::<BasicTokenResponse>(flow, received_token)
                     .await
             }
         }
     }
 
     /// Inner, typed implementation of executing a refresh.
-    async fn refresh_and_save_token_impl<T>(
+    async fn refresh_token_impl<T>(
         self,
         flow: &Arc<Flow>,
         refresh_token: RefreshToken,
@@ -94,7 +93,10 @@ impl Type {
             .client
             .exchange_refresh_token(&refresh_token)
             .param("client_id", flow.secrets_config.client_id.as_str())
-            .param("client_secret", flow.secrets_config.client_secret.as_str())
+            .param(
+                "client_secret",
+                flow.secrets_config.client_secret.secret().as_str(),
+            )
             .execute::<T>()
             .compat();
 
@@ -112,14 +114,14 @@ impl Type {
             .map(|r| r.clone())
             .unwrap_or(refresh_token);
 
-        Ok(flow.save_token(refresh_token, token_response)?)
+        Ok(flow.new_token(refresh_token, token_response))
     }
 
-    async fn exchange_and_save_token_impl<T>(
+    async fn exchange_token_impl<T>(
         self,
-        flow: Arc<Flow>,
+        flow: &Arc<Flow>,
         received_token: web::ReceivedToken,
-    ) -> Result<AuthPair, Error>
+    ) -> Result<Token, Error>
     where
         T: TokenResponse,
     {
@@ -129,7 +131,10 @@ impl Type {
             .client
             .exchange_code(AuthorizationCode::new(received_token.code))
             .param("client_id", client_id.as_str())
-            .param("client_secret", flow.secrets_config.client_secret.as_str());
+            .param(
+                "client_secret",
+                flow.secrets_config.client_secret.secret().as_str(),
+            );
 
         let token_response = exchange.execute::<T>().compat().await;
 
@@ -147,15 +152,7 @@ impl Type {
             None => bail!("did not receive a refresh token from the service"),
         };
 
-        let token = flow.save_token(refresh_token, token_response)?;
-        let sync_token = SyncToken {
-            token: Arc::new(RwLock::new(Some(token))),
-        };
-
-        Ok((
-            sync_token.clone(),
-            TokenRefreshFuture::new(flow, sync_token),
-        ))
+        Ok(flow.new_token(refresh_token, token_response))
     }
 }
 
@@ -297,23 +294,94 @@ impl Token {
 }
 
 #[derive(Debug, err_derive::Error)]
-#[error(display = "Missing OAuth 2.0 Token")]
-pub struct MissingTokenError;
+#[error(display = "Missing OAuth 2.0 Token: {0}", _0)]
+pub struct MissingTokenError(String);
+
+#[derive(Debug, err_derive::Error)]
+#[error(display = "Token receive was cancelled")]
+pub struct CancelledToken;
+
+#[derive(Debug, Default)]
+pub struct SyncTokenInner {
+    /// Stored token.
+    token: Option<Token>,
+    /// Queue to notify when a token is available.
+    ready_queue: VecDeque<oneshot::Sender<()>>,
+}
 
 #[derive(Clone, Debug)]
 pub struct SyncToken {
-    /// Serialized token token.
-    token: Arc<RwLock<Option<Token>>>,
+    /// Flow associated with token.
+    flow: Arc<Flow>,
+    inner: Arc<RwLock<SyncTokenInner>>,
+    /// Channel to use to force a refresh.
+    force_refresh: mpsc::UnboundedSender<Option<Token>>,
 }
 
 impl SyncToken {
+    /// Set the token and notify all waiters.
+    pub fn set(&self, update: Option<Token>) {
+        let mut lock = self.inner.write();
+
+        let SyncTokenInner {
+            ref mut token,
+            ref mut ready_queue,
+        } = *lock;
+
+        *token = update;
+
+        // send ready notifications if we updated the token.
+        if token.is_some() {
+            while let Some(front) = ready_queue.pop_front() {
+                if let Err(()) = front.send(()) {
+                    log::warn!("tried to send ready notification but failed");
+                }
+            }
+        }
+    }
+
+    /// Force a token refresh.
+    pub fn force_refresh(&self) -> Result<(), Error> {
+        log::warn!("Forcing token refresh for: {}", self.flow.what);
+        let token = self.inner.write().token.take();
+        self.force_refresh.unbounded_send(token)?;
+        Ok(())
+    }
+
+    /// Wait until an underlying token is available.
+    pub async fn wait_until_ready(&self) -> Result<(), CancelledToken> {
+        let rx = {
+            let mut lock = self.inner.write();
+
+            let SyncTokenInner {
+                ref token,
+                ref mut ready_queue,
+            } = *lock;
+
+            if token.is_some() {
+                return Ok(());
+            }
+
+            let (tx, rx) = oneshot::channel();
+            ready_queue.push_back(tx);
+            rx
+        };
+
+        log::info!("Waiting for token: {}", self.flow.what);
+
+        match rx.await {
+            Ok(()) => Ok(()),
+            Err(oneshot::Canceled) => Err(CancelledToken),
+        }
+    }
+
     /// Read the synchronized token.
     ///
     /// This results in an error if there is no token to read.
     pub fn read<'a>(&'a self) -> Result<MappedRwLockReadGuard<'a, Token>, MissingTokenError> {
-        match RwLockReadGuard::try_map(self.token.read(), Option::as_ref) {
+        match RwLockReadGuard::try_map(self.inner.read(), |i| i.token.as_ref()) {
             Ok(guard) => Ok(guard),
-            Err(_) => Err(MissingTokenError),
+            Err(_) => Err(MissingTokenError(self.flow.what.clone())),
         }
     }
 }
@@ -337,7 +405,7 @@ impl FlowBuilder {
     }
 
     /// Convert into an authentication flow.
-    pub fn build(self) -> Result<Arc<Flow>, Error> {
+    pub fn build(self, what: String) -> Result<Arc<Flow>, Error> {
         let secrets_config = match self.secrets {
             Secrets::Config(config) => config,
             Secrets::Static {
@@ -345,13 +413,13 @@ impl FlowBuilder {
                 client_secret,
             } => Arc::new(SecretsConfig {
                 client_id: client_id.to_string(),
-                client_secret: client_secret.to_string(),
+                client_secret: ClientSecret::new(client_secret.to_string()),
             }),
         };
 
         let mut client = Client::new(
             ClientId::new(secrets_config.client_id.to_string()),
-            Some(ClientSecret::new(secrets_config.client_secret.to_string())),
+            Some(secrets_config.client_secret.clone()),
             self.auth_url,
             self.token_url,
         );
@@ -370,6 +438,7 @@ impl FlowBuilder {
             settings: self.settings.clone(),
             scopes: Arc::new(self.scopes),
             extra_params: Arc::new(self.extra_params),
+            what,
         }))
     }
 }
@@ -382,30 +451,134 @@ pub struct Flow {
     settings: settings::ScopedSettings,
     scopes: Arc<Vec<String>>,
     extra_params: Arc<Vec<(String, String)>>,
+    what: String,
+}
+
+impl fmt::Debug for Flow {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.debug_struct("Flow")
+            .field("ty", &self.ty)
+            .field("secrets_config", &self.secrets_config)
+            .field("scopes", &self.scopes)
+            .field("extra_params", &self.extra_params)
+            .field("what", &self.what)
+            .finish()
+    }
 }
 
 impl Flow {
-    /// Execute the flow.
-    pub async fn execute(self: Arc<Flow>, what: String) -> Result<AuthPair, Error> {
-        let token = self.token_from_settings(what.clone()).await?;
+    /// Convert the flow into a token.
+    pub fn into_token(
+        self: Arc<Flow>,
+    ) -> Result<(SyncToken, impl Future<Output = Result<(), Error>>), Error> {
+        // token expires within 30 minutes.
+        let expires = Duration::from_secs(30 * 60);
 
-        match token {
-            Some(token) => {
-                let sync_token = SyncToken {
-                    token: Arc::new(RwLock::new(Some(token))),
-                };
+        // queue used to force token refreshes.
+        let (force_refresh, mut force_refresh_rx) = mpsc::unbounded();
 
-                return Ok((
-                    sync_token.clone(),
-                    TokenRefreshFuture::new(self, sync_token),
-                ));
+        let sync_token = SyncToken {
+            flow: self.clone(),
+            inner: Default::default(),
+            force_refresh,
+        };
+
+        let (mut token_stream, token) = self.settings.init_and_option_stream::<Token>("token")?;
+
+        // check interval.
+        let mut interval = timer::Interval::new(Instant::now(), Duration::from_secs(10 * 60));
+
+        let returned_sync_token = sync_token.clone();
+        let flow = self;
+
+        let future = async move {
+            log::trace!("Running loop for token: {}", flow.what);
+
+            // Initial token request.
+            let mut new_token = match token {
+                // Existing but expired token, refresh.
+                Some(ref token) if token.expires_within(expires.clone())? => {
+                    Some(flow.refresh(token.refresh_token.clone()).boxed())
+                }
+                // No existing token, request a new one.
+                None => Some(flow.request_new_token().boxed()),
+                other => {
+                    // set the SyncToken to its initial value.
+                    sync_token.set(other);
+                    None
+                }
+            };
+
+            loop {
+                futures::select! {
+                    current = force_refresh_rx.select_next_some() => {
+                        if new_token.is_some() {
+                            log::warn!("ignoring refresh request since a token request is already in progress");
+                            continue;
+                        }
+
+                        new_token = Some(match current {
+                            Some(ref current) => {
+                                flow.refresh(current.refresh_token.clone()).boxed()
+                            }
+                            _ => {
+                                flow.request_new_token().boxed()
+                            }
+                        });
+                    }
+                    token = token_stream.select_next_some() => {
+                        let token = match token {
+                            Some(token) => flow.validate_token(token).await?,
+                            None => None,
+                        };
+
+                        match (&token, &new_token) {
+                            // a token, and a pending request.
+                            (Some(..), Some(..)) => new_token = None,
+                            // no token, and no pending request.
+                            (None, None) => {
+                                new_token = Some(flow.request_new_token().boxed());
+                            }
+                            _ => (),
+                        };
+
+                        sync_token.set(token);
+                    }
+                    _ = interval.select_next_some() => {
+                        if new_token.as_ref().is_some() {
+                            continue;
+                        }
+
+                        new_token = match sync_token.inner.read().token.as_ref() {
+                            Some(current) if current.expires_within(expires.clone())? => {
+                                Some(flow.refresh(current.refresh_token.clone()).boxed())
+                            }
+                            _ => None,
+                        };
+                    }
+                    token = new_token.current() => {
+                        match token {
+                            Ok(token) => {
+                                // NB: will invoke token_stream.
+                                flow.settings.set("token", &token)?;
+                            }
+                            Err(e) => {
+                                log_err!(e, "failed to request new token");
+                                new_token = Some(flow.request_new_token().boxed());
+                            }
+                        }
+                    }
+                }
             }
-            None => self.request_new_token(what).await,
-        }
+        };
+
+        Ok((returned_sync_token, future))
     }
 
-    /// Request a new token.
-    async fn request_new_token(self: Arc<Flow>, what: String) -> Result<AuthPair, Error> {
+    /// Request a new token from the authentication flow.
+    async fn request_new_token(self: &Arc<Flow>) -> Result<Token, Error> {
+        log::trace!("Requesting new token: {}", self.what);
+
         let (mut auth_url, csrf_token) = self.client.authorize_url(CsrfToken::new_random);
 
         for (key, value) in self.extra_params.iter() {
@@ -414,7 +587,7 @@ impl Flow {
 
         let received = self
             .web
-            .receive_token(auth_url, what.to_string(), csrf_token.secret().to_string())
+            .receive_token(auth_url, self.what.clone(), csrf_token.secret().to_string())
             .await;
 
         let received_token = match received {
@@ -426,33 +599,11 @@ impl Flow {
             bail!("CSRF Token Mismatch");
         }
 
-        self.ty.exchange_and_save_token(self, received_token).await
-    }
-
-    /// Load a token from settings.
-    async fn token_from_settings(self: &Arc<Flow>, what: String) -> Result<Option<Token>, Error> {
-        let token = match self.settings.get::<Token>("token") {
-            Ok(token) => token,
-            Err(e) => {
-                log::warn!("failed to load saved token: {}", e);
-                return Ok(None);
-            }
-        };
-
-        let token = match token {
-            Some(token) => token,
-            None => return Ok(None),
-        };
-
-        self.stored_token(token, what).await
+        self.ty.exchange_token(self, received_token).await
     }
 
     /// Validate a token base on the current flow.
-    async fn stored_token(
-        self: &Arc<Flow>,
-        token: Token,
-        what: String,
-    ) -> Result<Option<Token>, Error> {
+    async fn validate_token(self: &Arc<Flow>, token: Token) -> Result<Option<Token>, Error> {
         if token.client_id != self.secrets_config.client_id {
             log::warn!("Not using stored token since it uses a different Client ID");
             return Ok(None);
@@ -469,7 +620,7 @@ impl Flow {
 
         // try to refresh in case it has expired.
         if expired {
-            log::info!("Attempting to refresh: {}", what);
+            log::info!("Attempting to refresh: {}", self.what);
 
             return Ok(match self.refresh(token.refresh_token.clone()).await {
                 Ok(token) => Some(token),
@@ -485,18 +636,18 @@ impl Flow {
 
     /// Refresh the token.
     pub async fn refresh(self: &Arc<Flow>, refresh_token: RefreshToken) -> Result<Token, Error> {
-        self.ty.refresh_and_save_token(self, refresh_token).await
+        self.ty.refresh_token(self, refresh_token).await
     }
 
     /// Save and return the given token.
-    fn save_token(
+    fn new_token(
         self: &Arc<Flow>,
         refresh_token: RefreshToken,
         token_response: impl TokenResponse,
-    ) -> Result<Token, Error> {
+    ) -> Token {
         let refreshed_at = Utc::now();
 
-        let token = Token {
+        Token {
             client_id: self.secrets_config.client_id.to_string(),
             refresh_token,
             access_token: token_response.access_token().clone(),
@@ -506,13 +657,7 @@ impl Flow {
                 .scopes()
                 .map(|s| s.clone())
                 .unwrap_or_default(),
-        };
-
-        self.settings
-            .set("token", &token)
-            .with_context(|_| failure::format_err!("failed to write token to"))?;
-
-        Ok(token)
+        }
     }
 }
 
@@ -553,58 +698,5 @@ impl TokenResponse for TwitchTokenResponse {
 
     fn scopes(&self) -> Option<&Vec<Scope>> {
         self.scopes.as_ref()
-    }
-}
-
-/// Future used to drive token refreshes.
-pub struct TokenRefreshFuture {
-    flow: Arc<Flow>,
-    sync_token: SyncToken,
-    interval: timer::Interval,
-    refresh_duration: Duration,
-}
-
-impl<'a> TokenRefreshFuture {
-    /// Construct a new future for refreshing oauth tokens.
-    pub fn new(flow: Arc<Flow>, sync_token: SyncToken) -> Self {
-        // check for expiration every 10 minutes.
-        let check_duration = Duration::from_secs(10 * 60);
-        // refresh if token expires within 30 minutes.
-        let refresh_duration = Duration::from_secs(30 * 60);
-
-        Self {
-            flow,
-            sync_token,
-            interval: timer::Interval::new(Instant::now(), check_duration),
-            refresh_duration,
-        }
-    }
-
-    /// Drive the token refresh future
-    pub async fn run(mut self) -> Result<(), Error> {
-        let mut refresh_future = None;
-
-        loop {
-            futures::select! {
-                _ = self.interval.select_next_some() => {
-                    if refresh_future.as_ref().is_some() {
-                        bail!("refresh already in progress");
-                    }
-
-                    refresh_future = match self.sync_token.token.read().as_ref() {
-                        Some(current) if current.expires_within(self.refresh_duration.clone())? => {
-                            Some(self.flow.refresh(current.refresh_token.clone()))
-                        }
-                        _ => None,
-                    };
-                }
-                result = refresh_future.current() => {
-                    match result {
-                        Ok(token) => *self.sync_token.token.write() = Some(token),
-                        Err(e) => log::warn!("failed to refresh token: {}", e),
-                    }
-                }
-            }
-        }
     }
 }

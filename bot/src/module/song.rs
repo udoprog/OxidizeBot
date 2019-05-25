@@ -640,7 +640,7 @@ impl module::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), failure::Error> {
-        let chat_feedback = settings.sync_var("song/chat-feedback", true)?;
+        let chat_feedback = settings.sync_var(futures, "song/chat-feedback", true)?;
 
         futures.push(
             player_feedback_loop(
@@ -652,23 +652,23 @@ impl module::Module for Module {
             .boxed(),
         );
 
-        let subscriber_only = settings.sync_var("song/subscriber-only", false)?;
+        let subscriber_only = settings.sync_var(futures, "song/subscriber-only", false)?;
 
-        let request_reward = settings.sync_var("song/request-reward", 0)?;
+        let request_reward = settings.sync_var(futures, "song/request-reward", 0)?;
 
         let spotify = settings.scoped(vec!["song", "spotify"]);
         let spotify_max_duration =
-            spotify.sync_var("max-duration", utils::Duration::seconds(60 * 10))?;
+            spotify.sync_var(futures, "max-duration", utils::Duration::seconds(60 * 10))?;
 
-        let spotify_min_currency = spotify.sync_var("min-currency", 60)?;
-        let spotify_subscriber_only = spotify.sync_var("subscriber-only", false)?;
+        let spotify_min_currency = spotify.sync_var(futures, "min-currency", 60)?;
+        let spotify_subscriber_only = spotify.sync_var(futures, "subscriber-only", false)?;
 
         let youtube = settings.scoped(vec!["song", "youtube"]);
-        let youtube_support = youtube.sync_var("support", false)?;
+        let youtube_support = youtube.sync_var(futures, "support", false)?;
         let youtube_max_duration =
-            youtube.sync_var("max-duration", utils::Duration::seconds(60 * 10))?;
-        let youtube_min_currency = youtube.sync_var("min-currency", 60)?;
-        let youtube_subscriber_only = youtube.sync_var("subscriber-only", true)?;
+            youtube.sync_var(futures, "max-duration", utils::Duration::seconds(60 * 10))?;
+        let youtube_min_currency = youtube.sync_var(futures, "min-currency", 60)?;
+        let youtube_subscriber_only = youtube.sync_var(futures, "subscriber-only", true)?;
 
         handlers.insert(
             "song",

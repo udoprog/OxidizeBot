@@ -15,7 +15,6 @@ pub struct Data {
 
 #[derive(Debug, Clone)]
 pub struct StreamInfo {
-    twitch: api::Twitch,
     streamer: Arc<String>,
     pub data: Arc<RwLock<Data>>,
 }
@@ -27,20 +26,19 @@ impl StreamInfo {
     }
 
     /// Refresh the stream info.
-    pub async fn refresh(&self) {
-        let stream = self.twitch.stream_by_login(self.streamer.as_str());
-        let channel = self.twitch.channel_by_login(self.streamer.as_str());
+    pub async fn refresh<'a>(&'a self, twitch: &'a api::Twitch) {
+        let stream = twitch.stream_by_login(self.streamer.as_str());
+        let channel = twitch.channel_by_login(self.streamer.as_str());
 
         let streamer = async {
-            let streamer = self.twitch.user_by_login(self.streamer.as_str()).await?;
+            let streamer = twitch.user_by_login(self.streamer.as_str()).await?;
 
             let streamer = match streamer {
                 Some(streamer) => streamer,
                 None => return Ok((None, None)),
             };
 
-            let subs = self
-                .twitch
+            let subs = twitch
                 .stream_subscriptions(&streamer.id, vec![])
                 .try_concat();
 
@@ -89,20 +87,19 @@ pub fn setup(
     twitch: api::Twitch,
 ) -> (StreamInfo, impl Future<Output = Result<(), failure::Error>>) {
     let stream_info = StreamInfo {
-        twitch,
         streamer: Arc::new(streamer),
         data: Default::default(),
     };
-
-    let stream_info = stream_info;
 
     let mut interval = timer::Interval::new(time::Instant::now(), interval);
 
     let future_info = stream_info.clone();
 
     let future = async move {
+        twitch.token.wait_until_ready().await?;
+
         while let Some(_) = interval.next().await.transpose()? {
-            future_info.refresh().await;
+            future_info.refresh(&twitch).await;
         }
 
         Ok(())

@@ -20,7 +20,7 @@ pub struct YouTube {
     client: Client,
     v3_url: Url,
     get_video_info_url: Url,
-    token: oauth2::SyncToken,
+    pub token: oauth2::SyncToken,
 }
 
 impl YouTube {

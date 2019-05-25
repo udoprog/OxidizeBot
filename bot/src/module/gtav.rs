@@ -821,13 +821,13 @@ impl super::Module for Module {
             .ok_or_else(|| format_err!("currency required for !gtav module"))?
             .clone();
 
-        let cooldown = settings.sync_var("gtav/cooldown", self.cooldown.clone())?;
+        let cooldown = settings.sync_var(futures, "gtav/cooldown", self.cooldown.clone())?;
 
-        let prefix = settings.sync_var("gtav/chat-prefix", String::from("ChaosMod: "))?;
-        let other_percentage = settings.sync_var("gtav/other%", 100)?;
-        let punish_percentage = settings.sync_var("gtav/punish%", 100)?;
-        let reward_percentage = settings.sync_var("gtav/reward%", 100)?;
-        let success_feedback = settings.sync_var("gtav/success-feedback", false)?;
+        let prefix = settings.sync_var(futures, "gtav/chat-prefix", String::from("ChaosMod: "))?;
+        let other_percentage = settings.sync_var(futures, "gtav/other%", 100)?;
+        let punish_percentage = settings.sync_var(futures, "gtav/punish%", 100)?;
+        let reward_percentage = settings.sync_var(futures, "gtav/reward%", 100)?;
+        let success_feedback = settings.sync_var(futures, "gtav/success-feedback", false)?;
 
         let (tx, mut rx) = mpsc::unbounded();
 

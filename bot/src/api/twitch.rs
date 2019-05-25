@@ -20,7 +20,7 @@ const API_TWITCH_URL: &'static str = "https://api.twitch.tv";
 pub struct Twitch {
     client: Client,
     api_url: Url,
-    token: oauth2::SyncToken,
+    pub token: oauth2::SyncToken,
 }
 
 impl Twitch {
