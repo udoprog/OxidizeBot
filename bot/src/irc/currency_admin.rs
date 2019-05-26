@@ -1,13 +1,33 @@
-use crate::{command, currency, db};
+use crate::{command, currency, db, injector::Injector, prelude::*};
+use failure::Error;
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Handler for the !admin command.
 pub struct Handler<'a> {
-    pub currency: currency::Currency,
+    pub currency: Arc<RwLock<Option<currency::Currency>>>,
     pub db: &'a db::Database,
 }
 
+impl Handler<'_> {
+    /// Get the name of the current currency.
+    pub fn currency_name(&self) -> Option<Arc<String>> {
+        self.currency.read().as_ref().map(|c| c.name.clone())
+    }
+}
+
 impl command::Handler for Handler<'_> {
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), Error> {
+        let currency = self.currency.read();
+
+        let currency = match currency.as_ref() {
+            Some(currency) => currency,
+            None => {
+                ctx.respond("No currency configured");
+                return Ok(());
+            }
+        };
+
         match ctx.next() {
             None => {
                 let balance = self
@@ -18,7 +38,7 @@ impl command::Handler for Handler<'_> {
                 ctx.respond(format!(
                     "You have {balance} {name}.",
                     balance = balance,
-                    name = self.currency.name
+                    name = currency.name
                 ));
             }
             Some("show") => {
@@ -31,7 +51,7 @@ impl command::Handler for Handler<'_> {
                     "{user} has {balance} {name}.",
                     user = user,
                     balance = balance,
-                    name = self.currency.name
+                    name = currency.name
                 ));
             }
             Some("give") => {
@@ -47,13 +67,13 @@ impl command::Handler for Handler<'_> {
                 if amount <= 0 {
                     ctx.respond(format!(
                         "Can't give negative or zero {currency} LUL",
-                        currency = self.currency.name
+                        currency = currency.name
                     ));
                     return Ok(());
                 }
 
                 let db = self.db.clone();
-                let currency = self.currency.clone();
+                let currency = currency.clone();
                 let target = ctx.user.target.to_owned();
                 let giver = ctx.user.as_owned_user();
                 let is_streamer = ctx.user.is(ctx.streamer);
@@ -109,7 +129,7 @@ impl command::Handler for Handler<'_> {
 
                 let db = self.db.clone();
                 let user = ctx.user.as_owned_user();
-                let currency = self.currency.clone();
+                let currency = currency.clone();
 
                 ctx.spawn(async move {
                     let result = db
@@ -146,7 +166,7 @@ impl command::Handler for Handler<'_> {
 
                 let user = ctx.user.as_owned_user();
                 let amount: i64 = ctx_try!(ctx.next_parse("<amount>", "!currency windfall"));
-                let currency = self.currency.clone();
+                let currency = currency.clone();
                 let sender = ctx.sender.clone();
 
                 ctx.spawn(async move {
@@ -186,4 +206,31 @@ impl command::Handler for Handler<'_> {
 
         Ok(())
     }
+}
+
+pub fn setup<'a>(
+    injector: &Injector,
+    db: &'a db::Database,
+) -> Result<(impl Future<Output = Result<(), Error>> + 'a, Handler<'a>), Error> {
+    let (currency_stream, currency) = injector.stream::<currency::Currency>();
+    let currency = Arc::new(RwLock::new(currency));
+
+    let handler = Handler {
+        db,
+        currency: currency.clone(),
+    };
+
+    let future = async move {
+        let mut currency_stream = currency_stream.fuse();
+
+        loop {
+            futures::select! {
+                update = currency_stream.select_next_some() => {
+                    *currency.write() = update;
+                }
+            }
+        }
+    };
+
+    Ok((future, handler))
 }

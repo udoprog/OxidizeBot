@@ -261,34 +261,22 @@ impl Irc {
                 })?;
             }
 
-            if let Some(currency) = currency.as_ref() {
-                handlers.insert(
-                    &*currency.name,
-                    currency_admin::Handler {
-                        currency: currency.clone(),
-                        db: &db,
-                    },
-                );
+            let (future, currency_handler) = currency_admin::setup(&injector, &db)?;
 
-                let reward = 10;
-                let interval = 60 * 10;
+            futures.push(future.boxed());
 
-                let reward_percentage =
-                    settings.sync_var(&mut futures, "irc/viewer-reward%", 100)?;
+            let future = currency_loop(
+                &mut futures,
+                db.clone(),
+                streamer_twitch.clone(),
+                channel.clone(),
+                sender.clone(),
+                idle.clone(),
+                &injector,
+                &settings,
+            )?;
 
-                let future = reward_loop(
-                    config.irc.clone(),
-                    channel.clone(),
-                    reward,
-                    interval,
-                    sender.clone(),
-                    currency.clone(),
-                    idle.clone(),
-                    reward_percentage,
-                );
-
-                futures.push(future.boxed());
-            }
+            futures.push(future.boxed());
 
             if config.features.test(Feature::Admin) {
                 handlers.insert(
@@ -386,6 +374,7 @@ impl Irc {
                 handler_shutdown: false,
                 stream_info: &stream_info,
                 auth: &auth,
+                currency_handler,
             };
 
             let mut client_stream = client.stream().compat().fuse();
@@ -435,37 +424,117 @@ impl Irc {
 }
 
 /// Set up a reward loop.
-async fn reward_loop(
-    config: Arc<Config>,
+fn currency_loop<'a>(
+    futures: &mut utils::Futures,
+    db: db::Database,
+    twitch: api::Twitch,
     channel: Arc<String>,
-    reward: i64,
-    interval: u64,
     sender: Sender,
-    currency: currency::Currency,
     idle: idle::Idle,
-    reward_percentage: Arc<RwLock<u32>>,
-) -> Result<(), Error> {
-    let mut interval = timer::Interval::new_interval(time::Duration::from_secs(interval));
+    injector: &'a injector::Injector,
+    settings: &settings::Settings,
+) -> Result<impl Future<Output = Result<(), Error>> + 'a, Error> {
+    let reward = 10;
+    let interval = 60 * 10;
 
-    while let Some(i) = interval.next().await {
-        let _ = i?;
+    let reward_percentage = settings.sync_var(futures, "irc/viewer-reward%", 100)?;
+    let (mut notify_rewards_stream, mut notify_rewards) =
+        settings.init_and_stream("currency/notify-rewards", true)?;
 
-        log::trace!("running reward loop");
+    let (mut enabled_stream, enabled) = settings.init_and_stream("currency/enabled", false)?;
+    let (mut name_stream, name) = settings.init_and_option_stream("currency/name")?;
 
-        let reward = (reward * *reward_percentage.read() as i64) / 100i64;
-        let count = currency
-            .add_channel_all(channel.to_string(), reward)
-            .await?;
+    let mut currency_builder = CurrencyBuilder {
+        enabled,
+        name: None,
+        db: db.clone(),
+        twitch: twitch.clone(),
+    };
 
-        if config.notify_rewards && count > 0 && !idle.is_idle() {
-            sender.privmsg(format!(
-                "/me has given {} {} to all viewers!",
-                reward, currency.name
-            ));
-        }
+    currency_builder.name = name.map(Arc::new);
+
+    let mut currency = currency_builder.build();
+
+    if let Some(currency) = currency.clone() {
+        injector.update(currency);
     }
 
-    Ok(())
+    return Ok(async move {
+        let mut interval = timer::Interval::new_interval(time::Duration::from_secs(interval));
+
+        loop {
+            futures::select! {
+                update = notify_rewards_stream.select_next_some() => {
+                    notify_rewards = update;
+                }
+                enabled = enabled_stream.select_next_some() => {
+                    currency_builder.enabled = enabled;
+                    currency = currency_builder.build();
+
+                    if let Some(currency) = currency.clone() {
+                        injector.update(currency);
+                    } else {
+                        injector.clear::<currency::Currency>();
+                    }
+                }
+                name = name_stream.select_next_some() => {
+                    currency_builder.name = name.map(Arc::new);
+                    currency = currency_builder.build();
+
+                    if let Some(currency) = currency.clone() {
+                        injector.update(currency);
+                    } else {
+                        injector.clear::<currency::Currency>();
+                    }
+                }
+                i = interval.select_next_some() => {
+                    let currency = match currency.as_ref() {
+                        Some(currency) => currency,
+                        None => continue,
+                    };
+
+                    let _ = i?;
+
+                    log::trace!("running reward loop");
+
+                    let reward = (reward * *reward_percentage.read() as i64) / 100i64;
+                    let count = currency
+                        .add_channel_all(channel.to_string(), reward)
+                        .await?;
+
+                    if notify_rewards && count > 0 && !idle.is_idle() {
+                        sender.privmsg(format!(
+                            "/me has given {} {} to all viewers!",
+                            reward, currency.name
+                        ));
+                    }
+                }
+            }
+        }
+    });
+
+    struct CurrencyBuilder {
+        enabled: bool,
+        name: Option<Arc<String>>,
+        db: db::Database,
+        twitch: api::Twitch,
+    }
+
+    impl CurrencyBuilder {
+        fn build(&self) -> Option<currency::Currency> {
+            if !self.enabled {
+                return None;
+            }
+
+            let name = Arc::new(self.name.as_ref()?.to_string());
+
+            Some(currency::Currency {
+                name,
+                db: self.db.clone(),
+                twitch: self.twitch.clone(),
+            })
+        }
+    }
 }
 
 struct SenderInner {
@@ -591,6 +660,8 @@ struct Handler<'a: 'h, 'to, 'h> {
     stream_info: &'a stream_info::StreamInfo,
     /// Information about auth.
     auth: &'a Auth,
+    /// Handler for currencies.
+    currency_handler: currency_admin::Handler<'a>,
 }
 
 impl Handler<'_, '_, '_> {
@@ -626,7 +697,15 @@ impl Handler<'_, '_, '_> {
                 self.global_bus.send(bus::Global::Ping);
             }
             other => {
-                if let Some(handler) = self.handlers.get_mut(other) {
+                let handler = match (other, self.currency_handler.currency_name()) {
+                    (other, Some(ref name)) if other == **name => {
+                        Some(&mut self.currency_handler as &mut (dyn command::Handler + Send))
+                    }
+                    (other, None) => self.handlers.get_mut(other),
+                    _ => None,
+                };
+
+                if let Some(handler) = handler {
                     let ctx = command::Context {
                         api_url: self.api_url.as_ref().map(|s| s.as_str()),
                         streamer: self.streamer,

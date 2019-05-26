@@ -23,8 +23,8 @@ impl Config {
 #[derive(Clone)]
 pub struct Currency {
     pub name: Arc<String>,
-    db: db::Database,
-    twitch: api::Twitch,
+    pub(crate) db: db::Database,
+    pub(crate) twitch: api::Twitch,
 }
 
 impl Currency {

@@ -119,3 +119,12 @@ types:
   countdown/path:
     doc: The path used for writing the countdown.
     type: {id: string, optional: true}
+  currency/enabled:
+    doc: If stream currency is enabled.
+    type: {id: bool}
+  currency/name:
+    doc: The name used for the current stream currency.
+    type: {id: string, optional: true}
+  currency/notify-rewards:
+    doc: Send a global notification on viewer rewards.
+    type: {id: bool}
