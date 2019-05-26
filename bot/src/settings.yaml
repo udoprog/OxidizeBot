@@ -106,7 +106,9 @@ types:
     doc: The minimum amount of stream currency required to request YouTube songs.
     type: {id: number}
   song/youtube/subscriber-only:
-    doc: If only subscribers can request songs from YouTube.
+    doc:
+      If only subscribers can request songs from YouTube.
+      This is deprecated in favor of the song/youtube scope.
     type: {id: bool}
   water/reward%:
     doc: Reward scaling for doing a water reminder.

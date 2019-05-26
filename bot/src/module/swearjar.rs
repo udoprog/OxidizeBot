@@ -1,4 +1,4 @@
-use crate::{api, command, config, currency, db, module, prelude::*, utils};
+use crate::{api, auth::Scope, command, config, currency, db, module, prelude::*, utils};
 use failure::format_err;
 use hashbrown::HashSet;
 
@@ -11,6 +11,10 @@ pub struct Handler<'a> {
 }
 
 impl<'a> command::Handler for Handler<'a> {
+    fn scope(&self) -> Option<Scope> {
+        Some(Scope::CommandSwearJar)
+    }
+
     fn handle<'m>(&mut self, ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         if !self.cooldown.is_open() {
             ctx.respond("A !swearjar command was recently issued, please wait a bit longer!");

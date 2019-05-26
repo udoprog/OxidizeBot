@@ -1,7 +1,0 @@
-scopes:
-  player/attach-detach:
-    doc: Scope required to attach or detach the music player.
-    version: 0
-    allow:
-      - "@streamer"
-      - "@moderator"

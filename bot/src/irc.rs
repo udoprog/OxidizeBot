@@ -639,6 +639,29 @@ impl Handler<'_, '_, '_> {
                         auth: &self.auth,
                     };
 
+                    let scope = handler.scope();
+
+                    if log::log_enabled!(log::Level::Trace) {
+                        log::trace!("Auth: {:?} against {:?}", scope, ctx.roles());
+                    }
+
+                    // Test if user has the required scope to run the given
+                    // command.
+                    if let Some(scope) = scope {
+                        if !ctx.has_scope(scope) {
+                            if ctx.is_moderator() {
+                                ctx.respond("You are not allowed to run that command");
+                            } else {
+                                ctx.privmsg(format!(
+                                    "Do you think this is a democracy {name}? LUL",
+                                    name = ctx.user.name
+                                ));
+                            }
+
+                            return Ok(());
+                        }
+                    }
+
                     handler.handle(ctx)?;
                     return Ok(());
                 }

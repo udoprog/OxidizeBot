@@ -1,40 +1,23 @@
 use crate::db;
 use diesel::prelude::*;
-use failure::{bail, Error};
+use failure::{Error, ResultExt as _};
 use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
 use std::{fmt, sync::Arc};
 
-const SCHEMA: &'static [u8] = include_bytes!("scopes.yaml");
+const SCHEMA: &'static [u8] = include_bytes!("auth.yaml");
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Schema {
+    roles: HashMap<Role, RoleData>,
     scopes: HashMap<Scope, ScopeData>,
 }
 
 impl Schema {
     /// Load schema from the given set of bytes.
     pub fn load_static() -> Result<Schema, failure::Error> {
-        Ok(serde_yaml::from_slice(SCHEMA)?)
+        Ok(serde_yaml::from_slice(SCHEMA).context("failed to load auth.yaml")?)
     }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ScopeInfo {
-    scope: Scope,
-    #[serde(flatten)]
-    data: ScopeData,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ScopeData {
-    /// Documentation for this scope.
-    pub doc: String,
-    /// Version of the schema.
-    /// A change in version will cause the default allows to be applied.
-    pub version: String,
-    /// Default allows for the scope.
-    pub allow: Vec<Role>,
 }
 
 /// A container for scopes and their allows.
@@ -164,8 +147,22 @@ impl Auth {
     }
 
     /// Get a list of roles.
-    pub fn roles(&self) -> Vec<Role> {
-        Role::list()
+    pub fn roles(&self) -> Vec<RoleInfo> {
+        let mut out = Vec::new();
+
+        for role in Role::list() {
+            let data = match self.schema.roles.get(&role) {
+                Some(data) => data,
+                None => continue,
+            };
+
+            out.push(RoleInfo {
+                role,
+                data: data.clone(),
+            });
+        }
+
+        out
     }
 
     /// Get a list of all allows.
@@ -193,6 +190,7 @@ macro_rules! scopes {
     #[sql_type = "diesel::sql_types::Text"]
     pub enum Scope {
         $(#[serde(rename = $scope)] $variant,)*
+        Unknown,
     }
 
     impl Scope {
@@ -208,6 +206,7 @@ macro_rules! scopes {
         fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
             match *self {
                 $(Scope::$variant => $scope.fmt(fmt),)*
+                Scope::Unknown => "unknown".fmt(fmt),
             }
         }
     }
@@ -218,7 +217,7 @@ macro_rules! scopes {
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             match s {
                 $($scope => Ok(Scope::$variant),)*
-                other => bail!("bad scope: {}", other),
+                _ => Ok(Scope::Unknown),
             }
         }
     }
@@ -268,6 +267,7 @@ macro_rules! roles {
     #[sql_type = "diesel::sql_types::Text"]
     pub enum Role {
         $(#[serde(rename = $role)] $variant,)*
+        Unknown,
     }
 
     impl Role {
@@ -283,6 +283,7 @@ macro_rules! roles {
         fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
             match *self {
                 $(Role::$variant => $role.fmt(fmt),)*
+                Role::Unknown => "unknown".fmt(fmt),
             }
         }
     }
@@ -293,7 +294,7 @@ macro_rules! roles {
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             match s {
                 $($role => Ok(Role::$variant),)*
-                other => bail!("bad role: {}", other),
+                _ => Ok(Role::Unknown),
             }
         }
     }
@@ -326,11 +327,47 @@ macro_rules! roles {
 
 scopes! {
     (PlayerDetachDetach, "player/attach-detach"),
+    (CommandAdmin, "command/admin"),
+    (CommandSong, "command/song"),
+    (CommandSongYouTube, "command/song/youtube"),
+    (CommandSongSpotify, "command/song/spotify"),
+    (CommandSwearJar, "command/swear-jar"),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ScopeInfo {
+    scope: Scope,
+    #[serde(flatten)]
+    data: ScopeData,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ScopeData {
+    /// Documentation for this scope.
+    pub doc: String,
+    /// Version of the schema.
+    /// A change in version will cause the default allows to be applied.
+    pub version: String,
+    /// Default allows for the scope.
+    pub allow: Vec<Role>,
 }
 
 roles! {
     (Streamer, "@streamer"),
     (Moderator, "@moderator"),
     (Subscriber, "@subscriber"),
-    (Other, "@other"),
+    (Everyone, "@everyone"),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RoleInfo {
+    role: Role,
+    #[serde(flatten)]
+    data: RoleData,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RoleData {
+    /// Documentation for this role.
+    pub doc: String,
 }

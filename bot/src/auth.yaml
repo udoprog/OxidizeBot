@@ -1,0 +1,42 @@
+roles:
+  "@streamer":
+    doc: Role containing the streamer.
+  "@moderator":
+    doc: Role containing all moderators.
+  "@subscriber":
+    doc: Role containing all subscribers.
+  "@everyone":
+    doc: Role containing everyone.
+
+scopes:
+  player/attach-detach:
+    doc: If you are allowed to attach or detach the music player.
+    version: 0
+    allow:
+      - "@moderator"
+  command/admin:
+    doc: If you are allowed to run the !admin command.
+    version: 0
+    allow:
+      - "@moderator"
+  command/swear-jar:
+    doc: If you are allowed to run the !swearjar command.
+    version: 0
+    allow:
+      - "@everyone"
+  command/song:
+    doc: If you are allowed to run the !song command.
+    version: 0
+    allow:
+      - "@everyone"
+  command/song/spotify:
+    doc: If you are allowed to request Spotify songs.
+    version: 0
+    allow:
+      - "@everyone"
+  command/song/youtube:
+    doc: If you are allowed to request YouTube songs.
+    version: 0
+    allow:
+      - "@moderator"
+      - "@subscriber"

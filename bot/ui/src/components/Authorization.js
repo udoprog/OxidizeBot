@@ -3,6 +3,14 @@ import React from "react";
 import {Alert, Table, Button, InputGroup, Form} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 
+/**
+ * Special role that everyone belongs to.
+ */
+const EVERYONE = "@everyone";
+const STREAMER = "@streamer";
+const MODERATOR = "@moderator";
+const SUBSCRIBER = "@subscriber";
+
 export default class Authorization extends React.Component {
   constructor(props) {
     super(props);
@@ -133,7 +141,7 @@ export default class Authorization extends React.Component {
             <tr>
               <th width="20%"></th>
               {data.roles.map(role => {
-                return <th key={role}>{role}</th>;
+                return <th key={role.role} title={role.doc}>{role.role}</th>;
               })}
             </tr>
           </thead>
@@ -146,22 +154,65 @@ export default class Authorization extends React.Component {
                     <div className="scope-key-doc">{scope.doc}</div>
                   </td>
                   {data.roles.map(role => {
-                    let key = `${scope.scope}:${role}`;
-                    let checked = data.allows[key] || false;
+                    let has_implicit = null;
+                    let title = null;
 
-                    let allow = () => this.allow(scope.scope, role);
-                    let deny = () => this.deny(scope.scope, role);
+                    let is_allowed = role => data.allows[`${scope.scope}:${role}`] || false;
 
+                    let test_implicit = roles => {
+                      for (let role of roles) {
+                        if (is_allowed(role)) {
+                          return role;
+                        }
+                      }
+
+                      return null;
+                    }
+
+                    switch (role.role) {
+                      case EVERYONE:
+                        break;
+                      case STREAMER:
+                        has_implicit = test_implicit([EVERYONE, MODERATOR, SUBSCRIBER]) || false;
+                        break;
+                      default:
+                        has_implicit = test_implicit([EVERYONE]) || false;
+                        break;
+                    }
+
+                    let allowed = !!has_implicit || is_allowed(role.role) || false;
                     let button = null;
 
-                    if (checked) {
-                      button = <Button title="Deny scope" size="sm" variant="success" onClick={deny}><True /></Button>;
+                    if (!!has_implicit) {
+                      title = `Implicitly enabled because ${has_implicit} is enabled`;
                     } else {
-                      button = <Button title="Allow scope" size="sm" variant="danger" onClick={allow}><False /></Button>;
+                      if (allowed) {
+                        title = `Deny ${scope.scope} from ${role.role}`;
+                      } else {
+                        title = `Allow ${scope.scope} to ${role.role}`;
+                      }
+                    }
+
+                    if (allowed) {
+                      let deny = () => this.deny(scope.scope, role.role);
+
+                      button = (
+                        <Button disabled={!!has_implicit} title={title} size="sm" variant="success" onClick={deny}>
+                          <True />
+                        </Button>
+                      );
+                    } else {
+                      let allow = () => this.allow(scope.scope, role.role);
+
+                      button = (
+                        <Button disabled={!!has_implicit} title={title} size="sm" variant="danger" onClick={allow}>
+                          <False />
+                        </Button>
+                      );
                     }
 
                     return (
-                      <td key={role}>{button}</td>
+                      <td key={role.role}>{button}</td>
                     );
                   })}
                 </tr>

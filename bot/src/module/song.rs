@@ -1,5 +1,5 @@
 use crate::{
-    command, currency, db, irc, module, player, prelude::*, stream_info, track_id,
+    auth::Scope, command, currency, db, irc, module, player, prelude::*, stream_info, track_id,
     track_id::TrackId, utils,
 };
 use chrono::Utc;
@@ -50,6 +50,8 @@ impl Handler {
         let request_reward = *self.request_reward.read();
         let db = self.db.clone();
         let player = self.player.clone();
+        let has_youtube_scope = ctx.has_scope(Scope::CommandSongYouTube);
+        let has_spotify_scope = ctx.has_scope(Scope::CommandSongSpotify);
 
         let track_id = match TrackId::parse_with_urls(&q) {
             Ok(track_id) => {
@@ -93,9 +95,22 @@ impl Handler {
                 }
             };
 
-            let (track_type, subscriber_only_by_track) = match track_id {
-                TrackId::Spotify(..) => ("Spotify", *spotify_subscriber_only.read()),
-                TrackId::YouTube(..) => ("YouTube", *youtube_subscriber_only.read()),
+            let (what, has_scope) = match track_id {
+                TrackId::Spotify(..) => ("Spotify", has_spotify_scope),
+                TrackId::YouTube(..) => ("YouTube", has_youtube_scope),
+            };
+
+            if !has_scope {
+                user.respond(format!(
+                    "You are not allowed to do {what} requests, sorry :(",
+                    what = what
+                ));
+                return Ok(());
+            }
+
+            let subscriber_only_by_track = match track_id {
+                TrackId::Spotify(..) => *spotify_subscriber_only.read(),
+                TrackId::YouTube(..) => *youtube_subscriber_only.read(),
             };
 
             let subscriber_only = subscriber_only_by_track || *subscriber_only.read();
@@ -103,8 +118,8 @@ impl Handler {
             if subscriber_only && !is_moderator {
                 if !stream_info.is_subscriber(&user.name) {
                     user.respond(format!(
-                        "You must be a subscriber for {} requests, sorry :(",
-                        track_type
+                        "You must be a subscriber for {what} requests, sorry :(",
+                        what = what
                     ));
                     return Ok(());
                 }
@@ -306,6 +321,10 @@ impl Handler {
 }
 
 impl command::Handler for Handler {
+    fn scope(&self) -> Option<Scope> {
+        Some(Scope::CommandSong)
+    }
+
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
         match ctx.next() {
             Some("theme") => {

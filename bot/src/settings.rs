@@ -2,6 +2,7 @@
 
 use crate::{auth::Scope, db, prelude::*, utils};
 use diesel::prelude::*;
+use failure::{Error, ResultExt};
 use futures::ready;
 use hashbrown::HashMap;
 use parking_lot::RwLock;
@@ -49,8 +50,8 @@ pub struct Schema {
 
 impl Schema {
     /// Load schema from the given set of bytes.
-    pub fn load_static() -> Result<Schema, failure::Error> {
-        Ok(serde_yaml::from_slice(SCHEMA)?)
+    pub fn load_static() -> Result<Schema, Error> {
+        Ok(serde_yaml::from_slice(SCHEMA).context("failed to load settings.yaml")?)
     }
 
     /// Lookup the given type by key.
@@ -84,10 +85,7 @@ impl Settings {
     }
 
     /// Get a setting by prefix.
-    pub fn get_by_prefix(
-        &self,
-        prefix: &str,
-    ) -> Result<Vec<(String, serde_json::Value)>, failure::Error> {
+    pub fn get_by_prefix(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>, Error> {
         use self::db::schema::settings::dsl;
         let c = self.db.pool.lock();
 
@@ -110,7 +108,7 @@ impl Settings {
     }
 
     /// Get the value of the given key from the database.
-    pub fn get<T>(&self, key: &str) -> Result<Option<T>, failure::Error>
+    pub fn get<T>(&self, key: &str) -> Result<Option<T>, Error>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -138,7 +136,7 @@ impl Settings {
     }
 
     /// Insert the given setting.
-    pub fn set<T>(&self, key: &str, value: T) -> Result<(), failure::Error>
+    pub fn set<T>(&self, key: &str, value: T) -> Result<(), Error>
     where
         T: serde::Serialize,
     {
@@ -147,7 +145,7 @@ impl Settings {
     }
 
     /// Insert the given setting as raw JSON.
-    pub fn set_json(&self, key: &str, value: serde_json::Value) -> Result<(), failure::Error> {
+    pub fn set_json(&self, key: &str, value: serde_json::Value) -> Result<(), Error> {
         use self::db::schema::settings::dsl;
 
         {
@@ -194,7 +192,7 @@ impl Settings {
     }
 
     /// Insert the given setting.
-    pub fn list(&self) -> Result<Vec<Setting>, failure::Error> {
+    pub fn list(&self) -> Result<Vec<Setting>, Error> {
         use self::db::schema::settings::dsl;
         let c = self.db.pool.lock();
 
@@ -225,7 +223,7 @@ impl Settings {
     }
 
     /// Clear the given setting. Returning `true` if it was removed.
-    pub fn clear(&self, key: &str) -> Result<bool, failure::Error> {
+    pub fn clear(&self, key: &str) -> Result<bool, Error> {
         use self::db::schema::settings::dsl;
 
         {
@@ -298,11 +296,7 @@ impl Settings {
     }
 
     /// Initialize the value from the database.
-    pub fn init_and_stream<T>(
-        &self,
-        key: &str,
-        default: T,
-    ) -> Result<(Stream<T>, T), failure::Error>
+    pub fn init_and_stream<T>(&self, key: &str, default: T) -> Result<(Stream<T>, T), Error>
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -321,7 +315,7 @@ impl Settings {
     pub fn init_and_option_stream<T>(
         &self,
         key: &str,
-    ) -> Result<(OptionStream<T>, Option<T>), failure::Error>
+    ) -> Result<(OptionStream<T>, Option<T>), Error>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -336,7 +330,7 @@ impl Settings {
         driver: &mut impl utils::Driver<'a>,
         key: &str,
         default: T,
-    ) -> Result<Arc<RwLock<T>>, failure::Error>
+    ) -> Result<Arc<RwLock<T>>, Error>
     where
         T: 'static
             + fmt::Debug
@@ -376,7 +370,7 @@ pub struct ScopedSettings {
 
 impl ScopedSettings {
     /// Get the value of the given key from the database.
-    pub fn get<T>(&self, key: &str) -> Result<Option<T>, failure::Error>
+    pub fn get<T>(&self, key: &str) -> Result<Option<T>, Error>
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -384,7 +378,7 @@ impl ScopedSettings {
     }
 
     /// Insert the given setting.
-    pub fn set<T>(&self, key: &str, value: &T) -> Result<(), failure::Error>
+    pub fn set<T>(&self, key: &str, value: &T) -> Result<(), Error>
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -392,7 +386,7 @@ impl ScopedSettings {
     }
 
     /// Clear the given setting. Returning `true` if it was removed.
-    pub fn clear(&self, key: &str) -> Result<bool, failure::Error> {
+    pub fn clear(&self, key: &str) -> Result<bool, Error> {
         self.settings.clear(&self.scope(key))
     }
 
@@ -411,11 +405,7 @@ impl ScopedSettings {
     }
 
     /// Initialize the value from the database.
-    pub fn init_and_stream<T>(
-        &self,
-        key: &str,
-        default: T,
-    ) -> Result<(Stream<T>, T), failure::Error>
+    pub fn init_and_stream<T>(&self, key: &str, default: T) -> Result<(Stream<T>, T), Error>
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -426,7 +416,7 @@ impl ScopedSettings {
     pub fn init_and_option_stream<T>(
         &self,
         key: &str,
-    ) -> Result<(OptionStream<T>, Option<T>), failure::Error>
+    ) -> Result<(OptionStream<T>, Option<T>), Error>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -439,7 +429,7 @@ impl ScopedSettings {
         driver: &mut impl utils::Driver<'a>,
         key: &str,
         default: T,
-    ) -> Result<Arc<RwLock<T>>, failure::Error>
+    ) -> Result<Arc<RwLock<T>>, Error>
     where
         T: 'static
             + fmt::Debug
@@ -592,7 +582,7 @@ impl Type {
     }
 
     /// Parse the given string as the current type and convert into JSON.
-    pub fn parse_as_json(&self, s: &str) -> Result<serde_json::Value, failure::Error> {
+    pub fn parse_as_json(&self, s: &str) -> Result<serde_json::Value, Error> {
         use self::Kind::*;
         use serde_json::Value;
 

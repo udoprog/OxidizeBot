@@ -12,6 +12,11 @@ use tokio_threadpool::ThreadPool;
 
 /// The handler trait for a given command.
 pub trait Handler {
+    /// Scope required to run command.
+    fn scope(&self) -> Option<Scope> {
+        None
+    }
+
     /// Handle the command.
     fn handle<'m>(&mut self, ctx: Context<'_, '_>) -> Result<(), failure::Error>;
 }
@@ -64,19 +69,19 @@ impl<'a, 'm> Context<'a, 'm> {
     pub fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
         let mut roles = smallvec::SmallVec::new();
 
-        if self.is_moderator() {
-            roles.push(Role::Moderator);
-        }
-
         if self.is_streamer() {
             roles.push(Role::Streamer);
+        }
+
+        if self.moderators.contains(self.user.name) {
+            roles.push(Role::Moderator);
         }
 
         if self.is_subscriber() {
             roles.push(Role::Subscriber);
         }
 
-        roles.push(Role::Other);
+        roles.push(Role::Everyone);
         roles
     }
 

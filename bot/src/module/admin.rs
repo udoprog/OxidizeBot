@@ -1,4 +1,4 @@
-use crate::{command, db, module, settings};
+use crate::{auth::Scope, command, db, module, settings};
 
 /// Handler for the !admin command.
 pub struct Handler<'a> {
@@ -10,9 +10,11 @@ pub struct Handler<'a> {
 }
 
 impl<'a> command::Handler for Handler<'a> {
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
-        ctx.check_moderator()?;
+    fn scope(&self) -> Option<Scope> {
+        Some(Scope::CommandAdmin)
+    }
 
+    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         match ctx.next() {
             Some("refresh-mods") => {
                 // The response from the /mods command will be received by the Handler.
