@@ -1,9 +1,10 @@
 use crate::{
-    api, bus, command, config, currency, db,
+    api,
+    auth::Auth,
+    bus, command, config, currency, db,
     features::{Feature, Features},
     idle, module, oauth2, obs, player,
     prelude::*,
-    scopes::Scopes,
     settings, stream_info, template, timer, utils,
 };
 use failure::{bail, format_err, Error, ResultExt as _};
@@ -77,7 +78,7 @@ pub struct Irc {
     pub settings: settings::Settings,
     pub player: Option<player::Player>,
     pub obs: Option<obs::Obs>,
-    pub scopes: Scopes,
+    pub auth: Auth,
     pub global_channel: Arc<RwLock<Option<String>>>,
 }
 
@@ -103,7 +104,7 @@ impl Irc {
             settings,
             player,
             obs,
-            scopes,
+            auth,
             global_channel,
         } = self;
 
@@ -381,7 +382,7 @@ impl Irc {
                 token: &token,
                 handler_shutdown: false,
                 stream_info: &stream_info,
-                scopes: &scopes,
+                auth: &auth,
             };
 
             let mut client_stream = client.stream().compat().fuse();
@@ -585,8 +586,8 @@ struct Handler<'a: 'h, 'to, 'h> {
     handler_shutdown: bool,
     /// Stream information.
     stream_info: &'a stream_info::StreamInfo,
-    /// Information about scopes.
-    scopes: &'a Scopes,
+    /// Information about auth.
+    auth: &'a Auth,
 }
 
 impl Handler<'_, '_, '_> {
@@ -635,7 +636,7 @@ impl Handler<'_, '_, '_> {
                         shutdown: self.shutdown,
                         alias: command::Alias { alias },
                         stream_info: &self.stream_info,
-                        scopes: &self.scopes,
+                        auth: &self.auth,
                     };
 
                     handler.handle(ctx)?;

@@ -3,6 +3,11 @@ export class Api {
     this.url = url;
   }
 
+  /**
+   *
+   * @param {string | array<string>} path
+   * @param {*} data
+   */
   fetch(path, data = {}) {
     if (path instanceof Array) {
       path = encodePath(path);
@@ -22,8 +27,8 @@ export class Api {
   /**
    * Get things that requires authentication.
    */
-  auth() {
-    return this.fetch("auth");
+  authPending() {
+    return this.fetch(["auth", "pending"]);
   }
 
   /**
@@ -209,6 +214,49 @@ export class Api {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({disabled}),
+    });
+  }
+
+  /**
+   * Get a list of all available scopes.
+   */
+  authScopes() {
+    return this.fetch(["auth", "scopes"]);
+  }
+
+  /**
+   * Get a list of all available roles.
+   */
+  authRoles() {
+    return this.fetch(["auth", "roles"]);
+  }
+
+  /**
+   * Get a list of all enabled allows.
+   */
+  authAllows() {
+    return this.fetch(["auth", "allows"]);
+  }
+
+  /**
+   * Insert an allow permit into the database.
+   */
+  authInsertAllow(auth) {
+    return this.fetch(["auth", "allows"], {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(auth),
+    });
+  }
+
+  /**
+   * Delete an allow permit from the database.
+   */
+  authDeleteAllow(scope, role) {
+    return this.fetch(["auth", "allows", scope, role], {
+      method: "DELETE",
     });
   }
 }

@@ -14,6 +14,7 @@ pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 #[macro_use]
 mod macros;
 pub mod api;
+pub mod auth;
 pub mod bus;
 mod command;
 pub mod config;
@@ -28,7 +29,6 @@ pub mod oauth2;
 pub mod obs;
 pub mod player;
 pub mod prelude;
-pub mod scopes;
 pub mod secrets;
 pub mod settings;
 mod spotify_id;

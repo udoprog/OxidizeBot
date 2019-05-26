@@ -20,6 +20,13 @@ impl Schema {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ScopeInfo {
+    scope: Scope,
+    #[serde(flatten)]
+    data: ScopeData,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ScopeData {
     /// Documentation for this scope.
     pub doc: String,
@@ -32,7 +39,7 @@ pub struct ScopeData {
 
 /// A container for scopes and their allows.
 #[derive(Clone)]
-pub struct Scopes {
+pub struct Auth {
     db: db::Database,
     /// Schema for every corresponding scope.
     pub schema: Arc<Schema>,
@@ -40,7 +47,7 @@ pub struct Scopes {
     pub allows: Arc<RwLock<HashSet<(Scope, Role)>>>,
 }
 
-impl Scopes {
+impl Auth {
     pub fn new(db: db::Database, schema: Schema) -> Result<Self, Error> {
         use db::schema::scope_allows::dsl;
 
@@ -131,6 +138,36 @@ impl Scopes {
         self.allows.read().contains(&(scope, role))
     }
 
+    /// Test if the given assignment exists.
+    pub fn test_any(&self, scope: Scope, roles: impl IntoIterator<Item = Role>) -> bool {
+        let allows = self.allows.read();
+        roles.into_iter().any(|r| allows.contains(&(scope, r)))
+    }
+
+    /// Get a list of scopes and extra information associated with them.
+    pub fn scopes(&self) -> Vec<ScopeInfo> {
+        let mut out = Vec::new();
+
+        for scope in Scope::list() {
+            let data = match self.schema.scopes.get(&scope) {
+                Some(data) => data,
+                None => continue,
+            };
+
+            out.push(ScopeInfo {
+                scope,
+                data: data.clone(),
+            });
+        }
+
+        out
+    }
+
+    /// Get a list of roles.
+    pub fn roles(&self) -> Vec<Role> {
+        Role::list()
+    }
+
     /// Get a list of all allows.
     pub fn list(&self) -> Vec<(Scope, Role)> {
         self.allows.read().iter().cloned().collect()
@@ -139,67 +176,76 @@ impl Scopes {
 
 macro_rules! scopes {
     ($(($variant:ident, $scope:expr),)*) => {
-        #[derive(
-            Debug,
-            Clone,
-            Copy,
-            PartialEq,
-            Eq,
-            PartialOrd,
-            Ord,
-            Hash,
-            serde::Serialize,
-            serde::Deserialize,
-            diesel::FromSqlRow,
-            diesel::AsExpression,
-        )]
-        #[sql_type = "diesel::sql_types::Text"]
-        pub enum Scope {
-            $(#[serde(rename = $scope)] $variant,)*
-        }
+    #[derive(
+        Debug,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        serde::Serialize,
+        serde::Deserialize,
+        diesel::FromSqlRow,
+        diesel::AsExpression,
+    )]
+    #[sql_type = "diesel::sql_types::Text"]
+    pub enum Scope {
+        $(#[serde(rename = $scope)] $variant,)*
+    }
 
-        impl fmt::Display for Scope {
-            fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-                match *self {
-                    $(Scope::$variant => $scope.fmt(fmt),)*
-                }
+    impl Scope {
+        /// Get a list of all scopes.
+        pub fn list() -> Vec<Scope> {
+            vec![
+                $(Scope::$variant,)*
+            ]
+        }
+    }
+
+    impl fmt::Display for Scope {
+        fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match *self {
+                $(Scope::$variant => $scope.fmt(fmt),)*
             }
         }
+    }
 
-        impl std::str::FromStr for Scope {
-            type Err = Error;
+    impl std::str::FromStr for Scope {
+        type Err = Error;
 
-            fn from_str(s: &str) -> Result<Self, Self::Err> {
-                match s {
-                    $($scope => Ok(Scope::$variant),)*
-                    other => bail!("bad scope: {}", other),
-                }
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            match s {
+                $($scope => Ok(Scope::$variant),)*
+                other => bail!("bad scope: {}", other),
             }
         }
+    }
 
-        impl<DB> diesel::serialize::ToSql<diesel::sql_types::Text, DB> for Scope
+    impl<DB> diesel::serialize::ToSql<diesel::sql_types::Text, DB> for Scope
+    where
+        DB: diesel::backend::Backend,
+        String: diesel::serialize::ToSql<diesel::sql_types::Text, DB>,
+    {
+        fn to_sql<W>(&self, out: &mut diesel::serialize::Output<W, DB>) -> diesel::serialize::Result
         where
-            DB: diesel::backend::Backend,
-            String: diesel::serialize::ToSql<diesel::sql_types::Text, DB>,
+            W: std::io::Write,
         {
-            fn to_sql<W>(&self, out: &mut diesel::serialize::Output<W, DB>) -> diesel::serialize::Result
-            where
-                W: std::io::Write,
-            {
-                self.to_string().to_sql(out)
-            }
+            self.to_string().to_sql(out)
         }
+    }
 
-        impl<DB> diesel::deserialize::FromSql<diesel::sql_types::Text, DB> for Scope
-        where
-            DB: diesel::backend::Backend,
-            String: diesel::deserialize::FromSql<diesel::sql_types::Text, DB>,
-        {
-            fn from_sql(bytes: Option<&DB::RawValue>) -> diesel::deserialize::Result<Self> {
-                let s = String::from_sql(bytes)?;
-                Ok(str::parse(&s)?)
-            }
+    impl<DB> diesel::deserialize::FromSql<diesel::sql_types::Text, DB> for Scope
+    where
+        DB: diesel::backend::Backend,
+        String: diesel::deserialize::FromSql<diesel::sql_types::Text, DB>,
+    {
+        fn from_sql(bytes: Option<&DB::RawValue>) -> diesel::deserialize::Result<Self> {
+            let s = String::from_sql(bytes)?;
+            Ok(str::parse(&s)?)
         }
+    }
     }
 }
 
@@ -222,6 +268,15 @@ macro_rules! roles {
     #[sql_type = "diesel::sql_types::Text"]
     pub enum Role {
         $(#[serde(rename = $role)] $variant,)*
+    }
+
+    impl Role {
+        /// Get a list of all roles.
+        pub fn list() -> Vec<Role> {
+            vec![
+                $(Role::$variant,)*
+            ]
+        }
     }
 
     impl fmt::Display for Role {

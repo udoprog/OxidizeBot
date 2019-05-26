@@ -17,6 +17,7 @@ import Promotions from "./components/Promotions";
 import Aliases from "./components/Aliases";
 import Themes from "./components/Themes";
 import YouTube from "./components/YouTube";
+import Authorization from "./components/Authorization";
 
 const RouteLayout = withRouter(props => <Layout {...props} />)
 
@@ -111,6 +112,47 @@ class AliasesPage extends React.Component {
         <Row>
           <Col>
             <Aliases current={this.state.current} api={this.api} />
+          </Col>
+        </Row>
+      </RouteLayout>
+    );
+  }
+}
+
+class AuthorizationPage extends React.Component {
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      current: null,
+    };
+
+    this.api = new Api(utils.apiUrl());
+  }
+
+  componentWillMount() {
+    this.api.current().then(current => {
+      this.setState({current});
+    });
+  }
+
+  render() {
+    if (!this.state.current) {
+      return (
+        <RouteLayout>
+          <div className="loading">
+            Loading Current User
+            <utils.Spinner />
+          </div>
+        </RouteLayout>
+      );
+    }
+
+    return (
+      <RouteLayout>
+        <Row>
+          <Col>
+            <Authorization current={this.state.current} api={this.api} />
           </Col>
         </Row>
       </RouteLayout>
@@ -290,8 +332,15 @@ function Layout(props) {
             <Nav.Link as={Link} active={path === "/"} to="/">Home</Nav.Link>
 
             <NavDropdown title="Internal">
-              <NavDropdown.Item as={Link} active={path === "/settings"} to="/settings">Settings</NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/import-export"} to="/import-export">Import / Export</NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/settings"} to="/settings">
+                Settings
+              </NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/authorization"} to="/authorization">
+                Authorization
+              </NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/import-export"} to="/import-export">
+                Import / Export
+              </NavDropdown.Item>
             </NavDropdown>
 
             <NavDropdown title="Chat">
@@ -324,6 +373,7 @@ function AppRouter() {
       <Route path="/" exact component={IndexPage} />
       <Route path="/after-streams" exact component={AfterStreamsPage} />
       <Route path="/settings" exact component={SettingsPage} />
+      <Route path="/authorization" exact component={AuthorizationPage} />
       <Route path="/import-export" exact component={ImportExportPage} />
       <Route path="/aliases" exact component={AliasesPage} />
       <Route path="/commands" exact component={CommandsPage} />

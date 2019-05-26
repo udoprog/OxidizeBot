@@ -213,6 +213,23 @@ body {
   }
 }
 
+.scope {
+  &-key {
+    width: 300px;
+    overflow: hidden;
+
+    &-name {
+      font-weight: bold;
+      white-space: nowrap;
+    }
+
+    &-doc {
+      white-space: normal;
+      font-size: 80%;
+    }
+  }
+}
+
 .command {
   &-name {
     font-family: monospace;

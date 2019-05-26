@@ -1,9 +1,9 @@
 //! Traits and shared plumbing for bot commands (e.g. `!uptime`)
 
 use crate::{
+    auth::{Auth, Role, Scope},
     irc,
     prelude::*,
-    scopes::{Role, Scope, Scopes},
     stream_info, utils,
 };
 use hashbrown::HashSet;
@@ -56,7 +56,7 @@ pub struct Context<'a, 'm> {
     pub shutdown: &'a utils::Shutdown,
     pub alias: Alias<'a>,
     pub stream_info: &'a stream_info::StreamInfo,
-    pub scopes: &'a Scopes,
+    pub auth: &'a Auth,
 }
 
 impl<'a, 'm> Context<'a, 'm> {
@@ -82,13 +82,7 @@ impl<'a, 'm> Context<'a, 'm> {
 
     /// Test if the current user has the given scope.
     pub fn has_scope(&self, scope: Scope) -> bool {
-        for role in self.roles() {
-            if self.scopes.test(scope, role) {
-                return true;
-            }
-        }
-
-        false
+        self.auth.test_any(scope, self.roles())
     }
 
     /// Spawn the given future on the thread pool associated with the context.

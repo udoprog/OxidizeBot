@@ -80,9 +80,9 @@ impl Database {
         })
     }
 
-    /// Access scopes from the database.
-    pub fn scopes(&self, schema: crate::scopes::Schema) -> Result<crate::scopes::Scopes, Error> {
-        Ok(crate::scopes::Scopes::new(self.clone(), schema)?)
+    /// Access auth from the database.
+    pub fn auth(&self, schema: crate::auth::Schema) -> Result<crate::auth::Auth, Error> {
+        Ok(crate::auth::Auth::new(self.clone(), schema)?)
     }
 
     /// Access settings from the database.

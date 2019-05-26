@@ -1,6 +1,6 @@
 //! Utilities for dealing with dynamic configuration and settings.
 
-use crate::{db, prelude::*, scopes::Scope, utils};
+use crate::{auth::Scope, db, prelude::*, utils};
 use diesel::prelude::*;
 use futures::ready;
 use hashbrown::HashMap;

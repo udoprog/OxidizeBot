@@ -128,6 +128,10 @@ impl super::Module for Module {
                         path = update;
                     }
                     update = enabled_stream.select_next_some() => {
+                        if (!update) {
+
+                        }
+
                         *enabled.write() = update;
                     }
                     out = current.next() => {

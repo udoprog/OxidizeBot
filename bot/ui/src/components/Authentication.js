@@ -19,7 +19,7 @@ export default class Authentication extends React.Component {
       loading: true,
     });
 
-    this.api.auth()
+    this.api.authPending()
       .then(auth => {
         this.setState({
           loading: false,

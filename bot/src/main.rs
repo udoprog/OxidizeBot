@@ -4,7 +4,7 @@
 use failure::{format_err, ResultExt};
 use parking_lot::RwLock;
 use setmod_bot::{
-    api, bus, config, db, features::Feature, irc, module, oauth2, obs, player, prelude::*, scopes,
+    api, auth, bus, config, db, features::Feature, irc, module, oauth2, obs, player, prelude::*,
     secrets, settings, utils, web,
 };
 use std::{
@@ -142,8 +142,8 @@ async fn try_main(
 
     let db = db::Database::open(database_url, Arc::clone(&thread_pool))?;
 
-    let scopes_schema = scopes::Schema::load_static()?;
-    let scopes = db.scopes(scopes_schema)?;
+    let scopes_schema = auth::Schema::load_static()?;
+    let auth = db.auth(scopes_schema)?;
 
     let settings_schema = settings::Schema::load_static()?;
     let settings = db.settings(settings_schema)?;
@@ -180,7 +180,7 @@ async fn try_main(
         after_streams.clone(),
         db.clone(),
         settings.clone(),
-        scopes.clone(),
+        auth.clone(),
         aliases.clone(),
         commands.clone(),
         promotions.clone(),
@@ -373,7 +373,7 @@ async fn try_main(
         settings,
         player,
         obs,
-        scopes,
+        auth,
         global_channel,
     };
 

@@ -1,6 +1,4 @@
-use crate::{
-    api, bus, db, player, prelude::*, scopes, settings, template, track_id::TrackId, utils,
-};
+use crate::{api, auth, bus, db, player, prelude::*, settings, template, track_id::TrackId, utils};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::{fmt, net::SocketAddr, path::Path, sync::Arc};
@@ -103,8 +101,8 @@ pub struct PutSetting {
 
 #[derive(serde::Deserialize)]
 pub struct PutScope {
-    scope: scopes::Scope,
-    role: scopes::Role,
+    scope: auth::Scope,
+    role: auth::Role,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -515,7 +513,7 @@ struct Api {
     after_streams: db::AfterStreams,
     db: db::Database,
     settings: settings::Settings,
-    scopes: scopes::Scopes,
+    auth: auth::Auth,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -543,7 +541,7 @@ impl Api {
     }
 
     /// Get a list of things that need authentication.
-    fn auth(&self) -> Result<impl warp::Reply, Error> {
+    fn auth_pending(&self) -> Result<impl warp::Reply, Error> {
         let mut auth = Vec::new();
 
         for expected in self.token_callbacks.read().values() {
@@ -644,27 +642,43 @@ impl Api {
         Ok(warp::reply::json(&EMPTY))
     }
 
-    /// Get the list of all scopes in the bot.
-    fn scopes(&self) -> Result<impl warp::Reply, failure::Error> {
-        let scopes = self.scopes.list();
+    /// Get the list of all scopes.
+    fn auth_scopes(&self) -> Result<impl warp::Reply, failure::Error> {
+        let scopes = self.auth.scopes();
         Ok(warp::reply::json(&scopes))
     }
 
+    /// Get the list of all roles.
+    fn auth_roles(&self) -> Result<impl warp::Reply, failure::Error> {
+        let roles = self.auth.roles();
+        Ok(warp::reply::json(&roles))
+    }
+
+    /// Get the list of all auth in the bot.
+    fn auth_allows(&self) -> Result<impl warp::Reply, failure::Error> {
+        let auth = self.auth.list();
+        Ok(warp::reply::json(&auth))
+    }
+
     /// Delete a single scope assignment.
-    fn delete_scope(&self, scope: &str, role: &str) -> Result<impl warp::Reply, failure::Error> {
+    fn delete_auth_allow(
+        &self,
+        scope: &str,
+        role: &str,
+    ) -> Result<impl warp::Reply, failure::Error> {
         let scope = str::parse(scope)?;
         let role = str::parse(role)?;
-        self.scopes.delete(scope, role)?;
+        self.auth.delete(scope, role)?;
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Insert a single scope assignment.
-    fn insert_scope(
+    fn insert_auth_allow(
         &self,
-        scope: scopes::Scope,
-        role: scopes::Role,
+        scope: auth::Scope,
+        role: auth::Role,
     ) -> Result<impl warp::Reply, failure::Error> {
-        self.scopes.insert(scope, role)?;
+        self.auth.insert(scope, role)?;
         Ok(warp::reply::json(&EMPTY))
     }
 
@@ -692,7 +706,7 @@ pub fn setup(
     after_streams: db::AfterStreams,
     db: db::Database,
     settings: settings::Settings,
-    scopes: scopes::Scopes,
+    auth: auth::Auth,
     aliases: db::Aliases,
     commands: db::Commands,
     promotions: db::Promotions,
@@ -726,7 +740,7 @@ pub fn setup(
         after_streams,
         db,
         settings,
-        scopes,
+        auth,
     };
 
     let api = {
@@ -742,13 +756,6 @@ pub fn setup(
                         .compat()
                 }
             })
-            .boxed();
-
-        let route = route
-            .or(warp::get2().and(warp::path("auth")).and_then({
-                let api = api.clone();
-                move || api.auth().map_err(warp::reject::custom)
-            }))
             .boxed();
 
         let route = route
@@ -815,20 +822,49 @@ pub fn setup(
             .boxed();
 
         let route = route
-            .or(warp::get2().and(warp::path("scopes")).and_then({
-                let api = api.clone();
-                move || api.scopes().map_err(warp::reject::custom)
-            }))
+            .or(warp::get2()
+                .and(warp::path!("auth" / "pending").and(warp::filters::path::end()))
+                .and_then({
+                    let api = api.clone();
+                    move || api.auth_pending().map_err(warp::reject::custom)
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::get2()
+                .and(warp::path!("auth" / "roles").and(warp::filters::path::end()))
+                .and_then({
+                    let api = api.clone();
+                    move || api.auth_roles().map_err(warp::reject::custom)
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::get2()
+                .and(warp::path!("auth" / "scopes").and(warp::filters::path::end()))
+                .and_then({
+                    let api = api.clone();
+                    move || api.auth_scopes().map_err(warp::reject::custom)
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::get2()
+                .and(warp::path!("auth" / "allows").and(warp::filters::path::end()))
+                .and_then({
+                    let api = api.clone();
+                    move || api.auth_allows().map_err(warp::reject::custom)
+                }))
             .boxed();
 
         let route = route
             .or(warp::put2()
-                .and(warp::path!("scopes"))
+                .and(warp::path!("auth" / "allows").and(warp::filters::path::end()))
                 .and(warp::body::json())
                 .and_then({
                     let api = api.clone();
                     move |body: PutScope| {
-                        api.insert_scope(body.scope, body.role)
+                        api.insert_auth_allow(body.scope, body.role)
                             .map_err(warp::reject::custom)
                     }
                 }))
@@ -836,11 +872,14 @@ pub fn setup(
 
         let route = route
             .or(warp::delete2()
-                .and(warp::path!("scopes" / Fragment / Fragment))
+                .and(
+                    warp::path!("auth" / "allows" / Fragment / Fragment)
+                        .and(warp::filters::path::end()),
+                )
                 .and_then({
                     let api = api.clone();
                     move |scope: Fragment, role: Fragment| {
-                        api.delete_scope(scope.as_str(), role.as_str())
+                        api.delete_auth_allow(scope.as_str(), role.as_str())
                             .map_err(warp::reject::custom)
                     }
                 }))
