@@ -127,12 +127,12 @@ export function Spinner() {
  * Indicator that a value is true.
  */
 export function True() {
-  return <FontAwesomeIcon icon="check" />;
+  return <FontAwesomeIcon className="boolean-icon" icon="check" />;
 }
 
 /**
  * Indicator that a value is falso.
  */
 export function False() {
-  return <FontAwesomeIcon icon="times" />;
+  return <FontAwesomeIcon className="boolean-icon" icon="times" />;
 }

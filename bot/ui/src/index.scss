@@ -213,19 +213,31 @@ body {
   }
 }
 
-.scope {
-  &-key {
-    width: 300px;
-    overflow: hidden;
+.auth {
+  &-boolean-icon {
+    width: 8em;
+  }
 
-    &-name {
-      font-weight: bold;
-      white-space: nowrap;
+  &-scope {
+    &-key {
+      width: 300px;
+      overflow: hidden;
+
+      &-name {
+        font-weight: bold;
+        white-space: nowrap;
+      }
+
+      &-doc {
+        white-space: normal;
+        font-size: 80%;
+      }
     }
+  }
 
-    &-doc {
-      white-space: normal;
-      font-size: 80%;
+  &-role {
+    &-name {
+      text-align: center;
     }
   }
 }
@@ -267,4 +279,12 @@ body.youtube-body {
       background-color: #333;
     }
   }
+}
+
+.table-fill {
+  width: 100%;
+}
+
+.button-fill {
+  width: 100%;
 }

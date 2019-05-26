@@ -114,7 +114,7 @@ export default class Themes extends React.Component {
                 <th>Group</th>
                 <th>Start</th>
                 <th>End</th>
-                <th width="99%">Track ID</th>
+                <th className="table-fill">Track ID</th>
                 <th></th>
               </tr>
             </thead>
@@ -123,13 +123,15 @@ export default class Themes extends React.Component {
                 let disabled = null;
 
                 if (c.disabled) {
-                  disabled = <Button size="sm" variant="danger" onClick={_ => {
+                  let onClick = _ => {
                     this.editDisabled(c.key, false);
-                  }}>Disabled</Button>;
+                  };
+                  disabled = <Button className="button-fill" size="sm" variant="danger" onClick={onClick}>Disabled</Button>;
                 } else {
-                  disabled = <Button size="sm" variant="success" onClick={_ => {
+                  let onClick = _ => {
                     this.editDisabled(c.key, true);
-                  }}>Enabled</Button>;
+                  };
+                  disabled = <Button className="button-fill" size="sm" variant="success" onClick={onClick}>Enabled</Button>;
                 }
 
                 let track = c.track_id;

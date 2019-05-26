@@ -98,7 +98,7 @@ export default class Promotions extends React.Component {
               <tr>
                 <th>Name</th>
                 <th>Group</th>
-                <th width="99%">Text</th>
+                <th className="table-fill">Text</th>
                 <th></th>
               </tr>
             </thead>
@@ -107,13 +107,15 @@ export default class Promotions extends React.Component {
                 let disabled = null;
 
                 if (c.disabled) {
-                  disabled = <Button size="sm" variant="danger" onClick={_ => {
+                  let onClick = _ => {
                     this.editDisabled(c.key, false);
-                  }}>Disabled</Button>;
+                  };
+                  disabled = <Button className="button-fill" size="sm" variant="danger" onClick={onClick}>Disabled</Button>;
                 } else {
-                  disabled = <Button size="sm" variant="success" onClick={_ => {
+                  let onClick = _ => {
                     this.editDisabled(c.key, true);
-                  }}>Enabled</Button>;
+                  };
+                  disabled = <Button className="button-fill" size="sm" variant="success" onClick={onClick}>Enabled</Button>;
                 }
 
                 return (

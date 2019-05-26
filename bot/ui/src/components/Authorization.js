@@ -139,9 +139,13 @@ export default class Authorization extends React.Component {
         <Table responsive="sm">
           <thead>
             <tr>
-              <th width="20%"></th>
+              <th className="table-fill"></th>
               {data.roles.map(role => {
-                return <th key={role.role} title={role.doc}>{role.role}</th>;
+                return (
+                  <th key={role.role} title={role.doc}>
+                    <div className="auth-role-name">{role.role}</div>
+                  </th>
+                );
               })}
             </tr>
           </thead>
@@ -149,9 +153,9 @@ export default class Authorization extends React.Component {
             {data.scopes.map(scope => {
               return (
                 <tr key={scope.scope}>
-                  <td className="scope-key">
-                    <div className="scope-key-name">{scope.scope}</div>
-                    <div className="scope-key-doc">{scope.doc}</div>
+                  <td className="auth-scope-key">
+                    <div className="auth-scope-key-name">{scope.scope}</div>
+                    <div className="auth-scope-key-doc">{scope.doc}</div>
                   </td>
                   {data.roles.map(role => {
                     let has_implicit = null;
@@ -184,35 +188,43 @@ export default class Authorization extends React.Component {
                     let button = null;
 
                     if (!!has_implicit) {
-                      title = `Implicitly enabled because ${has_implicit} is enabled`;
+                      title = `allowed because ${has_implicit} is allowed`;
                     } else {
                       if (allowed) {
-                        title = `Deny ${scope.scope} from ${role.role}`;
+                        title = `${scope.scope} scope is allowed by ${role.role}`;
                       } else {
-                        title = `Allow ${scope.scope} to ${role.role}`;
+                        title = `${scope.scope} scope is denied to ${role.role}`;
                       }
                     }
 
-                    if (allowed) {
-                      let deny = () => this.deny(scope.scope, role.role);
-
+                    if (!!has_implicit) {
                       button = (
-                        <Button disabled={!!has_implicit} title={title} size="sm" variant="success" onClick={deny}>
+                        <Button className="auth-boolean-icon" disabled={true} title={title} size="sm" variant="secondary">
                           <True />
                         </Button>
                       );
                     } else {
-                      let allow = () => this.allow(scope.scope, role.role);
+                      if (allowed) {
+                        let deny = () => this.deny(scope.scope, role.role);
 
-                      button = (
-                        <Button disabled={!!has_implicit} title={title} size="sm" variant="danger" onClick={allow}>
-                          <False />
-                        </Button>
-                      );
+                        button = (
+                          <Button className="auth-boolean-icon" title={title} size="sm" variant="success" onClick={deny}>
+                            <True />
+                          </Button>
+                        );
+                      } else {
+                        let allow = () => this.allow(scope.scope, role.role);
+
+                        button = (
+                          <Button className="auth-boolean-icon" title={title} size="sm" variant="danger" onClick={allow}>
+                            <False />
+                          </Button>
+                        );
+                      }
                     }
 
                     return (
-                      <td key={role.role}>{button}</td>
+                      <td align="center" key={role.role}>{button}</td>
                     );
                   })}
                 </tr>

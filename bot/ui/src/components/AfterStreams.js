@@ -98,7 +98,7 @@ export default class AfterStreams extends React.Component {
             <thead>
               <tr>
                 <th>User</th>
-                <th width="99%">Message</th>
+                <th className="table-fill">Message</th>
                 <th></th>
               </tr>
             </thead>
