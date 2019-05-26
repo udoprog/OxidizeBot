@@ -1,10 +1,10 @@
 use crate::{command, db, module};
 
-pub struct Handler {
-    pub themes: db::Themes,
+pub struct Handler<'a> {
+    pub themes: &'a db::Themes,
 }
 
-impl command::Handler for Handler {
+impl<'a> command::Handler for Handler<'a> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         let next = command_base!(ctx, self.themes, "!theme", "theme");
 
@@ -61,14 +61,9 @@ impl super::Module for Module {
         &self,
         module::HookContext {
             handlers, themes, ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        handlers.insert(
-            "theme",
-            Handler {
-                themes: themes.clone(),
-            },
-        );
+        handlers.insert("theme", Handler { themes });
         Ok(())
     }
 }

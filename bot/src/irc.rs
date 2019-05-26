@@ -135,10 +135,7 @@ impl Irc {
                 sender.privmsg(config.irc.channel.as_str(), startup_message);
             }
 
-            let mut handlers = module::Handlers::default();
-            let mut futures = Vec::<future::BoxFuture<'static, Result<(), Error>>>::new();
-
-            futures.push(refresh_mods_future(sender.clone(), config.irc.channel.clone()).boxed());
+            let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
 
             let stream_info = {
                 let interval = time::Duration::from_secs(60 * 5);
@@ -149,27 +146,30 @@ impl Irc {
             };
 
             let threshold = settings.sync_var(&mut futures, "irc/idle-detection/threshold", 5)?;
-
             let idle = idle::Idle::new(threshold);
+
+            let mut handlers = module::Handlers::default();
+
+            futures.push(refresh_mods_future(sender.clone(), config.irc.channel.clone()).boxed());
 
             for module in modules.iter() {
                 let result = module.hook(module::HookContext {
+                    handlers: &mut handlers,
+                    futures: &mut futures,
+                    stream_info: &stream_info,
+                    idle: &idle,
                     config: &*config,
                     db: &db,
                     commands: &commands,
                     aliases: &aliases,
                     promotions: &promotions,
                     themes: &themes,
-                    handlers: &mut handlers,
                     currency: currency.as_ref(),
                     youtube: &youtube,
                     twitch: &bot_twitch,
                     streamer_twitch: &streamer_twitch,
-                    futures: &mut futures,
-                    stream_info: &stream_info,
                     sender: &sender,
                     settings: &settings,
-                    idle: &idle,
                     player: player.as_ref(),
                     obs: obs.as_ref(),
                 });
@@ -184,7 +184,7 @@ impl Irc {
                     &*currency.name,
                     currency_admin::Handler {
                         currency: currency.clone(),
-                        db: db.clone(),
+                        db: &db,
                     },
                 );
 
@@ -212,7 +212,7 @@ impl Irc {
                     "title",
                     misc::Title {
                         stream_info: stream_info.clone(),
-                        twitch: streamer_twitch.clone(),
+                        twitch: &streamer_twitch,
                     },
                 );
 
@@ -220,7 +220,7 @@ impl Irc {
                     "game",
                     misc::Game {
                         stream_info: stream_info.clone(),
-                        twitch: streamer_twitch.clone(),
+                        twitch: &streamer_twitch,
                     },
                 );
 
@@ -236,13 +236,13 @@ impl Irc {
                 handlers.insert(
                     "badword",
                     bad_word::BadWord {
-                        bad_words: bad_words.clone(),
+                        bad_words: &bad_words,
                     },
                 );
             }
 
             if config.features.test(Feature::EightBall) {
-                handlers.insert("8ball", eight_ball::EightBall {});
+                handlers.insert("8ball", eight_ball::EightBall);
             }
 
             if config.features.test(Feature::Clip) {
@@ -251,7 +251,7 @@ impl Irc {
                     clip::Clip {
                         stream_info: stream_info.clone(),
                         clip_cooldown: config.irc.clip_cooldown.clone(),
-                        twitch: bot_twitch.clone(),
+                        twitch: &bot_twitch,
                     },
                 );
             }
@@ -261,7 +261,7 @@ impl Irc {
                     "afterstream",
                     after_stream::AfterStream {
                         cooldown: config.irc.afterstream_cooldown.clone(),
-                        after_streams: after_streams.clone(),
+                        after_streams: &after_streams,
                     },
                 );
             }
@@ -298,7 +298,7 @@ impl Irc {
                 moderator_cooldown: config.irc.moderator_cooldown.clone(),
                 handlers,
                 shutdown: &shutdown,
-                idle,
+                idle: &idle,
                 pong_timeout: &mut pong_timeout,
                 token: &token,
                 handler_shutdown: false,
@@ -444,7 +444,7 @@ impl Sender {
 }
 
 /// Handler for incoming messages.
-struct Handler<'a, 'to> {
+struct Handler<'a: 'h, 'to, 'h> {
     /// Current Streamer.
     streamer: String,
     /// Currench channel.
@@ -472,11 +472,11 @@ struct Handler<'a, 'to> {
     /// Active moderator cooldown.
     moderator_cooldown: Option<utils::Cooldown>,
     /// Handlers for specific commands like `!skip`.
-    handlers: module::Handlers,
+    handlers: module::Handlers<'h>,
     /// Handler for shutting down the service.
     shutdown: &'a utils::Shutdown,
     /// Build idle detection.
-    idle: idle::Idle,
+    idle: &'a idle::Idle,
     /// Pong timeout currently running.
     pong_timeout: &'to mut Option<timer::Delay>,
     /// OAuth 2.0 Token used to authenticate with IRC.
@@ -489,7 +489,7 @@ struct Handler<'a, 'to> {
     scopes: &'a Scopes,
 }
 
-impl Handler<'_, '_> {
+impl Handler<'_, '_, '_> {
     /// Run as user.
     fn as_user<'m>(&self, tags: Tags<'m>, m: &'m Message) -> Result<User<'m>, Error> {
         let name = m

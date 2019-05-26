@@ -1,11 +1,11 @@
 use crate::{command, db, module};
 
 /// Handler for the !alias command.
-pub struct Handler {
-    pub aliases: db::Aliases,
+pub struct Handler<'a> {
+    pub aliases: &'a db::Aliases,
 }
 
-impl command::Handler for Handler {
+impl<'a> command::Handler for Handler<'a> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
         ctx.check_moderator()?;
 
@@ -50,14 +50,9 @@ impl super::Module for Module {
         &self,
         module::HookContext {
             handlers, aliases, ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        handlers.insert(
-            "alias",
-            Handler {
-                aliases: aliases.clone(),
-            },
-        );
+        handlers.insert("alias", Handler { aliases });
         Ok(())
     }
 }

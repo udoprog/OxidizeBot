@@ -347,8 +347,8 @@ pub struct Reward {
     amount: i32,
 }
 
-pub struct Handler {
-    db: db::Database,
+pub struct Handler<'a> {
+    db: &'a db::Database,
     player: Option<player::PlayerClient>,
     currency: currency::Currency,
     cooldown: Arc<RwLock<utils::Cooldown>>,
@@ -361,7 +361,7 @@ pub struct Handler {
     tx: mpsc::UnboundedSender<(irc::OwnedUser, usize, Command)>,
 }
 
-impl Handler {
+impl<'a> Handler<'a> {
     /// Play the specified theme song.
     fn play_theme_song(&mut self, ctx: &mut command::Context<'_, '_>, id: &str) {
         if let Some(player) = self.player.as_ref() {
@@ -674,7 +674,7 @@ impl Handler {
     }
 }
 
-impl command::Handler for Handler {
+impl<'a> command::Handler for Handler<'a> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         let result = match ctx.next() {
             Some("other") => self.handle_other(&mut ctx)?,
@@ -815,7 +815,7 @@ impl super::Module for Module {
             futures,
             player,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
         let currency = currency
             .ok_or_else(|| format_err!("currency required for !gtav module"))?
@@ -834,7 +834,7 @@ impl super::Module for Module {
         handlers.insert(
             "gtav",
             Handler {
-                db: db.clone(),
+                db,
                 player: player.map(|p| p.client()),
                 currency,
                 cooldown,

@@ -638,7 +638,7 @@ impl module::Module for Module {
             settings,
             currency,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
         let chat_feedback = settings.sync_var(futures, "song/chat-feedback", true)?;
 

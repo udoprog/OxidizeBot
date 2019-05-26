@@ -181,7 +181,7 @@ impl super::Module for Module {
             settings,
             futures,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
         let reward_multiplier = settings.sync_var(futures, "water/reward%", 100)?;
 

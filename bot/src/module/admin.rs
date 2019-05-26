@@ -1,15 +1,15 @@
 use crate::{command, db, module, settings};
 
 /// Handler for the !admin command.
-pub struct Handler {
-    settings: settings::Settings,
-    aliases: db::Aliases,
-    commands: db::Commands,
-    promotions: db::Promotions,
-    themes: db::Themes,
+pub struct Handler<'a> {
+    settings: &'a settings::Settings,
+    aliases: &'a db::Aliases,
+    commands: &'a db::Commands,
+    promotions: &'a db::Promotions,
+    themes: &'a db::Themes,
 }
 
-impl command::Handler for Handler {
+impl<'a> command::Handler for Handler<'a> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         ctx.check_moderator()?;
 
@@ -189,7 +189,7 @@ impl command::Handler for Handler {
     }
 }
 
-impl Handler {
+impl<'a> Handler<'a> {
     /// Get a value that corresponds with the given set.
     fn value_in_set(
         &mut self,
@@ -275,16 +275,16 @@ impl super::Module for Module {
             promotions,
             themes,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
         handlers.insert(
             "admin",
             Handler {
-                settings: settings.clone(),
-                aliases: aliases.clone(),
-                commands: commands.clone(),
-                promotions: promotions.clone(),
-                themes: themes.clone(),
+                settings,
+                aliases,
+                commands,
+                promotions,
+                themes,
             },
         );
 

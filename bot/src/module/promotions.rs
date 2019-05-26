@@ -2,11 +2,11 @@ use crate::{command, db, irc, module, prelude::*, timer, utils};
 use chrono::Utc;
 use std::sync::Arc;
 
-pub struct Handler {
-    pub promotions: db::Promotions,
+pub struct Handler<'a> {
+    pub promotions: &'a db::Promotions,
 }
 
-impl command::Handler for Handler {
+impl<'a> command::Handler for Handler<'a> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         let next = command_base!(ctx, self.promotions, "!promo", "promotion");
 
@@ -71,14 +71,9 @@ impl super::Module for Module {
             settings,
             idle,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        handlers.insert(
-            "promo",
-            Handler {
-                promotions: promotions.clone(),
-            },
-        );
+        handlers.insert("promo", Handler { promotions });
 
         let (mut setting, frequency) =
             settings.init_and_stream("promotions/frequency", self.frequency.clone())?;

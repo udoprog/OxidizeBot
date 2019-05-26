@@ -1,12 +1,12 @@
 use crate::{command, currency, db};
 
 /// Handler for the !admin command.
-pub struct Handler {
+pub struct Handler<'a> {
     pub currency: currency::Currency,
-    pub db: db::Database,
+    pub db: &'a db::Database,
 }
 
-impl command::Handler for Handler {
+impl command::Handler for Handler<'_> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         match ctx.next() {
             None => {

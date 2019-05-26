@@ -2,15 +2,15 @@ use crate::{api, command, config, currency, db, module, prelude::*, utils};
 use failure::format_err;
 use hashbrown::HashSet;
 
-pub struct Handler {
+pub struct Handler<'a> {
     reward: i64,
     db: db::Database,
     currency: currency::Currency,
-    twitch: api::Twitch,
+    twitch: &'a api::Twitch,
     cooldown: utils::Cooldown,
 }
 
-impl command::Handler for Handler {
+impl<'a> command::Handler for Handler<'a> {
     fn handle<'m>(&mut self, ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         if !self.cooldown.is_open() {
             ctx.respond("A !swearjar command was recently issued, please wait a bit longer!");
@@ -105,7 +105,7 @@ impl super::Module for Module {
             currency,
             twitch,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
         let currency = currency
             .ok_or_else(|| format_err!("currency required for !swearjar module"))?
@@ -117,7 +117,7 @@ impl super::Module for Module {
                 reward: self.reward,
                 db: db.clone(),
                 currency,
-                twitch: twitch.clone(),
+                twitch,
                 cooldown: self.cooldown.clone(),
             },
         );

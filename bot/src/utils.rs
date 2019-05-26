@@ -5,19 +5,19 @@ use url::percent_encoding::PercentDecode;
 
 mod duration;
 
-pub type Futures = Vec<future::BoxFuture<'static, Result<(), failure::Error>>>;
+pub type Futures<'a> = Vec<future::BoxFuture<'a, Result<(), failure::Error>>>;
 
-pub trait Driver {
+pub trait Driver<'a> {
     /// Drive the given future.
     fn drive<F>(&mut self, future: F)
     where
-        F: 'static + Send + Future<Output = Result<(), failure::Error>>;
+        F: 'a + Send + Future<Output = Result<(), failure::Error>>;
 }
 
-impl Driver for Vec<future::BoxFuture<'static, Result<(), failure::Error>>> {
+impl<'a> Driver<'a> for Vec<future::BoxFuture<'a, Result<(), failure::Error>>> {
     fn drive<F>(&mut self, future: F)
     where
-        F: 'static + Send + Future<Output = Result<(), failure::Error>>,
+        F: 'a + Send + Future<Output = Result<(), failure::Error>>,
     {
         self.push(future.boxed());
     }

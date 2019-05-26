@@ -1,13 +1,13 @@
 use crate::{api, command, stream_info, utils};
 
 /// Handler for the `!clip` command.
-pub struct Clip {
+pub struct Clip<'a> {
     pub stream_info: stream_info::StreamInfo,
     pub clip_cooldown: utils::Cooldown,
-    pub twitch: api::Twitch,
+    pub twitch: &'a api::Twitch,
 }
 
-impl command::Handler for Clip {
+impl command::Handler for Clip<'_> {
     fn handle<'m>(&mut self, ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
         if !self.clip_cooldown.is_open() {
             ctx.respond("A clip was already created recently");

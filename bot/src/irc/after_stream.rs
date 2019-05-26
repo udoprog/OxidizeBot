@@ -1,12 +1,12 @@
 use crate::{command, db, utils};
 
 /// Handler for the `!afterstream` command.
-pub struct AfterStream {
+pub struct AfterStream<'a> {
     pub cooldown: utils::Cooldown,
-    pub after_streams: db::AfterStreams,
+    pub after_streams: &'a db::AfterStreams,
 }
 
-impl command::Handler for AfterStream {
+impl command::Handler for AfterStream<'_> {
     fn handle<'m>(&mut self, ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
         if !self.cooldown.is_open() {
             ctx.respond("An afterstream was already created recently.");

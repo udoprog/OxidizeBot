@@ -1,5 +1,5 @@
 use crate::{
-    api, command, config, currency, db, idle, irc, obs, player, prelude::*, settings, stream_info,
+    api, command, config, currency, db, idle, irc, obs, player, settings, stream_info, utils,
 };
 use hashbrown::HashMap;
 use std::sync::Arc;
@@ -18,26 +18,19 @@ pub mod theme_admin;
 mod water;
 
 #[derive(Default)]
-pub struct Handlers {
-    handlers: HashMap<String, Box<dyn command::Handler + Send + 'static>>,
+pub struct Handlers<'a> {
+    handlers: HashMap<String, Box<dyn command::Handler + Send + 'a>>,
 }
 
-impl Handlers {
+impl<'a> Handlers<'a> {
     /// Insert the given handler.
-    pub fn insert(
-        &mut self,
-        command: impl AsRef<str>,
-        handler: impl command::Handler + Send + 'static,
-    ) {
+    pub fn insert(&mut self, command: impl AsRef<str>, handler: impl command::Handler + Send + 'a) {
         self.handlers
             .insert(command.as_ref().to_string(), Box::new(handler));
     }
 
     /// Lookup the given command mutably.
-    pub fn get_mut(
-        &mut self,
-        command: &str,
-    ) -> Option<&mut (dyn command::Handler + Send + 'static)> {
+    pub fn get_mut(&mut self, command: &str) -> Option<&mut (dyn command::Handler + Send + 'a)> {
         self.handlers.get_mut(command).map(|command| &mut **command)
     }
 }
@@ -58,23 +51,23 @@ pub enum Config {
 }
 
 /// Context for a hook.
-pub struct HookContext<'a> {
+pub struct HookContext<'a: 'm, 'm> {
+    pub handlers: &'m mut Handlers<'a>,
+    pub futures: &'m mut utils::Futures<'a>,
+    pub stream_info: &'m stream_info::StreamInfo,
+    pub idle: &'m idle::Idle,
     pub config: &'a config::Config,
     pub db: &'a db::Database,
     pub commands: &'a db::Commands,
     pub aliases: &'a db::Aliases,
     pub promotions: &'a db::Promotions,
     pub themes: &'a db::Themes,
-    pub handlers: &'a mut Handlers,
     pub currency: Option<&'a currency::Currency>,
     pub youtube: &'a Arc<api::YouTube>,
     pub twitch: &'a api::Twitch,
     pub streamer_twitch: &'a api::Twitch,
-    pub futures: &'a mut Vec<future::BoxFuture<'static, Result<(), failure::Error>>>,
-    pub stream_info: &'a stream_info::StreamInfo,
     pub sender: &'a irc::Sender,
     pub settings: &'a settings::Settings,
-    pub idle: &'a idle::Idle,
     pub player: Option<&'a player::Player>,
     pub obs: Option<&'a obs::Obs>,
 }
@@ -84,7 +77,7 @@ pub trait Module: Send + 'static {
     fn ty(&self) -> &'static str;
 
     /// Set up command handlers for this module.
-    fn hook(&self, _: HookContext<'_>) -> Result<(), failure::Error> {
+    fn hook(&self, _: HookContext<'_, '_>) -> Result<(), failure::Error> {
         Ok(())
     }
 }

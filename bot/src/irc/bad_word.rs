@@ -2,11 +2,11 @@ use crate::{command, db};
 use failure::format_err;
 
 /// Handler for the !badword command.
-pub struct BadWord {
-    pub bad_words: db::Words,
+pub struct BadWord<'a> {
+    pub bad_words: &'a db::Words,
 }
 
-impl command::Handler for BadWord {
+impl command::Handler for BadWord<'_> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
         match ctx.next() {
             Some("edit") => {

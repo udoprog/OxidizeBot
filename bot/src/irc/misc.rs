@@ -44,12 +44,12 @@ impl command::Handler for Uptime {
 }
 
 /// Handler for the `!title` command.
-pub struct Title {
+pub struct Title<'a> {
     pub stream_info: stream_info::StreamInfo,
-    pub twitch: api::Twitch,
+    pub twitch: &'a api::Twitch,
 }
 
-impl Title {
+impl Title<'_> {
     /// Handle the title command.
     fn show(&mut self, user: irc::User<'_>) {
         let title = self.stream_info.data.read().title.clone();
@@ -65,7 +65,7 @@ impl Title {
     }
 }
 
-impl command::Handler for Title {
+impl command::Handler for Title<'_> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
         let rest = ctx.rest();
 
@@ -99,12 +99,12 @@ impl command::Handler for Title {
 }
 
 /// Handler for the `!title` command.
-pub struct Game {
+pub struct Game<'a> {
     pub stream_info: stream_info::StreamInfo,
-    pub twitch: api::Twitch,
+    pub twitch: &'a api::Twitch,
 }
 
-impl Game {
+impl Game<'_> {
     /// Handle the game command.
     fn show(&mut self, user: irc::User<'_>) {
         let game = self.stream_info.data.read().game.clone();
@@ -120,7 +120,7 @@ impl Game {
     }
 }
 
-impl command::Handler for Game {
+impl command::Handler for Game<'_> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
         let rest = ctx.rest();
 

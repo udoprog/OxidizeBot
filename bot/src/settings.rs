@@ -327,9 +327,9 @@ impl Settings {
     }
 
     /// Get a synchronized variable for the given configuration key.
-    pub fn sync_var<T>(
+    pub fn sync_var<'a, T>(
         &self,
-        driver: &mut impl utils::Driver,
+        driver: &mut impl utils::Driver<'a>,
         key: &str,
         default: T,
     ) -> Result<Arc<RwLock<T>>, failure::Error>
@@ -430,9 +430,9 @@ impl ScopedSettings {
     }
 
     /// Get a synchronized variable for the given configuration key.
-    pub fn sync_var<T>(
+    pub fn sync_var<'a, T>(
         &self,
-        driver: &mut impl utils::Driver,
+        driver: &mut impl utils::Driver<'a>,
         key: &str,
         default: T,
     ) -> Result<Arc<RwLock<T>>, failure::Error>

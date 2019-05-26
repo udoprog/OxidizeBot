@@ -81,7 +81,7 @@ impl super::Module for Module {
         &self,
         module::HookContext {
             handlers, futures, ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
         let (sender, mut receiver) = mpsc::unbounded();
 
@@ -93,7 +93,7 @@ impl super::Module for Module {
             let mut current = Option::<Current>::None;
 
             loop {
-                ::futures::select! {
+                futures::select! {
                     out = current.next() => {
                         match out.transpose()? {
                             Some(()) => if let Some(c) = current.as_mut() {

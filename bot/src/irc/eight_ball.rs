@@ -1,7 +1,7 @@
 use crate::command;
 
 /// Handler for the !8ball command.
-pub struct EightBall {}
+pub struct EightBall;
 
 impl command::Handler for EightBall {
     fn handle<'m>(&mut self, ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
