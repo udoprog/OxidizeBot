@@ -4,7 +4,7 @@ use crate::{
     idle, module, oauth2, obs, player,
     prelude::*,
     scopes::Scopes,
-    settings, stream_info, timer, utils,
+    settings, stream_info, template, timer, utils,
 };
 use failure::{bail, format_err, Error, ResultExt as _};
 use hashbrown::HashSet;
@@ -33,7 +33,7 @@ const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
 /// Configuration for twitch integration.
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
-    bot: String,
+    bot: Option<String>,
     /// Cooldown for moderator actions.
     moderator_cooldown: Option<utils::Cooldown>,
     /// Cooldown for creating clips.
@@ -43,7 +43,7 @@ pub struct Config {
     #[serde(default = "default_cooldown")]
     afterstream_cooldown: utils::Cooldown,
     /// Name of the channel to join.
-    pub channel: Arc<String>,
+    pub channel: Option<String>,
     /// Whether or not to notify on currency rewards.
     #[serde(default)]
     notify_rewards: bool,
@@ -78,6 +78,7 @@ pub struct Irc {
     pub player: Option<player::Player>,
     pub obs: Option<obs::Obs>,
     pub scopes: Scopes,
+    pub global_channel: Arc<RwLock<Option<String>>>,
 }
 
 impl Irc {
@@ -103,17 +104,94 @@ impl Irc {
             player,
             obs,
             scopes,
+            global_channel,
         } = self;
+
+        if config.streamer.is_some() {
+            log::warn!("`streamer` setting has been deprecated from the configuration");
+        }
+
+        if config.irc.bot.is_some() {
+            log::warn!("`[irc] bot` setting has been deprecated from the configuration");
+        }
+
+        if config.irc.channel.is_some() {
+            log::warn!("`[irc] channel` setting has been deprecated from the configuration");
+        }
 
         loop {
             log::trace!("Waiting for token to become ready");
-            token.wait_until_ready().await?;
+            future::try_join(
+                streamer_twitch.token.wait_until_ready(),
+                token.wait_until_ready(),
+            )
+            .await?;
+
+            let (bot_info, streamer_info) = future::try_join(
+                bot_twitch.validate_token(),
+                streamer_twitch.validate_token(),
+            )
+            .await?;
+
+            let bot = bot_info.login.to_lowercase();
+            let bot = bot.as_str();
+
+            let streamer = streamer_info.login.to_lowercase();
+            let streamer = streamer.as_str();
+
+            let channel = Arc::new(format!("#{}", streamer));
+
+            // TODO: remove this migration next major release.
+            if !config.aliases.is_empty() {
+                log::warn!("The [[aliases]] section in the configuration is now deprecated.");
+
+                if !settings
+                    .get::<bool>("migration/aliases-migrated")?
+                    .unwrap_or_default()
+                {
+                    log::warn!("Performing a one time migration of aliases from configuration.");
+
+                    for alias in &config.aliases {
+                        let template = template::Template::compile(&alias.replace)?;
+                        aliases.edit(channel.as_str(), &alias.r#match, template)?;
+                    }
+
+                    settings.set("migration/aliases-migrated", true)?;
+                }
+            }
+
+            // TODO: remove this migration next major release.
+            if !config.themes.themes.is_empty() {
+                log::warn!("The [themes] section in the configuration is now deprecated.");
+
+                if !settings
+                    .get::<bool>("migration/themes-migrated")?
+                    .unwrap_or_default()
+                {
+                    log::warn!("Performing a one time migration of themes from configuration.");
+
+                    for (name, theme) in &config.themes.themes {
+                        let track_id = theme.track.clone();
+                        themes.edit(channel.as_str(), name.as_str(), track_id)?;
+                        themes.edit_duration(
+                            channel.as_str(),
+                            name.as_str(),
+                            theme.offset.clone(),
+                            theme.end.clone(),
+                        )?;
+                    }
+
+                    settings.set("migration/themes-migrated", true)?;
+                }
+            }
+
+            *global_channel.write() = Some(channel.to_string());
 
             let access_token = token.read()?.access_token().to_string();
 
             let irc_client_config = client::data::config::Config {
-                nickname: Some(config.irc.bot.clone()),
-                channels: Some(vec![(*config.irc.channel).clone()]),
+                nickname: Some(bot.to_string()),
+                channels: Some(vec![(*channel).clone()]),
                 password: Some(format!("oauth:{}", access_token)),
                 server: Some(String::from(SERVER)),
                 port: Some(6697),
@@ -126,13 +204,13 @@ impl Irc {
             let PackedIrcClient(client, send_future) = client.compat().await?;
             client.identify()?;
 
-            let sender = Sender::new(client.clone());
+            let sender = Sender::new(channel.clone(), client.clone());
             sender.cap_req(TWITCH_TAGS_CAP);
             sender.cap_req(TWITCH_COMMANDS_CAP);
 
             if let Some(startup_message) = config.irc.startup_message.as_ref() {
                 // greeting when bot joins
-                sender.privmsg(config.irc.channel.as_str(), startup_message);
+                sender.privmsg(startup_message);
             }
 
             let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
@@ -140,7 +218,7 @@ impl Irc {
             let stream_info = {
                 let interval = time::Duration::from_secs(60 * 5);
                 let (stream_info, future) =
-                    stream_info::setup(config.streamer.clone(), interval, streamer_twitch.clone());
+                    stream_info::setup(streamer, interval, streamer_twitch.clone());
                 futures.push(future.boxed());
                 stream_info
             };
@@ -150,7 +228,7 @@ impl Irc {
 
             let mut handlers = module::Handlers::default();
 
-            futures.push(refresh_mods_future(sender.clone(), config.irc.channel.clone()).boxed());
+            futures.push(refresh_mods_future(sender.clone()).boxed());
 
             for module in modules.iter() {
                 let result = module.hook(module::HookContext {
@@ -196,6 +274,7 @@ impl Irc {
 
                 let future = reward_loop(
                     config.irc.clone(),
+                    channel.clone(),
                     reward,
                     interval,
                     sender.clone(),
@@ -283,8 +362,7 @@ impl Irc {
             let mut pong_timeout = None;
 
             let mut handler = Handler {
-                streamer: config.streamer.clone(),
-                channel: config.irc.channel.clone(),
+                streamer,
                 sender: sender.clone(),
                 moderators: HashSet::default(),
                 whitelisted_hosts,
@@ -355,6 +433,7 @@ impl Irc {
 /// Set up a reward loop.
 async fn reward_loop(
     config: Arc<Config>,
+    channel: Arc<String>,
     reward: i64,
     interval: u64,
     sender: Sender,
@@ -371,55 +450,67 @@ async fn reward_loop(
 
         let reward = (reward * *reward_percentage.read() as i64) / 100i64;
         let count = currency
-            .add_channel_all(config.channel.to_string(), reward)
+            .add_channel_all(channel.to_string(), reward)
             .await?;
 
         if config.notify_rewards && count > 0 && !idle.is_idle() {
-            sender.privmsg(
-                config.channel.as_str(),
-                format!("/me has given {} {} to all viewers!", reward, currency.name),
-            );
+            sender.privmsg(format!(
+                "/me has given {} {} to all viewers!",
+                reward, currency.name
+            ));
         }
     }
 
     Ok(())
 }
 
+struct SenderInner {
+    target: Arc<String>,
+    client: IrcClient,
+    thread_pool: ThreadPool,
+    limiter: Mutex<ratelimit::Limiter>,
+}
+
 #[derive(Clone)]
 pub struct Sender {
-    client: IrcClient,
-    thread_pool: Arc<ThreadPool>,
-    limiter: Arc<Mutex<ratelimit::Limiter>>,
+    inner: Arc<SenderInner>,
 }
 
 impl Sender {
-    pub fn new(client: IrcClient) -> Sender {
+    pub fn new(target: Arc<String>, client: IrcClient) -> Sender {
         let limiter = ratelimit::Builder::new().frequency(10).capacity(95).build();
 
         Sender {
-            client,
-            thread_pool: Arc::new(ThreadPool::new()),
-            limiter: Arc::new(Mutex::new(limiter)),
+            inner: Arc::new(SenderInner {
+                target,
+                client,
+                thread_pool: ThreadPool::new(),
+                limiter: Mutex::new(limiter),
+            }),
         }
+    }
+
+    /// Get the channel this sender is associated with.
+    pub fn channel(&self) -> &str {
+        self.inner.target.as_str()
     }
 
     /// Send an immediate message, without taking rate limiting into account.
     fn send_immediate(&self, m: impl Into<Message>) {
-        if let Err(e) = self.client.send(m) {
+        if let Err(e) = self.inner.client.send(m) {
             log_err!(e, "failed to send message");
         }
     }
 
     /// Send a message.
     fn send(&self, m: impl Into<Message>) {
-        let client = self.client.clone();
+        let inner = self.inner.clone();
         let m = m.into();
-        let limiter = Arc::clone(&self.limiter);
 
-        self.thread_pool.spawn(future01::lazy(move || {
-            limiter.lock().wait();
+        self.inner.thread_pool.spawn(future01::lazy(move || {
+            inner.limiter.lock().wait();
 
-            if let Err(e) = client.send(m) {
+            if let Err(e) = inner.client.send(m) {
                 log_err!(e, "failed to send message");
             }
 
@@ -428,8 +519,19 @@ impl Sender {
     }
 
     /// Send a PRIVMSG.
-    pub fn privmsg(&self, target: &str, f: impl fmt::Display) {
-        self.send(Command::PRIVMSG(target.to_owned(), f.to_string()))
+    pub fn privmsg(&self, f: impl fmt::Display) {
+        self.send(Command::PRIVMSG(
+            (*self.inner.target).clone(),
+            f.to_string(),
+        ))
+    }
+
+    /// Send a PRIVMSG without rate limiting.
+    pub fn privmsg_immediate(&self, f: impl fmt::Display) {
+        self.send_immediate(Command::PRIVMSG(
+            (*self.inner.target).clone(),
+            f.to_string(),
+        ))
     }
 
     /// Send a capability request.
@@ -446,9 +548,7 @@ impl Sender {
 /// Handler for incoming messages.
 struct Handler<'a: 'h, 'to, 'h> {
     /// Current Streamer.
-    streamer: String,
-    /// Currench channel.
-    channel: Arc<String>,
+    streamer: &'a str,
     /// Queue for sending messages.
     sender: Sender,
     /// Moderators.
@@ -525,7 +625,7 @@ impl Handler<'_, '_, '_> {
                 if let Some(handler) = self.handlers.get_mut(other) {
                     let ctx = command::Context {
                         api_url: self.api_url.as_ref().map(|s| s.as_str()),
-                        streamer: self.streamer.as_str(),
+                        streamer: self.streamer,
                         sender: &self.sender,
                         moderators: &self.moderators,
                         moderator_cooldown: self.moderator_cooldown.as_mut(),
@@ -570,7 +670,7 @@ impl Handler<'_, '_, '_> {
     }
 
     /// Delete the given message.
-    fn delete_message<'local>(&mut self, source: &str, tags: Tags<'local>) -> Result<(), Error> {
+    fn delete_message<'local>(&mut self, tags: Tags<'local>) -> Result<(), Error> {
         let id = match tags.id {
             Some(id) => id,
             None => return Ok(()),
@@ -578,7 +678,8 @@ impl Handler<'_, '_, '_> {
 
         log::info!("Attempting to delete message: {}", id);
 
-        self.sender.privmsg(source, format!("/delete {}", id));
+        self.sender.privmsg_immediate(format!("/delete {}", id));
+
         Ok(())
     }
 
@@ -603,7 +704,7 @@ impl Handler<'_, '_, '_> {
 
                     match why {
                         Ok(why) => {
-                            self.sender.privmsg(target, &why);
+                            self.sender.privmsg(&why);
                         }
                         Err(e) => {
                             log_err!(e, "failed to render response");
@@ -665,7 +766,7 @@ impl Handler<'_, '_, '_> {
     /// Handle the given command.
     pub fn handle<'local>(&mut self, m: &'local Message) -> Result<(), Error> {
         match m.command {
-            Command::PRIVMSG(ref source, ref message) => {
+            Command::PRIVMSG(_, ref message) => {
                 let tags = Self::tags(&m);
                 let user = self.as_user(tags.clone(), m)?;
 
@@ -699,7 +800,7 @@ impl Handler<'_, '_, '_> {
                             };
 
                             let response = command.render(&vars)?;
-                            self.sender.privmsg(user.target, response);
+                            self.sender.privmsg(response);
                         }
                     }
 
@@ -713,7 +814,7 @@ impl Handler<'_, '_, '_> {
                 }
 
                 if self.should_be_deleted(m, message) {
-                    self.delete_message(source, tags)?;
+                    self.delete_message(tags)?;
                 }
             }
             Command::CAP(_, CapSubCommand::ACK, _, ref what) => {
@@ -722,7 +823,7 @@ impl Handler<'_, '_, '_> {
                     // do what needs to happen with them (like `/mods`).
                     Some(TWITCH_COMMANDS_CAP) => {
                         // request to get a list of moderators.
-                        self.sender.privmsg(self.channel.as_str(), "/mods")
+                        self.sender.privmsg("/mods")
                     }
                     _ => {}
                 }
@@ -794,8 +895,7 @@ pub struct OwnedUser {
 impl OwnedUser {
     /// Respond to the user with a message.
     pub fn respond(&self, m: impl fmt::Display) {
-        self.sender
-            .privmsg(self.target.as_str(), format!("{} -> {}", self.name, m));
+        self.sender.privmsg(format!("{} -> {}", self.name, m));
     }
 }
 
@@ -815,8 +915,7 @@ impl<'m> User<'m> {
 
     /// Respond to the user with a message.
     pub fn respond(&self, m: impl fmt::Display) {
-        self.sender
-            .privmsg(self.target, format!("{} -> {}", self.name, m));
+        self.sender.privmsg(format!("{} -> {}", self.name, m));
     }
 
     /// Convert into an owned user.
@@ -876,13 +975,13 @@ pub struct CommandVars<'a> {
 }
 
 // Future to refresh moderators every 5 minutes.
-async fn refresh_mods_future(sender: Sender, channel: Arc<String>) -> Result<(), Error> {
+async fn refresh_mods_future(sender: Sender) -> Result<(), Error> {
     let mut interval = timer::Interval::new_interval(time::Duration::from_secs(60 * 5));
 
     while let Some(i) = interval.next().await {
         let _ = i?;
         log::trace!("refreshing mods");
-        sender.privmsg(channel.as_str(), "/mods");
+        sender.privmsg_immediate("/mods");
     }
 
     Ok(())

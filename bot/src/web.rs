@@ -1,5 +1,5 @@
 use crate::{
-    api, bus, config, db, player, prelude::*, scopes, settings, template, track_id::TrackId, utils,
+    api, bus, db, player, prelude::*, scopes, settings, template, track_id::TrackId, utils,
 };
 use hashbrown::HashMap;
 use parking_lot::RwLock;
@@ -93,7 +93,7 @@ impl Oauth2Redirect {
 
 #[derive(serde::Serialize)]
 pub struct Current {
-    channel: Arc<String>,
+    channel: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -687,7 +687,6 @@ impl Api {
 /// Set up the web endpoint.
 pub fn setup(
     web_root: Option<&Path>,
-    config: Arc<config::Config>,
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     after_streams: db::AfterStreams,
@@ -698,6 +697,7 @@ pub fn setup(
     commands: db::Commands,
     promotions: db::Promotions,
     themes: db::Themes,
+    channel: Arc<RwLock<Option<String>>>,
 ) -> Result<
     (
         Server,
@@ -884,8 +884,15 @@ pub fn setup(
             .or(warp::get2()
                 .and(path!("current").and(warp::filters::path::end()))
                 .and_then(move || {
+                    let channel = channel.read();
+
+                    let channel = match channel.as_ref() {
+                        Some(channel) => channel,
+                        None => return Err(warp::reject::not_found()),
+                    };
+
                     let current = Current {
-                        channel: config.irc.channel.clone(),
+                        channel: channel.to_string(),
                     };
 
                     Ok::<_, warp::Rejection>(warp::reply::json(&current))

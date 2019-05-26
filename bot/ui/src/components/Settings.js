@@ -100,6 +100,7 @@ export default class Settings extends React.Component {
 
           return {
             key: d.key,
+            type,
             control,
             value,
             doc: d.schema.doc,
@@ -186,10 +187,10 @@ export default class Settings extends React.Component {
       return data;
     }
 
-    let filter = this.state.filter.toLowerCase();
+    let parts = this.state.filter.split(" ").map(f => f.toLowerCase());
 
     return data.filter(d => {
-      return d.key.toLowerCase().indexOf(filter) != -1;
+      return parts.every(p => d.key.toLowerCase().indexOf(p) != -1);
     });
   }
 
@@ -208,15 +209,23 @@ export default class Settings extends React.Component {
         });
       };
 
-      deleteButton = (
-        <Button size="sm" variant="danger" className="action" disabled={this.state.loading} onClick={del}>
-          <FontAwesomeIcon icon="trash" />
-        </Button>
-      );
+      if (setting.value !== null) {
+        deleteButton = (
+          <Button size="sm" variant="danger" className="action" disabled={this.state.loading} onClick={del}>
+            <FontAwesomeIcon icon="trash" />
+          </Button>
+        );
+      }
     }
 
     if (setting.control.hasEditControl()) {
       let edit = () => {
+        let value = setting.value;
+
+        if (value == null) {
+          value = setting.type.default();
+        }
+
         let {edit, editValue} = setting.control.edit(setting.value);
 
         this.setState({
@@ -248,10 +257,14 @@ export default class Settings extends React.Component {
 
     let value = null;
 
-    if (isSecret) {
-      value = <b title="Secret value, only showed when editing">****</b>;
+    if (setting.value === null) {
+      value = <em title="Value not set">not set</em>;;
     } else {
-      value = setting.control.render(setting.value, renderOnChange);
+      if (isSecret) {
+        value = <b title="Secret value, only showed when editing">****</b>;
+      } else {
+        value = setting.control.render(setting.value, renderOnChange);
+      }
     }
 
     if (this.state.deleteKey === setting.key) {

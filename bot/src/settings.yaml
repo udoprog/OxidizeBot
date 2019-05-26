@@ -44,6 +44,7 @@ types:
   player/detached:
     doc: If the player is detached, in that it can no longer control the music.
     type: {id: bool}
+    scope: player/attach-detach
   player/max-queue-length:
     doc: The maximum queue length permitted in the player.
     type: {id: number}
@@ -110,3 +111,9 @@ types:
   water/reward%:
     doc: Reward scaling for doing a water reminder.
     type: {id: percentage}
+  countdown/enabled:
+    doc: If the countdown module is enabled.
+    type: {id: bool}
+  countdown/path:
+    doc: The path used for writing the countdown.
+    type: {id: string, optional: true}

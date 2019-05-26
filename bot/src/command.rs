@@ -156,7 +156,7 @@ impl<'a, 'm> Context<'a, 'm> {
 
     /// Send a privmsg to the channel.
     pub fn privmsg(&self, m: impl fmt::Display) {
-        self.sender.privmsg(self.user.target, m);
+        self.sender.privmsg(m);
     }
 
     /// Get the next argument.

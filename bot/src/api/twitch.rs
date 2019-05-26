@@ -3,7 +3,7 @@
 use crate::{oauth2, prelude::*};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use failure::Error;
+use failure::{Error, ResultExt};
 use reqwest::{
     header,
     r#async::{Client, Decoder},
@@ -14,12 +14,14 @@ use std::mem;
 pub const CLIPS_URL: &'static str = "http://clips.twitch.tv";
 const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";
 const API_TWITCH_URL: &'static str = "https://api.twitch.tv";
+const ID_TWITCH_URL: &'static str = "https://id.twitch.tv";
 
 /// API integration.
 #[derive(Clone, Debug)]
 pub struct Twitch {
     client: Client,
     api_url: Url,
+    id_url: Url,
     pub token: oauth2::SyncToken,
 }
 
@@ -29,6 +31,7 @@ impl Twitch {
         Ok(Twitch {
             client: Client::new(),
             api_url: str::parse::<Url>(API_TWITCH_URL)?,
+            id_url: str::parse::<Url>(ID_TWITCH_URL)?,
             token,
         })
     }
@@ -181,6 +184,27 @@ impl Twitch {
         struct Response {
             chatters: Chatters,
         }
+    }
+
+    // Validate the specified token through twitch validation API.
+    pub async fn validate_token(&self) -> Result<ValidateToken, Error> {
+        let mut url = self.id_url.clone();
+
+        url.path_segments_mut()
+            .expect("bad base")
+            .extend(&["oauth2", "validate"]);
+
+        let request = RequestBuilder {
+            token: self.token.clone(),
+            client: self.client.clone(),
+            url,
+            method: Method::GET,
+            headers: Vec::new(),
+            body: None,
+            use_bearer: false,
+        };
+
+        Ok(request.execute().await.context("validate token error")?)
     }
 }
 
@@ -459,4 +483,13 @@ pub struct Page<T> {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Data<T> {
     pub data: Vec<T>,
+}
+
+/// Response from the validate token endpoint.
+#[derive(Debug, serde::Deserialize)]
+pub struct ValidateToken {
+    pub client_id: String,
+    pub login: String,
+    pub scopes: Vec<String>,
+    pub user_id: String,
 }

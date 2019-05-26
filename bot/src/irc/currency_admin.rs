@@ -155,23 +155,17 @@ impl command::Handler for Handler<'_> {
                     match result {
                         Ok(_) => {
                             if amount >= 0 {
-                                sender.privmsg(
-                                    &user.target,
-                                    format!(
-                                        "/me gave {amount} {currency} to EVERYONE!",
-                                        amount = amount,
-                                        currency = currency.name
-                                    ),
-                                );
+                                sender.privmsg(format!(
+                                    "/me gave {amount} {currency} to EVERYONE!",
+                                    amount = amount,
+                                    currency = currency.name
+                                ));
                             } else {
-                                sender.privmsg(
-                                    &user.target,
-                                    format!(
-                                        "/me took away {amount} {currency} from EVERYONE!",
-                                        amount = amount,
-                                        currency = currency.name
-                                    ),
-                                );
+                                sender.privmsg(format!(
+                                    "/me took away {amount} {currency} from EVERYONE!",
+                                    amount = amount,
+                                    currency = currency.name
+                                ));
                             }
                         }
                         Err(e) => {

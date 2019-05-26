@@ -8,9 +8,7 @@ use std::sync::Arc;
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
-    /// The username of the streamer.
-    /// TODO: get from twitch token.
-    pub streamer: String,
+    pub streamer: Option<String>,
     pub irc: Arc<irc::Config>,
     #[serde(default)]
     pub database_url: Option<String>,

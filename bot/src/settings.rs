@@ -1,6 +1,6 @@
 //! Utilities for dealing with dynamic configuration and settings.
 
-use crate::{db, prelude::*, utils};
+use crate::{db, prelude::*, scopes::Scope, utils};
 use diesel::prelude::*;
 use futures::ready;
 use hashbrown::HashMap;
@@ -32,6 +32,9 @@ pub struct Setting {
 pub struct SchemaType {
     /// Documentation for this type.
     pub doc: String,
+    /// Scope required to modify variable.
+    #[serde(default)]
+    pub scope: Option<Scope>,
     /// The type.
     #[serde(rename = "type")]
     pub ty: Type,
@@ -197,21 +200,22 @@ impl Settings {
 
         let mut settings = Vec::new();
 
-        for (key, value) in dsl::settings
+        let values = dsl::settings
             .select((dsl::key, dsl::value))
             .order(dsl::key)
             .load::<(String, String)>(&*c)?
-        {
-            let value = serde_json::from_str(&value)?;
+            .into_iter()
+            .collect::<HashMap<_, _>>();
 
-            let schema = match self.schema.lookup(&key) {
-                Some(schema) => schema,
-                // NB: skip over unknown keys.
+        for (key, schema) in &self.schema.types {
+            let value = match values.get(key) {
+                Some(value) => serde_json::from_str(value)?,
+                None if schema.ty.optional => serde_json::Value::Null,
                 None => continue,
             };
 
             settings.push(Setting {
-                schema,
+                schema: schema.clone(),
                 key: key.to_string(),
                 value,
             });

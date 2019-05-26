@@ -67,7 +67,6 @@ impl super::Module for Module {
             promotions,
             futures,
             sender,
-            config,
             settings,
             idle,
             ..
@@ -80,7 +79,6 @@ impl super::Module for Module {
 
         let promotions = promotions.clone();
         let sender = sender.clone();
-        let channel = config.irc.channel.clone();
 
         let mut interval = timer::Interval::new_interval(frequency.as_std());
         let idle = idle.clone();
@@ -100,10 +98,9 @@ impl super::Module for Module {
                         } else {
                             let promotions = promotions.clone();
                             let sender = sender.clone();
-                            let channel = channel.clone();
 
                             tokio::spawn(future01::lazy(move || {
-                                if let Err(e) = promote(promotions, sender, &*channel) {
+                                if let Err(e) = promote(promotions, sender) {
                                     log::error!("failed to send promotion: {}", e);
                                 }
 
@@ -121,15 +118,13 @@ impl super::Module for Module {
 }
 
 /// Run the next promotion.
-fn promote(
-    promotions: db::Promotions,
-    sender: irc::Sender,
-    channel: &str,
-) -> Result<(), failure::Error> {
+fn promote(promotions: db::Promotions, sender: irc::Sender) -> Result<(), failure::Error> {
+    let channel = sender.channel();
+
     if let Some(p) = pick(promotions.list(channel)) {
         let text = p.render(&PromoData { channel })?;
         promotions.bump_promoted_at(&*p)?;
-        sender.privmsg(channel, text);
+        sender.privmsg(text);
     }
 
     Ok(())

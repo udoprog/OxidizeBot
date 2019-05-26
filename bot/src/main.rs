@@ -2,9 +2,10 @@
 #![recursion_limit = "128"]
 
 use failure::{format_err, ResultExt};
+use parking_lot::RwLock;
 use setmod_bot::{
     api, bus, config, db, features::Feature, irc, module, oauth2, obs, player, prelude::*, scopes,
-    secrets, settings, template, utils, web,
+    secrets, settings, utils, web,
 };
 use std::{
     fs,
@@ -154,59 +155,8 @@ async fn try_main(
     let promotions = db::Promotions::load(db.clone())?;
     let themes = db::Themes::load(db.clone())?;
 
-    // TODO: remove this migration next major release.
-    if !config.aliases.is_empty() {
-        log::warn!("# DEPRECATION WARNING");
-        log::warn!("The [[aliases]] section in the configuration is now deprecated.");
-        log::warn!(
-            "Please remove it in favor of the !alias command which stores aliases in the database."
-        );
-
-        if !settings
-            .get::<bool>("migration/aliases-migrated")?
-            .unwrap_or_default()
-        {
-            log::warn!("Performing a one time migration of aliases from configuration.");
-
-            for alias in &config.aliases {
-                let template = template::Template::compile(&alias.replace)?;
-                aliases.edit(config.irc.channel.as_str(), &alias.r#match, template)?;
-            }
-
-            settings.set("migration/aliases-migrated", true)?;
-        }
-    }
-
-    if !config.themes.themes.is_empty() {
-        log::warn!("# DEPRECATION WARNING");
-        log::warn!("The [themes] section in the configuration is now deprecated.");
-        log::warn!("Please remove it in favor of storing theme in the database.");
-
-        if !settings
-            .get::<bool>("migration/themes-migrated")?
-            .unwrap_or_default()
-        {
-            log::warn!("Performing a one time migration of themes from configuration.");
-
-            for (name, theme) in &config.themes.themes {
-                let track_id = theme.track.clone();
-                themes.edit(config.irc.channel.as_str(), name.as_str(), track_id)?;
-                themes.edit_duration(
-                    config.irc.channel.as_str(),
-                    name.as_str(),
-                    theme.offset.clone(),
-                    theme.end.clone(),
-                )?;
-            }
-
-            settings.set("migration/themes-migrated", true)?;
-        }
-    }
-
     if !config.whitelisted_hosts.is_empty() {
-        log::warn!("# DEPRECATION WARNING");
         log::warn!("The `whitelisted_hosts` section in the configuration is now deprecated.");
-        log::warn!("Please remove it in favor of the irc/whitelisted-hosts setting.");
     }
 
     if let Some(path) = config.bad_words.as_ref() {
@@ -219,11 +169,12 @@ async fn try_main(
     let global_bus = Arc::new(bus::Bus::new());
     let youtube_bus = Arc::new(bus::Bus::new());
 
+    let global_channel = Arc::new(RwLock::new(None));
+
     let mut futures = Vec::<future::BoxFuture<'static, Result<(), failure::Error>>>::new();
 
     let (web, future) = web::setup(
         web_root.as_ref().map(|p| p.as_path()),
-        config.clone(),
         global_bus.clone(),
         youtube_bus.clone(),
         after_streams.clone(),
@@ -234,6 +185,7 @@ async fn try_main(
         commands.clone(),
         promotions.clone(),
         themes.clone(),
+        global_channel.clone(),
     )?;
 
     let future = future.map_err(|e| {
@@ -422,6 +374,7 @@ async fn try_main(
         player,
         obs,
         scopes,
+        global_channel,
     };
 
     futures.push(irc.run().boxed());

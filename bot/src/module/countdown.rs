@@ -1,5 +1,11 @@
 use crate::{command, config, module, prelude::*, template, timer, utils};
-use std::{fs, path::PathBuf, time};
+use parking_lot::RwLock;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time,
+};
 
 enum Event {
     /// Set the countdown.
@@ -10,10 +16,15 @@ enum Event {
 
 pub struct Handler {
     sender: mpsc::UnboundedSender<Event>,
+    enabled: Arc<RwLock<bool>>,
 }
 
 impl command::Handler for Handler {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
         match ctx.next() {
             Some("set") => {
                 ctx.check_moderator()?;
@@ -54,19 +65,19 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Module {
-    path: PathBuf,
-}
-
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Config {
-    path: PathBuf,
+    path: Option<PathBuf>,
+}
+
+pub struct Module {
+    config_path: Option<PathBuf>,
 }
 
 impl Module {
     pub fn load(_config: &config::Config, module: &Config) -> Result<Self, failure::Error> {
         Ok(Module {
-            path: module.path.clone(),
+            config_path: module.path.clone(),
         })
     }
 }
@@ -80,50 +91,86 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            handlers, futures, ..
+            handlers,
+            futures,
+            settings,
+            ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
+        let settings = settings.scoped(&["countdown"]);
+
+        let (mut enabled_stream, enabled) = settings.init_and_stream("enabled", true)?;
+        let enabled = Arc::new(RwLock::new(enabled));
+
+        let (mut path_stream, mut path) = settings.init_and_option_stream::<PathBuf>("path")?;
+
+        if let (None, Some(config_path)) = (path.as_ref(), self.config_path.clone()) {
+            log::warn!("[countdown] configuration has been deprecated.");
+            settings.set("path", &config_path)?;
+        }
+
         let (sender, mut receiver) = mpsc::unbounded();
 
-        handlers.insert("countdown", Handler { sender });
-
-        let path = self.path.clone();
+        handlers.insert(
+            "countdown",
+            Handler {
+                sender,
+                enabled: enabled.clone(),
+            },
+        );
 
         let future = async move {
             let mut current = Option::<Current>::None;
 
             loop {
                 futures::select! {
+                    update = path_stream.select_next_some() => {
+                        path = update;
+                    }
+                    update = enabled_stream.select_next_some() => {
+                        *enabled.write() = update;
+                    }
                     out = current.next() => {
+                        let path = match path.as_ref() {
+                            Some(path) => path,
+                            None => continue,
+                        };
+
                         match out.transpose()? {
                             Some(()) => if let Some(c) = current.as_mut() {
-                                c.write_log();
+                                c.write_log(path);
                             },
                             None => if let Some(mut c) = current.take() {
-                                c.clear_log();
+                                c.clear_log(path);
                             },
                         }
                     },
-                    event = receiver.next() => {
+                    event = receiver.select_next_some() => {
+                        let path = match path.as_ref() {
+                            Some(path) => path,
+                            None => {
+                                log::warn!("countdown/path: not configured");
+                                continue;
+                            },
+                        };
+
                         match event {
-                            Some(Event::Set(duration, template)) => {
+                            Event::Set(duration, template) => {
                                 let mut c = Current {
                                     duration,
                                     template,
                                     elapsed: Default::default(),
                                     interval: timer::Interval::new_interval(time::Duration::from_secs(1)),
-                                    path: path.clone(),
                                 };
 
-                                c.write_log();
+                                c.write_log(path);
                                 current = Some(c);
                             }
-                            Some(Event::Clear) => {
+                            Event::Clear => {
                                 if let Some(mut c) = current.take() {
-                                    c.clear_log();
+                                    c.clear_log(path);
                                 }
                             }
-                            None => (),
                         }
                     }
                 }
@@ -140,12 +187,11 @@ struct Current {
     template: template::Template,
     elapsed: utils::Duration,
     interval: timer::Interval,
-    path: PathBuf,
 }
 
 impl Current {
-    fn write(&mut self) -> Result<(), failure::Error> {
-        let mut f = fs::File::create(&self.path)?;
+    fn write(&mut self, path: &Path) -> Result<(), failure::Error> {
+        let mut f = fs::File::create(path)?;
         let remaining = self.duration.saturating_sub(self.elapsed.clone());
         let remaining = remaining.as_digital();
         let elapsed = self.elapsed.as_digital();
@@ -170,26 +216,26 @@ impl Current {
         }
     }
 
-    fn clear(&mut self) -> Result<(), failure::Error> {
-        if !self.path.is_file() {
+    fn clear(&mut self, path: &Path) -> Result<(), failure::Error> {
+        if !path.is_file() {
             return Ok(());
         }
 
-        fs::remove_file(&self.path)?;
+        fs::remove_file(path)?;
         Ok(())
     }
 
     /// Attempt to write an update and log on errors.
-    fn write_log(&mut self) {
-        if let Err(e) = self.write() {
-            log_err!(e, "failed to write: {}", self.path.display());
+    fn write_log(&mut self, path: &Path) {
+        if let Err(e) = self.write(path) {
+            log_err!(e, "failed to write: {}", path.display());
         }
     }
 
     /// Attempt to clear the file and log on errors.
-    fn clear_log(&mut self) {
-        if let Err(e) = self.clear() {
-            log_err!(e, "failed to clear: {}", self.path.display());
+    fn clear_log(&mut self, path: &Path) {
+        if let Err(e) = self.clear(path) {
+            log_err!(e, "failed to clear: {}", path.display());
         }
     }
 }

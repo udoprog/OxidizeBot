@@ -631,7 +631,6 @@ impl module::Module for Module {
         module::HookContext {
             db,
             stream_info,
-            config,
             handlers,
             futures,
             sender,
@@ -642,15 +641,8 @@ impl module::Module for Module {
     ) -> Result<(), failure::Error> {
         let chat_feedback = settings.sync_var(futures, "song/chat-feedback", true)?;
 
-        futures.push(
-            player_feedback_loop(
-                config.irc.clone(),
-                self.player.clone(),
-                sender.clone(),
-                chat_feedback,
-            )
-            .boxed(),
-        );
+        futures
+            .push(player_feedback_loop(self.player.clone(), sender.clone(), chat_feedback).boxed());
 
         let subscriber_only = settings.sync_var(futures, "song/subscriber-only", false)?;
 
@@ -742,18 +734,16 @@ fn display_songs(
 
 /// Notifications from the player.
 async fn player_feedback_loop(
-    config: Arc<irc::Config>,
     player: player::PlayerClient,
     sender: irc::Sender,
     chat_feedback: Arc<RwLock<bool>>,
 ) -> Result<(), failure::Error> {
     let mut rx = player.add_rx().compat();
-    let channel = config.channel.as_str();
 
     while let Some(e) = rx.next().await {
         match e? {
             player::Event::Detached => {
-                sender.privmsg(channel, "Player is detached!");
+                sender.privmsg("Player is detached!");
             }
             player::Event::Playing(echo, item) => {
                 if !echo || !*chat_feedback.read() {
@@ -765,23 +755,22 @@ async fn player_feedback_loop(
                     None => format!("Now playing: {}.", item.what(),),
                 };
 
-                sender.privmsg(channel, message);
+                sender.privmsg(message);
             }
             player::Event::Pausing => {
                 if !*chat_feedback.read() {
                     return Ok(());
                 }
 
-                sender.privmsg(channel, "Pausing playback.");
+                sender.privmsg("Pausing playback.");
             }
             player::Event::Empty => {
-                sender.privmsg(
-                    channel,
-                    format!("Song queue is empty (use !song request <spotify-id> to add more).",),
-                );
+                sender.privmsg(format!(
+                    "Song queue is empty (use !song request <spotify-id> to add more).",
+                ));
             }
             player::Event::NotConfigured => {
-                sender.privmsg(channel, "Player has not been configured yet!");
+                sender.privmsg("Player has not been configured yet!");
             }
             // other event we don't care about
             _ => (),

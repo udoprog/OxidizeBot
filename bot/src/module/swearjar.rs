@@ -44,7 +44,6 @@ impl<'a> command::Handler for Handler<'a> {
             db.balances_increment(channel.clone(), u, reward).await?;
 
             sender.privmsg(
-                channel.as_str(),
                 format!(
                     "/me has taken {} {currency} from {streamer} and given it to the viewers for listening to their bad mouth!",
                     total_reward, currency = currency.name, streamer = streamer,

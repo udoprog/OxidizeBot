@@ -87,8 +87,17 @@ table! {
     }
 }
 
+// Scopes that have been initialized.
 table! {
-    scopes (scope, role) {
+    scope_inits (scope) {
+        scope -> Text,
+        version -> Text,
+    }
+}
+
+// Scopes that have been allowed.
+table! {
+    scope_allows (scope, role) {
         scope -> Text,
         role -> Text,
     }

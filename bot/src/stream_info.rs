@@ -15,7 +15,6 @@ pub struct Data {
 
 #[derive(Debug, Clone)]
 pub struct StreamInfo {
-    streamer: Arc<String>,
     pub data: Arc<RwLock<Data>>,
 }
 
@@ -26,12 +25,12 @@ impl StreamInfo {
     }
 
     /// Refresh the stream info.
-    pub async fn refresh<'a>(&'a self, twitch: &'a api::Twitch) {
-        let stream = twitch.stream_by_login(self.streamer.as_str());
-        let channel = twitch.channel_by_login(self.streamer.as_str());
+    pub async fn refresh<'a>(&'a self, twitch: &'a api::Twitch, streamer: &'a str) {
+        let stream = twitch.stream_by_login(streamer);
+        let channel = twitch.channel_by_login(streamer);
 
         let streamer = async {
-            let streamer = twitch.user_by_login(self.streamer.as_str()).await?;
+            let streamer = twitch.user_by_login(streamer).await?;
 
             let streamer = match streamer {
                 Some(streamer) => streamer,
@@ -81,13 +80,15 @@ impl StreamInfo {
 }
 
 /// Set up a reward loop.
-pub fn setup(
-    streamer: String,
+pub fn setup<'a>(
+    streamer: &'a str,
     interval: time::Duration,
     twitch: api::Twitch,
-) -> (StreamInfo, impl Future<Output = Result<(), failure::Error>>) {
+) -> (
+    StreamInfo,
+    impl Future<Output = Result<(), failure::Error>> + 'a,
+) {
     let stream_info = StreamInfo {
-        streamer: Arc::new(streamer),
         data: Default::default(),
     };
 
@@ -99,7 +100,7 @@ pub fn setup(
         twitch.token.wait_until_ready().await?;
 
         while let Some(_) = interval.next().await.transpose()? {
-            future_info.refresh(&twitch).await;
+            future_info.refresh(&twitch, streamer).await;
         }
 
         Ok(())
