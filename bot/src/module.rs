@@ -1,5 +1,6 @@
 use crate::{
-    api, command, config, currency, db, idle, irc, obs, player, settings, stream_info, utils,
+    api, command, config, currency, db, idle, injector, irc, obs, player, settings, stream_info,
+    utils,
 };
 use hashbrown::HashMap;
 use std::sync::Arc;
@@ -56,6 +57,7 @@ pub struct HookContext<'a: 'm, 'm> {
     pub futures: &'m mut utils::Futures<'a>,
     pub stream_info: &'m stream_info::StreamInfo,
     pub idle: &'m idle::Idle,
+    pub injector: &'m injector::Injector,
     pub config: &'a config::Config,
     pub db: &'a db::Database,
     pub commands: &'a db::Commands,

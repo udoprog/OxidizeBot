@@ -3,7 +3,7 @@ use crate::{
     auth::Auth,
     bus, command, config, currency, db,
     features::{Feature, Features},
-    idle, module, oauth2, obs, player,
+    idle, injector, module, oauth2, obs, player,
     prelude::*,
     settings, stream_info, template, timer, utils,
 };
@@ -107,6 +107,8 @@ impl Irc {
             auth,
             global_channel,
         } = self;
+
+        let injector = injector::Injector::new();
 
         if config.streamer.is_some() {
             log::warn!("`streamer` setting has been deprecated from the configuration");
@@ -251,6 +253,7 @@ impl Irc {
                     settings: &settings,
                     player: player.as_ref(),
                     obs: obs.as_ref(),
+                    injector: &injector,
                 });
 
                 result.with_context(|_| {

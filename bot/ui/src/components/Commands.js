@@ -107,13 +107,15 @@ export default class Commands extends React.Component {
                 let disabled = null;
 
                 if (c.disabled) {
-                  disabled = <Button className="button-fill" size="sm" variant="danger" onClick={_ => {
+                  let onClick = _ => {
                     this.editDisabled(c.key, false);
-                  }}>Disabled</Button>;
+                  };
+                  disabled = <Button className="button-fill" size="sm" variant="danger" onClick={onClick}>Disabled</Button>;
                 } else {
-                  disabled = <Button className="button-fill" size="sm" variant="success" onClick={_ => {
+                  let onClick = _ => {
                     this.editDisabled(c.key, true);
-                  }}>Enabled</Button>;
+                  };
+                  disabled = <Button className="button-fill" size="sm" variant="success" onClick={onClick}>Enabled</Button>;
                 }
 
                 return (

@@ -1,6 +1,5 @@
-use crate::{command, config, currency, db, module, stream_info, utils};
+use crate::{command, config, currency::Currency, db, module, prelude::*, stream_info, utils};
 use chrono::{DateTime, Utc};
-use failure::format_err;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -12,7 +11,7 @@ pub struct Reward {
 
 pub struct Handler {
     db: db::Database,
-    currency: currency::Currency,
+    currency: Arc<RwLock<Option<Currency>>>,
     cooldown: utils::Cooldown,
     waters: Vec<(DateTime<Utc>, Option<Reward>)>,
     stream_info: stream_info::StreamInfo,
@@ -51,6 +50,14 @@ impl Handler {
 
 impl command::Handler for Handler {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
+        let currency = match self.currency.read().clone() {
+            Some(currency) => currency,
+            None => {
+                ctx.respond("No currency configured for stream, sorry :(");
+                return Ok(());
+            }
+        };
+
         if !self.cooldown.is_open() {
             ctx.respond("A !water command was recently issued, please wait a bit longer!");
             return Ok(());
@@ -117,7 +124,7 @@ impl command::Handler for Handler {
                     "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.", streamer = ctx.streamer,
                     user = ctx.user.name,
                     amount = amount,
-                    currency = self.currency.name
+                    currency = currency.name
                 ));
 
                 let db = self.db.clone();
@@ -176,24 +183,23 @@ impl super::Module for Module {
         module::HookContext {
             db,
             handlers,
-            currency,
             stream_info,
             settings,
             futures,
+            injector,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
         let reward_multiplier = settings.sync_var(futures, "water/reward%", 100)?;
 
-        let currency = currency
-            .ok_or_else(|| format_err!("currency required for !swearjar module"))?
-            .clone();
+        let (currency_stream, currency) = injector.stream::<Currency>();
+        let currency = Arc::new(RwLock::new(currency));
 
         handlers.insert(
             "water",
             Handler {
                 db: db.clone(),
-                currency,
+                currency: currency.clone(),
                 cooldown: self.cooldown.clone(),
                 waters: Vec::new(),
                 stream_info: stream_info.clone(),
@@ -201,6 +207,19 @@ impl super::Module for Module {
             },
         );
 
+        let future = async move {
+            let mut currency_stream = currency_stream.fuse();
+
+            loop {
+                futures::select! {
+                    update = currency_stream.select_next_some() => {
+                        *currency.write() = update;
+                    }
+                }
+            }
+        };
+
+        futures.push(future.boxed());
         Ok(())
     }
 }
