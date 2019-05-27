@@ -262,14 +262,11 @@ fn key<'a>(ctx: &mut command::Context<'a, '_>, prefix: &str) -> Option<&'a str> 
     Some(key)
 }
 
-pub struct Module {}
-
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct Config {}
+pub struct Module;
 
 impl Module {
-    pub fn load(_: &Config) -> Result<Self, failure::Error> {
-        Ok(Module {})
+    pub fn load() -> Self {
+        Module
     }
 }
 

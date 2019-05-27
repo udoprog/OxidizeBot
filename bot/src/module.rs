@@ -1,7 +1,4 @@
-use crate::{
-    api, command, config, currency, db, idle, injector, irc, obs, player, settings, stream_info,
-    utils,
-};
+use crate::{api, command, config, db, idle, injector, irc, player, settings, stream_info, utils};
 use hashbrown::HashMap;
 use std::sync::Arc;
 
@@ -10,13 +7,13 @@ mod macros;
 pub mod admin;
 pub mod alias_admin;
 pub mod command_admin;
-mod countdown;
-mod gtav;
-mod promotions;
+pub mod countdown;
+pub mod gtav;
+pub mod promotions;
 pub mod song;
-mod swearjar;
+pub mod swearjar;
 pub mod theme_admin;
-mod water;
+pub mod water;
 
 #[derive(Default)]
 pub struct Handlers<'a> {
@@ -64,14 +61,12 @@ pub struct HookContext<'a: 'm, 'm> {
     pub aliases: &'a db::Aliases,
     pub promotions: &'a db::Promotions,
     pub themes: &'a db::Themes,
-    pub currency: Option<&'a currency::Currency>,
     pub youtube: &'a Arc<api::YouTube>,
     pub twitch: &'a api::Twitch,
     pub streamer_twitch: &'a api::Twitch,
     pub sender: &'a irc::Sender,
     pub settings: &'a settings::Settings,
     pub player: Option<&'a player::Player>,
-    pub obs: Option<&'a obs::Obs>,
 }
 
 pub trait Module: Send + 'static {
@@ -81,19 +76,5 @@ pub trait Module: Send + 'static {
     /// Set up command handlers for this module.
     fn hook(&self, _: HookContext<'_, '_>) -> Result<(), failure::Error> {
         Ok(())
-    }
-}
-
-impl Config {
-    pub fn load(&self, config: &config::Config) -> Result<Box<dyn Module>, failure::Error> {
-        Ok(match *self {
-            Config::Countdown(ref module) => {
-                Box::new(self::countdown::Module::load(config, module)?)
-            }
-            Config::SwearJar(ref module) => Box::new(self::swearjar::Module::load(config, module)?),
-            Config::Water(ref module) => Box::new(self::water::Module::load(config, module)?),
-            Config::Promotions(ref module) => Box::new(self::promotions::Module::load(module)?),
-            Config::Gtav(ref module) => Box::new(self::gtav::Module::load(module)?),
-        })
     }
 }

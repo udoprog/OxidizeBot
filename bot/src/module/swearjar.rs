@@ -1,13 +1,23 @@
-use crate::{api, auth::Scope, command, config, currency, db, module, prelude::*, utils};
-use failure::format_err;
+use crate::{
+    api,
+    auth::Scope,
+    command, config,
+    currency::Currency,
+    db, module,
+    prelude::*,
+    utils::{Cooldown, Duration},
+};
 use hashbrown::HashSet;
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 pub struct Handler<'a> {
-    reward: i64,
+    enabled: Arc<RwLock<bool>>,
+    reward: Arc<RwLock<i64>>,
+    cooldown: Arc<RwLock<Cooldown>>,
     db: db::Database,
-    currency: currency::Currency,
+    currency: Arc<RwLock<Option<Currency>>>,
     twitch: &'a api::Twitch,
-    cooldown: utils::Cooldown,
 }
 
 impl<'a> command::Handler for Handler<'a> {
@@ -16,18 +26,29 @@ impl<'a> command::Handler for Handler<'a> {
     }
 
     fn handle<'m>(&mut self, ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
-        if !self.cooldown.is_open() {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
+        let currency = match self.currency.read().clone() {
+            Some(currency) => currency,
+            None => {
+                ctx.respond("No currency configured for stream, sorry :(");
+                return Ok(());
+            }
+        };
+
+        if !self.cooldown.write().is_open() {
             ctx.respond("A !swearjar command was recently issued, please wait a bit longer!");
             return Ok(());
         }
 
         let db = self.db.clone();
         let twitch = self.twitch.clone();
-        let currency = self.currency.clone();
         let sender = ctx.sender.clone();
         let streamer = ctx.streamer.to_string();
         let channel = ctx.user.target.to_string();
-        let reward = self.reward;
+        let reward = *self.reward.read();
 
         let future = async move {
             let chatters = twitch.chatters(channel.clone()).await?;
@@ -68,29 +89,40 @@ impl<'a> command::Handler for Handler<'a> {
     }
 }
 
-pub struct Module {
-    reward: i64,
-    cooldown: utils::Cooldown,
-}
-
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
     /// Amount payed out for each swear.
-    reward: i64,
-    #[serde(default = "default_cooldown")]
-    cooldown: utils::Cooldown,
+    #[serde(default)]
+    reward: Option<i64>,
+    #[serde(default)]
+    cooldown: Option<Duration>,
 }
 
-fn default_cooldown() -> utils::Cooldown {
-    utils::Cooldown::from_duration(utils::Duration::seconds(60 * 10))
+pub struct Module {
+    default_reward: Option<i64>,
+    default_cooldown: Option<Duration>,
 }
 
 impl Module {
-    pub fn load(_config: &config::Config, module: &Config) -> Result<Self, failure::Error> {
-        Ok(Module {
-            reward: module.reward,
-            cooldown: module.cooldown.clone(),
-        })
+    pub fn load(config: &config::Config) -> Self {
+        let mut default_reward = None;
+        let mut default_cooldown = None;
+
+        for m in &config.modules {
+            match *m {
+                module::Config::SwearJar(ref config) => {
+                    log::warn!("`[[modules]] type = \"swearjar\"` configuration is deprecated");
+                    default_reward = config.reward.clone();
+                    default_cooldown = config.cooldown.clone();
+                }
+                _ => (),
+            }
+        }
+
+        Module {
+            default_reward,
+            default_cooldown,
+        }
     }
 }
 
@@ -105,26 +137,51 @@ impl super::Module for Module {
         module::HookContext {
             db,
             handlers,
-            currency,
             twitch,
+            injector,
+            futures,
+            settings,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        let currency = currency
-            .ok_or_else(|| format_err!("currency required for !swearjar module"))?
-            .clone();
+        let default_reward = self.default_reward.unwrap_or(10);
+        let enabled = settings.sync_var(futures, "swearjar/enabled", false)?;
+        let reward = settings.sync_var(futures, "swearjar/reward", default_reward)?;
+
+        let default_cooldown = self
+            .default_cooldown
+            .clone()
+            .unwrap_or(Duration::seconds(60 * 10));
+        let (mut cooldown_stream, cooldown) =
+            settings.init_and_stream("swearjar/cooldown", default_cooldown)?;
+
+        let cooldown = Arc::new(RwLock::new(Cooldown::from_duration(cooldown)));
+
+        let currency = injector.var(futures);
 
         handlers.insert(
             "swearjar",
             Handler {
-                reward: self.reward,
+                enabled,
+                reward,
+                cooldown: cooldown.clone(),
                 db: db.clone(),
                 currency,
                 twitch,
-                cooldown: self.cooldown.clone(),
             },
         );
 
+        let future = async move {
+            loop {
+                futures::select! {
+                    update = cooldown_stream.select_next_some() => {
+                        cooldown.write().cooldown = update;
+                    }
+                }
+            }
+        };
+
+        futures.push(future.boxed());
         Ok(())
     }
 }

@@ -3,7 +3,7 @@ use crate::{
     auth::Auth,
     bus, command, config, currency, db,
     features::{Feature, Features},
-    idle, injector, module, oauth2, obs, player,
+    idle, injector, module, oauth2, player,
     prelude::*,
     settings, stream_info, template, timer, utils,
 };
@@ -64,7 +64,6 @@ pub struct Irc {
     pub streamer_twitch: api::Twitch,
     pub bot_twitch: api::Twitch,
     pub config: Arc<config::Config>,
-    pub currency: Option<currency::Currency>,
     pub token: oauth2::SyncToken,
     pub commands: db::Commands,
     pub aliases: db::Aliases,
@@ -77,9 +76,9 @@ pub struct Irc {
     pub shutdown: utils::Shutdown,
     pub settings: settings::Settings,
     pub player: Option<player::Player>,
-    pub obs: Option<obs::Obs>,
     pub auth: Auth,
     pub global_channel: Arc<RwLock<Option<String>>>,
+    pub injector: injector::Injector,
 }
 
 impl Irc {
@@ -90,7 +89,6 @@ impl Irc {
             streamer_twitch,
             bot_twitch,
             config,
-            currency,
             token,
             commands,
             aliases,
@@ -103,12 +101,10 @@ impl Irc {
             shutdown,
             settings,
             player,
-            obs,
             auth,
             global_channel,
+            injector,
         } = self;
-
-        let injector = injector::Injector::new();
 
         if config.streamer.is_some() {
             log::warn!("`streamer` setting has been deprecated from the configuration");
@@ -122,8 +118,13 @@ impl Irc {
             log::warn!("`[irc] channel` setting has been deprecated from the configuration");
         }
 
+        if let Some(_) = config.currency {
+            log::warn!("`[currency]` setting has been deprecated from the configuration");
+        }
+
         loop {
             log::trace!("Waiting for token to become ready");
+
             future::try_join(
                 streamer_twitch.token.wait_until_ready(),
                 token.wait_until_ready(),
@@ -234,6 +235,10 @@ impl Irc {
             futures.push(refresh_mods_future(sender.clone()).boxed());
 
             for module in modules.iter() {
+                if log::log_enabled!(log::Level::Trace) {
+                    log::trace!("initializing module: {}", module.ty());
+                }
+
                 let result = module.hook(module::HookContext {
                     handlers: &mut handlers,
                     futures: &mut futures,
@@ -245,14 +250,12 @@ impl Irc {
                     aliases: &aliases,
                     promotions: &promotions,
                     themes: &themes,
-                    currency: currency.as_ref(),
                     youtube: &youtube,
                     twitch: &bot_twitch,
                     streamer_twitch: &streamer_twitch,
                     sender: &sender,
                     settings: &settings,
                     player: player.as_ref(),
-                    obs: obs.as_ref(),
                     injector: &injector,
                 });
 
@@ -701,8 +704,7 @@ impl Handler<'_, '_, '_> {
                     (other, Some(ref name)) if other == **name => {
                         Some(&mut self.currency_handler as &mut (dyn command::Handler + Send))
                     }
-                    (other, None) => self.handlers.get_mut(other),
-                    _ => None,
+                    (other, Some(..)) | (other, None) => self.handlers.get_mut(other),
                 };
 
                 if let Some(handler) = handler {

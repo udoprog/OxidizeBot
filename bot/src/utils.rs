@@ -439,7 +439,7 @@ impl fmt::Display for Offset {
 #[derive(Debug, Clone)]
 pub struct Cooldown {
     last_action_at: Option<time::Instant>,
-    cooldown: Duration,
+    pub cooldown: Duration,
 }
 
 impl Cooldown {

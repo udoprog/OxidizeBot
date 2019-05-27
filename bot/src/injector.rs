@@ -1,3 +1,4 @@
+use crate::utils;
 use futures::{channel::mpsc, ready, stream};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
@@ -47,6 +48,7 @@ struct Inner {
 }
 
 /// Use for handling injection.
+#[derive(Clone)]
 pub struct Injector {
     inner: Arc<RwLock<Inner>>,
 }
@@ -127,5 +129,29 @@ impl Injector {
         };
 
         (stream, value)
+    }
+
+    /// Get a synchronized variable for the given configuration key.
+    pub fn var<'a, T, D>(&self, driver: &mut D) -> Arc<RwLock<Option<T>>>
+    where
+        T: Any + Send + Sync + 'static + Clone + Unpin,
+        D: utils::Driver<'a>,
+    {
+        use futures::StreamExt as _;
+
+        let (mut stream, value) = self.stream();
+        let value = Arc::new(RwLock::new(value));
+        let future_value = value.clone();
+
+        let future = async move {
+            while let Some(update) = stream.next().await {
+                *future_value.write() = update;
+            }
+
+            Ok(())
+        };
+
+        driver.drive(future);
+        value
     }
 }

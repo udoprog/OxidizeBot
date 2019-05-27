@@ -4,8 +4,8 @@
 use failure::{format_err, ResultExt};
 use parking_lot::RwLock;
 use setmod_bot::{
-    api, auth, bus, config, db, features::Feature, irc, module, oauth2, obs, player, prelude::*,
-    secrets, settings, utils, web,
+    api, auth, bus, config, db, features::Feature, injector, irc, module, oauth2, obs, player,
+    prelude::*, secrets, settings, utils, web,
 };
 use std::{
     fs,
@@ -125,11 +125,7 @@ async fn try_main(
         None => root.join("secrets.yml"),
     };
 
-    let mut modules = Vec::new();
-
-    for module in &config.modules {
-        modules.push(module.load(&config)?);
-    }
+    let mut modules = Vec::<Box<dyn module::Module>>::new();
 
     let secrets = secrets::Secrets::open(&secrets_path)
         .with_context(|_| format_err!("failed to load secrets: {}", secrets_path.display()))?;
@@ -168,10 +164,10 @@ async fn try_main(
 
     let global_bus = Arc::new(bus::Bus::new());
     let youtube_bus = Arc::new(bus::Bus::new());
-
     let global_channel = Arc::new(RwLock::new(None));
+    let injector = injector::Injector::new();
 
-    let mut futures = Vec::<future::BoxFuture<'static, Result<(), failure::Error>>>::new();
+    let mut futures = Vec::<future::BoxFuture<'_, Result<(), failure::Error>>>::new();
 
     let (web, future) = web::setup(
         web_root.as_ref().map(|p| p.as_path()),
@@ -291,6 +287,7 @@ async fn try_main(
     let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
     let spotify = Arc::new(api::Spotify::new(spotify_token.clone())?);
     let streamer_twitch = api::Twitch::new(streamer_token.clone())?;
+    let bot_twitch = api::Twitch::new(bot_token.clone())?;
 
     let player = match config.player {
         // Only setup if the song feature is enabled.
@@ -316,8 +313,7 @@ async fn try_main(
             web.set_player(player.client());
 
             // load the song module if we have a player configuration.
-            let module = module::song::Config::default();
-            modules.push(Box::new(module::song::Module::load(&module, &player)?));
+            modules.push(Box::new(module::song::Module::load(&player)?));
 
             Some(player)
         }
@@ -325,33 +321,26 @@ async fn try_main(
     };
 
     if config.features.test(Feature::Command) {
-        let module = module::command_admin::Config::default();
-        modules.push(Box::new(module::command_admin::Module::load(&module)?));
+        modules.push(Box::new(module::command_admin::Module::load()));
     }
 
-    let module = module::admin::Config::default();
-    modules.push(Box::new(module::admin::Module::load(&module)?));
+    modules.push(Box::new(module::admin::Module::load()));
 
-    let module = module::alias_admin::Config::default();
-    modules.push(Box::new(module::alias_admin::Module::load(&module)?));
+    modules.push(Box::new(module::alias_admin::Module::load()));
+    modules.push(Box::new(module::theme_admin::Module::load()));
 
-    let module = module::theme_admin::Config::default();
-    modules.push(Box::new(module::theme_admin::Module::load(&module)?));
+    modules.push(Box::new(module::promotions::Module::load(&config)));
+    modules.push(Box::new(module::swearjar::Module::load(&config)));
+    modules.push(Box::new(module::countdown::Module::load(&config)));
+    modules.push(Box::new(module::gtav::Module::load(&config)));
+    modules.push(Box::new(module::water::Module::load(&config)));
 
-    let mut obs = None;
-
-    if let Some(config) = config.obs.clone() {
-        let (client, future) = obs::setup(config)?;
-        futures.push(future.boxed());
-        obs = Some(client);
+    if config.obs.is_some() {
+        log::warn!("`[obs]` setting has been deprecated from the configuration");
     }
 
-    let currency = config
-        .currency
-        .clone()
-        .map(|c| c.into_currency(db.clone(), streamer_twitch.clone()));
-
-    let bot_twitch = api::Twitch::new(bot_token.clone())?;
+    let future = obs::setup(&settings, &injector)?;
+    futures.push(future.boxed());
 
     let irc = irc::Irc {
         db: db,
@@ -359,7 +348,6 @@ async fn try_main(
         streamer_twitch,
         bot_twitch,
         config,
-        currency,
         token: bot_token,
         commands,
         aliases,
@@ -372,9 +360,9 @@ async fn try_main(
         shutdown,
         settings,
         player,
-        obs,
         auth,
         global_channel,
+        injector: injector.clone(),
     };
 
     futures.push(irc.run().boxed());

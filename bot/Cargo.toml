@@ -29,7 +29,7 @@ serde_urlencoded = "0.5.5"
 toml = "0.5.1"
 tokio = "0.1.20"
 tokio-threadpool = "0.1.14"
-url = "1.7.2"
+url = {version = "1.7.2", features = ["serde"]}
 Inflector = "0.11.4"
 rspotify = "0.4.0"
 tokio-bus = "0.1.1"
@@ -61,7 +61,7 @@ package = "futures-preview"
 version = "0.3.0-alpha.16"
 features = ["nightly", "async-await", "compat"]
 git = "https://github.com/udoprog/futures-rs"
-branch = "require-unpin"
+branch = "master"
 
 [build-dependencies]
 failure = "0.1.5"

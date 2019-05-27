@@ -2,6 +2,9 @@ types:
   first-run:
     doc: Indicates whether the bot has run at least once.
     type: {id: bool}
+  gtav/enabled:
+    doc: If the `!gtav` module is enabled.
+    type: {id: bool}
   gtav/chat-prefix:
     doc: Prefix to use when announcing effects.
     type: {id: string}
@@ -45,6 +48,9 @@ types:
     doc: If the player is detached, in that it can no longer control the music.
     type: {id: bool}
     scope: player/attach-detach
+  player/echo-current-song:
+    doc: Echo the current song in chat.
+    type: {id: bool}
   player/max-queue-length:
     doc: The maximum queue length permitted in the player.
     type: {id: number}
@@ -60,8 +66,20 @@ types:
   player/youtube/volume-scale:
     doc: Scaling to apply to volume. A value of 50% would mean that that would effectively be the maximum volume.
     type: {id: percentage}
+  promotions/enabled:
+    doc: If the `!promo` module is enabled.
+    type: {id: bool}
   promotions/frequency:
     doc: The highest frequency at which promotions are posted.
+    type: {id: duration}
+  swearjar/enabled:
+    doc: If the `!swearjar` module is enabled.
+    type: {id: bool}
+  swearjar/reward:
+    doc: The amount of currency each user is rewarded by the `!swearjar` command.
+    type: {id: number}
+  swearjar/cooldown:
+    doc: Minimum cooldown between each `!swearjar` invocation.
     type: {id: duration}
   secrets/oauth2/spotify/token:
     doc: Stored token for Spotify authentication.
@@ -110,11 +128,17 @@ types:
       If only subscribers can request songs from YouTube.
       This is deprecated in favor of the song/youtube scope.
     type: {id: bool}
+  water/enabled:
+    doc: If the `!water` module is enabled.
+    type: {id: bool}
+  water/cooldown:
+    doc: Cooldown between each `!water` command.
+    type: {id: duration}
   water/reward%:
     doc: Reward scaling for doing a water reminder.
     type: {id: percentage}
   countdown/enabled:
-    doc: If the countdown module is enabled.
+    doc: If the `!countdown` module is enabled.
     type: {id: bool}
   countdown/path:
     doc: The path used for writing the countdown.
@@ -128,3 +152,6 @@ types:
   currency/notify-rewards:
     doc: Send a global notification on viewer rewards.
     type: {id: bool}
+  obs/url:
+    doc: The URL to use when connecting to OBS.
+    type: {id: string, optional: true}

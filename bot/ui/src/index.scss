@@ -209,6 +209,10 @@ body {
     &-doc {
       white-space: normal;
       font-size: 80%;
+
+      p {
+        margin: 0;
+      }
     }
   }
 }
@@ -219,6 +223,11 @@ body {
   }
 
   &-scope {
+    &-short {
+      font-size: 120%;
+      font-weight: bold;
+    }
+
     &-key {
       width: 300px;
       overflow: hidden;
@@ -231,6 +240,10 @@ body {
       &-doc {
         white-space: normal;
         font-size: 80%;
+
+        p {
+          margin: 0;
+        }
       }
     }
   }

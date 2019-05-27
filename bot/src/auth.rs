@@ -331,7 +331,7 @@ scopes! {
     (CommandSong, "command/song"),
     (CommandSongYouTube, "command/song/youtube"),
     (CommandSongSpotify, "command/song/spotify"),
-    (CommandSwearJar, "command/swear-jar"),
+    (CommandSwearJar, "command/swearjar"),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

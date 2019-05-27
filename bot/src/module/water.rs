@@ -1,4 +1,4 @@
-use crate::{command, config, currency::Currency, db, module, prelude::*, stream_info, utils};
+use crate::{command, config, currency::Currency, db, module, stream_info, utils};
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -11,8 +11,9 @@ pub struct Reward {
 
 pub struct Handler {
     db: db::Database,
+    enabled: Arc<RwLock<bool>>,
+    cooldown: Arc<RwLock<utils::Cooldown>>,
     currency: Arc<RwLock<Option<Currency>>>,
-    cooldown: utils::Cooldown,
     waters: Vec<(DateTime<Utc>, Option<Reward>)>,
     stream_info: stream_info::StreamInfo,
     reward_multiplier: Arc<RwLock<u32>>,
@@ -50,6 +51,10 @@ impl Handler {
 
 impl command::Handler for Handler {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
         let currency = match self.currency.read().clone() {
             Some(currency) => currency,
             None => {
@@ -58,7 +63,7 @@ impl command::Handler for Handler {
             }
         };
 
-        if !self.cooldown.is_open() {
+        if !self.cooldown.write().is_open() {
             ctx.respond("A !water command was recently issued, please wait a bit longer!");
             return Ok(());
         }
@@ -150,25 +155,31 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Module {
-    cooldown: utils::Cooldown,
-}
-
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
-    #[serde(default = "default_cooldown")]
-    cooldown: utils::Cooldown,
+    #[serde(default)]
+    cooldown: Option<utils::Cooldown>,
 }
 
-fn default_cooldown() -> utils::Cooldown {
-    utils::Cooldown::from_duration(utils::Duration::seconds(60))
+pub struct Module {
+    default_cooldown: Option<utils::Cooldown>,
 }
 
 impl Module {
-    pub fn load(_config: &config::Config, module: &Config) -> Result<Self, failure::Error> {
-        Ok(Module {
-            cooldown: module.cooldown.clone(),
-        })
+    pub fn load(config: &config::Config) -> Self {
+        let mut default_cooldown = None;
+
+        for m in &config.modules {
+            match *m {
+                module::Config::Water(ref config) => {
+                    log::warn!("`[[modules]] type = \"water\"` configuration is deprecated");
+                    default_cooldown = config.cooldown.clone();
+                }
+                _ => (),
+            }
+        }
+
+        Module { default_cooldown }
     }
 }
 
@@ -190,36 +201,29 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
+        let default_cooldown = self
+            .default_cooldown
+            .clone()
+            .unwrap_or_else(|| utils::Cooldown::from_duration(utils::Duration::seconds(60)));
+        let enabled = settings.sync_var(futures, "water/enabled", false)?;
+        let cooldown = settings.sync_var(futures, "water/cooldown", default_cooldown)?;
         let reward_multiplier = settings.sync_var(futures, "water/reward%", 100)?;
 
-        let (currency_stream, currency) = injector.stream::<Currency>();
-        let currency = Arc::new(RwLock::new(currency));
+        let currency = injector.var(futures);
 
         handlers.insert(
             "water",
             Handler {
                 db: db.clone(),
+                enabled,
+                cooldown: cooldown.clone(),
                 currency: currency.clone(),
-                cooldown: self.cooldown.clone(),
                 waters: Vec::new(),
                 stream_info: stream_info.clone(),
                 reward_multiplier,
             },
         );
 
-        let future = async move {
-            let mut currency_stream = currency_stream.fuse();
-
-            loop {
-                futures::select! {
-                    update = currency_stream.select_next_some() => {
-                        *currency.write() = update;
-                    }
-                }
-            }
-        };
-
-        futures.push(future.boxed());
         Ok(())
     }
 }

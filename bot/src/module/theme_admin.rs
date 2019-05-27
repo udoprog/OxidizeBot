@@ -41,14 +41,11 @@ impl<'a> command::Handler for Handler<'a> {
     }
 }
 
-pub struct Module {}
-
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct Config {}
+pub struct Module;
 
 impl Module {
-    pub fn load(_: &Config) -> Result<Self, failure::Error> {
-        Ok(Module {})
+    pub fn load() -> Self {
+        Module
     }
 }
 

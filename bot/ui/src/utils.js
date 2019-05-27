@@ -2,6 +2,39 @@ import React from "react";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 
 /**
+ * Partition data so that it is displayer per-group.
+ */
+export function partition(data, key) {
+  let def = [];
+  let groups = {};
+
+  for (let d of data) {
+    let p = key(d).split('/');
+
+    if (p.length === 1) {
+      def.push(d);
+      continue;
+    }
+
+    let rest = p[p.length - 1];
+    let g = p.slice(0, p.length - 1).join('/');
+
+    let group = groups[g] || [];
+
+    group.push({
+      short: rest,
+      data: d,
+    });
+
+    groups[g] = group;
+  }
+
+  let order = Object.keys(groups);
+  order.sort();
+  return {order, groups, def};
+}
+
+/**
  * Generate a browser-originated download.
  * @param {*} contentType
  * @param {*} content

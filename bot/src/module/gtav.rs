@@ -1,5 +1,4 @@
-use crate::{command, currency, db, irc, module, player, prelude::*, utils};
-use failure::format_err;
+use crate::{command, config, currency, db, irc, module, player, prelude::*, utils};
 use parking_lot::RwLock;
 use std::{fmt, net::SocketAddr, sync::Arc};
 use tokio::net::UdpSocket;
@@ -349,8 +348,9 @@ pub struct Reward {
 
 pub struct Handler<'a> {
     db: &'a db::Database,
+    enabled: Arc<RwLock<bool>>,
     player: Option<player::PlayerClient>,
-    currency: currency::Currency,
+    currency: Arc<RwLock<Option<currency::Currency>>>,
     cooldown: Arc<RwLock<utils::Cooldown>>,
     prefix: Arc<RwLock<String>>,
     other_percentage: Arc<RwLock<u32>>,
@@ -676,6 +676,18 @@ impl<'a> Handler<'a> {
 
 impl<'a> command::Handler for Handler<'a> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
+        let currency = match self.currency.read().clone() {
+            Some(currency) => currency,
+            None => {
+                ctx.respond("No currency configured for stream, sorry :(");
+                return Ok(());
+            }
+        };
+
         let result = match ctx.next() {
             Some("other") => self.handle_other(&mut ctx)?,
             Some("punish") => self.handle_punish(&mut ctx)?,
@@ -718,7 +730,7 @@ impl<'a> command::Handler for Handler<'a> {
                  Keep watching to earn more!",
                 prefix = *self.prefix.read(),
                 limit = cost,
-                currency = self.currency.name,
+                currency = currency.name,
                 balance = balance,
             ));
 
@@ -743,7 +755,7 @@ impl<'a> command::Handler for Handler<'a> {
                 what = command.what(),
                 command = command,
                 cost = cost,
-                currency = self.currency.name,
+                currency = currency.name,
             ));
         }
 
@@ -777,25 +789,31 @@ fn license(input: &str, ctx: &mut command::Context<'_, '_>) -> Option<String> {
     }
 }
 
-pub struct Module {
-    cooldown: utils::Cooldown,
-}
-
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
-    #[serde(default = "default_cooldown")]
-    cooldown: utils::Cooldown,
+    #[serde(default)]
+    cooldown: Option<utils::Cooldown>,
 }
 
-fn default_cooldown() -> utils::Cooldown {
-    utils::Cooldown::from_duration(utils::Duration::seconds(10))
+pub struct Module {
+    default_cooldown: Option<utils::Cooldown>,
 }
 
 impl Module {
-    pub fn load(module: &Config) -> Result<Self, failure::Error> {
-        Ok(Module {
-            cooldown: module.cooldown.clone(),
-        })
+    pub fn load(config: &config::Config) -> Self {
+        let mut default_cooldown = None;
+
+        for m in &config.modules {
+            match *m {
+                module::Config::Gtav(ref config) => {
+                    log::warn!("`[[modules]] type = \"gtav\"` configuration is deprecated");
+                    default_cooldown = config.cooldown.clone();
+                }
+                _ => (),
+            }
+        }
+
+        Module { default_cooldown }
     }
 }
 
@@ -810,18 +828,24 @@ impl super::Module for Module {
         module::HookContext {
             db,
             handlers,
-            currency,
             settings,
             futures,
             player,
+            injector,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        let currency = currency
-            .ok_or_else(|| format_err!("currency required for !gtav module"))?
-            .clone();
+        let currency = injector.var(futures);
 
-        let cooldown = settings.sync_var(futures, "gtav/cooldown", self.cooldown.clone())?;
+        let default_cooldown = self
+            .default_cooldown
+            .clone()
+            .unwrap_or_else(|| utils::Cooldown::from_duration(utils::Duration::seconds(10)));
+
+        let (mut enabled_stream, enabled) = settings.init_and_stream("gtav/enabled", false)?;
+        let enabled = Arc::new(RwLock::new(enabled));
+
+        let cooldown = settings.sync_var(futures, "gtav/cooldown", default_cooldown)?;
 
         let prefix = settings.sync_var(futures, "gtav/chat-prefix", String::from("ChaosMod: "))?;
         let other_percentage = settings.sync_var(futures, "gtav/other%", 100)?;
@@ -835,6 +859,7 @@ impl super::Module for Module {
             "gtav",
             Handler {
                 db,
+                enabled: enabled.clone(),
                 player: player.map(|p| p.client()),
                 currency,
                 cooldown,
@@ -852,19 +877,36 @@ impl super::Module for Module {
         socket.connect(&str::parse::<SocketAddr>("127.0.0.1:7291")?)?;
 
         let future = async move {
-            while let Some((user, id, command)) = rx.next().await {
-                let message = format!("{} {} {}", user.name, id, command.command());
-                log::info!("sent: {}", message);
+            let mut receiver = match *enabled.read() {
+                true => Some(&mut rx),
+                false => None,
+            };
 
-                match socket.poll_send(message.as_bytes()) {
-                    Ok(_) => (),
-                    Err(e) => {
-                        log::error!("failed to send message: {}", e);
+            loop {
+                futures::select! {
+                    update = enabled_stream.select_next_some() => {
+                        receiver = match update {
+                            true => Some(&mut rx),
+                            false => None,
+                        };
+
+                        *enabled.write() = update;
+                    }
+                    command = receiver.next() => {
+                        if let Some((user, id, command)) = command {
+                            let message = format!("{} {} {}", user.name, id, command.command());
+                            log::info!("sent: {}", message);
+
+                            match socket.poll_send(message.as_bytes()) {
+                                Ok(_) => (),
+                                Err(e) => {
+                                    log::error!("failed to send message: {}", e);
+                                }
+                            }
+                        }
                     }
                 }
             }
-
-            Ok(())
         };
 
         futures.push(future.boxed());

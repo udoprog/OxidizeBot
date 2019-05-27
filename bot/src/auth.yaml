@@ -13,19 +13,21 @@ scopes:
     doc: If you are allowed to attach or detach the music player.
     version: 0
     allow:
+      - "@streamer"
       - "@moderator"
   command/admin:
-    doc: If you are allowed to run the !admin command.
+    doc: If you are allowed to run the `!admin` command.
     version: 0
     allow:
+      - "@streamer"
       - "@moderator"
-  command/swear-jar:
-    doc: If you are allowed to run the !swearjar command.
+  command/swearjar:
+    doc: If you are allowed to run the `!swearjar` command.
     version: 0
     allow:
       - "@everyone"
   command/song:
-    doc: If you are allowed to run the !song command.
+    doc: If you are allowed to run the `!song` command.
     version: 0
     allow:
       - "@everyone"

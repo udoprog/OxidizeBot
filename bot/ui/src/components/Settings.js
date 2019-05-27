@@ -1,41 +1,9 @@
 import React from "react";
-import {Spinner} from "../utils.js";
+import {Spinner, partition} from "../utils";
 import {Form, Button, Alert, Table, ButtonGroup, InputGroup, Row, Col} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import * as types from "./Settings/Types.js";
-
-/**
- * Partition data so that it is displayer per-group.
- */
-function partition(data) {
-  let def = [];
-  let groups = {};
-
-  for (let d of data) {
-    let p = d.key.split('/');
-
-    if (p.length === 1) {
-      def.push(d);
-      continue;
-    }
-
-    let rest = p[p.length - 1];
-    let g = p.slice(0, p.length - 1).join('/');
-
-    let group = groups[g] || [];
-
-    group.push({
-      short: rest,
-      data: d,
-    });
-
-    groups[g] = group;
-  }
-
-  let order = Object.keys(groups);
-  order.sort();
-  return {order, groups, def};
-}
+import * as ReactMarkdown from 'react-markdown';
 
 const SECRET_PREFIX = "secrets/";
 
@@ -322,7 +290,9 @@ export default class Settings extends React.Component {
           <Row>
             <Col lg="3" className="settings-key mb-1">
               <div className="settings-key-name mb-1">{keyOverride || setting.key}</div>
-              <div className="settings-key-doc">{setting.doc}</div>
+              <div className="settings-key-doc">
+                <ReactMarkdown source={setting.doc} />
+              </div>
             </Col>
 
             <Col lg="9">
@@ -364,7 +334,7 @@ export default class Settings extends React.Component {
           </Alert>
         );
       } else {
-        let {order, groups, def} = partition(this.filtered(this.state.data));
+        let {order, groups, def} = partition(this.filtered(this.state.data), d => d.key);
 
         content = (
           <div>

@@ -1,7 +1,8 @@
-import {Spinner, True, False} from "../utils";
+import {Spinner, True, False, partition} from "../utils";
 import React from "react";
 import {Alert, Table, Button, InputGroup, Form} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+import * as ReactMarkdown from 'react-markdown';
 
 /**
  * Special role that everyone belongs to.
@@ -113,6 +114,109 @@ export default class Authorization extends React.Component {
     return Object.assign({}, data, {scopes});
   }
 
+  /**
+   * Render authentication button.
+   */
+  renderAuthButton(scope, role, allows) {
+    let has_implicit = null;
+    let title = null;
+
+    let is_allowed = role => allows[`${scope.scope}:${role}`] || false;
+
+    let test_implicit = roles => {
+      for (let role of roles) {
+        if (is_allowed(role)) {
+          return role;
+        }
+      }
+
+      return null;
+    }
+
+    switch (role.role) {
+      case EVERYONE:
+        break;
+      case STREAMER:
+        has_implicit = test_implicit([EVERYONE, SUBSCRIBER]) || false;
+        break;
+      default:
+        has_implicit = test_implicit([EVERYONE]) || false;
+        break;
+    }
+
+    let allowed = !!has_implicit || is_allowed(role.role) || false;
+    let button = null;
+
+    if (!!has_implicit) {
+      title = `allowed because ${has_implicit} is allowed`;
+    } else {
+      if (allowed) {
+        title = `${scope.scope} scope is allowed by ${role.role}`;
+      } else {
+        title = `${scope.scope} scope is denied to ${role.role}`;
+      }
+    }
+
+    if (!!has_implicit) {
+      button = (
+        <Button className="auth-boolean-icon" disabled={true} title={title} size="sm" variant="secondary">
+          <True />
+        </Button>
+      );
+    } else {
+      if (allowed) {
+        let deny = () => this.deny(scope.scope, role.role);
+
+        button = (
+          <Button className="auth-boolean-icon" title={title} size="sm" variant="success" onClick={deny}>
+            <True />
+          </Button>
+        );
+      } else {
+        let allow = () => this.allow(scope.scope, role.role);
+
+        button = (
+          <Button className="auth-boolean-icon" title={title} size="sm" variant="danger" onClick={allow}>
+            <False />
+          </Button>
+        );
+      }
+    }
+
+    return <td key={role.role} align="center">{button}</td>;
+  }
+
+  /**
+   * Render a single group body.
+   */
+  renderScope(scope, data, nameOverride = null) {
+    return (
+      <tr key={scope.scope}>
+        <td className="auth-scope-key">
+          <div className="auth-scope-key-name">{nameOverride || scope.scope}</div>
+          <div className="auth-scope-key-doc">
+            <ReactMarkdown source={scope.doc} />
+          </div>
+        </td>
+        {data.roles.map(role => this.renderAuthButton(scope, role, data.allows))}
+      </tr>
+    );
+  }
+
+  /**
+   * Render a single group.
+   */
+  renderGroup(group, name, data) {
+    return [
+      <tr key={`title:${name}`} className="auth-scope-short">
+        <td colSpan={data.roles.length + 1}>{name}</td>
+      </tr>,
+      group.map(d => {
+        return this.renderScope(d.data, data, d.short);
+      }),
+    ];
+  }
+
   render() {
     let error = null;
 
@@ -132,12 +236,18 @@ export default class Authorization extends React.Component {
 
     let content = null;
 
+    let data = null;
+
     if (this.state.data) {
-      let data = this.filtered(this.state.data);
+      data = this.filtered(this.state.data);
+    }
+
+    if (data && data.scopes.length > 0) {
+      let {order, groups, def} = partition(data.scopes, s => s.scope);
 
       content = (
-        <Table responsive="sm">
-          <thead>
+        <Table key={name} className="mb-0">
+          <tbody>
             <tr>
               <th className="table-fill"></th>
               {data.roles.map(role => {
@@ -148,90 +258,16 @@ export default class Authorization extends React.Component {
                 );
               })}
             </tr>
-          </thead>
-          <tbody>
-            {data.scopes.map(scope => {
-              return (
-                <tr key={scope.scope}>
-                  <td className="auth-scope-key">
-                    <div className="auth-scope-key-name">{scope.scope}</div>
-                    <div className="auth-scope-key-doc">{scope.doc}</div>
-                  </td>
-                  {data.roles.map(role => {
-                    let has_implicit = null;
-                    let title = null;
-
-                    let is_allowed = role => data.allows[`${scope.scope}:${role}`] || false;
-
-                    let test_implicit = roles => {
-                      for (let role of roles) {
-                        if (is_allowed(role)) {
-                          return role;
-                        }
-                      }
-
-                      return null;
-                    }
-
-                    switch (role.role) {
-                      case EVERYONE:
-                        break;
-                      case STREAMER:
-                        has_implicit = test_implicit([EVERYONE, MODERATOR, SUBSCRIBER]) || false;
-                        break;
-                      default:
-                        has_implicit = test_implicit([EVERYONE]) || false;
-                        break;
-                    }
-
-                    let allowed = !!has_implicit || is_allowed(role.role) || false;
-                    let button = null;
-
-                    if (!!has_implicit) {
-                      title = `allowed because ${has_implicit} is allowed`;
-                    } else {
-                      if (allowed) {
-                        title = `${scope.scope} scope is allowed by ${role.role}`;
-                      } else {
-                        title = `${scope.scope} scope is denied to ${role.role}`;
-                      }
-                    }
-
-                    if (!!has_implicit) {
-                      button = (
-                        <Button className="auth-boolean-icon" disabled={true} title={title} size="sm" variant="secondary">
-                          <True />
-                        </Button>
-                      );
-                    } else {
-                      if (allowed) {
-                        let deny = () => this.deny(scope.scope, role.role);
-
-                        button = (
-                          <Button className="auth-boolean-icon" title={title} size="sm" variant="success" onClick={deny}>
-                            <True />
-                          </Button>
-                        );
-                      } else {
-                        let allow = () => this.allow(scope.scope, role.role);
-
-                        button = (
-                          <Button className="auth-boolean-icon" title={title} size="sm" variant="danger" onClick={allow}>
-                            <False />
-                          </Button>
-                        );
-                      }
-                    }
-
-                    return (
-                      <td align="center" key={role.role}>{button}</td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
+            {def.map(scope => this.renderScope(scope, data))}
+            {order.map(name => this.renderGroup(groups[name], name, data))}
           </tbody>
         </Table>
+      );
+    } else {
+      content = (
+        <Alert variant="info">
+          No Scopes!
+        </Alert>
       );
     }
 

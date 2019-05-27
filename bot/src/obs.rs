@@ -1,6 +1,6 @@
-use crate::prelude::*;
+use crate::{injector, prelude::*, settings, timer};
 use failure::{format_err, Error};
-use std::sync::Arc;
+use std::time;
 use websocket::{ClientBuilder, OwnedMessage};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -31,6 +31,7 @@ impl Request {
     }
 }
 
+#[derive(Clone)]
 pub struct Obs {
     tx: mpsc::UnboundedSender<Request>,
 }
@@ -42,14 +43,28 @@ impl Obs {
     }
 }
 
-/// Setup a websocket interface to OBS.
-pub fn setup(_: Arc<Config>) -> Result<(Obs, impl Future<Output = Result<(), Error>>), Error> {
+/// Setup an OBS connection.
+fn construct(
+    injector: &injector::Injector,
+    url: &str,
+) -> Option<future::BoxFuture<'static, Result<(), Error>>> {
+    let url = match str::parse(url) {
+        Ok(url) => url,
+        Err(e) => {
+            injector.clear::<Obs>();
+            log::warn!("bad url: {}: {}", url, e);
+            return None;
+        }
+    };
+
     let (tx, rx) = mpsc::unbounded::<Request>();
 
-    let connect = ClientBuilder::new("ws://localhost:4444")?.async_connect_insecure();
+    let connect = ClientBuilder::from_url(&url)
+        .async_connect_insecure()
+        .compat();
 
     let future = async move {
-        let (client, _) = connect.compat().await?;
+        let (client, _) = connect.await?;
         let (client_tx, _) = client.split();
 
         let forward = rx
@@ -66,6 +81,38 @@ pub fn setup(_: Arc<Config>) -> Result<(Obs, impl Future<Output = Result<(), Err
         Ok(())
     };
 
-    let obs = Obs { tx };
-    Ok((obs, future))
+    injector.update(Obs { tx });
+    Some(future.boxed())
+}
+
+/// Setup a websocket interface to OBS.
+pub fn setup<'a>(
+    settings: &settings::Settings,
+    injector: &'a injector::Injector,
+) -> Result<impl Future<Output = Result<(), Error>> + 'a, Error> {
+    let (mut url_stream, mut url) = settings.init_and_option_stream::<String>("obs/url")?;
+
+    let mut obs_stream = url.as_ref().and_then(|u| construct(injector, u));
+
+    let future = async move {
+        loop {
+            futures::select! {
+                update = url_stream.select_next_some() => {
+                    url = update;
+                    obs_stream = url.as_ref().and_then(|u| construct(injector, u));
+                }
+                result = obs_stream.current() => {
+                    match result {
+                        Ok(()) => log::warn!("obs stream ended"),
+                        Err(e) => log::warn!("obs stream errored: {}", e),
+                    }
+
+                    timer::Delay::new(time::Instant::now() + time::Duration::from_secs(5)).await?;
+                    obs_stream = url.as_ref().and_then(|u| construct(injector, u));
+                }
+            }
+        }
+    };
+
+    Ok(future)
 }

@@ -1,6 +1,6 @@
 use crate::{
-    currency, current_song, features, irc, module, obs, player, secrets, settings,
-    track_id::TrackId, utils::Offset, web,
+    current_song, features, irc, module, player, secrets, settings, track_id::TrackId,
+    utils::Offset, web,
 };
 use hashbrown::{HashMap, HashSet};
 use relative_path::RelativePathBuf;
@@ -39,12 +39,12 @@ pub struct Config {
     pub api_url: Option<String>,
     /// Loyalty currency in use.
     #[serde(default)]
-    pub currency: Option<currency::Config>,
+    pub currency: Option<serde_json::Value>,
     /// Modules to load.
     #[serde(default)]
     pub modules: Vec<module::Config>,
     #[serde(default)]
-    pub obs: Option<Arc<obs::Config>>,
+    pub obs: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Default, serde::Deserialize)]

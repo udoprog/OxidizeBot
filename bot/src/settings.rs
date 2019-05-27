@@ -342,15 +342,11 @@ impl Settings {
             + Unpin,
     {
         let (mut stream, value) = self.init_and_stream(key, default)?;
-
         let value = Arc::new(RwLock::new(value));
-
-        let key = key.to_string();
         let future_value = value.clone();
 
         let future = async move {
             while let Some(update) = stream.next().await {
-                log::trace!("Updating: {} = {:?}", key, update);
                 *future_value.write() = update;
             }
 
@@ -521,8 +517,6 @@ where
     type Item = Option<T>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        log::trace!("polling stream: {}", self.as_ref().key);
-
         let update = match ready!(Pin::new(&mut self.rx).poll_next(cx)) {
             Some(update) => update,
             None => return Poll::Ready(None),

@@ -75,10 +75,21 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn load(_config: &config::Config, module: &Config) -> Result<Self, failure::Error> {
-        Ok(Module {
-            config_path: module.path.clone(),
-        })
+    /// Load the given module configuration with backwards compatibility.
+    pub fn load(config: &config::Config) -> Self {
+        let mut config_path = None;
+
+        for m in &config.modules {
+            match *m {
+                module::Config::Countdown(ref config) => {
+                    log::warn!("`[[modules]] type = \"countdown\"` configuration is deprecated");
+                    config_path = config.path.clone();
+                }
+                _ => (),
+            }
+        }
+
+        Module { config_path }
     }
 }
 
@@ -129,7 +140,9 @@ impl super::Module for Module {
                     }
                     update = enabled_stream.select_next_some() => {
                         if (!update) {
-
+                            if let (Some(mut c), Some(path)) = (current.take(), path.as_ref()) {
+                                c.clear_log(path);
+                            }
                         }
 
                         *enabled.write() = update;

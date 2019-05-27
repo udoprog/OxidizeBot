@@ -23,7 +23,7 @@ pub struct Handler {
     pub youtube_max_duration: Arc<RwLock<utils::Duration>>,
     pub youtube_min_currency: Arc<RwLock<u32>>,
     pub youtube_subscriber_only: Arc<RwLock<bool>>,
-    pub currency: Option<Arc<currency::Currency>>,
+    pub currency: Arc<RwLock<Option<currency::Currency>>>,
 }
 
 impl Handler {
@@ -224,7 +224,7 @@ impl Handler {
                     return Ok(());
                 }
                 Err(player::AddTrackError::NotEnoughCurrency { balance, required }) => {
-                    let currency = match currency {
+                    let currency = match currency.read().as_ref() {
                         Some(currency) => currency.name.to_string(),
                         None => String::from("currency"),
                     };
@@ -243,8 +243,8 @@ impl Handler {
                 }
             };
 
-            let currency = match currency.clone() {
-                Some(ref currency) if request_reward > 0 => currency.clone(),
+            let currency = match currency.read().as_ref() {
+                Some(ref currency) if request_reward > 0 => currency.name.to_string(),
                 _ => {
                     user.respond(format!(
                         "Added {what} at position #{pos}!",
@@ -270,7 +270,7 @@ impl Handler {
                         what = item.what(),
                         pos = pos + 1,
                         amount = request_reward,
-                        currency = currency.name,
+                        currency = currency,
                     ));
                 }
                 Err(e) => {
@@ -607,33 +607,13 @@ impl command::Handler for Handler {
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
-pub struct Config {
-    #[serde(default = "default_cooldown")]
-    help_cooldown: utils::Cooldown,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            help_cooldown: default_cooldown(),
-        }
-    }
-}
-
-fn default_cooldown() -> utils::Cooldown {
-    utils::Cooldown::from_duration(utils::Duration::seconds(5))
-}
-
 pub struct Module {
-    help_cooldown: utils::Cooldown,
     player: player::PlayerClient,
 }
 
 impl Module {
-    pub fn load(module: &Config, player: &player::Player) -> Result<Self, failure::Error> {
+    pub fn load(player: &player::Player) -> Result<Self, failure::Error> {
         Ok(Module {
-            help_cooldown: module.help_cooldown.clone(),
             player: player.client(),
         })
     }
@@ -654,10 +634,11 @@ impl module::Module for Module {
             futures,
             sender,
             settings,
-            currency,
+            injector,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
+        let currency = injector.var(futures);
         let chat_feedback = settings.sync_var(futures, "song/chat-feedback", true)?;
 
         futures
@@ -681,12 +662,14 @@ impl module::Module for Module {
         let youtube_min_currency = youtube.sync_var(futures, "min-currency", 60)?;
         let youtube_subscriber_only = youtube.sync_var(futures, "subscriber-only", true)?;
 
+        let help_cooldown = utils::Cooldown::from_duration(utils::Duration::seconds(5));
+
         handlers.insert(
             "song",
             Handler {
                 db: db.clone(),
                 stream_info: stream_info.clone(),
-                request_help_cooldown: self.help_cooldown.clone(),
+                request_help_cooldown: help_cooldown,
                 player: self.player.clone(),
                 subscriber_only,
                 request_reward,
@@ -697,7 +680,7 @@ impl module::Module for Module {
                 youtube_max_duration,
                 youtube_min_currency,
                 youtube_subscriber_only,
-                currency: currency.cloned().map(Arc::new),
+                currency,
             },
         );
         Ok(())

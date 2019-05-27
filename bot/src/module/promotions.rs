@@ -1,13 +1,19 @@
-use crate::{command, db, irc, module, prelude::*, timer, utils};
+use crate::{command, config, db, irc, module, prelude::*, timer, utils};
 use chrono::Utc;
+use parking_lot::RwLock;
 use std::sync::Arc;
 
 pub struct Handler<'a> {
+    enabled: Arc<RwLock<bool>>,
     pub promotions: &'a db::Promotions,
 }
 
 impl<'a> command::Handler for Handler<'a> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
         let next = command_base!(ctx, self.promotions, "!promo", "promotion");
 
         match next {
@@ -33,25 +39,30 @@ impl<'a> command::Handler for Handler<'a> {
     }
 }
 
-pub struct Module {
-    frequency: utils::Duration,
-}
-
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Config {
-    #[serde(default = "default_duration")]
-    frequency: utils::Duration,
+    frequency: Option<utils::Duration>,
 }
 
-fn default_duration() -> utils::Duration {
-    utils::Duration::seconds(5 * 60)
+pub struct Module {
+    default_frequency: Option<utils::Duration>,
 }
 
 impl Module {
-    pub fn load(config: &Config) -> Result<Self, failure::Error> {
-        Ok(Module {
-            frequency: config.frequency.clone(),
-        })
+    pub fn load(config: &config::Config) -> Self {
+        let mut default_frequency = None;
+
+        for m in &config.modules {
+            match *m {
+                module::Config::Promotions(ref config) => {
+                    log::warn!("`[[modules]] type = \"countdown\"` configuration is deprecated");
+                    default_frequency = config.frequency.clone();
+                }
+                _ => (),
+            }
+        }
+
+        Module { default_frequency }
     }
 }
 
@@ -72,14 +83,26 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        handlers.insert("promo", Handler { promotions });
+        let default_frequency = self
+            .default_frequency
+            .clone()
+            .unwrap_or_else(|| utils::Duration::seconds(5 * 60));
+
+        let enabled = settings.sync_var(futures, "promotions/enabled", false)?;
 
         let (mut setting, frequency) =
-            settings.init_and_stream("promotions/frequency", self.frequency.clone())?;
+            settings.init_and_stream("promotions/frequency", default_frequency)?;
+
+        handlers.insert(
+            "promo",
+            Handler {
+                enabled: enabled.clone(),
+                promotions,
+            },
+        );
 
         let promotions = promotions.clone();
         let sender = sender.clone();
-
         let mut interval = timer::Interval::new_interval(frequency.as_std());
         let idle = idle.clone();
 
@@ -92,7 +115,11 @@ impl super::Module for Module {
                             interval = timer::Interval::new_interval(duration.as_std());
                         }
                     }
-                    _ = interval.next() => {
+                    _ = interval.select_next_some() => {
+                        if !*enabled.read() {
+                            continue;
+                        }
+
                         if idle.is_idle() {
                             log::trace!("channel is too idle to send a promotion");
                         } else {

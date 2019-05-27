@@ -36,11 +36,11 @@ pub enum Source {
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
     /// The max queue length of the player.
-    #[serde(default = "default_max_queue_length")]
-    max_queue_length: u32,
+    #[serde(default)]
+    max_queue_length: Option<u32>,
     /// The max number of songs per user.
-    #[serde(default = "default_max_songs_per_user")]
-    max_songs_per_user: u32,
+    #[serde(default)]
+    max_songs_per_user: Option<u32>,
     /// Playlist to fall back on. Will otherwise use the saved songs of the user.
     #[serde(default)]
     playlist: Option<String>,
@@ -48,26 +48,14 @@ pub struct Config {
     #[serde(default)]
     volume: Option<u32>,
     /// Whether or not to echo current song.
-    #[serde(default = "default_true")]
-    echo_current_song: bool,
+    #[serde(default)]
+    echo_current_song: Option<bool>,
     /// Device to use with connect player.
     #[serde(default)]
     device: Option<String>,
     /// Interval at which to try to sync the remote player with the local state.
     #[serde(default)]
     sync_player_interval: utils::Duration,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_max_queue_length() -> u32 {
-    30
-}
-
-fn default_max_songs_per_user() -> u32 {
-    2
 }
 
 /// Information on a single track.
@@ -258,13 +246,42 @@ pub fn run(
         "duplicate-duration",
         utils::Duration::default(),
     )?;
+
+    let echo_current_song = settings.sync_var(
+        &mut futures,
+        "echo-current-song",
+        match config.echo_current_song {
+            Some(value) => {
+                log::warn!("`[player] echo_current_song` configuration is deprecated");
+                value
+            }
+            None => true,
+        },
+    )?;
+
     let max_songs_per_user = settings.sync_var(
         &mut futures,
         "max-songs-per-user",
-        config.max_songs_per_user,
+        match config.max_songs_per_user {
+            Some(value) => {
+                log::warn!("`[player] max_songs_per_user` configuration is deprecated");
+                value
+            }
+            None => 2,
+        },
     )?;
-    let max_queue_length =
-        settings.sync_var(&mut futures, "max-queue-length", config.max_queue_length)?;
+
+    let max_queue_length = settings.sync_var(
+        &mut futures,
+        "max-queue-length",
+        match config.max_queue_length {
+            Some(value) => {
+                log::warn!("`[player] max_queue_length` configuration is deprecated");
+                value
+            }
+            None => 30,
+        },
+    )?;
 
     let parent_player = Player {
         device: device.clone(),
@@ -339,7 +356,7 @@ pub fn run(
             volume: Arc::clone(&volume),
             song: song.clone(),
             current_song: parent_config.current_song.clone(),
-            echo_current_song: config.echo_current_song,
+            echo_current_song,
             current_song_update,
             song_update_interval,
             song_update_interval_stream,
@@ -1426,7 +1443,7 @@ pub struct PlaybackFuture {
     /// Path to write current song.
     current_song: Option<Arc<current_song::CurrentSong>>,
     /// Song config.
-    echo_current_song: bool,
+    echo_current_song: Arc<RwLock<bool>>,
     /// Optional stream indicating when current song should update.
     current_song_update: Option<timer::Interval>,
     /// Optional stream indicating that we want to send a song update on the global bus.
@@ -1595,8 +1612,10 @@ impl PlaybackFuture {
         song.play();
 
         if let Source::Manual = source {
-            self.bus
-                .broadcast(Event::Playing(self.echo_current_song, song.item.clone()));
+            self.bus.broadcast(Event::Playing(
+                *self.echo_current_song.read(),
+                song.item.clone(),
+            ));
         }
 
         self.timeout = Some(timer::Delay::new(song.deadline()));
@@ -1613,8 +1632,10 @@ impl PlaybackFuture {
     /// Resume playing a specific song.
     async fn resume_song(&mut self, source: Source, song: Song) -> Result<(), Error> {
         if let Source::Manual = source {
-            self.bus
-                .broadcast(Event::Playing(self.echo_current_song, song.item.clone()));
+            self.bus.broadcast(Event::Playing(
+                *self.echo_current_song.read(),
+                song.item.clone(),
+            ));
         }
 
         self.timeout = Some(timer::Delay::new(song.deadline()));
