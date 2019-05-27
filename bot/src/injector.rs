@@ -1,6 +1,6 @@
 use crate::utils;
 use futures::{channel::mpsc, ready, stream};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
 use std::{
     any::{Any, TypeId},
@@ -12,6 +12,8 @@ use std::{
 
 /// Use for sending information on updates.
 struct Sender {
+    /// Unique id for this sender.
+    id: u32,
     tx: mpsc::UnboundedSender<Option<Box<dyn Any + Send + Sync + 'static>>>,
 }
 
@@ -43,6 +45,7 @@ where
 
 #[derive(Default)]
 struct Inner {
+    id: u32,
     storage: HashMap<TypeId, Box<dyn Any + Send + Sync + 'static>>,
     subs: HashMap<TypeId, Vec<Sender>>,
 }
@@ -64,23 +67,17 @@ impl Injector {
     /// Clear the given value.
     pub fn clear<T>(&self)
     where
-        T: Any + Send + Sync + 'static,
+        T: Clone + Any + Send + Sync + 'static,
     {
-        let id = TypeId::of::<T>();
+        let type_id = TypeId::of::<T>();
 
         let mut inner = self.inner.write();
 
-        if let None = inner.storage.remove(&id) {
+        if let None = inner.storage.remove(&type_id) {
             return;
         }
 
-        if let Some(subs) = inner.subs.get(&id) {
-            for s in subs {
-                if let Err(e) = s.tx.unbounded_send(None) {
-                    log::warn!("failed to send resource update: {}", e);
-                }
-            }
-        }
+        self.try_send(&mut *inner, type_id, || None);
     }
 
     /// Set the given value and notify any subscribers.
@@ -88,19 +85,10 @@ impl Injector {
     where
         T: Any + Send + Sync + 'static + Clone,
     {
-        let id = TypeId::of::<T>();
-        let value = Box::new(value);
+        let type_id = TypeId::of::<T>();
         let mut inner = self.inner.write();
-
-        if let Some(subs) = inner.subs.get(&id) {
-            for s in subs {
-                if let Err(e) = s.tx.unbounded_send(Some(value.clone())) {
-                    log::warn!("failed to send resource update: {}", e);
-                }
-            }
-        }
-
-        inner.storage.insert(id, value);
+        self.try_send(&mut *inner, type_id, || Some(Box::new(value.clone())));
+        inner.storage.insert(type_id, Box::new(value));
     }
 
     /// Get an existing value and setup a stream for updates at the same time.
@@ -108,11 +96,11 @@ impl Injector {
     where
         T: Any + Send + Sync + 'static + Clone,
     {
-        let id = TypeId::of::<T>();
+        let type_id = TypeId::of::<T>();
 
         let mut inner = self.inner.write();
 
-        let value = match inner.storage.get(&id) {
+        let value = match inner.storage.get(&type_id) {
             Some(value) => match value.downcast_ref::<T>() {
                 Some(value) => Some(value.clone()),
                 None => panic!("downcast failed"),
@@ -120,8 +108,14 @@ impl Injector {
             None => None,
         };
 
+        let id = inner.id;
+        inner.id += 1;
         let (tx, rx) = mpsc::unbounded();
-        inner.subs.entry(id).or_default().push(Sender { tx });
+        inner
+            .subs
+            .entry(type_id)
+            .or_default()
+            .push(Sender { id, tx });
 
         let stream = Stream {
             rx,
@@ -153,5 +147,41 @@ impl Injector {
 
         driver.drive(future);
         value
+    }
+
+    /// Try to perform a send, or clean up if one fails.
+    fn try_send<S>(&self, inner: &mut Inner, type_id: TypeId, send: S)
+    where
+        S: Fn() -> Option<Box<dyn Any + Send + Sync + 'static>>,
+    {
+        let mut to_delete = smallvec::SmallVec::<[u32; 16]>::new();
+
+        if let Some(subs) = inner.subs.get(&type_id) {
+            for s in subs {
+                if let Err(e) = s.tx.unbounded_send(send()) {
+                    if e.is_disconnected() {
+                        to_delete.push(s.id);
+                        continue;
+                    }
+
+                    log::warn!("failed to send resource update: {}", e);
+                }
+            }
+        }
+
+        if to_delete.is_empty() {
+            return;
+        }
+
+        let to_delete = to_delete.into_iter().collect::<HashSet<_>>();
+
+        if let Some(subs) = inner.subs.get_mut(&type_id) {
+            let new_subs = subs
+                .drain(..)
+                .into_iter()
+                .filter(|s| !to_delete.contains(&s.id))
+                .collect();
+            *subs = new_subs;
+        }
     }
 }

@@ -5,7 +5,7 @@ use diesel::prelude::*;
 use failure::{Error, ResultExt};
 use futures::ready;
 use hashbrown::HashMap;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use std::{fmt, marker, pin::Pin, sync::Arc};
 
 const SEPARATOR: &'static str = "/";
@@ -148,21 +148,6 @@ impl Settings {
     pub fn set_json(&self, key: &str, value: serde_json::Value) -> Result<(), Error> {
         use self::db::schema::settings::dsl;
 
-        {
-            let subscriptions = self.subscriptions.read();
-
-            if let Some(sub) = subscriptions.get(key) {
-                if log::log_enabled!(log::Level::Trace) {
-                    let level = serde_json::to_string(&value)?;
-                    log::trace!("send: {} = {}", key, level);
-                }
-
-                if let Err(_) = sub.unbounded_send(Event::Set(value.clone())) {
-                    log::error!("failed to send message to subscription on: {}", key);
-                }
-            }
-        }
-
         let c = self.db.pool.lock();
 
         let filter = dsl::settings.filter(dsl::key.eq(&key));
@@ -173,17 +158,18 @@ impl Settings {
             .first::<(String, String)>(&*c)
             .optional()?;
 
-        let value = serde_json::to_string(&value)?;
+        let json = serde_json::to_string(&value)?;
+        self.try_send(key, Event::Set(value));
 
         match b {
             None => {
                 diesel::insert_into(dsl::settings)
-                    .values((dsl::key.eq(key), dsl::value.eq(value)))
+                    .values((dsl::key.eq(key), dsl::value.eq(json)))
                     .execute(&*c)?;
             }
             Some(_) => {
                 diesel::update(filter)
-                    .set((dsl::key.eq(key), dsl::value.eq(&value)))
+                    .set((dsl::key.eq(key), dsl::value.eq(json)))
                     .execute(&*c)?;
             }
         }
@@ -225,16 +211,7 @@ impl Settings {
     /// Clear the given setting. Returning `true` if it was removed.
     pub fn clear(&self, key: &str) -> Result<bool, Error> {
         use self::db::schema::settings::dsl;
-
-        {
-            let subscriptions = self.subscriptions.read();
-
-            if let Some(sub) = subscriptions.get(key) {
-                if let Err(_) = sub.unbounded_send(Event::Clear) {
-                    log::error!("failed to send message to subscription on: {}", key);
-                }
-            }
-        }
+        self.try_send(key, Event::Clear);
 
         let c = self.db.pool.lock();
         let count = diesel::delete(dsl::settings.filter(dsl::key.eq(key))).execute(&*c)?;
@@ -317,16 +294,39 @@ impl Settings {
         {
             let mut subscriptions = self.subscriptions.write();
 
-            if subscriptions.insert(key.to_string(), tx).is_some() {
-                panic!("already a subscription for key: {}", key);
+            if let Some(tx) = subscriptions.insert(key.to_string(), tx) {
+                if !tx.is_closed() {
+                    panic!("conflicting subscription for key: {}", key);
+                }
             }
         }
 
         OptionStream {
-            subscriptions: self.subscriptions.clone(),
             key: key.to_string(),
             rx,
             marker: marker::PhantomData,
+        }
+    }
+
+    /// Try to send the specified event.
+    ///
+    /// Cleans up the existing subscription if the other side is closed.
+    fn try_send(&self, key: &str, event: Event<serde_json::Value>) {
+        let subscriptions = self.subscriptions.upgradable_read();
+        let mut delete = false;
+
+        if let Some(sub) = subscriptions.get(key) {
+            if let Err(e) = sub.unbounded_send(event) {
+                if e.is_disconnected() {
+                    delete = true;
+                } else {
+                    log::error!("error when sending to sub: {}: {}", key, e);
+                }
+            }
+        }
+
+        if delete {
+            RwLockUpgradableReadGuard::upgrade(subscriptions).remove(key);
         }
     }
 }
@@ -527,23 +527,9 @@ where
 
 /// Get updates for a specific setting.
 pub struct OptionStream<T> {
-    subscriptions: Subscriptions,
     key: String,
     rx: mpsc::UnboundedReceiver<Event<serde_json::Value>>,
     marker: marker::PhantomData<T>,
-}
-
-impl<T> Drop for OptionStream<T> {
-    fn drop(&mut self) {
-        if self.subscriptions.write().remove(&self.key).is_some() {
-            return;
-        }
-
-        log::warn!(
-            "Subscription dropped, but failed to clean up Settings for key: {}",
-            self.key
-        );
-    }
 }
 
 impl<T> stream::FusedStream for OptionStream<T> {
