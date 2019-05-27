@@ -2,9 +2,9 @@ import React from "react";
 import {Form} from "react-bootstrap";
 import {Base} from "./Base";
 
-export class StringType {
+export class String extends Base {
   constructor(optional) {
-    this.optional = optional;
+    super(optional);
   }
 
   default() {
@@ -12,10 +12,23 @@ export class StringType {
   }
 
   construct(value) {
-    return {
-      control: new String(this.optional),
-      value,
-    };
+    return value;
+  }
+
+  serialize(value) {
+    return value;
+  }
+
+  render(value) {
+    return <code>{value}</code>;
+  }
+
+  editControl() {
+    return new EditString();
+  }
+
+  edit(value) {
+    return value;
   }
 }
 
@@ -25,34 +38,10 @@ class EditString {
   }
 
   save(value) {
-    return {
-      control: new String(),
-      value,
-    };
-  }
-
-  control(_isValid, value, onChange) {
-    return <Form.Control size="sm" type="value" value={value} onChange={e => onChange(e.target.value)} />
-  }
-}
-
-class String extends Base {
-  constructor(optional) {
-    super(optional);
-  }
-
-  render(value) {
-    return <code>{value}</code>;
-  }
-
-  edit(editValue) {
-    return {
-      edit: new EditString(),
-      editValue,
-    };
-  }
-
-  serialize(value) {
     return value;
+  }
+
+  render(_isValid, value, onChange) {
+    return <Form.Control size="sm" type="value" value={value} onChange={e => onChange(e.target.value)} />
   }
 }

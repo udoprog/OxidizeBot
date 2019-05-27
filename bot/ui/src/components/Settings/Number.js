@@ -2,9 +2,9 @@ import React from "react";
 import {Form} from "react-bootstrap";
 import {Base} from "./Base";
 
-export class NumberType {
+export class Number extends Base {
   constructor(optional) {
-    this.optional = optional;
+    super(optional);
   }
 
   default() {
@@ -12,10 +12,23 @@ export class NumberType {
   }
 
   construct(data) {
-    return {
-      control: new Number(this.optional),
-      value: data,
-    };
+    return data;
+  }
+
+  serialize(value) {
+    return value;
+  }
+
+  render(value) {
+    return value.toString();
+  }
+
+  editControl() {
+    return new EditNumber();
+  }
+
+  edit(value) {
+    return value.toString();
   }
 }
 
@@ -25,45 +38,14 @@ class EditNumber {
   }
 
   save(value) {
-    return {
-      control: new Number(),
-      value,
-    };
+    return parseInt(value);
   }
 
-  control(isValid, value, onChange) {
+  render(isValid, value, onChange) {
     return <Form.Control size="sm" type="number" isInvalid={!isValid} value={value} onChange={
       e => {
         onChange(e.target.value);
       }
     } />
-  }
-}
-
-class Number extends Base {
-  constructor(optional) {
-    super(optional);
-  }
-
-  static parse(input) {
-    return {
-      render: new Number(),
-      value: parseInt(input) || 0,
-    };
-  }
-
-  render(value) {
-    return value.toString();
-  }
-
-  edit(editValue) {
-    return {
-      edit: new EditNumber(),
-      editValue: editValue.toString(),
-    };
-  }
-
-  serialize(value) {
-    return value;
   }
 }

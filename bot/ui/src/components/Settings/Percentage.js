@@ -2,9 +2,9 @@ import React from "react";
 import {Form, InputGroup} from "react-bootstrap";
 import {Base} from "./Base";
 
-export class PercentageType {
+export class Percentage extends Base {
   constructor(optional) {
-    this.optional = optional;
+    super(optional);
   }
 
   default() {
@@ -12,10 +12,23 @@ export class PercentageType {
   }
 
   construct(data) {
-    return {
-      control: new Percentage(this.optional),
-      value: data,
-    };
+    return data;
+  }
+
+  serialize(value) {
+    return value;
+  }
+
+  render(value) {
+    return `${value}%`;
+  }
+
+  editControl() {
+    return new EditPercentage();
+  }
+
+  edit(value) {
+    return value.toString();
   }
 }
 
@@ -31,13 +44,10 @@ class EditPercentage {
   }
 
   save(value) {
-    return {
-      control: new Percentage(),
-      value: parseInt(value) || 0,
-    };
+    return parseInt(value) || 0;
   }
 
-  control(isValid, value, onChange) {
+  render(isValid, value, onChange) {
     return (
       <InputGroup size="sm">
         <Form.Control type="number" isInvalid={!isValid} value={value} onChange={
@@ -50,33 +60,5 @@ class EditPercentage {
         </InputGroup.Append>
       </InputGroup>
     );
-  }
-}
-
-class Percentage extends Base {
-  constructor(optional) {
-    super(optional);
-  }
-
-  static parse(input) {
-    return {
-      render: new Percentage(),
-      value: parseInt(input) || 0,
-    };
-  }
-
-  render(value) {
-    return `${value}%`;
-  }
-
-  edit(editValue) {
-    return {
-      edit: new EditPercentage(),
-      editValue: editValue.toString(),
-    };
-  }
-
-  serialize(value) {
-    return value;
   }
 }

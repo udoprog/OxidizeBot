@@ -1,10 +1,10 @@
-import {StringType} from "./String";
-import {DurationType} from "./Duration";
-import {BooleanType} from "./Boolean";
-import {NumberType} from "./Number";
-import {PercentageType} from "./Percentage";
-import {RawType} from "./Raw";
-import {SetType} from "./Set";
+import {String} from "./String";
+import {Duration} from "./Duration";
+import {Boolean} from "./Boolean";
+import {Number} from "./Number";
+import {Percentage} from "./Percentage";
+import {Raw} from "./Raw";
+import {Set} from "./Set";
 
 /**
  * Decode the given type and value.
@@ -14,24 +14,24 @@ import {SetType} from "./Set";
  */
 export function decode(type) {
   if (type === null) {
-    return RawType;
+    return Raw;
   }
 
   switch (type.id) {
     case "duration":
-      return new DurationType(type.optional);
+      return new Duration(type.optional);
     case "bool":
-      return new BooleanType(type.optional);
+      return new Boolean(type.optional);
     case "string":
-      return new StringType(type.optional);
+      return new String(type.optional);
     case "number":
-      return new NumberType(type.optional);
+      return new Number(type.optional);
     case "percentage":
-      return new PercentageType(type.optional);
+      return new Percentage(type.optional);
     case "set":
       let value = decode(type.value);
-      return new SetType(type.optional, value);
+      return new Set(type.optional, value);
     default:
-      return new RawType(type.optional);
+      return new Raw(type.optional);
   }
 }

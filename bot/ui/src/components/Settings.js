@@ -63,12 +63,16 @@ export default class Settings extends React.Component {
     this.api.settings()
       .then(data => {
         data = data.map(d => {
-          let type = types.decode(d.schema.type);
-          let {control, value} = type.construct(d.value);
+          let control = types.decode(d.schema.type);
+
+          let value = null;
+
+          if (d.value !== null) {
+            value = control.construct(d.value);
+          }
 
           return {
             key: d.key,
-            type,
             control,
             value,
             doc: d.schema.doc,
@@ -119,11 +123,11 @@ export default class Settings extends React.Component {
    * @param {string} key key of the setting to edit.
    * @param {string} value the new value to edit it to.
    */
-  edit(key, {control, value}) {
+  edit(key, control, value) {
     this.setState(state => {
       let data = state.data.map(setting => {
         if (setting.key === key) {
-          return Object.assign(setting, {control, value});
+          return Object.assign(setting, {value});
         }
 
         return setting;
@@ -191,10 +195,11 @@ export default class Settings extends React.Component {
         let value = setting.value;
 
         if (value == null) {
-          value = setting.type.default();
+          value = setting.control.default();
         }
 
-        let {edit, editValue} = setting.control.edit(setting.value);
+        let edit = setting.control.editControl();
+        let editValue = setting.control.edit(value);
 
         this.setState({
           editKey: setting.key,
@@ -212,7 +217,7 @@ export default class Settings extends React.Component {
       renderOnChange = null;
     } else {
       renderOnChange = value => {
-        this.edit(setting.key, {control: setting.control, value});
+        this.edit(setting.key, setting.control, value);
       };
     }
 
@@ -255,13 +260,13 @@ export default class Settings extends React.Component {
 
         if (isValid) {
           let value = this.state.edit.save(this.state.editValue);
-          this.edit(this.state.editKey, value);
+          this.edit(this.state.editKey, setting.control, value);
         }
 
         return false;
       };
 
-      let control = this.state.edit.control(isValid, this.state.editValue, editValue => {
+      let control = this.state.edit.render(isValid, this.state.editValue, editValue => {
         this.setState({editValue});
       });
 

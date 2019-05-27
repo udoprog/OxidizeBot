@@ -25,10 +25,10 @@ types:
     type: {id: bool}
   irc/moderator-cooldown:
     doc: How long we must wait between each moderator action.
-    type: {id: duration}
+    type: {id: duration, optional: true}
   irc/startup-message:
     doc: Message to send when the bot starts up.
-    type: {id: string}
+    type: {id: string, optional: true}
   irc/idle-detection/threshold:
     doc: How many messages must be received before the channel is no longer considered idle.
     type: {id: number}

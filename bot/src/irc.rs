@@ -5,7 +5,8 @@ use crate::{
     features::{Feature, Features},
     idle, injector, module, oauth2,
     prelude::*,
-    settings, stream_info, template, timer, utils,
+    settings, stream_info, template, timer,
+    utils::{self, Cooldown, Duration},
 };
 use failure::{bail, format_err, Error, ResultExt as _};
 use hashbrown::HashSet;
@@ -37,13 +38,13 @@ pub struct Config {
     bot: Option<String>,
     /// Cooldown for moderator actions.
     #[serde(default)]
-    moderator_cooldown: Option<utils::Cooldown>,
+    moderator_cooldown: Option<Cooldown>,
     /// Cooldown for creating clips.
     #[serde(default = "default_cooldown")]
-    clip_cooldown: utils::Cooldown,
+    clip_cooldown: Cooldown,
     /// Cooldown for creating afterstream reminders.
     #[serde(default = "default_cooldown")]
-    afterstream_cooldown: utils::Cooldown,
+    afterstream_cooldown: Cooldown,
     /// Name of the channel to join.
     pub channel: Option<String>,
     /// Whether or not to notify on currency rewards.
@@ -54,8 +55,8 @@ pub struct Config {
     startup_message: Option<String>,
 }
 
-fn default_cooldown() -> utils::Cooldown {
-    utils::Cooldown::from_duration(utils::Duration::seconds(15))
+fn default_cooldown() -> Cooldown {
+    Cooldown::from_duration(Duration::seconds(15))
 }
 
 /// Helper struct to construct IRC integration.
@@ -674,7 +675,7 @@ struct Handler<'a: 'h, 'to, 'h> {
     /// Thread pool used for driving futures.
     thread_pool: Arc<ThreadPool>,
     /// Active moderator cooldown.
-    moderator_cooldown: Option<utils::Cooldown>,
+    moderator_cooldown: Option<Cooldown>,
     /// Handlers for specific commands like `!skip`.
     handlers: module::Handlers<'h>,
     /// Handler for shutting down the service.

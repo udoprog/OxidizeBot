@@ -3,10 +3,10 @@ import {Button, InputGroup} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {Base} from "./Base";
 
-export class SetType {
-  constructor(optional, type) {
-    this.optional = optional;
-    this.type = type;
+export class Set extends Base {
+  constructor(optional, control) {
+    super(optional);
+    this.control = control;
   }
 
   default() {
@@ -14,34 +14,50 @@ export class SetType {
   }
 
   construct(value) {
-    return {
-      control: new Set(this.optional, this.type),
-      value: value.map(v => this.type.construct(v)),
-    };
+    return value.map(v => this.control.construct(v));
+  }
+
+  serialize(values) {
+    return values.map(value => this.control.serialize(value));
+  }
+
+  render(values) {
+    return (
+      <div>
+        {values.map((value, key) => <div key={key}>{this.control.render(value)}</div>)}
+      </div>
+    );
+  }
+
+  editControl() {
+    return new EditSet(this.optional, this.control, this.control.editControl());
+  }
+
+  edit(values) {
+    return values.map(value => this.control.edit(value));
   }
 }
 
 class EditSet {
-  constructor(type) {
-    this.type = type;
+  constructor(optional, control, editControl) {
+    this.optional = optional;
+    this.control = control;
+    this.editControl = editControl;
   }
 
   validate(values) {
-    return values.every((({edit, editValue}) => edit.validate(editValue)));
+    return values.every(value => this.editControl.validate(value));
   }
 
   save(values) {
-    return {
-      control: new Set(this.type),
-      value: values.map(({edit, editValue}) => edit.save(editValue)),
-    };
+    return values.map(value => this.editControl.save(value));
   }
 
-  control(_isValid, values, onChange) {
+  render(_isValid, values, onChange) {
     let add = () => {
       let newValues = values.slice();
-      let {control, value} = this.type.construct(this.type.default());
-      newValues.push(control.edit(value));
+      let value = this.control.construct(this.control.default());
+      newValues.push(value);
       onChange(newValues);
     };
 
@@ -53,12 +69,12 @@ class EditSet {
 
     return (
       <div>
-        {values.map(({edit, editValue}, key) => {
-          let isValid = edit.validate(editValue);
+        {values.map((editValue, key) => {
+          let isValid = this.editControl.validate(editValue);
 
-          let control = edit.control(isValid, editValue, v => {
+          let control = this.editControl.render(isValid, editValue, v => {
             let newValues = values.slice();
-            newValues[key].editValue = v;
+            newValues[key] = v;
             onChange(newValues);
           });
 
@@ -77,31 +93,5 @@ class EditSet {
         </div>
       </div>
     );
-  }
-}
-
-class Set extends Base {
-  constructor(optional, type) {
-    super(optional);
-    this.type = type;
-  }
-
-  render(values) {
-    return (
-      <div>
-        {values.map(({control, value}, key) => <div key={key}>{control.render(value)}</div>)}
-      </div>
-    );
-  }
-
-  edit(values) {
-    return {
-      edit: new EditSet(this.type),
-      editValue: values.map(({control, value}) => control.edit(value)),
-    };
-  }
-
-  serialize(values) {
-    return values.map(({control, value}) => control.serialize(value));
   }
 }

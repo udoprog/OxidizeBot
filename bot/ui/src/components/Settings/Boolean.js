@@ -3,9 +3,9 @@ import {Button} from "react-bootstrap";
 import {True, False} from "../../utils";
 import {Base} from "./Base";
 
-export class BooleanType {
+export class Boolean extends Base {
   constructor(optional) {
-    this.optional = optional;
+    super(optional);
   }
 
   default() {
@@ -13,16 +13,11 @@ export class BooleanType {
   }
 
   construct(value) {
-    return {
-      control: new Boolean(this.optional),
-      value,
-    };
+    return value;
   }
-}
 
-export class Boolean extends Base {
-  constructor(optional) {
-    super(optional);
+  serialize(value) {
+    return value;
   }
 
   render(value, onChange) {
@@ -35,9 +30,5 @@ export class Boolean extends Base {
 
   hasEditControl() {
     return false;
-  }
-
-  serialize(value) {
-    return value;
   }
 }

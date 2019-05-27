@@ -2,9 +2,9 @@ import React from "react";
 import {Form} from "react-bootstrap";
 import {Base} from "./Base";
 
-export class RawType {
+export class Raw extends Base {
   constructor(optional) {
-    this.optional = optional;
+    super(optional);
   }
 
   default() {
@@ -12,10 +12,23 @@ export class RawType {
   }
 
   construct(value) {
-    return {
-      control: new Raw(this.optional),
-      value,
-    };
+    return value;
+  }
+
+  serialize(data) {
+    return data;
+  }
+
+  render(data) {
+    return <code>{JSON.stringify(data)}</code>;
+  }
+
+  editControl() {
+    return new EditRaw();
+  }
+
+  edit(data) {
+    return JSON.stringify(data);
   }
 }
 
@@ -34,38 +47,14 @@ class EditRaw {
   }
 
   save(value) {
-    return {
-      control: new Raw(),
-      value: JSON.parse(value),
-    };
+    return JSON.parse(value);
   }
 
-  control(isValid, value, onChange) {
+  render(isValid, value, onChange) {
     return <Form.Control size="sm" type="value" isInvalid={!isValid} value={value} onChange={
       e => {
         onChange(e.target.value);
       }
     } />
-  }
-}
-
-class Raw extends Base {
-  constructor(optional) {
-    super(optional);
-  }
-
-  render(data) {
-    return <code>{JSON.stringify(data)}</code>;
-  }
-
-  edit(data) {
-    return {
-      edit: new EditRaw(),
-      editValue: JSON.stringify(data),
-    };
-  }
-
-  serialize(data) {
-    return data;
   }
 }
