@@ -1,14 +1,4 @@
-streamer = "setbac"
-
-# Load a list of bad words from the given configuration file.
-#bad_words = "bad_words.yml"
-
-database_url = "database.sql"
-
-whitelisted_hosts = [
-  "youtube.com",
-  "youtu.be",
-]
+database_url = "setmod.sql"
 
 features = [
   "admin",
@@ -23,36 +13,6 @@ features = [
 # API to push updates based on Twitch credentials.
 api_url = "https://setbac.tv"
 
-[irc]
-channel = "#setbac"
-bot = "setmod"
-# Cooldown to use between each moderator command.
-moderator_cooldown = "5s"
-# Whether to notify when viewers are rewarded with loyalty currency.
-notify_rewards = false
-# Startup message to use when the bot initially connects.
-startup_message = "HeyGuys"
-
-# Support for connecting to OBS using obs-websocket.
-# Must be installed from:
-# https://github.com/Palakis/obs-websocket
-[obs]
-
-[currency]
-name = "thingies"
-
-[player]
-# Optional: if you don't want to use the default device. All devices are listed in the Admin UI.
-# device = "MyDevice"
-volume = 50
-
-# Set to false and the current song will not be echoed in chat.
-echo_current_song = true
-
-# How frequently we should check if the state of the remote player is different from the local state.
-# This allows doing stuff like playing a song on your own client.
-sync_player_interval = "10s"
-
 [current_song]
 path = "E:\\temp\\current_song.txt"
 not_playing = "No Song Playing"
@@ -63,24 +23,3 @@ template = [
 
 # How frequently information on the current song should be updated.
 update_interval = "1s"
-
-[themes]
-blimp = {track = "spotify:track:7JczDg05i29N5C3VMZKIVA"}
-setup = {track = "spotify:track:2fZpKgrcAlWzWYwQeFG43O", offset = "00:14"}
-
-[[modules]]
-# A countdown module that will set a countdown based on a template.
-type = "countdown"
-path = "E:\\temp\\countdown.txt"
-
-[[modules]]
-# Water command to help remind the streamer to drink water.
-type = "water"
-
-[[modules]]
-type = "swearjar"
-reward = 10
-
-[[modules]]
-# ChaosMod integration.
-type = "gtav"
