@@ -1,4 +1,4 @@
-use crate::{api, command, config, db, idle, injector, irc, player, settings, stream_info, utils};
+use crate::{api, command, config, db, idle, injector, irc, settings, stream_info, utils};
 use hashbrown::HashMap;
 use std::sync::Arc;
 
@@ -66,7 +66,6 @@ pub struct HookContext<'a: 'm, 'm> {
     pub streamer_twitch: &'a api::Twitch,
     pub sender: &'a irc::Sender,
     pub settings: &'a settings::Settings,
-    pub player: Option<&'a player::Player>,
 }
 
 pub trait Module: Send + 'static {

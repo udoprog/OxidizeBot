@@ -3,7 +3,7 @@ use crate::{
     auth::Auth,
     bus, command, config, currency, db,
     features::{Feature, Features},
-    idle, injector, module, oauth2, player,
+    idle, injector, module, oauth2,
     prelude::*,
     settings, stream_info, template, timer, utils,
 };
@@ -76,7 +76,6 @@ pub struct Irc {
     pub modules: Vec<Box<dyn module::Module>>,
     pub shutdown: utils::Shutdown,
     pub settings: settings::Settings,
-    pub player: Option<player::Player>,
     pub auth: Auth,
     pub global_channel: Arc<RwLock<Option<String>>>,
     pub injector: injector::Injector,
@@ -101,7 +100,6 @@ impl Irc {
             modules,
             shutdown,
             settings,
-            player,
             auth,
             global_channel,
             injector,
@@ -237,8 +235,10 @@ impl Irc {
                 stream_info
             };
 
-            let threshold = settings.sync_var(&mut futures, "irc/idle-detection/threshold", 5)?;
+            let mut vars = settings.vars();
+            let threshold = vars.var("irc/idle-detection/threshold", 5)?;
             let idle = idle::Idle::new(threshold);
+            futures.push(vars.run().boxed());
 
             let mut handlers = module::Handlers::default();
 
@@ -265,7 +265,6 @@ impl Irc {
                     streamer_twitch: &streamer_twitch,
                     sender: &sender,
                     settings: &settings,
-                    player: player.as_ref(),
                     injector: &injector,
                 });
 
@@ -362,10 +361,10 @@ impl Irc {
             }
 
             let (mut whitelisted_hosts_stream, whitelisted_hosts) =
-                settings.init_and_stream("irc/whitelisted-hosts", HashSet::<String>::new())?;
+                settings.stream("irc/whitelisted-hosts", HashSet::<String>::new())?;
 
             let (mut moderator_cooldown_stream, moderator_cooldown) =
-                settings.init_and_option_stream("irc/moderator-cooldown")?;
+                settings.stream_opt("irc/moderator-cooldown")?;
 
             let startup_message = settings.get::<String>("irc/startup-message")?;
 
@@ -466,12 +465,13 @@ fn currency_loop<'a>(
     let reward = 10;
     let interval = 60 * 10;
 
-    let reward_percentage = settings.sync_var(futures, "irc/viewer-reward%", 100)?;
+    let mut variables = settings.vars();
+    let reward_percentage = variables.var("irc/viewer-reward%", 100)?;
     let (mut notify_rewards_stream, mut notify_rewards) =
-        settings.init_and_stream("currency/notify-rewards", true)?;
+        settings.stream("currency/notify-rewards", true)?;
 
-    let (mut enabled_stream, enabled) = settings.init_and_stream("currency/enabled", false)?;
-    let (mut name_stream, name) = settings.init_and_option_stream("currency/name")?;
+    let (mut enabled_stream, enabled) = settings.stream("currency/enabled", false)?;
+    let (mut name_stream, name) = settings.stream_opt("currency/name")?;
 
     let mut currency_builder = CurrencyBuilder {
         enabled,
@@ -487,6 +487,8 @@ fn currency_loop<'a>(
     if let Some(currency) = currency.clone() {
         injector.update(currency);
     }
+
+    futures.push(variables.run().boxed());
 
     return Ok(async move {
         let mut interval = timer::Interval::new_interval(time::Duration::from_secs(interval));

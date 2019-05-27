@@ -108,6 +108,9 @@ types:
   song/subscriber-only:
     doc: If only subscribers can request songs.
     type: {id: bool}
+  song/spotify/support:
+    doc: If we accept Spotify song requests.
+    type: {id: bool}
   song/spotify/min-currency:
     doc: The minimum amount of stream currency required to request Spotify songs.
     type: {id: number}
@@ -117,12 +120,12 @@ types:
   song/spotify/subscriber-only:
     doc: If only subscribers can request songs from Spotify.
     type: {id: bool}
-  song/youtube/min-currency:
-    doc: The minimum amount of stream currency required to request YouTube songs.
-    type: {id: number}
   song/youtube/support:
     doc: If we accept YouTube song requests (Experimental).
     type: {id: bool}
+  song/youtube/min-currency:
+    doc: The minimum amount of stream currency required to request YouTube songs.
+    type: {id: number}
   song/youtube/max-duration:
     doc: The longest duration we will accept for a YouTube video. Any longer will be capped.
     type: {id: duration}

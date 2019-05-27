@@ -110,10 +110,10 @@ impl super::Module for Module {
     ) -> Result<(), failure::Error> {
         let settings = settings.scoped(&["countdown"]);
 
-        let (mut enabled_stream, enabled) = settings.init_and_stream("enabled", true)?;
+        let (mut enabled_stream, enabled) = settings.stream("enabled", true)?;
         let enabled = Arc::new(RwLock::new(enabled));
 
-        let (mut path_stream, mut path) = settings.init_and_option_stream::<PathBuf>("path")?;
+        let (mut path_stream, mut path) = settings.stream_opt::<PathBuf>("path")?;
 
         if let (None, Some(config_path)) = (path.as_ref(), self.config_path.clone()) {
             log::warn!("[countdown] configuration has been deprecated.");

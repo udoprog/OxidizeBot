@@ -289,36 +289,30 @@ async fn try_main(
     let streamer_twitch = api::Twitch::new(streamer_token.clone())?;
     let bot_twitch = api::Twitch::new(bot_token.clone())?;
 
-    let player = match config.player {
-        // Only setup if the song feature is enabled.
-        Some(ref player) if config.features.test(Feature::Song) => {
-            let (player, future) = player::run(
-                db.clone(),
-                spotify.clone(),
-                youtube.clone(),
-                config.clone(),
-                player.clone(),
-                global_bus.clone(),
-                youtube_bus.clone(),
-                settings.clone(),
-                themes.clone(),
-            )?;
+    if config.features.test(Feature::Song) {
+        let (player, future) = player::run(
+            db.clone(),
+            spotify.clone(),
+            youtube.clone(),
+            config.clone(),
+            global_bus.clone(),
+            youtube_bus.clone(),
+            settings.clone(),
+            themes.clone(),
+        )?;
 
-            futures.push(future.boxed());
+        futures.push(future.boxed());
 
-            if let Some(api_url) = config.api_url.as_ref() {
-                futures.push(api::setbac::run(api_url, &player, streamer_token.clone())?.boxed());
-            }
-
-            web.set_player(player.client());
-
-            // load the song module if we have a player configuration.
-            modules.push(Box::new(module::song::Module::load(&player)?));
-
-            Some(player)
+        if let Some(api_url) = config.api_url.as_ref() {
+            futures.push(api::setbac::run(api_url, &player, streamer_token.clone())?.boxed());
         }
-        _ => None,
-    };
+
+        web.set_player(player.client());
+
+        // load the song module if we have a player configuration.
+        modules.push(Box::new(module::song::Module::load(&player)?));
+        injector.update(player);
+    }
 
     if config.features.test(Feature::Command) {
         modules.push(Box::new(module::command_admin::Module::load()));
@@ -359,7 +353,6 @@ async fn try_main(
         modules,
         shutdown,
         settings,
-        player,
         auth,
         global_channel,
         injector: injector.clone(),

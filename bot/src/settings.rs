@@ -257,19 +257,54 @@ impl Settings {
         }
     }
 
+    /// Initialize the value from the database.
+    pub fn stream<T>(&self, key: &str, default: T) -> Result<(Stream<T>, T), Error>
+    where
+        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
+    {
+        let value = match self.get::<T>(key)? {
+            Some(value) => value,
+            None => {
+                self.set(key, &default)?;
+                default.clone()
+            }
+        };
+
+        let stream = self.make_stream(key, default);
+        Ok((stream, value))
+    }
+
+    /// Initialize the value from the database.
+    pub fn stream_opt<T>(&self, key: &str) -> Result<(OptionStream<T>, Option<T>), Error>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned,
+    {
+        let stream = self.make_option_stream(key);
+        let value = self.get::<T>(key)?;
+        Ok((stream, value))
+    }
+
+    /// Get a helper to build synchronized variables.
+    pub fn vars(&self) -> Vars<'_> {
+        Vars {
+            settings: self,
+            futures: Vec::new(),
+        }
+    }
+
     /// Subscribe for events on the given key.
-    pub fn stream<T>(&self, key: &str, default: T) -> Stream<T>
+    fn make_stream<T>(&self, key: &str, default: T) -> Stream<T>
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
         Stream {
             default,
-            option_stream: self.option_stream(key),
+            option_stream: self.make_option_stream(key),
         }
     }
 
     /// Subscribe for any events on the given key.
-    pub fn option_stream<T>(&self, key: &str) -> OptionStream<T>
+    fn make_option_stream<T>(&self, key: &str) -> OptionStream<T>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -294,43 +329,17 @@ impl Settings {
             marker: marker::PhantomData,
         }
     }
+}
 
-    /// Initialize the value from the database.
-    pub fn init_and_stream<T>(&self, key: &str, default: T) -> Result<(Stream<T>, T), Error>
-    where
-        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
-    {
-        let value = match self.get::<T>(key)? {
-            Some(value) => value,
-            None => {
-                self.set(key, &default)?;
-                default.clone()
-            }
-        };
+#[must_use = "Must consume to drive variable updates"]
+pub struct Vars<'a> {
+    settings: &'a Settings,
+    futures: Vec<future::BoxFuture<'static, Result<(), Error>>>,
+}
 
-        Ok((self.stream(key, default), value))
-    }
-
-    /// Initialize the value from the database.
-    pub fn init_and_option_stream<T>(
-        &self,
-        key: &str,
-    ) -> Result<(OptionStream<T>, Option<T>), Error>
-    where
-        T: serde::Serialize + serde::de::DeserializeOwned,
-    {
-        let stream = self.option_stream(key);
-        let value = self.get::<T>(key)?;
-        Ok((stream, value))
-    }
-
+impl<'a> Vars<'a> {
     /// Get a synchronized variable for the given configuration key.
-    pub fn sync_var<'a, T>(
-        &self,
-        driver: &mut impl utils::Driver<'a>,
-        key: &str,
-        default: T,
-    ) -> Result<Arc<RwLock<T>>, Error>
+    pub fn var<T>(&mut self, key: &str, default: T) -> Result<Arc<RwLock<T>>, Error>
     where
         T: 'static
             + fmt::Debug
@@ -341,7 +350,7 @@ impl Settings {
             + serde::de::DeserializeOwned
             + Unpin,
     {
-        let (mut stream, value) = self.init_and_stream(key, default)?;
+        let (mut stream, value) = self.settings.stream(key, default)?;
         let value = Arc::new(RwLock::new(value));
         let future_value = value.clone();
 
@@ -353,8 +362,18 @@ impl Settings {
             Ok(())
         };
 
-        driver.drive(future);
+        self.futures.push(future.boxed());
         Ok(value)
+    }
+
+    /// Drive the local variable set.
+    pub fn run(self) -> impl Future<Output = Result<(), Error>> {
+        let Vars { futures, .. } = self;
+
+        async move {
+            let _ = future::try_join_all(futures).await?;
+            Ok(())
+        }
     }
 }
 
@@ -386,57 +405,28 @@ impl ScopedSettings {
         self.settings.clear(&self.scope(key))
     }
 
-    /// Subscribe for events on the given key.
-    pub fn stream<T>(&self, key: &str, default: T) -> Stream<T>
+    /// Initialize the value from the database.
+    pub fn stream<T>(&self, key: &str, default: T) -> Result<(Stream<T>, T), Error>
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
         self.settings.stream(&self.scope(key), default)
     }
 
-    fn scope(&self, key: &str) -> String {
-        let mut scope = self.scope.clone();
-        scope.push(key.to_string());
-        scope.join(SEPARATOR)
-    }
-
     /// Initialize the value from the database.
-    pub fn init_and_stream<T>(&self, key: &str, default: T) -> Result<(Stream<T>, T), Error>
-    where
-        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
-    {
-        self.settings.init_and_stream(&self.scope(key), default)
-    }
-
-    /// Initialize the value from the database.
-    pub fn init_and_option_stream<T>(
-        &self,
-        key: &str,
-    ) -> Result<(OptionStream<T>, Option<T>), Error>
+    pub fn stream_opt<T>(&self, key: &str) -> Result<(OptionStream<T>, Option<T>), Error>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        self.settings.init_and_option_stream(&self.scope(key))
+        self.settings.stream_opt(&self.scope(key))
     }
 
     /// Get a synchronized variable for the given configuration key.
-    pub fn sync_var<'a, T>(
-        &self,
-        driver: &mut impl utils::Driver<'a>,
-        key: &str,
-        default: T,
-    ) -> Result<Arc<RwLock<T>>, Error>
-    where
-        T: 'static
-            + fmt::Debug
-            + Send
-            + Sync
-            + Clone
-            + serde::Serialize
-            + serde::de::DeserializeOwned
-            + Unpin,
-    {
-        self.settings.sync_var(driver, &self.scope(key), default)
+    pub fn vars(&self) -> ScopedVars<'_> {
+        ScopedVars {
+            settings: self,
+            futures: Vec::new(),
+        }
     }
 
     /// Scope the settings a bit more.
@@ -450,6 +440,58 @@ impl ScopedSettings {
         ScopedSettings {
             settings: self.settings.clone(),
             scope,
+        }
+    }
+
+    fn scope(&self, key: &str) -> String {
+        let mut scope = self.scope.clone();
+        scope.push(key.to_string());
+        scope.join(SEPARATOR)
+    }
+}
+
+#[must_use = "Must consume to drive variable updates"]
+pub struct ScopedVars<'a> {
+    settings: &'a ScopedSettings,
+    futures: Vec<future::BoxFuture<'static, Result<(), Error>>>,
+}
+
+impl<'a> ScopedVars<'a> {
+    /// Get a synchronized variable for the given configuration key.
+    pub fn var<T>(&mut self, key: &str, default: T) -> Result<Arc<RwLock<T>>, Error>
+    where
+        T: 'static
+            + fmt::Debug
+            + Send
+            + Sync
+            + Clone
+            + serde::Serialize
+            + serde::de::DeserializeOwned
+            + Unpin,
+    {
+        let (mut stream, value) = self.settings.stream(key, default)?;
+        let value = Arc::new(RwLock::new(value));
+        let future_value = value.clone();
+
+        let future = async move {
+            while let Some(update) = stream.next().await {
+                *future_value.write() = update;
+            }
+
+            Ok(())
+        };
+
+        self.futures.push(future.boxed());
+        Ok(value)
+    }
+
+    /// Drive the local variable set.
+    pub fn run(self) -> impl Future<Output = Result<(), Error>> {
+        let ScopedVars { futures, .. } = self;
+
+        async move {
+            let _ = future::try_join_all(futures).await?;
+            Ok(())
         }
     }
 }

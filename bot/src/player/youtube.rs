@@ -1,4 +1,4 @@
-use crate::{bus, settings::ScopedSettings, utils::Futures};
+use crate::{bus, prelude::*, settings::ScopedSettings, utils::Futures};
 use parking_lot::RwLock;
 use std::{sync::Arc, time::Duration};
 
@@ -8,7 +8,9 @@ pub fn setup(
     bus: Arc<bus::Bus<bus::YouTube>>,
     settings: ScopedSettings,
 ) -> Result<YouTubePlayer, failure::Error> {
-    let volume_scale = settings.sync_var(futures, "volume-scale", 100)?;
+    let mut vars = settings.vars();
+    let volume_scale = vars.var("volume-scale", 100)?;
+    futures.push(vars.run().boxed());
 
     Ok(YouTubePlayer { bus, volume_scale })
 }

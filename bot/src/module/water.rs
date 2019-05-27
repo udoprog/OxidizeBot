@@ -1,4 +1,4 @@
-use crate::{command, config, currency::Currency, db, module, stream_info, utils};
+use crate::{command, config, currency::Currency, db, module, prelude::*, stream_info, utils};
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -205,9 +205,12 @@ impl super::Module for Module {
             .default_cooldown
             .clone()
             .unwrap_or_else(|| utils::Cooldown::from_duration(utils::Duration::seconds(60)));
-        let enabled = settings.sync_var(futures, "water/enabled", false)?;
-        let cooldown = settings.sync_var(futures, "water/cooldown", default_cooldown)?;
-        let reward_multiplier = settings.sync_var(futures, "water/reward%", 100)?;
+
+        let mut vars = settings.vars();
+        let enabled = vars.var("water/enabled", false)?;
+        let cooldown = vars.var("water/cooldown", default_cooldown)?;
+        let reward_multiplier = vars.var("water/reward%", 100)?;
+        futures.push(vars.run().boxed());
 
         let currency = injector.var(futures);
 

@@ -88,10 +88,12 @@ impl super::Module for Module {
             .clone()
             .unwrap_or_else(|| utils::Duration::seconds(5 * 60));
 
-        let enabled = settings.sync_var(futures, "promotions/enabled", false)?;
+        let mut vars = settings.vars();
+        let enabled = vars.var("promotions/enabled", false)?;
+        futures.push(vars.run().boxed());
 
         let (mut setting, frequency) =
-            settings.init_and_stream("promotions/frequency", default_frequency)?;
+            settings.stream("promotions/frequency", default_frequency)?;
 
         handlers.insert(
             "promo",

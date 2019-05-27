@@ -349,7 +349,7 @@ pub struct Reward {
 pub struct Handler<'a> {
     db: &'a db::Database,
     enabled: Arc<RwLock<bool>>,
-    player: Option<player::PlayerClient>,
+    player: Arc<RwLock<Option<player::Player>>>,
     currency: Arc<RwLock<Option<currency::Currency>>>,
     cooldown: Arc<RwLock<utils::Cooldown>>,
     prefix: Arc<RwLock<String>>,
@@ -364,8 +364,10 @@ pub struct Handler<'a> {
 impl<'a> Handler<'a> {
     /// Play the specified theme song.
     fn play_theme_song(&mut self, ctx: &mut command::Context<'_, '_>, id: &str) {
-        if let Some(player) = self.player.as_ref() {
-            let player = player.clone();
+        let player = self.player.read();
+
+        if let Some(player) = player.as_ref() {
+            let player = player.client();
             let target = ctx.user.target.to_string();
             let id = id.to_string();
 
@@ -830,7 +832,6 @@ impl super::Module for Module {
             handlers,
             settings,
             futures,
-            player,
             injector,
             ..
         }: module::HookContext<'_, '_>,
@@ -842,16 +843,19 @@ impl super::Module for Module {
             .clone()
             .unwrap_or_else(|| utils::Cooldown::from_duration(utils::Duration::seconds(10)));
 
-        let (mut enabled_stream, enabled) = settings.init_and_stream("gtav/enabled", false)?;
+        let (mut enabled_stream, enabled) = settings.stream("gtav/enabled", false)?;
         let enabled = Arc::new(RwLock::new(enabled));
 
-        let cooldown = settings.sync_var(futures, "gtav/cooldown", default_cooldown)?;
+        let mut vars = settings.vars();
+        let cooldown = vars.var("gtav/cooldown", default_cooldown)?;
+        let prefix = vars.var("gtav/chat-prefix", String::from("ChaosMod: "))?;
+        let other_percentage = vars.var("gtav/other%", 100)?;
+        let punish_percentage = vars.var("gtav/punish%", 100)?;
+        let reward_percentage = vars.var("gtav/reward%", 100)?;
+        let success_feedback = vars.var("gtav/success-feedback", false)?;
+        futures.push(vars.run().boxed());
 
-        let prefix = settings.sync_var(futures, "gtav/chat-prefix", String::from("ChaosMod: "))?;
-        let other_percentage = settings.sync_var(futures, "gtav/other%", 100)?;
-        let punish_percentage = settings.sync_var(futures, "gtav/punish%", 100)?;
-        let reward_percentage = settings.sync_var(futures, "gtav/reward%", 100)?;
-        let success_feedback = settings.sync_var(futures, "gtav/success-feedback", false)?;
+        let player = injector.var(futures);
 
         let (tx, mut rx) = mpsc::unbounded();
 
@@ -860,7 +864,7 @@ impl super::Module for Module {
             Handler {
                 db,
                 enabled: enabled.clone(),
-                player: player.map(|p| p.client()),
+                player,
                 currency,
                 cooldown,
                 prefix,

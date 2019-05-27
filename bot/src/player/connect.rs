@@ -17,7 +17,9 @@ pub fn setup(
 ) -> Result<(ConnectPlayer, ConnectDevice), failure::Error> {
     let device = Arc::new(RwLock::new(None));
 
-    let volume_scale = settings.sync_var(futures, "volume-scale", 100)?;
+    let mut vars = settings.vars();
+    let volume_scale = vars.var("volume-scale", 100)?;
+    futures.push(vars.run().boxed());
 
     let (config_tx, config_rx) = mpsc::unbounded();
 

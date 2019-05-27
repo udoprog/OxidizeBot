@@ -145,15 +145,17 @@ impl super::Module for Module {
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
         let default_reward = self.default_reward.unwrap_or(10);
-        let enabled = settings.sync_var(futures, "swearjar/enabled", false)?;
-        let reward = settings.sync_var(futures, "swearjar/reward", default_reward)?;
+        let mut vars = settings.vars();
+        let enabled = vars.var("swearjar/enabled", false)?;
+        let reward = vars.var("swearjar/reward", default_reward)?;
+        futures.push(vars.run().boxed());
 
         let default_cooldown = self
             .default_cooldown
             .clone()
             .unwrap_or(Duration::seconds(60 * 10));
         let (mut cooldown_stream, cooldown) =
-            settings.init_and_stream("swearjar/cooldown", default_cooldown)?;
+            settings.stream("swearjar/cooldown", default_cooldown)?;
 
         let cooldown = Arc::new(RwLock::new(Cooldown::from_duration(cooldown)));
 

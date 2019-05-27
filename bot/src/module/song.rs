@@ -1,8 +1,13 @@
 use crate::{
-    auth::Scope, command, currency, db, irc, module, player, prelude::*, stream_info, track_id,
-    track_id::TrackId, utils,
+    auth::Scope,
+    command, currency, db, irc, module, player,
+    prelude::*,
+    settings, stream_info, track_id,
+    track_id::TrackId,
+    utils::{self, Cooldown, Duration},
 };
 use chrono::Utc;
+use failure::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -10,24 +15,19 @@ const EXAMPLE_SEARCH: &'static str = "queen we will rock you";
 
 /// Handler for the `!song` command.
 pub struct Handler {
-    pub db: db::Database,
-    pub stream_info: stream_info::StreamInfo,
-    pub player: player::PlayerClient,
-    pub request_help_cooldown: utils::Cooldown,
-    pub subscriber_only: Arc<RwLock<bool>>,
-    pub request_reward: Arc<RwLock<u32>>,
-    pub spotify_max_duration: Arc<RwLock<utils::Duration>>,
-    pub spotify_min_currency: Arc<RwLock<u32>>,
-    pub spotify_subscriber_only: Arc<RwLock<bool>>,
-    pub youtube_support: Arc<RwLock<bool>>,
-    pub youtube_max_duration: Arc<RwLock<utils::Duration>>,
-    pub youtube_min_currency: Arc<RwLock<u32>>,
-    pub youtube_subscriber_only: Arc<RwLock<bool>>,
-    pub currency: Arc<RwLock<Option<currency::Currency>>>,
+    db: db::Database,
+    stream_info: stream_info::StreamInfo,
+    player: player::PlayerClient,
+    request_help_cooldown: Cooldown,
+    subscriber_only: Arc<RwLock<bool>>,
+    request_reward: Arc<RwLock<u32>>,
+    currency: Arc<RwLock<Option<currency::Currency>>>,
+    spotify: Constraint,
+    youtube: Constraint,
 }
 
 impl Handler {
-    fn handle_request(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle_request(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
         let q = ctx.rest().trim().to_string();
 
         if q.is_empty() {
@@ -37,32 +37,19 @@ impl Handler {
 
         let stream_info = self.stream_info.clone();
         let subscriber_only = self.subscriber_only.clone();
-        let youtube_support = *self.youtube_support.read();
-        let youtube_subscriber_only = self.youtube_subscriber_only.clone();
-        let spotify_subscriber_only = self.spotify_subscriber_only.clone();
-        let spotify_max_duration = self.spotify_max_duration.clone();
-        let spotify_min_currency = self.spotify_min_currency.clone();
-        let youtube_max_duration = self.youtube_max_duration.clone();
-        let youtube_min_currency = self.youtube_min_currency.clone();
+        let request_reward = *self.request_reward.read();
+        let spotify = self.spotify.clone();
+        let youtube = self.youtube.clone();
         let user = ctx.user.as_owned_user();
         let is_moderator = ctx.is_moderator();
         let currency = self.currency.clone();
-        let request_reward = *self.request_reward.read();
         let db = self.db.clone();
         let player = self.player.clone();
-        let has_youtube_scope = ctx.has_scope(Scope::CommandSongYouTube);
         let has_spotify_scope = ctx.has_scope(Scope::CommandSongSpotify);
+        let has_youtube_scope = ctx.has_scope(Scope::CommandSongYouTube);
 
         let track_id = match TrackId::parse_with_urls(&q) {
-            Ok(track_id) => {
-                if !youtube_support && track_id.is_youtube() {
-                    let e = format!("YouTube song requests are currently not enabled, sorry :(");
-                    self.request_help(ctx, Some(e.as_str()));
-                    return Ok(());
-                }
-
-                Some(track_id)
-            }
+            Ok(track_id) => Some(track_id),
             Err(e) => {
                 match e {
                     // NB: fall back to searching.
@@ -95,10 +82,24 @@ impl Handler {
                 }
             };
 
-            let (what, has_scope) = match track_id {
-                TrackId::Spotify(..) => ("Spotify", has_spotify_scope),
-                TrackId::YouTube(..) => ("YouTube", has_youtube_scope),
+            let (what, has_scope, support) = match track_id {
+                TrackId::Spotify(..) => {
+                    let support = *spotify.support.read();
+                    ("Spotify", has_spotify_scope, support)
+                }
+                TrackId::YouTube(..) => {
+                    let support = *youtube.support.read();
+                    ("YouTube", has_youtube_scope, support)
+                }
             };
+
+            if !support {
+                user.respond(format!(
+                    "{} song requests are currently not enabled, sorry :(",
+                    what
+                ));
+                return Ok(());
+            }
 
             if !has_scope {
                 user.respond(format!(
@@ -109,8 +110,8 @@ impl Handler {
             }
 
             let subscriber_only_by_track = match track_id {
-                TrackId::Spotify(..) => *spotify_subscriber_only.read(),
-                TrackId::YouTube(..) => *youtube_subscriber_only.read(),
+                TrackId::Spotify(..) => *spotify.subscriber_only.read(),
+                TrackId::YouTube(..) => *youtube.subscriber_only.read(),
             };
 
             let subscriber_only = subscriber_only_by_track || *subscriber_only.read();
@@ -126,13 +127,13 @@ impl Handler {
             }
 
             let max_duration = match track_id {
-                TrackId::Spotify(_) => Some(spotify_max_duration.read().clone()),
-                TrackId::YouTube(_) => Some(youtube_max_duration.read().clone()),
+                TrackId::Spotify(_) => Some(spotify.max_duration.read().clone()),
+                TrackId::YouTube(_) => Some(youtube.max_duration.read().clone()),
             };
 
             let min_currency = match track_id {
-                TrackId::Spotify(_) => Some(spotify_min_currency.read().clone() as i64),
-                TrackId::YouTube(_) => Some(youtube_min_currency.read().clone() as i64),
+                TrackId::Spotify(_) => Some(spotify.min_currency.read().clone() as i64),
+                TrackId::YouTube(_) => Some(youtube.min_currency.read().clone() as i64),
             };
 
             let result = player
@@ -325,7 +326,7 @@ impl command::Handler for Handler {
         Some(Scope::CommandSong)
     }
 
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+    fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), Error> {
         match ctx.next() {
             Some("theme") => {
                 ctx.check_moderator()?;
@@ -612,7 +613,7 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn load(player: &player::Player) -> Result<Self, failure::Error> {
+    pub fn load(player: &player::Player) -> Result<Self, Error> {
         Ok(Module {
             player: player.client(),
         })
@@ -637,32 +638,29 @@ impl module::Module for Module {
             injector,
             ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), Error> {
         let currency = injector.var(futures);
-        let chat_feedback = settings.sync_var(futures, "song/chat-feedback", true)?;
+
+        let mut vars = settings.vars();
+        let chat_feedback = vars.var("song/chat-feedback", true)?;
+        let subscriber_only = vars.var("song/subscriber-only", false)?;
+        let request_reward = vars.var("song/request-reward", 0)?;
+        futures.push(vars.run().boxed());
+
+        let vars = settings.scoped(vec!["song", "spotify"]);
+        let mut vars = vars.vars();
+        let spotify = Constraint::build(&mut vars, true, false)?;
+        futures.push(vars.run().boxed());
+
+        let vars = settings.scoped(vec!["song", "youtube"]);
+        let mut vars = vars.vars();
+        let youtube = Constraint::build(&mut vars, false, true)?;
+        futures.push(vars.run().boxed());
 
         futures
             .push(player_feedback_loop(self.player.clone(), sender.clone(), chat_feedback).boxed());
 
-        let subscriber_only = settings.sync_var(futures, "song/subscriber-only", false)?;
-
-        let request_reward = settings.sync_var(futures, "song/request-reward", 0)?;
-
-        let spotify = settings.scoped(vec!["song", "spotify"]);
-        let spotify_max_duration =
-            spotify.sync_var(futures, "max-duration", utils::Duration::seconds(60 * 10))?;
-
-        let spotify_min_currency = spotify.sync_var(futures, "min-currency", 60)?;
-        let spotify_subscriber_only = spotify.sync_var(futures, "subscriber-only", false)?;
-
-        let youtube = settings.scoped(vec!["song", "youtube"]);
-        let youtube_support = youtube.sync_var(futures, "support", false)?;
-        let youtube_max_duration =
-            youtube.sync_var(futures, "max-duration", utils::Duration::seconds(60 * 10))?;
-        let youtube_min_currency = youtube.sync_var(futures, "min-currency", 60)?;
-        let youtube_subscriber_only = youtube.sync_var(futures, "subscriber-only", true)?;
-
-        let help_cooldown = utils::Cooldown::from_duration(utils::Duration::seconds(5));
+        let help_cooldown = Cooldown::from_duration(Duration::seconds(5));
 
         handlers.insert(
             "song",
@@ -673,17 +671,41 @@ impl module::Module for Module {
                 player: self.player.clone(),
                 subscriber_only,
                 request_reward,
-                spotify_max_duration,
-                spotify_min_currency,
-                spotify_subscriber_only,
-                youtube_support,
-                youtube_max_duration,
-                youtube_min_currency,
-                youtube_subscriber_only,
                 currency,
+                spotify,
+                youtube,
             },
         );
         Ok(())
+    }
+}
+
+/// Constraint for a single kind of track.
+#[derive(Debug, Clone)]
+struct Constraint {
+    support: Arc<RwLock<bool>>,
+    max_duration: Arc<RwLock<Duration>>,
+    min_currency: Arc<RwLock<i64>>,
+    subscriber_only: Arc<RwLock<bool>>,
+}
+
+impl Constraint {
+    fn build(
+        vars: &mut settings::ScopedVars<'_>,
+        support: bool,
+        subscriber_only: bool,
+    ) -> Result<Self, Error> {
+        let support = vars.var("support", support)?;
+        let max_duration = vars.var("max-duration", Duration::seconds(60 * 10))?;
+        let min_currency = vars.var("min-currency", 60)?;
+        let subscriber_only = vars.var("subscriber-only", subscriber_only)?;
+
+        Ok(Constraint {
+            support,
+            max_duration,
+            min_currency,
+            subscriber_only,
+        })
     }
 }
 
@@ -739,7 +761,7 @@ async fn player_feedback_loop(
     player: player::PlayerClient,
     sender: irc::Sender,
     chat_feedback: Arc<RwLock<bool>>,
-) -> Result<(), failure::Error> {
+) -> Result<(), Error> {
     let mut rx = player.add_rx().compat();
 
     while let Some(e) = rx.next().await {

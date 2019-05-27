@@ -33,7 +33,7 @@ pub enum Source {
     Manual,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Default, serde::Deserialize)]
 pub struct Config {
     /// The max queue length of the player.
     #[serde(default)]
@@ -174,8 +174,7 @@ pub fn run(
     db: db::Database,
     spotify: Arc<api::Spotify>,
     youtube: Arc<api::YouTube>,
-    parent_config: Arc<config::Config>,
-    config: Arc<Config>,
+    config: Arc<config::Config>,
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     settings: settings::Settings,
@@ -197,7 +196,7 @@ pub fn run(
     let queue = Queue::new(db.clone());
 
     // Blank current song file if specified.
-    if let Some(current_song) = parent_config.current_song.as_ref() {
+    if let Some(current_song) = config.current_song.as_ref() {
         if let Err(e) = current_song.blank() {
             log::warn!(
                 "failed to blank current songs: {}: {}",
@@ -209,13 +208,13 @@ pub fn run(
 
     let volume = Arc::new(RwLock::new(u32::min(
         100u32,
-        config.volume.unwrap_or(50u32),
+        config.player.volume.unwrap_or(50u32),
     )));
 
     let song = Arc::new(RwLock::new(None));
     let closed = Arc::new(RwLock::new(None));
 
-    let current_song_update = match parent_config
+    let current_song_update = match config
         .current_song
         .as_ref()
         .and_then(|c| c.update_interval())
@@ -225,32 +224,29 @@ pub fn run(
     };
 
     let (song_update_interval_stream, song_update_interval) =
-        settings.init_and_stream("song-update-interval", utils::Duration::seconds(1))?;
+        settings.stream("song-update-interval", utils::Duration::seconds(1))?;
 
     let song_update_interval = match song_update_interval.is_empty() {
         true => None,
         false => Some(timer::Interval::new_interval(song_update_interval.as_std())),
     };
 
-    if !config.sync_player_interval.is_empty() {
+    if !config.player.sync_player_interval.is_empty() {
         log::warn!("### DEPRECATION WARNING");
         log::warn!("[player] sync_player_interval - configuration has been deprecated since it was too unreliable.");
     }
 
     let (commands_tx, commands) = mpsc::unbounded();
 
-    let (detached_stream, detached) = settings.init_and_stream("detached", false)?;
+    let (detached_stream, detached) = settings.stream("detached", false)?;
 
-    let duplicate_duration = settings.sync_var(
-        &mut futures,
-        "duplicate-duration",
-        utils::Duration::default(),
-    )?;
+    let mut vars = settings.vars();
 
-    let echo_current_song = settings.sync_var(
-        &mut futures,
+    let duplicate_duration = vars.var("duplicate-duration", utils::Duration::default())?;
+
+    let echo_current_song = vars.var(
         "echo-current-song",
-        match config.echo_current_song {
+        match config.player.echo_current_song.clone() {
             Some(value) => {
                 log::warn!("`[player] echo_current_song` configuration is deprecated");
                 value
@@ -259,10 +255,9 @@ pub fn run(
         },
     )?;
 
-    let max_songs_per_user = settings.sync_var(
-        &mut futures,
+    let max_songs_per_user = vars.var(
         "max-songs-per-user",
-        match config.max_songs_per_user {
+        match config.player.max_songs_per_user.clone() {
             Some(value) => {
                 log::warn!("`[player] max_songs_per_user` configuration is deprecated");
                 value
@@ -271,10 +266,9 @@ pub fn run(
         },
     )?;
 
-    let max_queue_length = settings.sync_var(
-        &mut futures,
+    let max_queue_length = vars.var(
         "max-queue-length",
-        match config.max_queue_length {
+        match config.player.max_queue_length.clone() {
             Some(value) => {
                 log::warn!("`[player] max_queue_length` configuration is deprecated");
                 value
@@ -282,6 +276,8 @@ pub fn run(
             None => 30,
         },
     )?;
+
+    futures.push(vars.run().boxed());
 
     let parent_player = Player {
         device: device.clone(),
@@ -315,7 +311,7 @@ pub fn run(
         )
         .await?;
 
-        let fallback_items = match config.playlist.clone() {
+        let fallback_items = match config.player.playlist.clone() {
             Some(playlist) => playlist_to_items(spotify.clone(), playlist).await?,
             None => songs_to_items(spotify.clone()).await?,
         };
@@ -355,7 +351,7 @@ pub fn run(
             detached_stream,
             volume: Arc::clone(&volume),
             song: song.clone(),
-            current_song: parent_config.current_song.clone(),
+            current_song: config.current_song.clone(),
             echo_current_song,
             current_song_update,
             song_update_interval,
@@ -382,14 +378,14 @@ pub fn run(
                     log::info!("device #{}: {}", i, d.name)
                 }
 
-                *device.device.write() = match config.device.as_ref() {
+                *device.device.write() = match config.player.device.as_ref() {
                     Some(device) => devices.into_iter().find(|d| d.name == *device),
                     None => devices.into_iter().next(),
                 };
 
                 player.pause_with_source(Source::Automatic)?;
 
-                if let Some(volume) = config.volume {
+                if let Some(volume) = config.player.volume {
                     player.volume_with_source(Source::Automatic, volume)?;
                 }
             }

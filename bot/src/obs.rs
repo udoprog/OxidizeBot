@@ -90,7 +90,7 @@ pub fn setup<'a>(
     settings: &settings::Settings,
     injector: &'a injector::Injector,
 ) -> Result<impl Future<Output = Result<(), Error>> + 'a, Error> {
-    let (mut url_stream, mut url) = settings.init_and_option_stream::<String>("obs/url")?;
+    let (mut url_stream, mut url) = settings.stream_opt::<String>("obs/url")?;
 
     let mut obs_stream = url.as_ref().and_then(|u| construct(injector, u));
 

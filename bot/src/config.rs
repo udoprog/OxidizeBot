@@ -23,7 +23,7 @@ pub struct Config {
     pub themes: Themes,
     /// Player configuration file.
     #[serde(default)]
-    pub player: Option<Arc<player::Config>>,
+    pub player: Arc<player::Config>,
     /// Aliases in use for channels.
     #[serde(default)]
     pub aliases: Vec<DeprecatedAlias>,
