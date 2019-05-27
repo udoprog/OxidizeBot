@@ -52,8 +52,8 @@ pub struct Context<'a, 'm> {
     pub streamer: &'a str,
     /// Sender associated with the command.
     pub sender: &'a irc::Sender,
-    /// Moderators.
     pub moderators: &'a HashSet<String>,
+    pub vips: &'a HashSet<String>,
     pub moderator_cooldown: Option<&'a mut utils::Cooldown>,
     pub thread_pool: &'a ThreadPool,
     pub user: irc::User<'m>,
@@ -79,6 +79,10 @@ impl<'a, 'm> Context<'a, 'm> {
 
         if self.is_subscriber() {
             roles.push(Role::Subscriber);
+        }
+
+        if self.is_vip() {
+            roles.push(Role::Vip);
         }
 
         roles.push(Role::Everyone);
@@ -112,6 +116,11 @@ impl<'a, 'm> Context<'a, 'm> {
     /// Test if subscriber.
     pub fn is_subscriber(&self) -> bool {
         self.is_streamer() || self.stream_info.is_subscriber(self.user.name)
+    }
+
+    /// Test if vip.
+    pub fn is_vip(&self) -> bool {
+        self.vips.contains(self.user.name)
     }
 
     /// Check that the given user is a moderator.

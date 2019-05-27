@@ -17,8 +17,17 @@ impl<'a> command::Handler for Handler<'a> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         match ctx.next() {
             Some("refresh-mods") => {
-                // The response from the /mods command will be received by the Handler.
                 ctx.privmsg("/mods");
+                ctx.respond("Refreshed information on mods");
+            }
+            Some("refresh-vips") => {
+                ctx.privmsg("/vips");
+                ctx.respond("Refreshed information on vips");
+            }
+            Some("refresh") => {
+                ctx.privmsg("/mods");
+                ctx.privmsg("/vips");
+                ctx.respond("Refreshed information on mods and vips");
             }
             Some("version") => {
                 ctx.respond(format!("Bot Version {}", crate::VERSION));

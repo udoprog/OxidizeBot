@@ -5,6 +5,8 @@ roles:
     doc: Role containing all moderators.
   "@subscriber":
     doc: Role containing all subscribers.
+  "@vip":
+    doc: Role containing users which are VIP.
   "@everyone":
     doc: Role containing everyone.
 

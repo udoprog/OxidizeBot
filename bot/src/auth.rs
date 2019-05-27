@@ -374,6 +374,7 @@ roles! {
     (Streamer, "@streamer"),
     (Moderator, "@moderator"),
     (Subscriber, "@subscriber"),
+    (Vip, "@vip"),
     (Everyone, "@everyone"),
 }
 

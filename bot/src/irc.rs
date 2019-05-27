@@ -375,6 +375,7 @@ impl Irc {
                 streamer,
                 sender: sender.clone(),
                 moderators: HashSet::default(),
+                vips: HashSet::default(),
                 whitelisted_hosts,
                 commands: &commands,
                 bad_words: &bad_words,
@@ -658,6 +659,8 @@ struct Handler<'a: 'h, 'to, 'h> {
     sender: Sender,
     /// Moderators.
     moderators: HashSet<String>,
+    /// VIPs.
+    vips: HashSet<String>,
     /// Whitelisted hosts for links.
     whitelisted_hosts: HashSet<String>,
     /// All registered commands.
@@ -742,6 +745,7 @@ impl Handler<'_, '_, '_> {
                         streamer: self.streamer,
                         sender: &self.sender,
                         moderators: &self.moderators,
+                        vips: &self.vips,
                         moderator_cooldown: self.moderator_cooldown.as_mut(),
                         thread_pool: &self.thread_pool,
                         user,
@@ -959,8 +963,9 @@ impl Handler<'_, '_, '_> {
                     // twitch commands capabilities have been acknowledged.
                     // do what needs to happen with them (like `/mods`).
                     Some(TWITCH_COMMANDS_CAP) => {
-                        // request to get a list of moderators.
-                        self.sender.privmsg("/mods")
+                        // request to get a list of moderators and vips.
+                        self.sender.privmsg("/mods");
+                        self.sender.privmsg("/vips");
                     }
                     _ => {}
                 }
@@ -1002,7 +1007,14 @@ impl Handler<'_, '_, '_> {
                     }
                     // Response to /mods request.
                     Some("room_mods") => {
-                        self.moderators = parse_room_mods(message);
+                        self.moderators = parse_room_members(message);
+                    }
+                    Some("no_vips") => {
+                        self.vips.clear();
+                    }
+                    // Response to /vips request.
+                    Some("vips_success") => {
+                        self.vips = parse_room_members(message);
                     }
                     Some(msg_id) => {
                         log::info!("unhandled notice w/ msg_id: {:?}: {:?}", msg_id, m);
@@ -1117,19 +1129,22 @@ async fn refresh_mods_future(sender: Sender) -> Result<(), Error> {
 
     while let Some(i) = interval.next().await {
         let _ = i?;
-        log::trace!("refreshing mods");
+        log::trace!("refreshing mods and vips");
         sender.privmsg_immediate("/mods");
+        sender.privmsg_immediate("/vips");
     }
 
     Ok(())
 }
 
 /// Parse the `room_mods` message.
-fn parse_room_mods(message: &str) -> HashSet<String> {
+fn parse_room_members(message: &str) -> HashSet<String> {
     let mut out = HashSet::default();
 
     if let Some(index) = message.find(":") {
         let message = &message[(index + 1)..];
+        let message = message.trim_end_matches('.');
+
         out.extend(
             message
                 .split(",")
@@ -1144,7 +1159,7 @@ fn parse_room_mods(message: &str) -> HashSet<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_room_mods;
+    use super::parse_room_members;
     use hashbrown::HashSet;
 
     #[test]
@@ -1153,19 +1168,19 @@ mod tests {
             vec![String::from("foo"), String::from("bar")]
                 .into_iter()
                 .collect::<HashSet<String>>(),
-            parse_room_mods("The moderators of this channel are: foo, bar")
+            parse_room_members("The moderators of this channel are: foo, bar")
         );
 
         assert_eq!(
             vec![String::from("a")]
                 .into_iter()
                 .collect::<HashSet<String>>(),
-            parse_room_mods("The moderators of this channel are: a")
+            parse_room_members("The moderators of this channel are: a")
         );
 
         assert_eq!(
             vec![].into_iter().collect::<HashSet<String>>(),
-            parse_room_mods("The moderators of this channel are:")
+            parse_room_members("The moderators of this channel are:")
         );
     }
 }
