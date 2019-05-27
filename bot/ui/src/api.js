@@ -232,17 +232,17 @@ export class Api {
   }
 
   /**
-   * Get a list of all enabled allows.
+   * Get a list of all enabled grants.
    */
-  authAllows() {
-    return this.fetch(["auth", "allows"]);
+  authGrants() {
+    return this.fetch(["auth", "grants"]);
   }
 
   /**
-   * Insert an allow permit into the database.
+   * Insert a grant into the database.
    */
-  authInsertAllow(auth) {
-    return this.fetch(["auth", "allows"], {
+  authInsertGrant(auth) {
+    return this.fetch(["auth", "grants"], {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -252,10 +252,10 @@ export class Api {
   }
 
   /**
-   * Delete an allow permit from the database.
+   * Delete a grant from the database.
    */
-  authDeleteAllow(scope, role) {
-    return this.fetch(["auth", "allows", scope, role], {
+  authDeleteGrant(scope, role) {
+    return this.fetch(["auth", "grants", scope, role], {
       method: "DELETE",
     });
   }

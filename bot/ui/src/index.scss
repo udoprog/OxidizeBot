@@ -192,6 +192,10 @@ body {
 }
 
 .settings {
+  &-boolean-icon {
+    width: 3em;
+  }
+
   &-group {
     font-size: 150%;
     font-weight: bold;
@@ -219,7 +223,7 @@ body {
 
 .auth {
   &-boolean-icon {
-    width: 8em;
+    width: 3em;
   }
 
   &-scope {
@@ -300,4 +304,8 @@ body.youtube-body {
 
 .button-fill {
   width: 100%;
+}
+
+.align-center {
+  text-align: center;
 }

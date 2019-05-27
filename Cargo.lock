@@ -666,7 +666,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "futures-channel-preview"
 version = "0.3.0-alpha.16"
-source = "git+https://github.com/udoprog/futures-rs#b1b77448aa13f2585e142af54cf36138845862c2"
+source = "git+https://github.com/udoprog/futures-rs#5d30249aaf5840002b0d4407b71d462f29b14d29"
 dependencies = [
  "futures-core-preview 0.3.0-alpha.16 (git+https://github.com/udoprog/futures-rs)",
 ]
@@ -674,7 +674,7 @@ dependencies = [
 [[package]]
 name = "futures-core-preview"
 version = "0.3.0-alpha.16"
-source = "git+https://github.com/udoprog/futures-rs#b1b77448aa13f2585e142af54cf36138845862c2"
+source = "git+https://github.com/udoprog/futures-rs#5d30249aaf5840002b0d4407b71d462f29b14d29"
 
 [[package]]
 name = "futures-cpupool"
@@ -688,7 +688,7 @@ dependencies = [
 [[package]]
 name = "futures-executor-preview"
 version = "0.3.0-alpha.16"
-source = "git+https://github.com/udoprog/futures-rs#b1b77448aa13f2585e142af54cf36138845862c2"
+source = "git+https://github.com/udoprog/futures-rs#5d30249aaf5840002b0d4407b71d462f29b14d29"
 dependencies = [
  "futures-channel-preview 0.3.0-alpha.16 (git+https://github.com/udoprog/futures-rs)",
  "futures-core-preview 0.3.0-alpha.16 (git+https://github.com/udoprog/futures-rs)",
@@ -700,7 +700,7 @@ dependencies = [
 [[package]]
 name = "futures-io-preview"
 version = "0.3.0-alpha.16"
-source = "git+https://github.com/udoprog/futures-rs#b1b77448aa13f2585e142af54cf36138845862c2"
+source = "git+https://github.com/udoprog/futures-rs#5d30249aaf5840002b0d4407b71d462f29b14d29"
 dependencies = [
  "futures-core-preview 0.3.0-alpha.16 (git+https://github.com/udoprog/futures-rs)",
 ]
@@ -708,7 +708,7 @@ dependencies = [
 [[package]]
 name = "futures-preview"
 version = "0.3.0-alpha.16"
-source = "git+https://github.com/udoprog/futures-rs#b1b77448aa13f2585e142af54cf36138845862c2"
+source = "git+https://github.com/udoprog/futures-rs#5d30249aaf5840002b0d4407b71d462f29b14d29"
 dependencies = [
  "futures-channel-preview 0.3.0-alpha.16 (git+https://github.com/udoprog/futures-rs)",
  "futures-core-preview 0.3.0-alpha.16 (git+https://github.com/udoprog/futures-rs)",
@@ -721,7 +721,7 @@ dependencies = [
 [[package]]
 name = "futures-select-macro-preview"
 version = "0.3.0-alpha.16"
-source = "git+https://github.com/udoprog/futures-rs#b1b77448aa13f2585e142af54cf36138845862c2"
+source = "git+https://github.com/udoprog/futures-rs#5d30249aaf5840002b0d4407b71d462f29b14d29"
 dependencies = [
  "proc-macro-hack 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "proc-macro2 0.4.30 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -732,7 +732,7 @@ dependencies = [
 [[package]]
 name = "futures-sink-preview"
 version = "0.3.0-alpha.16"
-source = "git+https://github.com/udoprog/futures-rs#b1b77448aa13f2585e142af54cf36138845862c2"
+source = "git+https://github.com/udoprog/futures-rs#5d30249aaf5840002b0d4407b71d462f29b14d29"
 dependencies = [
  "futures-channel-preview 0.3.0-alpha.16 (git+https://github.com/udoprog/futures-rs)",
  "futures-core-preview 0.3.0-alpha.16 (git+https://github.com/udoprog/futures-rs)",
@@ -741,7 +741,7 @@ dependencies = [
 [[package]]
 name = "futures-util-preview"
 version = "0.3.0-alpha.16"
-source = "git+https://github.com/udoprog/futures-rs#b1b77448aa13f2585e142af54cf36138845862c2"
+source = "git+https://github.com/udoprog/futures-rs#5d30249aaf5840002b0d4407b71d462f29b14d29"
 dependencies = [
  "futures 0.1.27 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-channel-preview 0.3.0-alpha.16 (git+https://github.com/udoprog/futures-rs)",

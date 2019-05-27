@@ -45,12 +45,6 @@ struct Empty {}
 
 const EMPTY: Empty = Empty {};
 
-#[derive(serde::Serialize)]
-struct Auth {
-    title: String,
-    url: String,
-}
-
 #[derive(Clone, serde::Serialize)]
 struct AudioDevice {
     is_current: bool,
@@ -97,12 +91,6 @@ pub struct Current {
 #[derive(serde::Deserialize)]
 pub struct PutSetting {
     value: serde_json::Value,
-}
-
-#[derive(serde::Deserialize)]
-pub struct PutScope {
-    scope: auth::Scope,
-    role: auth::Role,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -505,15 +493,157 @@ impl Themes {
     }
 }
 
+/// Auth API endpoints.
+#[derive(Clone)]
+struct Auth {
+    token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
+    auth: auth::Auth,
+}
+
+impl Auth {
+    fn route(
+        auth: auth::Auth,
+        token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
+    ) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+        let api = Auth {
+            auth,
+            token_callbacks,
+        };
+
+        let route = warp::get2()
+            .and(warp::path!("pending").and(warp::filters::path::end()))
+            .and_then({
+                let api = api.clone();
+                move || api.pending().map_err(warp::reject::custom)
+            })
+            .boxed();
+
+        let route = route
+            .or(warp::get2()
+                .and(warp::path!("roles").and(warp::filters::path::end()))
+                .and_then({
+                    let api = api.clone();
+                    move || api.roles().map_err(warp::reject::custom)
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::get2()
+                .and(warp::path!("scopes").and(warp::filters::path::end()))
+                .and_then({
+                    let api = api.clone();
+                    move || api.scopes().map_err(warp::reject::custom)
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::get2()
+                .and(warp::path!("grants").and(warp::filters::path::end()))
+                .and_then({
+                    let api = api.clone();
+                    move || api.grants().map_err(warp::reject::custom)
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::put2()
+                .and(warp::path!("grants").and(warp::filters::path::end()))
+                .and(warp::body::json())
+                .and_then({
+                    let api = api.clone();
+                    move |body: PutGrant| {
+                        api.insert_grant(body.scope, body.role)
+                            .map_err(warp::reject::custom)
+                    }
+                }))
+            .boxed();
+
+        let route = route
+            .or(warp::delete2()
+                .and(warp::path!("grants" / Fragment / Fragment).and(warp::filters::path::end()))
+                .and_then({
+                    let api = api.clone();
+                    move |scope: Fragment, role: Fragment| {
+                        api.delete_grant(scope.as_str(), role.as_str())
+                            .map_err(warp::reject::custom)
+                    }
+                }))
+            .boxed();
+
+        return route;
+
+        #[derive(serde::Deserialize)]
+        pub struct PutGrant {
+            scope: auth::Scope,
+            role: auth::Role,
+        }
+    }
+
+    /// Get a list of things that need authentication.
+    fn pending(&self) -> Result<impl warp::Reply, Error> {
+        let mut auth = Vec::new();
+
+        for expected in self.token_callbacks.read().values() {
+            auth.push(AuthPending {
+                url: expected.url.to_string(),
+                title: expected.title.to_string(),
+            });
+        }
+
+        auth.sort_by(|a, b| a.title.cmp(&b.title));
+        return Ok(warp::reply::json(&auth));
+
+        #[derive(serde::Serialize)]
+        struct AuthPending {
+            title: String,
+            url: String,
+        }
+    }
+
+    /// Get the list of all scopes.
+    fn scopes(&self) -> Result<impl warp::Reply, failure::Error> {
+        let scopes = self.auth.scopes();
+        Ok(warp::reply::json(&scopes))
+    }
+
+    /// Get the list of all roles.
+    fn roles(&self) -> Result<impl warp::Reply, failure::Error> {
+        let roles = self.auth.roles();
+        Ok(warp::reply::json(&roles))
+    }
+
+    /// Get the list of all auth in the bot.
+    fn grants(&self) -> Result<impl warp::Reply, failure::Error> {
+        let auth = self.auth.list();
+        Ok(warp::reply::json(&auth))
+    }
+
+    /// Delete a single scope assignment.
+    fn delete_grant(&self, scope: &str, role: &str) -> Result<impl warp::Reply, failure::Error> {
+        let scope = str::parse(scope)?;
+        let role = str::parse(role)?;
+        self.auth.delete(scope, role)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Insert a single scope assignment.
+    fn insert_grant(
+        &self,
+        scope: auth::Scope,
+        role: auth::Role,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        self.auth.insert(scope, role)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+}
+
 /// API to manage device.
 #[derive(Clone)]
 struct Api {
     player: Arc<RwLock<Option<player::PlayerClient>>>,
-    token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
     after_streams: db::AfterStreams,
     db: db::Database,
     settings: settings::Settings,
-    auth: auth::Auth,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -538,21 +668,6 @@ impl Api {
         }
 
         Err(Error::BadRequest)
-    }
-
-    /// Get a list of things that need authentication.
-    fn auth_pending(&self) -> Result<impl warp::Reply, Error> {
-        let mut auth = Vec::new();
-
-        for expected in self.token_callbacks.read().values() {
-            auth.push(Auth {
-                url: expected.url.to_string(),
-                title: expected.title.to_string(),
-            });
-        }
-
-        auth.sort_by(|a, b| a.title.cmp(&b.title));
-        return Ok(warp::reply::json(&auth));
     }
 
     /// Get a list of things that need authentication.
@@ -642,46 +757,6 @@ impl Api {
         Ok(warp::reply::json(&EMPTY))
     }
 
-    /// Get the list of all scopes.
-    fn auth_scopes(&self) -> Result<impl warp::Reply, failure::Error> {
-        let scopes = self.auth.scopes();
-        Ok(warp::reply::json(&scopes))
-    }
-
-    /// Get the list of all roles.
-    fn auth_roles(&self) -> Result<impl warp::Reply, failure::Error> {
-        let roles = self.auth.roles();
-        Ok(warp::reply::json(&roles))
-    }
-
-    /// Get the list of all auth in the bot.
-    fn auth_allows(&self) -> Result<impl warp::Reply, failure::Error> {
-        let auth = self.auth.list();
-        Ok(warp::reply::json(&auth))
-    }
-
-    /// Delete a single scope assignment.
-    fn delete_auth_allow(
-        &self,
-        scope: &str,
-        role: &str,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        let scope = str::parse(scope)?;
-        let role = str::parse(role)?;
-        self.auth.delete(scope, role)?;
-        Ok(warp::reply::json(&EMPTY))
-    }
-
-    /// Insert a single scope assignment.
-    fn insert_auth_allow(
-        &self,
-        scope: auth::Scope,
-        role: auth::Role,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        self.auth.insert(scope, role)?;
-        Ok(warp::reply::json(&EMPTY))
-    }
-
     /// Import balances.
     async fn import_balances(
         self,
@@ -736,11 +811,9 @@ pub fn setup(
 
     let api = Api {
         player: player.clone(),
-        token_callbacks: token_callbacks.clone(),
         after_streams,
         db,
         settings,
-        auth,
     };
 
     let api = {
@@ -822,70 +895,6 @@ pub fn setup(
             .boxed();
 
         let route = route
-            .or(warp::get2()
-                .and(warp::path!("auth" / "pending").and(warp::filters::path::end()))
-                .and_then({
-                    let api = api.clone();
-                    move || api.auth_pending().map_err(warp::reject::custom)
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::get2()
-                .and(warp::path!("auth" / "roles").and(warp::filters::path::end()))
-                .and_then({
-                    let api = api.clone();
-                    move || api.auth_roles().map_err(warp::reject::custom)
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::get2()
-                .and(warp::path!("auth" / "scopes").and(warp::filters::path::end()))
-                .and_then({
-                    let api = api.clone();
-                    move || api.auth_scopes().map_err(warp::reject::custom)
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::get2()
-                .and(warp::path!("auth" / "allows").and(warp::filters::path::end()))
-                .and_then({
-                    let api = api.clone();
-                    move || api.auth_allows().map_err(warp::reject::custom)
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::put2()
-                .and(warp::path!("auth" / "allows").and(warp::filters::path::end()))
-                .and(warp::body::json())
-                .and_then({
-                    let api = api.clone();
-                    move |body: PutScope| {
-                        api.insert_auth_allow(body.scope, body.role)
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::delete2()
-                .and(
-                    warp::path!("auth" / "allows" / Fragment / Fragment)
-                        .and(warp::filters::path::end()),
-                )
-                .and_then({
-                    let api = api.clone();
-                    move |scope: Fragment, role: Fragment| {
-                        api.delete_auth_allow(scope.as_str(), role.as_str())
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
             .or(warp::put2()
                 .and(warp::path("balances"))
                 .and(warp::body::json())
@@ -914,6 +923,9 @@ pub fn setup(
             }))
             .boxed();
 
+        let route = route.or(warp::path("auth")
+            .and(Auth::route(auth, token_callbacks.clone()))
+            .boxed());
         let route = route.or(Aliases::route(aliases));
         let route = route.or(Commands::route(commands));
         let route = route.or(Promotions::route(promotions));

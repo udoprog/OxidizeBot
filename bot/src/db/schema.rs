@@ -87,17 +87,17 @@ table! {
     }
 }
 
-// Scopes that have been initialized.
+// Grants that have been initialized from their default configuration.
 table! {
-    scope_inits (scope) {
+    initialized_grants (scope) {
         scope -> Text,
         version -> Text,
     }
 }
 
-// Scopes that have been allowed.
+// Grants that are active.
 table! {
-    scope_allows (scope, role) {
+    grants (scope, role) {
         scope -> Text,
         role -> Text,
     }

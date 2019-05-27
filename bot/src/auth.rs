@@ -20,42 +20,42 @@ impl Schema {
     }
 }
 
-/// A container for scopes and their allows.
+/// A container for scopes and their grants.
 #[derive(Clone)]
 pub struct Auth {
     db: db::Database,
     /// Schema for every corresponding scope.
     pub schema: Arc<Schema>,
     /// Assignments.
-    pub allows: Arc<RwLock<HashSet<(Scope, Role)>>>,
+    pub grants: Arc<RwLock<HashSet<(Scope, Role)>>>,
 }
 
 impl Auth {
     pub fn new(db: db::Database, schema: Schema) -> Result<Self, Error> {
-        use db::schema::scope_allows::dsl;
+        use db::schema::grants::dsl;
 
-        let allows = dsl::scope_allows
+        let grants = dsl::grants
             .select((dsl::scope, dsl::role))
             .load::<(Scope, Role)>(&*db.pool.lock())?
             .into_iter()
             .collect::<HashSet<_>>();
 
-        let scopes = Self {
+        let auth = Self {
             db,
             schema: Arc::new(schema),
-            allows: Arc::new(RwLock::new(allows)),
+            grants: Arc::new(RwLock::new(grants)),
         };
 
-        // perform default scope migrations based on scopes.yaml
-        scopes.insert_default_allows()?;
-        Ok(scopes)
+        // perform default initialization based on auth.yaml
+        auth.insert_default_grants()?;
+        Ok(auth)
     }
 
-    /// Insert default allows for non-initialized scopes.
-    fn insert_default_allows(&self) -> Result<(), Error> {
-        use db::schema::scope_inits::dsl;
+    /// Insert default grants for non-initialized grants.
+    fn insert_default_grants(&self) -> Result<(), Error> {
+        use db::schema::initialized_grants::dsl;
 
-        let allows = dsl::scope_inits
+        let grants = dsl::initialized_grants
             .select((dsl::scope, dsl::version))
             .load::<(Scope, String)>(&*self.db.pool.lock())?
             .into_iter()
@@ -64,7 +64,7 @@ impl Auth {
         let mut to_insert = Vec::new();
 
         for (key, data) in &self.schema.scopes {
-            let version = match allows.get(key) {
+            let version = match grants.get(key) {
                 Some(version) => version,
                 None => {
                     to_insert.push((*key, data));
@@ -82,7 +82,7 @@ impl Auth {
                 self.insert(key, *allow)?;
             }
 
-            diesel::insert_into(dsl::scope_inits)
+            diesel::insert_into(dsl::initialized_grants)
                 .values((dsl::scope.eq(key), dsl::version.eq(&data.version)))
                 .execute(&*self.db.pool.lock())?;
         }
@@ -92,25 +92,24 @@ impl Auth {
 
     /// Insert an assignment.
     pub fn insert(&self, scope: Scope, role: Role) -> Result<(), Error> {
-        use db::schema::scope_allows::dsl;
+        use db::schema::grants::dsl;
 
-        diesel::insert_into(dsl::scope_allows)
+        diesel::insert_into(dsl::grants)
             .values((dsl::scope.eq(scope), dsl::role.eq(role)))
             .execute(&*self.db.pool.lock())?;
 
-        self.allows.write().insert((scope, role));
+        self.grants.write().insert((scope, role));
         Ok(())
     }
 
     /// Delete an assignment.
     pub fn delete(&self, scope: Scope, role: Role) -> Result<(), Error> {
-        use db::schema::scope_allows::dsl;
+        use db::schema::grants::dsl;
 
-        if self.allows.write().remove(&(scope, role)) {
-            let _ = diesel::delete(
-                dsl::scope_allows.filter(dsl::scope.eq(scope).and(dsl::role.eq(role))),
-            )
-            .execute(&*self.db.pool.lock())?;
+        if self.grants.write().remove(&(scope, role)) {
+            let _ =
+                diesel::delete(dsl::grants.filter(dsl::scope.eq(scope).and(dsl::role.eq(role))))
+                    .execute(&*self.db.pool.lock())?;
         }
 
         Ok(())
@@ -118,13 +117,13 @@ impl Auth {
 
     /// Test if the given assignment exists.
     pub fn test(&self, scope: Scope, role: Role) -> bool {
-        self.allows.read().contains(&(scope, role))
+        self.grants.read().contains(&(scope, role))
     }
 
     /// Test if the given assignment exists.
     pub fn test_any(&self, scope: Scope, roles: impl IntoIterator<Item = Role>) -> bool {
-        let allows = self.allows.read();
-        roles.into_iter().any(|r| allows.contains(&(scope, r)))
+        let grants = self.grants.read();
+        roles.into_iter().any(|r| grants.contains(&(scope, r)))
     }
 
     /// Get a list of scopes and extra information associated with them.
@@ -165,9 +164,9 @@ impl Auth {
         out
     }
 
-    /// Get a list of all allows.
+    /// Get a list of all grants.
     pub fn list(&self) -> Vec<(Scope, Role)> {
-        self.allows.read().iter().cloned().collect()
+        self.grants.read().iter().cloned().collect()
     }
 }
 
@@ -325,6 +324,21 @@ macro_rules! roles {
     }
 }
 
+/// The risk of a given scope.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub enum Risk {
+    #[serde(rename = "high")]
+    High,
+    #[serde(rename = "default", other)]
+    Default,
+}
+
+impl Default for Risk {
+    fn default() -> Self {
+        Risk::Default
+    }
+}
+
 scopes! {
     (PlayerDetachDetach, "player/attach-detach"),
     (CommandAdmin, "command/admin"),
@@ -345,10 +359,14 @@ pub struct ScopeInfo {
 pub struct ScopeData {
     /// Documentation for this scope.
     pub doc: String,
+    /// How risky is this scope to grant.
+    /// High risk grants should be prompted with a warning before granted.
+    #[serde(default)]
+    pub risk: Risk,
     /// Version of the schema.
-    /// A change in version will cause the default allows to be applied.
+    /// A change in version will cause the default grants to be applied.
     pub version: String,
-    /// Default allows for the scope.
+    /// Default grants for the scope.
     pub allow: Vec<Role>,
 }
 

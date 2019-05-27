@@ -1,6 +1,6 @@
 import {Spinner, True, False, partition} from "../utils";
 import React from "react";
-import {Alert, Table, Button, InputGroup, Form} from "react-bootstrap";
+import {Alert, Table, Button, InputGroup, Form, Modal} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import * as ReactMarkdown from 'react-markdown';
 
@@ -11,6 +11,22 @@ const EVERYONE = "@everyone";
 const STREAMER = "@streamer";
 const MODERATOR = "@moderator";
 const SUBSCRIBER = "@subscriber";
+
+/**
+ * Check if the given role is a risky role.
+ *
+ * @param {string} role name of the role to check.
+ */
+function is_risky_role(role) {
+  switch (role) {
+    case EVERYONE:
+      return true;
+    case SUBSCRIBER:
+      return true;
+    default:
+      return false;
+  }
+}
 
 export default class Authorization extends React.Component {
   constructor(props) {
@@ -23,6 +39,12 @@ export default class Authorization extends React.Component {
       error: null,
       data: null,
       filter: "",
+      checked: {
+        title: "",
+        prompt: "",
+        visible: false,
+        verify: () => {},
+      },
     };
   }
 
@@ -44,19 +66,19 @@ export default class Authorization extends React.Component {
 
     let roles = this.api.authRoles(this.props.current.channel);
     let scopes = this.api.authScopes(this.props.current.channel);
-    let allows = this.api.authAllows(this.props.current.channel);
+    let grants = this.api.authGrants(this.props.current.channel);
 
-    Promise.all([roles, scopes, allows]).then(([roles, scopes, allows]) => {
+    Promise.all([roles, scopes, grants]).then(([roles, scopes, grants]) => {
       let allowsObject = {};
 
-      for (let [scope, role] of allows) {
+      for (let [scope, role] of grants) {
         allowsObject[`${scope}:${role}`] = true;
       }
 
       this.setState({
         loading: false,
         error: null,
-        data: {roles, scopes, allows: allowsObject},
+        data: {roles, scopes, grants: allowsObject},
       });
     },
     e => {
@@ -69,7 +91,7 @@ export default class Authorization extends React.Component {
   }
 
   deny(scope, role) {
-    this.api.authDeleteAllow(scope, role)
+    this.api.authDeleteGrant(scope, role)
       .then(() => {
         return this.list();
       },
@@ -82,7 +104,7 @@ export default class Authorization extends React.Component {
   }
 
   allow(scope, role) {
-    this.api.authInsertAllow({scope, role})
+    this.api.authInsertGrant({scope, role})
       .then(() => {
         return this.list();
       },
@@ -117,11 +139,11 @@ export default class Authorization extends React.Component {
   /**
    * Render authentication button.
    */
-  renderAuthButton(scope, role, allows) {
+  renderAuthButton(scope, role, grants) {
     let has_implicit = null;
     let title = null;
 
-    let is_allowed = role => allows[`${scope.scope}:${role}`] || false;
+    let is_allowed = role => grants[`${scope.scope}:${role}`] || false;
 
     let test_implicit = roles => {
       for (let role of roles) {
@@ -175,6 +197,27 @@ export default class Authorization extends React.Component {
       } else {
         let allow = () => this.allow(scope.scope, role.role);
 
+        if (is_risky_role(role.role) && scope.risk === "high") {
+          allow = () => {
+            this.setState({
+              checked: {
+                title: "Grant high-risk scope?",
+                prompt: (
+                  <div>
+                    <div><b>{scope.scope}</b> is a <b>high risk</b> scope.</div>
+                    <div className="mb-3">Granting it to <b>{role.role}</b> might pose a <b>security risk</b>.</div>
+                    <div className="align-center">
+                      <em>Are you sure?</em>
+                    </div>
+                  </div>
+                ),
+                visible: true,
+                verify: () => this.allow(scope.scope, role.role),
+              }
+            });
+          };
+        }
+
         button = (
           <Button className="auth-boolean-icon" title={title} size="sm" variant="danger" onClick={allow}>
             <False />
@@ -198,7 +241,7 @@ export default class Authorization extends React.Component {
             <ReactMarkdown source={scope.doc} />
           </div>
         </td>
-        {data.roles.map(role => this.renderAuthButton(scope, role, data.allows))}
+        {data.roles.map(role => this.renderAuthButton(scope, role, data.grants))}
       </tr>
     );
   }
@@ -298,6 +341,39 @@ export default class Authorization extends React.Component {
       </Form>
     );
 
+    let handleClose = () => {
+      this.setState({
+        checked: {
+          title: "",
+          prompt: "",
+          visible: false,
+          verify: () => {},
+        }
+      });
+    };
+
+    let handleVerify = () => {
+      this.state.checked.verify();
+      handleClose();
+    };
+
+    let modal = (
+      <Modal show={!!this.state.checked.visible} onHide={handleClose}>
+        <Modal.Header closeButton>
+          <Modal.Title className="align-center">{this.state.checked.title}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="align-center">{this.state.checked.prompt}</Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleClose}>
+            No
+          </Button>
+          <Button variant="primary" onClick={handleVerify}>
+            Yes
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    );
+
     return (
       <div>
         <h2>
@@ -308,6 +384,7 @@ export default class Authorization extends React.Component {
         {filter}
         {content}
         {loading}
+        {modal}
       </div>
     );
   }

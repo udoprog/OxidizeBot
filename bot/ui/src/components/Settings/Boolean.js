@@ -22,9 +22,17 @@ export class Boolean extends Base {
 
   render(value, onChange) {
     if (value) {
-      return <Button title="Toggle to false" size="sm" variant="success" onClick={() => onChange(false)}><True /></Button>;
+      return (
+        <Button className="settings-boolean-icon" title="Toggle to false" size="sm" variant="success" onClick={() => onChange(false)}>
+          <True />
+        </Button>
+      );
     } else {
-      return <Button title="Toggle to true" size="sm" variant="danger" onClick={() => onChange(true)}><False /></Button>;
+      return (
+        <Button  className="settings-boolean-icon" title="Toggle to true" size="sm" variant="danger" onClick={() => onChange(true)}>
+          <False />
+        </Button>
+      );
     }
   }
 

@@ -12,12 +12,14 @@ scopes:
   player/attach-detach:
     doc: If you are allowed to attach or detach the music player.
     version: 0
+    risk: high
     allow:
       - "@streamer"
       - "@moderator"
   command/admin:
     doc: If you are allowed to run the `!admin` command.
     version: 0
+    risk: high
     allow:
       - "@streamer"
       - "@moderator"
