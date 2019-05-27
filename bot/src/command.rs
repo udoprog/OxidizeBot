@@ -73,7 +73,7 @@ impl<'a, 'm> Context<'a, 'm> {
             roles.push(Role::Streamer);
         }
 
-        if self.moderators.contains(self.user.name) {
+        if self.is_moderator() {
             roles.push(Role::Moderator);
         }
 
@@ -106,12 +106,12 @@ impl<'a, 'm> Context<'a, 'm> {
 
     /// Test if moderator.
     pub fn is_moderator(&self) -> bool {
-        self.moderators.contains(self.user.name) || self.is_streamer()
+        self.is_streamer() || self.moderators.contains(self.user.name)
     }
 
     /// Test if subscriber.
     pub fn is_subscriber(&self) -> bool {
-        self.stream_info.is_subscriber(self.user.name)
+        self.is_streamer() || self.stream_info.is_subscriber(self.user.name)
     }
 
     /// Check that the given user is a moderator.
