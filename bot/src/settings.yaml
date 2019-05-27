@@ -23,6 +23,12 @@ types:
   gtav/success-feedback:
     doc: If we should have chat feedback on successful commands.
     type: {id: bool}
+  irc/moderator-cooldown:
+    doc: How long we must wait between each moderator action.
+    type: {id: duration}
+  irc/startup-message:
+    doc: Message to send when the bot starts up.
+    type: {id: string}
   irc/idle-detection/threshold:
     doc: How many messages must be received before the channel is no longer considered idle.
     type: {id: number}

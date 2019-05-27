@@ -6,10 +6,11 @@ use hashbrown::{HashMap, HashSet};
 use relative_path::RelativePathBuf;
 use std::sync::Arc;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Default, serde::Deserialize)]
 pub struct Config {
     pub streamer: Option<String>,
-    pub irc: Arc<irc::Config>,
+    #[serde(default)]
+    pub irc: irc::Config,
     #[serde(default)]
     pub database_url: Option<String>,
     #[serde(default)]

@@ -436,7 +436,7 @@ impl fmt::Display for Offset {
 }
 
 /// A cooldown implementation that prevents an action from being executed too frequently.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Cooldown {
     last_action_at: Option<time::Instant>,
     pub cooldown: Duration,

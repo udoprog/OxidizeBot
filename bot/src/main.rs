@@ -109,14 +109,14 @@ async fn try_main(
 
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
 
-    if !config.is_file() {
-        failure::bail!("missing configuration: {}", config.display());
-    }
-
-    let config: config::Config = fs::read_to_string(&config)
-        .map_err(failure::Error::from)
-        .and_then(|s| toml::de::from_str(&s).map_err(failure::Error::from))
-        .with_context(|_| format_err!("failed to read configuration: {}", config.display()))?;
+    let config: config::Config = if config.is_file() {
+        fs::read_to_string(&config)
+            .map_err(failure::Error::from)
+            .and_then(|s| toml::de::from_str(&s).map_err(failure::Error::from))
+            .with_context(|_| format_err!("failed to read configuration: {}", config.display()))?
+    } else {
+        Default::default()
+    };
 
     let config = Arc::new(config);
 

@@ -32,10 +32,11 @@ const TWITCH_TAGS_CAP: &'static str = "twitch.tv/tags";
 const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
 
 /// Configuration for twitch integration.
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Default, serde::Deserialize)]
 pub struct Config {
     bot: Option<String>,
     /// Cooldown for moderator actions.
+    #[serde(default)]
     moderator_cooldown: Option<utils::Cooldown>,
     /// Cooldown for creating clips.
     #[serde(default = "default_cooldown")]
@@ -47,7 +48,7 @@ pub struct Config {
     pub channel: Option<String>,
     /// Whether or not to notify on currency rewards.
     #[serde(default)]
-    notify_rewards: bool,
+    notify_rewards: Option<bool>,
     /// Notify when bot starts.
     #[serde(default)]
     startup_message: Option<String>,
@@ -118,7 +119,23 @@ impl Irc {
             log::warn!("`[irc] channel` setting has been deprecated from the configuration");
         }
 
-        if let Some(_) = config.currency {
+        if config.irc.moderator_cooldown.is_some() {
+            log::warn!(
+                "`[irc] moderator_cooldown` setting has been deprecated from the configuration"
+            );
+        }
+
+        if config.irc.notify_rewards.is_some() {
+            log::warn!("`[irc] notify_rewards` setting has been deprecated from the configuration");
+        }
+
+        if config.irc.startup_message.is_some() {
+            log::warn!(
+                "`[irc] startup_message` setting has been deprecated from the configuration"
+            );
+        }
+
+        if config.currency.is_some() {
             log::warn!("`[currency]` setting has been deprecated from the configuration");
         }
 
@@ -209,13 +226,6 @@ impl Irc {
             client.identify()?;
 
             let sender = Sender::new(channel.clone(), client.clone());
-            sender.cap_req(TWITCH_TAGS_CAP);
-            sender.cap_req(TWITCH_COMMANDS_CAP);
-
-            if let Some(startup_message) = config.irc.startup_message.as_ref() {
-                // greeting when bot joins
-                sender.privmsg(startup_message);
-            }
 
             let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
 
@@ -354,6 +364,11 @@ impl Irc {
             let (mut whitelisted_hosts_stream, whitelisted_hosts) =
                 settings.init_and_stream("irc/whitelisted-hosts", HashSet::<String>::new())?;
 
+            let (mut moderator_cooldown_stream, moderator_cooldown) =
+                settings.init_and_option_stream("irc/moderator-cooldown")?;
+
+            let startup_message = settings.get::<String>("irc/startup-message")?;
+
             let mut pong_timeout = None;
 
             let mut handler = Handler {
@@ -368,7 +383,7 @@ impl Irc {
                 features: config.features.clone(),
                 api_url: config.api_url.clone(),
                 thread_pool: Arc::new(ThreadPool::new()),
-                moderator_cooldown: config.irc.moderator_cooldown.clone(),
+                moderator_cooldown,
                 handlers,
                 shutdown: &shutdown,
                 idle: &idle,
@@ -384,8 +399,19 @@ impl Irc {
             let mut ping_interval = timer::Interval::new_interval(time::Duration::from_secs(10));
 
             let future = async move {
+                handler.sender.cap_req(TWITCH_TAGS_CAP);
+                handler.sender.cap_req(TWITCH_COMMANDS_CAP);
+
+                if let Some(startup_message) = startup_message.as_ref() {
+                    // greeting when bot joins
+                    handler.sender.privmsg(startup_message);
+                }
+
                 loop {
                     futures::select! {
+                        update = moderator_cooldown_stream.select_next_some() => {
+                            handler.moderator_cooldown = update;
+                        }
                         _ = ping_interval.select_next_some() => {
                             handler.send_ping()?;
                         }
