@@ -62,6 +62,9 @@ types:
   migration/themes-migrated:
     doc: If themes have been migrated from the configuration file.
     type: {id: bool}
+  player/fallback-uri:
+    doc: The fallback URI (Spotify) to use when no other songs are queued up. Removing this setting causes the bot to use your library.
+    type: {id: string, optional: true}
   player/duplicate-duration:
     doc: The minimum amount of time that has to have been passed to allow adding a song that has already been queued.
     type: {id: duration}

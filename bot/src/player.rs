@@ -246,7 +246,6 @@ pub fn run(
     let (commands_tx, commands) = mpsc::unbounded();
 
     let (detached_stream, detached) = settings.stream("detached").or_default()?;
-
     let mut vars = settings.vars();
 
     let duplicate_duration = vars.var("duplicate-duration", utils::Duration::default())?;
@@ -318,13 +317,6 @@ pub fn run(
         )
         .await?;
 
-        let fallback_items = match config.player.playlist.clone() {
-            Some(playlist) => playlist_to_items(spotify.clone(), playlist).await?,
-            None => songs_to_items(spotify.clone()).await?,
-        };
-
-        log::info!("Added {} fallback songs", fallback_items.len());
-
         // Add tracks from database.
         for song in db.list()? {
             let item = convert_item(
@@ -342,12 +334,13 @@ pub fn run(
         let mixer = Mixer {
             queue,
             sidelined: Default::default(),
-            fallback_items,
+            fallback_items: Default::default(),
             fallback_queue: Default::default(),
         };
 
         let future = PlaybackFuture {
             config: config.clone(),
+            spotify: spotify.clone(),
             connect_player,
             youtube_player,
             commands,
@@ -1329,7 +1322,7 @@ pub struct Mixer {
     queue: Queue,
     /// A song that has been sidelined by another song.
     sidelined: VecDeque<Song>,
-    /// Items to fall back to when there are no more songs in queue.
+    /// Currently loaded fallback items.
     fallback_items: Vec<Arc<Item>>,
     /// Items ordered in the reverse way they are meant to be played.
     fallback_queue: VecDeque<Arc<Item>>,
@@ -1338,7 +1331,6 @@ pub struct Mixer {
 impl Mixer {
     /// The minimum size of the fallback queue.
     const FALLBACK_QUEUE_SIZE: usize = 10;
-
     /// Get next song to play.
     ///
     /// Will shuffle all fallback items and add them to a queue to avoid playing the same song twice.
@@ -1422,6 +1414,7 @@ pub enum State {
 /// Future associated with driving audio playback.
 pub struct PlaybackFuture {
     config: Arc<config::Config>,
+    spotify: Arc<api::Spotify>,
     connect_player: self::connect::ConnectPlayer,
     youtube_player: self::youtube::YouTubePlayer,
     commands: mpsc::UnboundedReceiver<Command>,
@@ -1497,6 +1490,9 @@ impl PlaybackFuture {
 
         let (mut enabled_stream, enabled) = song_file.stream("enabled").or_default()?;
 
+        let (mut fallback_stream, fallback) = settings.stream("fallback-uri").optional()?;
+        self.update_fallback_items(fallback.clone()).await;
+
         let mut song_file = SongFileBuilder::default();
         song_file.enabled = enabled;
         song_file.path = path;
@@ -1509,6 +1505,9 @@ impl PlaybackFuture {
             let mut song_file_update = self.song_file.as_mut().map(|u| &mut u.update_interval);
 
             futures::select! {
+                fallback = fallback_stream.select_next_some() => {
+                    self.update_fallback_items(fallback).await;
+                }
                 /* current song */
                 update = enabled_stream.select_next_some() => {
                     song_file.enabled = update;
@@ -1576,6 +1575,125 @@ impl PlaybackFuture {
                 }
             }
         }
+    }
+
+    /// Update fallback items based on an URI.
+    async fn update_fallback_items(&mut self, uri: Option<String>) {
+        let result = match uri.as_ref() {
+            Some(uri) => {
+                let result = match parse_playlist_id(uri) {
+                    Some(id) => Self::playlist_to_items(&self.spotify, id.to_string()).await,
+                    None => Self::playlist_to_items(&self.spotify, uri.clone()).await,
+                };
+
+                match result {
+                    Ok((name, items)) => Ok((Some(name), items)),
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to load playlist `{}`, \
+                             falling back to library: {}",
+                            uri,
+                            e
+                        );
+                        Self::songs_to_items(&self.spotify)
+                            .await
+                            .map(|items| (None, items))
+                    }
+                }
+            }
+            None => Self::songs_to_items(&self.spotify)
+                .await
+                .map(|items| (None, items)),
+        };
+
+        let (what, items) = match result {
+            Ok(result) => result,
+            Err(e) => {
+                log_err!(e, "Failed to configure fallback items");
+                return;
+            }
+        };
+
+        let what = what
+            .as_ref()
+            .map(|u| format!("\"{}\" playlist", u))
+            .unwrap_or_else(|| String::from("your library"));
+
+        log::info!(
+            "Updated fallback queue with {} items from {}.",
+            items.len(),
+            what
+        );
+
+        self.mixer.fallback_items = items;
+        self.mixer.fallback_queue.clear();
+
+        fn parse_playlist_id<'a>(s: &'a str) -> Option<&'a str> {
+            let mut p = s.split(":");
+
+            match (p.next(), p.next(), p.next(), p.next(), p.next()) {
+                (Some("spotify"), Some("user"), Some(_user), Some("playlist"), Some(id)) => {
+                    Some(id)
+                }
+                _ => None,
+            }
+        }
+    }
+
+    /// Convert a playlist into items.
+    async fn playlist_to_items(
+        spotify: &Arc<api::Spotify>,
+        playlist: String,
+    ) -> Result<(String, Vec<Arc<Item>>), Error> {
+        let mut items = Vec::new();
+
+        let playlist = spotify.playlist(playlist).await?;
+        let name = playlist.name.to_string();
+
+        for playlist_track in spotify.page_as_stream(playlist.tracks).try_concat().await? {
+            let track = playlist_track.track;
+
+            let track_id = TrackId::Spotify(
+                SpotifyId::from_base62(&track.id)
+                    .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
+            );
+
+            let duration = Duration::from_millis(track.duration_ms.into());
+
+            items.push(Arc::new(Item {
+                track_id,
+                track: Track::Spotify { track },
+                user: None,
+                duration,
+            }));
+        }
+
+        Ok((name, items))
+    }
+
+    /// Convert all songs of a user into items.
+    async fn songs_to_items(spotify: &Arc<api::Spotify>) -> Result<Vec<Arc<Item>>, Error> {
+        let mut items = Vec::new();
+
+        for added_song in spotify.my_tracks_stream().try_concat().await? {
+            let track = added_song.track;
+
+            let track_id = TrackId::Spotify(
+                SpotifyId::from_base62(&track.id)
+                    .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
+            );
+
+            let duration = Duration::from_millis(track.duration_ms.into());
+
+            items.push(Arc::new(Item {
+                track_id,
+                track: Track::Spotify { track },
+                user: None,
+                duration,
+            }));
+        }
+
+        Ok(items)
     }
 
     /// Notify a change in the current song.
@@ -1984,61 +2102,6 @@ impl PlaybackFuture {
 
         Ok(())
     }
-}
-
-/// Convert a playlist into items.
-async fn playlist_to_items(
-    spotify: Arc<api::Spotify>,
-    playlist: String,
-) -> Result<Vec<Arc<Item>>, Error> {
-    let mut items = Vec::new();
-
-    let playlist = spotify.playlist(playlist).await?;
-
-    for playlist_track in spotify.page_as_stream(playlist.tracks).try_concat().await? {
-        let track = playlist_track.track;
-
-        let track_id = TrackId::Spotify(
-            SpotifyId::from_base62(&track.id)
-                .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
-        );
-
-        let duration = Duration::from_millis(track.duration_ms.into());
-
-        items.push(Arc::new(Item {
-            track_id,
-            track: Track::Spotify { track },
-            user: None,
-            duration,
-        }));
-    }
-
-    Ok(items)
-}
-
-/// Convert all songs of a user into items.
-async fn songs_to_items(spotify: Arc<api::Spotify>) -> Result<Vec<Arc<Item>>, Error> {
-    let mut items = Vec::new();
-
-    for added_song in spotify.my_tracks_stream().try_concat().await? {
-        let track = added_song.track;
-
-        let track_id = TrackId::Spotify(
-            SpotifyId::from_base62(&track.id)
-                .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
-        );
-
-        let duration = Duration::from_millis(track.duration_ms.into());
-
-        items.push(Arc::new(Item {
-            track_id,
-            track: Track::Spotify { track },
-            user: None,
-            duration,
-        }));
-    }
-
-    Ok(items)
 }
 
 /// Converts a track into an Item.
