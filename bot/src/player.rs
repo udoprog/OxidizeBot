@@ -251,8 +251,8 @@ pub fn run(
 
     let duplicate_duration = vars.var("duplicate-duration", utils::Duration::default())?;
 
-    let echo_current_song = vars.var(
-        "echo-current-song",
+    let song_switch_feedback = vars.var(
+        "song-switch-feedback",
         match config.player.echo_current_song.clone() {
             Some(value) => {
                 log::warn!("`[player] echo_current_song` configuration is deprecated");
@@ -360,7 +360,7 @@ pub fn run(
             volume: Arc::clone(&volume),
             song: song.clone(),
             song_file: None,
-            echo_current_song,
+            song_switch_feedback,
             song_update_interval,
             song_update_interval_stream,
             global_bus,
@@ -402,9 +402,6 @@ pub fn run(
 
     Ok((parent_player, future))
 }
-
-/// Error value returned if a device has not been configured.
-pub struct NotConfigured;
 
 /// Events emitted by the player.
 #[derive(Debug, Clone)]
@@ -1445,7 +1442,7 @@ pub struct PlaybackFuture {
     /// Path to write current song.
     song_file: Option<SongFile>,
     /// Song config.
-    echo_current_song: Arc<RwLock<bool>>,
+    song_switch_feedback: Arc<RwLock<bool>>,
     /// Optional stream indicating that we want to send a song update on the global bus.
     song_update_interval: Option<timer::Interval>,
     /// Stream for when song update interval is updated.
@@ -1624,7 +1621,13 @@ impl PlaybackFuture {
         match (self.player, player) {
             (Spotify, Spotify) => (),
             (YouTube, YouTube) => (),
-            (Spotify, _) | (None, YouTube) => self.connect_player.stop().await,
+            (Spotify, _) | (None, YouTube) => {
+                let result = self.connect_player.stop().await;
+
+                if let Err(self::connect::CommandError::NoDevice) = result {
+                    self.bus.broadcast(Event::NotConfigured);
+                }
+            }
             (YouTube, _) | (None, Spotify) => self.youtube_player.stop(),
             (None, None) => (),
         }
@@ -1637,7 +1640,12 @@ impl PlaybackFuture {
         match self.player {
             PlayerKind::Spotify => {
                 log::trace!("pausing spotify player");
-                self.connect_player.pause().await;
+
+                let result = self.connect_player.pause().await;
+
+                if let Err(self::connect::CommandError::NoDevice) = result {
+                    self.bus.broadcast(Event::NotConfigured);
+                }
             }
             PlayerKind::YouTube => {
                 log::trace!("pausing youtube player");
@@ -1650,7 +1658,13 @@ impl PlaybackFuture {
     /// Play the given song.
     async fn send_play_command(&mut self, song: Song) {
         match song.item.track_id.clone() {
-            TrackId::Spotify(id) => self.connect_player.play(song.elapsed(), id).await,
+            TrackId::Spotify(id) => {
+                let result = self.connect_player.play(song.elapsed(), id).await;
+
+                if let Err(self::connect::CommandError::NoDevice) = result {
+                    self.bus.broadcast(Event::NotConfigured);
+                }
+            }
             TrackId::YouTube(id) => self
                 .youtube_player
                 .play(song.elapsed(), song.duration(), id),
@@ -1676,7 +1690,7 @@ impl PlaybackFuture {
 
         if let Source::Manual = source {
             self.bus.broadcast(Event::Playing(
-                *self.echo_current_song.read(),
+                *self.song_switch_feedback.read(),
                 song.item.clone(),
             ));
         }
@@ -1696,7 +1710,7 @@ impl PlaybackFuture {
     async fn resume_song(&mut self, source: Source, song: Song) -> Result<(), Error> {
         if let Source::Manual = source {
             self.bus.broadcast(Event::Playing(
-                *self.echo_current_song.read(),
+                *self.song_switch_feedback.read(),
                 song.item.clone(),
             ));
         }
@@ -1857,7 +1871,12 @@ impl PlaybackFuture {
                 self.bus.broadcast(Event::Modified);
             }
             (Volume(_, volume), _) => {
-                self.connect_player.volume(volume).await;
+                let result = self.connect_player.volume(volume).await;
+
+                if let Err(self::connect::CommandError::NoDevice) = result {
+                    self.bus.broadcast(Event::NotConfigured);
+                }
+
                 self.youtube_player.volume(volume);
                 *self.volume.write() = volume;
             }
@@ -1942,8 +1961,14 @@ impl PlaybackFuture {
 
                 match track_id {
                     TrackId::Spotify(id) => {
-                        self.connect_player.play(elapsed, id).await;
-                        self.connect_player.volume(volume).await;
+                        let c1 = self.connect_player.play(elapsed, id);
+                        let c2 = self.connect_player.volume(volume);
+                        let result = future::try_join(c1, c2).await;
+
+                        if let Err(self::connect::CommandError::NoDevice) = result {
+                            self.bus.broadcast(Event::NotConfigured);
+                        }
+
                         self.switch_current_player(PlayerKind::Spotify).await;
                         self.state = State::Playing;
                     }

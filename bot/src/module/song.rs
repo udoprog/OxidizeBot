@@ -798,6 +798,7 @@ async fn feedback(
     sender: irc::Sender,
     chat_feedback: Arc<RwLock<bool>>,
 ) -> Result<(), Error> {
+    let mut configured_cooldown = Cooldown::from_duration(Duration::seconds(10));
     let mut rx = player.add_rx().compat();
 
     while let Some(e) = rx.next().await {
@@ -807,8 +808,8 @@ async fn feedback(
             Event::Detached => {
                 sender.privmsg("Player is detached!");
             }
-            Event::Playing(echo, item) => {
-                if !echo || !*chat_feedback.read() {
+            Event::Playing(feedback, item) => {
+                if !feedback || !*chat_feedback.read() {
                     return Ok(());
                 }
 
@@ -832,7 +833,9 @@ async fn feedback(
                 ));
             }
             Event::NotConfigured => {
-                sender.privmsg("Player has not been configured yet!");
+                if configured_cooldown.is_open() {
+                    sender.privmsg("Player has not been configured!");
+                }
             }
             // other event we don't care about
             _ => (),

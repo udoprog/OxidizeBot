@@ -69,8 +69,8 @@ types:
     doc: If the player is detached, in that it can no longer control the music.
     type: {id: bool}
     scope: player/attach-detach
-  player/echo-current-song:
-    doc: Echo the current song in chat.
+  player/song-switch-feedback:
+    doc: Echo when the current song switches in chat.
     type: {id: bool}
   player/max-queue-length:
     doc: The maximum queue length permitted in the player.

@@ -48,58 +48,62 @@ pub struct ConnectPlayer {
     volume_scale: Arc<RwLock<u32>>,
 }
 
+#[derive(Debug, Clone, Copy, err_derive::Error)]
+pub enum CommandError {
+    #[error(display = "error when issuing {} command", _0)]
+    Error(&'static str),
+    #[error(display = "no device configured")]
+    NoDevice,
+}
+
+impl CommandError {
+    fn handle(
+        result: Result<bool, failure::Error>,
+        what: &'static str,
+    ) -> Result<(), CommandError> {
+        match result {
+            Err(e) => {
+                log_err!(e, "failed to issue {} command", what);
+                Err(CommandError::Error(what))
+            }
+            Ok(true) => Ok(()),
+            Ok(false) => Err(CommandError::NoDevice),
+        }
+    }
+}
+
 impl ConnectPlayer {
     /// Play the specified song.
-    pub async fn play(&self, elapsed: Duration, id: SpotifyId) {
+    pub async fn play(&self, elapsed: Duration, id: SpotifyId) -> Result<(), CommandError> {
         let track_uri = format!("spotify:track:{}", id.to_base62());
         let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
+
         let result = self
             .spotify
             .me_player_play(device_id, Some(track_uri), Some(elapsed.as_millis() as u64))
             .await;
 
-        match result {
-            Err(e) => log_err!(e, "failed to issue play command"),
-            Ok(true) => (),
-            Ok(false) => log::error!("no device configured"),
-        }
+        CommandError::handle(result, "play")
     }
 
-    pub async fn pause(&self) {
+    pub async fn pause(&self) -> Result<(), CommandError> {
         let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
-        let result = self.spotify.me_player_pause(device_id).await;
-
-        match result {
-            Err(e) => log_err!(e, "failed to issue pause command"),
-            Ok(true) => (),
-            Ok(false) => log::error!("no device configured"),
-        }
+        CommandError::handle(self.spotify.me_player_pause(device_id).await, "pause")
     }
 
-    pub async fn stop(&self) {
+    pub async fn stop(&self) -> Result<(), CommandError> {
         let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
-        let result = self.spotify.me_player_pause(device_id).await;
-
-        match result {
-            Err(e) => log_err!(e, "failed to issue stop command"),
-            Ok(true) => (),
-            Ok(false) => log::error!("no device configured"),
-        }
+        CommandError::handle(self.spotify.me_player_pause(device_id).await, "stop")
     }
 
-    pub async fn volume(&self, volume: u32) {
+    pub async fn volume(&self, volume: u32) -> Result<(), CommandError> {
         let volume = (volume * *self.volume_scale.read()) / 100u32;
+        let volume = (volume as f32) / 100f32;
         let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
-        let result = self
-            .spotify
-            .me_player_volume(device_id, (volume as f32) / 100f32)
-            .await;
-
-        match result {
-            Err(e) => log_err!(e, "failed to issue volume command"),
-            Ok(true) => (),
-            Ok(false) => log::error!("no device configured"),
-        }
+        CommandError::handle(
+            self.spotify.me_player_volume(device_id, volume).await,
+            "volume",
+        )
     }
 }
 
