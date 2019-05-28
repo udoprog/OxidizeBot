@@ -1,6 +1,13 @@
 use crate::{
-    api, bus, config, current_song, db, prelude::*, settings, spotify_id::SpotifyId, timer,
-    track_id::TrackId, utils,
+    api, bus, config, db,
+    prelude::*,
+    settings,
+    song_file::{SongFile, SongFileBuilder},
+    spotify_id::SpotifyId,
+    template::Template,
+    timer,
+    track_id::TrackId,
+    utils,
 };
 
 use chrono::{DateTime, Utc};
@@ -16,6 +23,9 @@ use tokio_threadpool::ThreadPool;
 
 mod connect;
 mod youtube;
+
+static DEFAULT_CURRENT_SONG_TEMPLATE: &'static str = "Song: {{name}}{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})\n{{#if user~}}Request by: @{{user~}}{{/if}}";
+static DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE: &'static str = "Not Playing";
 
 /// Event used by player integrations.
 #[derive(Debug)]
@@ -195,17 +205,6 @@ pub fn run(
     let bus = Arc::new(RwLock::new(Bus::new(1024)));
     let queue = Queue::new(db.clone());
 
-    // Blank current song file if specified.
-    if let Some(current_song) = config.current_song.as_ref() {
-        if let Err(e) = current_song.blank() {
-            log::warn!(
-                "failed to blank current songs: {}: {}",
-                current_song.path.display(),
-                e
-            );
-        }
-    }
-
     let volume = Arc::new(RwLock::new(u32::min(
         100u32,
         config.player.volume.unwrap_or(50u32),
@@ -213,15 +212,6 @@ pub fn run(
 
     let song = Arc::new(RwLock::new(None));
     let closed = Arc::new(RwLock::new(None));
-
-    let current_song_update = match config
-        .current_song
-        .as_ref()
-        .and_then(|c| c.update_interval())
-    {
-        Some(update_interval) => Some(timer::Interval::new_interval(update_interval.clone())),
-        None => None,
-    };
 
     let (song_update_interval_stream, song_update_interval) =
         settings.stream("song-update-interval", utils::Duration::seconds(1))?;
@@ -234,6 +224,22 @@ pub fn run(
     if !config.player.sync_player_interval.is_empty() {
         log::warn!("### DEPRECATION WARNING");
         log::warn!("[player] sync_player_interval - configuration has been deprecated since it was too unreliable.");
+    }
+
+    if !config.current_song.path.is_some() {
+        log::warn!("`[current_song] path` configuration is deprecated.");
+    }
+
+    if !config.current_song.template.is_some() {
+        log::warn!("`[current_song] template` configuration is deprecated.");
+    }
+
+    if !config.current_song.not_playing.is_some() {
+        log::warn!("`[current_song] not_playing` configuration is deprecated.");
+    }
+
+    if !config.current_song.update_interval.is_empty() {
+        log::warn!("`[current_song] update_interval` configuration is deprecated.");
     }
 
     let (commands_tx, commands) = mpsc::unbounded();
@@ -340,6 +346,7 @@ pub fn run(
         };
 
         let future = PlaybackFuture {
+            config: config.clone(),
             connect_player,
             youtube_player,
             commands,
@@ -351,9 +358,8 @@ pub fn run(
             detached_stream,
             volume: Arc::clone(&volume),
             song: song.clone(),
-            current_song: config.current_song.clone(),
+            song_file: None,
             echo_current_song,
-            current_song_update,
             song_update_interval,
             song_update_interval_stream,
             global_bus,
@@ -362,7 +368,7 @@ pub fn run(
 
         let p = match spotify.me_player().await? {
             Some(p) => p,
-            None => return future.run().await,
+            None => return future.run(settings).await,
         };
 
         match Song::from_playback(&p) {
@@ -392,7 +398,9 @@ pub fn run(
         }
 
         let futures = future::try_join_all(futures);
-        future::try_join(future.run(), futures).await.map(|_| ())
+        future::try_join(future.run(settings), futures)
+            .await
+            .map(|_| ())
     };
 
     Ok((parent_player, future))
@@ -1419,6 +1427,7 @@ pub enum State {
 
 /// Future associated with driving audio playback.
 pub struct PlaybackFuture {
+    config: Arc<config::Config>,
     connect_player: self::connect::ConnectPlayer,
     youtube_player: self::youtube::YouTubePlayer,
     commands: mpsc::UnboundedReceiver<Command>,
@@ -1437,11 +1446,9 @@ pub struct PlaybackFuture {
     /// Song that is currently loaded.
     song: Arc<RwLock<Option<Song>>>,
     /// Path to write current song.
-    current_song: Option<Arc<current_song::CurrentSong>>,
+    song_file: Option<SongFile>,
     /// Song config.
     echo_current_song: Arc<RwLock<bool>>,
-    /// Optional stream indicating when current song should update.
-    current_song_update: Option<timer::Interval>,
     /// Optional stream indicating that we want to send a song update on the global bus.
     song_update_interval: Option<timer::Interval>,
     /// Stream for when song update interval is updated.
@@ -1454,9 +1461,83 @@ pub struct PlaybackFuture {
 
 impl PlaybackFuture {
     /// Run the playback future.
-    pub async fn run(mut self) -> Result<(), Error> {
+    pub async fn run(mut self, settings: settings::Settings) -> Result<(), Error> {
+        let song_file = settings.scoped(&["song-file"]);
+
+        let (mut path_stream, path) =
+            song_file.stream_opt_or("path", self.config.current_song.path.clone())?;
+
+        let default_template = Some(
+            self.config
+                .current_song
+                .template
+                .clone()
+                .map(Ok)
+                .unwrap_or_else(|| Template::compile(DEFAULT_CURRENT_SONG_TEMPLATE))?,
+        );
+
+        let default_stopped_template = Some(
+            self.config
+                .current_song
+                .not_playing
+                .clone()
+                .map(Ok)
+                .unwrap_or_else(|| Template::compile(DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE))?,
+        );
+
+        let (mut template_stream, template) =
+            song_file.stream_opt_or("template", default_template)?;
+
+        let (mut stopped_template_stream, stopped_template) =
+            song_file.stream_opt_or("stopped-template", default_stopped_template)?;
+
+        let (mut update_interval_stream, update_interval) = song_file.stream(
+            "update-interval",
+            self.config.current_song.update_interval.clone(),
+        )?;
+
+        let (mut enabled_stream, enabled) = song_file.stream("enabled", false)?;
+
+        let mut song_file = SongFileBuilder::default();
+        song_file.enabled = enabled;
+        song_file.path = path;
+        song_file.template = template;
+        song_file.stopped_template = stopped_template;
+        song_file.update_interval = update_interval;
+        song_file.init(&mut self.song_file);
+
         loop {
+            let mut song_file_update = self.song_file.as_mut().map(|u| &mut u.update_interval);
+
             futures::select! {
+                /* current song */
+                update = enabled_stream.select_next_some() => {
+                    song_file.enabled = update;
+                    song_file.init(&mut self.song_file);
+                }
+                update = path_stream.select_next_some() => {
+                    song_file.path = update;
+                    song_file.init(&mut self.song_file);
+                }
+                update = template_stream.select_next_some() => {
+                    song_file.template = update;
+                    song_file.init(&mut self.song_file);
+                }
+                update = stopped_template_stream.select_next_some() => {
+                    song_file.stopped_template = update;
+                    song_file.init(&mut self.song_file);
+                }
+                update = update_interval_stream.select_next_some() => {
+                    song_file.update_interval = update;
+                    song_file.init(&mut self.song_file);
+                }
+                update = song_file_update.next() => {
+                    if let Some(_) = update.transpose()? {
+                        let song = self.song.read();
+                        self.update_song_file(song.as_ref());
+                    }
+                }
+                /* player */
                 timeout = self.timeout.current() => {
                     timeout?;
                     self.end_of_track().await?;
@@ -1468,12 +1549,6 @@ impl PlaybackFuture {
                         }
 
                         self.detached = update;
-                    }
-                }
-                update = self.current_song_update.next() => {
-                    if let Some(_) = update.transpose()? {
-                        let song = self.song.read();
-                        self.write_current_song(song.as_ref());
                     }
                 }
                 update = self.song_update_interval_stream.next() => {
@@ -1517,7 +1592,7 @@ impl PlaybackFuture {
     /// Notify a change in the current song.
     fn notify_song_change(&self, song: Option<&Song>) -> Result<(), Error> {
         self.global_bus.send(bus::Global::song(song)?);
-        self.write_current_song(song);
+        self.update_song_file(song);
         Ok(())
     }
 
@@ -1530,8 +1605,8 @@ impl PlaybackFuture {
     /// Write current song. Log any errors.
     ///
     /// MUST NOT be called when self.song is locked.
-    fn write_current_song(&self, song: Option<&Song>) {
-        let current_song = match self.current_song.as_ref() {
+    fn update_song_file(&self, song: Option<&Song>) {
+        let current_song = match self.song_file.as_ref() {
             Some(current_song) => current_song,
             None => return,
         };

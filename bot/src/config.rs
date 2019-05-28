@@ -1,6 +1,6 @@
 use crate::{
-    current_song, features, irc, module, player, secrets, settings, track_id::TrackId,
-    utils::Offset, web,
+    features, irc, module, player, secrets, settings, song_file, track_id::TrackId, utils::Offset,
+    web,
 };
 use hashbrown::{HashMap, HashSet};
 use relative_path::RelativePathBuf;
@@ -32,9 +32,9 @@ pub struct Config {
     pub features: features::Features,
     #[serde(default)]
     pub whitelisted_hosts: HashSet<String>,
-    /// Write the current song to the specified path.
+    /// Deprecated current_song configuration.
     #[serde(default)]
-    pub current_song: Option<Arc<current_song::CurrentSong>>,
+    pub current_song: song_file::Config,
     /// API URL to use for pushing updates.
     #[serde(default)]
     pub api_url: Option<String>,
@@ -62,7 +62,7 @@ impl OAuth2Params for Spotify {
 
     fn new_flow_builder(
         web: web::Server,
-        settings: settings::ScopedSettings,
+        settings: settings::Settings,
         secrets_config: Arc<crate::oauth2::SecretsConfig>,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
         crate::oauth2::spotify(web, settings, secrets_config)
@@ -77,7 +77,7 @@ impl OAuth2Params for Twitch {
 
     fn new_flow_builder(
         web: web::Server,
-        settings: settings::ScopedSettings,
+        settings: settings::Settings,
         secrets_config: Arc<crate::oauth2::SecretsConfig>,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
         crate::oauth2::twitch(web, settings, secrets_config)
@@ -90,7 +90,7 @@ pub trait OAuth2Params {
 
     fn new_flow_builder(
         web: web::Server,
-        settings: settings::ScopedSettings,
+        settings: settings::Settings,
         secrets_config: Arc<crate::oauth2::SecretsConfig>,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error>;
 }
@@ -99,7 +99,7 @@ pub trait OAuth2Params {
 pub fn new_oauth2_flow<T>(
     web: web::Server,
     name: &str,
-    settings: &settings::ScopedSettings,
+    settings: &settings::Settings,
     secrets: &secrets::Secrets,
 ) -> Result<crate::oauth2::FlowBuilder, failure::Error>
 where

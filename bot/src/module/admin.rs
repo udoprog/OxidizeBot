@@ -159,7 +159,7 @@ impl<'a> command::Handler for Handler<'a> {
                         ctx.respond(format!("{} = {}", key, serde_json::to_string(&value)?));
                     }
                     value => {
-                        let schema = match self.settings.schema.lookup(key) {
+                        let schema = match self.settings.lookup(key) {
                             Some(schema) => schema,
                             None => {
                                 ctx.respond("No such setting");
@@ -218,7 +218,7 @@ impl<'a> Handler<'a> {
         ctx: &mut command::Context<'_, '_>,
         key: &str,
     ) -> Option<serde_json::Value> {
-        let schema = match self.settings.schema.lookup(key) {
+        let schema = match self.settings.lookup(key) {
             Some(schema) => schema,
             None => {
                 ctx.respond("No such setting");
@@ -228,10 +228,10 @@ impl<'a> Handler<'a> {
 
         let ty = match schema.ty {
             settings::Type {
-                kind: settings::Kind::Set { value },
+                kind: settings::Kind::Set { ref value },
                 ..
             } => value,
-            other => {
+            ref other => {
                 ctx.respond(format!("Configuration is a {}, but expected a set", other));
                 return None;
             }

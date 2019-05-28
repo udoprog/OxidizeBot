@@ -691,7 +691,7 @@ struct Constraint {
 
 impl Constraint {
     fn build(
-        vars: &mut settings::ScopedVars<'_>,
+        vars: &mut settings::Vars<'_>,
         support: bool,
         subscriber_only: bool,
     ) -> Result<Self, Error> {

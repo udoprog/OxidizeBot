@@ -1,6 +1,4 @@
-use crate::{
-    api, player, prelude::*, settings::ScopedSettings, track_id::SpotifyId, utils::Futures,
-};
+use crate::{api, player, prelude::*, settings::Settings, track_id::SpotifyId, utils::Futures};
 use parking_lot::RwLock;
 use std::sync::Arc;
 use std::{
@@ -13,7 +11,7 @@ use std::{
 pub fn setup(
     futures: &mut Futures,
     spotify: Arc<api::Spotify>,
-    settings: ScopedSettings,
+    settings: Settings,
 ) -> Result<(ConnectPlayer, ConnectDevice), failure::Error> {
     let device = Arc::new(RwLock::new(None));
 

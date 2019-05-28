@@ -43,6 +43,12 @@ where
     }
 }
 
+impl<T> stream::FusedStream for Stream<T> {
+    fn is_terminated(&self) -> bool {
+        false
+    }
+}
+
 #[derive(Default)]
 struct Inner {
     id: u32,

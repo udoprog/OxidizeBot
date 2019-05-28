@@ -1,6 +1,16 @@
 //! setbac.tv API helpers.
 
-use crate::{oauth2, player, prelude::*, utils};
+use crate::{
+    bus,
+    config::Config,
+    injector::Injector,
+    oauth2,
+    player::{self, Player},
+    prelude::*,
+    settings::Settings,
+    utils,
+};
+use futures::compat::Compat01As03;
 use reqwest::{
     header,
     r#async::{Body, Client, Decoder},
@@ -8,36 +18,149 @@ use reqwest::{
 };
 use std::{mem, sync::Arc};
 
-/// Run update loop shipping information to the remote server.
-pub fn run(
-    api_url: &str,
-    player: &player::Player,
+static DEFAULT_API_URL: &'static str = "https://setbac.tv";
+
+fn parse_url(url: &str) -> Option<Url> {
+    match str::parse(url) {
+        Ok(api_url) => Some(api_url),
+        Err(e) => {
+            log::warn!("bad api url: {}: {}", url, e);
+            None
+        }
+    }
+}
+
+struct RemoteBuilder {
     token: oauth2::SyncToken,
-) -> Result<impl Future<Output = Result<(), failure::Error>>, failure::Error> {
-    /* perform remote player update */
-    let setbac = SetBac::new(token, api_url)?;
-    let client = player.client();
+    enabled: bool,
+    player: Option<Player>,
+    api_url: Option<Url>,
+}
 
-    let mut rx = player.add_rx().compat();
-
-    Ok(async move {
-        while let Some(_) = rx.next().await {
-            log::trace!("pushing remote player update");
-
-            let mut update = PlayerUpdate::default();
-
-            update.current = client.current().map(|c| c.item.into());
-
-            for i in client.list() {
-                update.items.push(i.into());
-            }
-
-            if let Err(e) = setbac.player_update(update).await {
-                log::error!("failed to perform remote player update: {}", e);
-            }
+impl RemoteBuilder {
+    fn init(&self, remote: &mut Remote) {
+        if !self.enabled {
+            remote.rx = None;
+            remote.client = None;
+            remote.setbac = None;
+            return;
         }
 
-        Ok(())
+        remote.rx = match self.player.as_ref() {
+            Some(player) => Some(player.add_rx().compat()),
+            None => None,
+        };
+
+        remote.client = match self.player.as_ref() {
+            Some(player) => Some(player.client()),
+            None => None,
+        };
+
+        remote.setbac = match self.api_url.as_ref() {
+            Some(api_url) => Some(SetBac::new(self.token.clone(), api_url.clone())),
+            None => None,
+        };
+    }
+}
+
+#[derive(Default)]
+struct Remote {
+    rx: Option<Compat01As03<bus::Reader<player::Event>>>,
+    client: Option<player::PlayerClient>,
+    setbac: Option<SetBac>,
+}
+
+/// Run update loop shipping information to the remote server.
+pub fn run(
+    config: &Config,
+    settings: &Settings,
+    injector: &Injector,
+    token: oauth2::SyncToken,
+) -> Result<impl Future<Output = Result<(), failure::Error>>, failure::Error> {
+    let settings = settings.scoped(&["remote"]);
+
+    if config.api_url.is_some() {
+        log::warn!("`api_url` configuration has been deprecated");
+    }
+
+    let default_api_url = Some(
+        config
+            .api_url
+            .clone()
+            .unwrap_or_else(|| String::from(DEFAULT_API_URL)),
+    );
+
+    let (mut api_url_stream, api_url) = settings.stream_opt_or("api-url", default_api_url)?;
+    let (mut enabled_stream, enabled) = settings.stream("enabled", config.api_url.is_some())?;
+    let (mut player_stream, player) = injector.stream::<Player>();
+
+    let mut remote_builder = RemoteBuilder {
+        token,
+        enabled: false,
+        player: None,
+        api_url: None,
+    };
+
+    remote_builder.enabled = enabled;
+    remote_builder.player = player;
+    remote_builder.api_url = match api_url.and_then(|s| parse_url(&s)) {
+        Some(api_url) => Some(api_url),
+        None => None,
+    };
+
+    let mut remote = Remote::default();
+    remote_builder.init(&mut remote);
+
+    Ok(async move {
+        loop {
+            futures::select! {
+                update = player_stream.next() => {
+                    if let Some(update) = update {
+                        remote_builder.player = update;
+                        remote_builder.init(&mut remote);
+                    }
+                }
+                update = api_url_stream.select_next_some() => {
+                    remote_builder.api_url = match update.and_then(|s| parse_url(&s)) {
+                        Some(api_url) => Some(api_url),
+                        None => None,
+                    };
+
+                    remote_builder.init(&mut remote);
+                }
+                update = enabled_stream.select_next_some() => {
+                    remote_builder.enabled = update;
+                    remote_builder.init(&mut remote);
+                }
+                result = remote.rx.next() => {
+                    if let Some(_) = result.transpose()? {
+                        let setbac = match remote.setbac.as_ref() {
+                            Some(setbac) => setbac,
+                            None => continue,
+                        };
+
+                        let client = match remote.client.as_ref() {
+                            Some(client) => client,
+                            None => continue,
+                        };
+
+                        log::trace!("pushing remote player update");
+
+                        let mut update = PlayerUpdate::default();
+
+                        update.current = client.current().map(|c| c.item.into());
+
+                        for i in client.list() {
+                            update.items.push(i.into());
+                        }
+
+                        if let Err(e) = setbac.player_update(update).await {
+                            log::error!("failed to perform remote player update: {}", e);
+                        }
+                    }
+                }
+            }
+        }
     })
 }
 
@@ -51,12 +174,12 @@ pub struct SetBac {
 
 impl SetBac {
     /// Create a new API integration.
-    pub fn new(token: oauth2::SyncToken, api_url: &str) -> Result<SetBac, failure::Error> {
-        Ok(SetBac {
+    pub fn new(token: oauth2::SyncToken, api_url: Url) -> Self {
+        SetBac {
             client: Client::new(),
-            api_url: str::parse::<Url>(api_url)?,
+            api_url,
             token,
-        })
+        }
     }
 
     /// Get request against API.

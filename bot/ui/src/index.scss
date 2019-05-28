@@ -192,6 +192,12 @@ body {
 }
 
 .settings {
+  &-text {
+    margin: 0;
+    font-size: 70%;
+    overflow: hidden;
+  }
+
   &-boolean-icon {
     width: 3em;
   }

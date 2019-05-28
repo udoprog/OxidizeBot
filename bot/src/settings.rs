@@ -6,9 +6,9 @@ use failure::{Error, ResultExt};
 use futures::ready;
 use hashbrown::HashMap;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
-use std::{fmt, marker, pin::Pin, sync::Arc};
+use std::{borrow::Cow, fmt, marker, pin::Pin, sync::Arc};
 
-const SEPARATOR: &'static str = "/";
+const SEPARATOR: char = '/';
 
 type EventSender = mpsc::UnboundedSender<Event<serde_json::Value>>;
 type Subscriptions = Arc<RwLock<HashMap<String, EventSender>>>;
@@ -65,9 +65,7 @@ impl Schema {
     }
 }
 
-/// A container for settings from which we can subscribe for updates.
-#[derive(Clone)]
-pub struct Settings {
+pub struct Inner {
     db: db::Database,
     /// Maps setting prefixes to subscriptions.
     subscriptions: Subscriptions,
@@ -75,19 +73,38 @@ pub struct Settings {
     pub schema: Arc<Schema>,
 }
 
+/// A container for settings from which we can subscribe for updates.
+#[derive(Clone)]
+pub struct Settings {
+    scope: String,
+    inner: Arc<Inner>,
+}
+
 impl Settings {
     pub fn new(db: db::Database, schema: Schema) -> Self {
         Self {
-            db,
-            subscriptions: Arc::new(RwLock::new(HashMap::new())),
-            schema: Arc::new(schema),
+            scope: String::from(""),
+            inner: Arc::new(Inner {
+                db,
+                subscriptions: Arc::new(RwLock::new(HashMap::new())),
+                schema: Arc::new(schema),
+            }),
         }
+    }
+
+    /// Lookup the given schema.
+    pub fn lookup(&self, key: &str) -> Option<&SchemaType> {
+        let key = self.key(key);
+        self.inner.schema.types.get(key.as_ref())
     }
 
     /// Get a setting by prefix.
     pub fn get_by_prefix(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>, Error> {
         use self::db::schema::settings::dsl;
-        let c = self.db.pool.lock();
+
+        let prefix = self.key(prefix);
+
+        let c = self.inner.db.pool.lock();
 
         let results = dsl::settings
             .select((dsl::key, dsl::value))
@@ -96,7 +113,7 @@ impl Settings {
         let mut out = Vec::new();
 
         for (key, value) in results {
-            if !key.starts_with(prefix) {
+            if !key.starts_with(prefix.as_ref()) {
                 continue;
             }
 
@@ -112,27 +129,8 @@ impl Settings {
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        use self::db::schema::settings::dsl;
-        let c = self.db.pool.lock();
-
-        let result = dsl::settings
-            .select(dsl::value)
-            .filter(dsl::key.eq(key))
-            .first::<String>(&*c)
-            .optional()?;
-
-        let value = match result {
-            Some(value) => match serde_json::from_str(&value) {
-                Ok(value) => Some(value),
-                Err(e) => {
-                    log::warn!("bad value for key: {}: {}", key, e);
-                    None
-                }
-            },
-            None => None,
-        };
-
-        Ok(value)
+        let key = self.key(key);
+        self.inner_get(&key)
     }
 
     /// Insert the given setting.
@@ -140,15 +138,21 @@ impl Settings {
     where
         T: serde::Serialize,
     {
-        let value = serde_json::to_value(value)?;
-        self.set_json(key, value)
+        let key = self.key(key);
+        self.inner_set(key.as_ref(), value)
     }
 
     /// Insert the given setting as raw JSON.
     pub fn set_json(&self, key: &str, value: serde_json::Value) -> Result<(), Error> {
+        let key = self.key(key);
+        self.inner_set_json(key.as_ref(), value)
+    }
+
+    /// Inner implementation of set_json which doesn't do key translation.
+    fn inner_set_json(&self, key: &str, value: serde_json::Value) -> Result<(), Error> {
         use self::db::schema::settings::dsl;
 
-        let c = self.db.pool.lock();
+        let c = self.inner.db.pool.lock();
 
         let filter = dsl::settings.filter(dsl::key.eq(&key));
 
@@ -159,17 +163,17 @@ impl Settings {
             .optional()?;
 
         let json = serde_json::to_string(&value)?;
-        self.try_send(key, Event::Set(value));
+        self.try_send(&key, Event::Set(value));
 
         match b {
             None => {
                 diesel::insert_into(dsl::settings)
-                    .values((dsl::key.eq(key), dsl::value.eq(json)))
+                    .values((dsl::key.eq(&key), dsl::value.eq(json)))
                     .execute(&*c)?;
             }
             Some(_) => {
                 diesel::update(filter)
-                    .set((dsl::key.eq(key), dsl::value.eq(json)))
+                    .set((dsl::key.eq(&key), dsl::value.eq(json)))
                     .execute(&*c)?;
             }
         }
@@ -180,7 +184,7 @@ impl Settings {
     /// Insert the given setting.
     pub fn list(&self) -> Result<Vec<Setting>, Error> {
         use self::db::schema::settings::dsl;
-        let c = self.db.pool.lock();
+        let c = self.inner.db.pool.lock();
 
         let mut settings = Vec::new();
 
@@ -191,7 +195,7 @@ impl Settings {
             .into_iter()
             .collect::<HashMap<_, _>>();
 
-        for (key, schema) in &self.schema.types {
+        for (key, schema) in &self.inner.schema.types {
             let value = match values.get(key) {
                 Some(value) => serde_json::from_str(value)?,
                 None if schema.ty.optional => serde_json::Value::Null,
@@ -211,26 +215,41 @@ impl Settings {
     /// Clear the given setting. Returning `true` if it was removed.
     pub fn clear(&self, key: &str) -> Result<bool, Error> {
         use self::db::schema::settings::dsl;
-        self.try_send(key, Event::Clear);
 
-        let c = self.db.pool.lock();
+        let key = self.key(key);
+
+        self.try_send(&key, Event::Clear);
+
+        let c = self.inner.db.pool.lock();
         let count = diesel::delete(dsl::settings.filter(dsl::key.eq(key))).execute(&*c)?;
         Ok(count == 1)
     }
 
     /// Create a scoped setting.
-    pub fn scoped<S>(&self, scope: impl IntoIterator<Item = S>) -> ScopedSettings
+    pub fn scoped<S>(&self, add: impl IntoIterator<Item = S>) -> Settings
     where
         S: AsRef<str>,
     {
-        let scope = scope
-            .into_iter()
-            .map(|s| s.as_ref().to_string())
-            .collect::<Vec<_>>();
+        let mut scope = self.scope.clone();
 
-        ScopedSettings {
-            settings: self.clone(),
+        for s in add.into_iter() {
+            let s = s.as_ref();
+            let s = s.trim_matches(SEPARATOR);
+
+            if s.is_empty() {
+                continue;
+            }
+
+            if !scope.is_empty() {
+                scope.push(SEPARATOR);
+            }
+
+            scope.push_str(s);
+        }
+
+        Settings {
             scope,
+            inner: self.inner.clone(),
         }
     }
 
@@ -239,15 +258,17 @@ impl Settings {
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
-        let value = match self.get::<T>(key)? {
+        let key = self.key(key);
+
+        let value = match self.inner_get::<T>(&key)? {
             Some(value) => value,
             None => {
-                self.set(key, &default)?;
+                self.inner_set(key.as_ref(), &default)?;
                 default.clone()
             }
         };
 
-        let stream = self.make_stream(key, default);
+        let stream = self.make_stream(key.as_ref(), default);
         Ok((stream, value))
     }
 
@@ -256,8 +277,35 @@ impl Settings {
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        let stream = self.make_option_stream(key);
-        let value = self.get::<T>(key)?;
+        let key = self.key(key);
+        let stream = self.make_option_stream(&key);
+        let value = self.inner_get::<T>(&key)?;
+        Ok((stream, value))
+    }
+
+    /// Initialize the value from the database or optionally initialize.
+    pub fn stream_opt_or<T>(
+        &self,
+        key: &str,
+        default: Option<T>,
+    ) -> Result<(OptionStream<T>, Option<T>), Error>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned,
+    {
+        let key = self.key(key);
+
+        let value = match self.inner_get::<T>(&key)? {
+            Some(value) => Some(value),
+            None => match default {
+                Some(default) => {
+                    self.inner_set(key.as_ref(), &default)?;
+                    Some(default)
+                }
+                None => None,
+            },
+        };
+
+        let stream = self.make_option_stream(key.as_ref());
         Ok((stream, value))
     }
 
@@ -267,6 +315,44 @@ impl Settings {
             settings: self,
             futures: Vec::new(),
         }
+    }
+
+    /// Get the value of the given key from the database.
+    fn inner_get<T>(&self, key: &str) -> Result<Option<T>, Error>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned,
+    {
+        use self::db::schema::settings::dsl;
+
+        let c = self.inner.db.pool.lock();
+
+        let result = dsl::settings
+            .select(dsl::value)
+            .filter(dsl::key.eq(&key))
+            .first::<String>(&*c)
+            .optional()?;
+
+        let value = match result {
+            Some(value) => match serde_json::from_str(&value) {
+                Ok(value) => Some(value),
+                Err(e) => {
+                    log::warn!("bad value for key: {}: {}", key, e);
+                    None
+                }
+            },
+            None => None,
+        };
+
+        Ok(value)
+    }
+
+    /// Insert the given setting.
+    fn inner_set<T>(&self, key: &str, value: T) -> Result<(), Error>
+    where
+        T: serde::Serialize,
+    {
+        let value = serde_json::to_value(value)?;
+        self.inner_set_json(key, value)
     }
 
     /// Subscribe for events on the given key.
@@ -287,12 +373,12 @@ impl Settings {
     {
         let (tx, rx) = mpsc::unbounded();
 
-        if !self.schema.contains(key) {
+        if !self.inner.schema.contains(key) {
             panic!("no schema registered for key `{}`", key);
         }
 
         {
-            let mut subscriptions = self.subscriptions.write();
+            let mut subscriptions = self.inner.subscriptions.write();
 
             if let Some(tx) = subscriptions.insert(key.to_string(), tx) {
                 if !tx.is_closed() {
@@ -312,7 +398,7 @@ impl Settings {
     ///
     /// Cleans up the existing subscription if the other side is closed.
     fn try_send(&self, key: &str, event: Event<serde_json::Value>) {
-        let subscriptions = self.subscriptions.upgradable_read();
+        let subscriptions = self.inner.subscriptions.upgradable_read();
         let mut delete = false;
 
         if let Some(sub) = subscriptions.get(key) {
@@ -328,6 +414,24 @@ impl Settings {
         if delete {
             RwLockUpgradableReadGuard::upgrade(subscriptions).remove(key);
         }
+    }
+
+    /// Construct a new key.
+    fn key(&self, key: &str) -> Cow<'_, str> {
+        let key = key.trim_matches(SEPARATOR);
+
+        if key.is_empty() {
+            return Cow::Borrowed(&self.scope);
+        }
+
+        if self.scope.is_empty() {
+            return Cow::Owned(key.to_string());
+        }
+
+        let mut scope = self.scope.clone();
+        scope.push(SEPARATOR);
+        scope.push_str(key.trim_matches(SEPARATOR));
+        Cow::Owned(scope)
     }
 }
 
@@ -369,125 +473,6 @@ impl<'a> Vars<'a> {
     /// Drive the local variable set.
     pub fn run(self) -> impl Future<Output = Result<(), Error>> {
         let Vars { futures, .. } = self;
-
-        async move {
-            let _ = future::try_join_all(futures).await?;
-            Ok(())
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct ScopedSettings {
-    settings: Settings,
-    scope: Vec<String>,
-}
-
-impl ScopedSettings {
-    /// Get the value of the given key from the database.
-    pub fn get<T>(&self, key: &str) -> Result<Option<T>, Error>
-    where
-        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
-    {
-        self.settings.get(&self.scope(key))
-    }
-
-    /// Insert the given setting.
-    pub fn set<T>(&self, key: &str, value: &T) -> Result<(), Error>
-    where
-        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
-    {
-        self.settings.set(&self.scope(key), value)
-    }
-
-    /// Clear the given setting. Returning `true` if it was removed.
-    pub fn clear(&self, key: &str) -> Result<bool, Error> {
-        self.settings.clear(&self.scope(key))
-    }
-
-    /// Initialize the value from the database.
-    pub fn stream<T>(&self, key: &str, default: T) -> Result<(Stream<T>, T), Error>
-    where
-        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
-    {
-        self.settings.stream(&self.scope(key), default)
-    }
-
-    /// Initialize the value from the database.
-    pub fn stream_opt<T>(&self, key: &str) -> Result<(OptionStream<T>, Option<T>), Error>
-    where
-        T: serde::Serialize + serde::de::DeserializeOwned,
-    {
-        self.settings.stream_opt(&self.scope(key))
-    }
-
-    /// Get a synchronized variable for the given configuration key.
-    pub fn vars(&self) -> ScopedVars<'_> {
-        ScopedVars {
-            settings: self,
-            futures: Vec::new(),
-        }
-    }
-
-    /// Scope the settings a bit more.
-    pub fn scoped<S>(&self, add: impl IntoIterator<Item = S>) -> ScopedSettings
-    where
-        S: AsRef<str>,
-    {
-        let mut scope = self.scope.clone();
-        scope.extend(add.into_iter().map(|s| s.as_ref().to_string()));
-
-        ScopedSettings {
-            settings: self.settings.clone(),
-            scope,
-        }
-    }
-
-    fn scope(&self, key: &str) -> String {
-        let mut scope = self.scope.clone();
-        scope.push(key.to_string());
-        scope.join(SEPARATOR)
-    }
-}
-
-#[must_use = "Must consume to drive variable updates"]
-pub struct ScopedVars<'a> {
-    settings: &'a ScopedSettings,
-    futures: Vec<future::BoxFuture<'static, Result<(), Error>>>,
-}
-
-impl<'a> ScopedVars<'a> {
-    /// Get a synchronized variable for the given configuration key.
-    pub fn var<T>(&mut self, key: &str, default: T) -> Result<Arc<RwLock<T>>, Error>
-    where
-        T: 'static
-            + fmt::Debug
-            + Send
-            + Sync
-            + Clone
-            + serde::Serialize
-            + serde::de::DeserializeOwned
-            + Unpin,
-    {
-        let (mut stream, value) = self.settings.stream(key, default)?;
-        let value = Arc::new(RwLock::new(value));
-        let future_value = value.clone();
-
-        let future = async move {
-            while let Some(update) = stream.next().await {
-                *future_value.write() = update;
-            }
-
-            Ok(())
-        };
-
-        self.futures.push(future.boxed());
-        Ok(value)
-    }
-
-    /// Drive the local variable set.
-    pub fn run(self) -> impl Future<Output = Result<(), Error>> {
-        let ScopedVars { futures, .. } = self;
 
         async move {
             let _ = future::try_join_all(futures).await?;
@@ -588,6 +573,9 @@ pub enum Kind {
     Percentage,
     #[serde(rename = "string")]
     String,
+    /// String type that supports multi-line editing.
+    #[serde(rename = "text")]
+    Text,
     #[serde(rename = "set")]
     Set { value: Box<Type> },
 }
@@ -627,7 +615,7 @@ impl Type {
                 let n = str::parse::<serde_json::Number>(s)?;
                 Value::Number(n)
             }
-            String => Value::String(s.to_string()),
+            String | Text => Value::String(s.to_string()),
             Set { ref value } => {
                 let json = serde_json::from_str(s)?;
 
@@ -663,6 +651,7 @@ impl Type {
             (Number, Value::Number(..)) => true,
             (Percentage, Value::Number(..)) => true,
             (String, Value::String(..)) => true,
+            (Text, Value::String(..)) => true,
             (Set { ref value }, Value::Array(ref values)) => {
                 values.iter().all(|v| value.is_compatible_with_json(v))
             }
@@ -688,6 +677,8 @@ impl fmt::Display for Type {
             (true, Percentage) => write!(fmt, "percentage?"),
             (false, String) => write!(fmt, "string"),
             (true, String) => write!(fmt, "string?"),
+            (false, Text) => write!(fmt, "text"),
+            (true, Text) => write!(fmt, "text?"),
             (false, Set { ref value }) => write!(fmt, "Array<{}>", value),
             (true, Set { ref value }) => write!(fmt, "Array<{}>?", value),
         }

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Themes are not stored in the database, accessible through the `!theme` command and the web UI.
+- `[player]` has been deprecated in favor of `player` settings.
+- `[current_song]` has been deprecated in favor of `player/song-file` settings.
+- `[[modules]]` configuration has been deprecated in favor of their corresponding setting.
 
 ### Added
 - Added the ability to scale the maximum volume of a player by a percentage using the following settings:

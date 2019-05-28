@@ -169,7 +169,7 @@ enum Secrets {
 /// Setup a Twitch authentication flow.
 pub fn twitch(
     web: web::Server,
-    settings: settings::ScopedSettings,
+    settings: settings::Settings,
     secrets_config: Arc<SecretsConfig>,
 ) -> Result<FlowBuilder, Error> {
     let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
@@ -192,7 +192,7 @@ pub fn twitch(
 /// Setup a Spotify AUTH flow.
 pub fn spotify(
     web: web::Server,
-    settings: settings::ScopedSettings,
+    settings: settings::Settings,
     secrets_config: Arc<SecretsConfig>,
 ) -> Result<FlowBuilder, Error> {
     let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
@@ -213,7 +213,7 @@ pub fn spotify(
 }
 
 /// Setup a YouTube AUTH flow.
-pub fn youtube(web: web::Server, settings: settings::ScopedSettings) -> Result<FlowBuilder, Error> {
+pub fn youtube(web: web::Server, settings: settings::Settings) -> Result<FlowBuilder, Error> {
     let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
 
     Ok(FlowBuilder {
@@ -394,7 +394,7 @@ pub struct FlowBuilder {
     auth_url: AuthUrl,
     token_url: Option<TokenUrl>,
     scopes: Vec<String>,
-    settings: settings::ScopedSettings,
+    settings: settings::Settings,
     extra_params: Vec<(String, String)>,
 }
 
@@ -448,7 +448,7 @@ pub struct Flow {
     web: web::Server,
     secrets_config: Arc<SecretsConfig>,
     client: Arc<Client>,
-    settings: settings::ScopedSettings,
+    settings: settings::Settings,
     scopes: Arc<Vec<String>>,
     extra_params: Arc<Vec<(String, String)>>,
     what: String,

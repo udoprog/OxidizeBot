@@ -303,16 +303,14 @@ async fn try_main(
 
         futures.push(future.boxed());
 
-        if let Some(api_url) = config.api_url.as_ref() {
-            futures.push(api::setbac::run(api_url, &player, streamer_token.clone())?.boxed());
-        }
-
         web.set_player(player.client());
 
         // load the song module if we have a player configuration.
         modules.push(Box::new(module::song::Module::load(&player)?));
         injector.update(player);
     }
+
+    futures.push(api::setbac::run(&config, &settings, &injector, streamer_token.clone())?.boxed());
 
     if config.features.test(Feature::Command) {
         modules.push(Box::new(module::command_admin::Module::load()));

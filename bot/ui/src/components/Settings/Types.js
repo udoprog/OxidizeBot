@@ -1,4 +1,5 @@
 import {String} from "./String";
+import {Text} from "./Text";
 import {Duration} from "./Duration";
 import {Boolean} from "./Boolean";
 import {Number} from "./Number";
@@ -24,6 +25,8 @@ export function decode(type) {
       return new Boolean(type.optional);
     case "string":
       return new String(type.optional);
+    case "text":
+      return new Text(type.optional);
     case "number":
       return new Number(type.optional);
     case "percentage":

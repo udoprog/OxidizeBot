@@ -1,4 +1,10 @@
 types:
+  remote/api-url:
+    doc: Endpoint to use for sending API updates to. One is provided for free at `https://setbac.tv`.
+    type: {id: string, optional: true}
+  remote/enabled:
+    doc: If remote updates are enabled.
+    type: {id: bool}
   first-run:
     doc: Indicates whether the bot has run at least once.
     type: {id: bool}
@@ -72,6 +78,21 @@ types:
   player/youtube/volume-scale:
     doc: Scaling to apply to volume. A value of 50% would mean that that would effectively be the maximum volume.
     type: {id: percentage}
+  player/song-file/enabled:
+    doc: If file-based current song information is enabled.
+    type: {id: bool}
+  player/song-file/path:
+    doc: The path to write the current song information to.
+    type: {id: string, optional: true}
+  player/song-file/update-interval:
+    doc: How frequently the file is updated.
+    type: {id: duration}
+  player/song-file/template:
+    doc: Template to use for current song.
+    type: {id: text, optional: true}
+  player/song-file/stopped-template:
+    doc: Template to use when the player doesn't have any songs loaded.
+    type: {id: text, optional: true}
   promotions/enabled:
     doc: If the `!promo` module is enabled.
     type: {id: bool}
