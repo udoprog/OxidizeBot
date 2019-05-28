@@ -11,7 +11,6 @@ clap = "2.33.0"
 diesel = { version = "1.4.2", features = ["sqlite", "r2d2", "chrono"] }
 diesel_migrations = "1.4.0"
 eudex = "0.1.1"
-failure = "0.1.5"
 hashbrown = { version = "0.3.0", features = ["serde"] }
 hyper = "0.12.29"
 warp = "0.1.15"
@@ -63,5 +62,8 @@ features = ["nightly", "async-await", "compat"]
 git = "https://github.com/udoprog/futures-rs"
 branch = "master"
 
-[build-dependencies]
-failure = "0.1.5"
+[dependencies.failure]
+version = "0.1.5"
+
+[build-dependencies.failure]
+version = "0.1.5"

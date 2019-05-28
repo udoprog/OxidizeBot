@@ -1,7 +1,7 @@
 #![feature(async_await)]
 #![recursion_limit = "128"]
 
-use failure::{format_err, ResultExt};
+use failure::{format_err, Error, ResultExt};
 use parking_lot::RwLock;
 use setmod_bot::{
     api, auth, bus, config, db, injector, irc, module, oauth2, obs, player, prelude::*, secrets,
@@ -43,7 +43,7 @@ fn opts() -> clap::App<'static, 'static> {
         )
 }
 
-fn default_log_config() -> Result<log4rs::config::Config, failure::Error> {
+fn default_log_config() -> Result<log4rs::config::Config, Error> {
     use log::LevelFilter;
     use log4rs::{
         append::console::ConsoleAppender,
@@ -54,23 +54,23 @@ fn default_log_config() -> Result<log4rs::config::Config, failure::Error> {
 
     let config = Config::builder()
         .appender(Appender::builder().build("stdout", Box::new(stdout)))
-        .logger(Logger::builder().build("setmod", LevelFilter::Warn))
+        .logger(
+            Logger::builder()
+                .additive(false)
+                .build("setmod", LevelFilter::Info),
+        )
         .build(Root::builder().appender("stdout").build(LevelFilter::Warn))?;
 
     Ok(config)
 }
 
 /// Configure logging.
-fn setup_logs(root: &Path) -> Result<(), failure::Error> {
+fn setup_logs(root: &Path) -> Result<(), Error> {
     let file = root.join("log4rs.yaml");
 
     if !file.is_file() {
         let config = default_log_config()?;
         log4rs::init_config(config)?;
-        log::warn!(
-            "Using default since log configuration is missing: {}",
-            file.display()
-        );
     } else {
         log4rs::init_file(file, Default::default())?;
     }
@@ -78,7 +78,9 @@ fn setup_logs(root: &Path) -> Result<(), failure::Error> {
     Ok(())
 }
 
-fn main() -> Result<(), failure::Error> {
+fn main() -> Result<(), Error> {
+    use std::{thread, time::Duration};
+
     let opts = opts();
     let m = opts.get_matches();
 
@@ -98,22 +100,25 @@ fn main() -> Result<(), failure::Error> {
 
     setup_logs(&root).context("failed to setup logs")?;
 
-    let mut runtime = tokio::runtime::Runtime::new()?;
-    let result = runtime.block_on(try_main(root, web_root, config).boxed().compat());
+    loop {
+        let mut runtime = tokio::runtime::Runtime::new()?;
+        let result = runtime.block_on(
+            try_main(root.clone(), web_root.clone(), config.clone())
+                .boxed()
+                .compat(),
+        );
 
-    match result {
-        Err(e) => setmod_bot::log_err!(e, "bot crashed"),
-        Ok(()) => log::info!("bot was shut down"),
+        match result {
+            Err(e) => setmod_bot::log_err!(e, "bot crashed"),
+            Ok(()) => log::info!("bot was shut down"),
+        }
+
+        log::info!("Restarting in 5 seconds...");
+        thread::sleep(Duration::from_secs(5));
     }
-
-    Ok(())
 }
 
-async fn try_main(
-    root: PathBuf,
-    web_root: Option<PathBuf>,
-    config: PathBuf,
-) -> Result<(), failure::Error> {
+async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> Result<(), Error> {
     log::info!("Starting SetMod Version {}", setmod_bot::VERSION);
 
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
@@ -123,8 +128,8 @@ async fn try_main(
         log::warn!("A configuration file is now optional, please consider removing it!");
 
         fs::read_to_string(&config)
-            .map_err(failure::Error::from)
-            .and_then(|s| toml::de::from_str(&s).map_err(failure::Error::from))
+            .map_err(Error::from)
+            .and_then(|s| toml::de::from_str(&s).map_err(Error::from))
             .with_context(|_| format_err!("failed to read configuration: {}", config.display()))?
     } else {
         Default::default()
@@ -180,7 +185,7 @@ async fn try_main(
     let global_channel = Arc::new(RwLock::new(None));
     let injector = injector::Injector::new();
 
-    let mut futures = Vec::<future::BoxFuture<'_, Result<(), failure::Error>>>::new();
+    let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
 
     let (web, future) = web::setup(
         web_root.as_ref().map(|p| p.as_path()),
@@ -376,8 +381,8 @@ async fn try_main(
 
     let shutdown_rx = async move {
         match shutdown_rx.await {
-            Ok(_) => Result::<(), Option<failure::Error>>::Err(None),
-            Err(_) => Result::<(), Option<failure::Error>>::Err(None),
+            Ok(_) => Result::<(), Option<Error>>::Err(None),
+            Err(_) => Result::<(), Option<Error>>::Err(None),
         }
     };
 

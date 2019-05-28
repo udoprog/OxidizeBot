@@ -5,11 +5,22 @@ macro_rules! log_err {
         let e = failure::Error::from($e);
 
         log::error!("{what}: {error}", what = format!($fmt $(, $($arg)*)*), error = e);
-        log::error!("backtrace: {}", e.backtrace());
+
+        let mut bt = e.backtrace().to_string();
+
+        if !bt.is_empty() {
+            log::error!("{}", e.backtrace());
+        }
 
         for cause in e.iter_causes() {
             log::error!("caused by: {}", cause);
-            log::error!("backtrace: {}", e.backtrace());
+
+            bt.clear();
+            write!(&mut bt as &mut std::fmt::Write, "{}", e.backtrace()).expect("failed to write string");
+
+            if !bt.is_empty() {
+                log::error!("{}", e.backtrace());
+            }
         }
     }};
 }

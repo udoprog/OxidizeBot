@@ -286,13 +286,15 @@ impl Irc {
             futures.push(future.boxed());
             futures.push(send_future.compat().map_err(Error::from).boxed());
 
-            if !settings
-                .get::<bool>("migration/whitelisted-hosts-migrated")?
-                .unwrap_or_default()
-            {
-                log::warn!("Performing a one time migration of aliases from configuration.");
-                settings.set("irc/whitelisted-hosts", &config.whitelisted_hosts)?;
-                settings.set("migration/whitelisted-hosts-migrated", true)?;
+            if !config.whitelisted_hosts.is_empty() {
+                if !settings
+                    .get::<bool>("migration/whitelisted-hosts-migrated")?
+                    .unwrap_or_default()
+                {
+                    log::warn!("Performing a one time migration of hosts from configuration.");
+                    settings.set("irc/whitelisted-hosts", &config.whitelisted_hosts)?;
+                    settings.set("migration/whitelisted-hosts-migrated", true)?;
+                }
             }
 
             let (mut whitelisted_hosts_stream, whitelisted_hosts) =
