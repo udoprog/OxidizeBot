@@ -45,8 +45,8 @@ impl Handler {
         let currency = self.currency.clone();
         let db = self.db.clone();
         let player = self.player.clone();
-        let has_spotify_scope = ctx.has_scope(Scope::CommandSongSpotify);
-        let has_youtube_scope = ctx.has_scope(Scope::CommandSongYouTube);
+        let has_spotify_scope = ctx.has_scope(Scope::SongSpotify);
+        let has_youtube_scope = ctx.has_scope(Scope::SongYouTube);
 
         let track_id = match TrackId::parse_with_urls(&q) {
             Ok(track_id) => Some(track_id),
@@ -323,7 +323,7 @@ impl Handler {
 
 impl command::Handler for Handler {
     fn scope(&self) -> Option<Scope> {
-        Some(Scope::CommandSong)
+        Some(Scope::Song)
     }
 
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), Error> {

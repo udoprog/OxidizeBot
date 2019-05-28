@@ -352,11 +352,17 @@ export default class Settings extends React.Component {
             {order.map(name => {
               let group = groups[name];
 
+              let setFilter = filter => () => this.setState({filter});
+
               return (
                 <Table className="mb-0" key={name}>
                   <tbody>
                     <tr>
-                      <th className="settings-group">{name}</th>
+                      <th className="settings-group">
+                        {name}
+                        &nbsp;
+                        <a className="settings-group-filter" onClick={setFilter}><FontAwesomeIcon icon="search" /></a>
+                      </th>
                     </tr>
 
                     {group.map(({short, data}) => this.renderSetting(data, short))}

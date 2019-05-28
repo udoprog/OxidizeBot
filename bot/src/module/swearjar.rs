@@ -22,7 +22,7 @@ pub struct Handler<'a> {
 
 impl<'a> command::Handler for Handler<'a> {
     fn scope(&self) -> Option<Scope> {
-        Some(Scope::CommandSwearJar)
+        Some(Scope::SwearJar)
     }
 
     fn handle<'m>(&mut self, ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {

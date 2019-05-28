@@ -44,6 +44,15 @@ types:
   irc/whitelisted-hosts:
     doc: Hosts that are whitelisted for linking to in chat.
     type: {id: set, value: {id: string}}
+  irc/url-whitelist/enabled:
+    doc: If URL whitelisting is enabled in chat.
+    type: {id: bool}
+  irc/bad-words/enabled:
+    doc: If bad words filtering is enabled in chat (Experimental).
+    type: {id: bool}
+  irc/bad-words/path:
+    doc: Filesystem location of the bad words dictionary to use.
+    type: {id: string, optional: true}
   migration/aliases-migrated:
     doc: If aliases have been migrated from the configuration file.
     type: {id: bool}
@@ -185,3 +194,30 @@ types:
   obs/url:
     doc: The URL to use when connecting to OBS.
     type: {id: string, optional: true}
+  uptime/enabled:
+    doc: If the `!uptime` command is enabled.
+    type: {id: bool}
+  game/enabled:
+    doc: If the `!game` command is enabled.
+    type: {id: bool}
+  title/enabled:
+    doc: If the `!title` command is enabled.
+    type: {id: bool}
+  afterstream/enabled:
+    doc: If the `!afterstream` command is enabled.
+    type: {id: bool}
+  afterstream/cooldown:
+    doc: Required cooldown between each `!afterstream` call.
+    type: {id: duration}
+  clip/enabled:
+    doc: If the `!clip` command is enabled.
+    type: {id: bool}
+  clip/cooldown:
+    doc: Required cooldown between each `!clip` call.
+    type: {id: duration}
+  8ball/enabled:
+    doc: If the `!8ball` command is enabled.
+    type: {id: bool}
+  command/enabled:
+    doc: If the `!command` command is enabled. It's used for custom command administration.
+    type: {id: bool}

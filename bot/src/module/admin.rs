@@ -11,7 +11,7 @@ pub struct Handler<'a> {
 
 impl<'a> command::Handler for Handler<'a> {
     fn scope(&self) -> Option<Scope> {
-        Some(Scope::CommandAdmin)
+        Some(Scope::Admin)
     }
 
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {

@@ -4,8 +4,8 @@
 use failure::{format_err, ResultExt};
 use parking_lot::RwLock;
 use setmod_bot::{
-    api, auth, bus, config, db, features::Feature, injector, irc, module, oauth2, obs, player,
-    prelude::*, secrets, settings, utils, web,
+    api, auth, bus, config, db, injector, irc, module, oauth2, obs, player, prelude::*, secrets,
+    settings, utils, web,
 };
 use std::{
     fs,
@@ -289,46 +289,47 @@ async fn try_main(
     let streamer_twitch = api::Twitch::new(streamer_token.clone())?;
     let bot_twitch = api::Twitch::new(bot_token.clone())?;
 
-    if config.features.test(Feature::Song) {
-        let (player, future) = player::run(
-            db.clone(),
-            spotify.clone(),
-            youtube.clone(),
-            config.clone(),
-            global_bus.clone(),
-            youtube_bus.clone(),
-            settings.clone(),
-            themes.clone(),
-        )?;
+    let (player, future) = player::run(
+        db.clone(),
+        spotify.clone(),
+        youtube.clone(),
+        config.clone(),
+        global_bus.clone(),
+        youtube_bus.clone(),
+        settings.clone(),
+        themes.clone(),
+    )?;
 
-        futures.push(future.boxed());
+    futures.push(future.boxed());
 
-        web.set_player(player.client());
+    web.set_player(player.client());
 
-        // load the song module if we have a player configuration.
-        modules.push(Box::new(module::song::Module::load(&player)?));
-        injector.update(player);
-    }
+    // load the song module if we have a player configuration.
+    modules.push(Box::new(module::song::Module::load(&player)?));
+    injector.update(player);
 
     futures.push(api::setbac::run(&config, &settings, &injector, streamer_token.clone())?.boxed());
 
-    if config.features.test(Feature::Command) {
-        modules.push(Box::new(module::command_admin::Module::load()));
-    }
-
+    modules.push(Box::new(module::command_admin::Module));
     modules.push(Box::new(module::admin::Module::load()));
-
     modules.push(Box::new(module::alias_admin::Module::load()));
     modules.push(Box::new(module::theme_admin::Module::load()));
-
     modules.push(Box::new(module::promotions::Module::load(&config)));
     modules.push(Box::new(module::swearjar::Module::load(&config)));
     modules.push(Box::new(module::countdown::Module::load(&config)));
     modules.push(Box::new(module::gtav::Module::load(&config)));
     modules.push(Box::new(module::water::Module::load(&config)));
+    modules.push(Box::new(module::misc::Module));
+    modules.push(Box::new(module::after_stream::Module));
+    modules.push(Box::new(module::clip::Module));
+    modules.push(Box::new(module::eight_ball::Module));
 
     if config.obs.is_some() {
         log::warn!("`[obs]` setting has been deprecated from the configuration");
+    }
+
+    if config.features.is_some() {
+        log::warn!("`features` setting has been deprecated from the configuration");
     }
 
     let future = obs::setup(&settings, &injector)?;

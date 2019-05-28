@@ -18,31 +18,81 @@ scopes:
     allow:
       - "@streamer"
       - "@moderator"
-  command/admin:
+  admin:
     doc: If you are allowed to run the `!admin` command.
     version: 0
     risk: high
     allow:
       - "@streamer"
       - "@moderator"
-  command/swearjar:
+  swearjar:
     doc: If you are allowed to run the `!swearjar` command.
     version: 0
     allow:
       - "@everyone"
-  command/song:
+  song:
     doc: If you are allowed to run the `!song` command.
     version: 0
     allow:
       - "@everyone"
-  command/song/spotify:
+  song/spotify:
     doc: If you are allowed to request Spotify songs.
     version: 0
     allow:
       - "@everyone"
-  command/song/youtube:
+  song/youtube:
     doc: If you are allowed to request YouTube songs.
     version: 0
     allow:
+      - "@streamer"
       - "@moderator"
       - "@subscriber"
+  uptime:
+    doc: If you are allowed to run the `!uptime` command.
+    version: 0
+    allow:
+      - "@everyone"
+  game:
+    doc: If you are allowed to run the `!game` command.
+    version: 0
+    allow:
+      - "@everyone"
+  game/edit:
+    doc: If you are allowed to edit the current game using the `!game` command.
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"
+  title:
+    doc: If you are allowed to run the `!title` command.
+    version: 0
+    allow:
+      - "@everyone"
+  title/edit:
+    doc: If you are allowed to edit the current title using the `!title` command.
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"
+  afterstream:
+    doc: If you are allowed to run the `!afterstream` command.
+    version: 0
+    allow:
+      - "@everyone"
+  clip:
+    doc: If you are allowed to run the `!clip` command.
+    version: 0
+    allow:
+      - "@everyone"
+  8ball:
+    doc: If you are allowed to run the `!8ball` command.
+    version: 0
+    allow:
+      - "@everyone"
+  command:
+    doc: If you are allowed to run the `!command` command.
+    version: 0
+    risk: high
+    allow:
+      - "@streamer"
+      - "@moderator"

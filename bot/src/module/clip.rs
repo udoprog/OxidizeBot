@@ -1,15 +1,31 @@
-use crate::{api, command, stream_info, utils};
+use crate::{
+    api, auth, command, module,
+    prelude::*,
+    stream_info,
+    utils::{Cooldown, Duration},
+};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Handler for the `!clip` command.
 pub struct Clip<'a> {
+    pub enabled: Arc<RwLock<bool>>,
     pub stream_info: stream_info::StreamInfo,
-    pub clip_cooldown: utils::Cooldown,
+    pub clip_cooldown: Arc<RwLock<Cooldown>>,
     pub twitch: &'a api::Twitch,
 }
 
 impl command::Handler for Clip<'_> {
+    fn scope(&self) -> Option<auth::Scope> {
+        Some(auth::Scope::Clip)
+    }
+
     fn handle<'m>(&mut self, ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
-        if !self.clip_cooldown.is_open() {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
+        if !self.clip_cooldown.write().is_open() {
             ctx.respond("A clip was already created recently");
             return Ok(());
         }
@@ -57,6 +73,54 @@ impl command::Handler for Clip<'_> {
             }
         });
 
+        Ok(())
+    }
+}
+
+pub struct Module;
+
+impl super::Module for Module {
+    fn ty(&self) -> &'static str {
+        "clip"
+    }
+
+    /// Set up command handlers for this module.
+    fn hook(
+        &self,
+        module::HookContext {
+            config,
+            handlers,
+            settings,
+            futures,
+            stream_info,
+            twitch,
+            ..
+        }: module::HookContext<'_, '_>,
+    ) -> Result<(), failure::Error> {
+        let settings = settings.scoped(&["clip"]);
+        let mut vars = settings.vars();
+
+        if config.irc.clip_cooldown.is_some() {
+            log::warn!("`[irc] clip_cooldown` is deprecated in the configuration");
+        }
+
+        let default_cooldown = config
+            .irc
+            .clip_cooldown
+            .clone()
+            .unwrap_or_else(|| Cooldown::from_duration(Duration::seconds(30)));
+
+        handlers.insert(
+            "clip",
+            Clip {
+                enabled: vars.var("enabled", true)?,
+                stream_info: stream_info.clone(),
+                clip_cooldown: vars.var("cooldown", default_cooldown)?,
+                twitch,
+            },
+        );
+
+        futures.push(vars.run().boxed());
         Ok(())
     }
 }

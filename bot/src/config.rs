@@ -29,7 +29,7 @@ pub struct Config {
     pub aliases: Vec<DeprecatedAlias>,
     /// Features enabled for bot.
     #[serde(default)]
-    pub features: features::Features,
+    pub features: Option<features::Features>,
     #[serde(default)]
     pub whitelisted_hosts: HashSet<String>,
     /// Deprecated current_song configuration.

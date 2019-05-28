@@ -1,15 +1,26 @@
 //! module for misc smaller commands.
 
-use crate::{api, command, irc, stream_info, utils};
+use crate::{api, auth, command, irc, module, prelude::*, stream_info, utils};
 use chrono::Utc;
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Handler for the `!uptime` command.
 pub struct Uptime {
+    pub enabled: Arc<RwLock<bool>>,
     pub stream_info: stream_info::StreamInfo,
 }
 
 impl command::Handler for Uptime {
+    fn scope(&self) -> Option<auth::Scope> {
+        Some(auth::Scope::Uptime)
+    }
+
     fn handle<'m>(&mut self, ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
         let started_at = self
             .stream_info
             .data
@@ -45,6 +56,7 @@ impl command::Handler for Uptime {
 
 /// Handler for the `!title` command.
 pub struct Title<'a> {
+    pub enabled: Arc<RwLock<bool>>,
     pub stream_info: stream_info::StreamInfo,
     pub twitch: &'a api::Twitch,
 }
@@ -66,13 +78,21 @@ impl Title<'_> {
 }
 
 impl command::Handler for Title<'_> {
+    fn scope(&self) -> Option<auth::Scope> {
+        Some(auth::Scope::Title)
+    }
+
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
         let rest = ctx.rest();
 
         if rest.is_empty() {
             self.show(ctx.user);
         } else {
-            ctx.check_moderator()?;
+            ctx.check_scope(auth::Scope::TitleEdit)?;
 
             let twitch = self.twitch.clone();
             let user = ctx.user.as_owned_user();
@@ -100,6 +120,7 @@ impl command::Handler for Title<'_> {
 
 /// Handler for the `!title` command.
 pub struct Game<'a> {
+    pub enabled: Arc<RwLock<bool>>,
     pub stream_info: stream_info::StreamInfo,
     pub twitch: &'a api::Twitch,
 }
@@ -121,7 +142,15 @@ impl Game<'_> {
 }
 
 impl command::Handler for Game<'_> {
+    fn scope(&self) -> Option<auth::Scope> {
+        Some(auth::Scope::Game)
+    }
+
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
         let rest = ctx.rest();
 
         if rest.is_empty() {
@@ -129,7 +158,7 @@ impl command::Handler for Game<'_> {
             return Ok(());
         }
 
-        ctx.check_moderator()?;
+        ctx.check_scope(auth::Scope::GameEdit)?;
 
         let twitch = self.twitch.clone();
         let user = ctx.user.as_owned_user();
@@ -150,6 +179,58 @@ impl command::Handler for Game<'_> {
             }
         });
 
+        Ok(())
+    }
+}
+
+pub struct Module;
+
+impl super::Module for Module {
+    fn ty(&self) -> &'static str {
+        "misc"
+    }
+
+    /// Set up command handlers for this module.
+    fn hook(
+        &self,
+        module::HookContext {
+            handlers,
+            stream_info,
+            streamer_twitch,
+            settings,
+            futures,
+            ..
+        }: module::HookContext<'_, '_>,
+    ) -> Result<(), failure::Error> {
+        let mut vars = settings.vars();
+
+        handlers.insert(
+            "title",
+            Title {
+                enabled: vars.var("title/enabled", true)?,
+                stream_info: stream_info.clone(),
+                twitch: &streamer_twitch,
+            },
+        );
+
+        handlers.insert(
+            "game",
+            Game {
+                enabled: vars.var("game/enabled", true)?,
+                stream_info: stream_info.clone(),
+                twitch: &streamer_twitch,
+            },
+        );
+
+        handlers.insert(
+            "uptime",
+            Uptime {
+                enabled: vars.var("uptime/enabled", true)?,
+                stream_info: stream_info.clone(),
+            },
+        );
+
+        futures.push(vars.run().boxed());
         Ok(())
     }
 }

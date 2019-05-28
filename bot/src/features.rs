@@ -49,8 +49,8 @@ impl<'de> serde::Deserialize<'de> for Features {
 }
 
 impl Features {
-    /// Test if the feature is enabled.
-    pub fn test(&self, feature: Feature) -> bool {
-        self.0.contains(feature)
+    /// Test if there are any features configured.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }

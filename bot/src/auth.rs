@@ -341,11 +341,20 @@ impl Default for Risk {
 
 scopes! {
     (PlayerDetachDetach, "player/attach-detach"),
-    (CommandAdmin, "command/admin"),
-    (CommandSong, "command/song"),
-    (CommandSongYouTube, "command/song/youtube"),
-    (CommandSongSpotify, "command/song/spotify"),
-    (CommandSwearJar, "command/swearjar"),
+    (Admin, "admin"),
+    (Song, "song"),
+    (SongYouTube, "song/youtube"),
+    (SongSpotify, "song/spotify"),
+    (SwearJar, "swearjar"),
+    (Uptime, "uptime"),
+    (Game, "game"),
+    (GameEdit, "game/edit"),
+    (Title, "title"),
+    (TitleEdit, "title/edit"),
+    (AfterStream, "afterstream"),
+    (Clip, "clip"),
+    (EightBall, "8ball"),
+    (Command, "command"),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

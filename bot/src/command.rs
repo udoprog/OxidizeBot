@@ -123,6 +123,24 @@ impl<'a, 'm> Context<'a, 'm> {
         self.vips.contains(self.user.name)
     }
 
+    /// Verify that the current user has the associated scope.
+    pub fn check_scope(&mut self, scope: Scope) -> Result<(), failure::Error> {
+        if !self.has_scope(scope) {
+            self.privmsg(format!(
+                "Do you think this is a democracy {name}? LUL",
+                name = self.user.name
+            ));
+
+            failure::bail!(
+                "scope `{}` not associated with user `{}`",
+                scope,
+                self.user.name
+            );
+        }
+
+        Ok(())
+    }
+
     /// Check that the given user is a moderator.
     pub fn check_moderator(&mut self) -> Result<(), failure::Error> {
         // Streamer immune to cooldown and is always a moderator.

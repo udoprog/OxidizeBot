@@ -5,10 +5,14 @@ use std::sync::Arc;
 #[macro_use]
 mod macros;
 pub mod admin;
+pub mod after_stream;
 pub mod alias_admin;
+pub mod clip;
 pub mod command_admin;
 pub mod countdown;
+pub mod eight_ball;
 pub mod gtav;
+pub mod misc;
 pub mod promotions;
 pub mod song;
 pub mod swearjar;
@@ -61,6 +65,7 @@ pub struct HookContext<'a: 'm, 'm> {
     pub aliases: &'a db::Aliases,
     pub promotions: &'a db::Promotions,
     pub themes: &'a db::Themes,
+    pub after_streams: &'a db::AfterStreams,
     pub youtube: &'a Arc<api::YouTube>,
     pub twitch: &'a api::Twitch,
     pub streamer_twitch: &'a api::Twitch,

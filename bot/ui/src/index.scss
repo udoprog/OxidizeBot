@@ -205,6 +205,11 @@ body {
   &-group {
     font-size: 150%;
     font-weight: bold;
+
+    &-filter {
+      color: purple;
+      cursor: pointer;
+    }
   }
 
   &-key {

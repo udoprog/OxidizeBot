@@ -1,9 +1,7 @@
 use crate::{
     api,
     auth::Auth,
-    bus, command, config, currency, db,
-    features::{Feature, Features},
-    idle, injector, module, oauth2,
+    bus, command, config, currency, db, idle, injector, module, oauth2,
     prelude::*,
     settings, stream_info, template, timer,
     utils::{self, Cooldown, Duration},
@@ -21,12 +19,7 @@ use parking_lot::{Mutex, RwLock};
 use std::{fmt, sync::Arc, time};
 use tokio_threadpool::ThreadPool;
 
-mod after_stream;
-mod bad_word;
-mod clip;
 mod currency_admin;
-mod eight_ball;
-mod misc;
 
 const SERVER: &'static str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &'static str = "twitch.tv/tags";
@@ -40,8 +33,8 @@ pub struct Config {
     #[serde(default)]
     moderator_cooldown: Option<Cooldown>,
     /// Cooldown for creating clips.
-    #[serde(default = "default_cooldown")]
-    clip_cooldown: Cooldown,
+    #[serde(default)]
+    pub clip_cooldown: Option<Cooldown>,
     /// Cooldown for creating afterstream reminders.
     #[serde(default = "default_cooldown")]
     afterstream_cooldown: Cooldown,
@@ -261,6 +254,7 @@ impl Irc {
                     aliases: &aliases,
                     promotions: &promotions,
                     themes: &themes,
+                    after_streams: &after_streams,
                     youtube: &youtube,
                     twitch: &bot_twitch,
                     streamer_twitch: &streamer_twitch,
@@ -290,66 +284,6 @@ impl Irc {
             )?;
 
             futures.push(future.boxed());
-
-            if config.features.test(Feature::Admin) {
-                handlers.insert(
-                    "title",
-                    misc::Title {
-                        stream_info: stream_info.clone(),
-                        twitch: &streamer_twitch,
-                    },
-                );
-
-                handlers.insert(
-                    "game",
-                    misc::Game {
-                        stream_info: stream_info.clone(),
-                        twitch: &streamer_twitch,
-                    },
-                );
-
-                handlers.insert(
-                    "uptime",
-                    misc::Uptime {
-                        stream_info: stream_info.clone(),
-                    },
-                );
-            }
-
-            if config.features.test(Feature::BadWords) {
-                handlers.insert(
-                    "badword",
-                    bad_word::BadWord {
-                        bad_words: &bad_words,
-                    },
-                );
-            }
-
-            if config.features.test(Feature::EightBall) {
-                handlers.insert("8ball", eight_ball::EightBall);
-            }
-
-            if config.features.test(Feature::Clip) {
-                handlers.insert(
-                    "clip",
-                    clip::Clip {
-                        stream_info: stream_info.clone(),
-                        clip_cooldown: config.irc.clip_cooldown.clone(),
-                        twitch: &bot_twitch,
-                    },
-                );
-            }
-
-            if config.features.test(Feature::AfterStream) {
-                handlers.insert(
-                    "afterstream",
-                    after_stream::AfterStream {
-                        cooldown: config.irc.afterstream_cooldown.clone(),
-                        after_streams: &after_streams,
-                    },
-                );
-            }
-
             futures.push(send_future.compat().map_err(Error::from).boxed());
 
             if !settings
@@ -369,6 +303,11 @@ impl Irc {
 
             let startup_message = settings.get::<String>("irc/startup-message")?;
 
+            let mut vars = settings.vars();
+            let url_whitelist_enabled = vars.var("irc/url-whitelist/enabled", true)?;
+            let bad_words_enabled = vars.var("irc/bad-words/enabled", false)?;
+            futures.push(vars.run().boxed());
+
             let mut pong_timeout = None;
 
             let mut handler = Handler {
@@ -381,7 +320,6 @@ impl Irc {
                 bad_words: &bad_words,
                 global_bus: &global_bus,
                 aliases: &aliases,
-                features: config.features.clone(),
                 api_url: config.api_url.clone(),
                 thread_pool: Arc::new(ThreadPool::new()),
                 moderator_cooldown,
@@ -394,6 +332,8 @@ impl Irc {
                 stream_info: &stream_info,
                 auth: &auth,
                 currency_handler,
+                url_whitelist_enabled,
+                bad_words_enabled,
             };
 
             let mut client_stream = client.stream().compat().fuse();
@@ -671,8 +611,6 @@ struct Handler<'a: 'h, 'to, 'h> {
     global_bus: &'a Arc<bus::Bus<bus::Global>>,
     /// Aliases.
     aliases: &'a db::Aliases,
-    /// Enabled features.
-    features: Features,
     /// Configured API URL.
     api_url: Option<String>,
     /// Thread pool used for driving futures.
@@ -697,6 +635,8 @@ struct Handler<'a: 'h, 'to, 'h> {
     auth: &'a Auth,
     /// Handler for currencies.
     currency_handler: currency_admin::Handler<'a>,
+    bad_words_enabled: Arc<RwLock<bool>>,
+    url_whitelist_enabled: Arc<RwLock<bool>>,
 }
 
 impl Handler<'_, '_, '_> {
@@ -833,7 +773,7 @@ impl Handler<'_, '_, '_> {
             return false;
         }
 
-        if self.features.test(Feature::BadWords) {
+        if *self.bad_words_enabled.read() {
             if let Some(word) = self.test_bad_words(message) {
                 if let (Some(why), Some(user), Some(target)) =
                     (word.why.as_ref(), user, m.response_target())
@@ -857,7 +797,7 @@ impl Handler<'_, '_, '_> {
             }
         }
 
-        if self.features.test(Feature::UrlWhitelist) {
+        if *self.url_whitelist_enabled.read() {
             if self.has_bad_link(message) {
                 return true;
             }
@@ -928,21 +868,19 @@ impl Handler<'_, '_, '_> {
                 }
 
                 if let Some(command) = it.next() {
-                    if self.features.test(Feature::Command) {
-                        if let Some(command) = self.commands.get(user.target, command) {
-                            if command.has_var("count") {
-                                self.commands.increment(&*command)?;
-                            }
-
-                            let vars = CommandVars {
-                                name: &user.name,
-                                target: &user.target,
-                                count: command.count(),
-                            };
-
-                            let response = command.render(&vars)?;
-                            self.sender.privmsg(response);
+                    if let Some(command) = self.commands.get(user.target, command) {
+                        if command.has_var("count") {
+                            self.commands.increment(&*command)?;
                         }
+
+                        let vars = CommandVars {
+                            name: &user.name,
+                            target: &user.target,
+                            count: command.count(),
+                        };
+
+                        let response = command.render(&vars)?;
+                        self.sender.privmsg(response);
                     }
 
                     if command.starts_with('!') {
