@@ -36,7 +36,6 @@ case $TRAVIS_OS_NAME in
     cp target/release/setmod-bot $dest/
     cp log4rs.yaml $dest/
     cp secrets.yml.example $dest/
-    cp config.toml.example $dest/
     cp tools/setmod-dist.ps1 $dest/setmod.ps1
     zip -r $package.zip $dest/
     ;;
