@@ -843,7 +843,7 @@ impl super::Module for Module {
             .clone()
             .unwrap_or_else(|| utils::Cooldown::from_duration(utils::Duration::seconds(10)));
 
-        let (mut enabled_stream, enabled) = settings.stream("gtav/enabled", false)?;
+        let (mut enabled_stream, enabled) = settings.stream("gtav/enabled").or_default()?;
         let enabled = Arc::new(RwLock::new(enabled));
 
         let mut vars = settings.vars();

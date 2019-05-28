@@ -213,8 +213,9 @@ pub fn run(
     let song = Arc::new(RwLock::new(None));
     let closed = Arc::new(RwLock::new(None));
 
-    let (song_update_interval_stream, song_update_interval) =
-        settings.stream("song-update-interval", utils::Duration::seconds(1))?;
+    let (song_update_interval_stream, song_update_interval) = settings
+        .stream("song-update-interval")
+        .or_with(utils::Duration::seconds(1))?;
 
     let song_update_interval = match song_update_interval.is_empty() {
         true => None,
@@ -244,7 +245,7 @@ pub fn run(
 
     let (commands_tx, commands) = mpsc::unbounded();
 
-    let (detached_stream, detached) = settings.stream("detached", false)?;
+    let (detached_stream, detached) = settings.stream("detached").or_default()?;
 
     let mut vars = settings.vars();
 
@@ -1460,8 +1461,10 @@ impl PlaybackFuture {
     pub async fn run(mut self, settings: settings::Settings) -> Result<(), Error> {
         let song_file = settings.scoped("song-file");
 
-        let (mut path_stream, path) =
-            song_file.stream_opt_or("path", self.config.current_song.path.clone())?;
+        let (mut path_stream, path) = song_file
+            .stream("path")
+            .or_else(|| self.config.current_song.path.clone())
+            .optional()?;
 
         let default_template = Some(
             self.config
@@ -1481,18 +1484,21 @@ impl PlaybackFuture {
                 .unwrap_or_else(|| Template::compile(DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE))?,
         );
 
-        let (mut template_stream, template) =
-            song_file.stream_opt_or("template", default_template)?;
+        let (mut template_stream, template) = song_file
+            .stream("template")
+            .or(default_template)
+            .optional()?;
 
-        let (mut stopped_template_stream, stopped_template) =
-            song_file.stream_opt_or("stopped-template", default_stopped_template)?;
+        let (mut stopped_template_stream, stopped_template) = song_file
+            .stream("stopped-template")
+            .or(default_stopped_template)
+            .optional()?;
 
-        let (mut update_interval_stream, update_interval) = song_file.stream(
-            "update-interval",
-            self.config.current_song.update_interval.clone(),
-        )?;
+        let (mut update_interval_stream, update_interval) = song_file
+            .stream("update-interval")
+            .or_with(self.config.current_song.update_interval.clone())?;
 
-        let (mut enabled_stream, enabled) = song_file.stream("enabled", false)?;
+        let (mut enabled_stream, enabled) = song_file.stream("enabled").or_default()?;
 
         let mut song_file = SongFileBuilder::default();
         song_file.enabled = enabled;

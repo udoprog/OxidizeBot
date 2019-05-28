@@ -24,9 +24,9 @@ pub enum Event<T> {
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Setting {
-    schema: SchemaType,
-    key: String,
-    value: serde_json::Value,
+    pub schema: SchemaType,
+    pub key: String,
+    pub value: serde_json::Value,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -99,29 +99,41 @@ impl Settings {
     }
 
     /// Get a setting by prefix.
-    pub fn get_by_prefix(&self, prefix: &str) -> Result<Vec<(String, serde_json::Value)>, Error> {
+    pub fn list_by_prefix(&self, prefix: &str) -> Result<Vec<Setting>, Error> {
         use self::db::schema::settings::dsl;
 
         let prefix = self.key(prefix);
 
         let c = self.inner.db.pool.lock();
 
-        let results = dsl::settings
+        let mut settings = Vec::new();
+
+        let values = dsl::settings
             .select((dsl::key, dsl::value))
-            .load::<(String, String)>(&*c)?;
+            .order(dsl::key)
+            .load::<(String, String)>(&*c)?
+            .into_iter()
+            .collect::<HashMap<_, _>>();
 
-        let mut out = Vec::new();
-
-        for (key, value) in results {
+        for (key, schema) in &self.inner.schema.types {
             if !key.starts_with(prefix.as_ref()) {
                 continue;
             }
 
-            let value = serde_json::from_str(value.as_str())?;
-            out.push((key, value));
+            let value = match values.get(key) {
+                Some(value) => serde_json::from_str(value)?,
+                None if schema.ty.optional => serde_json::Value::Null,
+                None => continue,
+            };
+
+            settings.push(Setting {
+                schema: schema.clone(),
+                key: key.to_string(),
+                value,
+            });
         }
 
-        return Ok(out);
+        Ok(settings)
     }
 
     /// Get the value of the given key from the database.
@@ -248,59 +260,14 @@ impl Settings {
     }
 
     /// Initialize the value from the database.
-    pub fn stream<T>(&self, key: &str, default: T) -> Result<(Stream<T>, T), Error>
-    where
-        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
-    {
+    pub fn stream<'a, T>(&'a self, key: &str) -> StreamBuilder<'_, T> {
         let key = self.key(key);
 
-        let value = match self.inner_get::<T>(&key)? {
-            Some(value) => value,
-            None => {
-                self.inner_set(key.as_ref(), &default)?;
-                default.clone()
-            }
-        };
-
-        let stream = self.make_stream(key.as_ref(), default);
-        Ok((stream, value))
-    }
-
-    /// Initialize the value from the database.
-    pub fn stream_opt<T>(&self, key: &str) -> Result<(OptionStream<T>, Option<T>), Error>
-    where
-        T: serde::Serialize + serde::de::DeserializeOwned,
-    {
-        let key = self.key(key);
-        let stream = self.make_option_stream(&key);
-        let value = self.inner_get::<T>(&key)?;
-        Ok((stream, value))
-    }
-
-    /// Initialize the value from the database or optionally initialize.
-    pub fn stream_opt_or<T>(
-        &self,
-        key: &str,
-        default: Option<T>,
-    ) -> Result<(OptionStream<T>, Option<T>), Error>
-    where
-        T: serde::Serialize + serde::de::DeserializeOwned,
-    {
-        let key = self.key(key);
-
-        let value = match self.inner_get::<T>(&key)? {
-            Some(value) => Some(value),
-            None => match default {
-                Some(default) => {
-                    self.inner_set(key.as_ref(), &default)?;
-                    Some(default)
-                }
-                None => None,
-            },
-        };
-
-        let stream = self.make_option_stream(key.as_ref());
-        Ok((stream, value))
+        StreamBuilder {
+            settings: self,
+            default_value: None,
+            key,
+        }
     }
 
     /// Get a helper to build synchronized variables.
@@ -411,7 +378,7 @@ impl Settings {
     }
 
     /// Construct a new key.
-    fn key(&self, key: &str) -> Cow<'_, str> {
+    fn key<'a>(&'a self, key: &str) -> Cow<'a, str> {
         let key = key.trim_matches(SEPARATOR);
 
         if key.is_empty() {
@@ -426,6 +393,90 @@ impl Settings {
         scope.push(SEPARATOR);
         scope.push_str(key.trim_matches(SEPARATOR));
         Cow::Owned(scope)
+    }
+}
+
+#[must_use = "Must consume to drive decide how to handle stream"]
+pub struct StreamBuilder<'a, T> {
+    settings: &'a Settings,
+    default_value: Option<T>,
+    key: Cow<'a, str>,
+}
+
+impl<'a, T> StreamBuilder<'a, T>
+where
+    T: serde::Serialize + serde::de::DeserializeOwned,
+{
+    /// Make the setting required, falling back to using and storing the default value if necessary.
+    pub fn or_default(self) -> Result<(Stream<T>, T), Error>
+    where
+        T: Clone + Default,
+    {
+        self.or_with(T::default())
+    }
+
+    /// Make the setting required, falling back to using and storing the specified value if necessary.
+    pub fn or_with(self, value: T) -> Result<(Stream<T>, T), Error>
+    where
+        T: Clone,
+    {
+        self.or_with_else(move || value)
+    }
+
+    /// Make the setting required, falling back to using and storing the specified value if necessary.
+    pub fn or_with_else<F>(self, value: F) -> Result<(Stream<T>, T), Error>
+    where
+        T: Clone,
+        F: FnOnce() -> T,
+    {
+        let value = match self.settings.inner_get::<T>(&self.key)? {
+            Some(value) => value,
+            None => {
+                let value = value();
+                self.settings.inner_set(&self.key, &value)?;
+                value
+            }
+        };
+
+        let stream = self.settings.make_stream(&self.key, value.clone());
+        Ok((stream, value))
+    }
+
+    /// Make the setting optional.
+    pub fn optional(self) -> Result<(OptionStream<T>, Option<T>), Error> {
+        let value = self.settings.inner_get::<T>(&self.key)?;
+
+        let value = match value {
+            Some(value) => Some(value),
+            None => match self.default_value {
+                Some(value) => {
+                    self.settings.inner_set(&self.key, &value)?;
+                    Some(value)
+                }
+                None => None,
+            },
+        };
+
+        let stream = self.settings.make_option_stream(&self.key);
+        Ok((stream, value))
+    }
+
+    /// Add a potential fallback value when the type is optional.
+    pub fn or(self, other: Option<T>) -> StreamBuilder<'a, T> {
+        self.or_else(move || other)
+    }
+
+    /// Add a potential fallback value when the type is optional.
+    pub fn or_else<F>(mut self, other: F) -> StreamBuilder<'a, T>
+    where
+        F: FnOnce() -> Option<T>,
+    {
+        if self.default_value.is_some() {
+            return self;
+        }
+
+        self.default_value = other();
+        self
     }
 }
 
@@ -448,7 +499,7 @@ impl<'a> Vars<'a> {
             + serde::de::DeserializeOwned
             + Unpin,
     {
-        let (mut stream, value) = self.settings.stream(key, default)?;
+        let (mut stream, value) = self.settings.stream(key).or_with(default)?;
         let value = Arc::new(RwLock::new(value));
         let future_value = value.clone();
 

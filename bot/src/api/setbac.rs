@@ -90,8 +90,13 @@ pub fn run(
             .unwrap_or_else(|| String::from(DEFAULT_API_URL)),
     );
 
-    let (mut api_url_stream, api_url) = settings.stream_opt_or("api-url", default_api_url)?;
-    let (mut enabled_stream, enabled) = settings.stream("enabled", config.api_url.is_some())?;
+    let (mut api_url_stream, api_url) =
+        settings.stream("api-url").or(default_api_url).optional()?;
+
+    let (mut enabled_stream, enabled) = settings
+        .stream("enabled")
+        .or_with(config.api_url.is_some())?;
+
     let (mut player_stream, player) = injector.stream::<Player>();
 
     let mut remote_builder = RemoteBuilder {

@@ -298,10 +298,10 @@ impl Irc {
             }
 
             let (mut whitelisted_hosts_stream, whitelisted_hosts) =
-                settings.stream("irc/whitelisted-hosts", HashSet::<String>::new())?;
+                settings.stream("irc/whitelisted-hosts").or_default()?;
 
             let (mut moderator_cooldown_stream, moderator_cooldown) =
-                settings.stream_opt("irc/moderator-cooldown")?;
+                settings.stream("irc/moderator-cooldown").optional()?;
 
             let startup_message = settings.get::<String>("irc/startup-message")?;
 
@@ -412,10 +412,10 @@ fn currency_loop<'a>(
     let mut variables = settings.vars();
     let reward_percentage = variables.var("irc/viewer-reward%", 100)?;
     let (mut notify_rewards_stream, mut notify_rewards) =
-        settings.stream("currency/notify-rewards", true)?;
+        settings.stream("currency/notify-rewards").or_with(true)?;
 
-    let (mut enabled_stream, enabled) = settings.stream("currency/enabled", false)?;
-    let (mut name_stream, name) = settings.stream_opt("currency/name")?;
+    let (mut enabled_stream, enabled) = settings.stream("currency/enabled").or_default()?;
+    let (mut name_stream, name) = settings.stream("currency/name").optional()?;
 
     let mut currency_builder = CurrencyBuilder {
         enabled,

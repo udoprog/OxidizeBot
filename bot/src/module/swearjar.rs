@@ -154,8 +154,9 @@ impl super::Module for Module {
             .default_cooldown
             .clone()
             .unwrap_or(Duration::seconds(60 * 10));
-        let (mut cooldown_stream, cooldown) =
-            settings.stream("swearjar/cooldown", default_cooldown)?;
+        let (mut cooldown_stream, cooldown) = settings
+            .stream("swearjar/cooldown")
+            .or_with(default_cooldown)?;
 
         let cooldown = Arc::new(RwLock::new(Cooldown::from_duration(cooldown)));
 

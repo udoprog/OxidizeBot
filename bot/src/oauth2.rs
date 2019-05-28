@@ -483,7 +483,7 @@ impl Flow {
             force_refresh,
         };
 
-        let (mut token_stream, token) = self.settings.stream_opt::<Token>("token")?;
+        let (mut token_stream, token) = self.settings.stream::<Token>("token").optional()?;
 
         // check interval.
         let mut interval = timer::Interval::new(Instant::now(), Duration::from_secs(10 * 60));

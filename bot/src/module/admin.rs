@@ -1,4 +1,5 @@
 use crate::{auth::Scope, command, db, module, settings};
+use failure::Error;
 
 /// Handler for the !admin command.
 pub struct Handler<'a> {
@@ -9,12 +10,61 @@ pub struct Handler<'a> {
     themes: &'a db::Themes,
 }
 
+impl Handler<'_> {
+    /// List settings by prefix.
+    fn list_settings_by_prefix(
+        &self,
+        ctx: command::Context<'_, '_>,
+        key: &str,
+    ) -> Result<(), Error> {
+        let mut results = Vec::new();
+
+        let settings = self.settings.list_by_prefix(key)?;
+
+        for setting in settings.iter().take(10) {
+            // NB: security issue if this was present.
+            if key.starts_with("secrets/") {
+                continue;
+            }
+
+            let value = serde_json::to_string(&setting.value)?;
+
+            let value = if value.len() > 20 {
+                "*too long*"
+            } else {
+                &value
+            };
+
+            results.push(format!(
+                "..{} = {}",
+                setting.key.trim_start_matches(key),
+                value,
+            ));
+        }
+
+        if results.is_empty() {
+            ctx.respond(format!("No settings starting with `{}`", key));
+        } else {
+            let mut response = results.join(", ");
+
+            if results.len() < settings.len() {
+                let more = settings.len() - results.len();
+                response = format!("{} .. and {} more", response, more);
+            }
+
+            ctx.respond(response);
+        }
+
+        return Ok(());
+    }
+}
+
 impl<'a> command::Handler for Handler<'a> {
     fn scope(&self) -> Option<Scope> {
         Some(Scope::Admin)
     }
 
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), Error> {
         match ctx.next() {
             Some("refresh-mods") => {
                 ctx.privmsg("/mods");
@@ -130,30 +180,7 @@ impl<'a> command::Handler for Handler<'a> {
                     "" => {
                         let value = match self.settings.get::<Option<serde_json::Value>>(key)? {
                             Some(value) => value,
-                            None => {
-                                let mut results = Vec::new();
-
-                                for (key, value) in self.settings.get_by_prefix(key)? {
-                                    // NB: security issue if this was present.
-                                    if key.starts_with("secrets/") {
-                                        continue;
-                                    }
-
-                                    results.push(format!(
-                                        "{} = {}",
-                                        key,
-                                        serde_json::to_string(&value)?
-                                    ));
-                                }
-
-                                if results.is_empty() {
-                                    ctx.respond("No such setting");
-                                } else {
-                                    ctx.respond(results.join(", "));
-                                }
-
-                                return Ok(());
-                            }
+                            None => return self.list_settings_by_prefix(ctx, &key),
                         };
 
                         ctx.respond(format!("{} = {}", key, serde_json::to_string(&value)?));
@@ -295,7 +322,7 @@ impl super::Module for Module {
             themes,
             ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), Error> {
         handlers.insert(
             "admin",
             Handler {

@@ -83,17 +83,16 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        let default_frequency = self
-            .default_frequency
-            .clone()
-            .unwrap_or_else(|| utils::Duration::seconds(5 * 60));
-
         let mut vars = settings.vars();
         let enabled = vars.var("promotions/enabled", false)?;
         futures.push(vars.run().boxed());
 
         let (mut setting, frequency) =
-            settings.stream("promotions/frequency", default_frequency)?;
+            settings.stream("promotions/frequency").or_with_else(|| {
+                self.default_frequency
+                    .clone()
+                    .unwrap_or_else(|| utils::Duration::seconds(5 * 60))
+            })?;
 
         handlers.insert(
             "promo",
