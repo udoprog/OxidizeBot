@@ -190,16 +190,16 @@ pub fn run(
     settings: settings::Settings,
     themes: db::Themes,
 ) -> Result<(Player, impl Future<Output = Result<(), Error>>), Error> {
-    let settings = settings.scoped(&["player"]);
+    let settings = settings.scoped("player");
 
     let mut futures = utils::Futures::default();
 
     let (connect_player, device) =
-        connect::setup(&mut futures, spotify.clone(), settings.scoped(&["spotify"]))?;
+        connect::setup(&mut futures, spotify.clone(), settings.scoped("spotify"))?;
     let youtube_player = youtube::setup(
         &mut futures,
         youtube_bus.clone(),
-        settings.scoped(&["youtube"]),
+        settings.scoped("youtube"),
     )?;
 
     let bus = Arc::new(RwLock::new(Bus::new(1024)));
@@ -226,15 +226,15 @@ pub fn run(
         log::warn!("[player] sync_player_interval - configuration has been deprecated since it was too unreliable.");
     }
 
-    if !config.current_song.path.is_some() {
+    if config.current_song.path.is_some() {
         log::warn!("`[current_song] path` configuration is deprecated.");
     }
 
-    if !config.current_song.template.is_some() {
+    if config.current_song.template.is_some() {
         log::warn!("`[current_song] template` configuration is deprecated.");
     }
 
-    if !config.current_song.not_playing.is_some() {
+    if config.current_song.not_playing.is_some() {
         log::warn!("`[current_song] not_playing` configuration is deprecated.");
     }
 
@@ -379,10 +379,6 @@ pub fn run(
             }
             None => {
                 let devices = spotify.my_player_devices().await?;
-
-                for (i, d) in devices.iter().enumerate() {
-                    log::info!("device #{}: {}", i, d.name)
-                }
 
                 *device.device.write() = match config.player.device.as_ref() {
                     Some(device) => devices.into_iter().find(|d| d.name == *device),
@@ -1462,7 +1458,7 @@ pub struct PlaybackFuture {
 impl PlaybackFuture {
     /// Run the playback future.
     pub async fn run(mut self, settings: settings::Settings) -> Result<(), Error> {
-        let song_file = settings.scoped(&["song-file"]);
+        let song_file = settings.scoped("song-file");
 
         let (mut path_stream, path) =
             song_file.stream_opt_or("path", self.config.current_song.path.clone())?;
@@ -1531,59 +1527,49 @@ impl PlaybackFuture {
                     song_file.update_interval = update;
                     song_file.init(&mut self.song_file);
                 }
-                update = song_file_update.next() => {
-                    if let Some(_) = update.transpose()? {
-                        let song = self.song.read();
-                        self.update_song_file(song.as_ref());
-                    }
+                update = song_file_update.select_next_some() => {
+                    let _ =  update?;
+                    let song = self.song.read();
+                    self.update_song_file(song.as_ref());
                 }
                 /* player */
                 timeout = self.timeout.current() => {
                     timeout?;
                     self.end_of_track().await?;
                 }
-                update = self.detached_stream.next() => {
-                    if let Some(update) = update {
-                        if update {
-                            self.detach()?;
-                        }
-
-                        self.detached = update;
+                update = self.detached_stream.select_next_some() => {
+                    if update {
+                        self.detach()?;
                     }
-                }
-                update = self.song_update_interval_stream.next() => {
-                    if let Some(value) = update {
-                        self.song_update_interval = match value.is_empty() {
-                            true => None,
-                            false => Some(timer::Interval::new_interval(value.as_std())),
-                        };
-                    }
-                }
-                update = self.song_update_interval.next() => {
-                    if let Some(update) = update.transpose()? {
-                        let song = self.song.read();
 
-                        if let State::Playing = self.state {
-                            self.global_bus
-                                .send(bus::Global::song_progress(song.as_ref()));
+                    self.detached = update;
+                }
+                value = self.song_update_interval_stream.select_next_some() => {
+                    self.song_update_interval = match value.is_empty() {
+                        true => None,
+                        false => Some(timer::Interval::new_interval(value.as_std())),
+                    };
+                }
+                update = self.song_update_interval.select_next_some() => {
+                    let _ = update?;
+                    let song = self.song.read();
 
-                            if let Some(song) = song.as_ref() {
-                                if let TrackId::YouTube(ref id) = song.item.track_id {
-                                    self.youtube_player.tick(song.elapsed(), song.duration(), id.to_string());
-                                }
+                    if let State::Playing = self.state {
+                        self.global_bus
+                            .send(bus::Global::song_progress(song.as_ref()));
+
+                        if let Some(song) = song.as_ref() {
+                            if let TrackId::YouTube(ref id) = song.item.track_id {
+                                self.youtube_player.tick(song.elapsed(), song.duration(), id.to_string());
                             }
                         }
                     }
                 }
-                event = self.connect_player.next() => {
-                    if let Some(event) = event.transpose()? {
-                        self.handle_player_event(event).await?;
-                    }
+                event = self.connect_player.select_next_some() => {
+                    self.handle_player_event(event?).await?;
                 }
-                command = self.commands.next() => {
-                    if let Some(command) = command {
-                        self.command(command).await?;
-                    }
+                command = self.commands.select_next_some() => {
+                    self.command(command).await?;
                 }
             }
         }

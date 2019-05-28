@@ -1,13 +1,14 @@
 use crate::{
     auth::Scope,
-    command, currency, db, irc, module, player,
+    command, currency, db, irc, module,
+    player::{AddTrackError, Event, Item, PlayThemeError, Player, PlayerClient},
     prelude::*,
     settings, stream_info, track_id,
     track_id::TrackId,
     utils::{self, Cooldown, Duration},
 };
 use chrono::Utc;
-use failure::Error;
+use failure::{Error, ResultExt as _};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -15,9 +16,10 @@ const EXAMPLE_SEARCH: &'static str = "queen we will rock you";
 
 /// Handler for the `!song` command.
 pub struct Handler {
+    enabled: Arc<RwLock<bool>>,
     db: db::Database,
     stream_info: stream_info::StreamInfo,
-    player: player::PlayerClient,
+    player: Arc<RwLock<Option<PlayerClient>>>,
     request_help_cooldown: Cooldown,
     subscriber_only: Arc<RwLock<bool>>,
     request_reward: Arc<RwLock<u32>>,
@@ -27,7 +29,11 @@ pub struct Handler {
 }
 
 impl Handler {
-    fn handle_request(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
+    fn handle_request(
+        &mut self,
+        ctx: &mut command::Context<'_, '_>,
+        player: PlayerClient,
+    ) -> Result<(), Error> {
         let q = ctx.rest().trim().to_string();
 
         if q.is_empty() {
@@ -44,7 +50,6 @@ impl Handler {
         let is_moderator = ctx.is_moderator();
         let currency = self.currency.clone();
         let db = self.db.clone();
-        let player = self.player.clone();
         let has_spotify_scope = ctx.has_scope(Scope::SongSpotify);
         let has_youtube_scope = ctx.has_scope(Scope::SongYouTube);
 
@@ -82,18 +87,18 @@ impl Handler {
                 }
             };
 
-            let (what, has_scope, support) = match track_id {
+            let (what, has_scope, enabled) = match track_id {
                 TrackId::Spotify(..) => {
-                    let support = *spotify.support.read();
-                    ("Spotify", has_spotify_scope, support)
+                    let enabled = *spotify.enabled.read();
+                    ("Spotify", has_spotify_scope, enabled)
                 }
                 TrackId::YouTube(..) => {
-                    let support = *youtube.support.read();
-                    ("YouTube", has_youtube_scope, support)
+                    let enabled = *youtube.enabled.read();
+                    ("YouTube", has_youtube_scope, enabled)
                 }
             };
 
-            if !support {
+            if !enabled {
                 user.respond(format!(
                     "{} song requests are currently not enabled, sorry :(",
                     what
@@ -149,7 +154,7 @@ impl Handler {
 
             let (pos, item) = match result {
                 Ok((pos, item)) => (pos, item),
-                Err(player::AddTrackError::PlayerClosed(reason)) => {
+                Err(AddTrackError::PlayerClosed(reason)) => {
                     match reason {
                         Some(reason) => {
                             user.respond(reason.as_str());
@@ -161,7 +166,7 @@ impl Handler {
 
                     return Ok(());
                 }
-                Err(player::AddTrackError::QueueContainsTrack(pos)) => {
+                Err(AddTrackError::QueueContainsTrack(pos)) => {
                     user.respond(format!(
                         "Player already contains that track (position #{pos}).",
                         pos = pos + 1,
@@ -169,7 +174,7 @@ impl Handler {
 
                     return Ok(());
                 }
-                Err(player::AddTrackError::TooManyUserTracks(count)) => {
+                Err(AddTrackError::TooManyUserTracks(count)) => {
                     match count {
                         0 => {
                             user.respond("Unfortunately you are not allowed to add tracks :(");
@@ -189,11 +194,11 @@ impl Handler {
 
                     return Ok(());
                 }
-                Err(player::AddTrackError::QueueFull) => {
+                Err(AddTrackError::QueueFull) => {
                     user.respond("Player is full, try again later!");
                     return Ok(());
                 }
-                Err(player::AddTrackError::Duplicate(when, who, limit)) => {
+                Err(AddTrackError::Duplicate(when, who, limit)) => {
                     let duration = Utc::now().signed_duration_since(when);
 
                     let duration = match duration.to_std() {
@@ -224,7 +229,7 @@ impl Handler {
 
                     return Ok(());
                 }
-                Err(player::AddTrackError::NotEnoughCurrency { balance, required }) => {
+                Err(AddTrackError::NotEnoughCurrency { balance, required }) => {
                     let currency = match currency.read().as_ref() {
                         Some(currency) => currency.name.to_string(),
                         None => String::from("currency"),
@@ -239,7 +244,7 @@ impl Handler {
 
                     return Ok(());
                 }
-                Err(player::AddTrackError::Error(e)) => {
+                Err(AddTrackError::Error(e)) => {
                     return Err(e);
                 }
             };
@@ -327,21 +332,33 @@ impl command::Handler for Handler {
     }
 
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
+        let player = match self.player.read().as_ref() {
+            Some(player) => player.clone(),
+            None => {
+                ctx.respond("No player configured");
+                return Ok(());
+            }
+        };
+
         match ctx.next() {
             Some("theme") => {
                 ctx.check_moderator()?;
                 let name = ctx_try!(ctx.next_str("<name>", "!song theme")).to_string();
 
-                let player = self.player.clone();
+                let player = player.clone();
                 let user = ctx.user.as_owned_user();
 
                 ctx.spawn(async move {
                     match player.play_theme(user.target.clone(), name).await {
                         Ok(()) => (),
-                        Err(player::PlayThemeError::NoSuchTheme) => {
+                        Err(PlayThemeError::NoSuchTheme) => {
                             user.respond("No such theme :(");
                         }
-                        Err(player::PlayThemeError::Error(e)) => {
+                        Err(PlayThemeError::Error(e)) => {
                             user.respond("There was a problem adding your song :(");
                             log_err!(e, "failed to add song");
                         }
@@ -356,7 +373,7 @@ impl command::Handler for Handler {
                     None => return Ok(()),
                 };
 
-                if let Some(item) = self.player.promote_song(ctx.user.name, index) {
+                if let Some(item) = player.promote_song(ctx.user.name, index) {
                     ctx.respond(format!("Promoted song to head of queue: {}", item.what()));
                 } else {
                     ctx.respond("No such song to promote");
@@ -365,7 +382,7 @@ impl command::Handler for Handler {
             Some("close") => {
                 ctx.check_moderator()?;
 
-                self.player.close(match ctx.rest() {
+                player.close(match ctx.rest() {
                     "" => None,
                     other => Some(other.to_string()),
                 });
@@ -373,7 +390,7 @@ impl command::Handler for Handler {
             }
             Some("open") => {
                 ctx.check_moderator()?;
-                self.player.open();
+                player.open();
                 ctx.respond("Opened player for requests.");
             }
             Some("list") => {
@@ -395,7 +412,7 @@ impl command::Handler for Handler {
                     }
                 }
 
-                let items = self.player.list();
+                let items = player.list();
 
                 let has_more = match items.len() > limit {
                     true => Some(items.len() - limit),
@@ -404,7 +421,7 @@ impl command::Handler for Handler {
 
                 display_songs(&ctx.user, has_more, items.iter().take(limit).cloned());
             }
-            Some("current") => match self.player.current() {
+            Some("current") => match player.current() {
                 Some(current) => {
                     let elapsed = utils::digital_duration(&current.elapsed());
                     let duration = utils::digital_duration(&current.duration());
@@ -434,7 +451,7 @@ impl command::Handler for Handler {
             },
             Some("purge") => {
                 ctx.check_moderator()?;
-                self.player.purge()?;
+                player.purge()?;
                 ctx.respond("Song queue purged.");
             }
             // print when your next song will play.
@@ -449,9 +466,7 @@ impl command::Handler for Handler {
 
                 let user = user.to_lowercase();
 
-                match self
-                    .player
-                    .find(|item| item.user.as_ref().map(|u| *u == user).unwrap_or_default())
+                match player.find(|item| item.user.as_ref().map(|u| *u == user).unwrap_or_default())
                 {
                     Some((when, ref item)) if when.as_secs() == 0 => {
                         if your {
@@ -493,14 +508,14 @@ impl command::Handler for Handler {
                         Some(last_user) => {
                             let last_user = last_user.to_lowercase();
                             ctx.check_moderator()?;
-                            self.player.remove_last_by_user(&last_user)?
+                            player.remove_last_by_user(&last_user)?
                         }
                         None => {
                             ctx.check_moderator()?;
-                            self.player.remove_last()?
+                            player.remove_last()?
                         }
                     },
-                    Some("mine") => self.player.remove_last_by_user(&ctx.user.name)?,
+                    Some("mine") => player.remove_last_by_user(&ctx.user.name)?,
                     Some(n) => {
                         ctx.check_moderator()?;
 
@@ -509,7 +524,7 @@ impl command::Handler for Handler {
                             None => return Ok(()),
                         };
 
-                        self.player.remove_at(n)?
+                        player.remove_at(n)?
                     }
                     None => {
                         ctx.respond(format!("Expected: last, last <user>, or mine"));
@@ -543,43 +558,43 @@ impl command::Handler for Handler {
                         };
 
                         let argument = match diff {
-                            Some(true) => self.player.current_volume().saturating_add(argument),
-                            Some(false) => self.player.current_volume().saturating_sub(argument),
+                            Some(true) => player.current_volume().saturating_add(argument),
+                            Some(false) => player.current_volume().saturating_sub(argument),
                             None => argument,
                         };
 
                         // clamp the volume.
                         let argument = u32::min(100, argument);
                         ctx.respond(format!("Volume set to {}.", argument));
-                        self.player.volume(argument)?;
+                        player.volume(argument)?;
                     }
                     // reading volume
                     None => {
-                        ctx.respond(format!("Current volume: {}.", self.player.current_volume()));
+                        ctx.respond(format!("Current volume: {}.", player.current_volume()));
                     }
                 }
             }
             Some("skip") => {
                 ctx.check_moderator()?;
-                self.player.skip()?;
+                player.skip()?;
             }
             Some("request") => {
-                self.handle_request(&mut ctx)?;
+                self.handle_request(&mut ctx, player)?;
             }
             Some("toggle") => {
                 ctx.check_moderator()?;
-                self.player.toggle()?;
+                player.toggle()?;
             }
             Some("play") => {
                 ctx.check_moderator()?;
-                self.player.play()?;
+                player.play()?;
             }
             Some("pause") => {
                 ctx.check_moderator()?;
-                self.player.pause()?;
+                player.pause()?;
             }
             Some("length") => {
-                let (count, duration) = self.player.length();
+                let (count, duration) = player.length();
 
                 match count {
                     0 => ctx.respond("No songs in queue :("),
@@ -608,17 +623,7 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Module {
-    player: player::PlayerClient,
-}
-
-impl Module {
-    pub fn load(player: &player::Player) -> Result<Self, Error> {
-        Ok(Module {
-            player: player.client(),
-        })
-    }
-}
+pub struct Module;
 
 impl module::Module for Module {
     fn ty(&self) -> &'static str {
@@ -640,35 +645,48 @@ impl module::Module for Module {
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
         let currency = injector.var(futures);
+        let settings = settings.scoped("song");
 
         let mut vars = settings.vars();
-        let chat_feedback = vars.var("song/chat-feedback", true)?;
-        let subscriber_only = vars.var("song/subscriber-only", false)?;
-        let request_reward = vars.var("song/request-reward", 0)?;
+        let enabled = vars.var("enabled", false)?;
+        let chat_feedback = vars.var("chat-feedback", true)?;
+        let subscriber_only = vars.var("subscriber-only", false)?;
+        let request_reward = vars.var("request-reward", 0)?;
         futures.push(vars.run().boxed());
 
-        let vars = settings.scoped(vec!["song", "spotify"]);
+        let vars = settings.scoped("spotify");
         let mut vars = vars.vars();
         let spotify = Constraint::build(&mut vars, true, false)?;
         futures.push(vars.run().boxed());
 
-        let vars = settings.scoped(vec!["song", "youtube"]);
+        let vars = settings.scoped("youtube");
         let mut vars = vars.vars();
         let youtube = Constraint::build(&mut vars, false, true)?;
         futures.push(vars.run().boxed());
 
-        futures
-            .push(player_feedback_loop(self.player.clone(), sender.clone(), chat_feedback).boxed());
+        let (mut player_stream, player) = injector.stream();
+
+        let new_feedback_loop = move |player: Option<&Player>| match player {
+            Some(player) => {
+                Some(feedback(player.client(), sender.clone(), chat_feedback.clone()).boxed())
+            }
+            None => None,
+        };
+
+        let mut feedback_loop = new_feedback_loop(player.as_ref());
+
+        let player = Arc::new(RwLock::new(player.as_ref().map(Player::client)));
 
         let help_cooldown = Cooldown::from_duration(Duration::seconds(5));
 
         handlers.insert(
             "song",
             Handler {
+                enabled,
                 db: db.clone(),
                 stream_info: stream_info.clone(),
                 request_help_cooldown: help_cooldown,
-                player: self.player.clone(),
+                player: player.clone(),
                 subscriber_only,
                 request_reward,
                 currency,
@@ -676,6 +694,24 @@ impl module::Module for Module {
                 youtube,
             },
         );
+
+        let future = async move {
+            loop {
+                futures::select! {
+                    update = player_stream.select_next_some() => {
+                        feedback_loop = new_feedback_loop(update.as_ref());
+                        *player.write() = update.as_ref().map(Player::client);
+                    }
+                    result = feedback_loop.current() => {
+                        if let Err(e) = result.context("feedback loop errored") {
+                            return Err(e.into());
+                        }
+                    }
+                }
+            }
+        };
+
+        futures.push(future.boxed());
         Ok(())
     }
 }
@@ -683,7 +719,7 @@ impl module::Module for Module {
 /// Constraint for a single kind of track.
 #[derive(Debug, Clone)]
 struct Constraint {
-    support: Arc<RwLock<bool>>,
+    enabled: Arc<RwLock<bool>>,
     max_duration: Arc<RwLock<Duration>>,
     min_currency: Arc<RwLock<i64>>,
     subscriber_only: Arc<RwLock<bool>>,
@@ -692,16 +728,16 @@ struct Constraint {
 impl Constraint {
     fn build(
         vars: &mut settings::Vars<'_>,
-        support: bool,
+        enabled: bool,
         subscriber_only: bool,
     ) -> Result<Self, Error> {
-        let support = vars.var("support", support)?;
+        let enabled = vars.var("enabled", enabled)?;
         let max_duration = vars.var("max-duration", Duration::seconds(60 * 10))?;
         let min_currency = vars.var("min-currency", 60)?;
         let subscriber_only = vars.var("subscriber-only", subscriber_only)?;
 
         Ok(Constraint {
-            support,
+            enabled,
             max_duration,
             min_currency,
             subscriber_only,
@@ -728,7 +764,7 @@ fn parse_queue_position(user: &irc::User<'_>, n: &str) -> Option<usize> {
 fn display_songs(
     user: &irc::User<'_>,
     has_more: Option<usize>,
-    it: impl IntoIterator<Item = Arc<player::Item>>,
+    it: impl IntoIterator<Item = Arc<Item>>,
 ) {
     let mut lines = Vec::new();
 
@@ -757,19 +793,21 @@ fn display_songs(
 }
 
 /// Notifications from the player.
-async fn player_feedback_loop(
-    player: player::PlayerClient,
+async fn feedback(
+    player: PlayerClient,
     sender: irc::Sender,
     chat_feedback: Arc<RwLock<bool>>,
 ) -> Result<(), Error> {
     let mut rx = player.add_rx().compat();
 
     while let Some(e) = rx.next().await {
+        log::trace!("Player event: {:?}", e);
+
         match e? {
-            player::Event::Detached => {
+            Event::Detached => {
                 sender.privmsg("Player is detached!");
             }
-            player::Event::Playing(echo, item) => {
+            Event::Playing(echo, item) => {
                 if !echo || !*chat_feedback.read() {
                     return Ok(());
                 }
@@ -781,19 +819,19 @@ async fn player_feedback_loop(
 
                 sender.privmsg(message);
             }
-            player::Event::Pausing => {
+            Event::Pausing => {
                 if !*chat_feedback.read() {
                     return Ok(());
                 }
 
                 sender.privmsg("Pausing playback.");
             }
-            player::Event::Empty => {
+            Event::Empty => {
                 sender.privmsg(format!(
                     "Song queue is empty (use !song request <spotify-id> to add more).",
                 ));
             }
-            player::Event::NotConfigured => {
+            Event::NotConfigured => {
                 sender.privmsg("Player has not been configured yet!");
             }
             // other event we don't care about

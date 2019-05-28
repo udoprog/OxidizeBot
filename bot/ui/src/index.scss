@@ -205,10 +205,20 @@ body {
   &-group {
     font-size: 150%;
     font-weight: bold;
+    cursor: pointer;
 
     &-filter {
+      font-size: 50%;
+      margin-left: .5em;
+      display: none;
+    }
+
+    &:hover {
       color: purple;
-      cursor: pointer;
+
+      .settings-group-filter {
+        display: inline;
+      }
     }
   }
 
@@ -266,6 +276,26 @@ body {
   &-role {
     &-name {
       text-align: center;
+    }
+  }
+
+  &-group {
+    font-size: 150%;
+    font-weight: bold;
+    cursor: pointer;
+
+    &-filter {
+      font-size: 50%;
+      margin-left: .5em;
+      display: none;
+    }
+
+    &:hover {
+      color: purple;
+
+      .auth-group-filter {
+        display: inline;
+      }
     }
   }
 }

@@ -12,7 +12,7 @@ pub struct Config {
     #[serde(default)]
     pub irc: irc::Config,
     #[serde(default)]
-    pub database_url: Option<String>,
+    pub database_url: Option<RelativePathBuf>,
     #[serde(default)]
     pub bad_words: Option<RelativePathBuf>,
     /// Where secrets are stored.
@@ -106,7 +106,7 @@ where
     T: OAuth2Params,
 {
     let secrets = secrets.load(T::SECRETS_KEY)?;
-    let settings = settings.scoped(&[name]);
+    let settings = settings.scoped(name);
     Ok(T::new_flow_builder(web, settings, secrets)?)
 }
 

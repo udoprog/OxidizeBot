@@ -672,6 +672,8 @@ impl Handler<'_, '_, '_> {
                 self.global_bus.send(bus::Global::Ping);
             }
             other => {
+                log::trace!("Testing command: {}", other);
+
                 let handler = match (other, self.currency_handler.currency_name()) {
                     (other, Some(ref name)) if other == **name => {
                         Some(&mut self.currency_handler as &mut (dyn command::Handler + Send))

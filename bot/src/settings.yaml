@@ -129,6 +129,9 @@ types:
   secrets/oauth2/youtube/token:
     doc: Stored token for YouTube authentication.
     type: {id: raw, optional: true}
+  song/enabled:
+    doc: If the `!song` module is enabled.
+    type: {id: bool}
   song/chat-feedback:
     doc: If song feedback is visible in chat or not.
     type: {id: bool}
@@ -138,7 +141,7 @@ types:
   song/subscriber-only:
     doc: If only subscribers can request songs.
     type: {id: bool}
-  song/spotify/support:
+  song/spotify/enabled:
     doc: If we accept Spotify song requests.
     type: {id: bool}
   song/spotify/min-currency:
@@ -150,7 +153,7 @@ types:
   song/spotify/subscriber-only:
     doc: If only subscribers can request songs from Spotify.
     type: {id: bool}
-  song/youtube/support:
+  song/youtube/enabled:
     doc: If we accept YouTube song requests (Experimental).
     type: {id: bool}
   song/youtube/min-currency:

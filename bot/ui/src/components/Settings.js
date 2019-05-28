@@ -159,6 +159,11 @@ export default class Settings extends React.Component {
       return data;
     }
 
+    if (this.state.filter.startsWith('^')) {
+      let filter = this.state.filter.substring(1);
+      return data.filter(d => d.key.startsWith(filter));
+    }
+
     let parts = this.state.filter.split(" ").map(f => f.toLowerCase());
 
     return data.filter(d => {
@@ -352,16 +357,17 @@ export default class Settings extends React.Component {
             {order.map(name => {
               let group = groups[name];
 
-              let setFilter = filter => () => this.setState({filter});
+              let setFilter = filter => () => this.setState({filter: `^${filter}/`});
 
               return (
                 <Table className="mb-0" key={name}>
                   <tbody>
                     <tr>
-                      <th className="settings-group">
+                      <th className="settings-group" title={`Filter for "${name}"`} onClick={setFilter(name)}>
                         {name}
-                        &nbsp;
-                        <a className="settings-group-filter" onClick={setFilter}><FontAwesomeIcon icon="search" /></a>
+                        <a className="settings-group-filter">
+                          <FontAwesomeIcon icon="search" />
+                        </a>
                       </th>
                     </tr>
 

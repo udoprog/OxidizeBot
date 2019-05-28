@@ -108,7 +108,7 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        let settings = settings.scoped(&["countdown"]);
+        let settings = settings.scoped("countdown");
 
         let (mut enabled_stream, enabled) = settings.stream("enabled", true)?;
         let enabled = Arc::new(RwLock::new(enabled));

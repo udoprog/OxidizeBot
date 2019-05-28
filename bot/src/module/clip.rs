@@ -97,7 +97,7 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        let settings = settings.scoped(&["clip"]);
+        let settings = settings.scoped("clip");
         let mut vars = settings.vars();
 
         if config.irc.clip_cooldown.is_some() {

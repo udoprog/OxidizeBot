@@ -226,16 +226,10 @@ impl Settings {
     }
 
     /// Create a scoped setting.
-    pub fn scoped<S>(&self, add: impl IntoIterator<Item = S>) -> Settings
-    where
-        S: AsRef<str>,
-    {
+    pub fn scoped(&self, s: &str) -> Settings {
         let mut scope = self.scope.clone();
 
-        for s in add.into_iter() {
-            let s = s.as_ref();
-            let s = s.trim_matches(SEPARATOR);
-
+        for s in s.trim_matches(SEPARATOR).split('/') {
             if s.is_empty() {
                 continue;
             }

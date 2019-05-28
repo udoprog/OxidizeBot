@@ -121,17 +121,24 @@ export default class Authorization extends React.Component {
       return data;
     }
 
-    let parts = this.state.filter.split(" ").map(f => f.toLowerCase());
+    let scopes = data.scopes;
 
-    let scopes = data.scopes.filter(scope => {
-      return parts.every(p => {
-        if (scope.scope.toLowerCase().indexOf(p) != -1) {
-          return true;
-        }
+    if (this.state.filter.startsWith('^')) {
+      let filter = this.state.filter.substring(1);
+      scopes = scopes.filter(scope => scope.scope.startsWith(filter));
+    } else {
+      let parts = this.state.filter.split(" ").map(f => f.toLowerCase());
 
-        return scope.doc.toLowerCase().indexOf(p) != -1;
+      scopes = data.scopes.filter(scope => {
+        return parts.every(p => {
+          if (scope.scope.toLowerCase().indexOf(p) != -1) {
+            return true;
+          }
+
+          return scope.doc.toLowerCase().indexOf(p) != -1;
+        });
       });
-    });
+    }
 
     return Object.assign({}, data, {scopes});
   }
@@ -250,9 +257,17 @@ export default class Authorization extends React.Component {
    * Render a single group.
    */
   renderGroup(group, name, data) {
+    let setFilter = filter => () => this.setState({filter: `^${filter}/`});
+
     return [
       <tr key={`title:${name}`} className="auth-scope-short">
-        <td colSpan={data.roles.length + 1}>{name}</td>
+        <td colSpan={data.roles.length + 1} className="auth-group" title={`Filter for "${name}"`} onClick={setFilter(name)}>
+          {name}
+
+          <a className="auth-group-filter">
+            <FontAwesomeIcon icon="search" />
+          </a>
+        </td>
       </tr>,
       group.map(d => {
         return this.renderScope(d.data, data, d.short);

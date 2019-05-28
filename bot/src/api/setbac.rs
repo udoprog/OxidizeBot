@@ -77,7 +77,7 @@ pub fn run(
     injector: &Injector,
     token: oauth2::SyncToken,
 ) -> Result<impl Future<Output = Result<(), failure::Error>>, failure::Error> {
-    let settings = settings.scoped(&["remote"]);
+    let settings = settings.scoped("remote");
 
     if config.api_url.is_some() {
         log::warn!("`api_url` configuration has been deprecated");
@@ -114,11 +114,9 @@ pub fn run(
     Ok(async move {
         loop {
             futures::select! {
-                update = player_stream.next() => {
-                    if let Some(update) = update {
-                        remote_builder.player = update;
-                        remote_builder.init(&mut remote);
-                    }
+                update = player_stream.select_next_some() => {
+                    remote_builder.player = update;
+                    remote_builder.init(&mut remote);
                 }
                 update = api_url_stream.select_next_some() => {
                     remote_builder.api_url = match update.and_then(|s| parse_url(&s)) {
@@ -132,31 +130,31 @@ pub fn run(
                     remote_builder.enabled = update;
                     remote_builder.init(&mut remote);
                 }
-                result = remote.rx.next() => {
-                    if let Some(_) = result.transpose()? {
-                        let setbac = match remote.setbac.as_ref() {
-                            Some(setbac) => setbac,
-                            None => continue,
-                        };
+                result = remote.rx.select_next_some() => {
+                    let _ = result?;
 
-                        let client = match remote.client.as_ref() {
-                            Some(client) => client,
-                            None => continue,
-                        };
+                    let setbac = match remote.setbac.as_ref() {
+                        Some(setbac) => setbac,
+                        None => continue,
+                    };
 
-                        log::trace!("pushing remote player update");
+                    let client = match remote.client.as_ref() {
+                        Some(client) => client,
+                        None => continue,
+                    };
 
-                        let mut update = PlayerUpdate::default();
+                    log::trace!("pushing remote player update");
 
-                        update.current = client.current().map(|c| c.item.into());
+                    let mut update = PlayerUpdate::default();
 
-                        for i in client.list() {
-                            update.items.push(i.into());
-                        }
+                    update.current = client.current().map(|c| c.item.into());
 
-                        if let Err(e) = setbac.player_update(update).await {
-                            log::error!("failed to perform remote player update: {}", e);
-                        }
+                    for i in client.list() {
+                        update.items.push(i.into());
+                    }
+
+                    if let Err(e) = setbac.player_update(update).await {
+                        log::error!("failed to perform remote player update: {}", e);
                     }
                 }
             }

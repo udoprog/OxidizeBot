@@ -57,7 +57,7 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        let settings = settings.scoped(&["afterstream"]);
+        let settings = settings.scoped("afterstream");
         let mut vars = settings.vars();
 
         handlers.insert(

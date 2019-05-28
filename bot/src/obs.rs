@@ -104,7 +104,7 @@ pub fn setup<'a>(
                 result = obs_stream.current() => {
                     match result {
                         Ok(()) => log::warn!("obs stream ended"),
-                        Err(e) => log::warn!("obs stream errored: {}", e),
+                        Err(e) => log::trace!("obs stream errored: {}", e),
                     }
 
                     timer::Delay::new(time::Instant::now() + time::Duration::from_secs(5)).await?;

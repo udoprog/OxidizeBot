@@ -19,6 +19,14 @@ fn opts() -> clap::App<'static, 'static> {
         .author("John-John Tedro <udoprog@tedro.se>")
         .about("Bot component of SetMod.")
         .arg(
+            clap::Arg::with_name("root")
+                .short("r")
+                .long("root")
+                .value_name("root")
+                .help("Directory to run from.")
+                .takes_value(true),
+        )
+        .arg(
             clap::Arg::with_name("config")
                 .short("c")
                 .long("config")
@@ -74,15 +82,16 @@ fn main() -> Result<(), failure::Error> {
     let opts = opts();
     let m = opts.get_matches();
 
-    let config = m
-        .value_of("config")
+    let root = m
+        .value_of("root")
         .map(Path::new)
-        .unwrap_or(Path::new("config.toml"))
+        .unwrap_or(Path::new("."))
         .to_owned();
 
-    let root = config
-        .parent()
-        .ok_or_else(|| format_err!("missing parent"))?
+    let config = m
+        .value_of("config")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("config.toml"))
         .to_owned();
 
     let web_root = m.value_of("web-root").map(PathBuf::from);
@@ -110,6 +119,9 @@ async fn try_main(
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
 
     let config: config::Config = if config.is_file() {
+        log::info!("Loaded configuration from: {}", config.display());
+        log::warn!("A configuration file is now optional, please consider removing it!");
+
         fs::read_to_string(&config)
             .map_err(failure::Error::from)
             .and_then(|s| toml::de::from_str(&s).map_err(failure::Error::from))
@@ -130,13 +142,14 @@ async fn try_main(
     let secrets = secrets::Secrets::open(&secrets_path)
         .with_context(|_| format_err!("failed to load secrets: {}", secrets_path.display()))?;
 
-    let database_url = config
+    let database_path = config
         .database_url
         .as_ref()
-        .map(|d| d.as_str())
-        .ok_or_else(|| format_err!("require `database_url`"))?;
+        .map(|url| url.to_path(&root))
+        .unwrap_or_else(|| root.join("setmod.sql"));
 
-    let db = db::Database::open(database_url, Arc::clone(&thread_pool))?;
+    let db = db::Database::open(&database_path, Arc::clone(&thread_pool))
+        .with_context(|_| format_err!("failed to open database at: {}", database_path.display()))?;
 
     let scopes_schema = auth::Schema::load_static()?;
     let auth = db.auth(scopes_schema)?;
@@ -208,7 +221,7 @@ async fn try_main(
 
     log::info!("Listening on: {}", web::URL);
 
-    let token_settings = settings.scoped(&["secrets", "oauth2"]);
+    let token_settings = settings.scoped("secrets/oauth2");
 
     let (spotify_token, future) = {
         let flow = config::new_oauth2_flow::<config::Spotify>(
@@ -232,7 +245,7 @@ async fn try_main(
     futures.push(future.boxed());
 
     let (youtube_token, future) = {
-        let flow = oauth2::youtube(web.clone(), token_settings.scoped(&["youtube"]))?
+        let flow = oauth2::youtube(web.clone(), token_settings.scoped("youtube"))?
             .with_scopes(vec![String::from(
                 "https://www.googleapis.com/auth/youtube.readonly",
             )])
@@ -305,11 +318,11 @@ async fn try_main(
     web.set_player(player.client());
 
     // load the song module if we have a player configuration.
-    modules.push(Box::new(module::song::Module::load(&player)?));
     injector.update(player);
 
     futures.push(api::setbac::run(&config, &settings, &injector, streamer_token.clone())?.boxed());
 
+    modules.push(Box::new(module::song::Module));
     modules.push(Box::new(module::command_admin::Module));
     modules.push(Box::new(module::admin::Module::load()));
     modules.push(Box::new(module::alias_admin::Module::load()));

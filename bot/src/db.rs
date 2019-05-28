@@ -10,6 +10,7 @@ mod themes;
 mod words;
 
 use crate::{player, prelude::*, track_id::TrackId, utils};
+use std::path::Path;
 
 pub use self::{
     after_streams::{AfterStream, AfterStreams},
@@ -68,8 +69,9 @@ pub struct Database {
 
 impl Database {
     /// Find posts by users.
-    pub fn open(url: &str, thread_pool: Arc<ThreadPool>) -> Result<Database, Error> {
-        let pool = SqliteConnection::establish(url)?;
+    pub fn open(path: &Path, thread_pool: Arc<ThreadPool>) -> Result<Database, Error> {
+        let url = path.display().to_string();
+        let pool = SqliteConnection::establish(&url)?;
 
         // Run all migrations.
         embedded_migrations::run_with_output(&pool, &mut std::io::stdout())?;
