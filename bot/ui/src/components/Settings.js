@@ -76,6 +76,7 @@ export default class Settings extends React.Component {
             control,
             value,
             doc: d.schema.doc,
+            secret: d.schema.secret,
           }
         });
 
@@ -172,12 +173,13 @@ export default class Settings extends React.Component {
   }
 
   renderSetting(setting, keyOverride = null) {
-    let isSecret = setting.key.startsWith(SECRET_PREFIX);
-
-    let deleteButton = null;
-    let editButton = null;
     // onChange handler used for things which support immediate editing.
     let renderOnChange = null;
+
+    let buttons = [];
+    let isDeleting = this.state.deleteKey === setting.key;
+    let isEditing = this.state.editKey === setting.key;
+    let isSecret = setting.key.startsWith(SECRET_PREFIX) || setting.secret;
 
     if (setting.control.optional) {
       let del = () => {
@@ -187,8 +189,8 @@ export default class Settings extends React.Component {
       };
 
       if (setting.value !== null) {
-        deleteButton = (
-          <Button size="sm" variant="danger" className="action" disabled={this.state.loading} onClick={del}>
+        buttons.push(
+          <Button key="delete" size="sm" variant="danger" className="action" disabled={this.state.loading} onClick={del}>
             <FontAwesomeIcon icon="trash" />
           </Button>
         );
@@ -213,8 +215,8 @@ export default class Settings extends React.Component {
         });
       };
 
-      editButton = (
-        <Button size="sm" variant="info" className="action" disabled={this.state.loading} onClick={edit}>
+      buttons.push(
+        <Button key="edit" size="sm" variant="info" className="action" disabled={this.state.loading} onClick={edit}>
           <FontAwesomeIcon icon="edit" />
         </Button>
       );
@@ -226,12 +228,13 @@ export default class Settings extends React.Component {
       };
     }
 
-    let buttons = (
-      <ButtonGroup>
-        {deleteButton}
-        {editButton}
-      </ButtonGroup>
-    );
+    if (buttons.length > 0) {
+      buttons = (
+        <div className="ml-3">
+          <ButtonGroup>{buttons}</ButtonGroup>
+        </div>
+      );
+    }
 
     let value = null;
 
@@ -245,7 +248,7 @@ export default class Settings extends React.Component {
       }
     }
 
-    if (this.state.deleteKey === setting.key) {
+    if (isDeleting) {
       buttons = <ConfirmButtons
         what="deletion"
         onConfirm={() => this.delete(this.state.deleteKey)}
@@ -257,7 +260,7 @@ export default class Settings extends React.Component {
       />;
     }
 
-    if (this.state.editKey === setting.key && this.state.edit) {
+    if (isEditing && this.state.edit) {
       let isValid = this.state.edit.validate(this.state.editValue);
 
       let save = (e) => {
@@ -308,7 +311,7 @@ export default class Settings extends React.Component {
             <Col lg="9">
               <div className="d-flex align-items-top">
                 <div className="flex-fill align-middle">{value}</div>
-                <div className="ml-3">{buttons}</div>
+                {buttons}
               </div>
             </Col>
           </Row>

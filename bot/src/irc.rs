@@ -1,7 +1,11 @@
 use crate::{
     api,
     auth::Auth,
-    bus, command, config, currency, db, idle, injector, module, oauth2,
+    bus, command, config,
+    currency::{Currency, CurrencyBuilder},
+    db, idle,
+    injector::Injector,
+    module, oauth2,
     prelude::*,
     settings, stream_info, template, timer,
     utils::{self, Cooldown, Duration},
@@ -15,11 +19,15 @@ use irc::{
         message::{Message, Tag},
     },
 };
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use std::{fmt, sync::Arc, time};
 use tokio_threadpool::ThreadPool;
 
+// re-exports
+pub use self::sender::Sender;
+
 mod currency_admin;
+mod sender;
 
 const SERVER: &'static str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &'static str = "twitch.tv/tags";
@@ -56,6 +64,7 @@ fn default_cooldown() -> Cooldown {
 pub struct Irc {
     pub db: db::Database,
     pub youtube: Arc<api::YouTube>,
+    pub nightbot: Arc<api::NightBot>,
     pub streamer_twitch: api::Twitch,
     pub bot_twitch: api::Twitch,
     pub config: Arc<config::Config>,
@@ -72,7 +81,7 @@ pub struct Irc {
     pub settings: settings::Settings,
     pub auth: Auth,
     pub global_channel: Arc<RwLock<Option<String>>>,
-    pub injector: injector::Injector,
+    pub injector: Injector,
 }
 
 impl Irc {
@@ -80,6 +89,7 @@ impl Irc {
         let Irc {
             db,
             youtube,
+            nightbot,
             streamer_twitch,
             bot_twitch,
             config,
@@ -217,9 +227,15 @@ impl Irc {
             let PackedIrcClient(client, send_future) = client.compat().await?;
             client.identify()?;
 
-            let sender = Sender::new(channel.clone(), client.clone());
+            let mut vars = settings.vars();
+            let url_whitelist_enabled = vars.var("irc/url-whitelist/enabled", true)?;
+            let bad_words_enabled = vars.var("irc/bad-words/enabled", false)?;
+            let sender_ty = vars.var("irc/sender-type", sender::Type::Chat)?;
+
+            let sender = Sender::new(sender_ty, channel.clone(), client.clone(), nightbot.clone());
 
             let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
+            futures.push(vars.run().boxed());
 
             let stream_info = {
                 let interval = time::Duration::from_secs(60 * 5);
@@ -304,11 +320,6 @@ impl Irc {
                 settings.stream("irc/moderator-cooldown").optional()?;
 
             let startup_message = settings.get::<String>("irc/startup-message")?;
-
-            let mut vars = settings.vars();
-            let url_whitelist_enabled = vars.var("irc/url-whitelist/enabled", true)?;
-            let bad_words_enabled = vars.var("irc/bad-words/enabled", false)?;
-            futures.push(vars.run().boxed());
 
             let mut pong_timeout = None;
 
@@ -403,7 +414,7 @@ fn currency_loop<'a>(
     channel: Arc<String>,
     sender: Sender,
     idle: idle::Idle,
-    injector: &'a injector::Injector,
+    injector: &'a Injector,
     settings: &settings::Settings,
 ) -> Result<impl Future<Output = Result<(), Error>> + 'a, Error> {
     let reward = 10;
@@ -414,24 +425,30 @@ fn currency_loop<'a>(
     let (mut notify_rewards_stream, mut notify_rewards) =
         settings.stream("currency/notify-rewards").or_with(true)?;
 
+    let (mut ty_stream, ty) = settings.stream("currency/type").or_default()?;
     let (mut enabled_stream, enabled) = settings.stream("currency/enabled").or_default()?;
     let (mut name_stream, name) = settings.stream("currency/name").optional()?;
+    let (mut honkos_url_stream, honkos_url) =
+        settings.stream("currency/honkos/database-url").optional()?;
 
-    let mut currency_builder = CurrencyBuilder {
-        enabled,
-        name: None,
-        db: db.clone(),
-        twitch: twitch.clone(),
+    let mut builder = CurrencyBuilder::new(db.clone(), twitch.clone());
+    builder.ty = ty;
+    builder.enabled = enabled;
+    builder.name = name.map(Arc::new);
+    builder.honkos_url = honkos_url;
+
+    let build = |injector: &Injector, builder: &CurrencyBuilder| match builder.build() {
+        Some(currency) => {
+            injector.update(currency.clone());
+            Some(currency)
+        }
+        None => {
+            injector.clear::<Currency>();
+            None
+        }
     };
 
-    currency_builder.name = name.map(Arc::new);
-
-    let mut currency = currency_builder.build();
-
-    if let Some(currency) = currency.clone() {
-        injector.update(currency);
-    }
-
+    let mut currency = build(injector, &builder);
     futures.push(variables.run().boxed());
 
     return Ok(async move {
@@ -443,24 +460,20 @@ fn currency_loop<'a>(
                     notify_rewards = update;
                 }
                 enabled = enabled_stream.select_next_some() => {
-                    currency_builder.enabled = enabled;
-                    currency = currency_builder.build();
-
-                    if let Some(currency) = currency.clone() {
-                        injector.update(currency);
-                    } else {
-                        injector.clear::<currency::Currency>();
-                    }
+                    builder.enabled = enabled;
+                    currency = build(injector, &builder);
+                }
+                update = ty_stream.select_next_some() => {
+                    builder.ty = update;
+                    currency = build(injector, &builder);
                 }
                 name = name_stream.select_next_some() => {
-                    currency_builder.name = name.map(Arc::new);
-                    currency = currency_builder.build();
-
-                    if let Some(currency) = currency.clone() {
-                        injector.update(currency);
-                    } else {
-                        injector.clear::<currency::Currency>();
-                    }
+                    builder.name = name.map(Arc::new);
+                    currency = build(injector, &builder);
+                }
+                honkos_url = honkos_url_stream.select_next_some() => {
+                    builder.honkos_url = honkos_url;
+                    currency = build(injector, &builder);
                 }
                 i = interval.select_next_some() => {
                     let currency = match currency.as_ref() {
@@ -487,110 +500,6 @@ fn currency_loop<'a>(
             }
         }
     });
-
-    struct CurrencyBuilder {
-        enabled: bool,
-        name: Option<Arc<String>>,
-        db: db::Database,
-        twitch: api::Twitch,
-    }
-
-    impl CurrencyBuilder {
-        fn build(&self) -> Option<currency::Currency> {
-            if !self.enabled {
-                return None;
-            }
-
-            let name = Arc::new(self.name.as_ref()?.to_string());
-
-            Some(currency::Currency {
-                name,
-                db: self.db.clone(),
-                twitch: self.twitch.clone(),
-            })
-        }
-    }
-}
-
-struct SenderInner {
-    target: Arc<String>,
-    client: IrcClient,
-    thread_pool: ThreadPool,
-    limiter: Mutex<ratelimit::Limiter>,
-}
-
-#[derive(Clone)]
-pub struct Sender {
-    inner: Arc<SenderInner>,
-}
-
-impl Sender {
-    pub fn new(target: Arc<String>, client: IrcClient) -> Sender {
-        let limiter = ratelimit::Builder::new().frequency(10).capacity(95).build();
-
-        Sender {
-            inner: Arc::new(SenderInner {
-                target,
-                client,
-                thread_pool: ThreadPool::new(),
-                limiter: Mutex::new(limiter),
-            }),
-        }
-    }
-
-    /// Get the channel this sender is associated with.
-    pub fn channel(&self) -> &str {
-        self.inner.target.as_str()
-    }
-
-    /// Send an immediate message, without taking rate limiting into account.
-    fn send_immediate(&self, m: impl Into<Message>) {
-        if let Err(e) = self.inner.client.send(m) {
-            log_err!(e, "failed to send message");
-        }
-    }
-
-    /// Send a message.
-    fn send(&self, m: impl Into<Message>) {
-        let inner = self.inner.clone();
-        let m = m.into();
-
-        self.inner.thread_pool.spawn(future01::lazy(move || {
-            inner.limiter.lock().wait();
-
-            if let Err(e) = inner.client.send(m) {
-                log_err!(e, "failed to send message");
-            }
-
-            Ok(())
-        }));
-    }
-
-    /// Send a PRIVMSG.
-    pub fn privmsg(&self, f: impl fmt::Display) {
-        self.send(Command::PRIVMSG(
-            (*self.inner.target).clone(),
-            f.to_string(),
-        ))
-    }
-
-    /// Send a PRIVMSG without rate limiting.
-    pub fn privmsg_immediate(&self, f: impl fmt::Display) {
-        self.send_immediate(Command::PRIVMSG(
-            (*self.inner.target).clone(),
-            f.to_string(),
-        ))
-    }
-
-    /// Send a capability request.
-    pub fn cap_req(&self, cap: &str) {
-        self.send(Command::CAP(
-            None,
-            CapSubCommand::REQ,
-            Some(String::from(cap)),
-            None,
-        ))
-    }
 }
 
 /// Handler for incoming messages.
@@ -763,8 +672,7 @@ impl Handler<'_, '_, '_> {
 
         log::info!("Attempting to delete message: {}", id);
 
-        self.sender.privmsg_immediate(format!("/delete {}", id));
-
+        self.sender.delete(id);
         Ok(())
     }
 
@@ -906,8 +814,8 @@ impl Handler<'_, '_, '_> {
                     // do what needs to happen with them (like `/mods`).
                     Some(TWITCH_COMMANDS_CAP) => {
                         // request to get a list of moderators and vips.
-                        self.sender.privmsg("/mods");
-                        self.sender.privmsg("/vips");
+                        self.sender.mods();
+                        self.sender.vips();
                     }
                     _ => {}
                 }
@@ -1072,8 +980,8 @@ async fn refresh_mods_future(sender: Sender) -> Result<(), Error> {
     while let Some(i) = interval.next().await {
         let _ = i?;
         log::trace!("refreshing mods and vips");
-        sender.privmsg_immediate("/mods");
-        sender.privmsg_immediate("/vips");
+        sender.mods();
+        sender.vips();
     }
 
     Ok(())

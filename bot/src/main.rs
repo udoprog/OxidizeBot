@@ -187,6 +187,8 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
 
     let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
 
+    let currency = injector.var(&mut futures);
+
     let (web, future) = web::setup(
         web_root.as_ref().map(|p| p.as_path()),
         global_bus.clone(),
@@ -200,6 +202,7 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
         promotions.clone(),
         themes.clone(),
         global_channel.clone(),
+        currency,
     )?;
 
     let future = future.map_err(|e| {
@@ -261,6 +264,16 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
 
     futures.push(future.boxed());
 
+    let (nightbot_token, future) = {
+        let flow = oauth2::nightbot(web.clone(), token_settings.scoped("nightbot"))?
+            .with_scopes(vec![String::from("channel_send")])
+            .build(String::from("NightBot"))?;
+
+        flow.into_token()?
+    };
+
+    futures.push(future.boxed());
+
     let (streamer_token, future) = {
         let flow = config::new_oauth2_flow::<config::Twitch>(
             web.clone(),
@@ -302,10 +315,11 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
 
     let (shutdown, shutdown_rx) = utils::Shutdown::new();
 
-    let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
     let spotify = Arc::new(api::Spotify::new(spotify_token.clone())?);
     let streamer_twitch = api::Twitch::new(streamer_token.clone())?;
     let bot_twitch = api::Twitch::new(bot_token.clone())?;
+    let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
+    let nightbot = Arc::new(api::NightBot::new(nightbot_token.clone())?);
 
     let (player, future) = player::run(
         db.clone(),
@@ -356,6 +370,7 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
     let irc = irc::Irc {
         db: db,
         youtube,
+        nightbot,
         streamer_twitch,
         bot_twitch,
         config,

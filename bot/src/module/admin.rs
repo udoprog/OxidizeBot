@@ -23,7 +23,7 @@ impl Handler<'_> {
 
         for setting in settings.iter().take(10) {
             // NB: security issue if this was present.
-            if key.starts_with("secrets/") {
+            if key.starts_with("secrets/") || setting.schema.secret {
                 continue;
             }
 
@@ -178,12 +178,22 @@ impl<'a> command::Handler for Handler<'a> {
 
                 match ctx.rest().trim() {
                     "" => {
-                        let value = match self.settings.get::<Option<serde_json::Value>>(key)? {
-                            Some(value) => value,
-                            None => return self.list_settings_by_prefix(ctx, &key),
-                        };
+                        let setting =
+                            match self.settings.setting::<Option<serde_json::Value>>(key)? {
+                                Some(value) => value,
+                                None => return self.list_settings_by_prefix(ctx, &key),
+                            };
 
-                        ctx.respond(format!("{} = {}", key, serde_json::to_string(&value)?));
+                        if setting.schema.secret {
+                            ctx.respond(format!("Cannot show secret setting `{}`", key));
+                            return Ok(());
+                        }
+
+                        ctx.respond(format!(
+                            "{} = {}",
+                            key,
+                            serde_json::to_string(&setting.value)?
+                        ));
                     }
                     value => {
                         let schema = match self.settings.lookup(key) {

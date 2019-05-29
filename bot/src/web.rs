@@ -1,4 +1,7 @@
-use crate::{api, auth, bus, db, player, prelude::*, settings, template, track_id::TrackId, utils};
+use crate::{
+    api, auth, bus, currency::Currency, db, player, prelude::*, settings, template,
+    track_id::TrackId, utils,
+};
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::{fmt, net::SocketAddr, path::Path, sync::Arc};
@@ -13,6 +16,7 @@ const MAIN_JS: &'static [u8] = include_bytes!("../ui/dist/main.js");
 #[derive(Debug)]
 enum Error {
     BadRequest,
+    NotFound,
     Custom(failure::Error),
 }
 
@@ -26,6 +30,7 @@ impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::BadRequest => "bad request".fmt(fmt),
+            Error::NotFound => "not found".fmt(fmt),
             Error::Custom(ref err) => err.fmt(fmt),
         }
     }
@@ -644,6 +649,7 @@ struct Api {
     after_streams: db::AfterStreams,
     db: db::Database,
     settings: settings::Settings,
+    currency: Arc<RwLock<Option<Currency>>>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -761,14 +767,26 @@ impl Api {
     async fn import_balances(
         self,
         balances: Vec<db::models::Balance>,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        self.db.import_balances(balances).await?;
+    ) -> Result<impl warp::Reply, Error> {
+        let currency = self.currency.read().as_ref().cloned();
+
+        match currency {
+            Some(currency) => currency.import_balances(balances).await?,
+            None => return Err(Error::NotFound),
+        }
+
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Export balances.
-    async fn export_balances(self) -> Result<impl warp::Reply, failure::Error> {
-        let balances = self.db.export_balances().await?;
+    async fn export_balances(self) -> Result<impl warp::Reply, Error> {
+        let currency = self.currency.read().as_ref().cloned();
+
+        let balances = match currency {
+            Some(currency) => currency.export_balances().await?,
+            None => return Err(Error::NotFound),
+        };
+
         Ok(warp::reply::json(&balances))
     }
 }
@@ -787,6 +805,7 @@ pub fn setup(
     promotions: db::Promotions,
     themes: db::Themes,
     channel: Arc<RwLock<Option<String>>>,
+    currency: Arc<RwLock<Option<Currency>>>,
 ) -> Result<
     (
         Server,
@@ -814,6 +833,7 @@ pub fn setup(
         after_streams,
         db,
         settings,
+        currency,
     };
 
     let api = {
@@ -1034,6 +1054,7 @@ fn recover(err: warp::Rejection) -> Result<impl warp::Reply, warp::Rejection> {
     if let Some(e) = err.find_cause::<Error>() {
         let code = match *e {
             Error::BadRequest => warp::http::StatusCode::BAD_REQUEST,
+            Error::NotFound => warp::http::StatusCode::NOT_FOUND,
             Error::Custom(_) => warp::http::StatusCode::INTERNAL_SERVER_ERROR,
         };
 

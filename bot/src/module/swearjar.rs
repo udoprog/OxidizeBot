@@ -3,7 +3,7 @@ use crate::{
     auth::Scope,
     command, config,
     currency::Currency,
-    db, module,
+    module,
     prelude::*,
     utils::{Cooldown, Duration},
 };
@@ -15,7 +15,6 @@ pub struct Handler<'a> {
     enabled: Arc<RwLock<bool>>,
     reward: Arc<RwLock<i64>>,
     cooldown: Arc<RwLock<Cooldown>>,
-    db: db::Database,
     currency: Arc<RwLock<Option<Currency>>>,
     twitch: &'a api::Twitch,
 }
@@ -30,8 +29,9 @@ impl<'a> command::Handler for Handler<'a> {
             return Ok(());
         }
 
-        let currency = match self.currency.read().clone() {
-            Some(currency) => currency,
+        let currency = self.currency.read();
+        let currency = match currency.as_ref() {
+            Some(currency) => currency.clone(),
             None => {
                 ctx.respond("No currency configured for stream, sorry :(");
                 return Ok(());
@@ -43,7 +43,6 @@ impl<'a> command::Handler for Handler<'a> {
             return Ok(());
         }
 
-        let db = self.db.clone();
         let twitch = self.twitch.clone();
         let sender = ctx.sender.clone();
         let streamer = ctx.streamer.to_string();
@@ -63,10 +62,13 @@ impl<'a> command::Handler for Handler<'a> {
 
             let total_reward = reward * u.len() as i64;
 
-            db.balance_add(channel.clone(), streamer.clone(), -total_reward)
+            currency
+                .balance_add(channel.clone(), streamer.clone(), -total_reward)
                 .await?;
 
-            db.balances_increment(channel.clone(), u, reward).await?;
+            currency
+                .balances_increment(channel.clone(), u, reward)
+                .await?;
 
             sender.privmsg(
                 format!(
@@ -81,7 +83,7 @@ impl<'a> command::Handler for Handler<'a> {
         ctx.spawn(future.map(|result| match result {
             Ok(()) => (),
             Err(e) => {
-                log_err!(e, "failed to reward users for !swearjar");
+                log_err!(e, "Failed to reward users for !swearjar");
             }
         }));
 
@@ -135,7 +137,6 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            db,
             handlers,
             twitch,
             injector,
@@ -168,7 +169,6 @@ impl super::Module for Module {
                 enabled,
                 reward,
                 cooldown: cooldown.clone(),
-                db: db.clone(),
                 currency,
                 twitch,
             },

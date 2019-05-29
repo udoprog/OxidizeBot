@@ -9,7 +9,7 @@ pub(crate) mod schema;
 mod themes;
 mod words;
 
-use crate::{player, prelude::*, track_id::TrackId, utils};
+use crate::{player, track_id::TrackId, utils};
 use std::path::Path;
 
 pub use self::{
@@ -28,43 +28,13 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use tokio_threadpool::ThreadPool;
 
-#[derive(Debug, err_derive::Error)]
-pub enum RenameError {
-    /// Trying to rename something to a conflicting name.
-    #[error(display = "conflict")]
-    Conflict,
-    /// Trying to rename something which doesn't exist.
-    #[error(display = "missing")]
-    Missing,
-}
-
-#[derive(Debug, err_derive::Error)]
-pub enum BalanceTransferError {
-    #[error(display = "missing balance for transfer")]
-    NoBalance,
-    #[error(display = "other error: {}", _0)]
-    Other(Error),
-}
-
-impl From<Error> for BalanceTransferError {
-    fn from(value: Error) -> Self {
-        BalanceTransferError::Other(value)
-    }
-}
-
-impl From<diesel::result::Error> for BalanceTransferError {
-    fn from(value: diesel::result::Error) -> Self {
-        BalanceTransferError::Other(value.into())
-    }
-}
-
 embed_migrations!("./migrations");
 
 /// Database abstraction.
 #[derive(Clone)]
 pub struct Database {
     pub(crate) pool: Arc<Mutex<SqliteConnection>>,
-    thread_pool: Arc<ThreadPool>,
+    pub(crate) thread_pool: Arc<ThreadPool>,
 }
 
 impl Database {
@@ -94,228 +64,11 @@ impl Database {
     ) -> Result<crate::settings::Settings, Error> {
         Ok(crate::settings::Settings::new(self.clone(), schema))
     }
-
-    /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_transfer(
-        &self,
-        channel: String,
-        giver: String,
-        taker: String,
-        amount: i64,
-        override_balance: bool,
-    ) -> Result<(), BalanceTransferError> {
-        use self::schema::balances::dsl;
-
-        let taker = user_id(&taker);
-        let giver = user_id(&giver);
-        let pool = self.pool.clone();
-
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
-            let c = pool.lock();
-            let c = &*c;
-
-            c.transaction(move || {
-                let giver_filter = dsl::balances
-                    .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&giver)));
-
-                let balance = giver_filter
-                    .clone()
-                    .select(dsl::amount)
-                    .first::<i64>(&*c)
-                    .optional()?
-                    .unwrap_or_default();
-
-                if balance < amount && !override_balance {
-                    return Err(BalanceTransferError::NoBalance);
-                }
-
-                modify_balance(c, &channel, &taker, amount)?;
-                modify_balance(c, &channel, &giver, -amount)?;
-                Ok(())
-            })
-        }));
-
-        future.compat().await
-    }
-
-    /// Get balances for all users.
-    pub async fn export_balances(&self) -> Result<Vec<models::Balance>, Error> {
-        use self::schema::balances::dsl;
-
-        let pool = self.pool.clone();
-
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
-            let c = pool.lock();
-            let balances = dsl::balances.load::<models::Balance>(&*c)?;
-            Ok(balances)
-        }));
-
-        future.compat().await
-    }
-
-    /// Import balances for all users.
-    pub async fn import_balances(&self, balances: Vec<models::Balance>) -> Result<(), Error> {
-        use self::schema::balances::dsl;
-
-        let pool = Arc::clone(&self.pool);
-
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
-            let c = pool.lock();
-
-            for balance in balances {
-                let balance = balance.checked();
-
-                let filter = dsl::balances.filter(
-                    dsl::channel
-                        .eq(balance.channel.as_str())
-                        .and(dsl::user.eq(&balance.user)),
-                );
-
-                let b = filter.clone().first::<models::Balance>(&*c).optional()?;
-
-                match b {
-                    None => {
-                        diesel::insert_into(dsl::balances)
-                            .values(&balance)
-                            .execute(&*c)?;
-                    }
-                    Some(_) => {
-                        diesel::update(filter)
-                            .set(dsl::amount.eq(balance.amount))
-                            .execute(&*c)?;
-                    }
-                }
-            }
-
-            Ok(())
-        }));
-
-        future.compat().await
-    }
-
-    /// Find user balance.
-    pub fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i64>, Error> {
-        use self::schema::balances::dsl;
-
-        let user = user_id(user);
-        let c = self.pool.lock();
-
-        let balance = dsl::balances
-            .select(dsl::amount)
-            .filter(dsl::channel.eq(channel).and(dsl::user.eq(user)))
-            .first::<i64>(&*c)
-            .optional()?;
-
-        Ok(balance)
-    }
-
-    /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(
-        &self,
-        channel: String,
-        user: String,
-        amount: i64,
-    ) -> Result<(), Error> {
-        let user = user_id(&user);
-        let pool = self.pool.clone();
-
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
-            let c = pool.lock();
-            modify_balance(&*c, &channel, &user, amount)
-        }));
-
-        future.compat().await
-    }
-
-    /// Add balance to users.
-    pub async fn balances_increment(
-        &self,
-        channel: String,
-        users: impl IntoIterator<Item = String> + Send + 'static,
-        amount: i64,
-    ) -> Result<(), Error> {
-        use self::schema::balances::dsl;
-
-        let pool = Arc::clone(&self.pool);
-
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
-            let c = pool.lock();
-
-            for user in users {
-                let user = user_id(&user);
-
-                let filter = dsl::balances
-                    .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&user)));
-
-                let b = filter.clone().first::<models::Balance>(&*c).optional()?;
-
-                match b {
-                    None => {
-                        let balance = models::Balance {
-                            channel: channel.to_string(),
-                            user: user.clone(),
-                            amount: amount,
-                        };
-
-                        diesel::insert_into(dsl::balances)
-                            .values(&balance)
-                            .execute(&*c)?;
-                    }
-                    Some(b) => {
-                        let value = b.amount.saturating_add(amount);
-
-                        diesel::update(filter)
-                            .set(dsl::amount.eq(value))
-                            .execute(&*c)?;
-                    }
-                }
-            }
-
-            Ok(())
-        }));
-
-        future.compat().await
-    }
 }
 
 /// Convert a user display name into a user id.
 pub fn user_id(user: &str) -> String {
     user.trim_start_matches('@').to_lowercase()
-}
-
-/// Common function to modify the balance for the given user.
-fn modify_balance(
-    c: &SqliteConnection,
-    channel: &str,
-    user: &str,
-    amount: i64,
-) -> Result<(), Error> {
-    use self::schema::balances::dsl;
-
-    let filter = dsl::balances.filter(dsl::channel.eq(channel).and(dsl::user.eq(user)));
-
-    match filter.clone().first::<models::Balance>(&*c).optional()? {
-        None => {
-            let balance = models::Balance {
-                channel: channel.to_string(),
-                user: user.to_string(),
-                amount: amount,
-            };
-
-            diesel::insert_into(dsl::balances)
-                .values(&balance)
-                .execute(c)?;
-        }
-        Some(b) => {
-            let amount = b.amount.saturating_add(amount);
-
-            diesel::update(filter)
-                .set(dsl::amount.eq(amount))
-                .execute(c)?;
-        }
-    }
-
-    Ok(())
 }
 
 impl words::Backend for Database {
@@ -456,6 +209,16 @@ impl player::Backend for Database {
 
         Ok(song)
     }
+}
+
+#[derive(Debug, err_derive::Error)]
+pub enum RenameError {
+    /// Trying to rename something to a conflicting name.
+    #[error(display = "conflict")]
+    Conflict,
+    /// Trying to rename something which doesn't exist.
+    #[error(display = "missing")]
+    Missing,
 }
 
 #[cfg(tests)]

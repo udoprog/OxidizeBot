@@ -1,6 +1,8 @@
 use crate::{
     auth::Scope,
-    command, currency, db, irc, module,
+    command,
+    currency::Currency,
+    irc, module,
     player::{AddTrackError, Event, Item, PlayThemeError, Player, PlayerClient},
     prelude::*,
     settings, stream_info, track_id,
@@ -17,13 +19,12 @@ const EXAMPLE_SEARCH: &'static str = "queen we will rock you";
 /// Handler for the `!song` command.
 pub struct Handler {
     enabled: Arc<RwLock<bool>>,
-    db: db::Database,
     stream_info: stream_info::StreamInfo,
     player: Arc<RwLock<Option<PlayerClient>>>,
     request_help_cooldown: Cooldown,
     subscriber_only: Arc<RwLock<bool>>,
     request_reward: Arc<RwLock<u32>>,
-    currency: Arc<RwLock<Option<currency::Currency>>>,
+    currency: Arc<RwLock<Option<Currency>>>,
     spotify: Constraint,
     youtube: Constraint,
 }
@@ -41,6 +42,7 @@ impl Handler {
             return Ok(());
         }
 
+        let currency: Option<Currency> = self.currency.read().clone();
         let stream_info = self.stream_info.clone();
         let subscriber_only = self.subscriber_only.clone();
         let request_reward = *self.request_reward.read();
@@ -48,8 +50,6 @@ impl Handler {
         let youtube = self.youtube.clone();
         let user = ctx.user.as_owned_user();
         let is_moderator = ctx.is_moderator();
-        let currency = self.currency.clone();
-        let db = self.db.clone();
         let has_spotify_scope = ctx.has_scope(Scope::SongSpotify);
         let has_youtube_scope = ctx.has_scope(Scope::SongYouTube);
 
@@ -143,6 +143,7 @@ impl Handler {
 
             let result = player
                 .add_track(
+                    currency.clone(),
                     user.target.clone(),
                     user.name.clone(),
                     track_id,
@@ -229,8 +230,12 @@ impl Handler {
 
                     return Ok(());
                 }
+                Err(AddTrackError::NoCurrency) => {
+                    user.respond("No currency configured for stream, but it is required.");
+                    return Ok(());
+                }
                 Err(AddTrackError::NotEnoughCurrency { balance, required }) => {
-                    let currency = match currency.read().as_ref() {
+                    let currency = match currency.as_ref() {
                         Some(currency) => currency.name.to_string(),
                         None => String::from("currency"),
                     };
@@ -249,8 +254,8 @@ impl Handler {
                 }
             };
 
-            let currency = match currency.read().as_ref() {
-                Some(ref currency) if request_reward > 0 => currency.name.to_string(),
+            let currency = match currency.as_ref() {
+                Some(currency) if request_reward > 0 => currency,
                 _ => {
                     user.respond(format!(
                         "Added {what} at position #{pos}!",
@@ -262,7 +267,7 @@ impl Handler {
                 }
             };
 
-            match db
+            match currency
                 .balance_add(
                     user.target.clone(),
                     user.name.clone(),
@@ -276,7 +281,7 @@ impl Handler {
                         what = item.what(),
                         pos = pos + 1,
                         amount = request_reward,
-                        currency = currency,
+                        currency = currency.name,
                     ));
                 }
                 Err(e) => {
@@ -634,7 +639,6 @@ impl module::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            db,
             stream_info,
             handlers,
             futures,
@@ -683,7 +687,6 @@ impl module::Module for Module {
             "song",
             Handler {
                 enabled,
-                db: db.clone(),
                 stream_info: stream_info.clone(),
                 request_help_cooldown: help_cooldown,
                 player: player.clone(),

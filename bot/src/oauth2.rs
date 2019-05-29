@@ -15,9 +15,20 @@ use std::{
 };
 use url::Url;
 
+/// Note:
+/// These values obviously aren't secret. But due to the nature of this project, it's not possible to keep them that way.
+/// Anyone can effectively use this information to impersonate setmod.
+///
+/// We protect against abuse the following ways:
+/// * We only permit closed redirects to http://localhost:12345/redirect to receive the token.
+///   - This makes it effectively useless to use for online services trying to impersonate setmod.
+/// * We assume that a user would pay attention when downloading and running an application.
+///   - If they don't, they have bigger problems on their hands.
 static YOUTUBE_CLIENT_ID: &'static str =
     "520353465977-filfj4j326v5vvd4do07riej30ekin70.apps.googleusercontent.com";
 static YOUTUBE_CLIENT_SECRET: &'static str = "8Rcs45nQEmruNey4-Egx7S7C";
+static NIGHTBOT_CLIENT_ID: &'static str = "08068f96a94dbb3286f61e26afa9bd6d";
+static NIGHTBOT_CLIENT_SECRET: &'static str = "d9afb0ee6092af477f671c3195109e54";
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SecretsConfig {
@@ -33,6 +44,8 @@ pub enum Type {
     Spotify,
     #[serde(rename = "youtube")]
     YouTube,
+    #[serde(rename = "nightbot")]
+    NightBot,
 }
 
 impl Type {
@@ -55,6 +68,10 @@ impl Type {
                 self.refresh_token_impl::<BasicTokenResponse>(flow, refresh_token)
                     .await
             }
+            Type::NightBot => {
+                self.refresh_token_impl::<BasicTokenResponse>(flow, refresh_token)
+                    .await
+            }
         }
     }
 
@@ -74,6 +91,10 @@ impl Type {
                     .await
             }
             Type::YouTube => {
+                self.exchange_token_impl::<BasicTokenResponse>(flow, received_token)
+                    .await
+            }
+            Type::NightBot => {
                 self.exchange_token_impl::<BasicTokenResponse>(flow, received_token)
                     .await
             }
@@ -231,6 +252,28 @@ pub fn youtube(web: web::Server, settings: settings::Settings) -> Result<FlowBui
         scopes: Default::default(),
         settings,
         extra_params: vec![(String::from("access_type"), String::from("offline"))],
+    })
+}
+
+/// Setup a NightBot AUTH flow.
+pub fn nightbot(web: web::Server, settings: settings::Settings) -> Result<FlowBuilder, Error> {
+    let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
+
+    Ok(FlowBuilder {
+        ty: Type::NightBot,
+        web,
+        secrets: Secrets::Static {
+            client_id: NIGHTBOT_CLIENT_ID,
+            client_secret: NIGHTBOT_CLIENT_SECRET,
+        },
+        redirect_url: RedirectUrl::new(Url::parse(&redirect_url)?),
+        auth_url: AuthUrl::new(Url::parse("https://api.nightbot.tv/oauth2/authorize")?),
+        token_url: Some(TokenUrl::new(Url::parse(
+            "https://api.nightbot.tv/oauth2/token",
+        )?)),
+        scopes: Default::default(),
+        settings,
+        extra_params: vec![],
     })
 }
 

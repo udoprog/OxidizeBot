@@ -10,7 +10,6 @@ pub struct Reward {
 }
 
 pub struct Handler {
-    db: db::Database,
     enabled: Arc<RwLock<bool>>,
     cooldown: Arc<RwLock<utils::Cooldown>>,
     currency: Arc<RwLock<Option<Currency>>>,
@@ -55,7 +54,8 @@ impl command::Handler for Handler {
             return Ok(());
         }
 
-        let currency = match self.currency.read().clone() {
+        let currency = self.currency.read().as_ref().cloned();
+        let currency = match currency {
             Some(currency) => currency,
             None => {
                 ctx.respond("No currency configured for stream, sorry :(");
@@ -91,11 +91,10 @@ impl command::Handler for Handler {
                     user = reward.user
                 ));
 
-                let db = self.db.clone();
                 let target = ctx.user.target.to_string();
 
                 ctx.spawn(async move {
-                    let op = db.balance_add(target, reward.user, -reward.amount);
+                    let op = currency.balance_add(target, reward.user, -reward.amount);
 
                     match op.await {
                         Ok(()) => (),
@@ -132,11 +131,10 @@ impl command::Handler for Handler {
                     currency = currency.name
                 ));
 
-                let db = self.db.clone();
                 let target = ctx.user.target.to_string();
 
                 ctx.spawn(async move {
-                    let op = db.balance_add(target, user, amount);
+                    let op = currency.balance_add(target, user, amount);
 
                     match op.await {
                         Ok(()) => (),
@@ -192,7 +190,6 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            db,
             handlers,
             stream_info,
             settings,
@@ -217,7 +214,6 @@ impl super::Module for Module {
         handlers.insert(
             "water",
             Handler {
-                db: db.clone(),
                 enabled,
                 cooldown: cooldown.clone(),
                 currency: currency.clone(),

@@ -8,7 +8,7 @@ license = "MIT/Apache-2.0"
 [dependencies]
 chrono = { version = "0.4.6", features = ["serde"] }
 clap = "2.33.0"
-diesel = { version = "1.4.2", features = ["sqlite", "r2d2", "chrono"] }
+diesel = { version = "1.4.2", features = ["mysql", "sqlite", "r2d2", "chrono"] }
 diesel_migrations = "1.4.0"
 eudex = "0.1.1"
 hashbrown = { version = "0.3.0", features = ["serde"] }
@@ -50,6 +50,7 @@ websocket = "0.22.4"
 uuid = { version = "0.7.4", features = ["serde", "v4"] }
 pin-utils = "0.1.0-alpha.4"
 smallvec = "0.6.9"
+futures-intrusive = "0.1.1"
 
 [dependencies.futures01]
 package = "futures"

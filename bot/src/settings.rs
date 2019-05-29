@@ -29,6 +29,12 @@ pub struct Setting {
     pub value: serde_json::Value,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SettingRef<'a, T> {
+    pub schema: &'a SchemaType,
+    pub value: Option<T>,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SchemaType {
     /// Documentation for this type.
@@ -39,6 +45,9 @@ pub struct SchemaType {
     /// The type.
     #[serde(rename = "type")]
     pub ty: Type,
+    /// If the value is a secret value or not.
+    #[serde(default)]
+    pub secret: bool,
 }
 
 const SCHEMA: &'static [u8] = include_bytes!("settings.yaml");
@@ -134,6 +143,24 @@ impl Settings {
         }
 
         Ok(settings)
+    }
+
+    /// Get the given setting.
+    ///
+    /// This includes the schema of the setting as well.
+    pub fn setting<'a, T>(&'a self, key: &str) -> Result<Option<SettingRef<'a, T>>, Error>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned,
+    {
+        let key = self.key(key);
+
+        let schema = match self.inner.schema.types.get(key.as_ref()) {
+            Some(schema) => schema,
+            None => return Ok(None),
+        };
+
+        let value = self.inner_get(&key)?;
+        Ok(Some(SettingRef { schema, value }))
     }
 
     /// Get the value of the given key from the database.
@@ -623,6 +650,11 @@ pub enum Kind {
     Text,
     #[serde(rename = "set")]
     Set { value: Box<Type> },
+    #[serde(rename = "select")]
+    Select {
+        value: Box<Type>,
+        options: Vec<serde_json::Value>,
+    },
 }
 
 impl Type {
@@ -675,6 +707,25 @@ impl Type {
                     _ => failure::bail!("expected array"),
                 }
             }
+            Select {
+                ref value,
+                ref options,
+            } => {
+                let v = value.parse_as_json(s)?;
+
+                if !options.iter().any(|o| *o == v) {
+                    let mut out = Vec::new();
+
+                    for o in options {
+                        out.push(serde_json::to_string(o)?);
+                    }
+
+                    let alts = out.join(", ");
+                    failure::bail!("Expected one of: {}.", alts);
+                }
+
+                v
+            }
         };
 
         Ok(value)
@@ -726,6 +777,8 @@ impl fmt::Display for Type {
             (true, Text) => write!(fmt, "text?"),
             (false, Set { ref value }) => write!(fmt, "Array<{}>", value),
             (true, Set { ref value }) => write!(fmt, "Array<{}>?", value),
+            (false, Select { ref value, .. }) => write!(fmt, "Select<{}>", value),
+            (true, Select { ref value, .. }) => write!(fmt, "Select<{}>?", value),
         }
     }
 }

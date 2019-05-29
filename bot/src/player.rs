@@ -1,5 +1,7 @@
 use crate::{
-    api, bus, config, db,
+    api, bus, config,
+    currency::Currency,
+    db,
     prelude::*,
     settings,
     song_file::{SongFile, SongFileBuilder},
@@ -850,6 +852,7 @@ impl PlayerClient {
     /// Returns the item added.
     pub async fn add_track(
         &self,
+        currency: Option<Currency>,
         channel: String,
         user: String,
         track_id: TrackId,
@@ -890,21 +893,6 @@ impl PlayerClient {
                         ));
                     }
                 }
-
-                if let Some(min_currency) = min_currency {
-                    let balance = self
-                        .db
-                        .balance_of(channel.as_str(), user.as_str())
-                        .map_err(AddTrackError::Error)?
-                        .unwrap_or_default();
-
-                    if balance < min_currency {
-                        return Err(AddTrackError::NotEnoughCurrency {
-                            balance,
-                            required: min_currency,
-                        });
-                    }
-                }
             }
 
             let mut user_count = 0;
@@ -921,6 +909,28 @@ impl PlayerClient {
 
             (user_count, len)
         };
+
+        if !is_moderator {
+            if let Some(min_currency) = min_currency {
+                let currency = match currency.as_ref() {
+                    Some(currency) => currency,
+                    None => return Err(AddTrackError::NoCurrency),
+                };
+
+                let balance = currency
+                    .balance_of(channel, user.clone())
+                    .await
+                    .map_err(AddTrackError::Error)?
+                    .unwrap_or_default();
+
+                if balance < min_currency {
+                    return Err(AddTrackError::NotEnoughCurrency {
+                        balance,
+                        required: min_currency,
+                    });
+                }
+            }
+        }
 
         let max_songs_per_user = *self.max_songs_per_user.read();
 
@@ -1090,6 +1100,8 @@ pub enum AddTrackError {
     PlayerClosed(Option<Arc<String>>),
     /// Duplicate song that was added at the specified time by the specified user.
     Duplicate(DateTime<Utc>, Option<String>, Duration),
+    /// No currency configured.
+    NoCurrency,
     /// Not enough currency to request songs.
     NotEnoughCurrency { required: i64, balance: i64 },
     /// Other generic error happened.

@@ -1,4 +1,5 @@
-use crate::{command, config, currency, db, irc, module, player, prelude::*, utils};
+use crate::{command, config, currency, irc, module, player, prelude::*, utils};
+use failure::{bail, Error};
 use parking_lot::RwLock;
 use std::{fmt, net::SocketAddr, sync::Arc};
 use tokio::net::UdpSocket;
@@ -346,8 +347,7 @@ pub struct Reward {
     amount: i32,
 }
 
-pub struct Handler<'a> {
-    db: &'a db::Database,
+pub struct Handler {
     enabled: Arc<RwLock<bool>>,
     player: Arc<RwLock<Option<player::Player>>>,
     currency: Arc<RwLock<Option<currency::Currency>>>,
@@ -361,7 +361,7 @@ pub struct Handler<'a> {
     tx: mpsc::UnboundedSender<(irc::OwnedUser, usize, Command)>,
 }
 
-impl<'a> Handler<'a> {
+impl Handler {
     /// Play the specified theme song.
     fn play_theme_song(&mut self, ctx: &mut command::Context<'_, '_>, id: &str) {
         let player = self.player.read();
@@ -389,7 +389,7 @@ impl<'a> Handler<'a> {
     fn handle_other(
         &mut self,
         ctx: &mut command::Context<'_, '_>,
-    ) -> Result<Option<(Command, u32)>, failure::Error> {
+    ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next() {
             Some("randomize-color") => Command::RandomizeColor,
             Some("randomize-weather") => Command::RandomizeWeather,
@@ -424,7 +424,7 @@ impl<'a> Handler<'a> {
     fn handle_punish(
         &mut self,
         ctx: &mut command::Context<'_, '_>,
-    ) -> Result<Option<(Command, u32)>, failure::Error> {
+    ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next() {
             Some("stumble") => Command::Stumble,
             Some("fall") => Command::Fall,
@@ -534,7 +534,7 @@ impl<'a> Handler<'a> {
     fn handle_reward(
         &mut self,
         ctx: &mut command::Context<'_, '_>,
-    ) -> Result<Option<(Command, u32)>, failure::Error> {
+    ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next() {
             Some("car") => Command::SpawnRandomVehicle(vehicle::Vehicle::random_car()),
             Some("vehicle") => {
@@ -676,14 +676,15 @@ impl<'a> Handler<'a> {
     }
 }
 
-impl<'a> command::Handler for Handler<'a> {
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
+impl command::Handler for Handler {
+    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
 
-        let currency = match self.currency.read().clone() {
-            Some(currency) => currency,
+        let currency = self.currency.read().as_ref().cloned();
+        let currency = match currency {
+            Some(currency) => currency.clone(),
             None => {
                 ctx.respond("No currency configured for stream, sorry :(");
                 return Ok(());
@@ -716,60 +717,68 @@ impl<'a> command::Handler for Handler<'a> {
             return Ok(());
         }
 
-        let cost = command.cost() * percentage / 100;
-
-        let balance = self
-            .db
-            .balance_of(ctx.user.target, ctx.user.name)?
-            .unwrap_or_default();
-        let balance = if balance < 0 { 0u32 } else { balance as u32 };
-
-        if balance < cost {
-            ctx.respond(format!(
-                "{prefix}\
-                 You need at least {limit} {currency} to reward the streamer, \
-                 you currently have {balance} {currency}. \
-                 Keep watching to earn more!",
-                prefix = *self.prefix.read(),
-                limit = cost,
-                currency = currency.name,
-                balance = balance,
-            ));
-
-            return Ok(());
-        }
-
-        let db = self.db.clone();
-        let target = ctx.user.target.to_string();
-        let name = ctx.user.name.to_string();
-
-        ctx.spawn(async move {
-            if let Err(e) = db.balance_add(target, name, -(cost as i64)).await {
-                log_err!(e, "failed to modify balance of user");
-            }
-        });
-
-        if *self.success_feedback.read() {
-            ctx.privmsg(format!(
-                "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
-                prefix = *self.prefix.read(),
-                user = ctx.user.name,
-                what = command.what(),
-                command = command,
-                cost = cost,
-                currency = currency.name,
-            ));
-        }
-
         let id = self.id_counter;
         self.id_counter += 1;
 
-        if let Err(_) = self
-            .tx
-            .unbounded_send((ctx.user.as_owned_user(), id, command))
-        {
-            failure::bail!("failed to send event");
-        }
+        let cost = command.cost() * percentage / 100;
+        let user = ctx.user.as_owned_user();
+        let sender = ctx.sender.clone();
+        let prefix = self.prefix.read().clone();
+        let success_feedback = self.success_feedback.clone();
+        let tx = self.tx.clone();
+
+        let future = async move {
+            let balance = currency
+                .balance_of(user.target.clone(), user.name.clone())
+                .await?
+                .unwrap_or_default();
+
+            let balance = if balance < 0 { 0u32 } else { balance as u32 };
+
+            if balance < cost {
+                user.respond(format!(
+                    "{prefix}\
+                     You need at least {limit} {currency} to reward the streamer, \
+                     you currently have {balance} {currency}. \
+                     Keep watching to earn more!",
+                    prefix = prefix,
+                    limit = cost,
+                    currency = currency.name,
+                    balance = balance,
+                ));
+
+                return Ok(());
+            }
+
+            currency
+                .balance_add(user.target.clone(), user.name.clone(), -(cost as i64))
+                .await?;
+
+            if *success_feedback.read() {
+                sender.privmsg(format!(
+                    "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
+                    prefix = prefix,
+                    user = user.name,
+                    what = command.what(),
+                    command = command,
+                    cost = cost,
+                    currency = currency.name,
+                ));
+            }
+
+            if let Err(_) = tx.unbounded_send((user, id, command)) {
+                bail!("failed to send event");
+            }
+
+            Ok(())
+        };
+
+        ctx.spawn(future.map(|result| match result {
+            Ok(()) => (),
+            Err(e) => {
+                log_err!(e, "failed to modify balance of user");
+            }
+        }));
 
         Ok(())
     }
@@ -828,14 +837,13 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            db,
             handlers,
             settings,
             futures,
             injector,
             ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), Error> {
         let currency = injector.var(futures);
 
         let default_cooldown = self
@@ -862,7 +870,6 @@ impl super::Module for Module {
         handlers.insert(
             "gtav",
             Handler {
-                db,
                 enabled: enabled.clone(),
                 player,
                 currency,

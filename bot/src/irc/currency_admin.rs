@@ -1,11 +1,17 @@
-use crate::{command, currency, db, injector::Injector, prelude::*};
+use crate::{
+    command,
+    currency::{BalanceTransferError, Currency},
+    db,
+    injector::Injector,
+    prelude::*,
+};
 use failure::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Handler for the !admin command.
 pub struct Handler<'a> {
-    pub currency: Arc<RwLock<Option<currency::Currency>>>,
+    pub currency: Arc<RwLock<Option<Currency>>>,
     pub db: &'a db::Database,
 }
 
@@ -19,9 +25,8 @@ impl Handler<'_> {
 impl command::Handler for Handler<'_> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), Error> {
         let currency = self.currency.read();
-
         let currency = match currency.as_ref() {
-            Some(currency) => currency,
+            Some(currency) => currency.clone(),
             None => {
                 ctx.respond("No currency configured");
                 return Ok(());
@@ -30,29 +35,58 @@ impl command::Handler for Handler<'_> {
 
         match ctx.next() {
             None => {
-                let balance = self
-                    .db
-                    .balance_of(ctx.user.target, ctx.user.name)?
-                    .unwrap_or(0);
+                let user = ctx.user.as_owned_user();
 
-                ctx.respond(format!(
-                    "You have {balance} {name}.",
-                    balance = balance,
-                    name = currency.name
-                ));
+                ctx.spawn(async move {
+                    let result = currency
+                        .balance_of(user.target.clone(), user.name.clone())
+                        .await;
+
+                    match result {
+                        Ok(balance) => {
+                            let balance = balance.unwrap_or_default();
+
+                            user.respond(format!(
+                                "You have {balance} {name}.",
+                                balance = balance,
+                                name = currency.name
+                            ));
+                        }
+                        Err(e) => {
+                            user.respond("Count not get balance, sorry :(");
+                            log_err!(e, "failed to get balance");
+                        }
+                    }
+                });
             }
             Some("show") => {
                 ctx.check_moderator()?;
+                let to_show = ctx_try!(ctx.next_str("<user>", "!currency show")).to_string();
 
-                let user = ctx_try!(ctx.next_str("<user>", "!currency show"));
-                let balance = self.db.balance_of(ctx.user.target, user)?.unwrap_or(0);
+                let user = ctx.user.as_owned_user();
 
-                ctx.respond(format!(
-                    "{user} has {balance} {name}.",
-                    user = user,
-                    balance = balance,
-                    name = currency.name
-                ));
+                ctx.spawn(async move {
+                    let result = currency
+                        .balance_of(user.name.clone(), to_show.clone())
+                        .await;
+
+                    match result {
+                        Ok(balance) => {
+                            let balance = balance.unwrap_or_default();
+
+                            user.respond(format!(
+                                "{user} has {balance} {name}.",
+                                user = to_show,
+                                balance = balance,
+                                name = currency.name
+                            ));
+                        }
+                        Err(e) => {
+                            user.respond("Count not get balance, sorry :(");
+                            log_err!(e, "failed to get balance");
+                        }
+                    }
+                });
             }
             Some("give") => {
                 let taker =
@@ -72,14 +106,12 @@ impl command::Handler for Handler<'_> {
                     return Ok(());
                 }
 
-                let db = self.db.clone();
-                let currency = currency.clone();
                 let target = ctx.user.target.to_owned();
                 let giver = ctx.user.as_owned_user();
                 let is_streamer = ctx.user.is(ctx.streamer);
 
                 ctx.spawn(async move {
-                    let result = db
+                    let result = currency
                         .balance_transfer(
                             target,
                             giver.name.clone(),
@@ -98,14 +130,14 @@ impl command::Handler for Handler<'_> {
                                 currency = currency.name
                             ));
                         }
-                        Err(db::BalanceTransferError::NoBalance) => {
+                        Err(BalanceTransferError::NoBalance) => {
                             giver.respond(format!(
                                 "Not enough {currency} to transfer {amount}",
                                 currency = currency.name,
                                 amount = amount,
                             ));
                         }
-                        Err(db::BalanceTransferError::Other(e)) => {
+                        Err(BalanceTransferError::Other(e)) => {
                             giver.respond(format!(
                                 "Failed to give {currency}, sorry :(",
                                 currency = currency.name
@@ -127,12 +159,11 @@ impl command::Handler for Handler<'_> {
                     return Ok(());
                 }
 
-                let db = self.db.clone();
                 let user = ctx.user.as_owned_user();
                 let currency = currency.clone();
 
                 ctx.spawn(async move {
-                    let result = db
+                    let result = currency
                         .balance_add(user.target.clone(), boosted_user.clone(), amount)
                         .await;
 
@@ -166,7 +197,6 @@ impl command::Handler for Handler<'_> {
 
                 let user = ctx.user.as_owned_user();
                 let amount: i64 = ctx_try!(ctx.next_parse("<amount>", "!currency windfall"));
-                let currency = currency.clone();
                 let sender = ctx.sender.clone();
 
                 ctx.spawn(async move {
@@ -212,7 +242,7 @@ pub fn setup<'a>(
     injector: &Injector,
     db: &'a db::Database,
 ) -> Result<(impl Future<Output = Result<(), Error>> + 'a, Handler<'a>), Error> {
-    let (currency_stream, currency) = injector.stream::<currency::Currency>();
+    let (currency_stream, currency) = injector.stream::<Currency>();
     let currency = Arc::new(RwLock::new(currency));
 
     let handler = Handler {

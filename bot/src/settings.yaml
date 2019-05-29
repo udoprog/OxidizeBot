@@ -29,6 +29,14 @@ types:
   gtav/success-feedback:
     doc: If we should have chat feedback on successful commands.
     type: {id: bool}
+  irc/sender-type:
+    doc: How to send messages to chat.
+    type:
+      id: select
+      value: {id: string}
+      options:
+        - {title: "Chat", value: "chat"}
+        - {title: "NightBot (requires Authentication)", value: "nightbot"}
   irc/moderator-cooldown:
     doc: How long we must wait between each moderator action.
     type: {id: duration, optional: true}
@@ -123,15 +131,23 @@ types:
   secrets/oauth2/spotify/token:
     doc: Stored token for Spotify authentication.
     type: {id: raw, optional: true}
+    secret: true
   secrets/oauth2/twitch-bot/token:
     doc: Stored token for Twitch Bot authentication.
     type: {id: raw, optional: true}
+    secret: true
   secrets/oauth2/twitch-streamer/token:
     doc: Stored token for Twitch Streamer authentication.
     type: {id: raw, optional: true}
+    secret: true
   secrets/oauth2/youtube/token:
     doc: Stored token for YouTube authentication.
     type: {id: raw, optional: true}
+    secret: true
+  secrets/oauth2/nightbot/token:
+    doc: Stored token for NightBot authentication.
+    type: {id: raw, optional: true}
+    secret: true
   song/enabled:
     doc: If the `!song` module is enabled.
     type: {id: bool}
@@ -188,6 +204,18 @@ types:
   countdown/path:
     doc: The path used for writing the countdown.
     type: {id: string, optional: true}
+  currency/type:
+    doc: The type of the stream currency. Decides the backend implementation.
+    type:
+      id: select
+      value: {id: string}
+      options:
+        - {title: "Built-In", value: "builtin"}
+        - {title: "Honkos", value: "honkos"}
+  currency/honkos/database-url:
+    doc: The database URL to connect to for the honkos database.
+    type: {id: string, optional: true}
+    secret: true
   currency/enabled:
     doc: If stream currency is enabled.
     type: {id: bool}
