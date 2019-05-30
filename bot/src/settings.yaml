@@ -217,11 +217,15 @@ types:
       value: {id: string}
       options:
         - {title: "Built-In", value: "builtin"}
+        - {title: "MySQL", value: "mysql"}
         - {title: "Honkos", value: "honkos"}
-  currency/honkos/database-url:
-    doc: The database URL to connect to for the honkos database.
+  currency/mysql/url:
+    doc: The database URL to connect to for the `mysql` or `honkos` backend.
     type: {id: string, optional: true}
     secret: true
+  currency/mysql/schema:
+    doc: Custom schema to use for `mysql` type backends.
+    type: {id: raw}
   currency/enabled:
     doc: If stream currency is enabled.
     type: {id: bool}

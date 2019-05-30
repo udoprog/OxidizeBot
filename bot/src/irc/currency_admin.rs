@@ -72,7 +72,7 @@ impl command::Handler for Handler<'_> {
 
                 ctx.spawn(async move {
                     let result = currency
-                        .balance_of(user.name.clone(), to_show.clone())
+                        .balance_of(user.target.clone(), to_show.clone())
                         .await;
 
                     match result {

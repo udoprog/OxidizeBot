@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio_threadpool::ThreadPool;
 
 mod builtin;
-mod honkos;
+mod mysql;
 
 /// Helper struct to construct a currency.
 pub struct CurrencyBuilder {
@@ -17,13 +17,14 @@ pub struct CurrencyBuilder {
     pub name: Option<Arc<String>>,
     pub db: Database,
     pub twitch: api::Twitch,
-    pub honkos_url: Option<String>,
+    pub mysql_url: Option<String>,
+    pub mysql_schema: mysql::Schema,
     pub thread_pool: Arc<ThreadPool>,
 }
 
 impl CurrencyBuilder {
     /// Construct a new currency builder.
-    pub fn new(db: Database, twitch: api::Twitch) -> Self {
+    pub fn new(db: Database, twitch: api::Twitch, mysql_schema: mysql::Schema) -> Self {
         Self {
             ty: Default::default(),
             enabled: Default::default(),
@@ -31,13 +32,16 @@ impl CurrencyBuilder {
             name: Default::default(),
             db,
             twitch,
-            honkos_url: None,
+            mysql_url: None,
+            mysql_schema,
             thread_pool: Arc::new(ThreadPool::new()),
         }
     }
 
     /// Build a new currency.
     pub fn build(&self) -> Option<Currency> {
+        use self::mysql::Schema;
+
         if !self.enabled {
             return None;
         }
@@ -47,12 +51,35 @@ impl CurrencyBuilder {
                 let backend = self::builtin::Backend::new(self.db.clone());
                 Backend::BuiltIn(backend)
             }
-            BackendType::Honkos => {
+            BackendType::Mysql => {
                 let channel = String::from("");
-                let url = self.honkos_url.clone()?;
+                let url = self.mysql_url.clone()?;
+                let schema = self.mysql_schema.clone();
                 let thread_pool = self.thread_pool.clone();
 
-                let backend = match self::honkos::Backend::connect(channel, url, thread_pool) {
+                let backend = match self::mysql::Backend::connect(channel, url, schema, thread_pool)
+                {
+                    Ok(backend) => backend,
+                    Err(e) => {
+                        log_err!(e, "failed to establish connection");
+                        return None;
+                    }
+                };
+
+                Backend::Honkos(backend)
+            }
+            BackendType::Honkos => {
+                let channel = String::from("");
+                let url = self.mysql_url.clone()?;
+                let schema = Schema {
+                    table: String::from("honkos"),
+                    user_column: String::from("username"),
+                    balance_column: String::from("honko_balance"),
+                };
+                let thread_pool = self.thread_pool.clone();
+
+                let backend = match self::mysql::Backend::connect(channel, url, schema, thread_pool)
+                {
                     Ok(backend) => backend,
                     Err(e) => {
                         log_err!(e, "failed to establish connection");
@@ -80,6 +107,8 @@ impl CurrencyBuilder {
 pub enum BackendType {
     #[serde(rename = "builtin")]
     BuiltIn,
+    #[serde(rename = "mysql")]
+    Mysql,
     #[serde(rename = "honkos")]
     Honkos,
 }
@@ -92,7 +121,7 @@ impl Default for BackendType {
 
 enum Backend {
     BuiltIn(self::builtin::Backend),
-    Honkos(self::honkos::Backend),
+    Honkos(self::mysql::Backend),
 }
 
 impl Backend {

@@ -231,7 +231,7 @@ impl Irc {
             let url_whitelist_enabled = vars.var("url-whitelist/enabled", true)?;
             let bad_words_enabled = vars.var("bad-words/enabled", false)?;
             let sender_ty = vars.var("sender-type", sender::Type::Chat)?;
-            let threshold = vars.var("irc/idle-detection/threshold", 5)?;
+            let threshold = vars.var("idle-detection/threshold", 5)?;
             let idle = idle::Idle::new(threshold);
 
             let sender = Sender::new(sender_ty, channel.clone(), client.clone(), nightbot.clone());
@@ -428,17 +428,18 @@ fn currency_loop<'a>(
     let (mut ty_stream, ty) = settings.stream("currency/type").or_default()?;
     let (mut enabled_stream, enabled) = settings.stream("currency/enabled").or_default()?;
     let (mut name_stream, name) = settings.stream("currency/name").optional()?;
-    let (mut honkos_url_stream, honkos_url) =
-        settings.stream("currency/honkos/database-url").optional()?;
     let (mut command_enabled_stream, command_enabled) =
         settings.stream("currency/command-enabled").or_with(true)?;
+    let (mut mysql_url_stream, mysql_url) = settings.stream("currency/mysql/url").optional()?;
+    let (mut mysql_schema_stream, mysql_schema) =
+        settings.stream("currency/mysql/schema").or_default()?;
 
-    let mut builder = CurrencyBuilder::new(db.clone(), twitch.clone());
+    let mut builder = CurrencyBuilder::new(db.clone(), twitch.clone(), mysql_schema);
     builder.ty = ty;
     builder.enabled = enabled;
     builder.command_enabled = command_enabled;
     builder.name = name.map(Arc::new);
-    builder.honkos_url = honkos_url;
+    builder.mysql_url = mysql_url;
 
     let build = |injector: &Injector, builder: &CurrencyBuilder| match builder.build() {
         Some(currency) => {
@@ -477,8 +478,12 @@ fn currency_loop<'a>(
                     builder.name = name.map(Arc::new);
                     currency = build(injector, &builder);
                 }
-                honkos_url = honkos_url_stream.select_next_some() => {
-                    builder.honkos_url = honkos_url;
+                mysql_url = mysql_url_stream.select_next_some() => {
+                    builder.mysql_url = mysql_url;
+                    currency = build(injector, &builder);
+                }
+                update = mysql_schema_stream.select_next_some() => {
+                    builder.mysql_schema = update;
                     currency = build(injector, &builder);
                 }
                 command_enabled = command_enabled_stream.select_next_some() => {

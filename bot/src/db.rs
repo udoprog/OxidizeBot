@@ -41,6 +41,9 @@ impl Database {
     /// Find posts by users.
     pub fn open(path: &Path, thread_pool: Arc<ThreadPool>) -> Result<Database, Error> {
         let url = path.display().to_string();
+
+        log::info!("Using database: {}", url);
+
         let pool = SqliteConnection::establish(&url)?;
 
         // Run all migrations.
