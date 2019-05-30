@@ -16,9 +16,14 @@ pub struct Handler<'a> {
 }
 
 impl Handler<'_> {
-    /// Get the name of the current currency.
-    pub fn currency_name(&self) -> Option<Arc<String>> {
-        self.currency.read().as_ref().map(|c| c.name.clone())
+    /// Get the name of the command for the current currency.
+    pub fn command_name(&self) -> Option<Arc<String>> {
+        let currency = self.currency.read();
+
+        match currency.as_ref() {
+            Some(ref c) if c.command_enabled => Some(c.name.clone()),
+            _ => None,
+        }
     }
 }
 

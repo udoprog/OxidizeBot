@@ -13,6 +13,7 @@ mod honkos;
 pub struct CurrencyBuilder {
     pub ty: BackendType,
     pub enabled: bool,
+    pub command_enabled: bool,
     pub name: Option<Arc<String>>,
     pub db: Database,
     pub twitch: api::Twitch,
@@ -26,6 +27,7 @@ impl CurrencyBuilder {
         Self {
             ty: Default::default(),
             enabled: Default::default(),
+            command_enabled: Default::default(),
             name: Default::default(),
             db,
             twitch,
@@ -64,9 +66,11 @@ impl CurrencyBuilder {
 
         let name = Arc::new(self.name.as_ref()?.to_string());
         let twitch = self.twitch.clone();
+        let command_enabled = self.command_enabled;
 
         Some(Currency {
             name,
+            command_enabled,
             inner: Arc::new(Inner { backend, twitch }),
         })
     }
@@ -193,6 +197,7 @@ struct Inner {
 #[derive(Clone)]
 pub struct Currency {
     pub name: Arc<String>,
+    pub command_enabled: bool,
     inner: Arc<Inner>,
 }
 

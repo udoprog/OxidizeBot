@@ -49,6 +49,9 @@ types:
   irc/viewer-reward%:
     doc: Scaling for viewer rewards.
     type: {id: percentage}
+  irc/viewer-reward/enabled:
+    doc: If viewer rewards are enabled. If enabled, this will award viewers 1 unit of stream currency for every minute of watch time.
+    type: {id: bool}
   irc/whitelisted-hosts:
     doc: Hosts that are whitelisted for linking to in chat.
     type: {id: set, value: {id: string}}
@@ -218,6 +221,9 @@ types:
     secret: true
   currency/enabled:
     doc: If stream currency is enabled.
+    type: {id: bool}
+  currency/command-enabled:
+    doc: If the `!<currency>` command is enabled.
     type: {id: bool}
   currency/name:
     doc: The name used for the current stream currency.

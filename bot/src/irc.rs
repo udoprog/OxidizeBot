@@ -418,10 +418,13 @@ fn currency_loop<'a>(
     settings: &settings::Settings,
 ) -> Result<impl Future<Output = Result<(), Error>> + 'a, Error> {
     let reward = 10;
-    let interval = 60 * 10;
+    let interval_duration = time::Duration::from_secs(60 * 10);
 
     let mut variables = settings.vars();
     let reward_percentage = variables.var("irc/viewer-reward%", 100)?;
+    let (mut viewer_reward_stream, viewer_reward) = settings
+        .stream("irc/viewer-reward/enabled")
+        .or_with(false)?;
     let (mut notify_rewards_stream, mut notify_rewards) =
         settings.stream("currency/notify-rewards").or_with(true)?;
 
@@ -430,10 +433,13 @@ fn currency_loop<'a>(
     let (mut name_stream, name) = settings.stream("currency/name").optional()?;
     let (mut honkos_url_stream, honkos_url) =
         settings.stream("currency/honkos/database-url").optional()?;
+    let (mut command_enabled_stream, command_enabled) =
+        settings.stream("currency/command-enabled").or_with(true)?;
 
     let mut builder = CurrencyBuilder::new(db.clone(), twitch.clone());
     builder.ty = ty;
     builder.enabled = enabled;
+    builder.command_enabled = command_enabled;
     builder.name = name.map(Arc::new);
     builder.honkos_url = honkos_url;
 
@@ -452,7 +458,10 @@ fn currency_loop<'a>(
     futures.push(variables.run().boxed());
 
     return Ok(async move {
-        let mut interval = timer::Interval::new_interval(time::Duration::from_secs(interval));
+        let mut interval = match viewer_reward {
+            true => Some(timer::Interval::new_interval(interval_duration.clone())),
+            false => None,
+        };
 
         loop {
             futures::select! {
@@ -474,6 +483,16 @@ fn currency_loop<'a>(
                 honkos_url = honkos_url_stream.select_next_some() => {
                     builder.honkos_url = honkos_url;
                     currency = build(injector, &builder);
+                }
+                command_enabled = command_enabled_stream.select_next_some() => {
+                    builder.command_enabled = command_enabled;
+                    currency = build(injector, &builder);
+                }
+                viewer_reward = viewer_reward_stream.select_next_some() => {
+                    let mut interval = match viewer_reward {
+                        true => Some(timer::Interval::new_interval(interval_duration.clone())),
+                        false => None,
+                    };
                 }
                 i = interval.select_next_some() => {
                     let currency = match currency.as_ref() {
@@ -585,7 +604,7 @@ impl Handler<'_, '_, '_> {
             other => {
                 log::trace!("Testing command: {}", other);
 
-                let handler = match (other, self.currency_handler.currency_name()) {
+                let handler = match (other, self.currency_handler.command_name()) {
                     (other, Some(ref name)) if other == **name => {
                         Some(&mut self.currency_handler as &mut (dyn command::Handler + Send))
                     }
