@@ -1,6 +1,7 @@
 import React from "react";
 import {Form} from "react-bootstrap";
 import {Base} from "./Base";
+import YAML from 'yaml'
 
 export class Raw extends Base {
   constructor(optional) {
@@ -28,7 +29,7 @@ export class Raw extends Base {
   }
 
   edit(data) {
-    return JSON.stringify(data);
+    return YAML.stringify(data);
   }
 }
 
@@ -39,7 +40,7 @@ class EditRaw {
 
   validate(value) {
     try {
-      JSON.parse(value);
+      YAML.parse(value);
       return true;
     } catch(e) {
       return false;
@@ -47,11 +48,11 @@ class EditRaw {
   }
 
   save(value) {
-    return JSON.parse(value);
+    return YAML.parse(value);
   }
 
   render(isValid, value, onChange) {
-    return <Form.Control size="sm" type="value" isInvalid={!isValid} value={value} onChange={
+    return <Form.Control as="textarea" rows={5} size="sm" type="value" isInvalid={!isValid} value={value} onChange={
       e => {
         onChange(e.target.value);
       }

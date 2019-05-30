@@ -23,7 +23,8 @@
     "react-dom": "^16.8.6",
     "react-feather": "^1.1.6",
     "react-markdown": "^4.0.8",
-    "react-websocket": "^2.0.1"
+    "react-websocket": "^2.0.1",
+    "yaml": "^1.6.0"
   },
   "devDependencies": {
     "@babel/core": "^7.4.4",
