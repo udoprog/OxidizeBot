@@ -320,6 +320,36 @@ export default class Settings extends React.Component {
     );
   }
 
+  nameLinks(name) {
+    let setFilter = filter => () => {
+      this.setState({filter: `^${filter}/`});
+    };
+
+    let parts = name.split("/");
+    let path = [];
+    let len = 0;
+    let out = [];
+
+    for (let p of parts) {
+      path.push(p);
+      len += p.length;
+      let filter = name.substring(0, Math.min(len, name.length));
+      len += 1;
+
+      out.push(
+        <a
+          className="settings-filter"
+          title={`Filter for "${filter}" prefix.`}
+          key={filter}
+          onClick={setFilter(filter)}>{p}</a>
+      );
+
+      out.push("/");
+    }
+
+    return out;
+  }
+
   render() {
     let error = null;
 
@@ -359,18 +389,14 @@ export default class Settings extends React.Component {
 
             {order.map(name => {
               let group = groups[name];
-
-              let setFilter = filter => () => this.setState({filter: `^${filter}/`});
+              let nameLinks = this.nameLinks(name);
 
               return (
                 <Table className="mb-0" key={name}>
                   <tbody>
                     <tr>
-                      <th className="settings-group" title={`Filter for "${name}"`} onClick={setFilter(name)}>
-                        {name}
-                        <a className="settings-group-filter">
-                          <FontAwesomeIcon icon="search" />
-                        </a>
+                      <th className="settings-group">
+                        {nameLinks}
                       </th>
                     </tr>
 

@@ -162,6 +162,10 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
     let settings_schema = settings::Schema::load_static()?;
     let settings = db.settings(settings_schema)?;
 
+    settings
+        .run_migrations()
+        .context("failed to run settings migrations")?;
+
     let bad_words = db::Words::load(db.clone())?;
     let after_streams = db::AfterStreams::load(db.clone())?;
     let commands = db::Commands::load(db.clone())?;

@@ -2,7 +2,7 @@
 
 use crate::{auth::Scope, db, prelude::*, utils};
 use diesel::prelude::*;
-use failure::{Error, ResultExt};
+use failure::{bail, Error, ResultExt};
 use futures::ready;
 use hashbrown::HashMap;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
@@ -54,7 +54,17 @@ const SCHEMA: &'static [u8] = include_bytes!("settings.yaml");
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Schema {
+    #[serde(default)]
+    migrations: Vec<Migration>,
     types: HashMap<String, SchemaType>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct Migration {
+    /// Key to migrate from.
+    pub from: String,
+    /// Key to migrate to.
+    pub to: String,
 }
 
 impl Schema {
@@ -99,6 +109,47 @@ impl Settings {
                 schema: Arc::new(schema),
             }),
         }
+    }
+
+    /// Run all settings migrations.
+    pub fn run_migrations(&self) -> Result<(), Error> {
+        for m in &self.inner.schema.migrations {
+            let from = match self.inner_get::<serde_json::Value>(&m.from)? {
+                Some(from) => from,
+                None => continue,
+            };
+
+            let to = match self.setting::<serde_json::Value>(&m.to)? {
+                Some(to) => to,
+                None => bail!("No target schema for key: {}", m.to),
+            };
+
+            if to.value.is_none() {
+                log::info!("Migrating setting: {} -> {}", m.from, m.to);
+
+                if !to.schema.ty.is_compatible_with_json(&from) {
+                    bail!(
+                        "value for {} (json: {}) is not compatible with {} ({})",
+                        m.from,
+                        serde_json::to_string(&from)?,
+                        m.to,
+                        to.schema.ty
+                    );
+                }
+
+                self.set_json(&m.to, from)?;
+            } else {
+                log::warn!(
+                    "Ignoring value for {} since {} is already present",
+                    m.from,
+                    m.to
+                );
+            }
+
+            self.clear(&m.from)?;
+        }
+
+        Ok(())
     }
 
     /// Lookup the given schema.
@@ -699,12 +750,12 @@ impl Type {
                 match json {
                     Value::Array(values) => {
                         if !values.iter().all(|v| value.is_compatible_with_json(v)) {
-                            failure::bail!("expected {}", self);
+                            bail!("expected {}", self);
                         }
 
                         Value::Array(values)
                     }
-                    _ => failure::bail!("expected array"),
+                    _ => bail!("expected array"),
                 }
             }
             Select {
@@ -721,7 +772,7 @@ impl Type {
                     }
 
                     let alts = out.join(", ");
-                    failure::bail!("Expected one of: {}.", alts);
+                    bail!("Expected one of: {}.", alts);
                 }
 
                 v

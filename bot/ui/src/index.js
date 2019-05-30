@@ -329,19 +329,15 @@ function Layout(props) {
 
         <Navbar.Collapse id="basic-navbar-nav">
           <Nav className="mr-auto">
-            <Nav.Link as={Link} active={path === "/"} to="/">Home</Nav.Link>
-
-            <NavDropdown title="Internal">
-              <NavDropdown.Item as={Link} active={path === "/settings"} to="/settings">
-                Settings
-              </NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/authorization"} to="/authorization">
-                Authorization
-              </NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/import-export"} to="/import-export">
-                Import / Export
-              </NavDropdown.Item>
-            </NavDropdown>
+            <Nav.Link as={Link} active={path === "/"} to="/">
+              Home
+            </Nav.Link>
+            <Nav.Link as={Link} active={path === "/settings"} to="/settings">
+              Settings
+            </Nav.Link>
+            <Nav.Link as={Link} active={path === "/authorization"} to="/authorization">
+              Authorization
+            </Nav.Link>
 
             <NavDropdown title="Chat">
               <NavDropdown.Item as={Link} active={path === "/after-streams"} to="/after-streams">After Streams</NavDropdown.Item>
@@ -351,10 +347,19 @@ function Layout(props) {
               <NavDropdown.Item as={Link} active={path === "/themes"} to="/themes">Themes</NavDropdown.Item>
             </NavDropdown>
 
-            <Nav.Link as={Link} active={path === "/overlay"} to="/overlay" target="overlay">Overlay</Nav.Link>
+            <NavDropdown title="Misc">
+              <NavDropdown.Item as={Link} active={path === "/import-export"} to="/import-export">
+                Import / Export
+              </NavDropdown.Item>
+            </NavDropdown>
 
             <NavDropdown title="Experimental">
-              <NavDropdown.Item as={Link} active={path === "/youtube"} to="/youtube" target="youtube">YouTube Player</NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/overlay"} to="/overlay" target="overlay">
+                Overlay
+              </NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/youtube"} to="/youtube" target="youtube">
+                YouTube Player
+              </NavDropdown.Item>
             </NavDropdown>
           </Nav>
         </Navbar.Collapse>

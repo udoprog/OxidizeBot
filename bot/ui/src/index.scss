@@ -202,24 +202,17 @@ body {
     width: 3em;
   }
 
+  &-filter {
+    cursor: pointer;
+
+    &:hover {
+      color: purple !important;
+    }
+  }
+
   &-group {
     font-size: 150%;
     font-weight: bold;
-    cursor: pointer;
-
-    &-filter {
-      font-size: 50%;
-      margin-left: .5em;
-      display: none;
-    }
-
-    &:hover {
-      color: purple;
-
-      .settings-group-filter {
-        display: inline;
-      }
-    }
   }
 
   &-key {

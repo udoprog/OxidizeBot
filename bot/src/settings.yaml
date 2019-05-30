@@ -1,3 +1,7 @@
+migrations:
+  - from: currency/honkos/database-url
+    to: currency/mysql/url
+
 types:
   remote/api-url:
     doc: Endpoint to use for sending API updates to. One is provided for free at `https://setbac.tv`.
