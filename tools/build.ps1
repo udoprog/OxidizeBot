@@ -1,3 +1,5 @@
+.\tools\env.ps1
+
 if ($env:APPVEYOR_REPO_TAG_NAME -match '^(\d+\.\d+)\.\d+$') {
     $release = $matches[1]
     $version = $env:APPVEYOR_REPO_TAG_NAME
@@ -27,6 +29,7 @@ Copy-Item log4rs.yaml -Destination $target/
 Copy-Item secrets.yml.example -Destination $target/
 Copy-Item target/release/setmod-bot.exe -Destination $target/
 Copy-Item tools/setmod-dist.ps1 -Destination $target/setmod.ps1
+Get-ChildItem -Path "build/dll" -Include *.dll -Recurse | Copy-Item -Destination $target/
 
 Set-Location -Path target
 7z a "setmod-$version-windows-x86_64.zip" $dest/

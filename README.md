@@ -58,6 +58,13 @@ rustup toolchain install nightly
 rustup default nightly
 ```
 
+On **Windows**, you will need to setup some environment variables.
+You can do that in PowerShell by running the following in the shell:
+
+```
+./tools/env.ps1
+```
+
 After this, you build the project using cargo:
 
 ```
