@@ -896,6 +896,7 @@ impl super::Module for Module {
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
         let currency = injector.var(futures);
+        let settings = settings.scoped("gtav");
 
         let default_cooldown = self
             .default_cooldown
@@ -904,17 +905,17 @@ impl super::Module for Module {
 
         let default_per_user_cooldown = Cooldown::from_duration(Duration::seconds(60));
 
-        let (mut enabled_stream, enabled) = settings.stream("gtav/enabled").or_default()?;
+        let (mut enabled_stream, enabled) = settings.stream("enabled").or_default()?;
         let enabled = Arc::new(RwLock::new(enabled));
 
         let mut vars = settings.vars();
-        let cooldown = vars.var("gtav/cooldown", default_cooldown)?;
-        let per_user_cooldown = vars.var("gtav/per-user-cooldown", default_per_user_cooldown)?;
-        let prefix = vars.var("gtav/chat-prefix", String::from("ChaosMod: "))?;
-        let other_percentage = vars.var("gtav/other%", 100)?;
-        let punish_percentage = vars.var("gtav/punish%", 100)?;
-        let reward_percentage = vars.var("gtav/reward%", 100)?;
-        let success_feedback = vars.var("gtav/success-feedback", false)?;
+        let cooldown = vars.var("cooldown", default_cooldown)?;
+        let per_user_cooldown = vars.var("per-user-cooldown", default_per_user_cooldown)?;
+        let prefix = vars.var("chat-prefix", String::from("ChaosMod: "))?;
+        let other_percentage = vars.var("other%", 100)?;
+        let punish_percentage = vars.var("punish%", 100)?;
+        let reward_percentage = vars.var("reward%", 100)?;
+        let success_feedback = vars.var("success-feedback", false)?;
         futures.push(vars.run().boxed());
 
         let player = injector.var(futures);

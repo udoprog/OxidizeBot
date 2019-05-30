@@ -227,10 +227,12 @@ impl Irc {
             let PackedIrcClient(client, send_future) = client.compat().await?;
             client.identify()?;
 
-            let mut vars = settings.vars();
-            let url_whitelist_enabled = vars.var("irc/url-whitelist/enabled", true)?;
-            let bad_words_enabled = vars.var("irc/bad-words/enabled", false)?;
-            let sender_ty = vars.var("irc/sender-type", sender::Type::Chat)?;
+            let mut vars = settings.scoped("irc").vars();
+            let url_whitelist_enabled = vars.var("url-whitelist/enabled", true)?;
+            let bad_words_enabled = vars.var("bad-words/enabled", false)?;
+            let sender_ty = vars.var("sender-type", sender::Type::Chat)?;
+            let threshold = vars.var("irc/idle-detection/threshold", 5)?;
+            let idle = idle::Idle::new(threshold);
 
             let sender = Sender::new(sender_ty, channel.clone(), client.clone(), nightbot.clone());
 
@@ -244,11 +246,6 @@ impl Irc {
                 futures.push(future.boxed());
                 stream_info
             };
-
-            let mut vars = settings.vars();
-            let threshold = vars.var("irc/idle-detection/threshold", 5)?;
-            let idle = idle::Idle::new(threshold);
-            futures.push(vars.run().boxed());
 
             let mut handlers = module::Handlers::default();
 

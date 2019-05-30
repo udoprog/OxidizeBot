@@ -298,9 +298,9 @@ impl Settings {
     }
 
     /// Get a helper to build synchronized variables.
-    pub fn vars(&self) -> Vars<'_> {
+    pub fn vars(&self) -> Vars {
         Vars {
-            settings: self,
+            settings: self.clone(),
             futures: Vec::new(),
         }
     }
@@ -508,12 +508,12 @@ where
 }
 
 #[must_use = "Must consume to drive variable updates"]
-pub struct Vars<'a> {
-    settings: &'a Settings,
+pub struct Vars {
+    settings: Settings,
     futures: Vec<future::BoxFuture<'static, Result<(), Error>>>,
 }
 
-impl<'a> Vars<'a> {
+impl Vars {
     /// Get a synchronized variable for the given configuration key.
     pub fn var<T>(&mut self, key: &str, default: T) -> Result<Arc<RwLock<T>>, Error>
     where

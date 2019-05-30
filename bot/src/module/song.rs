@@ -730,7 +730,7 @@ struct Constraint {
 
 impl Constraint {
     fn build(
-        vars: &mut settings::Vars<'_>,
+        vars: &mut settings::Vars,
         enabled: bool,
         subscriber_only: bool,
     ) -> Result<Self, Error> {
