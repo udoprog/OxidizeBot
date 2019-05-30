@@ -1,6 +1,5 @@
 use crate::{
-    features, irc, module, player, secrets, settings, song_file, track_id::TrackId, utils::Offset,
-    web,
+    features, irc, module, player, settings, song_file, track_id::TrackId, utils::Offset, web,
 };
 use hashbrown::{HashMap, HashSet};
 use relative_path::RelativePathBuf;
@@ -58,14 +57,11 @@ pub struct DeprecatedAlias {
 pub struct Spotify;
 
 impl OAuth2Params for Spotify {
-    const SECRETS_KEY: &'static str = "spotify::oauth2";
-
     fn new_flow_builder(
         web: web::Server,
         settings: settings::Settings,
-        secrets_config: Arc<crate::oauth2::SecretsConfig>,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
-        crate::oauth2::spotify(web, settings, secrets_config)
+        crate::oauth2::spotify(web, settings)
     }
 }
 
@@ -73,25 +69,19 @@ impl OAuth2Params for Spotify {
 pub struct Twitch;
 
 impl OAuth2Params for Twitch {
-    const SECRETS_KEY: &'static str = "twitch::oauth2";
-
     fn new_flow_builder(
         web: web::Server,
         settings: settings::Settings,
-        secrets_config: Arc<crate::oauth2::SecretsConfig>,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
-        crate::oauth2::twitch(web, settings, secrets_config)
+        crate::oauth2::twitch(web, settings)
     }
 }
 
 /// Define defaults for fields.
 pub trait OAuth2Params {
-    const SECRETS_KEY: &'static str;
-
     fn new_flow_builder(
         web: web::Server,
         settings: settings::Settings,
-        secrets_config: Arc<crate::oauth2::SecretsConfig>,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error>;
 }
 
@@ -100,14 +90,12 @@ pub fn new_oauth2_flow<T>(
     web: web::Server,
     name: &str,
     settings: &settings::Settings,
-    secrets: &secrets::Secrets,
 ) -> Result<crate::oauth2::FlowBuilder, failure::Error>
 where
     T: OAuth2Params,
 {
-    let secrets = secrets.load(T::SECRETS_KEY)?;
     let settings = settings.scoped(name);
-    Ok(T::new_flow_builder(web, settings, secrets)?)
+    Ok(T::new_flow_builder(web, settings)?)
 }
 
 #[derive(Debug, Default, serde::Deserialize)]

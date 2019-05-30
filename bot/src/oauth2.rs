@@ -54,7 +54,7 @@ impl Type {
         self,
         flow: &Arc<Flow>,
         refresh_token: RefreshToken,
-    ) -> Result<Token, Error> {
+    ) -> Result<Option<Token>, Error> {
         match self {
             Type::Twitch => {
                 self.refresh_token_impl::<TwitchTokenResponse>(flow, refresh_token)
@@ -80,7 +80,7 @@ impl Type {
         self,
         flow: &Arc<Flow>,
         received_token: web::ReceivedToken,
-    ) -> Result<Token, Error> {
+    ) -> Result<Option<Token>, Error> {
         match self {
             Type::Twitch => {
                 self.exchange_token_impl::<TwitchTokenResponse>(flow, received_token)
@@ -106,20 +106,27 @@ impl Type {
         self,
         flow: &Arc<Flow>,
         refresh_token: RefreshToken,
-    ) -> Result<Token, Error>
+    ) -> Result<Option<Token>, Error>
     where
         T: 'static + Send + TokenResponse,
     {
-        let future = flow
-            .client
-            .exchange_refresh_token(&refresh_token)
-            .param("client_id", flow.secrets_config.client_id.as_str())
-            .param(
-                "client_secret",
-                flow.secrets_config.client_secret.secret().as_str(),
-            )
-            .execute::<T>()
-            .compat();
+        let secrets_config = match flow.secrets_config.read().clone() {
+            Some(secrets_config) => secrets_config,
+            None => return Ok(None),
+        };
+
+        let future = match flow.client.read().as_ref() {
+            Some(client) => client
+                .exchange_refresh_token(&refresh_token)
+                .param("client_id", secrets_config.client_id.as_str())
+                .param(
+                    "client_secret",
+                    secrets_config.client_secret.secret().as_str(),
+                )
+                .execute::<T>()
+                .compat(),
+            None => return Ok(None),
+        };
 
         let token_response = match future.await {
             Ok(t) => t,
@@ -135,31 +142,39 @@ impl Type {
             .map(|r| r.clone())
             .unwrap_or(refresh_token);
 
-        Ok(flow.new_token(refresh_token, token_response))
+        let token = flow.new_token(secrets_config.client_id, refresh_token, token_response);
+        Ok(Some(token))
     }
 
     async fn exchange_token_impl<T>(
         self,
         flow: &Arc<Flow>,
         received_token: web::ReceivedToken,
-    ) -> Result<Token, Error>
+    ) -> Result<Option<Token>, Error>
     where
         T: TokenResponse,
     {
-        let client_id = flow.secrets_config.client_id.to_string();
+        let secrets_config = match flow.secrets_config.read().clone() {
+            Some(secrets_config) => secrets_config,
+            None => return Ok(None),
+        };
 
-        let exchange = flow
-            .client
-            .exchange_code(AuthorizationCode::new(received_token.code))
-            .param("client_id", client_id.as_str())
-            .param(
-                "client_secret",
-                flow.secrets_config.client_secret.secret().as_str(),
-            );
+        let client_id = secrets_config.client_id.to_string();
 
-        let token_response = exchange.execute::<T>().compat().await;
+        let future = match flow.client.read().as_ref() {
+            Some(client) => client
+                .exchange_code(AuthorizationCode::new(received_token.code))
+                .param("client_id", client_id.as_str())
+                .param(
+                    "client_secret",
+                    secrets_config.client_secret.secret().as_str(),
+                )
+                .execute::<T>()
+                .compat(),
+            None => return Ok(None),
+        };
 
-        let token_response = match token_response {
+        let token_response = match future.await {
             Ok(t) => t,
             Err(RequestTokenError::Parse(_, res)) => {
                 log::error!("bad token response: {}", String::from_utf8_lossy(&res));
@@ -173,13 +188,14 @@ impl Type {
             None => bail!("did not receive a refresh token from the service"),
         };
 
-        Ok(flow.new_token(refresh_token, token_response))
+        let token = flow.new_token(client_id, refresh_token, token_response);
+        Ok(Some(token))
     }
 }
 
 enum Secrets {
-    /// Dynamic secrets configuration.
-    Config(Arc<SecretsConfig>),
+    /// Get secrets from settings.
+    Settings,
     /// Static secrets configuration.
     Static {
         client_id: &'static str,
@@ -188,17 +204,13 @@ enum Secrets {
 }
 
 /// Setup a Twitch authentication flow.
-pub fn twitch(
-    web: web::Server,
-    settings: settings::Settings,
-    secrets_config: Arc<SecretsConfig>,
-) -> Result<FlowBuilder, Error> {
+pub fn twitch(web: web::Server, settings: settings::Settings) -> Result<FlowBuilder, Error> {
     let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
 
     Ok(FlowBuilder {
         ty: Type::Twitch,
         web,
-        secrets: Secrets::Config(secrets_config),
+        secrets: Secrets::Settings,
         redirect_url: RedirectUrl::new(Url::parse(&redirect_url)?),
         auth_url: AuthUrl::new(Url::parse("https://id.twitch.tv/oauth2/authorize")?),
         token_url: Some(TokenUrl::new(Url::parse(
@@ -211,17 +223,13 @@ pub fn twitch(
 }
 
 /// Setup a Spotify AUTH flow.
-pub fn spotify(
-    web: web::Server,
-    settings: settings::Settings,
-    secrets_config: Arc<SecretsConfig>,
-) -> Result<FlowBuilder, Error> {
+pub fn spotify(web: web::Server, settings: settings::Settings) -> Result<FlowBuilder, Error> {
     let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
 
     Ok(FlowBuilder {
         ty: Type::Spotify,
         web,
-        secrets: Secrets::Config(secrets_config),
+        secrets: Secrets::Settings,
         redirect_url: RedirectUrl::new(Url::parse(&redirect_url)?),
         auth_url: AuthUrl::new(Url::parse("https://accounts.spotify.com/authorize")?),
         token_url: Some(TokenUrl::new(Url::parse(
@@ -448,49 +456,52 @@ impl FlowBuilder {
     }
 
     /// Convert into an authentication flow.
-    pub fn build(self, what: String) -> Result<Arc<Flow>, Error> {
-        let secrets_config = match self.secrets {
-            Secrets::Config(config) => config,
+    pub fn build(self, what: String) -> Result<Flow, Error> {
+        let (secrets_config_stream, secrets_config) = match self.secrets {
+            Secrets::Settings => {
+                let (secrets_config_stream, secrets_config) =
+                    self.settings.stream("secrets").optional()?;
+                (Some(secrets_config_stream), secrets_config)
+            }
             Secrets::Static {
                 client_id,
                 client_secret,
-            } => Arc::new(SecretsConfig {
-                client_id: client_id.to_string(),
-                client_secret: ClientSecret::new(client_secret.to_string()),
-            }),
+            } => {
+                let secrets_config = SecretsConfig {
+                    client_id: client_id.to_string(),
+                    client_secret: ClientSecret::new(client_secret.to_string()),
+                };
+
+                (None, Some(secrets_config))
+            }
         };
 
-        let mut client = Client::new(
-            ClientId::new(secrets_config.client_id.to_string()),
-            Some(secrets_config.client_secret.clone()),
-            self.auth_url,
-            self.token_url,
-        );
-
-        for scope in &self.scopes {
-            client = client.add_scope(Scope::new(scope.to_string()));
-        }
-
-        client = client.set_redirect_url(self.redirect_url);
-
-        Ok(Arc::new(Flow {
+        Ok(Flow {
             ty: self.ty,
             web: self.web.clone(),
-            secrets_config,
-            client: Arc::new(client),
+            redirect_url: self.redirect_url,
+            auth_url: self.auth_url,
+            token_url: self.token_url,
+            client: RwLock::new(None),
+            secrets_config_stream,
+            secrets_config: RwLock::new(secrets_config),
             settings: self.settings.clone(),
             scopes: Arc::new(self.scopes),
             extra_params: Arc::new(self.extra_params),
             what,
-        }))
+        })
     }
 }
 
 pub struct Flow {
     ty: Type,
     web: web::Server,
-    secrets_config: Arc<SecretsConfig>,
-    client: Arc<Client>,
+    redirect_url: RedirectUrl,
+    auth_url: AuthUrl,
+    token_url: Option<TokenUrl>,
+    client: RwLock<Option<Client>>,
+    secrets_config_stream: Option<settings::OptionStream<SecretsConfig>>,
+    secrets_config: RwLock<Option<SecretsConfig>>,
     settings: settings::Settings,
     scopes: Arc<Vec<String>>,
     extra_params: Arc<Vec<(String, String)>>,
@@ -510,9 +521,31 @@ impl fmt::Debug for Flow {
 }
 
 impl Flow {
+    /// Construct a new client.
+    fn build_client(&self) -> Option<Client> {
+        let secrets_config = match self.secrets_config.read().clone() {
+            Some(secrets_config) => secrets_config,
+            None => return None,
+        };
+
+        let mut client = Client::new(
+            ClientId::new(secrets_config.client_id.to_string()),
+            Some(secrets_config.client_secret.clone()),
+            self.auth_url.clone(),
+            self.token_url.clone(),
+        );
+
+        for scope in self.scopes.iter() {
+            client = client.add_scope(Scope::new(scope.to_string()));
+        }
+
+        client = client.set_redirect_url(self.redirect_url.clone());
+        Some(client)
+    }
+
     /// Convert the flow into a token.
     pub fn into_token(
-        self: Arc<Flow>,
+        mut self,
     ) -> Result<(SyncToken, impl Future<Output = Result<(), Error>>), Error> {
         // token expires within 30 minutes.
         let expires = Duration::from_secs(30 * 60);
@@ -520,19 +553,23 @@ impl Flow {
         // queue used to force token refreshes.
         let (force_refresh, mut force_refresh_rx) = mpsc::unbounded();
 
-        let sync_token = SyncToken {
-            flow: self.clone(),
-            inner: Default::default(),
-            force_refresh,
-        };
-
         let (mut token_stream, token) = self.settings.stream::<Token>("token").optional()?;
 
         // check interval.
         let mut interval = timer::Interval::new(Instant::now(), Duration::from_secs(10 * 60));
 
+        let mut secrets_config_stream = self.secrets_config_stream.take();
+        let flow = Arc::new(self);
+
+        let sync_token = SyncToken {
+            flow: flow.clone(),
+            inner: Default::default(),
+            force_refresh,
+        };
+
         let returned_sync_token = sync_token.clone();
-        let flow = self;
+
+        *flow.client.write() = flow.build_client();
 
         let future = async move {
             log::trace!("Running loop for token: {}", flow.what);
@@ -554,6 +591,10 @@ impl Flow {
 
             loop {
                 futures::select! {
+                    secrets_config = secrets_config_stream.select_next_some() => {
+                        *flow.client.write() = flow.build_client();
+                        *flow.secrets_config.write() = secrets_config;
+                    }
                     current = force_refresh_rx.select_next_some() => {
                         if new_token.is_some() {
                             log::warn!("ignoring refresh request since a token request is already in progress");
@@ -619,10 +660,13 @@ impl Flow {
     }
 
     /// Request a new token from the authentication flow.
-    async fn request_new_token(self: &Arc<Flow>) -> Result<Token, Error> {
+    async fn request_new_token(self: &Arc<Flow>) -> Result<Option<Token>, Error> {
         log::trace!("Requesting new token: {}", self.what);
 
-        let (mut auth_url, csrf_token) = self.client.authorize_url(CsrfToken::new_random);
+        let (mut auth_url, csrf_token) = match self.client.read().as_ref() {
+            Some(client) => client.authorize_url(CsrfToken::new_random),
+            None => return Ok(None),
+        };
 
         for (key, value) in self.extra_params.iter() {
             auth_url.query_pairs_mut().append_pair(key, value);
@@ -647,7 +691,12 @@ impl Flow {
 
     /// Validate a token base on the current flow.
     async fn validate_token(self: &Arc<Flow>, token: Token) -> Result<Option<Token>, Error> {
-        if token.client_id != self.secrets_config.client_id {
+        let client_id = match self.secrets_config.read().as_ref() {
+            Some(secrets_config) => secrets_config.client_id.to_string(),
+            None => return Ok(None),
+        };
+
+        if token.client_id != client_id {
             log::warn!("Not using stored token since it uses a different Client ID");
             return Ok(None);
         }
@@ -666,7 +715,7 @@ impl Flow {
             log::info!("Attempting to refresh: {}", self.what);
 
             return Ok(match self.refresh(token.refresh_token.clone()).await {
-                Ok(token) => Some(token),
+                Ok(token) => token,
                 Err(e) => {
                     log::warn!("Failed to refresh saved token: {}", e);
                     None
@@ -678,20 +727,24 @@ impl Flow {
     }
 
     /// Refresh the token.
-    pub async fn refresh(self: &Arc<Flow>, refresh_token: RefreshToken) -> Result<Token, Error> {
+    pub async fn refresh(
+        self: &Arc<Flow>,
+        refresh_token: RefreshToken,
+    ) -> Result<Option<Token>, Error> {
         self.ty.refresh_token(self, refresh_token).await
     }
 
     /// Save and return the given token.
     fn new_token(
         self: &Arc<Flow>,
+        client_id: String,
         refresh_token: RefreshToken,
         token_response: impl TokenResponse,
     ) -> Token {
         let refreshed_at = Utc::now();
 
         Token {
-            client_id: self.secrets_config.client_id.to_string(),
+            client_id,
             refresh_token,
             access_token: token_response.access_token().clone(),
             refreshed_at: refreshed_at.clone(),

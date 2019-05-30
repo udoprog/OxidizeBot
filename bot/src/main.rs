@@ -4,8 +4,8 @@
 use failure::{format_err, Error, ResultExt};
 use parking_lot::RwLock;
 use setmod_bot::{
-    api, auth, bus, config, db, injector, irc, module, oauth2, obs, player, prelude::*, secrets,
-    settings, utils, web,
+    api, auth, bus, config, db, injector, irc, module, oauth2, obs, player, prelude::*, settings,
+    utils, web,
 };
 use std::{
     fs,
@@ -137,15 +137,7 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
 
     let config = Arc::new(config);
 
-    let secrets_path = match config.secrets.as_ref() {
-        Some(secrets) => secrets.to_path(&root),
-        None => root.join("secrets.yml"),
-    };
-
     let mut modules = Vec::<Box<dyn module::Module>>::new();
-
-    let secrets = secrets::Secrets::open(&secrets_path)
-        .with_context(|_| format_err!("failed to load secrets: {}", secrets_path.display()))?;
 
     let database_path = config
         .database_url
@@ -236,20 +228,16 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
     let token_settings = settings.scoped("secrets/oauth2");
 
     let (spotify_token, future) = {
-        let flow = config::new_oauth2_flow::<config::Spotify>(
-            web.clone(),
-            "spotify",
-            &token_settings,
-            &secrets,
-        )?
-        .with_scopes(vec![
-            String::from("playlist-read-collaborative"),
-            String::from("playlist-read-private"),
-            String::from("user-library-read"),
-            String::from("user-modify-playback-state"),
-            String::from("user-read-playback-state"),
-        ])
-        .build(String::from("Spotify"))?;
+        let flow =
+            config::new_oauth2_flow::<config::Spotify>(web.clone(), "spotify", &token_settings)?
+                .with_scopes(vec![
+                    String::from("playlist-read-collaborative"),
+                    String::from("playlist-read-private"),
+                    String::from("user-library-read"),
+                    String::from("user-modify-playback-state"),
+                    String::from("user-read-playback-state"),
+                ])
+                .build(String::from("Spotify"))?;
 
         flow.into_token()?
     };
@@ -283,7 +271,6 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
             web.clone(),
             "twitch-streamer",
             &token_settings,
-            &secrets,
         )?
         .with_scopes(vec![
             String::from("channel_editor"),
@@ -298,19 +285,15 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
     futures.push(future.boxed());
 
     let (bot_token, future) = {
-        let flow = config::new_oauth2_flow::<config::Twitch>(
-            web.clone(),
-            "twitch-bot",
-            &token_settings,
-            &secrets,
-        )?
-        .with_scopes(vec![
-            String::from("channel:moderate"),
-            String::from("chat:edit"),
-            String::from("chat:read"),
-            String::from("clips:edit"),
-        ])
-        .build(String::from("Twitch Bot"))?;
+        let flow =
+            config::new_oauth2_flow::<config::Twitch>(web.clone(), "twitch-bot", &token_settings)?
+                .with_scopes(vec![
+                    String::from("channel:moderate"),
+                    String::from("chat:edit"),
+                    String::from("chat:read"),
+                    String::from("clips:edit"),
+                ])
+                .build(String::from("Twitch Bot"))?;
 
         flow.into_token()?
     };
