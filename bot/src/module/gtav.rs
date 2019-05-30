@@ -1,7 +1,13 @@
-use crate::{command, config, currency, irc, module, player, prelude::*, utils};
+use crate::{
+    auth::Scope,
+    command, config, currency, irc, module, player,
+    prelude::*,
+    utils::{compact_duration, Cooldown, Duration},
+};
 use failure::{bail, Error};
+use hashbrown::HashMap;
 use parking_lot::RwLock;
-use std::{fmt, net::SocketAddr, sync::Arc};
+use std::{fmt, net::SocketAddr, sync::Arc, time};
 use tokio::net::UdpSocket;
 
 const VEHICLE_URL: &'static str = "http://bit.ly/gtavvehicles";
@@ -351,7 +357,8 @@ pub struct Handler {
     enabled: Arc<RwLock<bool>>,
     player: Arc<RwLock<Option<player::Player>>>,
     currency: Arc<RwLock<Option<currency::Currency>>>,
-    cooldown: Arc<RwLock<utils::Cooldown>>,
+    cooldown: Arc<RwLock<Cooldown>>,
+    per_user_cooldown: Arc<RwLock<Cooldown>>,
     prefix: Arc<RwLock<String>>,
     other_percentage: Arc<RwLock<u32>>,
     punish_percentage: Arc<RwLock<u32>>,
@@ -359,6 +366,7 @@ pub struct Handler {
     success_feedback: Arc<RwLock<bool>>,
     id_counter: usize,
     tx: mpsc::UnboundedSender<(irc::OwnedUser, usize, Command)>,
+    per_user_cooldowns: HashMap<String, Cooldown>,
 }
 
 impl Handler {
@@ -383,6 +391,32 @@ impl Handler {
                 }
             });
         }
+    }
+
+    /// Check if the given user is subject to cooldown right now.
+    fn check_user_cooldown(
+        &mut self,
+        ctx: &mut command::Context<'_, '_>,
+    ) -> Option<time::Duration> {
+        let per_user_cooldown = self.per_user_cooldown.read();
+
+        // no cooldown enabled.
+        if per_user_cooldown.cooldown.is_empty() {
+            return None;
+        }
+
+        let cooldown = self
+            .per_user_cooldowns
+            .entry(ctx.user.name.to_string())
+            .or_insert_with(|| per_user_cooldown.clone());
+
+        // cooldown setting has changed
+        if cooldown.cooldown != per_user_cooldown.cooldown {
+            self.per_user_cooldowns.remove(ctx.user.name);
+            return None;
+        }
+
+        cooldown.remaining_until_open()
     }
 
     /// Handle the other commands.
@@ -712,9 +746,26 @@ impl command::Handler for Handler {
             None => return Ok(()),
         };
 
-        if !ctx.is_moderator() && !self.cooldown.write().is_open() {
-            ctx.respond("A command was recently issued, please wait a bit longer!");
-            return Ok(());
+        let bypass_cooldown = ctx.has_scope(Scope::GtavBypassCooldown);
+
+        if !bypass_cooldown {
+            if let Some(remaining) = self.check_user_cooldown(&mut ctx) {
+                ctx.respond(format!(
+                    "User in cooldown, please wait at least {}!",
+                    compact_duration(remaining),
+                ));
+
+                return Ok(());
+            }
+
+            if let Some(remaining) = self.cooldown.write().remaining_until_open() {
+                ctx.respond(format!(
+                    "Cooldown in effect, please wait at least {}!",
+                    compact_duration(remaining),
+                ));
+
+                return Ok(());
+            }
         }
 
         let id = self.id_counter;
@@ -803,11 +854,11 @@ fn license(input: &str, ctx: &mut command::Context<'_, '_>) -> Option<String> {
 #[derive(Debug, serde::Deserialize)]
 pub struct Config {
     #[serde(default)]
-    cooldown: Option<utils::Cooldown>,
+    cooldown: Option<Cooldown>,
 }
 
 pub struct Module {
-    default_cooldown: Option<utils::Cooldown>,
+    default_cooldown: Option<Cooldown>,
 }
 
 impl Module {
@@ -849,13 +900,16 @@ impl super::Module for Module {
         let default_cooldown = self
             .default_cooldown
             .clone()
-            .unwrap_or_else(|| utils::Cooldown::from_duration(utils::Duration::seconds(10)));
+            .unwrap_or_else(|| Cooldown::from_duration(Duration::seconds(1)));
+
+        let default_per_user_cooldown = Cooldown::from_duration(Duration::seconds(60));
 
         let (mut enabled_stream, enabled) = settings.stream("gtav/enabled").or_default()?;
         let enabled = Arc::new(RwLock::new(enabled));
 
         let mut vars = settings.vars();
         let cooldown = vars.var("gtav/cooldown", default_cooldown)?;
+        let per_user_cooldown = vars.var("gtav/per-user-cooldown", default_per_user_cooldown)?;
         let prefix = vars.var("gtav/chat-prefix", String::from("ChaosMod: "))?;
         let other_percentage = vars.var("gtav/other%", 100)?;
         let punish_percentage = vars.var("gtav/punish%", 100)?;
@@ -874,6 +928,8 @@ impl super::Module for Module {
                 player,
                 currency,
                 cooldown,
+                per_user_cooldown,
+                per_user_cooldowns: Default::default(),
                 prefix,
                 other_percentage,
                 punish_percentage,

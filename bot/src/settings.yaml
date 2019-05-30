@@ -17,6 +17,9 @@ types:
   gtav/cooldown:
     doc: Global cooldown between each effect.
     type: {id: duration}
+  gtav/per-user-cooldown:
+    doc: Per-user cooldown between each effect.
+    type: {id: duration}
   gtav/other%:
     doc: Other effect cost scaling.
     type: {id: percentage}

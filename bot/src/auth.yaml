@@ -96,3 +96,8 @@ scopes:
     allow:
       - "@streamer"
       - "@moderator"
+  gtav/bypass-cooldown:
+    doc: If you are allowed to bypass cooldowns on `!gtav` commands.
+    version: 0
+    allow:
+      - "@streamer"

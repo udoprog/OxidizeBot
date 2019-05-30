@@ -453,16 +453,24 @@ impl Cooldown {
 
     /// Test if we are allowed to perform the action based on the cooldown in effect.
     pub fn is_open(&mut self) -> bool {
+        return self.remaining_until_open().is_none();
+    }
+
+    /// Test how much time remains until cooldown is open.
+    pub fn remaining_until_open(&mut self) -> Option<time::Duration> {
         let now = time::Instant::now();
 
         if let Some(last_action_at) = self.last_action_at.as_ref() {
-            if now - *last_action_at < self.cooldown.as_std() {
-                return false;
+            let since_last_action = now - *last_action_at;
+            let cooldown = self.cooldown.as_std();
+
+            if since_last_action < cooldown {
+                return Some(cooldown - since_last_action);
             }
         }
 
         self.last_action_at = Some(now);
-        return true;
+        None
     }
 }
 

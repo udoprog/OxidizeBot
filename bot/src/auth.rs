@@ -355,6 +355,7 @@ scopes! {
     (Clip, "clip"),
     (EightBall, "8ball"),
     (Command, "command"),
+    (GtavBypassCooldown, "gtav/bypass-cooldown"),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
