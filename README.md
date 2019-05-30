@@ -21,8 +21,6 @@ See the next section.
 
 Two configuration files are neccessary.
 
-First, `config.toml`. You can use the [config.toml.example] as a base which should be included in your distribution.
-
 Second, `secrets.yml` which specifies secrets for your bot. **This file is very sensitive**, you must avoid sharing it with anyone.
 
 ```yaml
@@ -47,8 +45,6 @@ http://localhost:12345/redirect
 ```
 
 This is where the bot will be running while it is receiving tokens.
-
-[config.toml.example]: config.toml.example
 
 ## Building
 
