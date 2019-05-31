@@ -6,8 +6,6 @@
 extern crate diesel;
 #[macro_use]
 extern crate diesel_migrations;
-#[macro_use]
-extern crate warp;
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 

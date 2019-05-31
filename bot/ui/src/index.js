@@ -40,6 +40,80 @@ class AfterStreamsPage extends React.Component {
   }
 }
 
+const TWITCH_CONFIG = "secrets/oauth2/twitch/config";
+const SPOTIFY_CONFIG = "secrets/oauth2/spotify/config";
+
+class ConfigurationPrompt extends React.Component {
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      configured: true,
+      loading: false,
+      error: null,
+    }
+  }
+
+  componentWillMount() {
+    if (this.state.loading) {
+      return;
+    }
+
+    this.list();
+  }
+
+  list() {
+    this.setState({
+      loading: true,
+    });
+
+    this.props.api.settings({keyFilter: this.props.keyFilter})
+      .then(settings => {
+        this.setState({
+          configured: settings.every(s => s.value !== null),
+          loading: false,
+        })
+      },
+      e => {
+        this.setState({
+          error: e,
+          loading: false,
+        })
+      });
+  }
+
+  render() {
+    if (this.state.configured) {
+      return null;
+    }
+
+    let error = null;
+
+    if (this.state.error) {
+      error = <Alert key="error" variant="warning">{this.state.error}</Alert>;
+    }
+
+    return [
+      error,
+
+      <Row key="help">
+        <Col>
+          {this.props.children}
+        </Col>
+      </Row>,
+
+      <Row key="settings">
+        <Col>
+          <Settings
+            api={this.props.api}
+            keyFilter={this.props.keyFilter}
+            filterable={false} />
+        </Col>
+      </Row>,
+    ];
+  }
+}
+
 class SettingsPage extends React.Component {
   constructor(props) {
     super(props);
@@ -49,9 +123,11 @@ class SettingsPage extends React.Component {
   render() {
     return (
       <RouteLayout>
+        <h2>Settings</h2>
+
         <Row>
           <Col>
-            <Settings api={this.api} />
+            <Settings api={this.api} filterable={true} />
           </Col>
         </Row>
       </RouteLayout>
@@ -136,7 +212,7 @@ class IndexPage extends React.Component {
         <Row>
           <Col>
             <p>
-            Congratulations on getting <b>setmod</b> running!
+              Congratulations on getting <b>setmod</b> running!
             </p>
 
             <p>
@@ -154,6 +230,32 @@ class IndexPage extends React.Component {
             <Devices api={this.api} />
           </Col>
         </Row>
+
+        <ConfigurationPrompt api={this.api} keyFilter={[TWITCH_CONFIG]}>
+          <h4><b>Action Required</b>: OAuth 2.0 Configuration for Twitch</h4>
+
+          <p>
+            You will have <a href="https://dev.twitch.tv/console/apps/create">register an application with Twitch</a>
+          </p>
+
+          <p>
+            You must configure following redirect URL:<br />
+            <code>http://localhost:12345/redirect</code>
+          </p>
+        </ConfigurationPrompt>
+
+        <ConfigurationPrompt api={this.api} keyFilter={[SPOTIFY_CONFIG]}>
+          <h4><b>Action Required</b>: OAuth 2.0 Configuration for Spotify</h4>
+
+          <p>
+            You will have <a href="https://developer.spotify.com/dashboard/">register an application with Spotify</a>
+          </p>
+
+          <p>
+            You must configure the following redirect URL:<br />
+            <code>http://localhost:12345/redirect</code>
+          </p>
+        </ConfigurationPrompt>
       </RouteLayout>
     );
   }

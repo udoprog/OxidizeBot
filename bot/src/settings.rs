@@ -32,7 +32,22 @@ pub struct Setting {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SettingRef<'a, T> {
     pub schema: &'a SchemaType,
+    pub key: Cow<'a, str>,
     pub value: Option<T>,
+}
+
+impl SettingRef<'_, serde_json::Value> {
+    /// Convert into an owned value.
+    pub fn to_setting(&self) -> Setting {
+        Setting {
+            schema: self.schema.clone(),
+            key: self.key.to_string(),
+            value: match self.value.clone() {
+                None => serde_json::Value::Null,
+                Some(value) => value,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -211,7 +226,7 @@ impl Settings {
         };
 
         let value = self.inner_get(&key)?;
-        Ok(Some(SettingRef { schema, value }))
+        Ok(Some(SettingRef { schema, key, value }))
     }
 
     /// Test if the given key exists in the database.

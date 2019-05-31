@@ -1,49 +1,22 @@
 import React from "react";
 import {Spinner, partition} from "../utils";
-import {Form, Button, Alert, Table, ButtonGroup, InputGroup, Row, Col} from "react-bootstrap";
+import {Form, Button, Alert, Table, InputGroup} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import * as types from "./Settings/Types.js";
-import * as ReactMarkdown from 'react-markdown';
-
-const SECRET_PREFIX = "secrets/";
-
-function confirmButtons({what, onConfirm, onCancel, confirmDisabled}) {
-  confirmDisabled = confirmDisabled || false;
-
-  return [
-    <Button key="cancel" title={`Cancel ${what}`} variant="primary" size="sm" onClick={e => onCancel(e)}>
-      <FontAwesomeIcon icon="window-close" />
-    </Button>,
-    <Button key="confirm" title={`Confirm ${what}`} disabled={confirmDisabled} variant="danger" size="sm" onClick={e => onConfirm(e)}>
-      <FontAwesomeIcon icon="check-circle" />
-    </Button>
-  ];
-}
+import Setting from "./Setting";
 
 export default class Settings extends React.Component {
   constructor(props) {
     super(props);
+
     this.api = this.props.api;
-    this.hideTimeout = null;
 
     this.state = {
       loading: false,
       error: null,
       data: null,
-      // set to the key of the setting currently being deleted.
-      deleteKey: null,
-      // set to the key of the setting currently being edited.
-      editKey: null,
-      // show a value even if it's secret.
-      showKey: null,
-      // the controller for the edit.
-      edit: null,
-      // the value currrently being edited.
-      editValue: null,
       // current filter being applied to filter visible settings.
       filter: "",
-      // Countdown until hiding.
-      hideCountdown: 0,
     };
   }
 
@@ -63,7 +36,11 @@ export default class Settings extends React.Component {
       loading: true,
     });
 
-    this.api.settings()
+    let params = {
+      keyFilter: this.props.keyFilter
+    };
+
+    this.api.settings(params)
       .then(data => {
         data = data.map(d => {
           let control = types.decode(d.schema.type);
@@ -106,19 +83,18 @@ export default class Settings extends React.Component {
   delete(key) {
     this.setState({
       loading: true,
-      deleteKey: null
     });
 
     this.api.deleteSetting(key)
-      .then(() => {
-        return this.list();
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to delete setting: ${e}`,
-        });
-      });
+      .then(
+        () => this.list(),
+        e => {
+          this.setState({
+            loading: false,
+            error: `failed to delete setting: ${e}`,
+          });
+        }
+      );
   }
 
   /**
@@ -140,24 +116,24 @@ export default class Settings extends React.Component {
       return {
         data,
         loading: true,
-        editKey: null,
-        edit: null,
-        editValue: null,
       };
     });
 
     this.api.editSetting(key, control.serialize(value))
-      .then(() => {
-        return this.list();
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to edit setting: ${e}`,
-        });
-      });
+      .then(
+        () => this.list(),
+        e => {
+          this.setState({
+            loading: false,
+            error: `failed to edit setting: ${e}`,
+          });
+        }
+      );
   }
 
+  /**
+   * Filter the data if applicable.
+   */
   filtered(data) {
     if (!this.state.filter) {
       return data;
@@ -175,207 +151,10 @@ export default class Settings extends React.Component {
     });
   }
 
-  renderSetting(setting, keyOverride = null) {
-    // onChange handler used for things which support immediate editing.
-    let renderOnChange = null;
-
-    let buttons = [];
-    let isDeleting = this.state.deleteKey === setting.key;
-    let isEditing = this.state.editKey === setting.key;
-    let isSecret = setting.key.startsWith(SECRET_PREFIX) || setting.secret;
-    let isSecretShown = this.state.showKey === setting.key;
-
-    let hide = () => {
-      if (this.state.hideInterval !== null) {
-        clearInterval(this.state.hideInterval);
-      }
-
-      this.setState({
-        showKey: null,
-        hideInterval: null,
-      });
-    };
-
-    if (isSecretShown) {
-      buttons.push(
-        <Button title="Hide the secret value" key="show" size="sm" variant="secondary" className="action" disabled={this.state.loading} onClick={hide}>
-          <FontAwesomeIcon icon="eye-slash" />
-          <span className="settings-countdown">
-            {this.state.hideCountdown}s
-          </span>
-        </Button>
-      );
-    }
-
-    if (isSecret && !isSecretShown) {
-      let hideFeedback = () => {
-        this.setState(state => {
-          if (state.hideCountdown <= 1) {
-            clearInterval(state.hideInterval);
-            return {showKey: null, hideCountdown: 0};
-          }
-
-          return {hideCountdown: state.hideCountdown - 1};
-        });
-      };
-
-      let show = () => {
-        this.setState({
-          hideCountdown: 10,
-          showKey: setting.key,
-          hideInterval: setInterval(hideFeedback, 1000),
-        });
-      };
-
-      buttons.push(
-        <Button title="Show the secret value" key="show" size="sm" variant="secondary" className="action" disabled={this.state.loading} onClick={show}>
-          <FontAwesomeIcon icon="eye" />
-        </Button>
-      );
-    }
-
-    if (setting.control.optional && !isSecretShown) {
-      let del = () => {
-        this.setState({
-          deleteKey: setting.key,
-        });
-      };
-
-      if (setting.value !== null) {
-        buttons.push(
-          <Button key="delete" size="sm" variant="danger" className="action" disabled={this.state.loading} onClick={del}>
-            <FontAwesomeIcon icon="trash" />
-          </Button>
-        );
-      }
-    }
-
-    if (setting.control.hasEditControl()) {
-      if (!isSecretShown) {
-        let edit = () => {
-          let value = setting.value;
-
-          if (value == null) {
-            value = setting.control.default();
-          }
-
-          let edit = setting.control.editControl();
-          let editValue = setting.control.edit(value);
-
-          this.setState({
-            editKey: setting.key,
-            edit,
-            editValue,
-          });
-        };
-
-        buttons.push(
-          <Button key="edit" size="sm" variant="info" className="action" disabled={this.state.loading} onClick={edit}>
-            <FontAwesomeIcon icon="edit" />
-          </Button>
-        );
-      }
-
-      renderOnChange = null;
-    } else {
-      renderOnChange = value => {
-        this.edit(setting.key, setting.control, value);
-      };
-    }
-
-    let value = null;
-
-    if (setting.value === null) {
-      value = <em title="Value not set">not set</em>;;
-    } else {
-      if (isSecret && !isSecretShown) {
-        value = <b title="Secret value, only showed when editing">****</b>;
-      } else {
-        value = setting.control.render(setting.value, renderOnChange);
-      }
-    }
-
-    if (isDeleting) {
-      buttons = confirmButtons({
-        what: "deletion",
-        onConfirm: () => this.delete(this.state.deleteKey),
-        onCancel: () => {
-          this.setState({
-            deleteKey: null,
-          })
-        },
-      });
-    }
-
-    if (isEditing && this.state.edit) {
-      let isValid = this.state.edit.validate(this.state.editValue);
-
-      let save = (e) => {
-        e.preventDefault();
-
-        if (isValid) {
-          let value = this.state.edit.save(this.state.editValue);
-          this.edit(this.state.editKey, setting.control, value);
-        }
-
-        return false;
-      };
-
-      let control = this.state.edit.render(isValid, this.state.editValue, editValue => {
-        this.setState({editValue});
-      });
-
-      value = (
-        <Form onSubmit={e => save(e)}>
-          {control}
-        </Form>
-      );
-
-      buttons = confirmButtons({
-        what: "edit",
-        confirmDisabled: !isValid,
-        onConfirm: e => save(e),
-        onCancel: () => {
-          this.setState({
-            editKey: null,
-            edit: null,
-          })
-        },
-      });
-    }
-
-    if (buttons.length > 0) {
-      buttons = (
-        <div className="ml-3">
-          <ButtonGroup>{buttons}</ButtonGroup>
-        </div>
-      );
-    }
-
-    return (
-      <tr key={setting.key}>
-        <td>
-          <Row>
-            <Col lg="3" className="settings-key mb-1">
-              <div className="settings-key-name mb-1">{keyOverride || setting.key}</div>
-              <div className="settings-key-doc">
-                <ReactMarkdown source={setting.doc} />
-              </div>
-            </Col>
-
-            <Col lg="9">
-              <div className="d-flex align-items-top">
-                <div className="flex-fill align-middle">{value}</div>
-                {buttons}
-              </div>
-            </Col>
-          </Row>
-        </td>
-      </tr>
-    );
-  }
-
-  nameLinks(name) {
+  /**
+   * Render the given name as a set of clickable links.
+   */
+  filterLinks(name) {
     let setFilter = filter => () => {
       this.setState({filter: `^${filter}/`});
     };
@@ -412,14 +191,10 @@ export default class Settings extends React.Component {
       error = <Alert variant="warning">{this.state.error}</Alert>;
     }
 
-    let refresh = null;
     let loading = null;
 
     if (this.state.loading) {
       loading = <Spinner />;
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh right" />;
-    } else {
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh clickable right" onClick={() => this.list()} />;
     }
 
     let content = null;
@@ -438,24 +213,41 @@ export default class Settings extends React.Component {
           <div>
             <Table className="mb-0">
               <tbody>
-                {def.map(s => this.renderSetting(s))}
+                {def.map(s => {
+                  return <Setting
+                    key={s.key}
+                    setting={s}
+                    onEdit={this.edit.bind(this)}
+                    onDelete={this.delete.bind(this)} />;
+                })}
               </tbody>
             </Table>
 
             {order.map(name => {
               let group = groups[name];
-              let nameLinks = this.nameLinks(name);
+              let title = null;
+
+              if (this.props.filterable) {
+                title = this.filterLinks(name);
+              } else {
+                title = name;
+              }
 
               return (
                 <Table className="mb-0" key={name}>
                   <tbody>
                     <tr>
-                      <th className="settings-group">
-                        {nameLinks}
-                      </th>
+                      <th className="settings-group">{title}</th>
                     </tr>
 
-                    {group.map(({short, data}) => this.renderSetting(data, short))}
+                    {group.map(({short, data}) => {
+                      return <Setting
+                        key={data.key}
+                        setting={data}
+                        onEdit={this.edit.bind(this)}
+                        onDelete={this.delete.bind(this)}
+                        keyOverride={short} />;
+                    })}
                   </tbody>
                 </Table>
               );
@@ -465,39 +257,39 @@ export default class Settings extends React.Component {
       }
     }
 
-    let filterOnChange = e => {
-      this.setState({filter: e.target.value});
-    };
+    let filter = null;
 
-    let clearFilter = () => {
-      this.setState({filter: ""});
-    };
+    if (this.props.filterable) {
+      let filterOnChange = e => {
+        this.setState({filter: e.target.value});
+      };
 
-    let clear = null;
+      let clearFilter = () => {
+        this.setState({filter: ""});
+      };
 
-    if (!!this.state.filter) {
-      clear = (
-        <InputGroup.Append>
-          <Button variant="primary" onClick={clearFilter}>Clear Filter</Button>
-        </InputGroup.Append>
+      let clear = null;
+
+      if (!!this.state.filter) {
+        clear = (
+          <InputGroup.Append>
+            <Button variant="primary" onClick={clearFilter}>Clear Filter</Button>
+          </InputGroup.Append>
+        );
+      }
+
+      filter = (
+        <Form className="mt-4 mb-4">
+          <InputGroup>
+            <Form.Control value={this.state.filter} placeholder="Filter Settings" onChange={filterOnChange}></Form.Control>
+            {clear}
+          </InputGroup>
+        </Form>
       );
     }
 
-    let filter = (
-      <Form className="mt-4 mb-4">
-        <InputGroup>
-          <Form.Control value={this.state.filter} placeholder="Filter Settings" onChange={filterOnChange}></Form.Control>
-          {clear}
-        </InputGroup>
-      </Form>
-    );
-
     return (
       <div className="settings">
-        <h2>
-          Settings
-          {refresh}
-        </h2>
         {error}
         {filter}
         {content}

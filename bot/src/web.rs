@@ -2,10 +2,10 @@ use crate::{
     api, auth, bus, currency::Currency, db, player, prelude::*, settings, template,
     track_id::TrackId, utils,
 };
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
 use std::{fmt, net::SocketAddr, path::Path, sync::Arc};
-use warp::{http::Uri, Filter as _};
+use warp::{body, filters, http::Uri, path, Filter as _};
 
 pub const URL: &'static str = "http://localhost:12345";
 pub const REDIRECT_URI: &'static str = "/redirect";
@@ -103,23 +103,135 @@ pub struct DisabledBody {
     disabled: bool,
 }
 
+/// Settings endpoint.
+#[derive(Clone)]
+struct Settings(settings::Settings);
+
+impl Settings {
+    fn route(settings: settings::Settings) -> filters::BoxedFilter<(impl warp::Reply,)> {
+        let api = Settings(settings);
+
+        let list = warp::get2()
+            .and(warp::path("settings").and(warp::query::<ListQuery>()))
+            .and_then({
+                let api = api.clone();
+                move |query: ListQuery| api.settings(query.key).map_err(warp::reject::custom)
+            })
+            .boxed();
+
+        let get = warp::get2()
+            .and(warp::path("settings").and(path::tail()).and_then({
+                let api = api.clone();
+                move |key: path::Tail| {
+                    let key = str::parse::<Fragment>(key.as_str()).map_err(warp::reject::custom)?;
+                    api.get_setting(key.as_str()).map_err(warp::reject::custom)
+                }
+            }))
+            .boxed();
+
+        let delete = warp::delete2()
+            .and(warp::path("settings").and(path::tail()).and_then({
+                let api = api.clone();
+                move |key: path::Tail| {
+                    let key = str::parse::<Fragment>(key.as_str()).map_err(warp::reject::custom)?;
+                    api.delete_setting(key.as_str())
+                        .map_err(warp::reject::custom)
+                }
+            }))
+            .boxed();
+
+        let edit = warp::put2()
+            .and(
+                warp::path("settings")
+                    .and(path::tail().and(body::json()))
+                    .and_then({
+                        let api = api.clone();
+                        move |key: path::Tail, body: PutSetting| {
+                            let key = str::parse::<Fragment>(key.as_str())
+                                .map_err(warp::reject::custom)?;
+                            api.edit_setting(key.as_str(), body.value)
+                                .map_err(warp::reject::custom)
+                        }
+                    }),
+            )
+            .boxed();
+
+        return list.or(get).or(delete).or(edit).boxed();
+
+        #[derive(serde::Deserialize)]
+        struct ListQuery {
+            #[serde(default)]
+            key: Option<String>,
+        }
+    }
+
+    /// Get the list of all settings in the bot.
+    fn settings(&self, key: Option<String>) -> Result<impl warp::Reply, failure::Error> {
+        let mut settings = self.0.list()?;
+
+        if let Some(key) = key {
+            let key = key
+                .split(",")
+                .map(|s| s.to_string())
+                .collect::<HashSet<_>>();
+
+            let mut out = Vec::with_capacity(settings.len());
+
+            for s in settings {
+                if key.contains(&s.key) {
+                    out.push(s);
+                }
+            }
+
+            settings = out;
+        }
+
+        Ok(warp::reply::json(&settings))
+    }
+
+    /// Delete the given setting by key.
+    fn delete_setting(&self, key: &str) -> Result<impl warp::Reply, failure::Error> {
+        self.0.clear(key)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+
+    /// Get the given setting by key.
+    fn get_setting(&self, key: &str) -> Result<impl warp::Reply, failure::Error> {
+        let setting: Option<settings::Setting> = self
+            .0
+            .setting::<serde_json::Value>(key)?
+            .map(|s| s.to_setting());
+        Ok(warp::reply::json(&setting))
+    }
+
+    /// Delete the given setting by key.
+    fn edit_setting(
+        &self,
+        key: &str,
+        value: serde_json::Value,
+    ) -> Result<impl warp::Reply, failure::Error> {
+        self.0.set_json(key, value)?;
+        Ok(warp::reply::json(&EMPTY))
+    }
+}
+
 /// Aliases endpoint.
 #[derive(Clone)]
 struct Aliases(db::Aliases);
 
 impl Aliases {
-    fn route(aliases: db::Aliases) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+    fn route(aliases: db::Aliases) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Aliases(aliases);
 
         let list = warp::get2()
-            .and(path!("aliases" / Fragment).and(warp::filters::path::end()))
+            .and(path!("aliases" / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment| api.list(channel.as_str()).map_err(warp::reject::custom)
             });
 
         let delete = warp::delete2()
-            .and(path!("aliases" / Fragment / Fragment).and(warp::filters::path::end()))
+            .and(path!("aliases" / Fragment / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment, name: Fragment| {
@@ -129,8 +241,8 @@ impl Aliases {
             });
 
         let edit = warp::put2()
-            .and(path!("aliases" / Fragment / Fragment).and(warp::filters::path::end()))
-            .and(warp::body::json())
+            .and(path!("aliases" / Fragment / Fragment).and(path::end()))
+            .and(body::json())
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment, name: Fragment, body: PutAlias| {
@@ -140,10 +252,8 @@ impl Aliases {
             });
 
         let edit_disabled = warp::post2()
-            .and(
-                path!("aliases" / Fragment / Fragment / "disabled").and(warp::filters::path::end()),
-            )
-            .and(warp::body::json())
+            .and(path!("aliases" / Fragment / Fragment / "disabled").and(path::end()))
+            .and(body::json())
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment, name: Fragment, body: DisabledBody| {
@@ -205,18 +315,18 @@ impl Aliases {
 struct Commands(db::Commands);
 
 impl Commands {
-    fn route(commands: db::Commands) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+    fn route(commands: db::Commands) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Commands(commands);
 
         let list = warp::get2()
-            .and(path!("commands" / Fragment).and(warp::filters::path::end()))
+            .and(path!("commands" / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment| api.list(channel.as_str()).map_err(warp::reject::custom)
             });
 
         let delete = warp::delete2()
-            .and(path!("commands" / Fragment / Fragment).and(warp::filters::path::end()))
+            .and(path!("commands" / Fragment / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment, name: Fragment| {
@@ -226,11 +336,8 @@ impl Commands {
             });
 
         let edit_disabled = warp::post2()
-            .and(
-                path!("commands" / Fragment / Fragment / "disabled")
-                    .and(warp::filters::path::end()),
-            )
-            .and(warp::body::json())
+            .and(path!("commands" / Fragment / Fragment / "disabled").and(path::end()))
+            .and(body::json())
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment, name: Fragment, body: DisabledBody| {
@@ -240,8 +347,8 @@ impl Commands {
             });
 
         let edit = warp::put2()
-            .and(path!("commands" / Fragment / Fragment).and(warp::filters::path::end()))
-            .and(warp::body::json())
+            .and(path!("commands" / Fragment / Fragment).and(path::end()))
+            .and(body::json())
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment, name: Fragment, body: PutCommand| {
@@ -303,18 +410,18 @@ impl Commands {
 struct Promotions(db::Promotions);
 
 impl Promotions {
-    fn route(promotions: db::Promotions) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+    fn route(promotions: db::Promotions) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Promotions(promotions);
 
         let list = warp::get2()
-            .and(path!("promotions" / Fragment).and(warp::filters::path::end()))
+            .and(path!("promotions" / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment| api.list(channel.as_str()).map_err(warp::reject::custom)
             });
 
         let delete = warp::delete2()
-            .and(path!("promotions" / Fragment / Fragment).and(warp::filters::path::end()))
+            .and(path!("promotions" / Fragment / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment, name: Fragment| {
@@ -324,8 +431,8 @@ impl Promotions {
             });
 
         let edit = warp::put2()
-            .and(path!("promotions" / Fragment / Fragment).and(warp::filters::path::end()))
-            .and(warp::body::json())
+            .and(path!("promotions" / Fragment / Fragment).and(path::end()))
+            .and(body::json())
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment, name: Fragment, body: PutPromotion| {
@@ -340,11 +447,8 @@ impl Promotions {
             });
 
         let edit_disabled = warp::post2()
-            .and(
-                path!("promotions" / Fragment / Fragment / "disabled")
-                    .and(warp::filters::path::end()),
-            )
-            .and(warp::body::json())
+            .and(path!("promotions" / Fragment / Fragment / "disabled").and(path::end()))
+            .and(body::json())
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment, name: Fragment, body: DisabledBody| {
@@ -408,18 +512,18 @@ impl Promotions {
 struct Themes(db::Themes);
 
 impl Themes {
-    fn route(themes: db::Themes) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+    fn route(themes: db::Themes) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Themes(themes);
 
         let list = warp::get2()
-            .and(path!("themes" / Fragment).and(warp::filters::path::end()))
+            .and(path!("themes" / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment| api.list(channel.as_str()).map_err(warp::reject::custom)
             });
 
         let delete = warp::delete2()
-            .and(path!("themes" / Fragment / Fragment).and(warp::filters::path::end()))
+            .and(path!("themes" / Fragment / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment, name: Fragment| {
@@ -429,8 +533,8 @@ impl Themes {
             });
 
         let edit = warp::put2()
-            .and(path!("themes" / Fragment / Fragment).and(warp::filters::path::end()))
-            .and(warp::body::json())
+            .and(path!("themes" / Fragment / Fragment).and(path::end()))
+            .and(body::json())
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment, name: Fragment, body: PutTheme| {
@@ -440,8 +544,8 @@ impl Themes {
             });
 
         let edit_disabled = warp::post2()
-            .and(path!("themes" / Fragment / Fragment / "disabled").and(warp::filters::path::end()))
-            .and(warp::body::json())
+            .and(path!("themes" / Fragment / Fragment / "disabled").and(path::end()))
+            .and(body::json())
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment, name: Fragment, body: DisabledBody| {
@@ -509,14 +613,14 @@ impl Auth {
     fn route(
         auth: auth::Auth,
         token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
-    ) -> warp::filters::BoxedFilter<(impl warp::Reply,)> {
+    ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Auth {
             auth,
             token_callbacks,
         };
 
         let route = warp::get2()
-            .and(warp::path!("pending").and(warp::filters::path::end()))
+            .and(warp::path!("pending").and(path::end()))
             .and_then({
                 let api = api.clone();
                 move || api.pending().map_err(warp::reject::custom)
@@ -525,7 +629,7 @@ impl Auth {
 
         let route = route
             .or(warp::get2()
-                .and(warp::path!("roles").and(warp::filters::path::end()))
+                .and(warp::path!("roles").and(path::end()))
                 .and_then({
                     let api = api.clone();
                     move || api.roles().map_err(warp::reject::custom)
@@ -534,7 +638,7 @@ impl Auth {
 
         let route = route
             .or(warp::get2()
-                .and(warp::path!("scopes").and(warp::filters::path::end()))
+                .and(warp::path!("scopes").and(path::end()))
                 .and_then({
                     let api = api.clone();
                     move || api.scopes().map_err(warp::reject::custom)
@@ -543,7 +647,7 @@ impl Auth {
 
         let route = route
             .or(warp::get2()
-                .and(warp::path!("grants").and(warp::filters::path::end()))
+                .and(warp::path!("grants").and(path::end()))
                 .and_then({
                     let api = api.clone();
                     move || api.grants().map_err(warp::reject::custom)
@@ -552,8 +656,8 @@ impl Auth {
 
         let route = route
             .or(warp::put2()
-                .and(warp::path!("grants").and(warp::filters::path::end()))
-                .and(warp::body::json())
+                .and(warp::path!("grants").and(path::end()))
+                .and(body::json())
                 .and_then({
                     let api = api.clone();
                     move |body: PutGrant| {
@@ -565,7 +669,7 @@ impl Auth {
 
         let route = route
             .or(warp::delete2()
-                .and(warp::path!("grants" / Fragment / Fragment).and(warp::filters::path::end()))
+                .and(warp::path!("grants" / Fragment / Fragment).and(path::end()))
                 .and_then({
                     let api = api.clone();
                     move |scope: Fragment, role: Fragment| {
@@ -648,7 +752,6 @@ struct Api {
     player: Arc<RwLock<Option<player::PlayerClient>>>,
     after_streams: db::AfterStreams,
     db: db::Database,
-    settings: settings::Settings,
     currency: Arc<RwLock<Option<Currency>>>,
 }
 
@@ -741,28 +844,6 @@ impl Api {
         Ok(warp::reply::json(&after_streams))
     }
 
-    /// Get the list of all settings in the bot.
-    fn settings(&self) -> Result<impl warp::Reply, failure::Error> {
-        let settings = self.settings.list()?;
-        Ok(warp::reply::json(&settings))
-    }
-
-    /// Delete the given setting by key.
-    fn delete_setting(&self, key: &str) -> Result<impl warp::Reply, failure::Error> {
-        self.settings.clear(key)?;
-        Ok(warp::reply::json(&EMPTY))
-    }
-
-    /// Delete the given setting by key.
-    fn edit_setting(
-        &self,
-        key: &str,
-        value: serde_json::Value,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        self.settings.set_json(key, value)?;
-        Ok(warp::reply::json(&EMPTY))
-    }
-
     /// Import balances.
     async fn import_balances(
         self,
@@ -823,8 +904,7 @@ pub fn setup(
     };
 
     let oauth2_redirect = warp::get2()
-        .and(path!("redirect"))
-        .and(warp::query::<RedirectQuery>())
+        .and(path!("redirect").and(warp::query::<RedirectQuery>()))
         .and_then(move |query| oauth2_redirect.handle(query).map_err(warp::reject::custom))
         .boxed();
 
@@ -832,7 +912,6 @@ pub fn setup(
         player: player.clone(),
         after_streams,
         db,
-        settings,
         currency,
     };
 
@@ -879,45 +958,9 @@ pub fn setup(
             .boxed();
 
         let route = route
-            .or(warp::delete2()
-                .and(warp::path("setting").and(warp::filters::path::tail()))
-                .and_then({
-                    let api = api.clone();
-                    move |key: warp::filters::path::Tail| {
-                        let key =
-                            str::parse::<Fragment>(key.as_str()).map_err(warp::reject::custom)?;
-                        api.delete_setting(key.as_str())
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::put2()
-                .and(warp::path("setting"))
-                .and(warp::filters::path::tail().and(warp::body::json()))
-                .and_then({
-                    let api = api.clone();
-                    move |key: warp::filters::path::Tail, body: PutSetting| {
-                        let key =
-                            str::parse::<Fragment>(key.as_str()).map_err(warp::reject::custom)?;
-                        api.edit_setting(key.as_str(), body.value)
-                            .map_err(warp::reject::custom)
-                    }
-                }))
-            .boxed();
-
-        let route = route
-            .or(warp::get2().and(warp::path("settings")).and_then({
-                let api = api.clone();
-                move || api.settings().map_err(warp::reject::custom)
-            }))
-            .boxed();
-
-        let route = route
             .or(warp::put2()
                 .and(warp::path("balances"))
-                .and(warp::body::json())
+                .and(body::json())
                 .and_then({
                     let api = api.clone();
                     move |balances: Vec<db::models::Balance>| {
@@ -950,23 +993,22 @@ pub fn setup(
         let route = route.or(Commands::route(commands));
         let route = route.or(Promotions::route(promotions));
         let route = route.or(Themes::route(themes));
+        let route = route.or(Settings::route(settings));
 
         let route = route
             .or(
-                warp::get2().and(path!("current").and(warp::filters::path::end()).and_then(
-                    move || {
-                        let channel = channel.read();
+                warp::get2().and(path!("current").and(path::end()).and_then(move || {
+                    let channel = channel.read();
 
-                        let channel = match channel.as_ref() {
-                            Some(channel) => Some(channel.to_string()),
-                            None => None,
-                        };
+                    let channel = match channel.as_ref() {
+                        Some(channel) => Some(channel.to_string()),
+                        None => None,
+                    };
 
-                        let current = Current { channel };
+                    let current = Current { channel };
 
-                        Ok::<_, warp::Rejection>(warp::reply::json(&current))
-                    },
-                )),
+                    Ok::<_, warp::Rejection>(warp::reply::json(&current))
+                })),
             )
             .boxed();
 
@@ -989,8 +1031,8 @@ pub fn setup(
     let server_future = if let Some(web_root) = web_root {
         let app = warp::get2()
             .and(warp::path("main.js"))
-            .and(warp::filters::fs::file(web_root.join("main.js")));
-        let app = app.or(warp::get2().and(warp::filters::fs::file(web_root.join("index.html"))));
+            .and(filters::fs::file(web_root.join("main.js")));
+        let app = app.or(warp::get2().and(filters::fs::file(web_root.join("index.html"))));
         let routes = routes.or(app.recover(recover));
 
         let service = warp::serve(routes);
@@ -1129,7 +1171,7 @@ pub struct ReceivedToken {
 }
 
 /// Connecting a bus to a websocket connection.
-fn send_bus<T>(bus: Arc<bus::Bus<T>>) -> warp::filters::BoxedFilter<(impl warp::Reply,)>
+fn send_bus<T>(bus: Arc<bus::Bus<T>>) -> filters::BoxedFilter<(impl warp::Reply,)>
 where
     T: bus::Message,
 {
@@ -1148,7 +1190,7 @@ where
                     rx.map_err(|_| failure::format_err!("failed to receive notification"))
                         .and_then(|n| {
                             serde_json::to_string(&n)
-                                .map(warp::filters::ws::Message::text)
+                                .map(filters::ws::Message::text)
                                 .map_err(failure::Error::from)
                         })
                         .forward(

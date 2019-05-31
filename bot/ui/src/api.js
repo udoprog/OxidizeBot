@@ -70,8 +70,24 @@ export class Api {
   /**
    * Get the list of settings.
    */
-  settings() {
-    return this.fetch("settings");
+  settings(params = {}) {
+    let queries = [];
+
+    if (!!params.keyFilter) {
+      let value = params.keyFilter.join(",");
+      queries.push(`key=${value}`);
+    }
+
+    let query = "";
+
+    if (queries.length > 0) {
+      query = queries.join("&");
+      query = `?${query}`;
+    }
+
+    return this.fetch(
+      `settings${query}`
+    );
   }
 
   /**
@@ -82,7 +98,7 @@ export class Api {
   deleteSetting(key) {
     key = settingsKey(key);
 
-    return this.fetch(`setting/${key}`, {
+    return this.fetch(`settings/${key}`, {
       method: "DELETE",
     });
   }
@@ -96,7 +112,7 @@ export class Api {
   editSetting(key, value) {
     key = settingsKey(key);
 
-    return this.fetch(`setting/${key}`, {
+    return this.fetch(`settings/${key}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -262,9 +278,9 @@ export class Api {
 }
 
 function encodePath(path) {
-  var out = [];
+  let out = [];
 
-  for (var part of path) {
+  for (let part of path) {
     out.push(encodeURIComponent(part));
   }
 
@@ -277,10 +293,10 @@ function encodePath(path) {
  * @param {string} key
  */
 function settingsKey(key) {
-  var parts = key.split("/");
-  var out = [];
+  let parts = key.split("/");
+  let out = [];
 
-  for (var part of parts) {
+  for (let part of parts) {
     out.push(encodeURIComponent(part));
   }
 
