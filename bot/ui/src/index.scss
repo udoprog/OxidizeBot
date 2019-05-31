@@ -192,6 +192,12 @@ body {
 }
 
 .settings {
+  &-countdown {
+    display: inline-block;
+    width: 2em;
+    text-align: center;
+  }
+
   &-text {
     margin: 0;
     font-size: 70%;

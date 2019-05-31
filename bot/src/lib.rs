@@ -29,6 +29,7 @@ pub mod oauth2;
 pub mod obs;
 pub mod player;
 pub mod prelude;
+pub mod secrets;
 pub mod settings;
 mod song_file;
 mod spotify_id;

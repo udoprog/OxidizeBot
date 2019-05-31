@@ -1,17 +1,17 @@
 //! Utilities for dealing with dynamic configuration and settings.
 
-use crate::{auth::Scope, db, prelude::*, utils};
+use crate::{auth::Scope, db, oauth2, prelude::*, utils};
 use diesel::prelude::*;
 use failure::{bail, Error, ResultExt};
 use futures::ready;
 use hashbrown::HashMap;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use parking_lot::RwLock;
 use std::{borrow::Cow, fmt, marker, pin::Pin, sync::Arc};
 
 const SEPARATOR: char = '/';
 
 type EventSender = mpsc::UnboundedSender<Event<serde_json::Value>>;
-type Subscriptions = Arc<RwLock<HashMap<String, EventSender>>>;
+type Subscriptions = Arc<RwLock<HashMap<String, Vec<EventSender>>>>;
 
 /// Update events for a given key.
 #[derive(Clone)]
@@ -105,7 +105,7 @@ impl Settings {
             scope: String::from(""),
             inner: Arc::new(Inner {
                 db,
-                subscriptions: Arc::new(RwLock::new(HashMap::new())),
+                subscriptions: Default::default(),
                 schema: Arc::new(schema),
             }),
         }
@@ -212,6 +212,12 @@ impl Settings {
 
         let value = self.inner_get(&key)?;
         Ok(Some(SettingRef { schema, value }))
+    }
+
+    /// Test if the given key exists in the database.
+    pub fn has(&self, key: &str) -> Result<bool, Error> {
+        let key = self.key(key);
+        Ok(self.inner_get::<serde_json::Value>(&key)?.is_some())
     }
 
     /// Get the value of the given key from the database.
@@ -372,8 +378,8 @@ impl Settings {
             .optional()?;
 
         let value = match result {
-            Some(value) => match serde_json::from_str(&value) {
-                Ok(value) => Some(value),
+            Some(value) => match serde_json::from_str::<Option<T>>(&value) {
+                Ok(value) => value,
                 Err(e) => {
                     log::warn!("bad value for key: {}: {}", key, e);
                     None
@@ -418,12 +424,18 @@ impl Settings {
 
         {
             let mut subscriptions = self.inner.subscriptions.write();
+            let values = subscriptions.entry(key.to_string()).or_default();
 
-            if let Some(tx) = subscriptions.insert(key.to_string(), tx) {
+            let mut update = Vec::with_capacity(values.len());
+
+            for tx in values.drain(..) {
                 if !tx.is_closed() {
-                    panic!("conflicting subscription for key: {}", key);
+                    update.push(tx);
                 }
             }
+
+            update.push(tx);
+            *values = update;
         }
 
         OptionStream {
@@ -438,20 +450,13 @@ impl Settings {
     /// Cleans up the existing subscription if the other side is closed.
     fn try_send(&self, key: &str, event: Event<serde_json::Value>) {
         let subscriptions = self.inner.subscriptions.upgradable_read();
-        let mut delete = false;
 
-        if let Some(sub) = subscriptions.get(key) {
-            if let Err(e) = sub.unbounded_send(event) {
-                if e.is_disconnected() {
-                    delete = true;
-                } else {
+        if let Some(subs) = subscriptions.get(key) {
+            for sub in subs {
+                if let Err(e) = sub.unbounded_send(event.clone()) {
                     log::error!("error when sending to sub: {}: {}", key, e);
                 }
             }
-        }
-
-        if delete {
-            RwLockUpgradableReadGuard::upgrade(subscriptions).remove(key);
         }
     }
 
@@ -686,6 +691,8 @@ pub struct Type {
 pub enum Kind {
     #[serde(rename = "raw")]
     Raw,
+    #[serde(rename = "oauth2-config")]
+    Oauth2Config,
     #[serde(rename = "duration")]
     Duration,
     #[serde(rename = "bool")]
@@ -730,6 +737,7 @@ impl Type {
 
         let value = match self.kind {
             Raw => serde_json::from_str(s)?,
+            Oauth2Config => serde_json::from_str(s)?,
             Duration => {
                 let d = str::parse::<utils::Duration>(s)?;
                 Value::String(d.to_string())
@@ -793,6 +801,7 @@ impl Type {
 
         match (&self.kind, other) {
             (Raw, _) => true,
+            (Oauth2Config, _) => serde_json::from_value::<oauth2::Config>(other.clone()).is_ok(),
             (Duration, Value::Number(..)) => true,
             (Bool, Value::Bool(..)) => true,
             (Number, Value::Number(..)) => true,
@@ -811,25 +820,23 @@ impl fmt::Display for Type {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         use self::Kind::*;
 
-        match (self.optional, &self.kind) {
-            (false, Raw) => write!(fmt, "any"),
-            (true, Raw) => write!(fmt, "any?"),
-            (false, Duration) => write!(fmt, "duration"),
-            (true, Duration) => write!(fmt, "duration?"),
-            (false, Bool) => write!(fmt, "bool"),
-            (true, Bool) => write!(fmt, "bool?"),
-            (false, Number) => write!(fmt, "number"),
-            (true, Number) => write!(fmt, "number?"),
-            (false, Percentage) => write!(fmt, "percentage"),
-            (true, Percentage) => write!(fmt, "percentage?"),
-            (false, String) => write!(fmt, "string"),
-            (true, String) => write!(fmt, "string?"),
-            (false, Text) => write!(fmt, "text"),
-            (true, Text) => write!(fmt, "text?"),
-            (false, Set { ref value }) => write!(fmt, "Array<{}>", value),
-            (true, Set { ref value }) => write!(fmt, "Array<{}>?", value),
-            (false, Select { ref value, .. }) => write!(fmt, "Select<{}>", value),
-            (true, Select { ref value, .. }) => write!(fmt, "Select<{}>?", value),
+        match &self.kind {
+            Raw => write!(fmt, "any")?,
+            Oauth2Config => write!(fmt, "secrets")?,
+            Duration => write!(fmt, "duration")?,
+            Bool => write!(fmt, "bool")?,
+            Number => write!(fmt, "number")?,
+            Percentage => write!(fmt, "percentage")?,
+            String => write!(fmt, "string")?,
+            Text => write!(fmt, "text")?,
+            Set { ref value } => write!(fmt, "Array<{}>", value)?,
+            Select { ref value, .. } => write!(fmt, "Select<{}>", value)?,
+        };
+
+        if self.optional {
+            write!(fmt, "?")?;
         }
+
+        Ok(())
     }
 }

@@ -78,8 +78,8 @@ class ImportExportPage extends React.Component {
   }
 }
 
-class AliasesPage extends React.Component {
-  constructor(props) {
+class AuthorizedPage extends React.Component {
+  constructor(props, page) {
     super(props);
 
     this.state = {
@@ -87,11 +87,14 @@ class AliasesPage extends React.Component {
     };
 
     this.api = new Api(utils.apiUrl());
+    this.page = page;
   }
 
   componentWillMount() {
     this.api.current().then(current => {
-      this.setState({current});
+      if (current.channel) {
+        this.setState({current});
+      }
     });
   }
 
@@ -107,176 +110,14 @@ class AliasesPage extends React.Component {
       );
     }
 
-    return (
-      <RouteLayout>
-        <Row>
-          <Col>
-            <Aliases current={this.state.current} api={this.api} />
-          </Col>
-        </Row>
-      </RouteLayout>
-    );
-  }
-}
-
-class AuthorizationPage extends React.Component {
-  constructor(props) {
-    super(props);
-
-    this.state = {
-      current: null,
-    };
-
-    this.api = new Api(utils.apiUrl());
-  }
-
-  componentWillMount() {
-    this.api.current().then(current => {
-      this.setState({current});
+    const children = React.Children.map(this.props.children, child => {
+      return React.cloneElement(child, { api: this.api, current: this.state.current });
     });
-  }
-
-  render() {
-    if (!this.state.current) {
-      return (
-        <RouteLayout>
-          <div className="loading">
-            Loading Current User
-            <utils.Spinner />
-          </div>
-        </RouteLayout>
-      );
-    }
 
     return (
       <RouteLayout>
         <Row>
-          <Col>
-            <Authorization current={this.state.current} api={this.api} />
-          </Col>
-        </Row>
-      </RouteLayout>
-    );
-  }
-}
-
-class ThemesPage extends React.Component {
-  constructor(props) {
-    super(props);
-
-    this.state = {
-      current: null,
-    };
-
-    this.api = new Api(utils.apiUrl());
-  }
-
-  componentWillMount() {
-    this.api.current().then(current => {
-      this.setState({current});
-    });
-  }
-
-  render() {
-    if (!this.state.current) {
-      return (
-        <RouteLayout>
-          <div className="loading">
-            Loading Current User
-            <utils.Spinner />
-          </div>
-        </RouteLayout>
-      );
-    }
-
-    return (
-      <RouteLayout>
-        <Row>
-          <Col>
-            <Themes current={this.state.current} api={this.api} />
-          </Col>
-        </Row>
-      </RouteLayout>
-    );
-  }
-}
-
-class CommandsPage extends React.Component {
-  constructor(props) {
-    super(props);
-
-    this.state = {
-      current: null,
-    };
-
-    this.api = new Api(utils.apiUrl());
-  }
-
-  componentWillMount() {
-    this.api.current().then(current => {
-      this.setState({current});
-    });
-  }
-
-  render() {
-    if (!this.state.current) {
-      return (
-        <RouteLayout>
-          <div className="loading">
-            Loading Current User
-            <utils.Spinner />
-          </div>
-        </RouteLayout>
-      );
-    }
-
-    return (
-      <RouteLayout>
-        <Row>
-          <Col>
-            <Commands current={this.state.current} api={this.api} />
-          </Col>
-        </Row>
-      </RouteLayout>
-    );
-  }
-}
-
-class PromotionsPage extends React.Component {
-  constructor(props) {
-    super(props);
-
-    this.state = {
-      current: null,
-    };
-
-    this.api = new Api(utils.apiUrl());
-  }
-
-  componentWillMount() {
-    this.api.current().then(current => {
-      this.setState({current});
-    });
-  }
-
-  render() {
-    if (!this.state.current) {
-      return (
-        <RouteLayout>
-          <div className="loading">
-            Loading Current User
-            <utils.Spinner />
-          </div>
-        </RouteLayout>
-      );
-    }
-
-    return (
-      <RouteLayout>
-        <Row>
-          <Col>
-            <Promotions current={this.state.current} api={this.api} />
-          </Col>
+          <Col>{children}</Col>
         </Row>
       </RouteLayout>
     );
@@ -378,12 +219,22 @@ function AppRouter() {
       <Route path="/" exact component={IndexPage} />
       <Route path="/after-streams" exact component={AfterStreamsPage} />
       <Route path="/settings" exact component={SettingsPage} />
-      <Route path="/authorization" exact component={AuthorizationPage} />
+      <Route path="/authorization" exact component={props => (
+        <AuthorizedPage><Authorization {...props} /></AuthorizedPage>
+      )} />
       <Route path="/import-export" exact component={ImportExportPage} />
-      <Route path="/aliases" exact component={AliasesPage} />
-      <Route path="/commands" exact component={CommandsPage} />
-      <Route path="/promotions" exact component={PromotionsPage} />
-      <Route path="/themes" exact component={ThemesPage} />
+      <Route path="/aliases" exact render={props => (
+        <AuthorizedPage><Aliases {...props} /></AuthorizedPage>
+      )} />
+      <Route path="/commands" exact render={props => (
+        <AuthorizedPage><Commands {...props} /></AuthorizedPage>
+      )} />
+      <Route path="/promotions" exact render={props => (
+        <AuthorizedPage><Promotions {...props} /></AuthorizedPage>
+      )} />
+      <Route path="/themes" exact render={props => (
+        <AuthorizedPage><Themes {...props} /></AuthorizedPage>
+      )} />
       <Route path="/overlay/" component={Overlay} />
       <Route path="/youtube" component={YouTube} />
     </Router>

@@ -60,8 +60,9 @@ impl OAuth2Params for Spotify {
     fn new_flow_builder(
         web: web::Server,
         settings: settings::Settings,
+        shared_settings: settings::Settings,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
-        crate::oauth2::spotify(web, settings)
+        crate::oauth2::spotify(web, settings, shared_settings)
     }
 }
 
@@ -72,8 +73,9 @@ impl OAuth2Params for Twitch {
     fn new_flow_builder(
         web: web::Server,
         settings: settings::Settings,
+        shared_settings: settings::Settings,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
-        crate::oauth2::twitch(web, settings)
+        crate::oauth2::twitch(web, settings, shared_settings)
     }
 }
 
@@ -82,20 +84,23 @@ pub trait OAuth2Params {
     fn new_flow_builder(
         web: web::Server,
         settings: settings::Settings,
+        shared_settings: settings::Settings,
     ) -> Result<crate::oauth2::FlowBuilder, failure::Error>;
 }
 
 /// Create a new flow based on a statis configuration.
 pub fn new_oauth2_flow<T>(
     web: web::Server,
-    name: &str,
+    local: &str,
+    shared: &str,
     settings: &settings::Settings,
 ) -> Result<crate::oauth2::FlowBuilder, failure::Error>
 where
     T: OAuth2Params,
 {
-    let settings = settings.scoped(name);
-    Ok(T::new_flow_builder(web, settings)?)
+    let local_settings = settings.scoped(local);
+    let shared_settings = settings.scoped(shared);
+    Ok(T::new_flow_builder(web, local_settings, shared_settings)?)
 }
 
 #[derive(Debug, Default, serde::Deserialize)]

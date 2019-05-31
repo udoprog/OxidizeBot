@@ -7,25 +7,24 @@ import * as ReactMarkdown from 'react-markdown';
 
 const SECRET_PREFIX = "secrets/";
 
-function ConfirmButtons(props) {
-  let confirmDisabled = props.confirmDisabled || false;
+function confirmButtons({what, onConfirm, onCancel, confirmDisabled}) {
+  confirmDisabled = confirmDisabled || false;
 
-  return (
-    <ButtonGroup>
-      <Button title={`Cancel ${props.what}`} variant="primary" size="sm" onClick={e => props.onCancel(e)}>
-        <FontAwesomeIcon icon="window-close" />
-      </Button>
-      <Button title={`Confirm ${props.what}`} disabled={confirmDisabled} variant="danger" size="sm" onClick={e => props.onConfirm(e)}>
-        <FontAwesomeIcon icon="check-circle" />
-      </Button>
-    </ButtonGroup>
-  );
+  return [
+    <Button key="cancel" title={`Cancel ${what}`} variant="primary" size="sm" onClick={e => onCancel(e)}>
+      <FontAwesomeIcon icon="window-close" />
+    </Button>,
+    <Button key="confirm" title={`Confirm ${what}`} disabled={confirmDisabled} variant="danger" size="sm" onClick={e => onConfirm(e)}>
+      <FontAwesomeIcon icon="check-circle" />
+    </Button>
+  ];
 }
 
 export default class Settings extends React.Component {
   constructor(props) {
     super(props);
     this.api = this.props.api;
+    this.hideTimeout = null;
 
     this.state = {
       loading: false,
@@ -35,12 +34,16 @@ export default class Settings extends React.Component {
       deleteKey: null,
       // set to the key of the setting currently being edited.
       editKey: null,
+      // show a value even if it's secret.
+      showKey: null,
       // the controller for the edit.
       edit: null,
       // the value currrently being edited.
       editValue: null,
       // current filter being applied to filter visible settings.
       filter: "",
+      // Countdown until hiding.
+      hideCountdown: 0,
     };
   }
 
@@ -180,8 +183,58 @@ export default class Settings extends React.Component {
     let isDeleting = this.state.deleteKey === setting.key;
     let isEditing = this.state.editKey === setting.key;
     let isSecret = setting.key.startsWith(SECRET_PREFIX) || setting.secret;
+    let isSecretShown = this.state.showKey === setting.key;
 
-    if (setting.control.optional) {
+    let hide = () => {
+      if (this.state.hideInterval !== null) {
+        clearInterval(this.state.hideInterval);
+      }
+
+      this.setState({
+        showKey: null,
+        hideInterval: null,
+      });
+    };
+
+    if (isSecretShown) {
+      buttons.push(
+        <Button title="Hide the secret value" key="show" size="sm" variant="secondary" className="action" disabled={this.state.loading} onClick={hide}>
+          <FontAwesomeIcon icon="eye-slash" />
+          <span className="settings-countdown">
+            {this.state.hideCountdown}s
+          </span>
+        </Button>
+      );
+    }
+
+    if (isSecret && !isSecretShown) {
+      let hideFeedback = () => {
+        this.setState(state => {
+          if (state.hideCountdown <= 1) {
+            clearInterval(state.hideInterval);
+            return {showKey: null, hideCountdown: 0};
+          }
+
+          return {hideCountdown: state.hideCountdown - 1};
+        });
+      };
+
+      let show = () => {
+        this.setState({
+          hideCountdown: 10,
+          showKey: setting.key,
+          hideInterval: setInterval(hideFeedback, 1000),
+        });
+      };
+
+      buttons.push(
+        <Button title="Show the secret value" key="show" size="sm" variant="secondary" className="action" disabled={this.state.loading} onClick={show}>
+          <FontAwesomeIcon icon="eye" />
+        </Button>
+      );
+    }
+
+    if (setting.control.optional && !isSecretShown) {
       let del = () => {
         this.setState({
           deleteKey: setting.key,
@@ -198,28 +251,30 @@ export default class Settings extends React.Component {
     }
 
     if (setting.control.hasEditControl()) {
-      let edit = () => {
-        let value = setting.value;
+      if (!isSecretShown) {
+        let edit = () => {
+          let value = setting.value;
 
-        if (value == null) {
-          value = setting.control.default();
-        }
+          if (value == null) {
+            value = setting.control.default();
+          }
 
-        let edit = setting.control.editControl();
-        let editValue = setting.control.edit(value);
+          let edit = setting.control.editControl();
+          let editValue = setting.control.edit(value);
 
-        this.setState({
-          editKey: setting.key,
-          edit,
-          editValue,
-        });
-      };
+          this.setState({
+            editKey: setting.key,
+            edit,
+            editValue,
+          });
+        };
 
-      buttons.push(
-        <Button key="edit" size="sm" variant="info" className="action" disabled={this.state.loading} onClick={edit}>
-          <FontAwesomeIcon icon="edit" />
-        </Button>
-      );
+        buttons.push(
+          <Button key="edit" size="sm" variant="info" className="action" disabled={this.state.loading} onClick={edit}>
+            <FontAwesomeIcon icon="edit" />
+          </Button>
+        );
+      }
 
       renderOnChange = null;
     } else {
@@ -228,20 +283,12 @@ export default class Settings extends React.Component {
       };
     }
 
-    if (buttons.length > 0) {
-      buttons = (
-        <div className="ml-3">
-          <ButtonGroup>{buttons}</ButtonGroup>
-        </div>
-      );
-    }
-
     let value = null;
 
     if (setting.value === null) {
       value = <em title="Value not set">not set</em>;;
     } else {
-      if (isSecret) {
+      if (isSecret && !isSecretShown) {
         value = <b title="Secret value, only showed when editing">****</b>;
       } else {
         value = setting.control.render(setting.value, renderOnChange);
@@ -249,15 +296,15 @@ export default class Settings extends React.Component {
     }
 
     if (isDeleting) {
-      buttons = <ConfirmButtons
-        what="deletion"
-        onConfirm={() => this.delete(this.state.deleteKey)}
-        onCancel={() => {
+      buttons = confirmButtons({
+        what: "deletion",
+        onConfirm: () => this.delete(this.state.deleteKey),
+        onCancel: () => {
           this.setState({
             deleteKey: null,
           })
-        }}
-      />;
+        },
+      });
     }
 
     if (isEditing && this.state.edit) {
@@ -284,17 +331,25 @@ export default class Settings extends React.Component {
         </Form>
       );
 
-      buttons = <ConfirmButtons
-        what="edit"
-        confirmDisabled={!isValid}
-        onConfirm={e => save(e)}
-        onCancel={() => {
+      buttons = confirmButtons({
+        what: "edit",
+        confirmDisabled: !isValid,
+        onConfirm: e => save(e),
+        onCancel: () => {
           this.setState({
             editKey: null,
             edit: null,
           })
-        }}
-      />;
+        },
+      });
+    }
+
+    if (buttons.length > 0) {
+      buttons = (
+        <div className="ml-3">
+          <ButtonGroup>{buttons}</ButtonGroup>
+        </div>
+      );
     }
 
     return (

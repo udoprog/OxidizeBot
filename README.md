@@ -19,32 +19,35 @@ See the next section.
 
 ## Setting Up
 
-Two configuration files are neccessary.
+SetMod doesn't require any configuration files. But before we can authenticate we must configure the necessary OAuth flows.
 
-Second, `secrets.yml` which specifies secrets for your bot. **This file is very sensitive**, you must avoid sharing it with anyone.
+Once started, go to `Settings` and configure the following keys:
 
-```yaml
-spotify::oauth2:
-  client_id: SPOTIFY_CLIENT_ID
-  client_secret: SPOTIFY_CLIENT_SECRET
+#### `secrets/oauth2/twitch/config`
 
-twitch::oauth2:
-  client_id: TWITCH_CLIENT_ID
-  client_secret: TWITCH_CLIENT_SECRET
-```
+This is necessary to connect to Twitch.
 
-The client ids and secrets above must be registered on Twitch and Spotify respectively:
+You will have to register an application here:
+https://dev.twitch.tv/console/apps/create
 
-* Twitch: https://dev.twitch.tv/console/apps/create
-* Spotify: https://developer.spotify.com/dashboard/
-
-For both of these, you must add the following redirect URL:
+You must add the following redirect URL:
 
 ```
 http://localhost:12345/redirect
 ```
 
-This is where the bot will be running while it is receiving tokens.
+#### `secrets/oauth2/spotify/config`
+
+This is necessary to Play music through Spotify.
+
+You will have to register an application here:
+https://developer.spotify.com/dashboard/
+
+You must add the following redirect URL:
+
+```
+http://localhost:12345/redirect
+```
 
 ## Building
 

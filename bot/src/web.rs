@@ -90,7 +90,7 @@ impl Oauth2Redirect {
 
 #[derive(serde::Serialize)]
 pub struct Current {
-    channel: String,
+    channel: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -952,22 +952,22 @@ pub fn setup(
         let route = route.or(Themes::route(themes));
 
         let route = route
-            .or(warp::get2()
-                .and(path!("current").and(warp::filters::path::end()))
-                .and_then(move || {
-                    let channel = channel.read();
+            .or(
+                warp::get2().and(path!("current").and(warp::filters::path::end()).and_then(
+                    move || {
+                        let channel = channel.read();
 
-                    let channel = match channel.as_ref() {
-                        Some(channel) => channel,
-                        None => return Err(warp::reject::not_found()),
-                    };
+                        let channel = match channel.as_ref() {
+                            Some(channel) => Some(channel.to_string()),
+                            None => None,
+                        };
 
-                    let current = Current {
-                        channel: channel.to_string(),
-                    };
+                        let current = Current { channel };
 
-                    Ok::<_, warp::Rejection>(warp::reply::json(&current))
-                }))
+                        Ok::<_, warp::Rejection>(warp::reply::json(&current))
+                    },
+                )),
+            )
             .boxed();
 
         warp::path("api").and(route)

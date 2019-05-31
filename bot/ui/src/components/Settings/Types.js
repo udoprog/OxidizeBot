@@ -7,6 +7,7 @@ import {Percentage} from "./Percentage";
 import {Raw} from "./Raw";
 import {Set} from "./Set";
 import {Select} from "./Select";
+import {Oauth2Config} from "./Oauth2Config";
 
 /**
  * Decode the given type and value.
@@ -22,6 +23,8 @@ export function decode(type) {
   let value = null;
 
   switch (type.id) {
+    case "oauth2-config":
+      return new Oauth2Config(type.optional);
     case "duration":
       return new Duration(type.optional);
     case "bool":
