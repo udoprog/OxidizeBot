@@ -453,13 +453,19 @@ impl Cooldown {
 
     /// Test if we are allowed to perform the action based on the cooldown in effect.
     pub fn is_open(&mut self) -> bool {
-        return self.remaining_until_open().is_none();
+        let now = time::Instant::now();
+
+        match self.check(now.clone()) {
+            None => {
+                self.poke(now);
+                true
+            }
+            Some(..) => false,
+        }
     }
 
     /// Test how much time remains until cooldown is open.
-    pub fn remaining_until_open(&mut self) -> Option<time::Duration> {
-        let now = time::Instant::now();
-
+    pub fn check(&mut self, now: time::Instant) -> Option<time::Duration> {
         if let Some(last_action_at) = self.last_action_at.as_ref() {
             let since_last_action = now - *last_action_at;
             let cooldown = self.cooldown.as_std();
@@ -469,8 +475,12 @@ impl Cooldown {
             }
         }
 
-        self.last_action_at = Some(now);
         None
+    }
+
+    /// Poke the cooldown with the current time
+    pub fn poke(&mut self, now: time::Instant) {
+        self.last_action_at = Some(now);
     }
 }
 

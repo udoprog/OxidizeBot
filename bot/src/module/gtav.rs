@@ -5,7 +5,7 @@ use crate::{
     utils::{compact_duration, Cooldown, Duration},
 };
 use failure::{bail, Error};
-use hashbrown::HashMap;
+use hashbrown::{hash_map, HashMap};
 use parking_lot::RwLock;
 use std::{fmt, net::SocketAddr, sync::Arc, time};
 use tokio::net::UdpSocket;
@@ -112,6 +112,62 @@ enum Command {
 }
 
 impl Command {
+    /// The name of the command.
+    fn command_name(&self) -> &'static str {
+        use self::Command::*;
+
+        match *self {
+            SpawnVehicle(..) => "SpawnVehicle",
+            SpawnRandomVehicle(..) => "SpawnRandomVehicle",
+            KillEngine => "KillEngine",
+            BlowTires => "BlowTires",
+            Repair => "Repair",
+            GiveWeapon(..) => "GiveWeapon",
+            TakeWeapon => "TakeWeapon",
+            TakeAllWeapons => "TakeAllWeapons",
+            Stumble => "Stumble",
+            Fall => "Fall",
+            Wanted(0) => "Wanted",
+            Wanted(..) => "Wanted",
+            GiveHealth => "GiveHealth",
+            GiveArmor => "GiveArmor",
+            TakeHealth => "TakeHealth",
+            License(..) => "License",
+            RandomizeColor => "RandomizeColor",
+            RandomizeWeather => "RandomizeWeather",
+            RandomizeCharacter => "RandomizeCharacter",
+            Brake => "Brake",
+            TakeAmmo => "TakeAmmo",
+            GiveAmmo => "GiveAmmo",
+            Boost => "Boost",
+            SuperBoost => "SuperBoost",
+            SuperSpeed(..) => "SuperSpeed",
+            SuperSwim(..) => "SuperSwim",
+            SuperJump(..) => "SuperJump",
+            Invincibility(..) => "Invincibility",
+            SpawnEnemy(..) => "SpawnEnemy",
+            ExplodingBullets(..) => "ExplodingBullets",
+            FireAmmo(..) => "FireAmmo",
+            ExplodingPunches(..) => "ExplodingPunches",
+            Drunk => "Drunk",
+            VeryDrunk => "VeryDrunk",
+            SetOnFire => "SetOnFire",
+            SetPedsOnFire => "SetPedsOnFire",
+            MakePedsAggressive => "MakePedsAggressive",
+            MatrixSlam => "MatrixSlam",
+            CloseParachute => "CloseParachute",
+            DisableControl(..) => "DisableControl",
+            ModVehicle(..) => "ModVehicle",
+            Levitate => "Levitate",
+            LevitateEntities => "LevitateEntities",
+            Eject => "Eject",
+            SlowDownTime => "SlowDownTime",
+            MakeFireProof(..) => "MakeFireProof",
+            FuelLeakage => "FuelLeakage",
+            Raw(..) => "Raw",
+        }
+    }
+
     /// If the command is a reward or a punishment.
     fn what(&self) -> &'static str {
         use self::Command::*;
@@ -359,6 +415,7 @@ pub struct Handler {
     currency: Arc<RwLock<Option<currency::Currency>>>,
     cooldown: Arc<RwLock<Cooldown>>,
     per_user_cooldown: Arc<RwLock<Cooldown>>,
+    per_command_cooldown: Arc<RwLock<Cooldown>>,
     prefix: Arc<RwLock<String>>,
     other_percentage: Arc<RwLock<u32>>,
     punish_percentage: Arc<RwLock<u32>>,
@@ -367,6 +424,7 @@ pub struct Handler {
     id_counter: usize,
     tx: mpsc::UnboundedSender<(irc::OwnedUser, usize, Command)>,
     per_user_cooldowns: HashMap<String, Cooldown>,
+    per_command_cooldowns: HashMap<&'static str, Cooldown>,
 }
 
 impl Handler {
@@ -394,29 +452,61 @@ impl Handler {
     }
 
     /// Check if the given user is subject to cooldown right now.
-    fn check_user_cooldown(
+    fn check_cooldown(
         &mut self,
         ctx: &mut command::Context<'_, '_>,
-    ) -> Option<time::Duration> {
+        command: &Command,
+    ) -> Option<(&'static str, time::Duration)> {
         let per_user_cooldown = self.per_user_cooldown.read();
 
-        // no cooldown enabled.
-        if per_user_cooldown.cooldown.is_empty() {
-            return None;
+        let user_cooldown = match self.per_user_cooldowns.entry(ctx.user.name.to_string()) {
+            hash_map::Entry::Vacant(e) => e.insert(per_user_cooldown.clone()),
+            hash_map::Entry::Occupied(e) => {
+                let cooldown = e.into_mut();
+
+                if cooldown.cooldown != per_user_cooldown.cooldown {
+                    cooldown.cooldown = per_user_cooldown.cooldown.clone();
+                }
+
+                cooldown
+            }
+        };
+
+        let per_command_cooldown = self.per_command_cooldown.read();
+
+        let command_cooldown = match self.per_command_cooldowns.entry(command.command_name()) {
+            hash_map::Entry::Vacant(e) => e.insert(per_command_cooldown.clone()),
+            hash_map::Entry::Occupied(e) => {
+                let cooldown = e.into_mut();
+
+                if cooldown.cooldown != per_command_cooldown.cooldown {
+                    cooldown.cooldown = per_command_cooldown.cooldown.clone();
+                }
+
+                cooldown
+            }
+        };
+
+        let now = time::Instant::now();
+
+        let mut cooldown = self.cooldown.write();
+
+        let mut remaining = smallvec::SmallVec::<[_; 3]>::new();
+        remaining.extend(cooldown.check(now.clone()).map(|d| ("Global", d)));
+        remaining.extend(user_cooldown.check(now.clone()).map(|d| ("User", d)));
+        remaining.extend(command_cooldown.check(now.clone()).map(|d| ("Command", d)));
+
+        remaining.sort_by(|a, b| b.1.cmp(&a.1));
+
+        match remaining.into_iter().next() {
+            Some((name, remaining)) => Some((name, remaining)),
+            None => {
+                cooldown.poke(now);
+                user_cooldown.poke(now);
+                command_cooldown.poke(now);
+                None
+            }
         }
-
-        let cooldown = self
-            .per_user_cooldowns
-            .entry(ctx.user.name.to_string())
-            .or_insert_with(|| per_user_cooldown.clone());
-
-        // cooldown setting has changed
-        if cooldown.cooldown != per_user_cooldown.cooldown {
-            self.per_user_cooldowns.remove(ctx.user.name);
-            return None;
-        }
-
-        cooldown.remaining_until_open()
     }
 
     /// Handle the other commands.
@@ -749,18 +839,10 @@ impl command::Handler for Handler {
         let bypass_cooldown = ctx.has_scope(Scope::GtavBypassCooldown);
 
         if !bypass_cooldown {
-            if let Some(remaining) = self.check_user_cooldown(&mut ctx) {
+            if let Some((what, remaining)) = self.check_cooldown(&mut ctx, &command) {
                 ctx.respond(format!(
-                    "User in cooldown, please wait at least {}!",
-                    compact_duration(remaining),
-                ));
-
-                return Ok(());
-            }
-
-            if let Some(remaining) = self.cooldown.write().remaining_until_open() {
-                ctx.respond(format!(
-                    "Cooldown in effect, please wait at least {}!",
+                    "{} cooldown in effect, please wait at least {}!",
+                    what,
                     compact_duration(remaining),
                 ));
 
@@ -904,6 +986,7 @@ impl super::Module for Module {
             .unwrap_or_else(|| Cooldown::from_duration(Duration::seconds(1)));
 
         let default_per_user_cooldown = Cooldown::from_duration(Duration::seconds(60));
+        let default_per_command_cooldown = Cooldown::from_duration(Duration::seconds(5));
 
         let (mut enabled_stream, enabled) = settings.stream("enabled").or_default()?;
         let enabled = Arc::new(RwLock::new(enabled));
@@ -911,6 +994,8 @@ impl super::Module for Module {
         let mut vars = settings.vars();
         let cooldown = vars.var("cooldown", default_cooldown)?;
         let per_user_cooldown = vars.var("per-user-cooldown", default_per_user_cooldown)?;
+        let per_command_cooldown =
+            vars.var("per-command-cooldown", default_per_command_cooldown)?;
         let prefix = vars.var("chat-prefix", String::from("ChaosMod: "))?;
         let other_percentage = vars.var("other%", 100)?;
         let punish_percentage = vars.var("punish%", 100)?;
@@ -931,6 +1016,8 @@ impl super::Module for Module {
                 cooldown,
                 per_user_cooldown,
                 per_user_cooldowns: Default::default(),
+                per_command_cooldown,
+                per_command_cooldowns: Default::default(),
                 prefix,
                 other_percentage,
                 punish_percentage,
