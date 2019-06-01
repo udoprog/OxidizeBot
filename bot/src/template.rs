@@ -131,7 +131,7 @@ impl Template {
     /// Render the template to the given output.
     fn render_internal(
         &self,
-        output: &mut handlebars::Output,
+        output: &mut dyn handlebars::Output,
         data: impl serde::Serialize,
     ) -> Result<(), failure::Error> {
         use handlebars::Renderable as _;

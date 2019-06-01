@@ -36,7 +36,7 @@ where
             None => return Poll::Ready(None),
         };
 
-        match (value as Box<Any + 'static>).downcast::<T>() {
+        match (value as Box<dyn Any + 'static>).downcast::<T>() {
             Ok(value) => Poll::Ready(Some(Some(*value))),
             Err(_) => panic!("downcast failed"),
         }

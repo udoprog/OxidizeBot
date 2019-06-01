@@ -16,7 +16,7 @@ macro_rules! log_err {
             log::error!("caused by: {}", cause);
 
             bt.clear();
-            write!(&mut bt as &mut std::fmt::Write, "{}", e.backtrace()).expect("failed to write string");
+            write!(&mut bt as &mut dyn std::fmt::Write, "{}", e.backtrace()).expect("failed to write string");
 
             if !bt.is_empty() {
                 log::error!("{}", e.backtrace());
