@@ -698,9 +698,7 @@ where
 pub enum Format {
     /// mysql://<user>:<password>@<host>/<database>
     #[serde(rename = "regex")]
-    Regex {
-        pattern: String,
-    },
+    Regex { pattern: String },
     #[serde(rename = "none")]
     None,
 }

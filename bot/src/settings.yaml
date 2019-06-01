@@ -14,6 +14,9 @@ types:
   first-run:
     doc: Indicates whether the bot has run at least once.
     type: {id: bool}
+  gtav/command-configs:
+    doc: Command-specific configuration overrides.
+    type: {id: raw}
   gtav/enabled:
     doc: If the `!gtav` module is enabled.
     type: {id: bool}
@@ -22,6 +25,12 @@ types:
     type: {id: string}
   gtav/cooldown:
     doc: Global cooldown between each effect.
+    type: {id: duration}
+  gtav/punish-cooldown:
+    doc: Punishment cooldown between each effect.
+    type: {id: duration}
+  gtav/reward-cooldown:
+    doc: Reward cooldown between each effect.
     type: {id: duration}
   gtav/per-user-cooldown:
     doc: Per-user cooldown between each effect.

@@ -14,6 +14,59 @@ const VEHICLE_URL: &'static str = "http://bit.ly/gtavvehicles";
 
 mod vehicle;
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct CommandConfig {
+    #[serde(default)]
+    enabled: Option<bool>,
+    #[serde(default)]
+    cooldown: Option<Duration>,
+    #[serde(default)]
+    cost: Option<u32>,
+}
+
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+struct CommandsConfig {
+    #[serde(default, flatten)]
+    configs: HashMap<String, CommandConfig>,
+}
+
+#[derive(Debug)]
+struct CommandSetting {
+    enabled: bool,
+    cooldown: Option<Arc<RwLock<Cooldown>>>,
+    cost: Option<u32>,
+}
+
+impl Default for CommandSetting {
+    fn default() -> Self {
+        CommandSetting {
+            enabled: true,
+            cooldown: None,
+            cost: None,
+        }
+    }
+}
+
+impl CommandsConfig {
+    fn into_map(self) -> HashMap<String, CommandSetting> {
+        let mut m = HashMap::new();
+
+        for (name, c) in self.configs {
+            let s = CommandSetting {
+                enabled: c.enabled.unwrap_or(true),
+                cooldown: c
+                    .cooldown
+                    .map(|c| Arc::new(RwLock::new(Cooldown::from_duration(c)))),
+                cost: c.cost,
+            };
+
+            m.insert(name, s);
+        }
+
+        m
+    }
+}
+
 enum Command {
     /// Spawn a vehicle.
     SpawnVehicle(vehicle::Vehicle),
@@ -127,7 +180,7 @@ impl Command {
             TakeAllWeapons => "TakeAllWeapons",
             Stumble => "Stumble",
             Fall => "Fall",
-            Wanted(0) => "Wanted",
+            Wanted(0) => "ClearWanted",
             Wanted(..) => "Wanted",
             GiveHealth => "GiveHealth",
             GiveArmor => "GiveArmor",
@@ -414,6 +467,8 @@ pub struct Handler {
     player: Arc<RwLock<Option<player::Player>>>,
     currency: Arc<RwLock<Option<currency::Currency>>>,
     cooldown: Arc<RwLock<Cooldown>>,
+    reward_cooldown: Arc<RwLock<Cooldown>>,
+    punish_cooldown: Arc<RwLock<Cooldown>>,
     per_user_cooldown: Arc<RwLock<Cooldown>>,
     per_command_cooldown: Arc<RwLock<Cooldown>>,
     prefix: Arc<RwLock<String>>,
@@ -425,6 +480,7 @@ pub struct Handler {
     tx: mpsc::UnboundedSender<(irc::OwnedUser, usize, Command)>,
     per_user_cooldowns: HashMap<String, Cooldown>,
     per_command_cooldowns: HashMap<&'static str, Cooldown>,
+    per_command_configs: Arc<RwLock<HashMap<String, CommandSetting>>>,
 }
 
 impl Handler {
@@ -456,6 +512,7 @@ impl Handler {
         &mut self,
         ctx: &mut command::Context<'_, '_>,
         command: &Command,
+        category_cooldown: Option<Arc<RwLock<Cooldown>>>,
     ) -> Option<(&'static str, time::Duration)> {
         let per_user_cooldown = self.per_user_cooldown.read();
 
@@ -487,14 +544,34 @@ impl Handler {
             }
         };
 
+        let per_command_configs = self.per_command_configs.read();
+        let command_specific = match per_command_configs.get(command.command_name()) {
+            Some(setting) => setting.cooldown.clone(),
+            None => None,
+        };
+
         let now = time::Instant::now();
 
         let mut cooldown = self.cooldown.write();
 
-        let mut remaining = smallvec::SmallVec::<[_; 3]>::new();
-        remaining.extend(cooldown.check(now.clone()).map(|d| ("Global", d)));
+        let mut remaining = smallvec::SmallVec::<[_; 4]>::new();
+
         remaining.extend(user_cooldown.check(now.clone()).map(|d| ("User", d)));
-        remaining.extend(command_cooldown.check(now.clone()).map(|d| ("Command", d)));
+
+        if let Some(command_specific) = command_specific.as_ref() {
+            let mut cooldown = command_specific.write();
+
+            remaining.extend(cooldown.check(now.clone()).map(|d| ("Command specific", d)));
+        } else {
+            remaining.extend(cooldown.check(now.clone()).map(|d| ("Global", d)));
+            remaining.extend(command_cooldown.check(now.clone()).map(|d| ("Command", d)));
+
+            if let Some(category_cooldown) = category_cooldown.as_ref() {
+                let mut cooldown = category_cooldown.write();
+
+                remaining.extend(cooldown.check(now.clone()).map(|d| ("Category", d)));
+            }
+        }
 
         remaining.sort_by(|a, b| b.1.cmp(&a.1));
 
@@ -504,6 +581,15 @@ impl Handler {
                 cooldown.poke(now);
                 user_cooldown.poke(now);
                 command_cooldown.poke(now);
+
+                if let Some(category_cooldown) = category_cooldown.as_ref() {
+                    category_cooldown.write().poke(now);
+                }
+
+                if let Some(command_specific) = command_specific.as_ref() {
+                    command_specific.write().poke(now);
+                }
+
                 None
             }
         }
@@ -815,10 +901,21 @@ impl command::Handler for Handler {
             }
         };
 
-        let result = match ctx.next() {
-            Some("other") => self.handle_other(&mut ctx)?,
-            Some("punish") => self.handle_punish(&mut ctx)?,
-            Some("reward") => self.handle_reward(&mut ctx)?,
+        let (result, category_cooldown) = match ctx.next() {
+            Some("other") => {
+                let command = self.handle_other(&mut ctx)?;
+                (command, None)
+            }
+            Some("punish") => {
+                let command = self.handle_punish(&mut ctx)?;
+                let cooldown = self.punish_cooldown.clone();
+                (command, Some(cooldown))
+            }
+            Some("reward") => {
+                let command = self.handle_reward(&mut ctx)?;
+                let cooldown = self.reward_cooldown.clone();
+                (command, Some(cooldown))
+            }
             _ => {
                 ctx.respond(format!(
                     "You have the following actions available: \
@@ -827,6 +924,7 @@ impl command::Handler for Handler {
                         {c} other - To do other kinds of modifications.",
                     c = ctx.alias.unwrap_or("!gtav")
                 ));
+
                 return Ok(());
             }
         };
@@ -836,10 +934,28 @@ impl command::Handler for Handler {
             None => return Ok(()),
         };
 
+        let mut cost = command.cost();
+
+        {
+            let per_command_configs = self.per_command_configs.read();
+
+            if let Some(setting) = per_command_configs.get(command.command_name()) {
+                if !setting.enabled {
+                    return Ok(());
+                }
+
+                if let Some(c) = setting.cost {
+                    cost = c;
+                }
+            }
+        }
+
         let bypass_cooldown = ctx.has_scope(Scope::GtavBypassCooldown);
 
         if !bypass_cooldown {
-            if let Some((what, remaining)) = self.check_cooldown(&mut ctx, &command) {
+            if let Some((what, remaining)) =
+                self.check_cooldown(&mut ctx, &command, category_cooldown)
+            {
                 ctx.respond(format!(
                     "{} cooldown in effect, please wait at least {}!",
                     what,
@@ -853,7 +969,7 @@ impl command::Handler for Handler {
         let id = self.id_counter;
         self.id_counter += 1;
 
-        let cost = command.cost() * percentage / 100;
+        let cost = cost * percentage / 100;
         let user = ctx.user.as_owned_user();
         let sender = ctx.sender.clone();
         let prefix = self.prefix.read().clone();
@@ -985,6 +1101,8 @@ impl super::Module for Module {
             .clone()
             .unwrap_or_else(|| Cooldown::from_duration(Duration::seconds(1)));
 
+        let default_reward_cooldown = Cooldown::from_duration(Duration::seconds(60));
+        let default_punish_cooldown = Cooldown::from_duration(Duration::seconds(60));
         let default_per_user_cooldown = Cooldown::from_duration(Duration::seconds(60));
         let default_per_command_cooldown = Cooldown::from_duration(Duration::seconds(5));
 
@@ -993,6 +1111,8 @@ impl super::Module for Module {
 
         let mut vars = settings.vars();
         let cooldown = vars.var("cooldown", default_cooldown)?;
+        let reward_cooldown = vars.var("reward-cooldown", default_reward_cooldown)?;
+        let punish_cooldown = vars.var("punish-cooldown", default_punish_cooldown)?;
         let per_user_cooldown = vars.var("per-user-cooldown", default_per_user_cooldown)?;
         let per_command_cooldown =
             vars.var("per-command-cooldown", default_per_command_cooldown)?;
@@ -1002,6 +1122,13 @@ impl super::Module for Module {
         let reward_percentage = vars.var("reward%", 100)?;
         let success_feedback = vars.var("success-feedback", false)?;
         futures.push(vars.run().boxed());
+
+        let (mut commands_config_stream, commands_config) = settings
+            .stream::<CommandsConfig>("command-configs")
+            .or_default()?;
+
+        let per_command_configs = Arc::new(RwLock::new(HashMap::new()));
+        *per_command_configs.write() = commands_config.into_map();
 
         let player = injector.var(futures);
 
@@ -1014,10 +1141,13 @@ impl super::Module for Module {
                 player,
                 currency,
                 cooldown,
+                reward_cooldown,
+                punish_cooldown,
                 per_user_cooldown,
                 per_user_cooldowns: Default::default(),
                 per_command_cooldown,
                 per_command_cooldowns: Default::default(),
+                per_command_configs: per_command_configs.clone(),
                 prefix,
                 other_percentage,
                 punish_percentage,
@@ -1039,6 +1169,9 @@ impl super::Module for Module {
 
             loop {
                 futures::select! {
+                    update = commands_config_stream.select_next_some() => {
+                        *per_command_configs.write() = update.into_map();
+                    }
                     update = enabled_stream.select_next_some() => {
                         receiver = match update {
                             true => Some(&mut rx),
