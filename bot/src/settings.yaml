@@ -235,8 +235,14 @@ types:
         - {title: "MySQL", value: "mysql"}
         - {title: "Honkos", value: "honkos"}
   currency/mysql/url:
-    doc: The database URL to connect to for the `mysql` or `honkos` backend.
-    type: {id: string, optional: true}
+    doc: >
+      The database URL to connect to for the `mysql` or `honkos` backend.
+      Expected: `mysql://<user>:<password>@<host>/<database>`.
+    type:
+      id: string
+      optional: true
+      placeholder: "mysql://<user>:<password>@<host>/<database>"
+      format: {type: "regex", pattern: "^mysql:\\/\\/(.+:.+@)?.+/.+$"}
     secret: true
   currency/mysql/schema:
     doc: Custom schema to use for `mysql` type backends.

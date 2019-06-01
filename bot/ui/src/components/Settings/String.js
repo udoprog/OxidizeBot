@@ -3,8 +3,10 @@ import {Form} from "react-bootstrap";
 import {Base} from "./Base";
 
 export class String extends Base {
-  constructor(optional) {
+  constructor(optional, format, placeholder) {
     super(optional);
+    this.format = format;
+    this.placeholder = placeholder;
   }
 
   default() {
@@ -24,7 +26,7 @@ export class String extends Base {
   }
 
   editControl() {
-    return new EditString();
+    return new EditString(this.format, this.placeholder);
   }
 
   edit(value) {
@@ -33,15 +35,26 @@ export class String extends Base {
 }
 
 class EditString {
+  constructor(format, placeholder) {
+    this.format = format;
+    this.placeholder = placeholder;
+  }
+
   validate(value) {
-    return true;
+    return this.format.validate(value);
   }
 
   save(value) {
     return value;
   }
 
-  render(_isValid, value, onChange) {
-    return <Form.Control size="sm" type="value" value={value} onChange={e => onChange(e.target.value)} />
+  render(isValid, value, onChange) {
+    return <Form.Control
+      size="sm"
+      type="value"
+      placeholder={this.placeholder}
+      isInvalid={!isValid}
+      value={value}
+      onChange={e => onChange(e.target.value)} />;
   }
 }

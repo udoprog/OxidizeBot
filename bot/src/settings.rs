@@ -694,6 +694,24 @@ where
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type")]
+pub enum Format {
+    /// mysql://<user>:<password>@<host>/<database>
+    #[serde(rename = "regex")]
+    Regex {
+        pattern: String,
+    },
+    #[serde(rename = "none")]
+    None,
+}
+
+impl Default for Format {
+    fn default() -> Self {
+        Format::None
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Type {
     #[serde(default)]
     pub optional: bool,
@@ -717,7 +735,12 @@ pub enum Kind {
     #[serde(rename = "percentage")]
     Percentage,
     #[serde(rename = "string")]
-    String,
+    String {
+        #[serde(default)]
+        placeholder: Option<String>,
+        #[serde(default)]
+        format: Format,
+    },
     /// String type that supports multi-line editing.
     #[serde(rename = "text")]
     Text,
@@ -766,7 +789,7 @@ impl Type {
                 let n = str::parse::<serde_json::Number>(s)?;
                 Value::Number(n)
             }
-            String | Text => Value::String(s.to_string()),
+            String { .. } | Text => Value::String(s.to_string()),
             Set { ref value } => {
                 let json = serde_json::from_str(s)?;
 
@@ -821,7 +844,7 @@ impl Type {
             (Bool, Value::Bool(..)) => true,
             (Number, Value::Number(..)) => true,
             (Percentage, Value::Number(..)) => true,
-            (String, Value::String(..)) => true,
+            (String { .. }, Value::String(..)) => true,
             (Text, Value::String(..)) => true,
             (Set { ref value }, Value::Array(ref values)) => {
                 values.iter().all(|v| value.is_compatible_with_json(v))
@@ -842,7 +865,7 @@ impl fmt::Display for Type {
             Bool => write!(fmt, "bool")?,
             Number => write!(fmt, "number")?,
             Percentage => write!(fmt, "percentage")?,
-            String => write!(fmt, "string")?,
+            String { .. } => write!(fmt, "string")?,
             Text => write!(fmt, "text")?,
             Set { ref value } => write!(fmt, "Array<{}>", value)?,
             Select { ref value, .. } => write!(fmt, "Select<{}>", value)?,

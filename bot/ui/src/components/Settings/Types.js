@@ -8,6 +8,7 @@ import {Raw} from "./Raw";
 import {Set} from "./Set";
 import {Select} from "./Select";
 import {Oauth2Config} from "./Oauth2Config";
+import * as Format from "./Format";
 
 /**
  * Decode the given type and value.
@@ -20,6 +21,8 @@ export function decode(type) {
     throw new Error(`bad type: ${type}`);
   }
 
+  let format = null;
+  let placeholder = null;
   let value = null;
 
   switch (type.id) {
@@ -30,7 +33,9 @@ export function decode(type) {
     case "bool":
       return new Boolean(type.optional);
     case "string":
-      return new String(type.optional);
+      format = Format.decode(type.format);
+      placeholder = type.placeholder;
+      return new String(type.optional, format, placeholder);
     case "text":
       return new Text(type.optional);
     case "number":
