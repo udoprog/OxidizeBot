@@ -579,7 +579,7 @@ impl TokenBuilder {
         };
 
         if let Some(token) = self.initial_token.take() {
-            log::trace!("{}: validating initial token", self.what);
+            log::trace!("{}: Validating initial token", self.what);
 
             let token = self.validate_token(config, client, token).await?;
             self.token = token.clone();
@@ -590,7 +590,7 @@ impl TokenBuilder {
         }
 
         if let Some(token) = self.new_token.take() {
-            log::trace!("{}: validating new token", self.what);
+            log::trace!("{}: Validating new token", self.what);
             let new_token = self.validate_token(config, client, token).await?;
 
             if let Some(token) = new_token {
@@ -633,7 +633,7 @@ impl TokenBuilder {
         config: &'a Config,
         client: &'a Client,
     ) -> Result<Token, Error> {
-        log::trace!("Requesting new token: {}", self.what);
+        log::trace!("{}: Requesting new token", self.what);
 
         let (mut auth_url, csrf_token) = client.authorize_url(CsrfToken::new_random);
 
@@ -810,17 +810,17 @@ impl Flow {
         let returned_sync_token = sync_token.clone();
 
         let future = async move {
-            log::trace!("{}: running loop", what);
+            log::trace!("{}: Running loop", what);
 
             if let Some(token) = builder.log_build().await {
-                log::trace!("{}: new token", what);
+                log::trace!("{}: New token", what);
                 sync_token.set(token);
             }
 
             loop {
                 futures::select! {
                     config = config_stream.select_next_some() => {
-                        log::trace!("{}: new configuration", what);
+                        log::trace!("{}: New configuration", what);
 
                         builder.new_config = config;
 
@@ -829,7 +829,7 @@ impl Flow {
                         }
                     }
                     current = force_refresh_rx.select_next_some() => {
-                        log::trace!("{}: forced refresh", what);
+                        log::trace!("{}: Forced refresh", what);
 
                         builder.force_refresh = true;
 
@@ -838,7 +838,7 @@ impl Flow {
                         }
                     }
                     token = token_stream.select_next_some() => {
-                        log::trace!("{}: new token", what);
+                        log::trace!("{}: New token", what);
 
                         builder.new_token = token;
 
@@ -847,7 +847,7 @@ impl Flow {
                         }
                     }
                     _ = interval.select_next_some() => {
-                        log::trace!("{}: check for expiration", what);
+                        log::trace!("{}: Check for expiration", what);
 
                         if let Some(token) = builder.log_build().await {
                             sync_token.set(token);
