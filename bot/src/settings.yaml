@@ -1,6 +1,8 @@
 migrations:
   - from: currency/honkos/database-url
     to: currency/mysql/url
+  - from: song/youtube/support
+    to: song/youtube/enabled
 
 types:
   remote/api-url:
