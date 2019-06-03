@@ -4,3 +4,6 @@ members = [
     "bot",
     "web",
 ]
+
+[patch.crates-io]
+backtrace = {git = "https://github.com/rust-lang/backtrace-rs"}

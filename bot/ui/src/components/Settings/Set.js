@@ -56,7 +56,7 @@ class EditSet {
   render(_isValid, values, onChange) {
     let add = () => {
       let newValues = values.slice();
-      let value = this.control.construct(this.control.default());
+      let value = this.control.edit(this.control.default());
       newValues.push(value);
       onChange(newValues);
     };

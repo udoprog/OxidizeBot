@@ -47,6 +47,7 @@ macro_rules! vehicle {
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct CommandConfig {
+    name: String,
     #[serde(default)]
     enabled: Option<bool>,
     #[serde(default)]
@@ -56,10 +57,7 @@ struct CommandConfig {
 }
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
-struct CommandsConfig {
-    #[serde(default, flatten)]
-    configs: HashMap<String, CommandConfig>,
-}
+struct CommandsConfig(Vec<CommandConfig>);
 
 #[derive(Debug)]
 struct CommandSetting {
@@ -82,7 +80,7 @@ impl CommandsConfig {
     fn into_map(self) -> HashMap<String, CommandSetting> {
         let mut m = HashMap::new();
 
-        for (name, c) in self.configs {
+        for c in self.0 {
             let s = CommandSetting {
                 enabled: c.enabled.unwrap_or(true),
                 cooldown: c
@@ -91,7 +89,7 @@ impl CommandsConfig {
                 cost: c.cost,
             };
 
-            m.insert(name, s);
+            m.insert(c.name, s);
         }
 
         m

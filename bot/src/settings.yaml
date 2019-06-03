@@ -16,7 +16,7 @@ types:
     type: {id: bool}
   gtav/command-configs:
     doc: Command-specific configuration overrides.
-    type: {id: raw}
+    type: {id: set, value: {id: raw}}
   gtav/enabled:
     doc: If the `!gtav` module is enabled.
     type: {id: bool}
