@@ -14,6 +14,37 @@ const VEHICLE_URL: &'static str = "http://bit.ly/gtavvehicles";
 
 mod vehicle;
 
+macro_rules! vehicle {
+    ($ctx:expr, $pfx:expr) => {
+        match $ctx
+            .next()
+            .map(str::to_lowercase)
+            .and_then(vehicle::Vehicle::from_id)
+        {
+            Some(vehicle) => vehicle,
+            None => {
+                let vehicles = vehicle::Vehicle::categories()
+                    .into_iter()
+                    .map(|v| format!("{} ({})", v, v.cost()))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+
+                $ctx.respond(format!(
+                    "You give the streamer a vehicle using for example {c} random. \
+                     You can pick a vehicle by its name or a category. \
+                     Available names are listed here: {url} - \
+                     Available categories are: {vehicles}. ",
+                    c = $ctx.alias.unwrap_or($pfx),
+                    url = VEHICLE_URL,
+                    vehicles = vehicles,
+                ));
+
+                return Ok(None);
+            }
+        }
+    };
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct CommandConfig {
     #[serde(default)]
@@ -160,6 +191,12 @@ enum Command {
     MakeFireProof(f32),
     /// Make the current car leak all its fuel in 30 seconds.
     FuelLeakage,
+    /// Change the current vehicle of the player.
+    ChangeCurrentVehicle(vehicle::Vehicle),
+    /// Randomize doors of the current vehicle.
+    RandomizeDoors,
+    /// Shoot the player up in the air with a parachute.
+    Skyfall,
     /// Send a raw command to ChaosMod.
     Raw(String),
 }
@@ -217,6 +254,9 @@ impl Command {
             SlowDownTime => "SlowDownTime",
             MakeFireProof(..) => "MakeFireProof",
             FuelLeakage => "FuelLeakage",
+            ChangeCurrentVehicle(..) => "ChangeCurrentVehicle",
+            RandomizeDoors => "RandomizeDoors",
+            Skyfall => "Skyfall",
             Raw(..) => "Raw",
         }
     }
@@ -273,6 +313,9 @@ impl Command {
             SlowDownTime => "rewarded",
             MakeFireProof(..) => "rewarded",
             FuelLeakage => "punished",
+            ChangeCurrentVehicle(..) => "rewarded",
+            RandomizeDoors => "rewarded",
+            Skyfall => "rewarded",
             Raw(..) => "?",
         }
     }
@@ -329,6 +372,9 @@ impl Command {
             SlowDownTime => format!("slow-down-time"),
             MakeFireProof(n) => format!("make-fire-proof {}", n),
             FuelLeakage => format!("fuel-leakage"),
+            ChangeCurrentVehicle(ref vehicle) => format!("change-current-vehicle {}", vehicle),
+            RandomizeDoors => format!("randomize-doors"),
+            Skyfall => format!("skyfall"),
             Raw(ref cmd) => cmd.to_string(),
         }
     }
@@ -387,6 +433,9 @@ impl Command {
             SlowDownTime => 25,
             MakeFireProof(..) => 50,
             FuelLeakage => 10,
+            ChangeCurrentVehicle(ref vehicle) => vehicle.cost(),
+            RandomizeDoors => 0,
+            Skyfall => 50,
             Raw(..) => 0,
         }
     }
@@ -451,6 +500,9 @@ impl fmt::Display for Command {
             SlowDownTime => write!(fmt, "causing time to slow down"),
             MakeFireProof(..) => write!(fmt, "making them fire proof"),
             FuelLeakage => write!(fmt, "slowly leaking all their fuel"),
+            ChangeCurrentVehicle(..) => write!(fmt, "changing their current vehicle"),
+            RandomizeDoors => write!(fmt, "randomizing their doors and windows"),
+            Skyfall => write!(fmt, "causing them to skyfall"),
             Raw(..) => write!(fmt, "sending a raw command"),
         }
     }
@@ -604,6 +656,7 @@ impl Handler {
             Some("randomize-color") => Command::RandomizeColor,
             Some("randomize-weather") => Command::RandomizeWeather,
             Some("randomize-character") => Command::RandomizeCharacter,
+            Some("randomize-doors") => Command::RandomizeDoors,
             Some("license") => match license(ctx.rest(), ctx) {
                 Some(license) => Command::License(license),
                 None => return Ok(None),
@@ -706,32 +759,7 @@ impl Handler {
             Some("eject") => Command::Eject,
             Some("leak-fuel") => Command::FuelLeakage,
             _ => {
-                ctx.respond(format!(
-                    "Available punishments are: \
-                     {c} stumble, \
-                     {c} fall, \
-                     {c} tires, \
-                     {c} engine, \
-                     {c} weapon, \
-                     {c} all-weapons, \
-                     {c} health, \
-                     {c} wanted <level> \
-                     {c} weather, \
-                     {c} brake, \
-                     {c} ammo, \
-                     {c} enemy, \
-                     {c} drunk, \
-                     {c} very-drunk, \
-                     {c} set-on-fire, \
-                     {c} set-peds-on-fire, \
-                     {c} make-peds-aggressive,
-                     {c} close-parachute,
-                     {c} disable-control,
-                     {c} eject,
-                     {c} leak-fuel. \
-                     See !chaos% for more details.",
-                    c = ctx.alias.unwrap_or("!gtav punish"),
-                ));
+                ctx.respond(format!("See !chaos% for available punishments.",));
 
                 return Ok(None);
             }
@@ -748,33 +776,7 @@ impl Handler {
         let command = match ctx.next() {
             Some("car") => Command::SpawnRandomVehicle(vehicle::Vehicle::random_car()),
             Some("vehicle") => {
-                let vehicle = match ctx
-                    .next()
-                    .map(str::to_lowercase)
-                    .and_then(vehicle::Vehicle::from_id)
-                {
-                    Some(vehicle) => vehicle,
-                    None => {
-                        let vehicles = vehicle::Vehicle::categories()
-                            .into_iter()
-                            .map(|v| format!("{} ({})", v, v.cost()))
-                            .collect::<Vec<String>>()
-                            .join(", ");
-
-                        ctx.respond(format!(
-                            "You give the streamer a vehicle using for example {c} random. \
-                             You can pick a vehicle by its name or a category. \
-                             Available names are listed here: {url} - \
-                             Available categories are: {vehicles}. ",
-                            c = ctx.alias.unwrap_or("!gtav reward vehicle"),
-                            url = VEHICLE_URL,
-                            vehicles = vehicles,
-                        ));
-
-                        return Ok(None);
-                    }
-                };
-
+                let vehicle = vehicle!(ctx, "!gtav reward");
                 Command::SpawnVehicle(vehicle)
             }
             Some("repair") => Command::Repair,
@@ -835,7 +837,7 @@ impl Handler {
                         ctx.respond(format!(
                             "You give the streamer vehicle mods using for example {c} random. \
                              Available mods are: {mods}. ",
-                            c = ctx.alias.unwrap_or("!gtav reward mod-vehicle"),
+                            c = ctx.alias.unwrap_or("!gtav reward"),
                             mods = mods,
                         ));
 
@@ -849,35 +851,13 @@ impl Handler {
             Some("levitate-entities") => Command::LevitateEntities,
             Some("slow-down-time") => Command::SlowDownTime,
             Some("fire-proof") => Command::MakeFireProof(30f32),
+            Some("change-current-vehicle") => {
+                let vehicle = vehicle!(ctx, "!gtav reward");
+                Command::ChangeCurrentVehicle(vehicle)
+            }
+            Some("skyfall") => Command::Skyfall,
             _ => {
-                ctx.respond(format!(
-                    "Available rewards are: \
-                     {c} vehicle, \
-                     {c} repair, \
-                     {c} weapon, \
-                     {c} wanted, \
-                     {c} armor, \
-                     {c} health, \
-                     {c} boost, \
-                     {c} superboost, \
-                     {c} superspeed, \
-                     {c} superswim, \
-                     {c} superjump, \
-                     {c} invincibility, \
-                     {c} ammo, \
-                     {c} exploding-bullets, \
-                     {c} fire-ammo, \
-                     {c} exploding-punches, \
-                     {c} matrix-slam, \
-                     {c} mod-vehicle, \
-                     {c} levitate, \
-                     {c} levitate-entities, \
-                     {c} slow-down-time, \
-                     {c} fire-proof. \
-                     See !chaos% for more details.",
-                    c = ctx.alias.unwrap_or("!gtav reward"),
-                ));
-
+                ctx.respond(format!("See !chaos% for available rewards."));
                 return Ok(None);
             }
         };
