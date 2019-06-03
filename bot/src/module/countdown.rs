@@ -1,11 +1,6 @@
 use crate::{command, config, module, prelude::*, template, timer, utils};
 use parking_lot::RwLock;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::Arc,
-    time,
-};
+use std::{fs, path::PathBuf, sync::Arc, time};
 
 enum Event {
     /// Set the countdown.
@@ -118,7 +113,11 @@ impl super::Module for Module {
         if let (None, Some(config_path)) = (path.as_ref(), self.config_path.clone()) {
             log::warn!("[countdown] configuration has been deprecated.");
             settings.set("path", &config_path)?;
+            path = Some(config_path);
         }
+
+        let mut writer = FileWriter::default();
+        writer.path = path;
 
         let (sender, mut receiver) = mpsc::unbounded();
 
@@ -131,62 +130,47 @@ impl super::Module for Module {
         );
 
         let future = async move {
-            let mut current = Option::<Current>::None;
+            let mut timer = Option::<Timer>::None;
 
             loop {
                 futures::select! {
                     update = path_stream.select_next_some() => {
-                        path = update;
+                        writer.path = update;
                     }
                     update = enabled_stream.select_next_some() => {
                         if (!update) {
-                            if let (Some(mut c), Some(path)) = (current.take(), path.as_ref()) {
-                                c.clear_log(path);
-                            }
+                            timer.take();
+                            writer.clear_log();
                         }
 
                         *enabled.write() = update;
                     }
-                    out = current.next() => {
-                        let path = match path.as_ref() {
-                            Some(path) => path,
-                            None => continue,
-                        };
-
+                    out = timer.next() => {
                         match out.transpose()? {
-                            Some(()) => if let Some(c) = current.as_mut() {
-                                c.write_log(path);
+                            Some(()) => if let Some(timer) = timer.as_ref() {
+                                writer.write_log(timer);
                             },
-                            None => if let Some(mut c) = current.take() {
-                                c.clear_log(path);
+                            None => {
+                                writer.clear_log();
                             },
                         }
                     },
                     event = receiver.select_next_some() => {
-                        let path = match path.as_ref() {
-                            Some(path) => path,
-                            None => {
-                                log::warn!("countdown/path: not configured");
-                                continue;
-                            },
-                        };
-
                         match event {
                             Event::Set(duration, template) => {
-                                let mut c = Current {
+                                let mut t = Timer {
                                     duration,
-                                    template,
                                     elapsed: Default::default(),
                                     interval: timer::Interval::new_interval(time::Duration::from_secs(1)),
                                 };
 
-                                c.write_log(path);
-                                current = Some(c);
+                                writer.template = Some(template);
+                                writer.write_log(&t);
+                                timer = Some(t);
                             }
                             Event::Clear => {
-                                if let Some(mut c) = current.take() {
-                                    c.clear_log(path);
-                                }
+                                timer.take();
+                                writer.clear_log();
                             }
                         }
                     }
@@ -199,22 +183,33 @@ impl super::Module for Module {
     }
 }
 
-struct Current {
-    duration: utils::Duration,
-    template: template::Template,
-    elapsed: utils::Duration,
-    interval: timer::Interval,
+#[derive(Default)]
+struct FileWriter {
+    path: Option<PathBuf>,
+    template: Option<template::Template>,
 }
 
-impl Current {
-    fn write(&mut self, path: &Path) -> Result<(), failure::Error> {
-        let mut f = fs::File::create(path)?;
-        let remaining = self.duration.saturating_sub(self.elapsed.clone());
-        let remaining = remaining.as_digital();
-        let elapsed = self.elapsed.as_digital();
-        let duration = self.duration.as_digital();
+impl FileWriter {
+    fn write(&self, timer: &Timer) -> Result<(), failure::Error> {
+        let path = match &self.path {
+            Some(path) => path,
+            None => return Ok(()),
+        };
 
-        self.template.render(
+        let template = match &self.template {
+            Some(template) => template,
+            None => return Ok(()),
+        };
+
+        log::trace!("Writing to log: {}", path.display());
+
+        let mut f = fs::File::create(path)?;
+        let remaining = timer.duration.saturating_sub(timer.elapsed.clone());
+        let remaining = remaining.as_digital();
+        let elapsed = timer.elapsed.as_digital();
+        let duration = timer.duration.as_digital();
+
+        template.render(
             &mut f,
             Data {
                 remaining,
@@ -233,7 +228,14 @@ impl Current {
         }
     }
 
-    fn clear(&mut self, path: &Path) -> Result<(), failure::Error> {
+    fn clear(&self) -> Result<(), failure::Error> {
+        let path = match &self.path {
+            Some(path) => path,
+            None => return Ok(()),
+        };
+
+        log::trace!("Clearing log: {}", path.display());
+
         if !path.is_file() {
             return Ok(());
         }
@@ -243,21 +245,27 @@ impl Current {
     }
 
     /// Attempt to write an update and log on errors.
-    fn write_log(&mut self, path: &Path) {
-        if let Err(e) = self.write(path) {
-            log_err!(e, "failed to write: {}", path.display());
+    fn write_log(&self, timer: &Timer) {
+        if let Err(e) = self.write(timer) {
+            log_err!(e, "failed to write");
         }
     }
 
     /// Attempt to clear the file and log on errors.
-    fn clear_log(&mut self, path: &Path) {
-        if let Err(e) = self.clear(path) {
-            log_err!(e, "failed to clear: {}", path.display());
+    fn clear_log(&self) {
+        if let Err(e) = self.clear() {
+            log_err!(e, "failed to clear");
         }
     }
 }
 
-impl Stream for Current {
+struct Timer {
+    duration: utils::Duration,
+    elapsed: utils::Duration,
+    interval: timer::Interval,
+}
+
+impl Stream for Timer {
     type Item = Result<(), failure::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -275,7 +283,7 @@ impl Stream for Current {
     }
 }
 
-impl stream::FusedStream for Current {
+impl stream::FusedStream for Timer {
     fn is_terminated(&self) -> bool {
         self.elapsed >= self.duration
     }
