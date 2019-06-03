@@ -13,17 +13,21 @@ use tokio::net::UdpSocket;
 const VEHICLE_URL: &'static str = "http://bit.ly/gtavvehicles";
 
 mod vehicle;
+mod weapon;
+
+use self::vehicle::Vehicle;
+use self::weapon::Weapon;
 
 macro_rules! vehicle {
     ($ctx:expr, $pfx:expr) => {
         match $ctx
             .next()
             .map(str::to_lowercase)
-            .and_then(vehicle::Vehicle::from_id)
+            .and_then(Vehicle::from_id)
         {
             Some(vehicle) => vehicle,
             None => {
-                let vehicles = vehicle::Vehicle::categories()
+                let vehicles = Vehicle::categories()
                     .into_iter()
                     .map(|v| format!("{} ({})", v, v.cost()))
                     .collect::<Vec<String>>()
@@ -98,9 +102,9 @@ impl CommandsConfig {
 
 enum Command {
     /// Spawn a vehicle.
-    SpawnVehicle(vehicle::Vehicle),
+    SpawnVehicle(Vehicle),
     /// Spawn a random vehicle.
-    SpawnRandomVehicle(vehicle::Vehicle),
+    SpawnRandomVehicle(Vehicle),
     /// Destroy the engine of the current vehicle.
     KillEngine,
     /// Fix the engine of the current vehicle.
@@ -190,7 +194,7 @@ enum Command {
     /// Make the current car leak all its fuel in 30 seconds.
     FuelLeakage,
     /// Change the current vehicle of the player.
-    ChangeCurrentVehicle(vehicle::Vehicle),
+    ChangeCurrentVehicle(Vehicle),
     /// Randomize doors of the current vehicle.
     RandomizeDoors,
     /// Shoot the player up in the air with a parachute.
@@ -772,7 +776,7 @@ impl Handler {
         ctx: &mut command::Context<'_, '_>,
     ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next() {
-            Some("car") => Command::SpawnRandomVehicle(vehicle::Vehicle::random_car()),
+            Some("car") => Command::SpawnRandomVehicle(Vehicle::random_car()),
             Some("vehicle") => {
                 let vehicle = vehicle!(ctx, "!gtav reward");
                 Command::SpawnVehicle(vehicle)
@@ -784,17 +788,9 @@ impl Handler {
                 let weapon = match ctx.next().and_then(Weapon::from_id) {
                     Some(weapon) => weapon,
                     None => {
-                        let weapons = Weapon::all()
-                            .into_iter()
-                            .map(|w| format!("{} ({})", w, w.cost()))
-                            .collect::<Vec<String>>()
-                            .join(", ");
-
                         ctx.respond(format!(
-                            "You give the streamer a weapon using for example {c} random. \
-                             Available weapons are: {weapons}. ",
+                            "No such weapon, sorry :(. You give a weapon using e.g.: {c} random.",
                             c = ctx.alias.unwrap_or("!gtav reward weapon"),
-                            weapons = weapons,
                         ));
 
                         return Ok(None);
@@ -1177,186 +1173,6 @@ impl super::Module for Module {
 
         futures.push(future.boxed());
         Ok(())
-    }
-}
-
-#[derive(Clone, Copy)]
-enum Weapon {
-    Random,
-
-    Ak47,
-    AssaultRifle,
-    AssaultRifleMk2,
-
-    M4,
-    CarbineRifle,
-    CarbineRifleMk2,
-
-    Grenade,
-    C4,
-    StickyBomb,
-
-    GrenadeLauncher,
-    GrenadeLauncherSmoke,
-
-    RocketLauncher,
-    Rpg,
-
-    Knife,
-
-    Minigun,
-
-    Parachute,
-
-    Firework,
-}
-
-impl Weapon {
-    /// Human-readable display of this weapon.
-    pub fn display(&self) -> String {
-        use self::Weapon::*;
-
-        match *self {
-            Random => format!("a random weapon BlessRNG"),
-            Ak47 | AssaultRifle | AssaultRifleMk2 => format!("an assault rifle!"),
-            M4 | CarbineRifle | CarbineRifleMk2 => format!("an assault rifle!"),
-            Grenade => format!("grenades!"),
-            C4 | StickyBomb => format!("sticky bombs!"),
-            GrenadeLauncher => format!("a grenade launcher"),
-            GrenadeLauncherSmoke => format!("a smoke grenade launcher"),
-            RocketLauncher | Rpg => format!("a rocket launcher!"),
-            Knife => format!("a knife!"),
-            Minigun => format!("a minigun!"),
-            Parachute => format!("a parachute!"),
-            Firework => format!("fireworks!"),
-        }
-    }
-
-    /// Map an id to a weapon.
-    pub fn from_id(id: &str) -> Option<Weapon> {
-        use self::Weapon::*;
-
-        match id {
-            "random" => Some(Random),
-            "ak47" => Some(Ak47),
-            "assault-rifle" => Some(AssaultRifle),
-            "assault-rifle-mk2" => Some(AssaultRifleMk2),
-            "m4" => Some(M4),
-            "carbine-rifle" => Some(CarbineRifle),
-            "carbine-rifle-mk2" => Some(CarbineRifleMk2),
-            "grenade" => Some(Grenade),
-            "c4" => Some(C4),
-            "sticky-bomb" => Some(StickyBomb),
-            "grenade-launcher" => Some(GrenadeLauncher),
-            "grenade-launcher-smoke" => Some(GrenadeLauncherSmoke),
-            "rocket-launcher" => Some(RocketLauncher),
-            "rpg" => Some(Rpg),
-            "knife" => Some(Knife),
-            "minigun" => Some(Minigun),
-            "parachute" => Some(Parachute),
-            "firework" => Some(Firework),
-            _ => None,
-        }
-    }
-
-    /**
-     * Get the cost of a vehicle.
-     */
-    fn cost(&self) -> u32 {
-        use self::Weapon::*;
-
-        match *self {
-            Random => 5,
-
-            M4 => 10,
-            AssaultRifle => 10,
-            AssaultRifleMk2 => 15,
-
-            Ak47 => 10,
-            CarbineRifle => 10,
-            CarbineRifleMk2 => 15,
-
-            Grenade => 5,
-            C4 => 10,
-            StickyBomb => 10,
-
-            GrenadeLauncher => 20,
-            GrenadeLauncherSmoke => 10,
-
-            RocketLauncher => 15,
-            Rpg => 15,
-
-            Knife => 1,
-
-            Minigun => 20,
-            Parachute => 10,
-
-            Firework => 20,
-        }
-    }
-
-    /// Get a list of all vehicles.
-    fn all() -> Vec<Weapon> {
-        use self::Weapon::*;
-
-        vec![
-            Random,
-            Ak47,
-            AssaultRifle,
-            AssaultRifleMk2,
-            M4,
-            CarbineRifle,
-            CarbineRifleMk2,
-            Grenade,
-            C4,
-            StickyBomb,
-            GrenadeLauncher,
-            GrenadeLauncherSmoke,
-            RocketLauncher,
-            Rpg,
-            Knife,
-            Minigun,
-            Parachute,
-            Firework,
-        ]
-    }
-}
-
-impl fmt::Display for Weapon {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use self::Weapon::*;
-
-        let s = match *self {
-            Random => "random",
-
-            Ak47 => "ak47",
-            AssaultRifle => "assault-rifle",
-            AssaultRifleMk2 => "assault-rifle-mk2",
-
-            M4 => "m4",
-            CarbineRifle => "carbine-rifle",
-            CarbineRifleMk2 => "carbine-rifle-mk2",
-
-            Grenade => "grenade",
-            C4 => "c4",
-            StickyBomb => "sticky-bomb",
-
-            GrenadeLauncher => "grenade-launcher",
-            GrenadeLauncherSmoke => "grenade-launcher-smoke",
-
-            RocketLauncher => "rocket-launcher",
-            Rpg => "rpg",
-
-            Knife => "knife",
-
-            Minigun => "minigun",
-
-            Parachute => "parachute",
-
-            Firework => "firework",
-        };
-
-        s.fmt(fmt)
     }
 }
 
