@@ -2,8 +2,8 @@ use crate::{
     auth::Scope,
     command,
     currency::Currency,
-    irc, module,
-    player::{AddTrackError, Event, Item, PlayThemeError, Player, PlayerClient},
+    irc, module, player,
+    player::{AddTrackError, Event, Item, PlayThemeError, Player},
     prelude::*,
     settings, stream_info, track_id,
     track_id::TrackId,
@@ -20,7 +20,7 @@ const EXAMPLE_SEARCH: &'static str = "queen we will rock you";
 pub struct Handler {
     enabled: Arc<RwLock<bool>>,
     stream_info: stream_info::StreamInfo,
-    player: Arc<RwLock<Option<PlayerClient>>>,
+    player: Arc<RwLock<Option<Player>>>,
     request_help_cooldown: Cooldown,
     subscriber_only: Arc<RwLock<bool>>,
     request_reward: Arc<RwLock<u32>>,
@@ -33,7 +33,7 @@ impl Handler {
     fn handle_request(
         &mut self,
         ctx: &mut command::Context<'_, '_>,
-        player: PlayerClient,
+        player: Player,
     ) -> Result<(), Error> {
         let q = ctx.rest().trim().to_string();
 
@@ -562,21 +562,30 @@ impl command::Handler for Handler {
                             }
                         };
 
-                        let argument = match diff {
-                            Some(true) => player.current_volume().saturating_add(argument),
-                            Some(false) => player.current_volume().saturating_sub(argument),
-                            None => argument,
+                        let volume = match diff {
+                            Some(true) => player::ModifyVolume::Increase(argument),
+                            Some(false) => player::ModifyVolume::Decrease(argument),
+                            None => player::ModifyVolume::Set(argument),
                         };
 
-                        // clamp the volume.
-                        let argument = u32::min(100, argument);
-                        ctx.respond(format!("Volume set to {}.", argument));
-                        player.volume(argument)?;
+                        match player.volume(volume)? {
+                            Some(volume) => {
+                                ctx.respond(format!("Updated volume to {}.", volume));
+                            }
+                            None => {
+                                ctx.respond("Cannot update volume");
+                            }
+                        }
                     }
                     // reading volume
-                    None => {
-                        ctx.respond(format!("Current volume: {}.", player.current_volume()));
-                    }
+                    None => match player.current_volume() {
+                        Some(volume) => {
+                            ctx.respond(format!("Current volume: {}.", volume));
+                        }
+                        None => {
+                            ctx.respond("No active player");
+                        }
+                    },
                 }
             }
             Some("skip") => {
@@ -672,14 +681,14 @@ impl module::Module for Module {
 
         let new_feedback_loop = move |player: Option<&Player>| match player {
             Some(player) => {
-                Some(feedback(player.client(), sender.clone(), chat_feedback.clone()).boxed())
+                Some(feedback(player.clone(), sender.clone(), chat_feedback.clone()).boxed())
             }
             None => None,
         };
 
         let mut feedback_loop = new_feedback_loop(player.as_ref());
 
-        let player = Arc::new(RwLock::new(player.as_ref().map(Player::client)));
+        let player = Arc::new(RwLock::new(player.as_ref().map(Clone::clone)));
 
         let help_cooldown = Cooldown::from_duration(Duration::seconds(5));
 
@@ -703,7 +712,7 @@ impl module::Module for Module {
                 futures::select! {
                     update = player_stream.select_next_some() => {
                         feedback_loop = new_feedback_loop(update.as_ref());
-                        *player.write() = update.as_ref().map(Player::client);
+                        *player.write() = update.as_ref().map(Clone::clone);
                     }
                     result = feedback_loop.current() => {
                         if let Err(e) = result.context("feedback loop errored") {
@@ -797,7 +806,7 @@ fn display_songs(
 
 /// Notifications from the player.
 async fn feedback(
-    player: PlayerClient,
+    player: Player,
     sender: irc::Sender,
     chat_feedback: Arc<RwLock<bool>>,
 ) -> Result<(), Error> {

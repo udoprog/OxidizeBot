@@ -358,7 +358,7 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
 
     futures.push(future.boxed());
 
-    web.set_player(player.client());
+    web.set_player(player.clone());
 
     // load the song module if we have a player configuration.
     injector.update(player);

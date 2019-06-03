@@ -749,7 +749,7 @@ impl Auth {
 /// API to manage device.
 #[derive(Clone)]
 struct Api {
-    player: Arc<RwLock<Option<player::PlayerClient>>>,
+    player: Arc<RwLock<Option<player::Player>>>,
     after_streams: db::AfterStreams,
     db: db::Database,
     currency: Arc<RwLock<Option<Currency>>>,
@@ -772,7 +772,7 @@ impl Api {
         let devices = player.list_devices().await?;
 
         if let Some(device) = devices.iter().find(|d| d.id == id) {
-            player.set_device(device.clone());
+            player.set_device(device.clone())?;
             return Ok(warp::reply::json(&EMPTY));
         }
 
@@ -1124,14 +1124,14 @@ struct ErrorMessage {
 /// Interface to the server.
 #[derive(Clone)]
 pub struct Server {
-    player: Arc<RwLock<Option<player::PlayerClient>>>,
+    player: Arc<RwLock<Option<player::Player>>>,
     /// Callbacks for when we have received a token.
     token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
 }
 
 impl Server {
     /// Set the player interface.
-    pub fn set_player(&self, player: player::PlayerClient) {
+    pub fn set_player(&self, player: player::Player) {
         *self.player.write() = Some(player);
     }
 

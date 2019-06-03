@@ -52,7 +52,7 @@ impl RemoteBuilder {
         };
 
         remote.client = match self.player.as_ref() {
-            Some(player) => Some(player.client()),
+            Some(player) => Some(player.clone()),
             None => None,
         };
 
@@ -66,7 +66,7 @@ impl RemoteBuilder {
 #[derive(Default)]
 struct Remote {
     rx: Option<Compat01As03<bus::Reader<player::Event>>>,
-    client: Option<player::PlayerClient>,
+    client: Option<player::Player>,
     setbac: Option<SetBac>,
 }
 

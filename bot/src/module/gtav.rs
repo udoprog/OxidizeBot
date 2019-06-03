@@ -489,7 +489,7 @@ impl Handler {
         let player = self.player.read();
 
         if let Some(player) = player.as_ref() {
-            let player = player.client();
+            let player = player.clone();
             let target = ctx.user.target.to_string();
             let id = id.to_string();
 

@@ -148,6 +148,28 @@ impl Item {
     }
 }
 
+/// A volume modification.
+pub enum ModifyVolume {
+    Increase(u32),
+    Decrease(u32),
+    Set(u32),
+}
+
+impl ModifyVolume {
+    /// Apply the given modification.
+    pub fn apply(self, v: u32) -> u32 {
+        use self::ModifyVolume::*;
+
+        let v = match self {
+            Increase(n) => v.saturating_add(n),
+            Decrease(n) => v.saturating_sub(n),
+            Set(v) => v,
+        };
+
+        u32::min(100, v)
+    }
+}
+
 #[derive(Debug)]
 pub enum Command {
     /// Skip the current song.
@@ -162,8 +184,6 @@ pub enum Command {
     Sync { song: Option<Song> },
     /// The queue was modified.
     Modified(Source),
-    /// Set the gain of the player.
-    Volume(Source, u32),
     /// Play the given item as a theme at the given offset.
     Inject(Source, Arc<Item>, Duration),
 }
@@ -175,7 +195,7 @@ impl Command {
 
         match *self {
             Skip(source) | Toggle(source) | Pause(source) | Play(source) | Modified(source)
-            | Volume(source, ..) | Inject(source, ..) => source,
+            | Inject(source, ..) => source,
             Sync { .. } => Source::Automatic,
         }
     }
@@ -196,7 +216,7 @@ pub fn run(
 
     let mut futures = utils::Futures::default();
 
-    let (connect_player, device) =
+    let (connect_stream, connect_player, device) =
         connect::setup(&mut futures, spotify.clone(), settings.scoped("spotify"))?;
     let youtube_player = youtube::setup(
         &mut futures,
@@ -204,13 +224,10 @@ pub fn run(
         settings.scoped("youtube"),
     )?;
 
-    let bus = Arc::new(RwLock::new(Bus::new(1024)));
+    let bus = EventBus {
+        bus: Arc::new(RwLock::new(Bus::new(1024))),
+    };
     let queue = Queue::new(db.clone());
-
-    let volume = Arc::new(RwLock::new(u32::min(
-        100u32,
-        config.player.volume.unwrap_or(50u32),
-    )));
 
     let song = Arc::new(RwLock::new(None));
     let closed = Arc::new(RwLock::new(None));
@@ -288,23 +305,25 @@ pub fn run(
     futures.push(vars.run().boxed());
 
     let parent_player = Player {
-        device: device.clone(),
-        queue: queue.clone(),
-        db: db.clone(),
-        max_queue_length,
-        max_songs_per_user,
-        duplicate_duration,
-        spotify: spotify.clone(),
-        youtube: youtube.clone(),
-        commands_tx,
-        bus: bus.clone(),
-        volume: volume.clone(),
-        song: song.clone(),
-        themes: themes.clone(),
-        closed: closed.clone(),
+        inner: Arc::new(PlayerInner {
+            device: device.clone(),
+            queue: queue.clone(),
+            connect_player: connect_player.clone(),
+            youtube_player: youtube_player.clone(),
+            max_queue_length,
+            max_songs_per_user,
+            duplicate_duration,
+            spotify: spotify.clone(),
+            youtube: youtube.clone(),
+            commands_tx,
+            bus: bus.clone(),
+            song: song.clone(),
+            themes: themes.clone(),
+            closed: closed.clone(),
+        }),
     };
 
-    let player = parent_player.client();
+    let player = parent_player.clone();
 
     // future to initialize the player future.
     // Yeah, I know....
@@ -343,16 +362,16 @@ pub fn run(
         let future = PlaybackFuture {
             config: config.clone(),
             spotify: spotify.clone(),
-            connect_player,
+            connect_stream,
+            connect_player: connect_player.clone(),
             youtube_player,
             commands,
-            bus: EventBus { bus },
+            bus,
             mixer,
             state: State::None,
             player: PlayerKind::None,
             detached,
             detached_stream,
-            volume: Arc::clone(&volume),
             song: song.clone(),
             song_file: None,
             song_switch_feedback,
@@ -370,22 +389,11 @@ pub fn run(
         match Song::from_playback(&p) {
             Some(song) => {
                 player.play_sync(Some(song))?;
-                *volume.write() = p.device.volume_percent;
-                *device.device.write() = Some(p.device);
+                connect_player.volume(ModifyVolume::Set(p.device.volume_percent))?;
+                device.sync_device(Some(p.device))?;
             }
             None => {
-                let devices = spotify.my_player_devices().await?;
-
-                *device.device.write() = match config.player.device.as_ref() {
-                    Some(device) => devices.into_iter().find(|d| d.name == *device),
-                    None => devices.into_iter().next(),
-                };
-
                 player.pause_with_source(Source::Automatic)?;
-
-                if let Some(volume) = config.player.volume {
-                    player.volume_with_source(Source::Automatic, volume)?;
-                }
             }
         }
 
@@ -599,72 +607,19 @@ pub struct CurrentData<'a> {
     elapsed: String,
 }
 
-/// A handler for the player.
-#[derive(Clone)]
-pub struct Player {
+/// Internal of the player.
+pub struct PlayerInner {
     device: self::connect::ConnectDevice,
     queue: Queue,
-    db: db::Database,
+    connect_player: self::connect::ConnectPlayer,
+    youtube_player: self::youtube::YouTubePlayer,
     max_queue_length: Arc<RwLock<u32>>,
     max_songs_per_user: Arc<RwLock<u32>>,
     duplicate_duration: Arc<RwLock<utils::Duration>>,
     spotify: Arc<api::Spotify>,
     youtube: Arc<api::YouTube>,
     commands_tx: mpsc::UnboundedSender<Command>,
-    bus: Arc<RwLock<Bus<Event>>>,
-    volume: Arc<RwLock<u32>>,
-    /// The current song that is loaded.
-    song: Arc<RwLock<Option<Song>>>,
-    /// Theme songs.
-    themes: db::Themes,
-    /// Player is closed for more requests.
-    closed: Arc<RwLock<Option<Option<Arc<String>>>>>,
-}
-
-impl Player {
-    /// The client components of the player.
-    pub fn client(&self) -> PlayerClient {
-        PlayerClient {
-            device: self.device.clone(),
-            db: self.db.clone(),
-            queue: self.queue.clone(),
-            thread_pool: Arc::new(ThreadPool::new()),
-            max_queue_length: self.max_queue_length.clone(),
-            max_songs_per_user: self.max_songs_per_user.clone(),
-            duplicate_duration: self.duplicate_duration.clone(),
-            spotify: self.spotify.clone(),
-            youtube: self.youtube.clone(),
-            commands_tx: self.commands_tx.clone(),
-            bus: self.bus.clone(),
-            volume: Arc::clone(&self.volume),
-            song: self.song.clone(),
-            themes: self.themes.clone(),
-            closed: self.closed.clone(),
-        }
-    }
-
-    /// Get a receiver for player events.
-    pub fn add_rx(&self) -> BusReader<Event> {
-        self.bus.write().add_rx()
-    }
-}
-
-/// All parts of a Player that can be shared between threads.
-#[derive(Clone)]
-pub struct PlayerClient {
-    device: self::connect::ConnectDevice,
-    db: db::Database,
-    queue: Queue,
-    thread_pool: Arc<ThreadPool>,
-    max_queue_length: Arc<RwLock<u32>>,
-    max_songs_per_user: Arc<RwLock<u32>>,
-    duplicate_duration: Arc<RwLock<utils::Duration>>,
-    spotify: Arc<api::Spotify>,
-    youtube: Arc<api::YouTube>,
-    commands_tx: mpsc::UnboundedSender<Command>,
-    bus: Arc<RwLock<Bus<Event>>>,
-    /// Song volume.
-    volume: Arc<RwLock<u32>>,
+    bus: EventBus,
     /// Song song that is loaded.
     song: Arc<RwLock<Option<Song>>>,
     /// Theme songs.
@@ -673,10 +628,17 @@ pub struct PlayerClient {
     closed: Arc<RwLock<Option<Option<Arc<String>>>>>,
 }
 
-impl PlayerClient {
+/// All parts of a Player that can be shared between threads.
+#[derive(Clone)]
+pub struct Player {
+    /// Player internals. Wrapped to make cloning cheaper since Player is frequently shared.
+    inner: Arc<PlayerInner>,
+}
+
+impl Player {
     /// Get a receiver for player events.
     pub fn add_rx(&self) -> BusReader<Event> {
-        self.bus.write().add_rx()
+        self.inner.bus.add_rx()
     }
 
     /// Synchronize playback with the given song.
@@ -686,37 +648,38 @@ impl PlayerClient {
 
     /// Get the current device.
     pub fn current_device(&self) -> Option<api::spotify::Device> {
-        self.device.current_device()
+        self.inner.device.current_device()
     }
 
     /// List all available devices.
     pub async fn list_devices(&self) -> Result<Vec<api::spotify::Device>, Error> {
-        self.device.list_devices().await
+        self.inner.device.list_devices().await
     }
 
     /// External call to set device.
     ///
     /// Should always notify the player to change.
-    pub fn set_device(&self, device: api::spotify::Device) -> Option<api::spotify::Device> {
-        self.device.set_device(Some(device))
+    pub fn set_device(&self, device: api::spotify::Device) -> Result<(), Error> {
+        self.inner.device.set_device(Some(device))
     }
 
     /// Clear the current device.
-    pub fn clear_device(&self) -> Option<api::spotify::Device> {
-        self.device.set_device(None)
+    pub fn clear_device(&self) -> Result<(), Error> {
+        self.inner.device.set_device(None)
     }
 
     /// Send the given command.
     fn send(&self, command: Command) -> Result<(), Error> {
-        self.commands_tx
+        self.inner
+            .commands_tx
             .unbounded_send(command)
             .map_err(|_| format_err!("failed to send command"))
     }
 
     /// Get the next N songs in queue.
     pub fn list(&self) -> Vec<Arc<Item>> {
-        let song = self.song.read();
-        let queue = self.queue.queue.read();
+        let song = self.inner.song.read();
+        let queue = self.inner.queue.queue.read();
 
         song.as_ref()
             .map(|c| c.item.clone())
@@ -727,7 +690,7 @@ impl PlayerClient {
 
     /// Promote the given song to the head of the queue.
     pub fn promote_song(&self, user: &str, n: usize) -> Option<Arc<Item>> {
-        let promoted = self.queue.promote_song(user, n);
+        let promoted = self.inner.queue.promote_song(user, n);
 
         if promoted.is_some() {
             self.modified();
@@ -762,35 +725,57 @@ impl PlayerClient {
     }
 
     /// Update volume of the player.
-    pub fn volume(&self, volume: u32) -> Result<(), Error> {
-        self.send(Command::Volume(Source::Manual, u32::min(100u32, volume)))
-    }
+    pub fn volume(&self, modify: ModifyVolume) -> Result<Option<u32>, Error> {
+        let track_id = match self.inner.song.read().as_ref() {
+            Some(song) => song.item.track_id.clone(),
+            None => {
+                return Ok(None);
+            }
+        };
 
-    /// Update volume of the player with a custom source.
-    pub fn volume_with_source(&self, source: Source, volume: u32) -> Result<(), Error> {
-        self.send(Command::Volume(source, u32::min(100u32, volume)))
+        match track_id {
+            TrackId::Spotify(..) => match self.inner.connect_player.volume(modify) {
+                Err(self::connect::CommandError::NoDevice) => {
+                    self.inner.bus.broadcast(Event::NotConfigured);
+                    return Ok(None);
+                }
+                Err(e) => return Err(e.into()),
+                Ok(volume) => return Ok(Some(volume)),
+            },
+            TrackId::YouTube(..) => Ok(Some(self.inner.youtube_player.volume(modify)?)),
+        }
     }
 
     /// Get the current volume.
-    pub fn current_volume(&self) -> u32 {
-        *self.volume.read()
+    pub fn current_volume(&self) -> Option<u32> {
+        let track_id = match self.inner.song.read().as_ref() {
+            Some(song) => song.item.track_id.clone(),
+            None => {
+                return None;
+            }
+        };
+
+        match track_id {
+            TrackId::Spotify(..) => Some(self.inner.connect_player.current_volume()),
+            TrackId::YouTube(..) => Some(self.inner.youtube_player.current_volume()),
+        }
     }
 
     /// Close the player from more requests.
     pub fn close(&self, reason: Option<String>) {
-        *self.closed.write() = Some(reason.map(Arc::new));
+        *self.inner.closed.write() = Some(reason.map(Arc::new));
     }
 
     /// Open the player.
     pub fn open(&self) {
-        *self.closed.write() = None;
+        *self.inner.closed.write() = None;
     }
 
     /// Search for a track.
     pub async fn search_track(&self, q: String) -> Result<Option<TrackId>, Error> {
         if q.starts_with("youtube:") {
             let q = q.trim_start_matches("youtube:").to_string();
-            let results = self.youtube.search(q).await?;
+            let results = self.inner.youtube.search(q).await?;
 
             let result = results.items.into_iter().filter(|r| match r.id.kind {
                 api::youtube::Kind::Video => true,
@@ -807,7 +792,7 @@ impl PlayerClient {
             q
         };
 
-        let page = self.spotify.search_track(q).await?;
+        let page = self.inner.spotify.search_track(q).await?;
 
         match page.items.into_iter().next() {
             Some(track) => match SpotifyId::from_base62(&track.id) {
@@ -820,7 +805,7 @@ impl PlayerClient {
 
     /// Play a theme track.
     pub async fn play_theme(&self, channel: String, name: String) -> Result<(), PlayThemeError> {
-        let theme = match self.themes.get(&channel, &name) {
+        let theme = match self.inner.themes.get(&channel, &name) {
             Some(theme) => theme,
             None => return Err(PlayThemeError::NoSuchTheme),
         };
@@ -828,8 +813,8 @@ impl PlayerClient {
         let duration = theme.end.clone().map(|o| o.as_duration());
 
         let item = convert_item(
-            self.spotify.clone(),
-            self.youtube.clone(),
+            self.inner.spotify.clone(),
+            self.inner.youtube.clone(),
             None,
             theme.track_id.clone(),
             duration,
@@ -840,7 +825,8 @@ impl PlayerClient {
         let item = Arc::new(item);
         let duration = theme.start.as_duration();
 
-        self.commands_tx
+        self.inner
+            .commands_tx
             .unbounded_send(Command::Inject(Source::Manual, item, duration))
             .map_err(|e| PlayThemeError::Error(e.into()))?;
 
@@ -861,25 +847,26 @@ impl PlayerClient {
         min_currency: Option<i64>,
     ) -> Result<(usize, Arc<Item>), AddTrackError> {
         let (user_count, len) = {
-            let queue_inner = self.queue.queue.read();
+            let queue_inner = self.inner.queue.queue.read();
             let len = queue_inner.len();
 
             if !is_moderator {
-                if let Some(reason) = self.closed.read().as_ref() {
+                if let Some(reason) = self.inner.closed.read().as_ref() {
                     return Err(AddTrackError::PlayerClosed(reason.clone()));
                 }
 
-                let max_queue_length = *self.max_queue_length.read();
+                let max_queue_length = *self.inner.max_queue_length.read();
 
                 // NB: moderator is allowed to violate max queue length.
                 if len >= max_queue_length as usize {
                     return Err(AddTrackError::QueueFull);
                 }
 
-                let duplicate_duration = self.duplicate_duration.read().clone();
+                let duplicate_duration = self.inner.duplicate_duration.read().clone();
 
                 if !duplicate_duration.is_empty() {
                     if let Some(last) = self
+                        .inner
                         .queue
                         .last_song_within(&track_id, duplicate_duration.clone())
                         .map_err(AddTrackError::Error)?
@@ -932,7 +919,7 @@ impl PlayerClient {
             }
         }
 
-        let max_songs_per_user = *self.max_songs_per_user.read();
+        let max_songs_per_user = *self.inner.max_songs_per_user.read();
 
         // NB: moderator is allowed to add more songs.
         if !is_moderator && user_count >= max_songs_per_user {
@@ -940,8 +927,8 @@ impl PlayerClient {
         }
 
         let mut item = convert_item(
-            self.spotify.clone(),
-            self.youtube.clone(),
+            self.inner.spotify.clone(),
+            self.inner.youtube.clone(),
             Some(user),
             track_id,
             None,
@@ -959,12 +946,14 @@ impl PlayerClient {
 
         let item = Arc::new(item);
 
-        self.queue
+        self.inner
+            .queue
             .push_back(item.clone())
             .await
             .map_err(|e| AddTrackError::Error(e.into()))?;
 
-        self.commands_tx
+        self.inner
+            .commands_tx
             .unbounded_send(Command::Modified(Source::Manual))
             .map_err(|e| AddTrackError::Error(e.into()))?;
 
@@ -977,7 +966,7 @@ impl PlayerClient {
     }
 
     pub fn purge(&self) -> Result<Vec<Arc<Item>>, Error> {
-        let purged = self.queue.purge()?;
+        let purged = self.inner.queue.purge()?;
 
         if !purged.is_empty() {
             self.modified();
@@ -988,7 +977,7 @@ impl PlayerClient {
 
     /// Remove the item at the given position.
     pub fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, Error> {
-        let removed = self.queue.remove_at(n)?;
+        let removed = self.inner.queue.remove_at(n)?;
 
         if removed.is_some() {
             self.modified();
@@ -999,7 +988,7 @@ impl PlayerClient {
 
     /// Remove the first track in the queue.
     pub fn remove_last(&self) -> Result<Option<Arc<Item>>, Error> {
-        let removed = self.queue.remove_last()?;
+        let removed = self.inner.queue.remove_last()?;
 
         if removed.is_some() {
             self.modified();
@@ -1010,7 +999,7 @@ impl PlayerClient {
 
     /// Remove the last track by the given user.
     pub fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, Error> {
-        let removed = self.queue.remove_last_by_user(user)?;
+        let removed = self.inner.queue.remove_last_by_user(user)?;
 
         if removed.is_some() {
             self.modified();
@@ -1023,7 +1012,7 @@ impl PlayerClient {
     pub fn find(&self, mut predicate: impl FnMut(&Item) -> bool) -> Option<(Duration, Arc<Item>)> {
         let mut duration = Duration::default();
 
-        if let Some(c) = self.song.read().as_ref() {
+        if let Some(c) = self.inner.song.read().as_ref() {
             if predicate(&c.item) {
                 return Some((Default::default(), c.item.clone()));
             }
@@ -1031,7 +1020,7 @@ impl PlayerClient {
             duration += c.remaining();
         }
 
-        let queue = self.queue.queue.read();
+        let queue = self.inner.queue.queue.read();
 
         for item in &*queue {
             if predicate(item) {
@@ -1049,12 +1038,12 @@ impl PlayerClient {
         let mut count = 0;
         let mut duration = Duration::default();
 
-        if let Some(item) = self.song.read().as_ref() {
+        if let Some(item) = self.inner.song.read().as_ref() {
             duration += item.remaining();
             count += 1;
         }
 
-        let queue = self.queue.queue.read();
+        let queue = self.inner.queue.queue.read();
 
         for item in &*queue {
             duration += item.duration;
@@ -1066,12 +1055,13 @@ impl PlayerClient {
 
     /// Get the current song, if it is set.
     pub fn current(&self) -> Option<Song> {
-        self.song.read().clone()
+        self.inner.song.read().clone()
     }
 
     /// Indicate that the queue has been modified.
     fn modified(&self) {
         if let Err(e) = self
+            .inner
             .commands_tx
             .unbounded_send(Command::Modified(Source::Manual))
         {
@@ -1393,6 +1383,7 @@ impl Mixer {
     }
 }
 
+#[derive(Clone)]
 pub struct EventBus {
     bus: Arc<RwLock<Bus<Event>>>,
 }
@@ -1405,6 +1396,11 @@ impl EventBus {
         if let Err(e) = b.try_broadcast(event) {
             log::error!("failed to broadcast player event: {:?}", e);
         }
+    }
+
+    /// Create a receiver for the bus.
+    fn add_rx(&self) -> BusReader<Event> {
+        self.bus.write().add_rx()
     }
 }
 
@@ -1427,6 +1423,7 @@ pub enum State {
 pub struct PlaybackFuture {
     config: Arc<config::Config>,
     spotify: Arc<api::Spotify>,
+    connect_stream: self::connect::ConnectStream,
     connect_player: self::connect::ConnectPlayer,
     youtube_player: self::youtube::YouTubePlayer,
     commands: mpsc::UnboundedReceiver<Command>,
@@ -1440,8 +1437,6 @@ pub struct PlaybackFuture {
     detached: bool,
     /// Stream of settings if the player is detached.
     detached_stream: settings::Stream<bool>,
-    /// Song volume.
-    volume: Arc<RwLock<u32>>,
     /// Song that is currently loaded.
     song: Arc<RwLock<Option<Song>>>,
     /// Path to write current song.
@@ -1579,7 +1574,7 @@ impl PlaybackFuture {
                         }
                     }
                 }
-                event = self.connect_player.select_next_some() => {
+                event = self.connect_stream.select_next_some() => {
                     self.handle_player_event(event?).await?;
                 }
                 command = self.commands.select_next_some() => {
@@ -2000,16 +1995,6 @@ impl PlaybackFuture {
 
                 self.bus.broadcast(Event::Modified);
             }
-            (Volume(_, volume), _) => {
-                let result = self.connect_player.volume(volume).await;
-
-                if let Err(self::connect::CommandError::NoDevice) = result {
-                    self.bus.broadcast(Event::NotConfigured);
-                }
-
-                self.youtube_player.volume(volume);
-                *self.volume.write() = volume;
-            }
             (Inject(source, item, offset), State::Playing) => {
                 {
                     // store the currently playing song in the sidelined slot.
@@ -2074,8 +2059,6 @@ impl PlaybackFuture {
                     return Ok(());
                 }
 
-                let volume = *self.volume.read();
-
                 let (elapsed, duration, track_id) = {
                     let mut song = self.song.write();
 
@@ -2091,9 +2074,7 @@ impl PlaybackFuture {
 
                 match track_id {
                     TrackId::Spotify(id) => {
-                        let c1 = self.connect_player.play(elapsed, id);
-                        let c2 = self.connect_player.volume(volume);
-                        let result = future::try_join(c1, c2).await;
+                        let result = self.connect_player.play(elapsed, id).await;
 
                         if let Err(self::connect::CommandError::NoDevice) = result {
                             self.bus.broadcast(Event::NotConfigured);
@@ -2104,7 +2085,6 @@ impl PlaybackFuture {
                     }
                     TrackId::YouTube(id) => {
                         self.youtube_player.play(elapsed, duration, id);
-                        self.youtube_player.volume(volume);
                         self.switch_current_player(PlayerKind::YouTube).await;
                         self.state = State::Playing;
                     }

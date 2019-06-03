@@ -116,8 +116,17 @@ types:
   player/song-update-interval:
     doc: The interval at which song updates are visible. Used in the Overlay.
     type: {id: duration}
+  player/spotify/volume:
+    doc: Volume to use for the Spotify player.
+    type: {id: percentage}
   player/spotify/volume-scale:
     doc: Scaling to apply to volume. A value of 50% would mean that that would effectively be the maximum volume.
+    type: {id: percentage}
+  player/spotify/device:
+    doc: Currently configured device to use for playback.
+    type: {id: raw, optional: true}
+  player/youtube/volume:
+    doc: Volume to use for the YouTube player.
     type: {id: percentage}
   player/youtube/volume-scale:
     doc: Scaling to apply to volume. A value of 50% would mean that that would effectively be the maximum volume.

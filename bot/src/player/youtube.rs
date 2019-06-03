@@ -1,4 +1,5 @@
-use crate::{bus, prelude::*, settings::Settings, utils::Futures};
+use crate::{bus, player, prelude::*, settings::Settings, utils::Futures};
+use failure::Error;
 use parking_lot::RwLock;
 use std::{sync::Arc, time::Duration};
 
@@ -8,16 +9,48 @@ pub fn setup(
     bus: Arc<bus::Bus<bus::YouTube>>,
     settings: Settings,
 ) -> Result<YouTubePlayer, failure::Error> {
-    let mut vars = settings.vars();
-    let volume_scale = vars.var("volume-scale", 100)?;
-    futures.push(vars.run().boxed());
+    let (mut volume_scale_stream, mut volume_scale) =
+        settings.stream("volume-scale").or_with(100)?;
+    let (mut volume_stream, volume) = settings.stream("volume").or_with(50)?;
+    let mut scaled_volume = (volume * volume_scale) / 100u32;
+    let volume = Arc::new(RwLock::new(volume));
 
-    Ok(YouTubePlayer { bus, volume_scale })
+    let player = YouTubePlayer {
+        bus,
+        settings,
+        volume: volume.clone(),
+    };
+
+    let returned_player = player.clone();
+
+    let future = async move {
+        player.volume_update(scaled_volume);
+
+        loop {
+            futures::select! {
+                update = volume_scale_stream.select_next_some() => {
+                    volume_scale = update;
+                    scaled_volume = (*volume.read() * volume_scale) / 100u32;
+                    player.volume_update(scaled_volume);
+                }
+                update = volume_stream.select_next_some() => {
+                    *volume.write() = update;
+                    scaled_volume = (*volume.read() * volume_scale) / 100u32;
+                    player.volume_update(scaled_volume);
+                }
+            }
+        }
+    };
+
+    futures.push(future.boxed());
+    Ok(returned_player)
 }
 
+#[derive(Clone)]
 pub struct YouTubePlayer {
     bus: Arc<bus::Bus<bus::YouTube>>,
-    volume_scale: Arc<RwLock<u32>>,
+    settings: Settings,
+    volume: Arc<RwLock<u32>>,
 }
 
 impl YouTubePlayer {
@@ -32,7 +65,7 @@ impl YouTubePlayer {
         self.bus.send(bus::YouTube::YouTubeCurrent { event });
     }
 
-    pub fn play(&mut self, elapsed: Duration, duration: Duration, video_id: String) {
+    pub fn play(&self, elapsed: Duration, duration: Duration, video_id: String) {
         let event = bus::YouTubeEvent::Play {
             video_id,
             elapsed: elapsed.as_secs(),
@@ -42,18 +75,29 @@ impl YouTubePlayer {
         self.bus.send(bus::YouTube::YouTubeCurrent { event });
     }
 
-    pub fn pause(&mut self) {
+    pub fn pause(&self) {
         let event = bus::YouTubeEvent::Pause;
         self.bus.send(bus::YouTube::YouTubeCurrent { event });
     }
 
-    pub fn stop(&mut self) {
+    pub fn stop(&self) {
         let event = bus::YouTubeEvent::Stop;
         self.bus.send(bus::YouTube::YouTubeCurrent { event });
     }
 
-    pub fn volume(&mut self, volume: u32) {
-        let volume = (volume * *self.volume_scale.read()) / 100u32;
+    pub fn volume(&self, modify: player::ModifyVolume) -> Result<u32, Error> {
+        let mut volume = self.volume.write();
+        let update = modify.apply(*volume);
+        *volume = update;
+        self.settings.set("volume", update)?;
+        Ok(update)
+    }
+
+    pub fn current_volume(&self) -> u32 {
+        *self.volume.read()
+    }
+
+    fn volume_update(&self, volume: u32) {
         self.bus.send(bus::YouTube::YouTubeVolume { volume });
     }
 }
