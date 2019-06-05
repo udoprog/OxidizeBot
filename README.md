@@ -145,31 +145,17 @@ It supports the following template variables:
 * `{{name}}` - the user who said the word.
 * `{{target}}` - the channel where the word was sent.
 
-## Features
+## Commands
 
-Note: In a future version, `features` will be removed in favor of `[[modules]]`. See below.
+Every command is enabled through a Setting named `<command>/enabled`.
 
-Features are enabled per-channel like this:
+To for example enable the `!admin` command, you'd have to make sure the `admin/enabled` setting is set.
 
-```toml
-features = [
-    "name-of-feature"
-]
-```
+#### Misc Commands
 
-Where `name-of-feature` is one of the features listed below.
+You enable the `!admin` command by setting `admin/enabled` to `true`.
 
-#### `admin` feature
-
-You enable the feature by adding `"admin"` to the `features` array in the configuration:
-
-```toml
-features = [
-  "admin",
-]
-```
-
-Enabled commands:
+Available commands:
 
 * `!uptime` - Get the current uptime.
 * `!title` - Get the current title.
@@ -177,21 +163,15 @@ Enabled commands:
 * `!game` - Get the current game.
 * `!game <game>` - Update the game to be `<game>`.
 
-#### `command` feature
+#### `!command` command
 
-You enable the feature by adding `"command"` to the `features` array in the configuration:
-
-```toml
-features = [
-  "command",
-]
-```
+You enable custom command administration by setting `command/enabled` to `true`.
 
 Allows setting and requesting custom commands.
 
 A command is the bot responding with a pre-defined message based on a template.
 
-Enabled commands:
+Available commands:
 
 * `!command edit <name> <what>` - Set the command `<name>` to respond with `<what>` (**moderator**).
 * `!command clear-group <name>` - Clear the group for command `<name>` (**moderator**).
@@ -206,9 +186,7 @@ Template variables that can be used in `<what>`:
 * `{{name}}` - The user who said the word.
 * `{{target}}` - The channel where the word was sent.
 
-#### `alias` feature
-
-This feature is enabled by default.
+#### `!alias` command
 
 Allows setting custom aliases.
 Aliases are prefixes that when invoked they will be expanded when processed by the bot.
@@ -216,7 +194,7 @@ Aliases are prefixes that when invoked they will be expanded when processed by t
 For example, lets say we have an alias named `!sr` configured to `!song request {{rest}}`.
 This would allow us to invoke `!sr don't call me` and it would be processed as `!song request don't call me`.
 
-Enabled commands:
+Available commands:
 
 * `!alias edit <name> <what>` - Set the command `<name>` to alias to `<what>` (**moderator**).
 * `!alias clear-group <name>` - Clear the group for alias `<name>` (**moderator**).
@@ -231,7 +209,7 @@ Template variables that can be used in `<what>`:
 * `{{name}}` - The user who invoked the alias.
 * `{{target}}` - The channel where the alias was invoked.
 
-###### Deprecated configuration
+###### Deprecated configuration `[[aliases]]`
 
 Aliases used to be specified in the configuration.
 If these are still present, the bot will migrate those aliases into the database and post a warning at startup.
@@ -252,40 +230,30 @@ match = "!volume"
 replace = "!song volume {{rest}}"
 ```
 
-#### `afterstream` feature
+Now it's all handled using the `!alias` command.
 
-You enable the feature by adding `"afterstream"` to the `features` array in the configuration:
+#### `!afterstream` command
 
-```toml
-features = [
-  "afterstream",
-]
-```
+You enable the `!afterstream` command by setting `afterstream/enabled` to `true`.
 
 Enabled adding afterstream messages.
 
 Afterstream messages keeps track of who added them and when.
 
-Enabled commands:
+Available commands:
 
 * `!afterstream <message>` - Leaves the `<message>` in the afterstream queue.
 
 Afterstreams that are posted are made available in the UI at: http://localhost:12345/after-streams
 
 
-#### `song` feature
+#### `!song` command
 
-You enable the feature by adding `"song"` to the `features` array in the configuration:
-
-```toml
-features = [
-  "song",
-]
-```
+You enable the `!song` command by setting `song/enabled` to `true`.
 
 Enables song playback through Spotify.
 
-Enabled commands:
+Available commands:
 
 * `!song request spotify:track:<id>` - Request a song through a Spotify URI.
 * `!song request https://open.spotify.com/track/<id>` - Request a song by spotify URL.
@@ -311,38 +279,19 @@ Enabled commands:
 * `!song when` - Find out when your song will play.
 * `!song when <user>` - Find out when the song for a specific user will play (**moderator**).
 
-#### `clip` feature
+#### `!clip` command
 
-You enable the feature by adding `"clip"` to the `features` array in the configuration:
+You enable the `!clip` command by setting `clip/enabled` to `true`.
 
-```toml
-features = [
-  "clip",
-]
-```
-
-The `clip` feature enables the `!clip` command.
+The `!clip` command enables the `!clip` command.
 
 This command has a cooldown determined by the `[irc] clip_cooldown` configuration key (see above).
 
-#### `8ball` feature
+#### `!8ball` command
 
-You enable the feature by adding `"8ball"` to the `features` array in the configuration:
-
-```toml
-features = [
-  "8ball",
-]
-```
+You enable the `!8ball` command by setting `8ball/enabled` to `true`.
 
 Enables the Magic `!8ball` command. Cause it's MAGIC.
-
-## Modules
-
-Modules are defined in the `[[modules]]` sections of the configuration.
-
-They enable certain behavior of the bot, and are generally better than `features` since they allow adding configuration
-associated with the module.
 
 #### `currency`
 
@@ -363,71 +312,51 @@ Enabled commands depend on the `name` of your currency, so we are gonna assume t
 - `!thingies windfall <amount>` - Give away `<amount>` currency to all current viewers (**moderator**).
 - `!thingies show <user>` - Show the amount of currency for the given user (**moderator**).
 
-#### `swearjar`
+#### `!swearjar` command
 
-You enable the `swearjar` module by adding the following to your configuration:
+You enable the `!swearjar` command by setting `swearjar/enabled` to `true`.
 
-```toml
-[[modules]]
-type = "swearjar"
+This also requires the `!currency` command to be enabled.
 
-# The amount of currency to reward all watchers with.
-reward = 10
-# Cooldown between invocations, default: 1m
-# cooldown = "1m"
-```
-
-This also requires the `currency` feature to be enabled.
-
-Enabled commands:
+Available commands:
 
 * `!swearjar` - Anyone can invoke the swearjar to reward all viewers with some currency from the streamer when they swear.
 
-#### `countdown`
+#### `!countdown` command
 
-You enable the `countdown` module by adding the following to your configuration:
+You enable the `!countdown` command by setting `countdown/enabled` to `true`.
 
-```toml
-[[modules]]
-type = "countdown"
-path = "E:\\temp\\countdown.txt"
-```
+The `!countdown` command allows setting a countdown and a corresponding template, that will be written to a file while the countdown is active.
 
-Enabled commands:
+The following settings are required:
+
+* `countdown/path` - The path to write the countdown to.
+
+Available commands:
 
 * `!countdown set <duration> <template>` - Set a countdown, available template variables are `{{remaining}}`, `{{duration}}`, and `{{elapsed}}`.
   - Example: `!countdown set 5m I'll be live in {{remaining}}`
   - Example: `!countdown set 1m Getting food, back in {{remaining}}`
 * `!countdown clear` - Clear the current countdown.
 
-#### `water`
+#### `!water` command
 
-You enable the `water` module by adding the following to your configuration:
+You enable the `!water` command by setting `water/enabled` to `true`.
 
-```toml
-[[modules]]
-type = "water"
-```
-
-Enabled commands:
+Available commands:
 
 * `!water` - A user can remind the streamer to drink water and will be rewarded one unit of stream currency for every minute since last reminder.
 * `!water undo` - Undos the last water reminder and refunds the reward.
 
-#### `promotions`
+#### `!promo` command
 
-You enable the `promotions` module by adding the following to your configuration:
+You enable the `!promo` command by setting `promo/enabled` to `true`.
 
-```toml
-[[modules]]
-type = "promotions"
-frequency = "15m"
-```
+The following settings are required:
 
-The frequency says how frequently promotions should be posted.
-This is also combined with a custom frequency that must be met per promotion.
+* `promo/frequency` - The highest frequency at which promotions are posted.
 
-Enabled commands:
+Available commands:
 
 * `!promo list` - List all available promotions.
 * `!promo edit <id> <frequency> <what>` - Set the promotion identified by `<id>` to send the message `<what>` every `<frequency>`.
@@ -438,57 +367,14 @@ Enabled commands:
 * `!promo delete <id>` - Delete the promotion with the given id.
 * `!promo rename <from> <to>` - Delete the promotion with the given id.
 
-#### `gtav`
+#### `!gtav` command
+
+You enable the `!gtav` command by setting `gtav/enabled` to `true`.
 
 The `gtav` module enables support for [`ChaosMod`](https://github.com/udoprog/ChaosMod).
 
-It enables _a lot_ of commands:
+This has a lot of settings to tweak, go into `Settings` and search for `gtav` to find out more.
+It also enables a lot of commands.
+Go to https://bit.ly/gtavchaos for a full list.
 
-* `!gtav other randomize-color`
-* `!gtav other randomize-weather`
-* `!gtav other randomize-character`
-* `!gtav other license <name>`
-* `!gtav reward car`
-* `!gtav reward vehicle`
-* `!gtav reward repair`
-* `!gtav reward wanted`
-* `!gtav reward weapon`
-* `!gtav reward health`
-* `!gtav reward armor`
-* `!gtav reward parachute`
-* `!gtav reward boost`
-* `!gtav reward superboost`
-* `!gtav reward superspeed`
-* `!gtav reward superswim`
-* `!gtav reward superjump`
-* `!gtav reward invincibility`
-* `!gtav reward ammo`
-* `!gtav reward exploding-bullets`
-* `!gtav reward matrix-slam`
-* `!gtav reward mod-vehicle`
-* `!gtav punish wanted 1`
-* `!gtav punish wanted 2`
-* `!gtav punish wanted 3`
-* `!gtav punish wanted 4`
-* `!gtav punish wanted 5`
-* `!gtav punish stumble`
-* `!gtav punish fall`
-* `!gtav punish health`
-* `!gtav punish engine`
-* `!gtav punish tires`
-* `!gtav punish weapon`
-* `!gtav punish all-weapons`
-* `!gtav punish brake`
-* `!gtav punish ammo`
-* `!gtav punish enemy`
-* `!gtav punish enemy <amount>`
-* `!gtav punish drunk`
-* `!gtav punish very-drunk`
-* `!gtav punish set-on-fire`
-* `!gtav punish set-peds-on-fire`
-* `!gtav punish make-peds-aggressive`
-* `!gtav punish disable-control`
-
-All of these have different effects and costs (which requires the `currency` feature).
-
-These are mostly detailed here: https://bit.ly/gtavchaos
+All of these have different effects and costs (which requires the `!currency` command).

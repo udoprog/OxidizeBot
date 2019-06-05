@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `[current_song]` has been deprecated in favor of `player/song-file` settings.
 - `[[modules]]` configuration has been deprecated in favor of their corresponding setting.
 - Fully deprecated the need for a configuration file. If you want to migrate existing settings, run the bot once with the configuration file, then it can safely be deleted.
+- Add more commands to `!gtav` and add command-specific overrides through `gtav/command-config`.
 
 ### Added
 - Added the ability to scale the maximum volume of a player by a percentage using the following settings:
@@ -23,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * This includes the groups: **@streamer**, **@moderator**, **@subscriber**, and **@everyone**.
 - A UI page to handle Authorization.
 - Load fallback songs from `player/fallback-uri`.
+- `!speedrun` command to get records from speedrun.com.
 
 [auth.yaml]: bot/src/auth.yaml
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.2.7...master

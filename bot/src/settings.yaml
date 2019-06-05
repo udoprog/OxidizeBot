@@ -15,7 +15,10 @@ types:
     doc: Indicates whether the bot has run at least once.
     type: {id: bool}
   gtav/command-configs:
-    doc: Command-specific configuration overrides.
+    doc: >
+      **Experimental** support for command-specific configuration overrides.
+      An example override looks like this: `{"name": "Wanted", "enabled": true, "cost": 10000, "cooldown": "5m"}`.
+      [Available names](https://github.com/udoprog/setmod/blob/master/bot/src/module/gtav.rs#L208).
     type: {id: set, value: {id: raw}}
   gtav/enabled:
     doc: If the `!gtav` module is enabled.
