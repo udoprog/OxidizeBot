@@ -13,6 +13,11 @@ impl Duration {
         Duration(seconds)
     }
 
+    /// Construct a duration from the given number of hours.
+    pub fn hours(hours: u64) -> Self {
+        Duration(hours * 3600)
+    }
+
     /// Test if the duration is empty.
     pub fn is_empty(&self) -> bool {
         self.0 == 0

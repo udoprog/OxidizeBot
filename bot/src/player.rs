@@ -9,7 +9,7 @@ use crate::{
     template::Template,
     timer,
     track_id::TrackId,
-    utils,
+    utils::{self, PtDuration},
 };
 
 use chrono::{DateTime, Utc};
@@ -2132,8 +2132,8 @@ async fn convert_item(
                 .as_ref()
                 .ok_or_else(|| failure::format_err!("video does not have content details"))?;
 
-            let duration = parse_youtube_duration(&content_details.duration)?;
-            (Track::YouTube { video }, duration)
+            let duration = str::parse::<PtDuration>(&content_details.duration)?;
+            (Track::YouTube { video }, duration.into_std())
         }
     };
 
@@ -2148,37 +2148,4 @@ async fn convert_item(
         user,
         duration,
     });
-
-    fn parse_youtube_duration(duration: &str) -> Result<Duration, Error> {
-        let duration = duration.trim_start_matches("PT");
-
-        let (duration, hours) = match duration.find('H') {
-            Some(index) => {
-                let hours = str::parse::<u64>(&duration[..index])?;
-                (&duration[(index + 1)..], hours)
-            }
-            None => (duration, 0u64),
-        };
-
-        let (duration, minutes) = match duration.find('M') {
-            Some(index) => {
-                let minutes = str::parse::<u64>(&duration[..index])?;
-                (&duration[(index + 1)..], minutes)
-            }
-            None => (duration, 0u64),
-        };
-
-        let (_, mut seconds) = match duration.find('S') {
-            Some(index) => {
-                let seconds = str::parse::<u64>(&duration[..index])?;
-                (&duration[(index + 1)..], seconds)
-            }
-            None => (duration, 0u64),
-        };
-
-        seconds += minutes * 60;
-        seconds += hours * 3600;
-
-        Ok(Duration::from_secs(seconds))
-    }
 }

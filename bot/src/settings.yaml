@@ -309,3 +309,9 @@ types:
   command/enabled:
     doc: If the `!command` command is enabled. It's used for custom command administration.
     type: {id: bool}
+  speedrun/enabled:
+    doc: If the `!speedrun` command is enabled.
+    type: {id: bool}
+  speedrun/top:
+    doc: "How many top runs to fetch (default: 20)."
+    type: {id: number}

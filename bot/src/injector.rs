@@ -97,6 +97,23 @@ impl Injector {
         inner.storage.insert(type_id, Box::new(value));
     }
 
+    /// Get a value from the injector.
+    pub fn get<T>(&self) -> Option<T>
+    where
+        T: Any + Send + Sync + 'static + Clone,
+    {
+        let type_id = TypeId::of::<T>();
+        let inner = self.inner.read();
+
+        match inner.storage.get(&type_id) {
+            Some(value) => match value.downcast_ref::<T>() {
+                Some(value) => Some(value.clone()),
+                None => panic!("downcast failed"),
+            },
+            None => None,
+        }
+    }
+
     /// Get an existing value and setup a stream for updates at the same time.
     pub fn stream<T>(&self) -> (Stream<T>, Option<T>)
     where

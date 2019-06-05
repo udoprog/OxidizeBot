@@ -533,6 +533,100 @@ impl Shutdown {
     }
 }
 
+/// PT-formatted duration.
+#[derive(Debug, Clone)]
+pub struct PtDuration(time::Duration);
+
+impl PtDuration {
+    /// Access the inner duration.
+    pub fn as_std(&self) -> &time::Duration {
+        &self.0
+    }
+
+    /// Convert into inner duration.
+    pub fn into_std(self) -> time::Duration {
+        self.0
+    }
+}
+
+impl std::str::FromStr for PtDuration {
+    type Err = failure::Error;
+
+    fn from_str(duration: &str) -> Result<Self, Self::Err> {
+        let duration = duration.trim_start_matches("PT");
+
+        let (duration, hours) = match duration.find('H') {
+            Some(index) => {
+                let hours = str::parse::<u64>(&duration[..index])?;
+                (&duration[(index + 1)..], hours)
+            }
+            None => (duration, 0u64),
+        };
+
+        let (duration, minutes) = match duration.find('M') {
+            Some(index) => {
+                let minutes = str::parse::<u64>(&duration[..index])?;
+                (&duration[(index + 1)..], minutes)
+            }
+            None => (duration, 0u64),
+        };
+
+        let (_, mut seconds) = match duration.find('S') {
+            Some(index) => {
+                let seconds = str::parse::<u64>(&duration[..index])?;
+                (&duration[(index + 1)..], seconds)
+            }
+            None => (duration, 0u64),
+        };
+
+        seconds += minutes * 60;
+        seconds += hours * 3600;
+
+        Ok(PtDuration(time::Duration::from_secs(seconds)))
+    }
+}
+
+impl fmt::Display for PtDuration {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let p = partition(self.0.as_secs());
+
+        write!(fmt, "PT")?;
+
+        if p.hours > 0 {
+            write!(fmt, "{}H", p.hours)?;
+        }
+
+        if p.minutes > 0 {
+            write!(fmt, "{}M", p.minutes)?;
+        }
+
+        if p.seconds > 0 {
+            write!(fmt, "{}S", p.seconds)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PtDuration {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        str::parse(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+impl serde::Serialize for PtDuration {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Offset, TrimmedWords, Urls, Words};

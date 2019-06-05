@@ -356,6 +356,7 @@ scopes! {
     (EightBall, "8ball"),
     (Command, "command"),
     (GtavBypassCooldown, "gtav/bypass-cooldown"),
+    (Speedrun, "speedrun"),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -102,3 +102,12 @@ table! {
         role -> Text,
     }
 }
+
+// Cached entries.
+table! {
+    cache (key) {
+        key -> Text,
+        expires_at -> Timestamp,
+        value -> Text,
+    }
+}

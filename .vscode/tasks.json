@@ -5,14 +5,21 @@
     "tasks": [
         {
             "type": "cargo",
-            "label": "cargo build",
-            "command": "cargo",
-            "args": [
-                "build"
-            ],
+            "label": "cargo check",
+            "subcommand": "check",
             "problemMatcher": [
                 "$rustc"
-            ]
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "type": "npm",
+            "script": "build",
+            "path": "bot/ui/",
+            "problemMatcher": []
         }
     ]
 }

@@ -158,6 +158,8 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
         .run_migrations()
         .context("failed to run settings migrations")?;
 
+    let injector = injector::Injector::new();
+
     let bad_words = db::Words::load(db.clone())?;
     let after_streams = db::AfterStreams::load(db.clone())?;
     let commands = db::Commands::load(db.clone())?;
@@ -207,9 +209,12 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
     let global_bus = Arc::new(bus::Bus::new());
     let youtube_bus = Arc::new(bus::Bus::new());
     let global_channel = Arc::new(RwLock::new(None));
-    let injector = injector::Injector::new();
 
     let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
+
+    let cache = db::Cache::load(db.clone())?;
+    futures.push(cache.clone().run().boxed());
+    injector.update(cache);
 
     let currency = injector.var(&mut futures);
 
@@ -344,6 +349,7 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
     let bot_twitch = api::Twitch::new(bot_token.clone())?;
     let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
     let nightbot = Arc::new(api::NightBot::new(nightbot_token.clone())?);
+    injector.update(api::Speedrun::new()?);
 
     let (player, future) = player::run(
         db.clone(),
@@ -379,6 +385,7 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
     modules.push(Box::new(module::after_stream::Module));
     modules.push(Box::new(module::clip::Module));
     modules.push(Box::new(module::eight_ball::Module));
+    modules.push(Box::new(module::speedrun::Module));
 
     if config.obs.is_some() {
         log::warn!("`[obs]` setting has been deprecated from the configuration");

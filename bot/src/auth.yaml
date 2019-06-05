@@ -101,3 +101,8 @@ scopes:
     version: 0
     allow:
       - "@streamer"
+  speedrun:
+    doc: If you are allowed to run the `!speedrun` command.
+    version: 0
+    allow:
+      - "@everyone"

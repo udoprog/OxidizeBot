@@ -2,6 +2,7 @@
 mod macros;
 mod after_streams;
 mod aliases;
+mod cache;
 mod commands;
 pub(crate) mod models;
 mod promotions;
@@ -15,6 +16,7 @@ use std::path::Path;
 pub use self::{
     after_streams::{AfterStream, AfterStreams},
     aliases::{Alias, Aliases},
+    cache::Cache,
     commands::{Command, Commands},
     promotions::{Promotion, Promotions},
     themes::{Theme, Themes},
