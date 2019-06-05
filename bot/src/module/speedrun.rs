@@ -121,7 +121,7 @@ impl command::Handler for Speedrun {
                         let mut runs = Vec::new();
 
                         for run in records.runs.into_iter() {
-                            if runs.len() > 3 {
+                            if runs.len() >= 3 {
                                 break;
                             }
 
