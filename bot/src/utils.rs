@@ -118,9 +118,7 @@ pub struct Words<'a> {
 impl<'a> Words<'a> {
     /// Split the commandline.
     pub fn new(string: &str) -> Words<'_> {
-        Words {
-            string: string.trim_start_matches(char::is_whitespace),
-        }
+        Words { string }
     }
 
     /// The rest of the input.
@@ -137,13 +135,54 @@ impl<'a> Iterator for Words<'a> {
             return None;
         }
 
-        let (out, rest) = match self.string.find(char::is_whitespace) {
-            Some(n) => self.string.split_at(n),
-            None => return Some(mem::replace(&mut self.string, "")),
-        };
+        let mut it = self.string.char_indices();
+        let len = self.string.len();
 
-        self.string = rest.trim_start_matches(char::is_whitespace);
-        Some(out)
+        while let Some((s, c)) = it.next() {
+            match c {
+                ' ' | '\t' | '\r' | '\n' => continue,
+                // parse string
+                '"' => {
+                    let s = it.next().map(|(i, _)| i).unwrap_or(len);
+                    let mut e = len;
+
+                    while let Some((i, c)) = it.next() {
+                        match c {
+                            '"' => {
+                                e = usize::min(i, len);
+                                break;
+                            }
+                            _ => (),
+                        }
+                    }
+
+                    let out = &self.string[s..e];
+                    let e = it.next().map(|(i, _)| i).unwrap_or(len);
+                    self.string = &self.string[e..];
+                    return Some(out);
+                }
+                _ => {
+                    let mut e = len;
+
+                    while let Some((i, c)) = it.next() {
+                        match c {
+                            ' ' | '\t' | '\r' | '\n' => {
+                                e = usize::min(i, len);
+                                break;
+                            }
+                            _ => (),
+                        }
+                    }
+
+                    let (head, tail) = self.string.split_at(e);
+                    self.string = tail;
+                    return Some(&head[s..]);
+                }
+            }
+        }
+
+        self.string = "";
+        None
     }
 }
 
@@ -667,6 +706,12 @@ mod tests {
     pub fn test_split_escape() {
         let out = Words::new("   foo bar   baz   ").collect::<Vec<_>>();
         assert_eq!(out, vec!["foo", "bar", "baz"]);
+    }
+
+    #[test]
+    pub fn test_split_quoted() {
+        let out = Words::new("   foo bar   \"baz  biz\" ").collect::<Vec<_>>();
+        assert_eq!(out, vec!["foo", "bar", "baz  biz"]);
     }
 
     #[test]

@@ -70,15 +70,20 @@ impl Speedrun {
     pub async fn game_categories_by_id(
         &self,
         game: String,
+        embeds: Embeds,
     ) -> Result<Option<Vec<Category>>, Error> {
-        let data = self
-            .v1(Method::GET, &["games", game.as_str(), "categories"])
-            .json::<Data<Vec<Category>>>()
-            .await?;
+        let mut request = self.v1(Method::GET, &["games", game.as_str(), "categories"]);
+
+        if let Some(q) = embeds.to_query() {
+            request = request.query_param("embed", q.as_str());
+        }
+
+        let data = request.json::<Data<Vec<Category>>>().await?;
         Ok(data.map(|d| d.data))
     }
 
     /// Get all variables associated with a category.
+    #[allow(unused)]
     pub async fn category_variables_by_id(
         &self,
         category: String,
@@ -112,6 +117,7 @@ impl Speedrun {
         category: String,
         top: u32,
         variables: Variables,
+        embeds: Embeds,
     ) -> Result<Option<GameRecord>, Error> {
         let mut request = self
             .v1(
@@ -119,6 +125,10 @@ impl Speedrun {
                 &["leaderboards", game.as_str(), "category", category.as_str()],
             )
             .query_param("top", top.to_string().as_str());
+
+        if let Some(q) = embeds.to_query() {
+            request = request.query_param("embed", q.as_str());
+        }
 
         for (key, value) in variables.variables {
             request = request.query_param(&format!("var-{}", key), &value);
@@ -252,6 +262,59 @@ pub struct Variables {
     pub variables: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Clone)]
+pub enum Embed {
+    Players,
+    Variables,
+    Game,
+}
+
+impl Embed {
+    /// Get the id of this embed.
+    pub fn id(&self) -> &'static str {
+        use self::Embed::*;
+
+        match *self {
+            Players => "players",
+            Variables => "variables",
+            Game => "game",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Embeds {
+    embeds: Vec<Embed>,
+}
+
+impl Embeds {
+    /// Convert into a query.
+    pub fn to_query(&self) -> Option<String> {
+        let mut it = self.embeds.iter().peekable();
+
+        if !it.peek().is_some() {
+            return None;
+        }
+
+        let mut s = String::new();
+
+        while let Some(e) = it.next() {
+            s.push_str(e.id());
+
+            if it.peek().is_some() {
+                s.push(',');
+            }
+        }
+
+        Some(s)
+    }
+
+    /// Add the given embed parameter.
+    pub fn push(&mut self, embed: Embed) {
+        self.embeds.push(embed);
+    }
+}
+
 impl Variables {
     /// Generate a unique cache key for this collection of variables.
     pub fn cache_key(&self) -> String {
@@ -338,6 +401,63 @@ pub struct User {
     pub links: Vec<Link>,
 }
 
+impl User {
+    /// Check if the given user matches the given string.
+    pub fn matches(&self, s: &str) -> bool {
+        if self.names.matches(s) {
+            return true;
+        }
+
+        if self.twitch_matches(s) {
+            return true;
+        }
+
+        false
+    }
+
+    /// Test if Twitch matches.
+    pub fn twitch_matches(&self, s: &str) -> bool {
+        let twitch = match self.twitch.as_ref() {
+            Some(twitch) => twitch,
+            None => return false,
+        };
+
+        let url = match url::Url::parse(&twitch.uri) {
+            Ok(url) => url,
+            Err(_) => return false,
+        };
+
+        let mut segments = match url.path_segments() {
+            Some(segments) => segments,
+            None => return false,
+        };
+
+        let part = match segments.next() {
+            Some(part) => part,
+            None => return false,
+        };
+
+        part.contains(s)
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Guest {
+    pub name: String,
+    #[serde(default)]
+    pub links: Vec<Link>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(tag = "rel")]
+pub enum Players {
+    #[serde(rename = "user")]
+    User(User),
+    #[serde(rename = "guest")]
+    Guest(Guest),
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Videos {
@@ -356,13 +476,25 @@ pub struct Status {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(tag = "rel")]
+pub enum RelatedPlayer {
+    #[serde(rename = "user")]
+    Player(RelatedUser),
+    #[serde(rename = "guest")]
+    Guest(RelatedGuest),
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Player {
-    pub rel: String,
-    /// ID is set if player is a registered speedrun.com user.
-    pub id: Option<String>,
-    /// Name is set if player is not registered (a guest).
-    pub name: Option<String>,
+pub struct RelatedUser {
+    pub id: String,
+    pub uri: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct RelatedGuest {
+    pub name: String,
     pub uri: String,
 }
 
@@ -406,7 +538,7 @@ pub struct RunInfo {
     pub comment: Option<String>,
     pub status: Status,
     #[serde(default)]
-    pub players: Vec<Player>,
+    pub players: Vec<RelatedPlayer>,
     #[serde(default)]
     pub date: Option<NaiveDate>,
     #[serde(default)]
@@ -492,6 +624,11 @@ pub struct GameRecord {
     pub values: serde_json::Value,
     #[serde(default)]
     pub runs: Vec<Run>,
+    #[serde(default)]
+    pub links: Vec<Link>,
+    /// Annotated information on players, if embed=players was requested.
+    #[serde(default)]
+    pub players: Option<Data<Vec<Players>>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -560,12 +697,16 @@ pub enum CategoryType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Scope {
-    #[serde(rename = "full-game", rename_all = "kebab-case")]
+    #[serde(rename_all = "kebab-case")]
     FullGame {},
-    #[serde(rename = "global", rename_all = "kebab-case")]
+    #[serde(rename_all = "kebab-case")]
+    AllLevels {},
+    #[serde(rename_all = "kebab-case")]
     Global {},
+    #[serde(rename_all = "kebab-case")]
+    SingleLevel { level: String },
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -581,6 +722,12 @@ pub struct Category {
     pub miscellaneous: bool,
     #[serde(default)]
     pub links: Vec<Link>,
+    /// This is included in case we have the `variables` embed.
+    #[serde(default)]
+    pub variables: Option<Data<Vec<Variable>>>,
+    /// Annotated information on players, if embed=game was requested.
+    #[serde(default)]
+    pub game: Option<Data<Game>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
