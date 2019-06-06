@@ -6,12 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.10...master
+
+## [0.2.10]
+
 ### Changed
 - Reduce the number of calls for `!speedrun` command.
 - Commands can now be quoted to support spaces in arguments.
   * Example: `!speedrun record sm64 --category "120 Star"`
 
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.9...master
+[0.2.10]: https://github.com/udoprog/setmod/compare/0.2.9...0.2.10
 
 ## [0.2.9]
 
