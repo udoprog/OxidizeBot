@@ -317,7 +317,8 @@ pub struct RawVideoInfo {
     pub video_id: String,
     pub status: String,
     pub title: String,
-    pub thumbnail_url: String,
+    #[serde(default)]
+    pub thumbnail_url: Option<String>,
     pub url_encoded_fmt_stream_map: String,
     #[serde(default)]
     pub view_count: Option<usize>,

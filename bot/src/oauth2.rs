@@ -25,8 +25,8 @@ use url::Url;
 /// * We assume that a user would pay attention when downloading and running an application.
 ///   - If they don't, they have bigger problems on their hands.
 static YOUTUBE_CLIENT_ID: &'static str =
-    "520353465977-filfj4j326v5vvd4do07riej30ekin70.apps.googleusercontent.com";
-static YOUTUBE_CLIENT_SECRET: &'static str = "8Rcs45nQEmruNey4-Egx7S7C";
+    "104600448660-l5qspsirgqsnq7uv4tu3fpfmtbs2c234.apps.googleusercontent.com";
+static YOUTUBE_CLIENT_SECRET: &'static str = "xQMzQtFvXadhJh1cqoe6G0zH";
 static NIGHTBOT_CLIENT_ID: &'static str = "08068f96a94dbb3286f61e26afa9bd6d";
 static NIGHTBOT_CLIENT_SECRET: &'static str = "d9afb0ee6092af477f671c3195109e54";
 
@@ -808,23 +808,52 @@ impl Flow {
         };
 
         let returned_sync_token = sync_token.clone();
+        let settings = self.settings;
 
         let future = async move {
             log::trace!("{}: Running loop", what);
 
             if let Some(token) = builder.log_build().await {
-                log::trace!("{}: New token", what);
+                log::trace!("{}: Storing new token", what);
+                settings.set_silent("token", &token)?;
                 sync_token.set(token);
             }
 
             loop {
                 futures::select! {
+                    token = token_stream.select_next_some() => {
+                        log::trace!("{}: New from settings", what);
+
+                        match token {
+                            Some(token) => {
+                                // force new token to be validated.
+                                builder.new_token = Some(token);
+
+                                if let Some(token) = builder.log_build().await {
+                                    log::trace!("{}: Updating in-memory token", what);
+                                    sync_token.set(token);
+                                }
+                            }
+                            None => {
+                                // unset the existing token to force a new authentication loop.
+                                builder.token = None;
+
+                                if let Some(token) = builder.log_build().await {
+                                    log::trace!("{}: Storing new token", what);
+                                    settings.set_silent("token", &token)?;
+                                    sync_token.set(token);
+                                }
+                            }
+                        }
+                    }
                     config = config_stream.select_next_some() => {
                         log::trace!("{}: New configuration", what);
 
                         builder.new_config = config;
 
                         if let Some(token) = builder.log_build().await {
+                            log::trace!("{}: Storing new token", what);
+                            settings.set_silent("token", &token)?;
                             sync_token.set(token);
                         }
                     }
@@ -834,15 +863,8 @@ impl Flow {
                         builder.force_refresh = true;
 
                         if let Some(token) = builder.log_build().await {
-                            sync_token.set(token);
-                        }
-                    }
-                    token = token_stream.select_next_some() => {
-                        log::trace!("{}: New token", what);
-
-                        builder.new_token = token;
-
-                        if let Some(token) = builder.log_build().await {
+                            log::trace!("{}: Storing new token", what);
+                            settings.set_silent("token", &token)?;
                             sync_token.set(token);
                         }
                     }
@@ -850,6 +872,8 @@ impl Flow {
                         log::trace!("{}: Check for expiration", what);
 
                         if let Some(token) = builder.log_build().await {
+                            log::trace!("{}: Storing new token", what);
+                            settings.set_silent("token", &token)?;
                             sync_token.set(token);
                         }
                     }

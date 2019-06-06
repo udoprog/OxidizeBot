@@ -244,23 +244,37 @@ impl Settings {
         self.inner_get(&key)
     }
 
+    /// Insert the given setting without sending an update notification to other components.
+    pub fn set_silent<T>(&self, key: &str, value: T) -> Result<(), Error>
+    where
+        T: serde::Serialize,
+    {
+        let key = self.key(key);
+        self.inner_set(key.as_ref(), value, false)
+    }
+
     /// Insert the given setting.
     pub fn set<T>(&self, key: &str, value: T) -> Result<(), Error>
     where
         T: serde::Serialize,
     {
         let key = self.key(key);
-        self.inner_set(key.as_ref(), value)
+        self.inner_set(key.as_ref(), value, true)
     }
 
     /// Insert the given setting as raw JSON.
     pub fn set_json(&self, key: &str, value: serde_json::Value) -> Result<(), Error> {
         let key = self.key(key);
-        self.inner_set_json(key.as_ref(), value)
+        self.inner_set_json(key.as_ref(), value, true)
     }
 
     /// Inner implementation of set_json which doesn't do key translation.
-    fn inner_set_json(&self, key: &str, value: serde_json::Value) -> Result<(), Error> {
+    fn inner_set_json(
+        &self,
+        key: &str,
+        value: serde_json::Value,
+        notify: bool,
+    ) -> Result<(), Error> {
         use self::db::schema::settings::dsl;
 
         let c = self.inner.db.pool.lock();
@@ -274,7 +288,10 @@ impl Settings {
             .optional()?;
 
         let json = serde_json::to_string(&value)?;
-        self.try_send(&key, Event::Set(value));
+
+        if notify {
+            self.try_send(&key, Event::Set(value));
+        }
 
         match b {
             None => {
@@ -407,12 +424,12 @@ impl Settings {
     }
 
     /// Insert the given setting.
-    fn inner_set<T>(&self, key: &str, value: T) -> Result<(), Error>
+    fn inner_set<T>(&self, key: &str, value: T, notify: bool) -> Result<(), Error>
     where
         T: serde::Serialize,
     {
         let value = serde_json::to_value(value)?;
-        self.inner_set_json(key, value)
+        self.inner_set_json(key, value, notify)
     }
 
     /// Subscribe for events on the given key.
@@ -531,7 +548,7 @@ where
             Some(value) => value,
             None => {
                 let value = value();
-                self.settings.inner_set(&self.key, &value)?;
+                self.settings.inner_set(&self.key, &value, true)?;
                 value
             }
         };
@@ -548,7 +565,7 @@ where
             Some(value) => Some(value),
             None => match self.default_value {
                 Some(value) => {
-                    self.settings.inner_set(&self.key, &value)?;
+                    self.settings.inner_set(&self.key, &value, true)?;
                     Some(value)
                 }
                 None => None,
