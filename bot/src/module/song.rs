@@ -204,10 +204,10 @@ impl Handler {
 
                     let duration = match duration.to_std() {
                         Err(_) => None,
-                        Ok(duration) => Some(utils::compact_duration(duration)),
+                        Ok(duration) => Some(utils::compact_duration(&duration)),
                     };
 
-                    let limit = utils::compact_duration(limit);
+                    let limit = utils::compact_duration(&limit);
 
                     let who = match who {
                         Some(ref who) if *who == user.name => String::from(" by you"),
@@ -485,7 +485,7 @@ impl command::Handler for Handler {
                         }
                     }
                     Some((when, item)) => {
-                        let when = utils::compact_duration(when);
+                        let when = utils::compact_duration(&when);
 
                         if your {
                             ctx.respond(format!("Your song {} will play in {}", item.what(), when));

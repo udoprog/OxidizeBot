@@ -10,6 +10,7 @@ use reqwest::{
     r#async::{Chunk, Client, Decoder},
     Method, StatusCode, Url,
 };
+use std::collections::BTreeMap;
 use std::mem;
 
 const V1_URL: &'static str = "https://speedrun.com/api/v1";
@@ -77,6 +78,20 @@ impl Speedrun {
         Ok(data.map(|d| d.data))
     }
 
+    /// Get all variables associated with a category.
+    pub async fn category_variables_by_id(
+        &self,
+        category: String,
+    ) -> Result<Option<Vec<Variable>>, Error> {
+        let data = self
+            .v1(Method::GET, &["categories", category.as_str(), "variables"])
+            .json::<Data<Vec<Variable>>>()
+            .await?;
+
+        Ok(data.map(|d| d.data))
+    }
+
+    /// Get all records associated with a category.
     pub async fn category_records_by_id(
         &self,
         category: String,
@@ -88,6 +103,29 @@ impl Speedrun {
             .json::<Page<GameRecord>>()
             .await?;
         Ok(data)
+    }
+
+    /// Get all records associated with a category.
+    pub async fn leaderboard(
+        &self,
+        game: String,
+        category: String,
+        top: u32,
+        variables: Variables,
+    ) -> Result<Option<GameRecord>, Error> {
+        let mut request = self
+            .v1(
+                Method::GET,
+                &["leaderboards", game.as_str(), "category", category.as_str()],
+            )
+            .query_param("top", top.to_string().as_str());
+
+        for (key, value) in variables.variables {
+            request = request.query_param(&format!("var-{}", key), &value);
+        }
+
+        let data = request.json::<Data<GameRecord>>().await?;
+        Ok(data.map(|d| d.data))
     }
 }
 
@@ -113,6 +151,10 @@ impl RequestBuilder {
         }
 
         req = req.header(header::ACCEPT, "application/json");
+        req = req.header(
+            header::USER_AGENT,
+            concat!("setmod/", env!("CARGO_PKG_VERSION")),
+        );
         let mut res = req.send().compat().await?;
 
         let status = res.status();
@@ -202,6 +244,22 @@ impl Names {
         }
 
         false
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Variables {
+    pub variables: BTreeMap<String, String>,
+}
+
+impl Variables {
+    /// Generate a unique cache key for this collection of variables.
+    pub fn cache_key(&self) -> String {
+        self.variables
+            .iter()
+            .map(|(k, v)| format!("{}:{}", k, v))
+            .collect::<Vec<_>>()
+            .join("/")
     }
 }
 
@@ -301,20 +359,23 @@ pub struct Status {
 #[serde(rename_all = "kebab-case")]
 pub struct Player {
     pub rel: String,
-    pub id: String,
+    /// ID is set if player is a registered speedrun.com user.
+    pub id: Option<String>,
+    /// Name is set if player is not registered (a guest).
+    pub name: Option<String>,
     pub uri: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Times {
     pub primary: PtDuration,
-    pub primary_t: u64,
+    pub primary_t: serde_json::Number,
     pub realtime: Option<PtDuration>,
-    pub realtime_t: u64,
+    pub realtime_t: serde_json::Number,
     pub realtime_noloads: Option<PtDuration>,
-    pub realtime_noloads_t: u64,
+    pub realtime_noloads_t: serde_json::Number,
     pub ingame: Option<PtDuration>,
-    pub ingame_t: u64,
+    pub ingame_t: serde_json::Number,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -339,13 +400,15 @@ pub struct RunInfo {
     #[serde(default)]
     pub level: serde_json::Value,
     pub category: String,
-    pub videos: Videos,
+    #[serde(default)]
+    pub videos: Option<Videos>,
     #[serde(default)]
     pub comment: Option<String>,
     pub status: Status,
     #[serde(default)]
     pub players: Vec<Player>,
-    pub date: NaiveDate,
+    #[serde(default)]
+    pub date: Option<NaiveDate>,
     #[serde(default)]
     pub submitted: Option<DateTime<Utc>>,
     pub times: Times,
@@ -360,6 +423,52 @@ pub struct RunInfo {
 pub struct Run {
     pub place: u32,
     pub run: RunInfo,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct VariableFlags {
+    #[serde(default)]
+    pub miscellaneous: Option<bool>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct VariableValue {
+    pub label: String,
+    pub rule: Option<String>,
+    #[serde(default)]
+    pub flags: VariableFlags,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct VariableValues {
+    #[serde(rename = "_note")]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub choices: HashMap<String, String>,
+    #[serde(default)]
+    pub values: HashMap<String, VariableValue>,
+    #[serde(default)]
+    pub default: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Variable {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub category: Option<String>,
+    pub scope: Scope,
+    pub mandatory: bool,
+    pub user_defined: bool,
+    pub obsoletes: bool,
+    pub values: VariableValues,
+    pub is_subcategory: bool,
+    #[serde(default)]
+    pub links: Vec<Link>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -438,7 +547,9 @@ pub struct Game {
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum CategoryPlayers {
     #[serde(rename = "exactly")]
-    Exactly { value: u64 },
+    Exactly { value: u32 },
+    #[serde(rename = "up-to")]
+    UpTo { value: u32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
@@ -446,6 +557,15 @@ pub enum CategoryPlayers {
 pub enum CategoryType {
     PerGame,
     PerLevel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[serde(tag = "type")]
+pub enum Scope {
+    #[serde(rename = "full-game", rename_all = "kebab-case")]
+    FullGame {},
+    #[serde(rename = "global", rename_all = "kebab-case")]
+    Global {},
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

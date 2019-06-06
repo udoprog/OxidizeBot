@@ -35,7 +35,7 @@ impl command::Handler for Uptime {
             // NB: very important to check that _now_ is after started at.
             Some(ref started_at) if now > *started_at => {
                 let uptime =
-                    utils::compact_duration((now - *started_at).to_std().unwrap_or_default());
+                    utils::compact_duration(&(now - *started_at).to_std().unwrap_or_default());
 
                 ctx.respond(format!(
                     "Stream has been live for {uptime}.",

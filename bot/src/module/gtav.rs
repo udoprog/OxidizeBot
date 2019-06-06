@@ -933,7 +933,7 @@ impl command::Handler for Handler {
                 ctx.respond(format!(
                     "{} cooldown in effect, please wait at least {}!",
                     what,
-                    compact_duration(remaining),
+                    compact_duration(&remaining),
                 ));
 
                 return Ok(());

@@ -216,7 +216,7 @@ fn partition(seconds: u64) -> DurationParts {
 }
 
 /// Format the given number of seconds as a compact human time.
-pub fn compact_duration(duration: time::Duration) -> String {
+pub fn compact_duration(duration: &time::Duration) -> String {
     let mut parts = Vec::new();
 
     let p = partition(duration.as_secs());
@@ -571,9 +571,22 @@ impl std::str::FromStr for PtDuration {
             None => (duration, 0u64),
         };
 
+        let mut milliseconds = 0;
+
         let (_, mut seconds) = match duration.find('S') {
             Some(index) => {
-                let seconds = str::parse::<u64>(&duration[..index])?;
+                let seconds = &duration[..index];
+
+                let seconds = match seconds.find('.') {
+                    Some(dot) => {
+                        let (seconds, tail) = seconds.split_at(dot);
+                        milliseconds = str::parse::<u64>(&tail[1..])?;
+                        seconds
+                    }
+                    None => seconds,
+                };
+
+                let seconds = str::parse::<u64>(seconds)?;
                 (&duration[(index + 1)..], seconds)
             }
             None => (duration, 0u64),
@@ -581,8 +594,9 @@ impl std::str::FromStr for PtDuration {
 
         seconds += minutes * 60;
         seconds += hours * 3600;
+        milliseconds += seconds * 1000;
 
-        Ok(PtDuration(time::Duration::from_secs(seconds)))
+        Ok(PtDuration(time::Duration::from_millis(milliseconds)))
     }
 }
 
