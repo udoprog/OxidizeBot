@@ -378,3 +378,17 @@ It also enables a lot of commands.
 Go to https://bit.ly/gtavchaos for a full list.
 
 All of these have different effects and costs (which requires the `!currency` command).
+
+#### `!speedrun` command
+
+You enable the `!speedrun` command by setting `speedrun/enabled` to `true`.
+
+* `!speedrun record <game> [filters]` - List a specific record.
+  * Example: `!speedrun record gtav --user burhac --category 100%`
+
+Available `[filters]` are:
+* `--user <name>` - Limit results to the given user.
+* `--category <name>` - Limit results to the given category.
+* `--sub-category <name>` - Limit results to the given sub-category.
+* `--misc` - Include misc categories.
+* `--misc-only` - Only list misc categories.
