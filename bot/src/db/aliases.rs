@@ -107,8 +107,6 @@ impl Aliases {
         let mut inner = self.inner.write();
 
         if let Some(alias) = self.db.edit(&key, template.source())? {
-            log::info!("inserting alias in-memory");
-
             inner.insert(
                 key.clone(),
                 Arc::new(Alias {
