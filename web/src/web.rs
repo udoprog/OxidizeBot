@@ -18,6 +18,7 @@ pub fn setup(
     let mut reg = handlebars::Handlebars::new();
     reg.register_partial("layout", include_str!("web/layout.html.hbs"))?;
     reg.register_template_string("index", include_str!("web/index.html.hbs"))?;
+    reg.register_template_string("privacy", include_str!("web/privacy.html.hbs"))?;
     reg.register_template_string("player", include_str!("web/player.html.hbs"))?;
 
     let server = Server::new(Arc::new(reg), no_auth)?;
@@ -91,6 +92,7 @@ impl service::Service for Server {
         let future: Box<dyn Future<Item = Response<Self::ResBody>, Error = Error> + Send> =
             match route {
                 (&Method::GET, (Some(""), None)) => Box::new(self.handle_index()),
+                (&Method::GET, (Some("privacy"), None)) => Box::new(self.handle_privacy()),
                 (&Method::GET, (Some("player"), Some(login))) => {
                     Box::new(self.handle_player_show(login))
                 }
@@ -145,7 +147,7 @@ impl service::Service for Server {
 impl Server {
     const MAX_BYTES: usize = 10_000;
 
-    /// Handles Oauth 2.0 authentication redirect.
+    /// Handles the index page.
     pub fn handle_index(&mut self) -> impl Future<Item = Response<Body>, Error = Error> {
         let players = self.players.read().expect("poisoned");
 
@@ -183,6 +185,21 @@ impl Server {
         struct Player<'a> {
             name: &'a str,
         }
+    }
+
+    /// Handles the index page.
+    pub fn handle_privacy(&mut self) -> impl Future<Item = Response<Body>, Error = Error> {
+        let data = Data {};
+
+        let body = match self.reg.render("privacy", &data) {
+            Ok(body) => body,
+            Err(e) => return future::err(e.into()),
+        };
+
+        return future::result(html(body));
+
+        #[derive(serde::Serialize)]
+        struct Data {}
     }
 
     /// Handle listing players.
