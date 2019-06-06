@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.8...master
+
+## [0.2.8]
+
 ### Changed
 - Themes are not stored in the database, accessible through the `!theme` command and the web UI.
 - `[player]` has been deprecated in favor of `player` settings.
@@ -27,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `!speedrun` command to get records from speedrun.com.
 
 [auth.yaml]: bot/src/auth.yaml
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.7...master
+[0.2.8]: https://github.com/udoprog/setmod/compare/0.2.7...0.2.8
 
 ## [0.2.7]
 
