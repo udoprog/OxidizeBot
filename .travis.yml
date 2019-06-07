@@ -3,6 +3,9 @@ os:
 language: rust
 rust:
 - nightly-2019-06-04
+before_install:
+  - sudo apt-get update
+  - sudo apt-get install -y libmysqlclient-dev
 script:
 - tools/build.sh
 deploy:
