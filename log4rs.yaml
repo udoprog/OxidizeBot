@@ -12,7 +12,7 @@ root:
   appenders:
     - stdout
 loggers:
-  setmod_bot:
+  setmod:
     level: info
     appenders:
       - file

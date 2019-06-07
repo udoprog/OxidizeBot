@@ -109,7 +109,7 @@ impl Cache {
             }
         }
 
-        let mut to_delete;
+        let to_delete;
 
         // delete from database.
         {

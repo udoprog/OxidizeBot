@@ -28,12 +28,12 @@ fi
 package=setmod-$version-$TRAVIS_OS_NAME-$arch
 dest=setmod-$maj.$min
 
-cargo build --release --bin setmod-bot
+cargo build --release --bin setmod
 mkdir $dest
 
 case $TRAVIS_OS_NAME in
 "linux")
-    cp target/release/setmod-bot $dest/
+    cp target/release/setmod $dest/
     cp log4rs.yaml $dest/
     cp secrets.yml.example $dest/
     cp tools/setmod-dist.ps1 $dest/setmod.ps1

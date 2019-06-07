@@ -13,7 +13,8 @@ if ($env:APPVEYOR_REPO_TAG_NAME -match '^(\d+\.\d+)\.\d+$') {
     exit
 }
 
-& cmd /c 'cargo build --release --bin setmod-bot 2>&1'
+& cmd /c 'cargo build --release --bin setmod 2>&1'
+& cmd /c "cargo wix -n setmod --install-version $version 2>&1"
 
 $dest="setmod-$release"
 $target="target/$dest"
@@ -27,9 +28,10 @@ New-Item -Name $target -ItemType "directory"
 # example secrets.yml
 Copy-Item log4rs.yaml -Destination $target/
 Copy-Item secrets.yml.example -Destination $target/
-Copy-Item target/release/setmod-bot.exe -Destination $target/
+Copy-Item target/release/setmod.exe -Destination $target/
 Copy-Item tools/setmod-dist.ps1 -Destination $target/setmod.ps1
-Get-ChildItem -Path "build/dll" -Include *.dll -Recurse | Copy-Item -Destination $target/
+Get-ChildItem -Path target/wix -Include *.msi -Recurse | Copy-Item -Destination $target/
+Get-ChildItem -Path build/dll -Include *.dll -Recurse | Copy-Item -Destination $target/
 
 Set-Location -Path target
 7z a "setmod-$version-windows-x86_64.zip" $dest/
