@@ -216,8 +216,6 @@ impl<'a> command::Handler for Handler<'a> {
                         };
 
                         if let Some(scope) = schema.scope.clone() {
-                            log::warn!("scope required: {}", scope);
-
                             if !ctx.has_scope(scope) {
                                 ctx.respond(
                                     "You are not permitted to modify that setting, sorry :(",
