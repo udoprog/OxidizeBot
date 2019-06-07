@@ -1,11 +1,12 @@
 #![feature(async_await)]
 #![recursion_limit = "128"]
+#![windows_subsystem = "windows"]
 
 use failure::{format_err, Error, ResultExt};
 use parking_lot::RwLock;
 use setmod_bot::{
     api, auth, bus, config, db, injector, irc, module, oauth2, obs, player, prelude::*, secrets,
-    settings, utils, web,
+    settings, sys, utils, web,
 };
 use std::{
     fs,
@@ -84,11 +85,12 @@ fn main() -> Result<(), Error> {
     let opts = opts();
     let m = opts.get_matches();
 
-    let root = m
-        .value_of("root")
-        .map(Path::new)
-        .unwrap_or(Path::new("."))
-        .to_owned();
+    let root = match m.value_of("root") {
+        Some(root) => PathBuf::from(root),
+        None => dirs::config_dir()
+            .ok_or_else(|| format_err!("no standard configuration directory available"))?
+            .join("SetMod"),
+    };
 
     let config = m
         .value_of("config")
@@ -100,12 +102,25 @@ fn main() -> Result<(), Error> {
 
     setup_logs(&root).context("failed to setup logs")?;
 
+    if !root.is_dir() {
+        log::info!("Creating SetMod directory: {}", root.display());
+        std::fs::create_dir_all(&root)?;
+    }
+
+    let system = sys::setup(&root)?;
+
     loop {
         let mut runtime = tokio::runtime::Runtime::new()?;
+
         let result = runtime.block_on(
-            try_main(root.clone(), web_root.clone(), config.clone())
-                .boxed()
-                .compat(),
+            try_main(
+                system.clone(),
+                root.clone(),
+                web_root.clone(),
+                config.clone(),
+            )
+            .boxed()
+            .compat(),
         );
 
         match result {
@@ -113,12 +128,24 @@ fn main() -> Result<(), Error> {
             Ok(()) => log::info!("bot was shut down"),
         }
 
+        if !system.is_running() {
+            break;
+        }
+
         log::info!("Restarting in 5 seconds...");
         thread::sleep(Duration::from_secs(5));
     }
+
+    system.join()?;
+    Ok(())
 }
 
-async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> Result<(), Error> {
+async fn try_main(
+    system: sys::System,
+    root: PathBuf,
+    web_root: Option<PathBuf>,
+    config: PathBuf,
+) -> Result<(), Error> {
     log::info!("Starting SetMod Version {}", setmod_bot::VERSION);
 
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
@@ -425,11 +452,11 @@ async fn try_main(root: PathBuf, web_root: Option<PathBuf>, config: PathBuf) -> 
 
     let stuff = async move { future::try_join_all(futures).await.map_err(Some) };
 
+    let system_shutdown = system.wait_for_shutdown();
+
     let shutdown_rx = async move {
-        match shutdown_rx.await {
-            Ok(_) => Result::<(), Option<Error>>::Err(None),
-            Err(_) => Result::<(), Option<Error>>::Err(None),
-        }
+        let _ = future::select(system_shutdown.boxed(), shutdown_rx).await;
+        Err::<(), _>(None::<Error>)
     };
 
     let result = future::try_join(stuff, shutdown_rx).await;
