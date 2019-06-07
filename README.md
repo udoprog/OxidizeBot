@@ -1,4 +1,4 @@
-# setmod
+# ![alt text](https://raw.githubusercontent.com/udoprog/setmod/master/bot/res/icon48.png "SetMod Rust Bot") SetMod
 
 [![Build Status](https://travis-ci.org/udoprog/setmod.svg?branch=master)](https://travis-ci.org/udoprog/setmod)
 [![Build status](https://ci.appveyor.com/api/projects/status/cxagsq3idti252a4/branch/master?svg=true)](https://ci.appveyor.com/project/udoprog/setmod/branch/master)
@@ -19,19 +19,21 @@ On Windows, this can be done by right clicking and selecting `Run with PowerShel
 
 ## Migrating from 0.2 to 0.3
 
-SetMod 0.3 completely removed all configuration from the bot.
-It is instead managed through the `Settings` page in the UI.
+SetMod 0.3 completely removes the need for any configuration files.
+Everything is now managed through the `Settings` page in the UI.
 
-It also moved where it expected the database to be, so if you have an old database you will have to move it manually.
+We've also moved where we expect the database to be, so if you have an old `0.2` database and a `config.toml` file you'll have to move it like this:
 
 1. Install SetMod `0.3.x`
-2. When SetMod is running is has a systray icon you. Click on it and select `Open Directory...`.
-3. Shut down SetMod.
-4. Copy the following files into the directory that you just opened:
-  * Your old `config.toml`
-  * Your old `setmod.sql` database.
-5. Start SetMod again. This time it will migrate any existing configuration.
-6. Remove `config.toml`.
+2. Start SetMod through the Start Menu.
+3. When SetMod is running it has a systray icon.
+   Click on it and select `Open Directory...`.
+4. Quit SetMod.
+5. Copy the following files into the directory that you just opened:
+   * Your old `config.toml`
+   * Your old `setmod.sql` database.
+6. Start SetMod again. This time it will migrate any existing configuration.
+7. Remove `config.toml`.
 
 ## Building
 
