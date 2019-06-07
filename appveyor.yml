@@ -31,7 +31,7 @@ deploy:
     provider: GitHub
     auth_token:
       secure: QlcWMc/7j2eVy1J8j0CFm3tUev+ZC6zXh7SrP2aFuE1trzhtf0IDbx2eTnYzta0h
-    artifact: /.*\.zip/
+    artifact: /.*\.(zip|msi)/
     draft: false
     prerelease: false
     on:
@@ -41,7 +41,7 @@ deploy:
     provider: GitHub
     auth_token:
       secure: QlcWMc/7j2eVy1J8j0CFm3tUev+ZC6zXh7SrP2aFuE1trzhtf0IDbx2eTnYzta0h
-    artifact: /.*\.zip/
+    artifact: /.*\.(zip|msi)/
     draft: false
     prerelease: true
     on:
