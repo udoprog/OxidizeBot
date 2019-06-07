@@ -1,10 +1,8 @@
 .\tools\env.ps1
 
-if ($env:APPVEYOR_REPO_TAG_NAME -match '^(\d+\.\d+)\.\d+$') {
-    $release = $matches[1]
+if ($env:APPVEYOR_REPO_TAG_NAME -match '^\d+\.\d+\.\d+$') {
     $version = $env:APPVEYOR_REPO_TAG_NAME
-} elseif ($env:APPVEYOR_REPO_BRANCH -match '^point-(\d+\.\d+)$') {
-    $release = $matches[1]
+} elseif ($env:APPVEYOR_REPO_BRANCH -match '^point-\d+\.\d+$') {
     $version=Get-Date -UFormat '%Y%m%d-%H%M%S'
 } else {
     Write-Output "Testing..."
@@ -16,24 +14,11 @@ if ($env:APPVEYOR_REPO_TAG_NAME -match '^(\d+\.\d+)\.\d+$') {
 & cmd /c 'cargo build --release --bin setmod 2>&1'
 & cmd /c "cargo wix -n setmod --install-version $version 2>&1"
 
-$dest="setmod-$release"
-$target="target/$dest"
+$root="$PSScriptRoot/.."
 $zip="setmod-$version-windows-x86_64.zip"
 
-if (Test-Path -Path $target) {
-    Remove-Item -Recurse -Force $target
-}
+Get-ChildItem -Path $root/target/wix -Include *.msi -Recurse | Copy-Item -Destination $root
 
-New-Item -Name $target -ItemType "directory"
-
-# example secrets.yml
-Copy-Item log4rs.yaml -Destination $target/
-Copy-Item secrets.yml.example -Destination $target/
-Copy-Item target/release/setmod.exe -Destination $target/
-Copy-Item tools/setmod-dist.ps1 -Destination $target/setmod.ps1
-Get-ChildItem -Path build/dll -Include *.dll -Recurse | Copy-Item -Destination $target/
-
-Set-Location -Path target
-7z a $zip $dest/
-
-Get-ChildItem -Path target/wix -Include *.msi -Recurse | Copy-Item -Destination .
+7z a $zip $root/log4rs.yaml
+7z a $zip $root/target/release/setmod.exe
+7z a $zip $root/build/dll/*.dll
