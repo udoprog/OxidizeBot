@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.3.1...master
+
+## [0.3.1]
 
 ### Added
 - Added a button to open the setmod log file in systray.
@@ -14,8 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed bug with syncing remote player state.
 - Fixed bug with syncing player queue to setbac.tv.
 - Reverted fix for Twitch API, since they fixed it themselves :|.
+- Fixed broken link to player on setbac.tv.
 
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.3.0...master
+[0.3.1]: https://github.com/udoprog/setmod/compare/0.3.0...0.3.1
 
 ## [0.3.0]
 
