@@ -14,9 +14,8 @@ pub fn setup(
     spotify: Arc<api::Spotify>,
     settings: Settings,
 ) -> Result<(ConnectStream, ConnectPlayer, ConnectDevice), Error> {
-    let (mut volume_scale_stream, mut volume_scale) =
-        settings.stream("volume-scale").or_with(100)?;
     let (mut volume_stream, volume) = settings.stream("volume").or_with(50)?;
+    let (mut volume_scale_stream, volume_scale) = settings.stream("volume-scale").or_with(100)?;
     let (mut device_stream, device) = settings
         .stream::<api::spotify::Device>("device")
         .optional()?;
@@ -25,6 +24,7 @@ pub fn setup(
 
     let mut scaled_volume = (volume * volume_scale) / 100u32;
     let volume = Arc::new(RwLock::new(volume));
+    let volume_scale = Arc::new(RwLock::new(volume_scale));
 
     let (config_tx, config_rx) = mpsc::unbounded();
 
@@ -34,6 +34,7 @@ pub fn setup(
         spotify: spotify.clone(),
         device: device.clone(),
         settings: settings.clone(),
+        volume_scale: volume_scale.clone(),
         volume: volume.clone(),
     };
 
@@ -59,13 +60,13 @@ pub fn setup(
                     }
                 }
                 update = volume_scale_stream.select_next_some() => {
-                    volume_scale = update;
-                    scaled_volume = (*volume.read() * volume_scale) / 100u32;
+                    *volume_scale.write() = update;
+                    scaled_volume = (*volume.read() * update) / 100u32;
                     player.volume_update(scaled_volume).await?;
                 }
                 update = volume_stream.select_next_some() => {
                     *volume.write() = update;
-                    scaled_volume = (*volume.read() * volume_scale) / 100u32;
+                    scaled_volume = (update * *volume_scale.read()) / 100u32;
                     player.volume_update(scaled_volume).await?;
                 }
             }
@@ -106,6 +107,8 @@ pub struct ConnectPlayer {
     device: Arc<RwLock<Option<api::spotify::Device>>>,
     /// Access to settings.
     settings: Settings,
+    /// Current volume scale for this player.
+    volume_scale: Arc<RwLock<u32>>,
     /// Current volume for this player.
     volume: Arc<RwLock<u32>>,
 }
@@ -132,6 +135,13 @@ impl ConnectPlayer {
     pub async fn stop(&self) -> Result<(), CommandError> {
         let device_id = self.device.read().as_ref().map(|d| d.id.to_string());
         CommandError::handle(self.spotify.me_player_pause(device_id).await, "stop")
+    }
+
+    /// Update an unscaled volume.
+    pub(crate) fn set_scaled_volume(&self, scaled_volume: u32) -> Result<u32, CommandError> {
+        let volume_scale = *self.volume_scale.read();
+        let update = u32::min((scaled_volume * 100) / volume_scale, 100);
+        self.volume(player::ModifyVolume::Set(update))
     }
 
     pub fn volume(&self, modify: player::ModifyVolume) -> Result<u32, CommandError> {

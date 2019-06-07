@@ -383,16 +383,24 @@ pub fn run(
 
         let p = match spotify.me_player().await? {
             Some(p) => p,
-            None => return future.run(settings).await,
+            None => {
+                log::trace!("No playback detected, falling back to defaults");
+                return future.run(settings).await;
+            }
         };
+
+        log::trace!("Detected playback: {:?}", p);
 
         match Song::from_playback(&p) {
             Some(song) => {
-                player.play_sync(Some(song))?;
-                connect_player.volume(ModifyVolume::Set(p.device.volume_percent))?;
+                log::trace!("Syncing playback");
+                let volume_percent = p.device.volume_percent;
                 device.sync_device(Some(p.device))?;
+                connect_player.set_scaled_volume(volume_percent)?;
+                player.play_sync(Some(song))?;
             }
             None => {
+                log::trace!("Pausing playback since item is missing");
                 player.pause_with_source(Source::Automatic)?;
             }
         }
@@ -466,12 +474,22 @@ impl Song {
 
         let track = match playback.item.clone() {
             Some(track) => track,
-            _ => return None,
+            _ => {
+                log::warn!("No playback item in current playback");
+                return None;
+            }
         };
 
-        let track_id: TrackId = match str::parse(&track.id) {
-            Ok(track_id) => track_id,
-            Err(_) => return None,
+        let track_id = match SpotifyId::from_base62(&track.id) {
+            Ok(spotify_id) => TrackId::Spotify(spotify_id),
+            Err(e) => {
+                log::warn!(
+                    "Failed to parse track id from current playback: {}: {}",
+                    track.id,
+                    e
+                );
+                return None;
+            }
         };
 
         let elapsed = Duration::from_millis(progress_ms as u64);
@@ -1706,6 +1724,7 @@ impl PlaybackFuture {
     /// Notify a change in the current song.
     fn notify_song_change(&self, song: Option<&Song>) -> Result<(), Error> {
         self.global_bus.send(bus::Global::song(song)?);
+        self.global_bus.send(bus::Global::SongModified);
         self.update_song_file(song);
         Ok(())
     }
@@ -1813,19 +1832,19 @@ impl PlaybackFuture {
     async fn play_song(&mut self, source: Source, mut song: Song) -> Result<(), Error> {
         song.play();
 
+        self.timeout = Some(timer::Delay::new(song.deadline()));
+
+        self.send_play_command(song.clone()).await;
+        self.switch_current_player(song.player()).await;
+        self.write_song(Some(song.clone()))?;
+        self.notify_song_change(Some(&song))?;
+
         if let Source::Manual = source {
             self.bus.broadcast(Event::Playing(
                 *self.song_switch_feedback.read(),
                 song.item.clone(),
             ));
         }
-
-        self.timeout = Some(timer::Delay::new(song.deadline()));
-
-        self.send_play_command(song.clone()).await;
-        self.switch_current_player(song.player()).await;
-        self.notify_song_change(Some(&song))?;
-        self.write_song(Some(song))?;
 
         self.state = State::Playing;
         Ok(())
@@ -1833,18 +1852,18 @@ impl PlaybackFuture {
 
     /// Resume playing a specific song.
     async fn resume_song(&mut self, source: Source, song: Song) -> Result<(), Error> {
+        self.timeout = Some(timer::Delay::new(song.deadline()));
+
+        self.send_play_command(song.clone()).await;
+        self.switch_current_player(song.player()).await;
+        self.notify_song_change(Some(&song))?;
+
         if let Source::Manual = source {
             self.bus.broadcast(Event::Playing(
                 *self.song_switch_feedback.read(),
                 song.item.clone(),
             ));
         }
-
-        self.timeout = Some(timer::Delay::new(song.deadline()));
-
-        self.send_play_command(song.clone()).await;
-        self.switch_current_player(song.player()).await;
-        self.notify_song_change(Some(&song))?;
 
         self.state = State::Playing;
         Ok(())
@@ -1899,26 +1918,32 @@ impl PlaybackFuture {
 
         match (command, self.state) {
             (Skip(source), _) => {
-                log::trace!("skipping song");
+                log::trace!("Skipping song");
 
                 let song = self.mixer.next_song().await?;
 
                 match (song, self.state) {
-                    (Some(song), State::Playing) => self.play_song(source, song).await?,
-                    (Some(song), _) => self.switch_to_song(Some(song)).await?,
+                    (Some(song), State::Playing) => {
+                        self.play_song(source, song).await?;
+                    }
+                    (Some(song), _) => {
+                        self.switch_to_song(Some(song.clone())).await?;
+                        self.notify_song_change(Some(&song))?;
+                    }
                     (None, _) => {
                         if let Source::Manual = source {
                             self.bus.broadcast(Event::Empty);
                         }
 
                         self.switch_to_song(None).await?;
+                        self.notify_song_change(None)?;
                         self.state = State::Paused;
                     }
                 }
             }
             // initial pause
             (Pause(source), State::Playing) => {
-                log::trace!("pausing player");
+                log::trace!("Pausing player");
 
                 self.send_pause_command().await;
                 self.timeout = None;
@@ -1937,7 +1962,7 @@ impl PlaybackFuture {
                 self.notify_song_change(song.as_ref())?;
             }
             (Play(source), State::Paused) | (Play(source), State::None) => {
-                log::trace!("starting player");
+                log::trace!("Starting player");
 
                 let song = {
                     match self.song.write().as_mut() {
@@ -1968,7 +1993,7 @@ impl PlaybackFuture {
                 }
             }
             (Sync { song }, _) => {
-                log::trace!("synchronize the state of the player with the current song");
+                log::trace!("Synchronize the state of the player with the given song");
 
                 if let Some(s) = song.as_ref() {
                     if let State::Playing = s.state() {
@@ -1983,6 +2008,7 @@ impl PlaybackFuture {
                     self.state = State::Paused;
                 }
 
+                self.notify_song_change(song.as_ref())?;
                 self.write_song(song)?;
             }
             // queue was modified in some way
@@ -1993,6 +2019,7 @@ impl PlaybackFuture {
                     }
                 }
 
+                self.global_bus.send(bus::Global::SongModified);
                 self.bus.broadcast(Event::Modified);
             }
             (Inject(source, item, offset), State::Playing) => {
@@ -2025,7 +2052,7 @@ impl PlaybackFuture {
             self.play_song(Source::Manual, song).await?;
         } else {
             self.bus.broadcast(Event::Empty);
-            self.write_song(None)?;
+            self.notify_song_change(None)?;
         }
 
         Ok(())

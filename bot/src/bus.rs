@@ -130,6 +130,8 @@ pub enum Global {
         elapsed: u64,
         duration: u64,
     },
+    #[serde(rename = "song/modified")]
+    SongModified,
 }
 
 impl Message for Global {

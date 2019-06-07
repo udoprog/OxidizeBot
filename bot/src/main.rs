@@ -1,6 +1,7 @@
 #![feature(async_await)]
 #![recursion_limit = "128"]
-#![windows_subsystem = "windows"]
+#![cfg_attr(feature = "desktop", windows_subsystem = "windows")]
+#![cfg_attr(not(feature = "desktop"), windows_subsystem = "console")]
 
 use failure::{format_err, Error, ResultExt};
 use parking_lot::RwLock;
@@ -389,7 +390,16 @@ async fn try_main(
     // load the song module if we have a player configuration.
     injector.update(player);
 
-    futures.push(api::setbac::run(&config, &settings, &injector, streamer_token.clone())?.boxed());
+    futures.push(
+        api::setbac::run(
+            &config,
+            &settings,
+            &injector,
+            streamer_token.clone(),
+            global_bus.clone(),
+        )?
+        .boxed(),
+    );
 
     modules.push(Box::new(module::song::Module));
     modules.push(Box::new(module::command_admin::Module));

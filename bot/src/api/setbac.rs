@@ -32,8 +32,9 @@ fn parse_url(url: &str) -> Option<Url> {
 
 struct RemoteBuilder {
     token: oauth2::SyncToken,
-    enabled: bool,
+    global_bus: Arc<bus::Bus<bus::Global>>,
     player: Option<Player>,
+    enabled: bool,
     api_url: Option<Url>,
 }
 
@@ -46,10 +47,7 @@ impl RemoteBuilder {
             return;
         }
 
-        remote.rx = match self.player.as_ref() {
-            Some(player) => Some(player.add_rx().compat()),
-            None => None,
-        };
+        remote.rx = Some(self.global_bus.clone().add_rx().compat());
 
         remote.client = match self.player.as_ref() {
             Some(player) => Some(player.clone()),
@@ -65,7 +63,7 @@ impl RemoteBuilder {
 
 #[derive(Default)]
 struct Remote {
-    rx: Option<Compat01As03<bus::Reader<player::Event>>>,
+    rx: Option<Compat01As03<bus::Reader<bus::Global>>>,
     client: Option<player::Player>,
     setbac: Option<SetBac>,
 }
@@ -76,6 +74,7 @@ pub fn run(
     settings: &Settings,
     injector: &Injector,
     token: oauth2::SyncToken,
+    global_bus: Arc<bus::Bus<bus::Global>>,
 ) -> Result<impl Future<Output = Result<(), failure::Error>>, failure::Error> {
     let settings = settings.scoped("remote");
 
@@ -101,8 +100,9 @@ pub fn run(
 
     let mut remote_builder = RemoteBuilder {
         token,
-        enabled: false,
+        global_bus,
         player: None,
+        enabled: false,
         api_url: None,
     };
 
@@ -136,7 +136,13 @@ pub fn run(
                     remote_builder.init(&mut remote);
                 }
                 result = remote.rx.select_next_some() => {
-                    let _ = result?;
+                    let event = result?;
+
+                    /// Only update on switches to current song.
+                    match event {
+                        bus::Global::SongModified => (),
+                        _ => continue,
+                    };
 
                     let setbac = match remote.setbac.as_ref() {
                         Some(setbac) => setbac,
