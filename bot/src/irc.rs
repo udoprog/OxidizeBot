@@ -316,6 +316,8 @@ impl Irc {
             let (mut moderator_cooldown_stream, moderator_cooldown) =
                 settings.stream("irc/moderator-cooldown").optional()?;
 
+            let (mut api_url_stream, api_url) = settings.stream("remote/api-url").optional()?;
+
             let startup_message = settings.get::<String>("irc/startup-message")?;
 
             let mut pong_timeout = None;
@@ -330,7 +332,7 @@ impl Irc {
                 bad_words: &bad_words,
                 global_bus: &global_bus,
                 aliases: &aliases,
-                api_url: config.api_url.clone(),
+                api_url,
                 thread_pool: Arc::new(ThreadPool::new()),
                 moderator_cooldown,
                 handlers,
@@ -360,6 +362,9 @@ impl Irc {
 
                 loop {
                     futures::select! {
+                        update = api_url_stream.select_next_some() => {
+                            handler.api_url = update;
+                        }
                         update = moderator_cooldown_stream.select_next_some() => {
                             handler.moderator_cooldown = update;
                         }
