@@ -6,7 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.10...master
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.3.0...master
+
+## [0.3.0]
+
+### Changed
+- Changed where SetMod configuration is expected to be.
+  See `Migrating from 0.2 to 0.3` in the README.
+
+### Added
+- Added an installer for SetMod which is recommended to use on Windows.
+
+[0.2.10]: https://github.com/udoprog/setmod/compare/0.2.10...0.3.0
 
 ## [0.2.10]
 
