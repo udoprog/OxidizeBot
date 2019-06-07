@@ -1,5 +1,5 @@
 [package]
-name = "setmod-bot"
+name = "setmod"
 version = "0.2.10"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2018"

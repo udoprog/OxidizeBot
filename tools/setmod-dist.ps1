@@ -2,7 +2,7 @@
 # It can be evoked from anywhere on the filesystem.
 
 while($true) {
-    ./setmod-bot.exe
+    ./setmod.exe
     Write-Host "Bot shut down, restarting in 5s..."
     Start-Sleep -s 5
 }

@@ -4,7 +4,7 @@
 
 use failure::{format_err, Error, ResultExt};
 use parking_lot::RwLock;
-use setmod_bot::{
+use setmod::{
     api, auth, bus, config, db, injector, irc, module, oauth2, obs, player, prelude::*, secrets,
     settings, sys, utils, web,
 };
@@ -16,7 +16,7 @@ use std::{
 
 fn opts() -> clap::App<'static, 'static> {
     clap::App::new("SetMod Bot")
-        .version(setmod_bot::VERSION)
+        .version(setmod::VERSION)
         .author("John-John Tedro <udoprog@tedro.se>")
         .about("Bot component of SetMod.")
         .arg(
@@ -61,7 +61,7 @@ fn default_log_config(root: &Path) -> Result<log4rs::config::Config, Error> {
             Logger::builder()
                 .appender("file")
                 .additive(false)
-                .build("setmod_bot", LevelFilter::Info),
+                .build("setmod", LevelFilter::Info),
         )
         .build(Root::builder().appender("stdout").build(LevelFilter::Warn))?;
 
@@ -127,7 +127,7 @@ fn main() -> Result<(), Error> {
         );
 
         match result {
-            Err(e) => setmod_bot::log_err!(e, "bot crashed"),
+            Err(e) => setmod::log_err!(e, "bot crashed"),
             Ok(()) => log::info!("bot was shut down"),
         }
 
@@ -149,7 +149,7 @@ async fn try_main(
     web_root: Option<PathBuf>,
     config: PathBuf,
 ) -> Result<(), Error> {
-    log::info!("Starting SetMod Version {}", setmod_bot::VERSION);
+    log::info!("Starting SetMod Version {}", setmod::VERSION);
 
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
 

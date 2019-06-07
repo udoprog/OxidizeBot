@@ -11,6 +11,7 @@ install:
   - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin
   - rustc -Vv
   - cargo -V
+  - cargo install cargo-wix
 
 build_script:
   - ps: .\tools\build.ps1

@@ -7,47 +7,31 @@ This is a high performance Twitch Bot written in Rust.
 
 ## Installing and Running
 
-You can download an archive from [releases](https://github.com/udoprog/setmod/releases) or [build the project yourself](#building).
+You can download an installer or an archive from [releases](https://github.com/udoprog/setmod/releases) or [build the project yourself](#building).
+
+If you installed using an installer, SetMod will be in your start folder.
+Once started, it shows up as a systray icon.
 
 If you use an archive, you can unpack it in any directory.
 
 It is suggested that you run the bot through `setmod.ps1` since that will run the bot in a loop in case it crashes or is shut down through Twitch.
 On Windows, this can be done by right clicking and selecting `Run with PowerShell`.
 
-Before the bot can run, you need to set it up.
-See the next section.
+## Migrating from 0.2 to 0.3
 
-## Setting Up
+SetMod 0.3 completely removed all configuration from the bot.
+It is instead managed through the `Settings` page in the UI.
 
-SetMod doesn't require any configuration files. But before we can authenticate we must configure the necessary OAuth flows.
+It also moved where it expected the database to be, so if you have an old database you will have to move it manually.
 
-Once started, go to `Settings` and configure the following keys:
-
-#### `secrets/oauth2/twitch/config`
-
-This is necessary to connect to Twitch.
-
-You will have to register an application here:
-https://dev.twitch.tv/console/apps/create
-
-You must add the following redirect URL:
-
-```
-http://localhost:12345/redirect
-```
-
-#### `secrets/oauth2/spotify/config`
-
-This is necessary to Play music through Spotify.
-
-You will have to register an application here:
-https://developer.spotify.com/dashboard/
-
-You must add the following redirect URL:
-
-```
-http://localhost:12345/redirect
-```
+1. Install SetMod `0.3.x`
+2. When SetMod is running is has a systray icon you. Click on it and select `Open Directory...`.
+3. Shut down SetMod.
+4. Copy the following files into the directory that you just opened:
+  * Your old `config.toml`
+  * Your old `setmod.sql` database.
+5. Start SetMod again. This time it will migrate any existing configuration.
+6. Remove `config.toml`.
 
 ## Building
 
