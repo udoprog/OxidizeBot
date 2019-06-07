@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added a button to open the setmod log file in systray.
+- Added a button to restart the bot from systray.
+
+### Changed
+- Fixed bug with syncing remote player state.
+- Fixed bug with syncing player queue to setbac.tv.
+- Reverted fix for Twitch API, since they fixed it themselves :|.
+
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.3.0...master
 
 ## [0.3.0]
@@ -38,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.8]
 
 ### Changed
-- Themes are not stored in the database, accessible through the `!theme` command and the web UI.
+- Themes are now stored in the database, accessible through the `!theme` command and the web UI.
 - `[player]` has been deprecated in favor of `player` settings.
 - `[current_song]` has been deprecated in favor of `player/song-file` settings.
 - `[[modules]]` configuration has been deprecated in favor of their corresponding setting.

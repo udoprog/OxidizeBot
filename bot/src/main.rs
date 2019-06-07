@@ -1,7 +1,6 @@
 #![feature(async_await)]
 #![recursion_limit = "128"]
-#![cfg_attr(feature = "desktop", windows_subsystem = "windows")]
-#![cfg_attr(not(feature = "desktop"), windows_subsystem = "console")]
+#![windows_subsystem = "windows"]
 
 use failure::{format_err, Error, ResultExt};
 use parking_lot::RwLock;
@@ -45,14 +44,15 @@ fn opts() -> clap::App<'static, 'static> {
         )
 }
 
-fn default_log_config(root: &Path) -> Result<log4rs::config::Config, Error> {
+/// Setup a default logging configuration if none is specified.
+fn default_log_config(log_file: &Path) -> Result<log4rs::config::Config, Error> {
     use log::LevelFilter;
     use log4rs::{
         append::{console::ConsoleAppender, file::FileAppender},
         config::{Appender, Config, Logger, Root},
     };
 
-    let file = FileAppender::builder().build(root.join("setmod.log"))?;
+    let file = FileAppender::builder().build(log_file)?;
     let stdout = ConsoleAppender::builder().build();
 
     let config = Config::builder()
@@ -70,11 +70,11 @@ fn default_log_config(root: &Path) -> Result<log4rs::config::Config, Error> {
 }
 
 /// Configure logging.
-fn setup_logs(root: &Path) -> Result<(), Error> {
+fn setup_logs(root: &Path, default_log_file: &Path) -> Result<(), Error> {
     let file = root.join("log4rs.yaml");
 
     if !file.is_file() {
-        let config = default_log_config(root)?;
+        let config = default_log_config(default_log_file)?;
         log4rs::init_config(config)?;
     } else {
         log4rs::init_file(file, Default::default())?;
@@ -103,15 +103,16 @@ fn main() -> Result<(), Error> {
         .to_owned();
 
     let web_root = m.value_of("web-root").map(PathBuf::from);
+    let default_log_file = root.join("setmod.log");
 
-    setup_logs(&root).context("failed to setup logs")?;
+    setup_logs(&root, &default_log_file).context("failed to setup logs")?;
 
     if !root.is_dir() {
         log::info!("Creating SetMod directory: {}", root.display());
         std::fs::create_dir_all(&root)?;
     }
 
-    let system = sys::setup(&root)?;
+    let system = sys::setup(&root, &default_log_file)?;
 
     loop {
         let mut runtime = tokio::runtime::Runtime::new()?;
@@ -128,11 +129,12 @@ fn main() -> Result<(), Error> {
         );
 
         match result {
-            Err(e) => setmod::log_err!(e, "bot crashed"),
-            Ok(()) => log::info!("bot was shut down"),
+            Err(e) => setmod::log_err!(e, "Bot crashed"),
+            Ok(()) => log::info!("Bot was shut down cleanly"),
         }
 
         if !system.is_running() {
+            log::info!("Exiting...");
             break;
         }
 
@@ -265,17 +267,7 @@ async fn try_main(
         currency,
     )?;
 
-    let future = future.map_err(|e| {
-        log::error!("Error in web server: {}", e);
-        ()
-    });
-
-    // NB: spawn the web server on a separate thread because it's needed for the synchronous authentication flow below.
-    tokio::spawn(future.boxed().compat())
-        .into_future()
-        .compat()
-        .await
-        .map_err(|_| failure::format_err!("failed to spawn web server"))?;
+    futures.push(future.boxed());
 
     if settings.get::<bool>("first-run")?.unwrap_or(true) {
         log::info!("Opening {} for the first time", web::URL);
@@ -456,9 +448,15 @@ async fn try_main(
     let stuff = async move { future::try_join_all(futures).await.map_err(Some) };
 
     let system_shutdown = system.wait_for_shutdown();
+    let system_restart = system.wait_for_restart();
 
     let shutdown_rx = async move {
-        let _ = future::select(system_shutdown.boxed(), shutdown_rx).await;
+        let futures = vec![
+            system_shutdown.boxed(),
+            system_restart.boxed(),
+            shutdown_rx.boxed(),
+        ];
+        let _ = future::select_all(futures).await;
         Err::<(), _>(None::<Error>)
     };
 
@@ -469,7 +467,7 @@ async fn try_main(
         Err(Some(e)) => Err(e),
         // Shutting down cleanly.
         Err(None) => {
-            log::info!("shutting down...");
+            log::info!("Shutting down...");
             Ok(())
         }
     }
