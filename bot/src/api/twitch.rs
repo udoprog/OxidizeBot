@@ -295,7 +295,7 @@ impl RequestBuilder {
             let access_token = token.access_token().to_string();
 
             log::trace!("request: {}: {}", self.method, self.url);
-            let mut req = self.client.request(self.method.clone(), self.url.clone());
+            let mut req = self.client.request(self.method, self.url);
 
             if let Some(body) = self.body {
                 req = req.body(body);
@@ -325,18 +325,18 @@ impl RequestBuilder {
             self.token.force_refresh()?;
         }
 
-        if log::log_enabled!(log::Level::Trace) {
-            let response = String::from_utf8_lossy(body.as_ref());
-            log::trace!("response: {}: {}: {}", self.method, self.url, response);
-        }
-
         if !status.is_success() {
             failure::bail!(
                 "bad response: {}: {}",
                 status,
                 String::from_utf8_lossy(body.as_ref())
             );
-        }        
+        }
+
+        if log::log_enabled!(log::Level::Trace) {
+            let response = String::from_utf8_lossy(body.as_ref());
+            log::trace!("response: {}", response);
+        }
 
         serde_json::from_slice(body.as_ref()).map_err(Into::into)
     }
@@ -435,7 +435,7 @@ pub struct Channel {
     pub game: Option<String>,
     pub language: Option<String>,
     #[serde(rename = "_id")]
-    pub id: String,
+    pub id: u64,
     pub name: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
