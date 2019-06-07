@@ -27,8 +27,12 @@ use url::Url;
 static YOUTUBE_CLIENT_ID: &'static str =
     "104600448660-l5qspsirgqsnq7uv4tu3fpfmtbs2c234.apps.googleusercontent.com";
 static YOUTUBE_CLIENT_SECRET: &'static str = "xQMzQtFvXadhJh1cqoe6G0zH";
+
 static NIGHTBOT_CLIENT_ID: &'static str = "08068f96a94dbb3286f61e26afa9bd6d";
 static NIGHTBOT_CLIENT_SECRET: &'static str = "d9afb0ee6092af477f671c3195109e54";
+
+static TWITCH_CLIENT_ID: &'static str = "y9mvigagkxy2p9dyhmarv9tb8b7nkq";
+static TWITCH_CLIENT_SECRET: &'static str = "l3nwijji8t3ds8cxudkas8fcudave8";
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Config {
@@ -207,17 +211,16 @@ enum Secrets {
 }
 
 /// Setup a Twitch authentication flow.
-pub fn twitch(
-    web: web::Server,
-    settings: Settings,
-    shared_settings: Settings,
-) -> Result<FlowBuilder, Error> {
+pub fn twitch(web: web::Server, settings: Settings) -> Result<FlowBuilder, Error> {
     let redirect_url = format!("{}{}", web::URL, web::REDIRECT_URI);
 
     Ok(FlowBuilder {
         ty: Type::Twitch,
         web,
-        secrets: Secrets::Settings(shared_settings),
+        secrets: Secrets::Static {
+            client_id: TWITCH_CLIENT_ID,
+            client_secret: TWITCH_CLIENT_SECRET,
+        },
         redirect_url: RedirectUrl::new(Url::parse(&redirect_url)?),
         auth_url: AuthUrl::new(Url::parse("https://id.twitch.tv/oauth2/authorize")?),
         token_url: Some(TokenUrl::new(Url::parse(

@@ -40,7 +40,6 @@ class AfterStreamsPage extends React.Component {
   }
 }
 
-const TWITCH_CONFIG = "secrets/oauth2/twitch/config";
 const SPOTIFY_CONFIG = "secrets/oauth2/spotify/config";
 
 class ConfigurationPrompt extends React.Component {
@@ -230,19 +229,6 @@ class IndexPage extends React.Component {
             <Devices api={this.api} />
           </Col>
         </Row>
-
-        <ConfigurationPrompt api={this.api} keyFilter={[TWITCH_CONFIG]}>
-          <h4><b>Action Required</b>: OAuth 2.0 Configuration for Twitch</h4>
-
-          <p>
-            You will have <a href="https://dev.twitch.tv/console/apps/create">register an application with Twitch</a>
-          </p>
-
-          <p>
-            You must configure following redirect URL:<br />
-            <code>http://localhost:12345/redirect</code>
-          </p>
-        </ConfigurationPrompt>
 
         <ConfigurationPrompt api={this.api} keyFilter={[SPOTIFY_CONFIG]}>
           <h4><b>Action Required</b>: OAuth 2.0 Configuration for Spotify</h4>

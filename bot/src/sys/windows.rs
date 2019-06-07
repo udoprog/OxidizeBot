@@ -81,7 +81,7 @@ pub fn setup(root: &Path) -> Result<System, Error> {
         Ok::<_, io::Error>(())
     })?;
 
-    app.add_menu_item("Open Config Directory ...", move |_| {
+    app.add_menu_item("Open Directory ...", move |_| {
         let _ = open_dir(&root)?;
         Ok::<_, io::Error>(())
     })?;
