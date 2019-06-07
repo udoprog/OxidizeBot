@@ -27,34 +27,35 @@ impl StreamInfo {
     /// Refresh the stream info.
     pub async fn refresh<'a>(&'a self, twitch: &'a api::Twitch, streamer: &'a str) {
         let stream = twitch.stream_by_login(streamer);
-        let channel = twitch.channel_by_login(streamer);
 
         let streamer = async {
             let streamer = twitch.user_by_login(streamer).await?;
 
             let streamer = match streamer {
                 Some(streamer) => streamer,
-                None => return Ok((None, None)),
+                None => return Ok((None, None, None)),
             };
+
+            let channel = twitch.channel_by_login(&streamer.id);
 
             let subs = twitch
                 .stream_subscriptions(&streamer.id, vec![])
                 .try_concat();
 
-            let subs = match subs.await {
-                Ok(subs) => Some(subs),
+            let (subs, channel) = match future::try_join(subs, channel).await {
+                Ok((subs, channel)) => (Some(subs), Some(channel)),
                 Err(e) => {
                     log_err!(e, "failed to fetch subscriptions");
-                    None
+                    (None, None)
                 }
             };
 
-            Ok((Some(streamer), subs))
+            Ok((Some(streamer), subs, channel))
         };
 
-        let result = future::try_join3(stream, channel, streamer).await;
+        let result = future::try_join(stream, streamer).await;
 
-        let (stream, channel, (streamer, subs)) = match result {
+        let (stream, (streamer, subs, channel)) = match result {
             Ok(result) => result,
             Err(e) => {
                 log_err!(e, "failed to refresh stream info");
@@ -65,8 +66,11 @@ impl StreamInfo {
         let mut info = self.data.write();
         info.user = streamer;
         info.stream = stream;
-        info.title = Some(channel.status);
-        info.game = channel.game;
+
+        if let Some(channel) = channel {
+            info.title = Some(channel.status);
+            info.game = channel.game;
+        }
 
         if let Some(subs) = subs {
             info.subs = subs;
