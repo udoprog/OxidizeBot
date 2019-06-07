@@ -44,21 +44,24 @@ fn opts() -> clap::App<'static, 'static> {
         )
 }
 
-fn default_log_config() -> Result<log4rs::config::Config, Error> {
+fn default_log_config(root: &Path) -> Result<log4rs::config::Config, Error> {
     use log::LevelFilter;
     use log4rs::{
-        append::console::ConsoleAppender,
+        append::{console::ConsoleAppender, file::FileAppender},
         config::{Appender, Config, Logger, Root},
     };
 
+    let file = FileAppender::builder().build(root.join("setmod.log"))?;
     let stdout = ConsoleAppender::builder().build();
 
     let config = Config::builder()
         .appender(Appender::builder().build("stdout", Box::new(stdout)))
+        .appender(Appender::builder().build("file", Box::new(file)))
         .logger(
             Logger::builder()
+                .appender("file")
                 .additive(false)
-                .build("setmod", LevelFilter::Info),
+                .build("setmod_bot", LevelFilter::Info),
         )
         .build(Root::builder().appender("stdout").build(LevelFilter::Warn))?;
 
@@ -70,7 +73,7 @@ fn setup_logs(root: &Path) -> Result<(), Error> {
     let file = root.join("log4rs.yaml");
 
     if !file.is_file() {
-        let config = default_log_config()?;
+        let config = default_log_config(root)?;
         log4rs::init_config(config)?;
     } else {
         log4rs::init_file(file, Default::default())?;
@@ -331,18 +334,13 @@ async fn try_main(
     futures.push(future.boxed());
 
     let (streamer_token, future) = {
-        let flow = config::new_oauth2_flow::<config::Twitch>(
-            web.clone(),
-            "twitch-streamer",
-            "twitch",
-            &token_settings,
-        )?
-        .with_scopes(vec![
-            String::from("channel_editor"),
-            String::from("channel_read"),
-            String::from("channel:read:subscriptions"),
-        ])
-        .build(String::from("Twitch Streamer"))?;
+        let flow = oauth2::twitch(web.clone(), token_settings.scoped("twitch-streamer"))?
+            .with_scopes(vec![
+                String::from("channel_editor"),
+                String::from("channel_read"),
+                String::from("channel:read:subscriptions"),
+            ])
+            .build(String::from("Twitch Streamer"))?;
 
         flow.into_token()?
     };
@@ -350,19 +348,14 @@ async fn try_main(
     futures.push(future.boxed());
 
     let (bot_token, future) = {
-        let flow = config::new_oauth2_flow::<config::Twitch>(
-            web.clone(),
-            "twitch-bot",
-            "twitch",
-            &token_settings,
-        )?
-        .with_scopes(vec![
-            String::from("channel:moderate"),
-            String::from("chat:edit"),
-            String::from("chat:read"),
-            String::from("clips:edit"),
-        ])
-        .build(String::from("Twitch Bot"))?;
+        let flow = oauth2::twitch(web.clone(), token_settings.scoped("twitch-bot"))?
+            .with_scopes(vec![
+                String::from("channel:moderate"),
+                String::from("chat:edit"),
+                String::from("chat:read"),
+                String::from("clips:edit"),
+            ])
+            .build(String::from("Twitch Bot"))?;
 
         flow.into_token()?
     };

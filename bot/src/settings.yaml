@@ -172,10 +172,6 @@ types:
     doc: Stored token for Spotify authentication.
     type: {id: raw, optional: true}
     secret: true
-  secrets/oauth2/twitch/config:
-    doc: OAuth 2.0 configuration for Twitch authentication.
-    type: {id: "oauth2-config", optional: true}
-    secret: true
   secrets/oauth2/twitch-bot/token:
     doc: Stored token for Twitch Bot authentication.
     type: {id: raw, optional: true}

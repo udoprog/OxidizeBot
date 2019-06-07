@@ -66,19 +66,6 @@ impl OAuth2Params for Spotify {
     }
 }
 
-#[derive(Debug)]
-pub struct Twitch;
-
-impl OAuth2Params for Twitch {
-    fn new_flow_builder(
-        web: web::Server,
-        settings: settings::Settings,
-        shared_settings: settings::Settings,
-    ) -> Result<crate::oauth2::FlowBuilder, failure::Error> {
-        crate::oauth2::twitch(web, settings, shared_settings)
-    }
-}
-
 /// Define defaults for fields.
 pub trait OAuth2Params {
     fn new_flow_builder(
