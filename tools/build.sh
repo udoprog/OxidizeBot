@@ -10,10 +10,7 @@ fi
 
 version=$TRAVIS_TAG
 
-if [[ $version =~ ^([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
-    maj="${BASH_REMATCH[1]}"
-    min="${BASH_REMATCH[2]}"
-else
+if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit "bad version: $version"
     exit 1
 fi
@@ -25,19 +22,16 @@ if [[ -z $arch ]]; then
     exit 1
 fi
 
-package=setmod-$version-$TRAVIS_OS_NAME-$arch
-dest=setmod-$maj.$min
+zip=$PWD/setmod-$version-$TRAVIS_OS_NAME-$arch.zip
 
 cargo build --release --bin setmod
-mkdir $dest
+mkdir target/build
 
 case $TRAVIS_OS_NAME in
 "linux")
-    cp target/release/setmod $dest/
-    cp log4rs.yaml $dest/
-    cp secrets.yml.example $dest/
-    cp tools/setmod-dist.ps1 $dest/setmod.ps1
-    zip -r $package.zip $dest/
+    cp target/release/setmod target/build
+    cp log4rs.yaml target/build
+    (cd target/build; zip -r $zip *)
     ;;
 *)
     echo "Unsupported OS: $TRAVIS_OS_NAME"
@@ -46,5 +40,8 @@ case $TRAVIS_OS_NAME in
 esac
 
 mkdir -p target/upload
-cp $package.zip target/upload/
+cp $zip target/upload/
+
+(cd bot && cargo deb)
+cp target/debian/setmod_${version}_amd64.deb target/upload/
 exit 0

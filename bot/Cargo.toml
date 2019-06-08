@@ -4,6 +4,7 @@ version = "0.3.1"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2018"
 license = "MIT/Apache-2.0"
+description = "Flexible Twitch Bot written in Rust"
 
 [dependencies]
 chrono = { version = "0.4.6", features = ["serde"] }
@@ -76,3 +77,6 @@ version = "0.1.5"
 [target.'cfg(target_os = "windows")'.dependencies]
 systray = {git = "https://github.com/udoprog/systray-rs"}
 winapi = {version = "0.3.7", features = ["shellapi", "impl-default"]}
+
+[package.metadata.deb]
+depends = "libssl1.0.0 (>= 1.0.2g), libmysqlclient20 (>= 5.7.26)"

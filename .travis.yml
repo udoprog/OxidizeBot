@@ -6,13 +6,14 @@ rust:
 before_install:
   - sudo apt-get update
   - sudo apt-get install -y libmysqlclient-dev
+  - cargo install cargo-deb
 script:
 - tools/build.sh
 deploy:
   provider: releases
   skip_cleanup: true
   file_glob: true
-  file: target/upload/*.zip
+  file: target/upload/*
   on:
     repo: udoprog/setmod
     tags: true
