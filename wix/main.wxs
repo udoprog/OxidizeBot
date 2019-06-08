@@ -64,7 +64,7 @@
 
             <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
                 <Directory Id='APPLICATIONFOLDER' Name='SetMod'>
-                    <Component Id='setmod.exe' Guid='*' Win64='$(var.Win64)'>
+                    <Component Id='setmod.exe' Guid='{968B8316-90C9-4532-A8BA-35F193B815DB}' Win64='$(var.Win64)'>
                         <File
                             Id='setmod.exe'
                             Name='setmod.exe'
@@ -73,7 +73,7 @@
                             KeyPath='yes'/>
                     </Component>
 
-                    <Component Id='libeay32.dll' Guid='*' Win64='$(var.Win64)'>
+                    <Component Id='libeay32.dll' Guid='{06E39074-9927-4EDE-A4DA-74802BC15E79}' Win64='$(var.Win64)'>
                         <File
                             Id='libeay32.dll'
                             Name='libeay32.dll'
@@ -82,7 +82,7 @@
                             KeyPath='yes'/>
                     </Component>
 
-                    <Component Id='ssleay32.dll' Guid='*' Win64='$(var.Win64)'>
+                    <Component Id='ssleay32.dll' Guid='{F72C0D40-2FC9-450A-B8E6-4F3C8FD299D1}' Win64='$(var.Win64)'>
                         <File
                             Id='ssleay32.dll'
                             Name='ssleay32.dll'
@@ -91,7 +91,7 @@
                             KeyPath='yes'/>
                     </Component>
 
-                    <Component Id='libmysql.dll' Guid='*' Win64='$(var.Win64)'>
+                    <Component Id='libmysql.dll' Guid='{A5DC9C82-CF47-451B-B3D0-72189303297B}' Win64='$(var.Win64)'>
                         <File
                             Id='libmysql.dll'
                             Name='libmysql.dll'
@@ -100,7 +100,7 @@
                             KeyPath='yes'/>
                     </Component>
 
-                    <Component Id='zlib1.dll' Guid='*' Win64='$(var.Win64)'>
+                    <Component Id='zlib1.dll' Guid='{76A120A9-4A79-483B-839B-048A50282E27}' Win64='$(var.Win64)'>
                         <File
                             Id='zlib1.dll'
                             Name='zlib1.dll'
@@ -113,7 +113,7 @@
         </Directory>
 
         <DirectoryRef Id='ApplicationProgramsFolder'>
-            <Component Id='ApplicationShortcut' Guid='*'>
+            <Component Id='ApplicationShortcut' Guid='{E26B4B0D-C9F9-46AB-A234-CF674CD1D4C3}'>
                 <Shortcut Id='ApplicationStartMenuShortcut'
                             Name='SetMod'
                             Description='SetMod Twitch Bot'
@@ -180,8 +180,13 @@
                    displayed in the license agreement dialog.
             -->
             <Publish Dialog='WelcomeDlg' Control='Next' Event='NewDialog' Value='CustomizeDlg' Order='2'>1</Publish>
+
             <Publish Dialog='CustomizeDlg' Control='Back' Event='NewDialog' Value='WelcomeDlg' Order='2'>1</Publish>
 
+            <Publish Dialog="ExitDialog"
+                Control="Finish"
+                Event="DoAction"
+                Value="LaunchApplication">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>
         </UI>
 
 
@@ -213,6 +218,10 @@
           The dialog BMP dimensions are 493 x 312 pixels.
         -->
         <WixVariable Id='WixUIDialogBmp' Value='bot\res\dialog.bmp'/>
+
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch SetMod" />
+        <Property Id="WixShellExecTarget" Value="[#setmod.exe]" />
+        <CustomAction Id="LaunchApplication" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" />
     </Product>
 
 </Wix>

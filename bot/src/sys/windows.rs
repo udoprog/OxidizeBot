@@ -144,9 +144,15 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
         Ok::<_, systray::Error>(())
     })?;
 
+    let shutdown_senders2 = shutdown_senders.clone();
+
     let thread = thread::spawn(move || {
         if let Err(e) = app.wait_for_message() {
-            panic!("systray handler crashed: {}", e);
+            log::warn!("systray handler crashed: {}", e);
+        }
+
+        for tx in shutdown_senders2.lock().drain(..) {
+            let _ = tx.send(());
         }
     });
 
