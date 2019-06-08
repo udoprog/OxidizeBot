@@ -81,22 +81,6 @@ export default class Authentication extends React.Component {
       error = <Alert variant="warning">{this.state.error}</Alert>;
     }
 
-    let current = null;
-
-    if (this.state.data && this.state.data.current) {
-      current = (
-        <div>
-          <p>
-            Make sure you have the following in your <code>config.toml</code> if you want your current device saved:
-          </p>
-
-          <code><pre>{
-            `[player]\ndevice = "${this.state.data.current.name}"`
-          }</pre></code>
-      </div>
-      );
-    }
-
     let refresh = null;
     let loading = null;
 
@@ -107,9 +91,19 @@ export default class Authentication extends React.Component {
       refresh = <FontAwesomeIcon icon="sync" className="title-refresh clickable right" onClick={() => this.listDevices()} />;
     }
 
+    let selectOne = null;
     let content = null;
 
     if (this.state.data) {
+      if (this.state.data.devices.every(d => !d.is_current)) {
+        selectOne = (
+          <Alert variant="danger">
+            <b>No audio device selected</b><br />
+            Press <FontAwesomeIcon icon="play" /> below to select one.
+          </Alert>
+        );
+      }
+
       if (this.state.data.devices.length === 0) {
         content = (
           <Alert variant="warning">
@@ -168,7 +162,7 @@ export default class Authentication extends React.Component {
           {refresh}
         </h2>
         {error}
-        {current}
+        {selectOne}
         {content}
         {loading}
       </div>

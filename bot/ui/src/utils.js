@@ -148,11 +148,11 @@ export function pickArtist(artists) {
  */
 export function Spinner() {
   return (
-    <div className="spinner">
-      <div className="bounce1"></div>
-      <div className="bounce2"></div>
-      <div className="bounce3"></div>
-    </div>
+    <span className="spinner">
+      <span className="bounce1"></span>
+      <span className="bounce2"></span>
+      <span className="bounce3"></span>
+    </span>
   );
 }
 

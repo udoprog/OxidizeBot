@@ -126,8 +126,8 @@ types:
     doc: Scaling to apply to volume. A value of 50% would mean that that would effectively be the maximum volume.
     type: {id: percentage}
   player/spotify/device:
-    doc: Currently configured device to use for playback.
-    type: {id: raw, optional: true}
+    doc: ID of the device configured for playback.
+    type: {id: string, optional: true}
   player/youtube/volume:
     doc: Volume to use for the YouTube player.
     type: {id: percentage}

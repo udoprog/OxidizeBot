@@ -6,7 +6,7 @@ use failure::{format_err, Error, ResultExt};
 use parking_lot::RwLock;
 use setmod::{
     api, auth, bus, config, db, injector, irc, module, oauth2, obs, player, prelude::*, secrets,
-    settings, sys, utils, web,
+    settings, sys, updater, utils, web,
 };
 use std::{
     fs,
@@ -249,6 +249,9 @@ async fn try_main(
     futures.push(cache.clone().run().boxed());
     injector.update(cache);
 
+    let (latest, future) = updater::run(&injector);
+    futures.push(future.boxed());
+
     let currency = injector.var(&mut futures);
 
     let (web, future) = web::setup(
@@ -265,6 +268,7 @@ async fn try_main(
         themes.clone(),
         global_channel.clone(),
         currency,
+        latest.clone(),
     )?;
 
     futures.push(future.boxed());

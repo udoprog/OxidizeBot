@@ -36,5 +36,6 @@ pub mod sys;
 pub mod template;
 mod timer;
 mod track_id;
+pub mod updater;
 pub mod utils;
 pub mod web;

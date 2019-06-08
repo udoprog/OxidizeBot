@@ -665,7 +665,7 @@ impl Player {
     }
 
     /// Get the current device.
-    pub fn current_device(&self) -> Option<api::spotify::Device> {
+    pub fn current_device(&self) -> Option<String> {
         self.inner.device.current_device()
     }
 
@@ -677,7 +677,7 @@ impl Player {
     /// External call to set device.
     ///
     /// Should always notify the player to change.
-    pub fn set_device(&self, device: api::spotify::Device) -> Result<(), Error> {
+    pub fn set_device(&self, device: String) -> Result<(), Error> {
         self.inner.device.set_device(Some(device))
     }
 

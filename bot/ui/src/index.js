@@ -3,8 +3,8 @@ import * as utils from "./utils.js";
 import {Api} from "./api.js";
 import React from "react";
 import ReactDOM from "react-dom";
-import { BrowserRouter as Router, Route, Link, withRouter} from "react-router-dom";
-import {Container, Row, Col, Navbar, Nav, NavDropdown} from "react-bootstrap";
+import {BrowserRouter as Router, Route, Link, withRouter} from "react-router-dom";
+import {Container, Row, Col, Navbar, Nav, NavDropdown, Alert} from "react-bootstrap";
 import Authentication from "./components/Authentication.js";
 import Devices from "./components/Devices.js";
 import AfterStreams from "./components/AfterStreams.js";
@@ -203,20 +203,63 @@ class IndexPage extends React.Component {
   constructor(props) {
     super(props);
     this.api = new Api(utils.apiUrl());
+    this.state = {
+      version: null,
+    };
+  }
+
+  componentDidMount() {
+    this.api.version().then(version => {
+      this.setState({version});
+    });
   }
 
   render() {
+    let version = <utils.Spinner />;
+    let newVersion = null;
+
+    if (this.state.version) {
+      version = this.state.version.version;
+      let latest = this.state.version.latest;
+
+      if (latest && latest.version != version) {
+        let dl = null;
+
+        if (latest.asset) {
+          dl = (
+            <div>
+              Download it from:&nbsp;
+              <b><a href={latest.asset.download_url}>{latest.asset.name}</a></b>
+            </div>
+          );
+        } else {
+          let releases_url = `https://github.com/udoprog/setmod/releases/${latest.version}`;
+
+          dl = (
+            <div>
+              Download is not ready <em>just yet</em>, but you can find it later at:&nbsp;
+              <b><a href={releases_url}>GitHub Releases</a></b>
+            </div>
+          )
+        }
+
+        newVersion = (
+          <Alert variant="info">
+            <b>Version {latest.version} of SetMod is available!</b>
+            {dl}
+          </Alert>
+        );
+      }
+    }
+
     return (
       <RouteLayout>
         <Row>
           <Col>
             <p>
-              Congratulations on getting <b>setmod</b> running!
+              Congratulations on getting <b>SetMod {version}</b> running!
             </p>
-
-            <p>
-              If you need more help, go to the <a href="https://github.com/udoprog/setmod">README</a>.
-            </p>
+            {newVersion}
           </Col>
         </Row>
 

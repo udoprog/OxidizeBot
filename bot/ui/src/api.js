@@ -25,6 +25,13 @@ export class Api {
   }
 
   /**
+   * Get version information.
+   */
+  version() {
+    return this.fetch(["version"]);
+  }
+
+  /**
    * Get things that requires authentication.
    */
   authPending() {

@@ -176,7 +176,13 @@ export default class Setting extends React.Component {
     if (this.state.delete) {
       buttons = confirmButtons({
         what: "deletion",
-        onConfirm: () => this.delete(setting.key),
+        onConfirm: () => {
+          this.setState({
+            delete: false,
+          });
+
+          this.delete(setting.key);
+        },
         onCancel: () => {
           this.setState({
             delete: false,

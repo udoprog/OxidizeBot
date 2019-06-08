@@ -753,6 +753,7 @@ struct Api {
     after_streams: db::AfterStreams,
     db: db::Database,
     currency: Arc<RwLock<Option<Currency>>>,
+    latest: Arc<RwLock<Option<api::github::Release>>>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -772,7 +773,7 @@ impl Api {
         let devices = player.list_devices().await?;
 
         if let Some(device) = devices.iter().find(|d| d.id == id) {
-            player.set_device(device.clone())?;
+            player.set_device(device.id.clone())?;
             return Ok(warp::reply::json(&EMPTY));
         }
 
@@ -796,7 +797,7 @@ impl Api {
         let mut current = None;
 
         for device in data {
-            let is_current = c.as_ref().map(|d| d.id == device.id).unwrap_or_default();
+            let is_current = c.as_ref().map(|d| *d == device.id).unwrap_or_default();
 
             let device = AudioDevice {
                 name: device.name.to_string(),
@@ -870,6 +871,51 @@ impl Api {
 
         Ok(warp::reply::json(&balances))
     }
+
+    /// Get version information.
+    fn version(&self) -> Result<impl warp::Reply, Error> {
+        let info = Version {
+            version: crate::VERSION,
+            latest: self.latest.read().clone().map(to_latest),
+        };
+
+        return Ok(warp::reply::json(&info));
+
+        #[derive(serde::Serialize)]
+        struct Version {
+            version: &'static str,
+            latest: Option<Latest>,
+        }
+
+        #[derive(serde::Serialize)]
+        struct Latest {
+            version: String,
+            asset: Option<Asset>,
+        }
+
+        #[derive(serde::Serialize)]
+        struct Asset {
+            name: String,
+            download_url: String,
+        }
+
+        /// Convert a relase into information on latest release.
+        fn to_latest(release: api::github::Release) -> Latest {
+            let version = release.tag_name;
+
+            let asset = release
+                .assets
+                .into_iter()
+                .filter(|a| a.name.ends_with(".msi"))
+                .map(|a| Asset {
+                    name: a.name,
+                    download_url: a.browser_download_url,
+                })
+                .next();
+
+            Latest { version, asset }
+        }
+    }
 }
 
 /// Set up the web endpoint.
@@ -887,6 +933,7 @@ pub fn setup(
     themes: db::Themes,
     channel: Arc<RwLock<Option<String>>>,
     currency: Arc<RwLock<Option<Currency>>>,
+    latest: Arc<RwLock<Option<api::github::Release>>>,
 ) -> Result<
     (
         Server,
@@ -913,6 +960,7 @@ pub fn setup(
         after_streams,
         db,
         currency,
+        latest,
     };
 
     let api = {
@@ -928,6 +976,13 @@ pub fn setup(
                         .compat()
                 }
             })
+            .boxed();
+
+        let route = route
+            .or(warp::get2().and(warp::path("version")).and_then({
+                let api = api.clone();
+                move || api.version().map_err(warp::reject::custom)
+            }))
             .boxed();
 
         let route = route
