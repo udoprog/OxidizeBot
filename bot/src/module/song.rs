@@ -132,13 +132,13 @@ impl Handler {
             }
 
             let max_duration = match track_id {
-                TrackId::Spotify(_) => Some(spotify.max_duration.read().clone()),
-                TrackId::YouTube(_) => Some(youtube.max_duration.read().clone()),
+                TrackId::Spotify(_) => spotify.max_duration.read().clone(),
+                TrackId::YouTube(_) => youtube.max_duration.read().clone(),
             };
 
             let min_currency = match track_id {
-                TrackId::Spotify(_) => Some(spotify.min_currency.read().clone() as i64),
-                TrackId::YouTube(_) => Some(youtube.min_currency.read().clone() as i64),
+                TrackId::Spotify(_) => spotify.min_currency.read().clone(),
+                TrackId::YouTube(_) => youtube.min_currency.read().clone(),
             };
 
             let result = player
@@ -669,12 +669,12 @@ impl module::Module for Module {
 
         let vars = settings.scoped("spotify");
         let mut vars = vars.vars();
-        let spotify = Constraint::build(&mut vars, true, false)?;
+        let spotify = Constraint::build(&mut vars, true, false, 0)?;
         futures.push(vars.run().boxed());
 
         let vars = settings.scoped("youtube");
         let mut vars = vars.vars();
-        let youtube = Constraint::build(&mut vars, false, true)?;
+        let youtube = Constraint::build(&mut vars, false, true, 60)?;
         futures.push(vars.run().boxed());
 
         let (mut player_stream, player) = injector.stream();
@@ -732,7 +732,7 @@ impl module::Module for Module {
 #[derive(Debug, Clone)]
 struct Constraint {
     enabled: Arc<RwLock<bool>>,
-    max_duration: Arc<RwLock<Duration>>,
+    max_duration: Arc<RwLock<Option<Duration>>>,
     min_currency: Arc<RwLock<i64>>,
     subscriber_only: Arc<RwLock<bool>>,
 }
@@ -742,10 +742,11 @@ impl Constraint {
         vars: &mut settings::Vars,
         enabled: bool,
         subscriber_only: bool,
+        min_currency: i64,
     ) -> Result<Self, Error> {
         let enabled = vars.var("enabled", enabled)?;
-        let max_duration = vars.var("max-duration", Duration::seconds(60 * 10))?;
-        let min_currency = vars.var("min-currency", 60)?;
+        let max_duration = vars.optional("max-duration")?;
+        let min_currency = vars.var("min-currency", min_currency)?;
         let subscriber_only = vars.var("subscriber-only", subscriber_only)?;
 
         Ok(Constraint {

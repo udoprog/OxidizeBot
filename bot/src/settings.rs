@@ -630,6 +630,34 @@ impl Vars {
         Ok(value)
     }
 
+    /// Get an optional synchronized variable for the given configuration key.
+    pub fn optional<T>(&mut self, key: &str) -> Result<Arc<RwLock<Option<T>>>, Error>
+    where
+        T: 'static
+            + fmt::Debug
+            + Send
+            + Sync
+            + Clone
+            + serde::Serialize
+            + serde::de::DeserializeOwned
+            + Unpin,
+    {
+        let (mut stream, value) = self.settings.stream(key).optional()?;
+        let value = Arc::new(RwLock::new(value));
+        let future_value = value.clone();
+
+        let future = async move {
+            while let Some(update) = stream.next().await {
+                *future_value.write() = update;
+            }
+
+            Ok(())
+        };
+
+        self.futures.push(future.boxed());
+        Ok(value)
+    }
+
     /// Drive the local variable set.
     pub fn run(self) -> impl Future<Output = Result<(), Error>> {
         let Vars { futures, .. } = self;

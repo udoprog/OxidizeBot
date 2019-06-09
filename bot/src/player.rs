@@ -862,7 +862,7 @@ impl Player {
         track_id: TrackId,
         is_moderator: bool,
         max_duration: Option<utils::Duration>,
-        min_currency: Option<i64>,
+        min_currency: i64,
     ) -> Result<(usize, Arc<Item>), AddTrackError> {
         let (user_count, len) = {
             let queue_inner = self.inner.queue.queue.read();
@@ -916,23 +916,27 @@ impl Player {
         };
 
         if !is_moderator {
-            if let Some(min_currency) = min_currency {
-                let currency = match currency.as_ref() {
-                    Some(currency) => currency,
-                    None => return Err(AddTrackError::NoCurrency),
-                };
+            match min_currency {
+                // don't test if min_currency is not defined.
+                0 => (),
+                min_currency => {
+                    let currency = match currency.as_ref() {
+                        Some(currency) => currency,
+                        None => return Err(AddTrackError::NoCurrency),
+                    };
 
-                let balance = currency
-                    .balance_of(channel, user.clone())
-                    .await
-                    .map_err(AddTrackError::Error)?
-                    .unwrap_or_default();
+                    let balance = currency
+                        .balance_of(channel, user.clone())
+                        .await
+                        .map_err(AddTrackError::Error)?
+                        .unwrap_or_default();
 
-                if balance < min_currency {
-                    return Err(AddTrackError::NotEnoughCurrency {
-                        balance,
-                        required: min_currency,
-                    });
+                    if balance < min_currency {
+                        return Err(AddTrackError::NotEnoughCurrency {
+                            balance,
+                            required: min_currency,
+                        });
+                    }
                 }
             }
         }

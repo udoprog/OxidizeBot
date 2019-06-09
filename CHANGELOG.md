@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Installer can now successfully stop SetMod during upgrades.
+- Fixed issue where non-mods cannot request songs without stream currency enabled even though `song/*/min-currency` was set to `0`.
+- `song/*/max-duration` is not optional and unset by default, and can be deleted.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.3.2...master
 
