@@ -181,7 +181,7 @@ pub enum Command {
     /// Start playback.
     Play(Source),
     /// Start playback on a specific song state.
-    Sync { song: Option<Song> },
+    Sync { song: Song },
     /// The queue was modified.
     Modified(Source),
     /// Play the given item as a theme at the given offset.
@@ -397,7 +397,7 @@ pub fn run(
                 let volume_percent = p.device.volume_percent;
                 device.sync_device(Some(p.device))?;
                 connect_player.set_scaled_volume(volume_percent)?;
-                player.play_sync(Some(song))?;
+                player.play_sync(song)?;
             }
             None => {
                 log::trace!("Pausing playback since item is missing");
@@ -660,7 +660,7 @@ impl Player {
     }
 
     /// Synchronize playback with the given song.
-    fn play_sync(&self, song: Option<Song>) -> Result<(), Error> {
+    fn play_sync(&self, song: Song) -> Result<(), Error> {
         self.send(Command::Sync { song })
     }
 
@@ -1999,21 +1999,18 @@ impl PlaybackFuture {
             (Sync { song }, _) => {
                 log::trace!("Synchronize the state of the player with the given song");
 
-                if let Some(s) = song.as_ref() {
-                    if let State::Playing = s.state() {
-                        self.timeout = Some(timer::Delay::new(s.deadline()));
-                    }
+                self.switch_current_player(song.player()).await;
 
-                    self.switch_current_player(s.player()).await;
-                    self.state = State::Playing;
+                self.state = song.state();
+
+                if let State::Playing = self.state {
+                    self.timeout = Some(timer::Delay::new(song.deadline()));
                 } else {
                     self.timeout = None;
-                    self.switch_current_player(PlayerKind::None).await;
-                    self.state = State::Paused;
                 }
 
-                self.notify_song_change(song.as_ref())?;
-                self.write_song(song)?;
+                self.notify_song_change(Some(&song))?;
+                self.write_song(Some(song))?;
             }
             // queue was modified in some way
             (Modified(source), State::Playing) => {
