@@ -1,4 +1,5 @@
 use crate::{
+    auth::Scope,
     command,
     currency::{BalanceTransferError, Currency},
     db,
@@ -65,7 +66,7 @@ impl command::Handler for Handler<'_> {
                 });
             }
             Some("show") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::CurrencyShow)?;
                 let to_show = ctx_try!(ctx.next_str("<user>", "!currency show")).to_string();
 
                 let user = ctx.user.as_owned_user();
@@ -153,7 +154,7 @@ impl command::Handler for Handler<'_> {
                 });
             }
             Some("boost") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::CurrencyBoost)?;
 
                 let boosted_user =
                     db::user_id(ctx_try!(ctx.next_str("<user> <amount>", "!currency boost")));
@@ -198,7 +199,7 @@ impl command::Handler for Handler<'_> {
                 });
             }
             Some("windfall") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::CurrencyWindfall)?;
 
                 let user = ctx.user.as_owned_user();
                 let amount: i64 = ctx_try!(ctx.next_parse("<amount>", "!currency windfall"));
@@ -231,11 +232,23 @@ impl command::Handler for Handler<'_> {
                 });
             }
             Some(..) => {
-                if ctx.is_moderator() {
-                    ctx.respond("Expected: boost, windfall, show, or give.");
-                } else {
-                    ctx.respond("Expected: give.");
+                let mut alts = Vec::new();
+
+                alts.push("give");
+
+                if ctx.has_scope(Scope::CurrencyBoost) {
+                    alts.push("boost");
                 }
+
+                if ctx.has_scope(Scope::CurrencyWindfall) {
+                    alts.push("windfall");
+                }
+
+                if ctx.has_scope(Scope::CurrencyShow) {
+                    alts.push("show");
+                }
+
+                ctx.respond(format!("Expected: {alts}", alts = alts.join(", ")));
             }
         }
 

@@ -214,8 +214,10 @@ types:
       Remove this value to allow requests of any length.
     type: {id: duration, optional: true}
   song/spotify/subscriber-only:
-    doc: If only subscribers can request songs from Spotify.
-    type: {id: bool}
+    doc: >
+      If only subscribers can request songs from Spotify.
+      **Deprecated** in favor of `song/spotify` scope (see Authentication).
+    type: {id: bool, optional: true}
   song/youtube/enabled:
     doc: If we accept YouTube song requests (Experimental).
     type: {id: bool}
@@ -235,10 +237,10 @@ types:
       Remove this value to allow requests of any length.
     type: {id: number}
   song/youtube/subscriber-only:
-    doc:
+    doc: >
       If only subscribers can request songs from YouTube.
-      This is deprecated in favor of the song/youtube scope.
-    type: {id: bool}
+      **Deprecated** in favor of `song/spotify` scope (see Authentication).
+    type: {id: bool, optional: true}
   water/enabled:
     doc: If the `!water` module is enabled.
     type: {id: bool}
