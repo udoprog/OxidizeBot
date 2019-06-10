@@ -1,6 +1,6 @@
 use crate::{
     api,
-    auth::Auth,
+    auth::{Auth, Scope},
     bus, command, config,
     currency::{Currency, CurrencyBuilder},
     db, idle,
@@ -11,7 +11,7 @@ use crate::{
     utils::{self, Cooldown, Duration},
 };
 use failure::{bail, format_err, Error, ResultExt as _};
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 use irc::{
     client::{self, ext::ClientExt, Client, IrcClient, PackedIrcClient},
     proto::{
@@ -343,6 +343,7 @@ impl Irc {
                 handler_shutdown: false,
                 stream_info: &stream_info,
                 auth: &auth,
+                scope_cooldowns: auth.scope_cooldowns(),
                 currency_handler,
                 url_whitelist_enabled,
                 bad_words_enabled,
@@ -570,6 +571,8 @@ struct Handler<'a: 'h, 'to, 'h> {
     stream_info: &'a stream_info::StreamInfo,
     /// Information about auth.
     auth: &'a Auth,
+    /// Active scope cooldowns.
+    scope_cooldowns: HashMap<Scope, Cooldown>,
     /// Handler for currencies.
     currency_handler: currency_admin::Handler<'a>,
     bad_words_enabled: Arc<RwLock<bool>>,
@@ -633,6 +636,7 @@ impl Handler<'_, '_, '_> {
                         alias: command::Alias { alias },
                         stream_info: &self.stream_info,
                         auth: &self.auth,
+                        scope_cooldowns: &mut self.scope_cooldowns,
                     };
 
                     let scope = handler.scope();

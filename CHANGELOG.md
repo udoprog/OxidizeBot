@@ -5,6 +5,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Changed
+- Move most authorization checks to their own scopes (See [auth.yaml] for details) [#48].
+  * `song/theme`
+  * `song/edit-queue`
+  * `song/list-limit`
+  * `song/volume`
+  * `song/playback-control`
+  * `command/edit`
+  * `theme/edit`
+  * `promo/edit`
+  * `alias/edit`
+  * `countdown`
+  * `gtav/raw`
+  * `water/undo`
+
+[auth.yaml]: bot/src/auth.yaml
+[#48]: https://github.com/udoprog/setmod/issues/48
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.3.4...master
 
 ## [0.3.4]

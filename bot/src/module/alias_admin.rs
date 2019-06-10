@@ -1,4 +1,4 @@
-use crate::{command, db, module};
+use crate::{auth, command, db, module};
 
 /// Handler for the !alias command.
 pub struct Handler<'a> {
@@ -7,13 +7,11 @@ pub struct Handler<'a> {
 
 impl<'a> command::Handler for Handler<'a> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
-        ctx.check_moderator()?;
-
-        let next = command_base!(ctx, self.aliases, "!alias", "alias");
+        let next = command_base!(ctx, self.aliases, "!alias", "alias", AliasEdit);
 
         match next {
             Some("edit") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(auth::Scope::AliasEdit)?;
 
                 let name = ctx_try!(ctx.next_str("<name>", "!alias edit"));
                 let template = ctx_try!(ctx.rest_parse("<name> <template>", "!alias edit"));

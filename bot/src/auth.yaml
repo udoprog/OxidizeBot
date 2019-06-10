@@ -55,6 +55,45 @@ scopes:
     allow:
       - "@streamer"
       - "@moderator"
+  song/theme:
+    doc: >
+      If you are allowed to play a theme song (`!song theme`).
+      Theme songs are immediately played over the current song.
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"
+  song/edit-queue:
+    doc: >
+      If you are allowed to edit the queue (`!song promote`, `!song delete <user>`).
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"
+    cooldown: 5s
+  song/list-limit:
+    doc: >
+      If you are allowed to list more songs than the default (`!song list <number>`).
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"
+  song/volume:
+    doc: >
+      If you are allowed to modify the volume of the player (`!song volume`).
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"
+    cooldown: 5s
+  song/playback-control:
+    doc: >
+      If you are allowed control playback (`!song play`, `!song pause`, `!song toggle`).
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"
+    cooldown: 5s
   uptime:
     doc: If you are allowed to run the `!uptime` command.
     version: 0
@@ -104,11 +143,55 @@ scopes:
     allow:
       - "@streamer"
       - "@moderator"
+  command/edit:
+    doc: If you are allowed to run the `!command` command to edit other custom commands.
+    version: 0
+    risk: high
+    allow:
+      - "@streamer"
+      - "@moderator"
+  theme/edit:
+    doc: If you are allowed to run the `!theme` command to edit other custom themes.
+    version: 0
+    risk: high
+    allow:
+      - "@streamer"
+      - "@moderator"
+  promo/edit:
+    doc: If you are allowed to run the `!promo` command to edit promos.
+    version: 0
+    risk: high
+    allow:
+      - "@streamer"
+      - "@moderator"
+  alias/edit:
+    doc: If you are allowed to run the `!alias` command to edit promos.
+    version: 0
+    risk: high
+    allow:
+      - "@streamer"
+      - "@moderator"
+  countdown:
+    doc: If you are allowed to run the `!countdown` command.
+    version: 0
+    risk: high
+    allow:
+      - "@streamer"
+      - "@moderator"
   gtav/bypass-cooldown:
     doc: If you are allowed to bypass cooldowns on `!gtav` commands.
     version: 0
     allow:
       - "@streamer"
+  gtav/raw:
+    doc: >
+      If you are allowed to post raw commands with `!gtav raw`.
+      This is risky to enable for `@everyone` since it allows sending raw commands to ChaosMod.
+    version: 0
+    risk: high
+    allow:
+      - "@streamer"
+      - "@moderator"
   speedrun:
     doc: If you are allowed to run the `!speedrun` command.
     version: 0
@@ -135,3 +218,10 @@ scopes:
     version: 0
     allow:
       - "@streamer"
+  water/undo:
+    doc: >
+      If you are allowed to undo water (`!water undo`).
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"

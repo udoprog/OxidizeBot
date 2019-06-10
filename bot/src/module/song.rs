@@ -330,7 +330,7 @@ impl command::Handler for Handler {
 
         match ctx.next() {
             Some("theme") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::SongTheme)?;
                 let name = ctx_try!(ctx.next_str("<name>", "!song theme")).to_string();
 
                 let player = player.clone();
@@ -350,7 +350,7 @@ impl command::Handler for Handler {
                 });
             }
             Some("promote") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::SongEditQueue)?;
 
                 let index = match ctx.next().and_then(|n| parse_queue_position(&ctx.user, n)) {
                     Some(index) => index,
@@ -364,7 +364,7 @@ impl command::Handler for Handler {
                 }
             }
             Some("close") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::SongEditQueue)?;
 
                 player.close(match ctx.rest() {
                     "" => None,
@@ -373,7 +373,8 @@ impl command::Handler for Handler {
                 ctx.respond("Closed player from further requests.");
             }
             Some("open") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::SongEditQueue)?;
+
                 player.open();
                 ctx.respond("Opened player for requests.");
             }
@@ -389,7 +390,7 @@ impl command::Handler for Handler {
                 let mut limit = 3usize;
 
                 if let Some(n) = ctx.next() {
-                    ctx.check_moderator()?;
+                    ctx.check_scope(Scope::SongListLimit)?;
 
                     if let Ok(n) = str::parse(n) {
                         limit = n;
@@ -434,17 +435,15 @@ impl command::Handler for Handler {
                 }
             },
             Some("purge") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::SongEditQueue)?;
+
                 player.purge()?;
                 ctx.respond("Song queue purged.");
             }
             // print when your next song will play.
             Some("when") => {
                 let (your, user) = match ctx.next() {
-                    Some(user) => {
-                        ctx.check_moderator()?;
-                        (false, user)
-                    }
+                    Some(user) => (false, user),
                     None => (true, ctx.user.name),
                 };
 
@@ -491,17 +490,17 @@ impl command::Handler for Handler {
                     Some("last") => match ctx.next() {
                         Some(last_user) => {
                             let last_user = last_user.to_lowercase();
-                            ctx.check_moderator()?;
+                            ctx.check_scope(Scope::SongEditQueue)?;
                             player.remove_last_by_user(&last_user)?
                         }
                         None => {
-                            ctx.check_moderator()?;
+                            ctx.check_scope(Scope::SongEditQueue)?;
                             player.remove_last()?
                         }
                     },
                     Some("mine") => player.remove_last_by_user(&ctx.user.name)?,
                     Some(n) => {
-                        ctx.check_moderator()?;
+                        ctx.check_scope(Scope::SongEditQueue)?;
 
                         let n = match parse_queue_position(&ctx.user, n) {
                             Some(n) => n,
@@ -525,7 +524,7 @@ impl command::Handler for Handler {
                 match ctx.next() {
                     // setting volume
                     Some(other) => {
-                        ctx.check_moderator()?;
+                        ctx.check_scope(Scope::SongVolume)?;
 
                         let (diff, argument) = match other.chars().next() {
                             Some('+') => (Some(true), &other[1..]),
@@ -568,22 +567,22 @@ impl command::Handler for Handler {
                 }
             }
             Some("skip") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::SongPlaybackControl)?;
                 player.skip()?;
             }
             Some("request") => {
                 self.handle_request(&mut ctx, player)?;
             }
             Some("toggle") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::SongPlaybackControl)?;
                 player.toggle()?;
             }
             Some("play") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::SongPlaybackControl)?;
                 player.play()?;
             }
             Some("pause") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::SongPlaybackControl)?;
                 player.pause()?;
             }
             Some("length") => {
