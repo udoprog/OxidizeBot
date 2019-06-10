@@ -345,6 +345,7 @@ scopes! {
     (Song, "song"),
     (SongYouTube, "song/youtube"),
     (SongSpotify, "song/spotify"),
+    (SongBypassConstraints, "song/bypass-constraints"),
     (SwearJar, "swearjar"),
     (Uptime, "uptime"),
     (Game, "game"),
@@ -357,6 +358,9 @@ scopes! {
     (Command, "command"),
     (GtavBypassCooldown, "gtav/bypass-cooldown"),
     (Speedrun, "speedrun"),
+    (CurrencyShow, "currency/show"),
+    (CurrencyBoost, "currency/boost"),
+    (CurrencyWindfall, "currency/windfall"),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

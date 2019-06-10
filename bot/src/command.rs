@@ -117,7 +117,7 @@ impl<'a, 'm> Context<'a, 'm> {
     }
 
     /// Test if streamer.
-    pub fn is_streamer(&self) -> bool {
+    fn is_streamer(&self) -> bool {
         self.user.name == self.streamer
     }
 
@@ -127,12 +127,12 @@ impl<'a, 'm> Context<'a, 'm> {
     }
 
     /// Test if subscriber.
-    pub fn is_subscriber(&self) -> bool {
+    fn is_subscriber(&self) -> bool {
         self.is_streamer() || self.stream_info.is_subscriber(self.user.name)
     }
 
     /// Test if vip.
-    pub fn is_vip(&self) -> bool {
+    fn is_vip(&self) -> bool {
         self.vips.contains(self.user.name)
     }
 

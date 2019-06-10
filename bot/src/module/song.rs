@@ -5,7 +5,7 @@ use crate::{
     irc, module, player,
     player::{AddTrackError, Event, Item, PlayThemeError, Player},
     prelude::*,
-    settings, stream_info, track_id,
+    settings, track_id,
     track_id::TrackId,
     utils::{self, Cooldown, Duration},
 };
@@ -19,10 +19,8 @@ const EXAMPLE_SEARCH: &'static str = "queen we will rock you";
 /// Handler for the `!song` command.
 pub struct Handler {
     enabled: Arc<RwLock<bool>>,
-    stream_info: stream_info::StreamInfo,
     player: Arc<RwLock<Option<Player>>>,
     request_help_cooldown: Cooldown,
-    subscriber_only: Arc<RwLock<bool>>,
     request_reward: Arc<RwLock<u32>>,
     currency: Arc<RwLock<Option<Currency>>>,
     spotify: Constraint,
@@ -43,15 +41,13 @@ impl Handler {
         }
 
         let currency: Option<Currency> = self.currency.read().clone();
-        let stream_info = self.stream_info.clone();
-        let subscriber_only = self.subscriber_only.clone();
         let request_reward = *self.request_reward.read();
         let spotify = self.spotify.clone();
         let youtube = self.youtube.clone();
         let user = ctx.user.as_owned_user();
-        let is_moderator = ctx.is_moderator();
         let has_spotify_scope = ctx.has_scope(Scope::SongSpotify);
         let has_youtube_scope = ctx.has_scope(Scope::SongYouTube);
+        let has_bypass_constraints = ctx.has_scope(Scope::SongBypassConstraints);
 
         let track_id = match TrackId::parse_with_urls(&q) {
             Ok(track_id) => Some(track_id),
@@ -114,23 +110,6 @@ impl Handler {
                 return Ok(());
             }
 
-            let subscriber_only_by_track = match track_id {
-                TrackId::Spotify(..) => *spotify.subscriber_only.read(),
-                TrackId::YouTube(..) => *youtube.subscriber_only.read(),
-            };
-
-            let subscriber_only = subscriber_only_by_track || *subscriber_only.read();
-
-            if subscriber_only && !is_moderator {
-                if !stream_info.is_subscriber(&user.name) {
-                    user.respond(format!(
-                        "You must be a subscriber for {what} requests, sorry :(",
-                        what = what
-                    ));
-                    return Ok(());
-                }
-            }
-
             let max_duration = match track_id {
                 TrackId::Spotify(_) => spotify.max_duration.read().clone(),
                 TrackId::YouTube(_) => youtube.max_duration.read().clone(),
@@ -147,7 +126,7 @@ impl Handler {
                     user.target.clone(),
                     user.name.clone(),
                     track_id,
-                    is_moderator,
+                    has_bypass_constraints,
                     max_duration,
                     min_currency,
                 )
@@ -648,7 +627,6 @@ impl module::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            stream_info,
             handlers,
             futures,
             sender,
@@ -663,18 +641,17 @@ impl module::Module for Module {
         let mut vars = settings.vars();
         let enabled = vars.var("enabled", false)?;
         let chat_feedback = vars.var("chat-feedback", true)?;
-        let subscriber_only = vars.var("subscriber-only", false)?;
         let request_reward = vars.var("request-reward", 0)?;
         futures.push(vars.run().boxed());
 
         let vars = settings.scoped("spotify");
         let mut vars = vars.vars();
-        let spotify = Constraint::build(&mut vars, true, false, 0)?;
+        let spotify = Constraint::build(&mut vars, true, 0)?;
         futures.push(vars.run().boxed());
 
         let vars = settings.scoped("youtube");
         let mut vars = vars.vars();
-        let youtube = Constraint::build(&mut vars, false, true, 60)?;
+        let youtube = Constraint::build(&mut vars, false, 60)?;
         futures.push(vars.run().boxed());
 
         let (mut player_stream, player) = injector.stream();
@@ -696,10 +673,8 @@ impl module::Module for Module {
             "song",
             Handler {
                 enabled,
-                stream_info: stream_info.clone(),
                 request_help_cooldown: help_cooldown,
                 player: player.clone(),
-                subscriber_only,
                 request_reward,
                 currency,
                 spotify,
@@ -734,26 +709,18 @@ struct Constraint {
     enabled: Arc<RwLock<bool>>,
     max_duration: Arc<RwLock<Option<Duration>>>,
     min_currency: Arc<RwLock<i64>>,
-    subscriber_only: Arc<RwLock<bool>>,
 }
 
 impl Constraint {
-    fn build(
-        vars: &mut settings::Vars,
-        enabled: bool,
-        subscriber_only: bool,
-        min_currency: i64,
-    ) -> Result<Self, Error> {
+    fn build(vars: &mut settings::Vars, enabled: bool, min_currency: i64) -> Result<Self, Error> {
         let enabled = vars.var("enabled", enabled)?;
         let max_duration = vars.optional("max-duration")?;
         let min_currency = vars.var("min-currency", min_currency)?;
-        let subscriber_only = vars.var("subscriber-only", subscriber_only)?;
 
         Ok(Constraint {
             enabled,
             max_duration,
             min_currency,
-            subscriber_only,
         })
     }
 }

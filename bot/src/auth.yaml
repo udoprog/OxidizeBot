@@ -47,6 +47,14 @@ scopes:
       - "@streamer"
       - "@moderator"
       - "@subscriber"
+  song/bypass-constraints:
+    doc: >
+      If you are allowed to bypass song request constraints.
+      Like maximum queue length or max songs per user.
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"
   uptime:
     doc: If you are allowed to run the `!uptime` command.
     version: 0
@@ -106,3 +114,24 @@ scopes:
     version: 0
     allow:
       - "@everyone"
+  currency/show:
+    doc: If you are allowed to show the currency of any user (`!currency show`).
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"
+  currency/boost:
+    doc: >
+      If you are allowed to boost the currency of any user (`!currency boost`).
+      Boosting means adding currency to another user.
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"
+  currency/windfall:
+    doc: >
+      If you are allowed to windfall currency (`!currency windfall`).
+      Windfall means giving everyone in the channel the given amount of currency.
+    version: 0
+    allow:
+      - "@streamer"

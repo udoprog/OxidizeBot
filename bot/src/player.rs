@@ -854,7 +854,7 @@ impl Player {
         channel: String,
         user: String,
         track_id: TrackId,
-        is_moderator: bool,
+        bypass_constraints: bool,
         max_duration: Option<utils::Duration>,
         min_currency: i64,
     ) -> Result<(usize, Arc<Item>), AddTrackError> {
@@ -862,7 +862,7 @@ impl Player {
             let queue_inner = self.inner.queue.queue.read();
             let len = queue_inner.len();
 
-            if !is_moderator {
+            if !bypass_constraints {
                 if let Some(reason) = self.inner.closed.read().as_ref() {
                     return Err(AddTrackError::PlayerClosed(reason.clone()));
                 }
@@ -909,7 +909,7 @@ impl Player {
             (user_count, len)
         };
 
-        if !is_moderator {
+        if !bypass_constraints {
             match min_currency {
                 // don't test if min_currency is not defined.
                 0 => (),
@@ -938,7 +938,7 @@ impl Player {
         let max_songs_per_user = *self.inner.max_songs_per_user.read();
 
         // NB: moderator is allowed to add more songs.
-        if !is_moderator && user_count >= max_songs_per_user {
+        if !bypass_constraints && user_count >= max_songs_per_user {
             return Err(AddTrackError::TooManyUserTracks(max_songs_per_user));
         }
 
