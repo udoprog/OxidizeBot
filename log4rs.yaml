@@ -6,7 +6,7 @@ appenders:
     kind: file
     path: "setmod.log"
     encoder:
-      pattern: "{d} - {m}{n}"
+      pattern: "{d} {l} {t} - {m}{n}"
 root:
   level: info
   appenders:

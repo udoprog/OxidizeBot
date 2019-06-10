@@ -8,9 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Notifications for system integration.
+- Added `--log-config` and `--trace` switches to give more control over logging.
 
 ### Changed
 - Fixed player sync on startup not setting state correctly.
+- Fixed issue where Spotify can't be controlled unless it is started before the bot.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.3.3...master
 

@@ -1,3 +1,4 @@
+mod base;
 pub mod github;
 pub mod nightbot;
 pub mod setbac;
@@ -6,6 +7,7 @@ pub mod spotify;
 pub mod twitch;
 pub mod youtube;
 
+pub use self::base::RequestBuilder;
 pub use self::github::GitHub;
 pub use self::nightbot::NightBot;
 pub use self::setbac::SetBac;

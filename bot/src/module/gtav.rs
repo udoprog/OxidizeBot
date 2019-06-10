@@ -49,7 +49,7 @@ macro_rules! vehicle {
     };
 }
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct CommandConfig {
     name: String,
     #[serde(default)]
@@ -60,7 +60,7 @@ struct CommandConfig {
     cost: Option<u32>,
 }
 
-#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 struct CommandsConfig(Vec<CommandConfig>);
 
 #[derive(Debug)]

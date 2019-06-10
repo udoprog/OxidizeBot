@@ -1,13 +1,13 @@
 //! Twitch API helpers.
 
-use crate::{oauth2, prelude::*};
+use crate::{api::RequestBuilder, oauth2, prelude::*};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use failure::{Error, ResultExt};
 use reqwest::{
     header,
     r#async::{Client, Decoder},
-    Method, StatusCode, Url,
+    Method, Url,
 };
 use std::mem;
 
@@ -46,15 +46,9 @@ impl Twitch {
             url_path.extend(path);
         }
 
-        RequestBuilder {
-            token: self.token.clone(),
-            client: self.client.clone(),
-            url,
-            method,
-            headers: Vec::new(),
-            body: None,
-            use_bearer: true,
-        }
+        RequestBuilder::new(self.client.clone(), method, url)
+            .token(self.token.clone())
+            .client_id_header("Client-ID")
     }
 
     /// Get request against API.
@@ -67,15 +61,10 @@ impl Twitch {
             url_path.extend(path);
         }
 
-        RequestBuilder {
-            token: self.token.clone(),
-            client: self.client.clone(),
-            url,
-            method,
-            headers: Vec::new(),
-            body: None,
-            use_bearer: false,
-        }
+        RequestBuilder::new(self.client.clone(), method, url)
+            .token(self.token.clone())
+            .client_id_header("Client-ID")
+            .use_oauth2_header()
     }
 
     /// Update the channel information.
@@ -90,7 +79,7 @@ impl Twitch {
 
         async move {
             let body = Bytes::from(serde_json::to_vec(&request)?);
-            let _ = req.body(body).execute::<serde_json::Value>().await?;
+            let _ = req.body(body).json::<serde_json::Value>().await?;
             Ok(())
         }
     }
@@ -100,7 +89,7 @@ impl Twitch {
         let req = self
             .new_api(Method::GET, &["users"])
             .query_param("login", login)
-            .execute::<Data<User>>();
+            .json::<Data<User>>();
 
         async move { Ok(req.await?.data.into_iter().next()) }
     }
@@ -119,11 +108,10 @@ impl Twitch {
             request = request.query_param("user_id", &user_id);
         }
 
-        let copied = request.clone_without_body();
-        let initial = request.execute::<Page<Subscription>>();
+        let initial = request.clone().json::<Page<Subscription>>();
 
         Paged {
-            request: copied,
+            request,
             page: Some(initial.boxed()),
         }
     }
@@ -136,22 +124,19 @@ impl Twitch {
         let req = self
             .new_api(Method::POST, &["clips"])
             .query_param("broadcaster_id", broadcaster_id)
-            .execute::<Data<Clip>>();
+            .json::<Data<Clip>>();
 
         async move { Ok(req.await?.data.into_iter().next()) }
     }
 
     /// Get the channela associated with the current authentication.
     pub async fn channel(&self) -> Result<Channel, Error> {
-        self.v5(Method::GET, &["channel"])
-            .execute::<Channel>()
-            .await
+        self.v5(Method::GET, &["channel"]).json::<Channel>().await
     }
 
     /// Get the channela associated with the current authentication.
     pub fn channel_by_login(&self, login: &str) -> impl Future<Output = Result<Channel, Error>> {
-        self.v5(Method::GET, &["channels", login])
-            .execute::<Channel>()
+        self.v5(Method::GET, &["channels", login]).json::<Channel>()
     }
 
     /// Get stream information.
@@ -162,7 +147,7 @@ impl Twitch {
         let req = self
             .new_api(Method::GET, &["streams"])
             .query_param("user_login", login)
-            .execute::<Page<Stream>>();
+            .json::<Page<Stream>>();
 
         async move { Ok(req.await?.data.into_iter().next()) }
     }
@@ -194,17 +179,12 @@ impl Twitch {
             .expect("bad base")
             .extend(&["oauth2", "validate"]);
 
-        let request = RequestBuilder {
-            token: self.token.clone(),
-            client: self.client.clone(),
-            url,
-            method: Method::GET,
-            headers: Vec::new(),
-            body: None,
-            use_bearer: false,
-        };
+        let request = RequestBuilder::new(self.client.clone(), Method::GET, url)
+            .token(self.token.clone())
+            .client_id_header("Client-ID")
+            .use_oauth2_header();
 
-        Ok(request.execute().await.context("validate token error")?)
+        Ok(request.json().await.context("validate token error")?)
     }
 }
 
@@ -241,11 +221,8 @@ where
                             }
 
                             if let Some(cursor) = pagination.and_then(|p| p.cursor) {
-                                let req = self
-                                    .request
-                                    .clone_without_body()
-                                    .query_param("after", &cursor);
-                                self.as_mut().page = Some(req.execute().boxed());
+                                let req = self.request.clone().query_param("after", &cursor);
+                                self.as_mut().page = Some(req.json().boxed());
                             }
 
                             return Poll::Ready(Some(Ok(data)));
@@ -256,107 +233,6 @@ where
         }
 
         Poll::Ready(None)
-    }
-}
-
-struct RequestBuilder {
-    token: oauth2::SyncToken,
-    client: Client,
-    url: Url,
-    method: Method,
-    headers: Vec<(header::HeaderName, String)>,
-    body: Option<Bytes>,
-    /// Use Bearer header instead of OAuth for access tokens.
-    use_bearer: bool,
-}
-
-impl RequestBuilder {
-    /// Clone the request but discard the body since it's not cloneable.
-    pub fn clone_without_body(&self) -> RequestBuilder {
-        RequestBuilder {
-            token: self.token.clone(),
-            client: self.client.clone(),
-            url: self.url.clone(),
-            method: self.method.clone(),
-            headers: self.headers.clone(),
-            body: None,
-            use_bearer: self.use_bearer,
-        }
-    }
-
-    /// Execute the request.
-    pub async fn execute<T>(self) -> Result<T, Error>
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        // NB: scope to only lock the token over the request setup.
-        let req = {
-            let token = self.token.read()?;
-            let access_token = token.access_token().to_string();
-
-            log::trace!("request: {}: {}", self.method, self.url);
-            let mut req = self.client.request(self.method, self.url);
-
-            if let Some(body) = self.body {
-                req = req.body(body);
-            }
-
-            for (key, value) in self.headers {
-                req = req.header(key, value);
-            }
-
-            if self.use_bearer {
-                req = req.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
-            } else {
-                req = req.header(header::AUTHORIZATION, format!("OAuth {}", access_token));
-            }
-
-            req.header("Client-ID", token.client_id())
-        };
-
-        let mut res = req.send().compat().await?;
-
-        let body = mem::replace(res.body_mut(), Decoder::empty());
-        let body = body.compat().try_concat().await?;
-
-        let status = res.status();
-
-        if status == StatusCode::UNAUTHORIZED {
-            self.token.force_refresh()?;
-        }
-
-        if !status.is_success() {
-            failure::bail!(
-                "bad response: {}: {}",
-                status,
-                String::from_utf8_lossy(body.as_ref())
-            );
-        }
-
-        if log::log_enabled!(log::Level::Trace) {
-            let response = String::from_utf8_lossy(body.as_ref());
-            log::trace!("response: {}", response);
-        }
-
-        serde_json::from_slice(body.as_ref()).map_err(Into::into)
-    }
-
-    /// Add a body to the request.
-    pub fn body(mut self, body: Bytes) -> Self {
-        self.body = Some(body);
-        self
-    }
-
-    /// Push a header.
-    pub fn header(mut self, key: header::HeaderName, value: &str) -> Self {
-        self.headers.push((key, value.to_string()));
-        self
-    }
-
-    /// Add a query parameter.
-    pub fn query_param(mut self, key: &str, value: &str) -> Self {
-        self.url.query_pairs_mut().append_pair(key, value);
-        self
     }
 }
 

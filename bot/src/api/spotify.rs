@@ -1,13 +1,9 @@
 //! Spotify API helpers.
 
-use crate::{oauth2, prelude::*};
+use crate::{api::RequestBuilder, oauth2, prelude::*};
 use bytes::Bytes;
 use failure::Error;
-use reqwest::{
-    header,
-    r#async::{Client, Decoder},
-    Method, StatusCode, Url,
-};
+use reqwest::{header, r#async::Client, Method, StatusCode, Url};
 use rspotify::spotify::model::search;
 pub use rspotify::spotify::{
     model::{
@@ -21,7 +17,6 @@ pub use rspotify::spotify::{
     senum::DeviceType,
 };
 use std::{
-    mem,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -50,21 +45,13 @@ impl Spotify {
     fn request(&self, method: Method, path: &[&str]) -> RequestBuilder {
         let mut url = self.api_url.clone();
         url.path_segments_mut().expect("bad base").extend(path);
-
-        RequestBuilder {
-            token: self.token.clone(),
-            client: self.client.clone(),
-            url,
-            method,
-            headers: Vec::new(),
-            body: None,
-        }
+        RequestBuilder::new(self.client.clone(), method, url).token(self.token.clone())
     }
 
     /// Get my playlists.
     pub async fn playlist(&self, id: String) -> Result<FullPlaylist, Error> {
         self.request(Method::GET, &["playlists", id.as_str()])
-            .execute()
+            .json()
             .await
     }
 
@@ -72,7 +59,7 @@ impl Spotify {
     pub async fn my_player_devices(&self) -> Result<Vec<Device>, Error> {
         let r = self
             .request(Method::GET, &["me", "player", "devices"])
-            .execute::<Response>()
+            .json::<Response>()
             .await?;
 
         return Ok(r.devices);
@@ -96,7 +83,7 @@ impl Spotify {
             .query_param("volume_percent", &volume)
             .header(header::ACCEPT, "application/json")
             .header(header::CONTENT_LENGTH, "0")
-            .execute_empty_not_found()
+            .json_map(device_control)
             .await
     }
 
@@ -106,14 +93,14 @@ impl Spotify {
             .optional_query_param("device_id", device_id)
             .header(header::CONTENT_LENGTH, "0")
             .header(header::ACCEPT, "application/json")
-            .execute_empty_not_found()
+            .json_map(device_control)
             .await
     }
 
     /// Information on the current playback.
     pub async fn me_player(&self) -> Result<Option<FullPlayingContext>, Error> {
         self.request(Method::GET, &["me", "player"])
-            .execute_optional()
+            .json_option(not_found)
             .await
     }
 
@@ -136,7 +123,7 @@ impl Spotify {
             .header(header::ACCEPT, "application/json");
 
         let body = Bytes::from(serde_json::to_vec(&request)?);
-        return r.body(body).execute_empty_not_found().await;
+        return r.body(body).json_map(device_control).await;
 
         #[derive(serde::Serialize)]
         struct Request {
@@ -149,25 +136,23 @@ impl Spotify {
 
     /// Get my playlists.
     pub async fn my_playlists(&self) -> Result<Page<SimplifiedPlaylist>, Error> {
-        self.request(Method::GET, &["me", "playlists"])
-            .execute()
-            .await
+        self.request(Method::GET, &["me", "playlists"]).json().await
     }
 
     /// Get my songs.
     pub async fn my_tracks(&self) -> Result<Page<SavedTrack>, Error> {
-        self.request(Method::GET, &["me", "tracks"]).execute().await
+        self.request(Method::GET, &["me", "tracks"]).json().await
     }
 
     /// Get my songs.
     pub fn my_tracks_stream(&self) -> PageStream<SavedTrack> {
-        self.page_stream(self.request(Method::GET, &["me", "tracks"]).execute())
+        self.page_stream(self.request(Method::GET, &["me", "tracks"]).json())
     }
 
     /// Get the full track by ID.
     pub async fn track(&self, id: String) -> Result<FullTrack, Error> {
         self.request(Method::GET, &["tracks", id.as_str()])
-            .execute()
+            .json()
             .await
     }
 
@@ -176,7 +161,7 @@ impl Spotify {
         self.request(Method::GET, &["search"])
             .query_param("type", "track")
             .query_param("q", &q)
-            .execute::<search::SearchTracks>()
+            .json::<search::SearchTracks>()
             .await
             .map(|r| r.tracks)
     }
@@ -202,6 +187,24 @@ impl Spotify {
     }
 }
 
+/// Handle device control requests.
+fn device_control<C>(status: &StatusCode, _: &C) -> Result<Option<bool>, Error> {
+    match *status {
+        StatusCode::NO_CONTENT => Ok(Some(true)),
+        StatusCode::NOT_FOUND => Ok(Some(false)),
+        _ => Ok(None),
+    }
+}
+
+/// Handle not found as a missing body.
+fn not_found(status: &StatusCode) -> bool {
+    match *status {
+        StatusCode::NOT_FOUND => true,
+        StatusCode::NO_CONTENT => true,
+        _ => false,
+    }
+}
+
 pub struct PageStream<T> {
     client: Client,
     token: oauth2::SyncToken,
@@ -214,19 +217,9 @@ where
 {
     /// Get the next page for a type.
     pub fn next_page(&self, url: Url) -> impl Future<Output = Result<Page<T>, Error>> {
-        let client = self.client.clone();
-        let token = self.token.clone();
-
-        let request = RequestBuilder {
-            token,
-            client,
-            url,
-            method: Method::GET,
-            headers: Vec::new(),
-            body: None,
-        };
-
-        request.execute()
+        RequestBuilder::new(self.client.clone(), Method::GET, url)
+            .token(self.token.clone())
+            .json()
     }
 }
 
@@ -256,165 +249,5 @@ where
         }
 
         Poll::Pending
-    }
-}
-
-struct RequestBuilder {
-    token: oauth2::SyncToken,
-    client: Client,
-    url: Url,
-    method: Method,
-    headers: Vec<(header::HeaderName, String)>,
-    body: Option<Bytes>,
-}
-
-impl RequestBuilder {
-    /// Execute the request requiring content to be returned.
-    pub async fn execute<T>(self) -> Result<T, Error>
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        match self.execute_optional().await? {
-            Some(body) => Ok(body),
-            None => Err(failure::format_err!("got empty response from server")),
-        }
-    }
-
-    /// Execute the request, taking into account that the server might return 204 NO CONTENT, and treat it as
-    /// `Option::None`
-    pub async fn execute_optional<T>(self) -> Result<Option<T>, Error>
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        let mut req = self.client.request(self.method, self.url);
-
-        if let Some(body) = self.body {
-            req = req.body(body);
-        }
-
-        for (key, value) in self.headers {
-            req = req.header(key, value);
-        }
-
-        let access_token = self.token.read()?.access_token().to_string();
-        let req = req.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
-
-        let mut res = req.send().compat().await?;
-        let body = mem::replace(res.body_mut(), Decoder::empty());
-        let body = body.compat().try_concat().await?;
-
-        let status = res.status();
-
-        if status == StatusCode::UNAUTHORIZED {
-            self.token.force_refresh()?;
-        }
-
-        if !status.is_success() {
-            failure::bail!(
-                "bad response: {}: {}",
-                status,
-                String::from_utf8_lossy(body.as_ref())
-            );
-        }
-
-        if status == StatusCode::NO_CONTENT {
-            return Ok(None);
-        }
-
-        if log::log_enabled!(log::Level::Trace) {
-            let response = String::from_utf8_lossy(body.as_ref());
-            log::trace!("response: {}", response);
-        }
-
-        match serde_json::from_slice(body.as_ref()) {
-            Ok(body) => Ok(Some(body)),
-            Err(e) => {
-                log::trace!(
-                    "failed to deserialize: {}: {}: {}",
-                    status,
-                    e,
-                    String::from_utf8_lossy(body.as_ref())
-                );
-                Err(e.into())
-            }
-        }
-    }
-
-    /// Execute the request, expecting nothing back.
-    pub async fn execute_empty_not_found(self) -> Result<bool, Error> {
-        let RequestBuilder {
-            token,
-            client,
-            url,
-            method,
-            headers,
-            body,
-        } = self;
-
-        let access_token = token.read()?.access_token().to_string();
-
-        let mut r = client.request(method, url);
-
-        if let Some(body) = body {
-            r = r.body(body);
-        }
-
-        for (key, value) in headers {
-            r = r.header(key, value);
-        }
-
-        let request = r.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
-
-        let mut res = request.send().compat().await?;
-        let body = mem::replace(res.body_mut(), Decoder::empty());
-        let body = body.compat().try_concat().await?;
-
-        let status = res.status();
-
-        if status == StatusCode::NOT_FOUND {
-            log::trace!("not found: {}", String::from_utf8_lossy(body.as_ref()));
-            return Ok(false);
-        }
-
-        if !status.is_success() {
-            failure::bail!(
-                "bad response: {}: {}",
-                status,
-                String::from_utf8_lossy(body.as_ref())
-            );
-        }
-
-        if log::log_enabled!(log::Level::Trace) {
-            log::trace!("response: {}", String::from_utf8_lossy(body.as_ref()));
-        }
-
-        Ok(true)
-    }
-
-    /// Add a body to the request.
-    pub fn body(mut self, body: Bytes) -> Self {
-        self.body = Some(body);
-        self
-    }
-
-    /// Push a header.
-    pub fn header(mut self, key: header::HeaderName, value: &str) -> Self {
-        self.headers.push((key, value.to_string()));
-        self
-    }
-
-    /// Add a query parameter.
-    pub fn query_param(mut self, key: &str, value: &str) -> Self {
-        self.url.query_pairs_mut().append_pair(key, value);
-        self
-    }
-
-    /// Add a query parameter.
-    pub fn optional_query_param(mut self, key: &str, value: Option<String>) -> Self {
-        if let Some(value) = value {
-            self.url.query_pairs_mut().append_pair(key, value.as_str());
-        }
-
-        self
     }
 }

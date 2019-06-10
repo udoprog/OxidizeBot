@@ -14,7 +14,7 @@ type EventSender = mpsc::UnboundedSender<Event<serde_json::Value>>;
 type Subscriptions = Arc<RwLock<HashMap<String, Vec<EventSender>>>>;
 
 /// Update events for a given key.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum Event<T> {
     /// Indicate that the given key was cleared.
     Clear,
@@ -277,6 +277,10 @@ impl Settings {
     ) -> Result<(), Error> {
         use self::db::schema::settings::dsl;
 
+        if log::log_enabled!(log::Level::Trace) {
+            log::trace!("{}: Setting to {:?} (notify: {})", key, value, notify);
+        }
+
         let c = self.inner.db.pool.lock();
 
         let filter = dsl::settings.filter(dsl::key.eq(&key));
@@ -484,11 +488,15 @@ impl Settings {
         let subscriptions = self.inner.subscriptions.upgradable_read();
 
         if let Some(subs) = subscriptions.get(key) {
+            log::trace!("{}: Updating {} subscriptions", key, subs.len());
+
             for sub in subs {
                 if let Err(e) = sub.unbounded_send(event.clone()) {
                     log::error!("error when sending to sub: {}: {}", key, e);
                 }
             }
+        } else {
+            log::trace!("{}: No subscription to update", key);
         }
     }
 
@@ -683,15 +691,17 @@ impl<T> stream::FusedStream for Stream<T> {
 
 impl<T> futures::Stream for Stream<T>
 where
-    T: Unpin + Clone + serde::de::DeserializeOwned,
+    T: fmt::Debug + Unpin + Clone + serde::de::DeserializeOwned,
 {
     type Item = T;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         Poll::Ready(Some(
             match ready!(Pin::new(&mut self.option_stream).poll_next(cx)) {
-                Some(Some(update)) => update,
-                Some(None) => self.as_ref().default.clone(),
+                Some(update) => match update {
+                    Some(update) => update,
+                    None => self.as_ref().default.clone(),
+                },
                 None => return Poll::Ready(None),
             },
         ))
@@ -713,7 +723,7 @@ impl<T> stream::FusedStream for OptionStream<T> {
 
 impl<T> futures::Stream for OptionStream<T>
 where
-    T: Unpin + serde::de::DeserializeOwned,
+    T: fmt::Debug + Unpin + serde::de::DeserializeOwned,
 {
     type Item = Option<T>;
 
@@ -722,6 +732,10 @@ where
             Some(update) => update,
             None => return Poll::Ready(None),
         };
+
+        if log::log_enabled!(log::Level::Trace) {
+            log::trace!("{}: {:?}", self.as_ref().key, update);
+        }
 
         let value = Some(match update {
             Event::Clear => None,

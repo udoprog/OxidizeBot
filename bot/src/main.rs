@@ -38,16 +38,28 @@ fn opts() -> clap::App<'static, 'static> {
                 .takes_value(true),
         )
         .arg(
+            clap::Arg::with_name("trace")
+                .long("trace")
+                .help("If we should enable tracing in logs."),
+        )
+        .arg(
             clap::Arg::with_name("web-root")
                 .long("web-root")
                 .value_name("dir")
                 .help("Directory to use as web root.")
                 .takes_value(true),
         )
+        .arg(
+            clap::Arg::with_name("log-config")
+                .long("log-config")
+                .value_name("file")
+                .help("File to use for reading log configuration.")
+                .takes_value(true),
+        )
 }
 
 /// Setup a default logging configuration if none is specified.
-fn default_log_config(log_file: &Path) -> Result<log4rs::config::Config, Error> {
+fn default_log_config(log_file: &Path, trace: bool) -> Result<log4rs::config::Config, Error> {
     use log::LevelFilter;
     use log4rs::{
         append::{console::ConsoleAppender, file::FileAppender},
@@ -57,6 +69,12 @@ fn default_log_config(log_file: &Path) -> Result<log4rs::config::Config, Error> 
     let file = FileAppender::builder().build(log_file)?;
     let stdout = ConsoleAppender::builder().build();
 
+    let mut level = LevelFilter::Info;
+
+    if trace {
+        level = LevelFilter::Trace;
+    }
+
     let config = Config::builder()
         .appender(Appender::builder().build("stdout", Box::new(stdout)))
         .appender(Appender::builder().build("file", Box::new(file)))
@@ -64,7 +82,7 @@ fn default_log_config(log_file: &Path) -> Result<log4rs::config::Config, Error> 
             Logger::builder()
                 .appender("file")
                 .additive(false)
-                .build("setmod", LevelFilter::Info),
+                .build("setmod", level),
         )
         .build(Root::builder().appender("stdout").build(LevelFilter::Warn))?;
 
@@ -72,11 +90,16 @@ fn default_log_config(log_file: &Path) -> Result<log4rs::config::Config, Error> 
 }
 
 /// Configure logging.
-fn setup_logs(root: &Path, default_log_file: &Path) -> Result<(), Error> {
-    let file = root.join("log4rs.yaml");
+fn setup_logs(
+    root: &Path,
+    log_config: Option<PathBuf>,
+    default_log_file: &Path,
+    trace: bool,
+) -> Result<(), Error> {
+    let file = log_config.unwrap_or_else(|| root.join("log4rs.yaml"));
 
     if !file.is_file() {
-        let config = default_log_config(default_log_file)?;
+        let config = default_log_config(default_log_file, trace)?;
         log4rs::init_config(config)?;
     } else {
         log4rs::init_file(file, Default::default())?;
@@ -98,6 +121,8 @@ fn main() -> Result<(), Error> {
             .join("SetMod"),
     };
 
+    let trace = m.is_present("trace");
+
     let config = m
         .value_of("config")
         .map(PathBuf::from)
@@ -105,9 +130,10 @@ fn main() -> Result<(), Error> {
         .to_owned();
 
     let web_root = m.value_of("web-root").map(PathBuf::from);
+    let log_config = m.value_of("log-config").map(PathBuf::from);
     let default_log_file = root.join("setmod.log");
 
-    setup_logs(&root, &default_log_file).context("failed to setup logs")?;
+    setup_logs(&root, log_config, &default_log_file, trace).context("failed to setup logs")?;
 
     if !root.is_dir() {
         log::info!("Creating SetMod directory: {}", root.display());
