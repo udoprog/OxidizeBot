@@ -1092,7 +1092,7 @@ pub fn setup(
 
         let service = warp::serve(routes);
 
-        let server_future = service.bind(addr).map_err(|_| {
+        let server_future = service.bind(addr)?.map_err(|_| {
             // TODO: do we know _why_?
             failure::format_err!("web service errored")
         });
@@ -1107,7 +1107,7 @@ pub fn setup(
         let routes = routes.or(app.recover(recover));
         let service = warp::serve(routes);
 
-        let server_future = service.bind(addr).map_err(|_| {
+        let server_future = service.bind(addr)?.map_err(|_| {
             // TODO: do we know _why_?
             failure::format_err!("web service errored")
         });

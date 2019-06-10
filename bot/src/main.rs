@@ -2,6 +2,7 @@
 #![recursion_limit = "128"]
 #![windows_subsystem = "windows"]
 
+use backoff::backoff::Backoff as _;
 use failure::{format_err, Error, ResultExt};
 use parking_lot::RwLock;
 use setmod::{
@@ -12,6 +13,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::Arc,
+    time,
 };
 
 fn opts() -> clap::App<'static, 'static> {
@@ -84,7 +86,7 @@ fn setup_logs(root: &Path, default_log_file: &Path) -> Result<(), Error> {
 }
 
 fn main() -> Result<(), Error> {
-    use std::{thread, time::Duration};
+    use std::thread;
 
     let opts = opts();
     let m = opts.get_matches();
@@ -113,8 +115,22 @@ fn main() -> Result<(), Error> {
     }
 
     let system = sys::setup(&root, &default_log_file)?;
+    let mut error_backoff = backoff::ExponentialBackoff::default();
+    error_backoff.current_interval = time::Duration::from_secs(30);
+    error_backoff.initial_interval = time::Duration::from_secs(30);
+
+    let mut current_backoff;
+    let mut errored = false;
+
+    let startup = sys::Notification::new(format!("Started SetMod {}", setmod::VERSION));
+    system.notification(startup);
 
     loop {
+        if errored {
+            system.clear();
+            errored = false;
+        }
+
         let mut runtime = tokio::runtime::Runtime::new()?;
 
         let result = runtime.block_on(
@@ -129,8 +145,29 @@ fn main() -> Result<(), Error> {
         );
 
         match result {
-            Err(e) => setmod::log_err!(e, "Bot crashed"),
-            Ok(()) => log::info!("Bot was shut down cleanly"),
+            Err(e) => {
+                let backoff = error_backoff.next_backoff().unwrap_or_default();
+                current_backoff = Some(backoff);
+                errored = true;
+
+                let message = format!(
+                    "Trying to restart in {}.\nSee log for more details.",
+                    utils::compact_duration(&backoff)
+                );
+
+                let n = sys::Notification::new(message)
+                    .title("Bot crashed!")
+                    .icon(sys::NotificationIcon::Error);
+
+                system.notification(n);
+                system.error(String::from("Bot crashed, see log for more details."));
+                setmod::log_err!(e, "Bot crashed");
+            }
+            Ok(()) => {
+                error_backoff.reset();
+                current_backoff = None;
+                log::info!("Bot was shut down cleanly");
+            }
         }
 
         if !system.is_running() {
@@ -138,8 +175,18 @@ fn main() -> Result<(), Error> {
             break;
         }
 
-        log::info!("Restarting in 5 seconds...");
-        thread::sleep(Duration::from_secs(5));
+        if let Some(current_backoff) = current_backoff.as_ref() {
+            log::info!(
+                "Restarting in {}...",
+                utils::compact_duration(current_backoff)
+            );
+            thread::sleep(current_backoff.clone());
+        }
+
+        if !errored {
+            let n = sys::Notification::new("Restarted bot").icon(sys::NotificationIcon::Warning);
+            system.notification(n);
+        }
     }
 
     system.join()?;
