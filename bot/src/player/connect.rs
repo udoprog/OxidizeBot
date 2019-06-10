@@ -46,7 +46,7 @@ pub fn setup(
     let returned_player = player.clone();
 
     let future = async move {
-        player.volume_update(scaled_volume).await?;
+        player.volume_update_log(scaled_volume).await;
 
         loop {
             futures::select! {
@@ -60,12 +60,12 @@ pub fn setup(
                 update = volume_scale_stream.select_next_some() => {
                     *volume_scale.write() = update;
                     scaled_volume = (*volume.read() * update) / 100u32;
-                    player.volume_update(scaled_volume).await?;
+                    player.volume_update_log(scaled_volume).await;
                 }
                 update = volume_stream.select_next_some() => {
                     *volume.write() = update;
                     scaled_volume = (update * *volume_scale.read()) / 100u32;
-                    player.volume_update(scaled_volume).await?;
+                    player.volume_update_log(scaled_volume).await;
                 }
             }
         }
@@ -79,7 +79,7 @@ pub fn setup(
 pub enum CommandError {
     #[error(display = "error when issuing {} command", _0)]
     Error(&'static str),
-    #[error(display = "no device configured")]
+    #[error(display = "no device configured or available")]
     NoDevice,
     #[error(display = "other error")]
     Other(Error),
@@ -163,6 +163,13 @@ impl ConnectPlayer {
             self.spotify.me_player_volume(device_id, volume).await,
             "volume",
         )
+    }
+
+    /// Same as volume update, but logs instead of errors.
+    async fn volume_update_log(&self, volume: u32) {
+        if let Err(e) = self.volume_update(volume).await {
+            log::error!("Failed to update volume: {}", e);
+        }
     }
 }
 
