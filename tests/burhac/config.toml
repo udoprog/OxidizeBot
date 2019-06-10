@@ -1,0 +1,36 @@
+streamer = "burhac"
+
+features = [
+  "song",
+  "afterstream",
+]
+
+# API to use for remotely showing playlist information. Uncomment if you want it.
+api_url = "https://setbac.tv"
+
+database_url = "database.sql"
+
+[irc]
+channel = "#burhac"
+bot = "setmod"
+startup_message = "HeyGuys I'm alive!"
+moderator_cooldown = "4s"
+
+[player]
+device = "DESKTOP-JNSSN6E"
+speaker = "CABLE-A Input (VB-Audio Cable A"
+volume = 34
+playlist = "0SfMVB4nr5NaGm0BxiP53F"
+
+[current_song]
+path = "D:\\Personal\\speedruns\\GTA\\setmod-0.2\\current_song.txt"
+not_playing = "No Song Playing"
+template = "Song: \"{{name}}\"{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{elapsed}} / {{duration}}) {{#if user~}} Request by: @{{user~}}{{/if}}"
+update_interval = "1s"
+
+[themes]
+blimp = {track = "spotify:track:7JczDg05i29N5C3VMZKIVA"}
+setup = {track = "spotify:track:2fZpKgrcAlWzWYwQeFG43O", offset = "00:14"}
+michael = {track = "spotify:track:1zdsOgv1hdGGGe9CK1QPY7"}
+trevor = {track = "spotify:track:620tbRI5ZFvrWF31JkQ2dS"}
+burger = {track = "spotify:track:4U3UsEjcsv8S5w4zhFbDES"}

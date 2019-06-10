@@ -1,11 +1,8 @@
-use crate::web;
+use crate::{prelude::*, sys::Notification, web};
 use failure::{bail, Error};
-use futures::channel::oneshot;
 use parking_lot::Mutex;
 use std::{
-    ffi::OsStr,
     io,
-    os::windows::ffi::OsStrExt as _,
     path::Path,
     ptr,
     sync::{
@@ -16,13 +13,24 @@ use std::{
 };
 use winapi::um::{shellapi, winuser::SW_SHOW};
 
+#[path = "windows/window.rs"]
+mod window;
+
 const ICON: &[u8] = include_bytes!("../../res/icon.ico");
+const ICON_ERROR: &[u8] = include_bytes!("../../res/icon-error.ico");
+
+pub enum Event {
+    Cleared,
+    Errored(String),
+    Notification(Notification),
+}
 
 #[derive(Clone)]
 pub struct System {
     thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
     shutdown_senders: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
     restart_senders: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
+    events: mpsc::UnboundedSender<Event>,
     stopped: Arc<AtomicBool>,
 }
 
@@ -42,6 +50,27 @@ impl System {
         self.restart_senders.lock().push(tx);
         rx.await?;
         Ok(())
+    }
+
+    /// Clear the current state.
+    pub fn clear(&self) {
+        if let Err(e) = self.events.unbounded_send(Event::Cleared) {
+            log::error!("failed to send clear: {}", e);
+        }
+    }
+
+    /// Set an error.
+    pub fn error(&self, error: String) {
+        if let Err(e) = self.events.unbounded_send(Event::Errored(error)) {
+            log::error!("failed to send clear: {}", e);
+        }
+    }
+
+    /// Send the given notification.
+    pub fn notification(&self, n: Notification) {
+        if let Err(e) = self.events.unbounded_send(Event::Notification(n)) {
+            log::error!("failed to send notification: {}", e);
+        }
     }
 
     /// Test if system is running.
@@ -64,17 +93,10 @@ impl System {
     }
 }
 
-/// Convert into a u16 string.
-fn to_u16s(s: &OsStr) -> Vec<u16> {
-    s.encode_wide()
-        .chain(Some(0).into_iter())
-        .collect::<Vec<_>>()
-}
-
 /// Open the given directory.
 fn open_dir(path: &Path) -> io::Result<bool> {
-    let path = to_u16s(path.as_os_str());
-    let operation = to_u16s(OsStr::new("open"));
+    let path = self::window::to_wstring(path);
+    let operation = self::window::to_wstring("open");
 
     let result = unsafe {
         shellapi::ShellExecuteW(
@@ -91,75 +113,104 @@ fn open_dir(path: &Path) -> io::Result<bool> {
 }
 
 pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
-    let mut app = systray::Application::new()?;
-
-    app.set_icon_from_buffer(ICON, 128, 128)?;
-
     let root = root.to_owned();
     let log_file = log_file.to_owned();
-
-    app.add_menu_item("Open UI ...", move |_| {
-        webbrowser::open(web::URL)?;
-        Ok::<_, io::Error>(())
-    })?;
-
-    app.add_menu_separator()?;
-
-    app.add_menu_item("Open Log File ...", move |_| {
-        let _ = open_dir(&log_file)?;
-        Ok::<_, io::Error>(())
-    })?;
-
-    app.add_menu_item("Open Directory ...", move |_| {
-        let _ = open_dir(&root)?;
-        Ok::<_, io::Error>(())
-    })?;
 
     // all senders to notify when we are requesting a restart.
     let restart_senders = Arc::new(Mutex::new(Vec::<oneshot::Sender<()>>::new()));
     let restart_senders1 = restart_senders.clone();
 
-    app.add_menu_separator()?;
-
-    app.add_menu_item("Restart Bot", move |_| {
-        for tx in restart_senders1.lock().drain(..) {
-            let _ = tx.send(());
-        }
-
-        Ok::<_, systray::Error>(())
-    })?;
-
-    app.add_menu_separator()?;
-
     // all senders to notify when we are shutting down.
     let shutdown_senders = Arc::new(Mutex::new(Vec::<oneshot::Sender<()>>::new()));
     let shutdown_senders1 = shutdown_senders.clone();
 
-    app.add_menu_item("Quit Bot", move |w| {
+    let (events, mut events_rx) = mpsc::unbounded::<Event>();
+
+    let window_loop = async move {
+        let mut window = window::Window::new(String::from("SetMod")).await?;
+
+        window.set_icon_from_buffer(ICON, 128, 128)?;
+
+        window.add_menu_entry(0, "Open UI ...")?;
+        window.add_menu_separator(1)?;
+        window.add_menu_entry(2, "Open Log File ...")?;
+        window.add_menu_entry(3, "Open Directory ...")?;
+        window.add_menu_entry(4, "Restart Bot")?;
+        window.add_menu_separator(5)?;
+        window.add_menu_entry(6, "Quit Bot")?;
+
+        loop {
+            futures::select! {
+                event = events_rx.select_next_some() => {
+                    match event {
+                        Event::Cleared => {
+                            window.set_icon_from_buffer(ICON, 128, 128)?;
+                        }
+                        Event::Errored(message) => {
+                            let message = format!("{}", message);
+                            window.set_tooltip(&message)?;
+                            window.set_icon_from_buffer(ICON_ERROR, 128, 128)?;
+                        }
+                        Event::Notification(n) => {
+                            window.send_notification(n)?;
+                        }
+                    }
+                }
+                e = window.tick() => {
+                    match e {
+                        window::Event::MenuClicked(idx) => match idx {
+                            0 => {
+                                webbrowser::open(web::URL)?;
+                            }
+                            2 => {
+                                let _ = open_dir(&log_file)?;
+                            }
+                            3 => {
+                                let _ = open_dir(&root)?;
+                            }
+                            4 => {
+                                for tx in restart_senders1.lock().drain(..) {
+                                    let _ = tx.send(());
+                                }
+                            }
+                            6 => {
+                                window.quit();
+
+                                for tx in shutdown_senders1.lock().drain(..) {
+                                    let _ = tx.send(());
+                                }
+                            }
+                            _ => (),
+                        },
+                        window::Event::Shutdown => {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         for tx in shutdown_senders1.lock().drain(..) {
             let _ = tx.send(());
         }
 
-        w.quit();
-        Ok::<_, systray::Error>(())
-    })?;
+        Ok::<_, io::Error>(())
+    };
 
-    let shutdown_senders2 = shutdown_senders.clone();
-
-    let thread = thread::spawn(move || {
-        if let Err(e) = app.wait_for_message() {
-            log::warn!("systray handler crashed: {}", e);
-        }
-
-        for tx in shutdown_senders2.lock().drain(..) {
-            let _ = tx.send(());
+    let thread = thread::spawn(move || match futures::executor::block_on(window_loop) {
+        Ok(()) => (),
+        Err(e) => {
+            log::error!("systray errored: {}", e);
         }
     });
 
-    Ok(System {
+    let system = System {
         thread: Arc::new(Mutex::new(Some(thread))),
         shutdown_senders,
         restart_senders,
+        events,
         stopped: Arc::new(AtomicBool::new(false)),
-    })
+    };
+
+    Ok(system)
 }

@@ -4,7 +4,7 @@ version = "0.3.3"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2018"
 license = "MIT/Apache-2.0"
-description = "Flexible Twitch Bot written in Rust"
+description = "SetMod Twitch Bot"
 
 [dependencies]
 chrono = { version = "0.4.6", features = ["serde"] }
@@ -14,7 +14,7 @@ diesel_migrations = "1.4.0"
 eudex = "0.1.1"
 hashbrown = { version = "0.3.0", features = ["serde"] }
 hyper = "0.12.29"
-warp = "0.1.15"
+warp = {version = "0.1.15", git = "https://github.com/udoprog/warp"}
 irc = {version = "0.13", git = "https://github.com/aatxe/irc", rev = "47d9c4c78b1580bf7a6114ec682bd7d3d3498539"}
 log = "0.4.6"
 oauth2 = {version = "2.0.0-alpha.5", git = "https://github.com/udoprog/oauth2-rs", branch = "async"}
@@ -51,8 +51,8 @@ websocket = "0.22.4"
 uuid = { version = "0.7.4", features = ["serde", "v4"] }
 pin-utils = "0.1.0-alpha.4"
 smallvec = "0.6.9"
-futures-intrusive = "0.1.1"
 dirs = "2.0.1"
+backoff = "0.1.5"
 
 [dependencies.futures01]
 package = "futures"
@@ -75,7 +75,6 @@ winres = "0.1.9"
 version = "0.1.5"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-systray = {git = "https://github.com/udoprog/systray-rs"}
 winapi = {version = "0.3.7", features = ["shellapi", "impl-default"]}
 
 [package.metadata.deb]

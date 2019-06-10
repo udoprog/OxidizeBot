@@ -1,3 +1,4 @@
+use crate::sys::Notification;
 use failure::Error;
 use futures::{channel::oneshot, future};
 use std::path::Path;
@@ -13,6 +14,12 @@ impl System {
     pub async fn wait_for_restart(&self) -> Result<(), oneshot::Canceled> {
         future::empty().await
     }
+
+    pub fn clear(&self) {}
+
+    pub fn error(&self, _error: String) {}
+
+    pub fn notification(&self, _: Notification) {}
 
     pub fn is_running(&self) -> bool {
         true

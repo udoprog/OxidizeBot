@@ -233,24 +233,29 @@ struct DurationParts {
     minutes: u64,
     hours: u64,
     days: u64,
+    milliseconds: u64,
 }
 
 /// Partition the given duration into time components.
 #[inline(always)]
-fn partition(seconds: u64) -> DurationParts {
-    let rest = seconds as u64;
-    let days = rest / (3600 * 24);
-    let rest = rest % (3600 * 24);
-    let hours = rest / 3600;
-    let rest = rest % 3600;
-    let minutes = rest / 60;
-    let seconds = rest % 60;
+fn partition(duration: &time::Duration) -> DurationParts {
+    let rest = duration.as_millis() as u64;
+
+    let days = rest / (3600 * 24 * 1000);
+    let rest = rest % (3600 * 24 * 1000);
+    let hours = rest / (3600 * 1000);
+    let rest = rest % (3600 * 1000);
+    let minutes = rest / (60 * 1000);
+    let rest = rest % (60 * 1000);
+    let seconds = rest / 1000;
+    let milliseconds = rest % 1000;
 
     DurationParts {
         seconds,
         minutes,
         hours,
         days,
+        milliseconds,
     }
 }
 
@@ -258,24 +263,28 @@ fn partition(seconds: u64) -> DurationParts {
 pub fn compact_duration(duration: &time::Duration) -> String {
     let mut parts = Vec::new();
 
-    let p = partition(duration.as_secs());
+    let p = partition(duration);
 
     parts.extend(match p.hours {
         0 => None,
-        n => Some(format!("{:02}h", n)),
+        n => Some(format!("{}h", n)),
     });
 
     parts.extend(match p.minutes {
         0 => None,
-        n => Some(format!("{:02}m", n)),
+        n => Some(format!("{}m", n)),
     });
 
     parts.extend(match p.seconds {
         0 => None,
-        n => Some(format!("{:02}s", n)),
+        n => Some(format!("{}s", n)),
     });
 
     if parts.is_empty() {
+        if p.milliseconds > 0 {
+            return String::from("<1s");
+        }
+
         return String::from("0s");
     }
 
@@ -286,7 +295,7 @@ pub fn compact_duration(duration: &time::Duration) -> String {
 pub fn long_duration(duration: &time::Duration) -> String {
     let mut parts = Vec::new();
 
-    let p = partition(duration.as_secs());
+    let p = partition(duration);
 
     parts.extend(match p.hours {
         0 => None,
@@ -317,7 +326,7 @@ pub fn long_duration(duration: &time::Duration) -> String {
 pub fn digital_duration(duration: &time::Duration) -> String {
     let mut parts = Vec::new();
 
-    let p = partition(duration.as_secs());
+    let p = partition(duration);
 
     parts.extend(match p.hours {
         0 => None,
@@ -641,7 +650,7 @@ impl std::str::FromStr for PtDuration {
 
 impl fmt::Display for PtDuration {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let p = partition(self.0.as_secs());
+        let p = partition(&self.0);
 
         write!(fmt, "PT")?;
 

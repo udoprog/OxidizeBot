@@ -1,0 +1,51 @@
+2019-06-09T02:44:56.663044+02:00 INFO setmod - Starting SetMod Version 0.3.2
+2019-06-09T02:44:56.663563800+02:00 INFO setmod - Loaded configuration from: tests/burhac\config.toml
+2019-06-09T02:44:56.663563800+02:00 WARN setmod - A configuration file is now optional, please consider removing it!
+2019-06-09T02:44:56.666019800+02:00 INFO setmod::db - Using database: tests/burhac\database.sql
+2019-06-09T02:45:06.842495500+02:00 INFO setmod - Starting SetMod Version 0.3.2
+2019-06-09T02:45:06.842991600+02:00 INFO setmod - Loaded configuration from: tests/burhac\config.toml
+2019-06-09T02:45:06.842991600+02:00 WARN setmod - A configuration file is now optional, please consider removing it!
+2019-06-09T02:45:06.844975500+02:00 INFO setmod::db - Using database: tests/burhac\database.sql
+2019-06-09T02:45:06.861839500+02:00 INFO setmod - Listening on: http://localhost:12345
+2019-06-09T02:45:06.862831700+02:00 WARN setmod::settings - bad value for key: secrets/oauth2/spotify/token: missing field `client_id` at line 1 column 830
+2019-06-09T02:45:06.863327100+02:00 WARN setmod::settings - bad value for key: secrets/oauth2/youtube/token: missing field `client_id` at line 1 column 343
+2019-06-09T02:45:06.863823+02:00 WARN setmod::settings - bad value for key: secrets/oauth2/twitch-streamer/token: missing field `client_id` at line 1 column 228
+2019-06-09T02:45:06.864345800+02:00 WARN setmod::settings - bad value for key: secrets/oauth2/twitch-bot/token: missing field `client_id` at line 1 column 252
+2019-06-09T02:45:06.895567200+02:00 WARN setmod::player - `[current_song] path` configuration is deprecated.
+2019-06-09T02:45:06.895567200+02:00 WARN setmod::player - `[current_song] template` configuration is deprecated.
+2019-06-09T02:45:06.895567200+02:00 WARN setmod::player - `[current_song] not_playing` configuration is deprecated.
+2019-06-09T02:45:06.895567200+02:00 WARN setmod::player - `[current_song] update_interval` configuration is deprecated.
+2019-06-09T02:45:06.903007100+02:00 WARN setmod::api::setbac - `api_url` configuration has been deprecated
+2019-06-09T02:45:06.916894500+02:00 WARN setmod - `features` setting has been deprecated from the configuration
+2019-06-09T02:45:06.918383700+02:00 WARN setmod::irc - `streamer` setting has been deprecated from the configuration
+2019-06-09T02:45:06.918383700+02:00 WARN setmod::irc - `[irc] bot` setting has been deprecated from the configuration
+2019-06-09T02:45:06.918878700+02:00 WARN setmod::irc - `[irc] channel` setting has been deprecated from the configuration
+2019-06-09T02:45:06.918878700+02:00 WARN setmod::irc - `[irc] moderator_cooldown` setting has been deprecated from the configuration
+2019-06-09T02:45:06.918878700+02:00 WARN setmod::irc - `[irc] startup_message` setting has been deprecated from the configuration
+2019-06-09T02:46:45.120393500+02:00 INFO setmod - Starting SetMod Version 0.3.2
+2019-06-09T02:46:45.120889300+02:00 INFO setmod - Loaded configuration from: tests/burhac\config.toml
+2019-06-09T02:46:45.120889300+02:00 WARN setmod - A configuration file is now optional, please consider removing it!
+2019-06-09T02:46:45.122873300+02:00 INFO setmod::db - Using database: tests/burhac\database.sql
+2019-06-09T02:46:45.139241100+02:00 INFO setmod - Listening on: http://localhost:12345
+2019-06-09T02:46:45.140233400+02:00 WARN setmod::settings - bad value for key: secrets/oauth2/spotify/token: missing field `client_id` at line 1 column 830
+2019-06-09T02:46:45.140729200+02:00 WARN setmod::settings - bad value for key: secrets/oauth2/youtube/token: missing field `client_id` at line 1 column 343
+2019-06-09T02:46:45.141225400+02:00 WARN setmod::settings - bad value for key: secrets/oauth2/twitch-streamer/token: missing field `client_id` at line 1 column 228
+2019-06-09T02:46:45.141721+02:00 WARN setmod::settings - bad value for key: secrets/oauth2/twitch-bot/token: missing field `client_id` at line 1 column 252
+2019-06-09T02:46:45.144201200+02:00 WARN setmod::player - `[current_song] path` configuration is deprecated.
+2019-06-09T02:46:45.144201200+02:00 WARN setmod::player - `[current_song] template` configuration is deprecated.
+2019-06-09T02:46:45.144201200+02:00 WARN setmod::player - `[current_song] not_playing` configuration is deprecated.
+2019-06-09T02:46:45.144201200+02:00 WARN setmod::player - `[current_song] update_interval` configuration is deprecated.
+2019-06-09T02:46:45.144697200+02:00 WARN setmod::api::setbac - `api_url` configuration has been deprecated
+2019-06-09T02:46:45.145193200+02:00 WARN setmod - `features` setting has been deprecated from the configuration
+2019-06-09T02:46:45.146681500+02:00 WARN setmod::irc - `streamer` setting has been deprecated from the configuration
+2019-06-09T02:46:45.146681500+02:00 WARN setmod::irc - `[irc] bot` setting has been deprecated from the configuration
+2019-06-09T02:46:45.146681500+02:00 WARN setmod::irc - `[irc] channel` setting has been deprecated from the configuration
+2019-06-09T02:46:45.146681500+02:00 WARN setmod::irc - `[irc] moderator_cooldown` setting has been deprecated from the configuration
+2019-06-09T02:46:45.146681500+02:00 WARN setmod::irc - `[irc] startup_message` setting has been deprecated from the configuration
+2019-06-09T02:47:40.078990400+02:00 WARN setmod::irc - The [themes] section in the configuration is now deprecated.
+2019-06-09T02:47:40.078990400+02:00 WARN setmod::irc - Performing a one time migration of themes from configuration.
+2019-06-09T02:47:40.085933700+02:00 INFO setmod::db::themes - inserting theme in-memory
+2019-06-09T02:47:40.092877500+02:00 INFO setmod::db::themes - inserting theme in-memory
+2019-06-09T02:47:40.099849500+02:00 INFO setmod::db::themes - inserting theme in-memory
+2019-06-09T02:47:40.107289700+02:00 INFO setmod::db::themes - inserting theme in-memory
+2019-06-09T02:47:40.114205700+02:00 INFO setmod::db::themes - inserting theme in-memory
