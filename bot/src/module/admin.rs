@@ -82,11 +82,11 @@ impl<'a> command::Handler for Handler<'a> {
             Some("version") => {
                 ctx.respond(format!("Bot Version {}", crate::VERSION));
             }
-            Some("shutdown") => {
+            Some("shutdown") | Some("restart") => {
                 if ctx.shutdown.shutdown() {
-                    ctx.respond("Shutting down...");
+                    ctx.respond("Restarting...");
                 } else {
-                    ctx.respond("Already called shutdown...");
+                    ctx.respond("Already restarting...");
                 }
             }
             // Insert a value into a setting.

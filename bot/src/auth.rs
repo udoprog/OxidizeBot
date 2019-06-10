@@ -1,4 +1,7 @@
-use crate::db;
+use crate::{
+    db,
+    utils::{Cooldown, Duration},
+};
 use diesel::prelude::*;
 use failure::{Error, ResultExt as _};
 use hashbrown::{HashMap, HashSet};
@@ -49,6 +52,19 @@ impl Auth {
         // perform default initialization based on auth.yaml
         auth.insert_default_grants()?;
         Ok(auth)
+    }
+
+    /// Construct scope cooldowns.
+    pub fn scope_cooldowns(&self) -> HashMap<Scope, Cooldown> {
+        let mut cooldowns = HashMap::new();
+
+        for (scope, schema) in self.schema.scopes.iter() {
+            if let Some(duration) = schema.cooldown.clone() {
+                cooldowns.insert(*scope, Cooldown::from_duration(duration));
+            }
+        }
+
+        cooldowns
     }
 
     /// Insert default grants for non-initialized grants.
@@ -346,6 +362,11 @@ scopes! {
     (SongYouTube, "song/youtube"),
     (SongSpotify, "song/spotify"),
     (SongBypassConstraints, "song/bypass-constraints"),
+    (SongTheme, "song/theme"),
+    (SongEditQueue, "song/edit-queue"),
+    (SongListLimit, "song/list-limit"),
+    (SongVolume, "song/volume"),
+    (SongPlaybackControl, "song/playback-control"),
     (SwearJar, "swearjar"),
     (Uptime, "uptime"),
     (Game, "game"),
@@ -356,11 +377,18 @@ scopes! {
     (Clip, "clip"),
     (EightBall, "8ball"),
     (Command, "command"),
+    (CommandEdit, "command/edit"),
+    (ThemeEdit, "theme/edit"),
+    (PromoEdit, "promo/edit"),
+    (AliasEdit, "alias/edit"),
+    (Countdown, "countdown"),
     (GtavBypassCooldown, "gtav/bypass-cooldown"),
+    (GtavRaw, "gtav/raw"),
     (Speedrun, "speedrun"),
     (CurrencyShow, "currency/show"),
     (CurrencyBoost, "currency/boost"),
     (CurrencyWindfall, "currency/windfall"),
+    (WaterUndo, "water/undo"),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -383,6 +411,8 @@ pub struct ScopeData {
     pub version: String,
     /// Default grants for the scope.
     pub allow: Vec<Role>,
+    /// Cooldown in effect for the given scope.
+    pub cooldown: Option<Duration>,
 }
 
 roles! {

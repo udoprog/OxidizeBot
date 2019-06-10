@@ -664,7 +664,7 @@ impl Handler {
                 None => return Ok(None),
             },
             Some("raw") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(Scope::GtavRaw)?;
                 Command::Raw(ctx.rest().to_string())
             }
             Some(..) | None => {

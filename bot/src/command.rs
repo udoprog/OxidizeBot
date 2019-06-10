@@ -7,8 +7,8 @@ use crate::{
     stream_info, utils,
 };
 use failure::Error;
-use hashbrown::HashSet;
-use std::fmt;
+use hashbrown::{HashMap, HashSet};
+use std::{fmt, time::Instant};
 use tokio_threadpool::ThreadPool;
 
 /// The handler trait for a given command.
@@ -63,6 +63,7 @@ pub struct Context<'a, 'm> {
     pub alias: Alias<'a>,
     pub stream_info: &'a stream_info::StreamInfo,
     pub auth: &'a Auth,
+    pub scope_cooldowns: &'a mut HashMap<Scope, utils::Cooldown>,
 }
 
 impl<'a, 'm> Context<'a, 'm> {
@@ -123,7 +124,7 @@ impl<'a, 'm> Context<'a, 'm> {
 
     /// Test if moderator.
     pub fn is_moderator(&self) -> bool {
-        self.is_streamer() || self.moderators.contains(self.user.name)
+        self.moderators.contains(self.user.name)
     }
 
     /// Test if subscriber.
@@ -145,47 +146,28 @@ impl<'a, 'm> Context<'a, 'm> {
             ));
 
             failure::bail!(
-                "scope `{}` not associated with user `{}`",
+                "Scope `{}` not associated with user `{}`",
                 scope,
                 self.user.name
             );
         }
 
+        if let Some(cooldown) = self.scope_cooldowns.get_mut(&scope) {
+            let now = Instant::now();
+
+            if let Some(duration) = cooldown.check(now.clone()) {
+                self.respond(format!(
+                    "Cooldown in effect for {}",
+                    utils::compact_duration(&duration),
+                ));
+
+                failure::bail!("Scope `{}` is in cooldown", scope);
+            }
+
+            cooldown.poke(now);
+        }
+
         Ok(())
-    }
-
-    /// Check that the given user is a moderator.
-    pub fn check_moderator(&mut self) -> Result<(), Error> {
-        // Streamer immune to cooldown and is always a moderator.
-        if self.user.name == self.streamer {
-            return Ok(());
-        }
-
-        if !self.is_moderator() {
-            self.privmsg(format!(
-                "Do you think this is a democracy {name}? LUL",
-                name = self.user.name
-            ));
-
-            failure::bail!("moderator access required for action");
-        }
-
-        // Test if we have moderator cooldown in effect.
-        let moderator_cooldown = match self.moderator_cooldown.as_mut() {
-            Some(moderator_cooldown) => moderator_cooldown,
-            None => return Ok(()),
-        };
-
-        if moderator_cooldown.is_open() {
-            return Ok(());
-        }
-
-        self.privmsg(format!(
-            "{name} -> Cooldown in effect since last moderator action.",
-            name = self.user.name
-        ));
-
-        failure::bail!("moderator action cooldown");
     }
 
     /// Respond to the user with a message.

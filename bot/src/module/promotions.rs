@@ -1,4 +1,4 @@
-use crate::{command, config, db, irc, module, prelude::*, timer, utils};
+use crate::{auth, command, config, db, irc, module, prelude::*, timer, utils};
 use chrono::Utc;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -14,11 +14,11 @@ impl<'a> command::Handler for Handler<'a> {
             return Ok(());
         }
 
-        let next = command_base!(ctx, self.promotions, "!promo", "promotion");
+        let next = command_base!(ctx, self.promotions, "!promo", "promotion", PromoEdit);
 
         match next {
             Some("edit") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(auth::Scope::PromoEdit)?;
 
                 let name = ctx_try!(ctx.next_str("<name> <frequency> <template..>", "!promo edit"));
                 let frequency =

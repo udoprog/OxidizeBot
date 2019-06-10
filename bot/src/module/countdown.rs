@@ -1,4 +1,4 @@
-use crate::{command, config, module, prelude::*, template, timer, utils};
+use crate::{auth, command, config, module, prelude::*, template, timer, utils};
 use parking_lot::RwLock;
 use std::{fs, path::PathBuf, sync::Arc, time};
 
@@ -15,6 +15,10 @@ pub struct Handler {
 }
 
 impl command::Handler for Handler {
+    fn scope(&self) -> Option<auth::Scope> {
+        Some(auth::Scope::Countdown)
+    }
+
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
@@ -22,8 +26,6 @@ impl command::Handler for Handler {
 
         match ctx.next() {
             Some("set") => {
-                ctx.check_moderator()?;
-
                 let duration = ctx_try!(ctx.next_parse("<duration> <template>", "!countdown set"));
                 let template = ctx_try!(ctx.rest_parse("<duration> <template>", "!countdown set"));
 
@@ -37,19 +39,15 @@ impl command::Handler for Handler {
                     }
                 }
             }
-            Some("clear") => {
-                ctx.check_moderator()?;
-
-                match self.sender.unbounded_send(Event::Clear) {
-                    Ok(()) => {
-                        ctx.respond("Countdown cleared!");
-                    }
-                    Err(_) => {
-                        ctx.respond("Could not clear countdown :(");
-                        return Ok(());
-                    }
+            Some("clear") => match self.sender.unbounded_send(Event::Clear) {
+                Ok(()) => {
+                    ctx.respond("Countdown cleared!");
                 }
-            }
+                Err(_) => {
+                    ctx.respond("Could not clear countdown :(");
+                    return Ok(());
+                }
+            },
             _ => {
                 ctx.respond("Expected: !countdown set <duration> <template>, or !countdown clear");
                 return Ok(());

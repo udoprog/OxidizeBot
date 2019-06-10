@@ -1,4 +1,4 @@
-use crate::{command, db, module};
+use crate::{auth, command, db, module};
 
 pub struct Handler<'a> {
     pub themes: &'a db::Themes,
@@ -6,11 +6,11 @@ pub struct Handler<'a> {
 
 impl<'a> command::Handler for Handler<'a> {
     fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
-        let next = command_base!(ctx, self.themes, "!theme", "theme");
+        let next = command_base!(ctx, self.themes, "!theme", "theme", ThemeEdit);
 
         match next {
             Some("edit") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(auth::Scope::ThemeEdit)?;
 
                 let name = ctx_try!(ctx.next_str("<name> <track-id>", "!theme edit"));
                 let track_id = ctx_try!(ctx.next_parse("<name> <track-id>", "!theme edit"));
@@ -19,7 +19,7 @@ impl<'a> command::Handler for Handler<'a> {
                 ctx.respond("Edited theme.");
             }
             Some("edit-duration") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(auth::Scope::ThemeEdit)?;
 
                 let name = ctx_try!(ctx.next_str("<name> <start> <end>", "!theme edit-duration"));
                 let start =

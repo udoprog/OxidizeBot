@@ -1,4 +1,6 @@
-use crate::{command, config, currency::Currency, db, module, prelude::*, stream_info, utils};
+use crate::{
+    auth, command, config, currency::Currency, db, module, prelude::*, stream_info, utils,
+};
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -70,7 +72,8 @@ impl command::Handler for Handler {
 
         match ctx.next() {
             Some("undo") => {
-                ctx.check_moderator()?;
+                ctx.check_scope(auth::Scope::WaterUndo)?;
+
                 let (_, reward) = match self.check_waters(&mut ctx) {
                     Some(water) => water,
                     None => return Ok(()),
