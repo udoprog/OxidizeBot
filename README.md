@@ -31,7 +31,7 @@ We've also moved where we expect the database to be, so if you have an old `0.2`
 4. Quit SetMod.
 5. Copy the following files into the directory that you just opened:
    * Your old `config.toml`
-   * Your old `setmod.sql` database.
+   * Your old `*.sql` database, which must be renamed to `setmod.sql`.
 6. Start SetMod again. This time it will migrate any existing configuration.
 7. Remove `config.toml`.
 
