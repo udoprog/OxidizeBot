@@ -45,9 +45,9 @@ impl Handler {
         let spotify = self.spotify.clone();
         let youtube = self.youtube.clone();
         let user = ctx.user.as_owned_user();
-        let has_spotify_scope = ctx.has_scope(Scope::SongSpotify);
-        let has_youtube_scope = ctx.has_scope(Scope::SongYouTube);
-        let has_bypass_constraints = ctx.has_scope(Scope::SongBypassConstraints);
+        let has_spotify_scope = ctx.user.has_scope(Scope::SongSpotify);
+        let has_youtube_scope = ctx.user.has_scope(Scope::SongYouTube);
+        let has_bypass_constraints = ctx.user.has_scope(Scope::SongBypassConstraints);
 
         let track_id = match TrackId::parse_with_urls(&q) {
             Ok(track_id) => Some(track_id),
@@ -315,7 +315,7 @@ impl command::Handler for Handler {
         Some(Scope::Song)
     }
 
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), Error> {
+    fn handle(&mut self, mut ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -382,7 +382,7 @@ impl command::Handler for Handler {
                 if let Some(api_url) = ctx.api_url {
                     ctx.respond(format!(
                         "You can find the queue at {}/player/{}",
-                        api_url, ctx.streamer
+                        api_url, ctx.user.streamer
                     ));
                     return Ok(());
                 }

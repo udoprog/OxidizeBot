@@ -2,11 +2,12 @@ use crate::{
     db,
     utils::{Cooldown, Duration},
 };
+use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use failure::{Error, ResultExt as _};
 use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
-use std::{fmt, sync::Arc};
+use std::{fmt, iter, sync::Arc};
 
 const SCHEMA: &'static [u8] = include_bytes!("auth.yaml");
 
@@ -23,6 +24,49 @@ impl Schema {
     }
 }
 
+/// A role or a user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoleOrUser {
+    Role(Role),
+    User(String),
+}
+
+impl fmt::Display for RoleOrUser {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            RoleOrUser::User(ref user) => user.fmt(fmt),
+            RoleOrUser::Role(role) => role.fmt(fmt),
+        }
+    }
+}
+
+impl std::str::FromStr for RoleOrUser {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.starts_with('@') {
+            let role = Role::from_str(&s[1..])?;
+            return Ok(RoleOrUser::Role(role));
+        }
+
+        Ok(RoleOrUser::User(db::user_id(s)))
+    }
+}
+
+/// A grant that has been temporarily given.
+struct TemporaryGrant {
+    pub scope: Scope,
+    pub principal: RoleOrUser,
+    pub expires_at: DateTime<Utc>,
+}
+
+impl TemporaryGrant {
+    /// Test if the grant is expired.
+    pub fn is_expired(&self, now: &DateTime<Utc>) -> bool {
+        *now >= self.expires_at
+    }
+}
+
 /// A container for scopes and their grants.
 #[derive(Clone)]
 pub struct Auth {
@@ -31,6 +75,8 @@ pub struct Auth {
     pub schema: Arc<Schema>,
     /// Assignments.
     pub grants: Arc<RwLock<HashSet<(Scope, Role)>>>,
+    /// Temporary grants.
+    temporary_grants: Arc<RwLock<Vec<TemporaryGrant>>>,
 }
 
 impl Auth {
@@ -47,11 +93,49 @@ impl Auth {
             db,
             schema: Arc::new(schema),
             grants: Arc::new(RwLock::new(grants)),
+            temporary_grants: Default::default(),
         };
 
         // perform default initialization based on auth.yaml
         auth.insert_default_grants()?;
         Ok(auth)
+    }
+
+    /// Return all temporary scopes belonging to the specified user.
+    fn temporary_scopes(&self, now: &DateTime<Utc>, principal: RoleOrUser) -> Vec<Scope> {
+        let mut out = Vec::new();
+
+        let grants = self.temporary_grants.read();
+
+        for grant in grants.iter() {
+            if grant.principal == principal && !grant.is_expired(now) {
+                out.push(grant.scope);
+            }
+        }
+
+        out
+    }
+
+    /// Return all temporary scopes belonging to the specified user.
+    pub fn scopes_for_user(&self, user: &str) -> Vec<Scope> {
+        let now = Utc::now();
+        self.temporary_scopes(&now, RoleOrUser::User(user.to_string()))
+    }
+
+    /// Return all temporary scopes belonging to the specified user.
+    pub fn scopes_for_role(&self, needle: Role) -> Vec<Scope> {
+        let now = Utc::now();
+        let mut out = self.temporary_scopes(&now, RoleOrUser::Role(needle));
+
+        let grants = self.grants.read();
+
+        for (scope, role) in grants.iter() {
+            if needle == *role {
+                out.push(*scope);
+            }
+        }
+
+        out
     }
 
     /// Construct scope cooldowns.
@@ -106,6 +190,15 @@ impl Auth {
         Ok(())
     }
 
+    /// Insert a temporary grant.
+    pub fn insert_temporary(&self, scope: Scope, principal: RoleOrUser, expires_at: DateTime<Utc>) {
+        self.temporary_grants.write().push(TemporaryGrant {
+            scope,
+            principal,
+            expires_at,
+        })
+    }
+
     /// Insert an assignment.
     pub fn insert(&self, scope: Scope, role: Role) -> Result<(), Error> {
         use db::schema::grants::dsl;
@@ -131,15 +224,96 @@ impl Auth {
         Ok(())
     }
 
-    /// Test if the given assignment exists.
-    pub fn test(&self, scope: Scope, role: Role) -> bool {
-        self.grants.read().contains(&(scope, role))
+    /// Test if there are any temporary grants matching the given user or role.
+    fn test_temporary(
+        &self,
+        now: &DateTime<Utc>,
+        scope: Scope,
+        against: impl IntoIterator<Item = RoleOrUser>,
+    ) -> (bool, bool) {
+        let temporary = self.temporary_grants.read();
+
+        if temporary.is_empty() {
+            return (false, false);
+        }
+
+        let mut granted = false;
+        let mut expired = false;
+
+        'outer: for against in against.into_iter() {
+            for t in temporary.iter() {
+                if t.principal != against || t.scope != scope {
+                    continue;
+                }
+
+                if t.is_expired(now) {
+                    expired = true;
+                    continue;
+                }
+
+                granted = true;
+                break 'outer;
+            }
+        }
+
+        (granted, expired)
     }
 
     /// Test if the given assignment exists.
-    pub fn test_any(&self, scope: Scope, roles: impl IntoIterator<Item = Role>) -> bool {
-        let grants = self.grants.read();
-        roles.into_iter().any(|r| grants.contains(&(scope, r)))
+    pub fn test(&self, scope: Scope, user: &str, role: Role) -> bool {
+        if self.grants.read().contains(&(scope, role)) {
+            return true;
+        }
+
+        let now = Utc::now();
+
+        let against = iter::once(RoleOrUser::User(user.to_string()))
+            .chain(iter::once(RoleOrUser::Role(role)));
+
+        let (granted, expired) = self.test_temporary(&now, scope, against);
+
+        // Delete temporary grants that has expired.
+        if expired {
+            self.temporary_grants
+                .write()
+                .retain(|g| !g.is_expired(&now));
+        }
+
+        granted
+    }
+
+    /// Test if the given assignment exists.
+    pub fn test_any(
+        &self,
+        scope: Scope,
+        user: &str,
+        roles: impl IntoIterator<Item = Role>,
+    ) -> bool {
+        let roles = roles.into_iter().collect::<HashSet<_>>();
+
+        {
+            let grants = self.grants.read();
+
+            if roles.iter().any(|r| grants.contains(&(scope, *r))) {
+                return true;
+            }
+        }
+
+        let now = Utc::now();
+
+        let against = iter::once(RoleOrUser::User(user.to_string()))
+            .chain(roles.into_iter().map(RoleOrUser::Role));
+
+        let (granted, expired) = self.test_temporary(&now, scope, against);
+
+        // Delete temporary grants that has expired.
+        if expired {
+            self.temporary_grants
+                .write()
+                .retain(|g| !g.is_expired(&now));
+        }
+
+        granted
     }
 
     /// Get a list of scopes and extra information associated with them.
@@ -389,6 +563,8 @@ scopes! {
     (CurrencyBoost, "currency/boost"),
     (CurrencyWindfall, "currency/windfall"),
     (WaterUndo, "water/undo"),
+    (AuthPermit, "auth/permit"),
+    (ChatBypassUrlWhitelist, "chat/bypass-url-whitelist"),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

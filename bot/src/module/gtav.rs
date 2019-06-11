@@ -861,7 +861,7 @@ impl Handler {
 }
 
 impl command::Handler for Handler {
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -877,16 +877,16 @@ impl command::Handler for Handler {
 
         let (result, category_cooldown) = match ctx.next() {
             Some("other") => {
-                let command = self.handle_other(&mut ctx)?;
+                let command = self.handle_other(ctx)?;
                 (command, None)
             }
             Some("punish") => {
-                let command = self.handle_punish(&mut ctx)?;
+                let command = self.handle_punish(ctx)?;
                 let cooldown = self.punish_cooldown.clone();
                 (command, Some(cooldown))
             }
             Some("reward") => {
-                let command = self.handle_reward(&mut ctx)?;
+                let command = self.handle_reward(ctx)?;
                 let cooldown = self.reward_cooldown.clone();
                 (command, Some(cooldown))
             }
@@ -924,12 +924,10 @@ impl command::Handler for Handler {
             }
         }
 
-        let bypass_cooldown = ctx.has_scope(Scope::GtavBypassCooldown);
+        let bypass_cooldown = ctx.user.has_scope(Scope::GtavBypassCooldown);
 
         if !bypass_cooldown {
-            if let Some((what, remaining)) =
-                self.check_cooldown(&mut ctx, &command, category_cooldown)
-            {
+            if let Some((what, remaining)) = self.check_cooldown(ctx, &command, category_cooldown) {
                 ctx.respond(format!(
                     "{} cooldown in effect, please wait at least {}!",
                     what,

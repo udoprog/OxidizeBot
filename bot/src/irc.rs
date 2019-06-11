@@ -1,6 +1,6 @@
 use crate::{
     api,
-    auth::{Auth, Scope},
+    auth::{Auth, Role, Scope},
     bus, command, config,
     currency::{Currency, CurrencyBuilder},
     db, idle,
@@ -274,6 +274,7 @@ impl Irc {
                     sender: &sender,
                     settings: &settings,
                     injector: &injector,
+                    auth: &auth,
                 });
 
                 result.with_context(|_| {
@@ -530,7 +531,7 @@ fn currency_loop<'a>(
 }
 
 /// Handler for incoming messages.
-struct Handler<'a: 'h, 'to, 'h> {
+struct Handler<'a, 'to, 'h> {
     /// Current Streamer.
     streamer: &'a str,
     /// Queue for sending messages.
@@ -574,103 +575,68 @@ struct Handler<'a: 'h, 'to, 'h> {
     /// Active scope cooldowns.
     scope_cooldowns: HashMap<Scope, Cooldown>,
     /// Handler for currencies.
-    currency_handler: currency_admin::Handler<'a>,
+    currency_handler: currency_admin::Handler<'h>,
     bad_words_enabled: Arc<RwLock<bool>>,
     url_whitelist_enabled: Arc<RwLock<bool>>,
 }
 
-impl Handler<'_, '_, '_> {
-    /// Run as user.
-    fn as_user<'m>(&self, tags: Tags<'m>, m: &'m Message) -> Result<User<'m>, Error> {
-        let name = m
-            .source_nickname()
-            .ok_or_else(|| format_err!("expected user info"))?;
+/// Handle a command.
+pub fn process_command<'a: 'h, 'h>(
+    command: &str,
+    ctx: &mut command::Context<'_, '_>,
+    global_bus: &Arc<bus::Bus<bus::Global>>,
+    currency_handler: &'h mut currency_admin::Handler<'a>,
+    handlers: &'h mut module::Handlers<'a>,
+) -> Result<(), Error> {
+    match command {
+        "ping" => {
+            ctx.user.respond("What do you want?");
+            global_bus.send(bus::Global::Ping);
+        }
+        other => {
+            log::trace!("Testing command: {}", other);
 
-        let target = m
-            .response_target()
-            .ok_or_else(|| format_err!("expected user info"))?;
-
-        Ok(User {
-            tags,
-            sender: self.sender.clone(),
-            name,
-            target,
-        })
-    }
-
-    /// Handle a command.
-    pub fn process_command<'m>(
-        &mut self,
-        command: &str,
-        user: User<'m>,
-        it: &mut utils::Words<'m>,
-        alias: Option<(&str, &str)>,
-    ) -> Result<(), Error> {
-        match command {
-            "ping" => {
-                user.respond("What do you want?");
-                self.global_bus.send(bus::Global::Ping);
-            }
-            other => {
-                log::trace!("Testing command: {}", other);
-
-                let handler = match (other, self.currency_handler.command_name()) {
-                    (other, Some(ref name)) if other == **name => {
-                        Some(&mut self.currency_handler as &mut (dyn command::Handler + Send))
-                    }
-                    (other, Some(..)) | (other, None) => self.handlers.get_mut(other),
-                };
-
-                if let Some(handler) = handler {
-                    let ctx = command::Context {
-                        api_url: self.api_url.as_ref().map(|s| s.as_str()),
-                        streamer: self.streamer,
-                        sender: &self.sender,
-                        moderators: &self.moderators,
-                        vips: &self.vips,
-                        moderator_cooldown: self.moderator_cooldown.as_mut(),
-                        thread_pool: &self.thread_pool,
-                        user,
-                        it,
-                        shutdown: self.shutdown,
-                        alias: command::Alias { alias },
-                        stream_info: &self.stream_info,
-                        auth: &self.auth,
-                        scope_cooldowns: &mut self.scope_cooldowns,
-                    };
-
-                    let scope = handler.scope();
-
-                    if log::log_enabled!(log::Level::Trace) {
-                        log::trace!("Auth: {:?} against {:?}", scope, ctx.roles());
-                    }
-
-                    // Test if user has the required scope to run the given
-                    // command.
-                    if let Some(scope) = scope {
-                        if !ctx.has_scope(scope) {
-                            if ctx.is_moderator() {
-                                ctx.respond("You are not allowed to run that command");
-                            } else {
-                                ctx.privmsg(format!(
-                                    "Do you think this is a democracy {name}? LUL",
-                                    name = ctx.user.name
-                                ));
-                            }
-
-                            return Ok(());
-                        }
-                    }
-
-                    handler.handle(ctx)?;
-                    return Ok(());
+            let handler = match (other, currency_handler.command_name()) {
+                (other, Some(ref name)) if other == **name => {
+                    Some(currency_handler as &mut (dyn command::Handler + Send))
                 }
+                (other, Some(..)) | (other, None) => handlers.get_mut(other),
+            };
+
+            if let Some(handler) = handler {
+                let scope = handler.scope();
+
+                if log::log_enabled!(log::Level::Trace) {
+                    log::trace!("Auth: {:?} against {:?}", scope, ctx.user.roles());
+                }
+
+                // Test if user has the required scope to run the given
+                // command.
+                if let Some(scope) = scope {
+                    if !ctx.user.has_scope(scope) {
+                        if ctx.user.is_moderator() {
+                            ctx.respond("You are not allowed to run that command");
+                        } else {
+                            ctx.privmsg(format!(
+                                "Do you think this is a democracy {name}? LUL",
+                                name = ctx.user.name
+                            ));
+                        }
+
+                        return Ok(());
+                    }
+                }
+
+                handler.handle(ctx)?;
+                return Ok(());
             }
         }
-
-        Ok(())
     }
 
+    Ok(())
+}
+
+impl Handler<'_, '_, '_> {
     /// Extract tags from message.
     fn tags<'local>(m: &'local Message) -> Tags<'local> {
         let mut id = None;
@@ -694,35 +660,30 @@ impl Handler<'_, '_, '_> {
     }
 
     /// Delete the given message.
-    fn delete_message<'local>(&mut self, tags: Tags<'local>) -> Result<(), Error> {
-        let id = match tags.id {
+    fn delete_message(&self, user: &User<'_>) -> Result<(), Error> {
+        let id = match user.tags.id {
             Some(id) => id,
             None => return Ok(()),
         };
 
         log::info!("Attempting to delete message: {}", id);
-
-        self.sender.delete(id);
+        user.sender.delete(id);
         Ok(())
     }
 
     /// Test if the message should be deleted.
-    fn should_be_deleted(&mut self, m: &Message, message: &str) -> bool {
-        let user = m.source_nickname();
-
+    fn should_be_deleted(&self, user: &User<'_>, message: &str) -> bool {
         // Moderators can say whatever they want.
-        if user.map(|u| self.moderators.contains(u)).unwrap_or(false) {
+        if self.moderators.contains(user.name) {
             return false;
         }
 
         if *self.bad_words_enabled.read() {
             if let Some(word) = self.test_bad_words(message) {
-                if let (Some(why), Some(user), Some(target)) =
-                    (word.why.as_ref(), user, m.response_target())
-                {
+                if let Some(why) = word.why.as_ref() {
                     let why = why.render_to_string(&BadWordsVars {
-                        name: user,
-                        target: target,
+                        name: user.name,
+                        target: user.target,
                     });
 
                     match why {
@@ -739,7 +700,7 @@ impl Handler<'_, '_, '_> {
             }
         }
 
-        if *self.url_whitelist_enabled.read() {
+        if !user.has_scope(Scope::ChatBypassUrlWhitelist) && *self.url_whitelist_enabled.read() {
             if self.has_bad_link(message) {
                 return true;
             }
@@ -762,7 +723,7 @@ impl Handler<'_, '_, '_> {
     }
 
     /// Check if the given iterator has URLs that need to be
-    fn has_bad_link(&mut self, message: &str) -> bool {
+    fn has_bad_link(&self, message: &str) -> bool {
         for url in utils::Urls::new(message) {
             if let Some(host) = url.host_str() {
                 if !self.whitelisted_hosts.contains(host) {
@@ -791,7 +752,26 @@ impl Handler<'_, '_, '_> {
         match m.command {
             Command::PRIVMSG(_, ref message) => {
                 let tags = Self::tags(&m);
-                let user = self.as_user(tags.clone(), m)?;
+
+                let name = m
+                    .source_nickname()
+                    .ok_or_else(|| format_err!("expected user info"))?;
+
+                let target = m
+                    .response_target()
+                    .ok_or_else(|| format_err!("expected user info"))?;
+
+                let user = User {
+                    tags,
+                    sender: self.sender.clone(),
+                    name,
+                    target,
+                    streamer: self.streamer,
+                    moderators: &self.moderators,
+                    vips: &self.vips,
+                    stream_info: &self.stream_info,
+                    auth: &self.auth,
+                };
 
                 // only non-moderators and non-streamer bumps the idle counter.
                 if !self.moderators.contains(user.name) && user.name != self.streamer {
@@ -828,14 +808,34 @@ impl Handler<'_, '_, '_> {
                     if command.starts_with('!') {
                         let command = &command[1..];
 
-                        if let Err(e) = self.process_command(command, user, &mut it, alias) {
+                        let mut ctx = command::Context {
+                            api_url: self.api_url.as_ref().map(|s| s.as_str()),
+                            sender: &self.sender,
+                            moderator_cooldown: self.moderator_cooldown.as_mut(),
+                            thread_pool: &self.thread_pool,
+                            user: user.clone(),
+                            it: &mut it,
+                            shutdown: self.shutdown,
+                            alias: command::Alias { alias },
+                            scope_cooldowns: &mut self.scope_cooldowns,
+                        };
+
+                        let result = process_command(
+                            command,
+                            &mut ctx,
+                            &self.global_bus,
+                            &mut self.currency_handler,
+                            &mut self.handlers,
+                        );
+
+                        if let Err(e) = result {
                             log_err!(e, "failed to process command");
                         }
                     }
                 }
 
-                if self.should_be_deleted(m, message) {
-                    self.delete_message(tags)?;
+                if self.should_be_deleted(&user, message) {
+                    self.delete_message(&user)?;
                 }
             }
             Command::CAP(_, CapSubCommand::ACK, _, ref what) => {
@@ -929,14 +929,19 @@ impl OwnedUser {
 }
 
 #[derive(Clone)]
-pub struct User<'m> {
-    pub tags: Tags<'m>,
+pub struct User<'a> {
+    pub tags: Tags<'a>,
     sender: Sender,
-    pub name: &'m str,
-    pub target: &'m str,
+    pub name: &'a str,
+    pub target: &'a str,
+    pub streamer: &'a str,
+    pub moderators: &'a HashSet<String>,
+    pub vips: &'a HashSet<String>,
+    pub stream_info: &'a stream_info::StreamInfo,
+    pub auth: &'a Auth,
 }
 
-impl<'m> User<'m> {
+impl<'a> User<'a> {
     /// Test if the current user is the given user.
     pub fn is(&self, name: &str) -> bool {
         self.name == name.to_lowercase()
@@ -955,6 +960,55 @@ impl<'m> User<'m> {
             name: self.name.to_owned(),
             target: self.target.to_owned(),
         }
+    }
+
+    /// Get a list of all roles the current requester belongs to.
+    pub fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
+        let mut roles = smallvec::SmallVec::new();
+
+        if self.is_streamer() {
+            roles.push(Role::Streamer);
+        }
+
+        if self.is_moderator() {
+            roles.push(Role::Moderator);
+        }
+
+        if self.is_subscriber() {
+            roles.push(Role::Subscriber);
+        }
+
+        if self.is_vip() {
+            roles.push(Role::Vip);
+        }
+
+        roles.push(Role::Everyone);
+        roles
+    }
+
+    /// Test if the current user has the given scope.
+    pub fn has_scope(&self, scope: Scope) -> bool {
+        self.auth.test_any(scope, self.name, self.roles())
+    }
+
+    /// Test if streamer.
+    fn is_streamer(&self) -> bool {
+        self.name == self.streamer
+    }
+
+    /// Test if moderator.
+    pub fn is_moderator(&self) -> bool {
+        self.moderators.contains(self.name)
+    }
+
+    /// Test if subscriber.
+    fn is_subscriber(&self) -> bool {
+        self.is_streamer() || self.stream_info.is_subscriber(self.name)
+    }
+
+    /// Test if vip.
+    fn is_vip(&self) -> bool {
+        self.vips.contains(self.name)
     }
 }
 

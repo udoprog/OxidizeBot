@@ -7,6 +7,7 @@ mod macros;
 pub mod admin;
 pub mod after_stream;
 pub mod alias_admin;
+pub mod auth;
 pub mod clip;
 pub mod command_admin;
 pub mod countdown;
@@ -72,6 +73,7 @@ pub struct HookContext<'a: 'm, 'm> {
     pub streamer_twitch: &'a api::Twitch,
     pub sender: &'a irc::Sender,
     pub settings: &'a settings::Settings,
+    pub auth: &'a crate::auth::Auth,
 }
 
 pub trait Module: Send + 'static {

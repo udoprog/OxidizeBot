@@ -24,7 +24,7 @@ impl<'a> command::Handler for Handler<'a> {
         Some(Scope::SwearJar)
     }
 
-    fn handle<'m>(&mut self, ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -45,7 +45,7 @@ impl<'a> command::Handler for Handler<'a> {
 
         let twitch = self.twitch.clone();
         let sender = ctx.sender.clone();
-        let streamer = ctx.streamer.to_string();
+        let streamer = ctx.user.streamer.to_string();
         let channel = ctx.user.target.to_string();
         let reward = *self.reward.read();
 

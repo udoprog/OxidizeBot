@@ -12,7 +12,7 @@ impl<'a> command::Handler for Handler<'a> {
         Some(auth::Scope::Command)
     }
 
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

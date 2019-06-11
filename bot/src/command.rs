@@ -1,13 +1,8 @@
 //! Traits and shared plumbing for bot commands (e.g. `!uptime`)
 
-use crate::{
-    auth::{Auth, Role, Scope},
-    irc,
-    prelude::*,
-    stream_info, utils,
-};
+use crate::{auth::Scope, irc, prelude::*, utils};
 use failure::Error;
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 use std::{fmt, time::Instant};
 use tokio_threadpool::ThreadPool;
 
@@ -19,7 +14,7 @@ pub trait Handler {
     }
 
     /// Handle the command.
-    fn handle<'m>(&mut self, ctx: Context<'_, '_>) -> Result<(), Error>;
+    fn handle(&mut self, ctx: &mut Context<'_, '_>) -> Result<(), Error>;
 }
 
 /// The alias that was expanded for this command.
@@ -49,53 +44,18 @@ impl Alias<'_> {
 /// Context for a single command invocation.
 pub struct Context<'a, 'm> {
     pub api_url: Option<&'a str>,
-    /// The current streamer.
-    pub streamer: &'a str,
     /// Sender associated with the command.
     pub sender: &'a irc::Sender,
-    pub moderators: &'a HashSet<String>,
-    pub vips: &'a HashSet<String>,
     pub moderator_cooldown: Option<&'a mut utils::Cooldown>,
     pub thread_pool: &'a ThreadPool,
     pub user: irc::User<'m>,
     pub it: &'a mut utils::Words<'m>,
     pub shutdown: &'a utils::Shutdown,
     pub alias: Alias<'a>,
-    pub stream_info: &'a stream_info::StreamInfo,
-    pub auth: &'a Auth,
     pub scope_cooldowns: &'a mut HashMap<Scope, utils::Cooldown>,
 }
 
 impl<'a, 'm> Context<'a, 'm> {
-    /// Get a list of all roles the current requester belongs to.
-    pub fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
-        let mut roles = smallvec::SmallVec::new();
-
-        if self.is_streamer() {
-            roles.push(Role::Streamer);
-        }
-
-        if self.is_moderator() {
-            roles.push(Role::Moderator);
-        }
-
-        if self.is_subscriber() {
-            roles.push(Role::Subscriber);
-        }
-
-        if self.is_vip() {
-            roles.push(Role::Vip);
-        }
-
-        roles.push(Role::Everyone);
-        roles
-    }
-
-    /// Test if the current user has the given scope.
-    pub fn has_scope(&self, scope: Scope) -> bool {
-        self.auth.test_any(scope, self.roles())
-    }
-
     /// Spawn the given result and log on errors.
     pub fn spawn_result<F>(&self, id: &'static str, future: F)
     where
@@ -117,29 +77,9 @@ impl<'a, 'm> Context<'a, 'm> {
             .spawn(Compat::new(Box::pin(future.unit_error())));
     }
 
-    /// Test if streamer.
-    fn is_streamer(&self) -> bool {
-        self.user.name == self.streamer
-    }
-
-    /// Test if moderator.
-    pub fn is_moderator(&self) -> bool {
-        self.moderators.contains(self.user.name)
-    }
-
-    /// Test if subscriber.
-    fn is_subscriber(&self) -> bool {
-        self.is_streamer() || self.stream_info.is_subscriber(self.user.name)
-    }
-
-    /// Test if vip.
-    fn is_vip(&self) -> bool {
-        self.vips.contains(self.user.name)
-    }
-
     /// Verify that the current user has the associated scope.
     pub fn check_scope(&mut self, scope: Scope) -> Result<(), Error> {
-        if !self.has_scope(scope) {
+        if !self.user.has_scope(scope) {
             self.privmsg(format!(
                 "Do you think this is a democracy {name}? LUL",
                 name = self.user.name

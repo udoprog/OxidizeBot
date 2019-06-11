@@ -30,7 +30,7 @@ impl command::Handler for Speedrun {
         Some(auth::Scope::Speedrun)
     }
 
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
