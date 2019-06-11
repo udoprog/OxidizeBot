@@ -6,7 +6,7 @@ pub struct Handler<'a> {
 }
 
 impl<'a> command::Handler for Handler<'a> {
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
         let next = command_base!(ctx, self.aliases, "!alias", "alias", AliasEdit);
 
         match next {

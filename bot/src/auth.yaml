@@ -225,3 +225,18 @@ scopes:
     allow:
       - "@streamer"
       - "@moderator"
+  auth/permit:
+    doc: >
+      If you are allowed to run `!auth permit` to grant temporary scopes.
+      You are only able to grant scopes which you yourself have access to.
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"
+  chat/bypass-url-whitelist:
+    doc: >
+      If you are allowed to bypass the URL whitelist.
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"

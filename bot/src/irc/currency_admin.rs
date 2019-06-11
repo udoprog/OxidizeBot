@@ -29,7 +29,7 @@ impl Handler<'_> {
 }
 
 impl command::Handler for Handler<'_> {
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
         let currency = self.currency.read();
         let currency = match currency.as_ref() {
             Some(currency) => currency.clone(),
@@ -114,7 +114,7 @@ impl command::Handler for Handler<'_> {
 
                 let target = ctx.user.target.to_owned();
                 let giver = ctx.user.as_owned_user();
-                let is_streamer = ctx.user.is(ctx.streamer);
+                let is_streamer = ctx.user.is(ctx.user.streamer);
 
                 ctx.spawn(async move {
                     let result = currency
@@ -160,7 +160,7 @@ impl command::Handler for Handler<'_> {
                     db::user_id(ctx_try!(ctx.next_str("<user> <amount>", "!currency boost")));
                 let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>", "!currency boost"));
 
-                if !ctx.user.is(ctx.streamer) && ctx.user.is(&boosted_user) {
+                if !ctx.user.is(ctx.user.streamer) && ctx.user.is(&boosted_user) {
                     ctx.respond("You gonna have to play by the rules (or ask another mod) :(");
                     return Ok(());
                 }
@@ -236,15 +236,15 @@ impl command::Handler for Handler<'_> {
 
                 alts.push("give");
 
-                if ctx.has_scope(Scope::CurrencyBoost) {
+                if ctx.user.has_scope(Scope::CurrencyBoost) {
                     alts.push("boost");
                 }
 
-                if ctx.has_scope(Scope::CurrencyWindfall) {
+                if ctx.user.has_scope(Scope::CurrencyWindfall) {
                     alts.push("windfall");
                 }
 
-                if ctx.has_scope(Scope::CurrencyShow) {
+                if ctx.user.has_scope(Scope::CurrencyShow) {
                     alts.push("show");
                 }
 

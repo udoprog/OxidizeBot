@@ -1,4 +1,4 @@
-use crate::{auth::Scope, command, db, module, settings};
+use crate::{auth, command, db, module, settings};
 use failure::Error;
 
 /// Handler for the !admin command.
@@ -14,7 +14,7 @@ impl Handler<'_> {
     /// List settings by prefix.
     fn list_settings_by_prefix(
         &self,
-        ctx: command::Context<'_, '_>,
+        ctx: &mut command::Context<'_, '_>,
         key: &str,
     ) -> Result<(), Error> {
         let mut results = Vec::new();
@@ -60,11 +60,11 @@ impl Handler<'_> {
 }
 
 impl<'a> command::Handler for Handler<'a> {
-    fn scope(&self) -> Option<Scope> {
-        Some(Scope::Admin)
+    fn scope(&self) -> Option<auth::Scope> {
+        Some(auth::Scope::Admin)
     }
 
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
         match ctx.next() {
             Some("refresh-mods") => {
                 ctx.privmsg("/mods");
@@ -91,12 +91,12 @@ impl<'a> command::Handler for Handler<'a> {
             }
             // Insert a value into a setting.
             Some("push") => {
-                let key = match key(&mut ctx, "!admin insert") {
+                let key = match key(ctx, "!admin insert") {
                     Some(key) => key,
                     None => return Ok(()),
                 };
 
-                let value = match self.value_in_set(&mut ctx, key) {
+                let value = match self.value_in_set(ctx, key) {
                     Some(ty) => ty,
                     None => return Ok(()),
                 };
@@ -112,12 +112,12 @@ impl<'a> command::Handler for Handler<'a> {
             }
             // Delete a value from a setting.
             Some("delete") => {
-                let key = match key(&mut ctx, "!admin delete") {
+                let key = match key(ctx, "!admin delete") {
                     Some(key) => key,
                     None => return Ok(()),
                 };
 
-                let value = match self.value_in_set(&mut ctx, key) {
+                let value = match self.value_in_set(ctx, key) {
                     Some(ty) => ty,
                     None => return Ok(()),
                 };
@@ -171,7 +171,7 @@ impl<'a> command::Handler for Handler<'a> {
             }
             // Get or set settings.
             Some("settings") => {
-                let key = match key(&mut ctx, "!admin settings") {
+                let key = match key(ctx, "!admin settings") {
                     Some(key) => key,
                     None => return Ok(()),
                 };
@@ -216,7 +216,7 @@ impl<'a> command::Handler for Handler<'a> {
                         };
 
                         if let Some(scope) = schema.scope.clone() {
-                            if !ctx.has_scope(scope) {
+                            if !ctx.user.has_scope(scope) {
                                 ctx.respond(
                                     "You are not permitted to modify that setting, sorry :(",
                                 );

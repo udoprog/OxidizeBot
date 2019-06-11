@@ -20,9 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   * `countdown`
   * `gtav/raw`
   * `water/undo`
+- Support temporary grants through `!auth permit 5m <user> <scope>`.
+  You can only grants scopes that you have [#47].
+  * For example, to permit posting any links: `!auth permit 30s setbactesting chat/bypass-url-whitelist`
 
 [auth.yaml]: bot/src/auth.yaml
 [#48]: https://github.com/udoprog/setmod/issues/48
+[#47]: https://github.com/udoprog/setmod/issues/47
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.3.4...master
 
 ## [0.3.4]

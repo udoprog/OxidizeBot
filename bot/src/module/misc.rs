@@ -16,7 +16,7 @@ impl command::Handler for Uptime {
         Some(auth::Scope::Uptime)
     }
 
-    fn handle<'m>(&mut self, ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -63,7 +63,7 @@ pub struct Title<'a> {
 
 impl Title<'_> {
     /// Handle the title command.
-    fn show(&mut self, user: irc::User<'_>) {
+    fn show(&mut self, user: &irc::User<'_>) {
         let title = self.stream_info.data.read().title.clone();
 
         match title {
@@ -82,7 +82,7 @@ impl command::Handler for Title<'_> {
         Some(auth::Scope::Title)
     }
 
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -90,7 +90,7 @@ impl command::Handler for Title<'_> {
         let rest = ctx.rest();
 
         if rest.is_empty() {
-            self.show(ctx.user);
+            self.show(&ctx.user);
         } else {
             ctx.check_scope(auth::Scope::TitleEdit)?;
 
@@ -127,7 +127,7 @@ pub struct Game<'a> {
 
 impl Game<'_> {
     /// Handle the game command.
-    fn show(&mut self, user: irc::User<'_>) {
+    fn show(&mut self, user: &irc::User<'_>) {
         let game = self.stream_info.data.read().game.clone();
 
         match game {
@@ -146,7 +146,7 @@ impl command::Handler for Game<'_> {
         Some(auth::Scope::Game)
     }
 
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, 'm>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -154,7 +154,7 @@ impl command::Handler for Game<'_> {
         let rest = ctx.rest();
 
         if rest.is_empty() {
-            self.show(ctx.user);
+            self.show(&ctx.user);
             return Ok(());
         }
 

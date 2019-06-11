@@ -51,7 +51,7 @@ impl Handler {
 }
 
 impl command::Handler for Handler {
-    fn handle<'m>(&mut self, mut ctx: command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -74,7 +74,7 @@ impl command::Handler for Handler {
             Some("undo") => {
                 ctx.check_scope(auth::Scope::WaterUndo)?;
 
-                let (_, reward) = match self.check_waters(&mut ctx) {
+                let (_, reward) = match self.check_waters(ctx) {
                     Some(water) => water,
                     None => return Ok(()),
                 };
@@ -108,7 +108,7 @@ impl command::Handler for Handler {
                 });
             }
             None => {
-                let (last, _) = match self.check_waters(&mut ctx) {
+                let (last, _) = match self.check_waters(ctx) {
                     Some(water) => water,
                     None => return Ok(()),
                 };
@@ -128,7 +128,7 @@ impl command::Handler for Handler {
                 ));
 
                 ctx.respond(format!(
-                    "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.", streamer = ctx.streamer,
+                    "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.", streamer = ctx.user.streamer,
                     user = ctx.user.name,
                     amount = amount,
                     currency = currency.name
