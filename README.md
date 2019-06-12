@@ -369,12 +369,23 @@ All of these have different effects and costs (which requires the `!currency` co
 
 You enable the `!speedrun` command by setting `speedrun/enabled` to `true`.
 
-* `!speedrun record <game> [filters]` - List a specific record.
-  * Example: `!speedrun record gtav --user burhac --category 100%`
-
-Available `[filters]` are:
-* `--user <name>` - Limit results to the given user.
-* `--category <name>` - Limit results to the given category.
-* `--sub-category <name>` - Limit results to the given sub-category.
-* `--misc` - Include misc categories.
-* `--misc-only` - Only list misc categories.
+* `!speedrun game <game> [filters]` - List leaderboards for a specific game.
+  * Example: `!speedrun game gtav --category 100%`
+  * Available `[filters]` are:
+    * `--user <name>` - Limit results to the given user.
+    * `--abbrev` - Abbreviate sub-categories (e.g. `100% No Mission Skips` becomes `100% NMS`).
+    * `--category <name>` - Limit results to the given category.
+    * `--sub-category <name>` - Limit results to the given sub-category.
+    * `--misc` - Include misc categories.
+    * `--misc-only` - Only list misc categories.
+* `!speedrun personal-bests <user> [filters]` - List leaderboards for a specific game.
+  * Example: `!speedrun personal-bests setbac --game gtav`
+  * Available `[filters]` are:
+    * `--game <game>` - Limit results to the given game.
+    * `--abbrev` - Abbreviate sub-categories (e.g. `100% No Mission Skips` becomes `100% NMS`).
+    * `--per-level` - Show per-level personal bests.
+    * `--level <level>` - Filter by the given level.
+    * `--category <name>` - Limit results to the given category.
+    * `--sub-category <name>` - Limit results to the given sub-category.
+    * `--misc` - Include misc categories.
+    * `--misc-only` - Only list misc categories.

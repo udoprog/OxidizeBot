@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `!speedrun game <game>` as a preferred alias for `!speedrun record`.
+- `!speedrun personal-bests <user>` as a way to query personal bests for a single user.
+
 ### Changed
 - Move most authorization checks to their own scopes (See [auth.yaml] for details) [#48].
   * `song/theme`
@@ -91,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Reduce the number of calls for `!speedrun` command.
 - Commands can now be quoted to support spaces in arguments.
-  * Example: `!speedrun record sm64 --category "120 Star"`
+  * Example: `!speedrun game sm64 --category "120 Star"`
 
 [0.2.10]: https://github.com/udoprog/setmod/compare/0.2.9...0.2.10
 
