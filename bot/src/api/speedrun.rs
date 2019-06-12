@@ -1,17 +1,11 @@
 //! Twitch API helpers.
 
-use crate::{prelude::*, utils::PtDuration};
-use bytes::Bytes;
+use crate::{api::RequestBuilder, utils::PtDuration};
 use chrono::{DateTime, NaiveDate, Utc};
 use failure::Error;
 use hashbrown::HashMap;
-use reqwest::{
-    header,
-    r#async::{Chunk, Client, Decoder},
-    Method, StatusCode, Url,
-};
+use reqwest::{header, r#async::Client, Method, Url};
 use std::collections::BTreeMap;
-use std::mem;
 
 const V1_URL: &'static str = "https://speedrun.com/api/v1";
 
@@ -40,20 +34,32 @@ impl Speedrun {
             url_path.extend(path);
         }
 
-        RequestBuilder {
-            client: self.client.clone(),
-            url,
-            method,
-            headers: Vec::new(),
-            body: None,
-        }
+        let req = RequestBuilder::new(self.client.clone(), method, url);
+        req.header(header::ACCEPT, "application/json")
     }
 
+    /// Fetch the user by id.
     pub async fn user_by_id(&self, user: String) -> Result<Option<User>, Error> {
         let data = self
             .v1(Method::GET, &["users", user.as_str()])
-            .json::<Data<User>>()
+            .json_or::<Data<User>>()
             .await?;
+        Ok(data.map(|d| d.data))
+    }
+
+    /// Fetch the user by id.
+    pub async fn user_personal_bests(
+        &self,
+        user_id: String,
+        embeds: Embeds,
+    ) -> Result<Option<Vec<Run>>, Error> {
+        let mut request = self.v1(Method::GET, &["users", user_id.as_str(), "personal-bests"]);
+
+        if let Some(q) = embeds.to_query() {
+            request = request.query_param("embed", q.as_str());
+        }
+
+        let data = request.json_or::<Data<Vec<Run>>>().await?;
         Ok(data.map(|d| d.data))
     }
 
@@ -61,7 +67,7 @@ impl Speedrun {
     pub async fn game_by_id(&self, game: String) -> Result<Option<Game>, Error> {
         let data = self
             .v1(Method::GET, &["games", game.as_str()])
-            .json::<Data<Game>>()
+            .json_or::<Data<Game>>()
             .await?;
         Ok(data.map(|d| d.data))
     }
@@ -78,19 +84,25 @@ impl Speedrun {
             request = request.query_param("embed", q.as_str());
         }
 
-        let data = request.json::<Data<Vec<Category>>>().await?;
+        let data = request.json_or::<Data<Vec<Category>>>().await?;
+        Ok(data.map(|d| d.data))
+    }
+
+    /// Get game levels.
+    pub async fn game_levels(&self, game: String) -> Result<Option<Vec<Level>>, Error> {
+        let request = self.v1(Method::GET, &["games", game.as_str(), "levels"]);
+        let data = request.json_or::<Data<Vec<Level>>>().await?;
         Ok(data.map(|d| d.data))
     }
 
     /// Get all variables associated with a category.
-    #[allow(unused)]
-    pub async fn category_variables_by_id(
+    pub async fn category_variables(
         &self,
         category: String,
     ) -> Result<Option<Vec<Variable>>, Error> {
         let data = self
             .v1(Method::GET, &["categories", category.as_str(), "variables"])
-            .json::<Data<Vec<Variable>>>()
+            .json_or::<Data<Vec<Variable>>>()
             .await?;
 
         Ok(data.map(|d| d.data))
@@ -105,7 +117,7 @@ impl Speedrun {
         let data = self
             .v1(Method::GET, &["categories", category.as_str(), "records"])
             .query_param("top", top.to_string().as_str())
-            .json::<Page<GameRecord>>()
+            .json_or::<Page<GameRecord>>()
             .await?;
         Ok(data)
     }
@@ -134,88 +146,10 @@ impl Speedrun {
             request = request.query_param(&format!("var-{}", key), &value);
         }
 
-        let data = request.json::<Data<GameRecord>>().await?;
+        let data = request.json_or::<Data<GameRecord>>().await?;
         Ok(data.map(|d| d.data))
     }
 }
-
-struct RequestBuilder {
-    client: Client,
-    url: Url,
-    method: Method,
-    headers: Vec<(header::HeaderName, String)>,
-    body: Option<Bytes>,
-}
-
-impl RequestBuilder {
-    /// Execute the request, providing the raw body as a response.
-    pub async fn raw(self) -> Result<Option<Chunk>, Error> {
-        let mut req = self.client.request(self.method, self.url);
-
-        if let Some(body) = self.body {
-            req = req.body(body);
-        }
-
-        for (key, value) in self.headers {
-            req = req.header(key, value);
-        }
-
-        req = req.header(header::ACCEPT, "application/json");
-        req = req.header(
-            header::USER_AGENT,
-            concat!("setmod/", env!("CARGO_PKG_VERSION")),
-        );
-        let mut res = req.send().compat().await?;
-
-        let status = res.status();
-
-        if status == StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
-
-        let body = mem::replace(res.body_mut(), Decoder::empty());
-        let body = body.compat().try_concat().await?;
-
-        if !status.is_success() {
-            failure::bail!(
-                "bad response: {}: {}",
-                status,
-                String::from_utf8_lossy(&body)
-            );
-        }
-
-        if log::log_enabled!(log::Level::Trace) {
-            let response = String::from_utf8_lossy(body.as_ref());
-            log::trace!("response: {}", response);
-        }
-
-        Ok(Some(body))
-    }
-
-    /// Execute the request expecting a JSON response.
-    pub async fn json<T>(self) -> Result<Option<T>, Error>
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        let body = self.raw().await?;
-
-        let body = match body {
-            Some(body) => body,
-            None => return Ok(None),
-        };
-
-        serde_json::from_slice(body.as_ref()).map_err(Into::into)
-    }
-
-    /// Add a query parameter.
-    pub fn query_param(mut self, key: &str, value: &str) -> Self {
-        self.url.query_pairs_mut().append_pair(key, value);
-        self
-    }
-}
-
-#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
-pub struct Empty {}
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Names {
@@ -267,6 +201,7 @@ pub enum Embed {
     Players,
     Variables,
     Game,
+    Category,
 }
 
 impl Embed {
@@ -278,6 +213,7 @@ impl Embed {
             Players => "players",
             Variables => "variables",
             Game => "game",
+            Category => "category",
         }
     }
 }
@@ -512,8 +448,10 @@ pub struct Times {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct System {
-    pub platform: String,
+    #[serde(default)]
+    pub platform: Option<String>,
     pub emulated: bool,
+    #[serde(default)]
     pub region: Option<String>,
 }
 
@@ -530,7 +468,7 @@ pub struct RunInfo {
     pub weblink: String,
     pub game: String,
     #[serde(default)]
-    pub level: serde_json::Value,
+    pub level: Option<String>,
     pub category: String,
     #[serde(default)]
     pub videos: Option<Videos>,
@@ -547,7 +485,7 @@ pub struct RunInfo {
     pub system: System,
     pub splits: Option<Splits>,
     #[serde(default)]
-    pub values: serde_json::Value,
+    pub values: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -555,6 +493,12 @@ pub struct RunInfo {
 pub struct Run {
     pub place: u32,
     pub run: RunInfo,
+    /// Annotated information on players, if embed=game was requested.
+    #[serde(default)]
+    pub game: Option<Data<Game>>,
+    /// Annotated information on players, if embed=category was requested.
+    #[serde(default)]
+    pub category: Option<Data<Category>>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
@@ -610,11 +554,11 @@ pub struct GameRecord {
     pub game: String,
     pub category: String,
     #[serde(default)]
-    pub level: serde_json::Value,
+    pub level: Option<String>,
     #[serde(default)]
-    pub platform: serde_json::Value,
+    pub platform: Option<String>,
     #[serde(default)]
-    pub region: serde_json::Value,
+    pub region: Option<String>,
     #[serde(default)]
     pub emulators: serde_json::Value,
     pub video_only: bool,
@@ -653,7 +597,7 @@ pub enum Role {
 #[serde(rename_all = "kebab-case")]
 pub struct Moderators {
     #[serde(flatten)]
-    map: HashMap<String, Role>,
+    pub map: HashMap<String, Role>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -680,6 +624,25 @@ pub struct Game {
     pub links: Vec<Link>,
 }
 
+impl Game {
+    /// Test if game matches the given identifying string.
+    pub fn matches(&self, s: &str) -> bool {
+        if self.id == s {
+            return true;
+        }
+
+        if self.abbreviation == s {
+            return true;
+        }
+
+        if self.names.matches(s) {
+            return true;
+        }
+
+        false
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum CategoryPlayers {
@@ -689,7 +652,7 @@ pub enum CategoryPlayers {
     UpTo { value: u32 },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CategoryType {
     PerGame,
@@ -717,7 +680,8 @@ pub struct Category {
     pub weblink: String,
     #[serde(rename = "type")]
     pub ty: CategoryType,
-    pub rules: String,
+    #[serde(default)]
+    pub rules: Option<String>,
     pub players: CategoryPlayers,
     pub miscellaneous: bool,
     #[serde(default)]
@@ -728,6 +692,31 @@ pub struct Category {
     /// Annotated information on players, if embed=game was requested.
     #[serde(default)]
     pub game: Option<Data<Game>>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Level {
+    pub id: String,
+    pub name: String,
+    pub weblink: String,
+    pub rules: Option<String>,
+    pub links: Vec<Link>,
+}
+
+impl Level {
+    /// Test if level matches the given identifying string.
+    pub fn matches(&self, s: &str) -> bool {
+        if self.id == s {
+            return true;
+        }
+
+        if self.name.to_lowercase().contains(s) {
+            return true;
+        }
+
+        false
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

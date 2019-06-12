@@ -385,6 +385,34 @@ pub fn human_artists(artists: &[api::spotify::SimplifiedArtist]) -> Option<Strin
     Some(artists)
 }
 
+/// Formats the given list of strings as a comma-separated set of values.
+pub fn human_list(list: &[String]) -> Option<String> {
+    if list.is_empty() {
+        return None;
+    }
+
+    let mut it = list.iter();
+    let mut list = String::new();
+
+    if let Some(el) = it.next() {
+        list.push_str(el);
+    }
+
+    let back = it.next_back();
+
+    while let Some(el) = it.next() {
+        list.push_str(", ");
+        list.push_str(el);
+    }
+
+    if let Some(el) = back {
+        list.push_str(", & ");
+        list.push_str(el);
+    }
+
+    Some(list)
+}
+
 /// Test if character is a URL character.
 fn is_url_character(c: char) -> bool {
     match c {
