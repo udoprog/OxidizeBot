@@ -32,13 +32,15 @@ export default class Authorization extends React.Component {
   constructor(props) {
     super(props);
 
+    var search = new URLSearchParams(this.props.location.search);
+
     this.api = this.props.api;
 
     this.state = {
       loading: false,
       error: null,
       data: null,
-      filter: "",
+      filter: search.get("q") || "",
       checked: {
         title: "",
         prompt: "",
@@ -54,6 +56,22 @@ export default class Authorization extends React.Component {
     }
 
     this.list()
+  }
+
+  /**
+   * Update the current filter.
+   */
+  setFilter(filter) {
+    var path = `${this.props.location.pathname}`;
+
+    if (!!filter) {
+      var search = new URLSearchParams(this.props.location.search);
+      search.set("q", filter);
+      path = `${path}?${search}`
+    }
+
+    this.props.history.replace(path);
+    this.setState({filter});
   }
 
   /**
@@ -257,7 +275,7 @@ export default class Authorization extends React.Component {
    * Render a single group.
    */
   renderGroup(group, name, data) {
-    let setFilter = filter => () => this.setState({filter: `^${filter}/`});
+    let setFilter = filter => () => this.setFilter(`^${filter}/`);
 
     return [
       <tr key={`title:${name}`} className="auth-scope-short">
@@ -332,9 +350,7 @@ export default class Authorization extends React.Component {
     let clear = null;
 
     if (!!this.state.filter) {
-      let clearFilter = () => {
-        this.setState({filter: ""});
-      };
+      let clearFilter = () => this.setFilter("");
 
       clear = (
         <InputGroup.Append>
@@ -343,9 +359,7 @@ export default class Authorization extends React.Component {
       );
     }
 
-    let filterOnChange = e => {
-      this.setState({filter: e.target.value});
-    };
+    let filterOnChange = e => this.setFilter(e.target.value);
 
     let filter = (
       <Form className="mt-4 mb-4">
