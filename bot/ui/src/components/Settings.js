@@ -9,6 +9,8 @@ export default class Settings extends React.Component {
   constructor(props) {
     super(props);
 
+    var search = new URLSearchParams(this.props.location.search);
+
     this.api = this.props.api;
 
     this.state = {
@@ -16,7 +18,7 @@ export default class Settings extends React.Component {
       error: null,
       data: null,
       // current filter being applied to filter visible settings.
-      filter: "",
+      filter: search.get("q") || "",
     };
   }
 
@@ -26,6 +28,22 @@ export default class Settings extends React.Component {
     }
 
     this.list()
+  }
+
+  /**
+   * Update the current filter.
+   */
+  setFilter(filter) {
+    var path = `${this.props.location.pathname}`;
+
+    if (!!filter) {
+      var search = new URLSearchParams(this.props.location.search);
+      search.set("q", filter);
+      path = `${path}?${search}`
+    }
+
+    this.props.history.replace(path);
+    this.setState({filter});
   }
 
   /**
@@ -155,9 +173,7 @@ export default class Settings extends React.Component {
    * Render the given name as a set of clickable links.
    */
   filterLinks(name) {
-    let setFilter = filter => () => {
-      this.setState({filter: `^${filter}/`});
-    };
+    let setFilter = filter => () => this.setFilter(`^${filter}/`);
 
     let parts = name.split("/");
     let path = [];
@@ -260,13 +276,8 @@ export default class Settings extends React.Component {
     let filter = null;
 
     if (this.props.filterable) {
-      let filterOnChange = e => {
-        this.setState({filter: e.target.value});
-      };
-
-      let clearFilter = () => {
-        this.setState({filter: ""});
-      };
+      let filterOnChange = e => this.setFilter(e.target.value);
+      let clearFilter = () => this.setFilter("");
 
       let clear = null;
 

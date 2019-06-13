@@ -126,7 +126,7 @@ class SettingsPage extends React.Component {
 
         <Row>
           <Col>
-            <Settings api={this.api} filterable={true} />
+            <Settings api={this.api} filterable={true} {...this.props} />
           </Col>
         </Row>
       </RouteLayout>
