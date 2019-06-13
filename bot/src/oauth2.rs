@@ -541,19 +541,19 @@ impl TokenBuilder {
     }
 
     /// Construct a new client.
-    pub fn client(&self, config: &Config) -> Client {
+    pub fn client(&self, config: &Config) -> Result<Client, Error> {
         let mut client = Client::new(
             ClientId::new(config.client_id.to_string()),
             Some(config.client_secret.clone()),
             self.auth_url.clone(),
             self.token_url.clone(),
-        );
+        )?;
 
         for scope in self.scopes.iter() {
             client = client.add_scope(Scope::new(scope.to_string()));
         }
 
-        client.set_redirect_url(self.redirect_url.clone())
+        Ok(client.set_redirect_url(self.redirect_url.clone()))
     }
 
     /// Construct a new token and log on failures.
@@ -572,7 +572,7 @@ impl TokenBuilder {
         if let Some(config) = self.new_config.take() {
             // on new secrets configuration we must invalidate the old token.
             self.token = None;
-            self.client = Some(self.client(&config));
+            self.client = Some(self.client(&config)?);
             self.config = Some(config);
         }
 
