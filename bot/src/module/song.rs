@@ -789,7 +789,7 @@ async fn feedback(
             }
             Event::Playing(feedback, item) => {
                 if !feedback || !*chat_feedback.read() {
-                    return Ok(());
+                    continue;
                 }
 
                 let message = match item.user.as_ref() {
@@ -801,7 +801,7 @@ async fn feedback(
             }
             Event::Pausing => {
                 if !*chat_feedback.read() {
-                    return Ok(());
+                    continue;
                 }
 
                 sender.privmsg("Pausing playback.");

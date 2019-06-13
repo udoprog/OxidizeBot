@@ -1838,10 +1838,9 @@ impl PlaybackFuture {
         self.notify_song_change(Some(&song))?;
 
         if let Source::Manual = source {
-            self.bus.broadcast(Event::Playing(
-                *self.song_switch_feedback.read(),
-                song.item.clone(),
-            ));
+            let feedback = *self.song_switch_feedback.read();
+            self.bus
+                .broadcast(Event::Playing(feedback, song.item.clone()));
         }
 
         self.state = State::Playing;
@@ -1857,10 +1856,9 @@ impl PlaybackFuture {
         self.notify_song_change(Some(&song))?;
 
         if let Source::Manual = source {
-            self.bus.broadcast(Event::Playing(
-                *self.song_switch_feedback.read(),
-                song.item.clone(),
-            ));
+            let feedback = *self.song_switch_feedback.read();
+            self.bus
+                .broadcast(Event::Playing(feedback, song.item.clone()));
         }
 
         self.state = State::Playing;
