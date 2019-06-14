@@ -7,8 +7,10 @@ import {Percentage} from "./Percentage";
 import {Raw} from "./Raw";
 import {Set} from "./Set";
 import {Select} from "./Select";
+import {Typeahead} from "./Typeahead";
 import {Oauth2Config} from "./Oauth2Config";
-import * as Format from "./Format";
+import * as format from "./Format";
+import * as timezones from "timezones.json";
 
 /**
  * Decode the given type and value.
@@ -21,8 +23,6 @@ export function decode(type) {
     throw new Error(`bad type: ${type}`);
   }
 
-  let format = null;
-  let placeholder = null;
   let value = null;
 
   switch (type.id) {
@@ -33,9 +33,7 @@ export function decode(type) {
     case "bool":
       return new Boolean(type.optional);
     case "string":
-      format = Format.decode(type.format);
-      placeholder = type.placeholder;
-      return new String(type.optional, format, placeholder);
+      return new String(type.optional, format.decode(type.format), type.placeholder);
     case "text":
       return new Text(type.optional);
     case "number":
@@ -48,7 +46,55 @@ export function decode(type) {
     case "select":
       value = decode(type.value);
       return new Select(type.optional, value, type.options);
+    case "time-zone":
+      value = new String(false, new format.None(), "");;
+      return new Typeahead(type.optional, value, timezoneOptions, "timezone");
     default:
       return new Raw(type.optional);
+  }
+}
+
+const timezoneOptions = buildTimezoneOptions();
+
+function buildTimezoneOptions() {
+  return timezones.flatMap(p => p.utc.map(tz => {
+    let name = tz;
+    let n = name.indexOf('/');
+
+    if (n > 0) {
+      name = name.substring(n + 1);
+    } else {
+      name = name;
+    }
+
+    name = name.replace('_', ' ');
+
+    let id = null;
+
+    if (p.offset >= 0) {
+      id = `UTC+${tzOffset(p.offset)}`;
+    } else {
+      id = `UTC-${tzOffset(-p.offset)}`;
+    }
+
+    return {
+      title: `${id} - ${name} (${p.abbr})`,
+      value: tz,
+    }
+  }));
+}
+
+function tzOffset(offset) {
+  let rest = offset % 1;
+  return `${pad(offset - rest, 2)}${pad(60 * rest, 2)}`;
+
+  function pad(num, size) {
+    var s = num + "";
+
+    while (s.length < size) {
+      s = "0" + s;
+    }
+
+    return s;
   }
 }

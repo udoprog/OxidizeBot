@@ -1,4 +1,4 @@
-class Regex {
+export class Regex {
   constructor(pattern) {
     this.pattern = new RegExp(pattern);
   }
@@ -8,7 +8,7 @@ class Regex {
   }
 }
 
-class None {
+export class None {
   constructor() {
   }
 

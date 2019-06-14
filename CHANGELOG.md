@@ -5,6 +5,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Added
+- `time/timezone` for setting your current time zone.
+- `!time` command for showing the current time of the streamer (in the specified time zone) [#45].
+
+[#45]: https://github.com/udoprog/setmod/issues/45
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.3.5...master
 
 ## [0.3.5]

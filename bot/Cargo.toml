@@ -8,6 +8,7 @@ description = "SetMod Twitch Bot"
 
 [dependencies]
 chrono = { version = "0.4.6", features = ["serde"] }
+chrono-tz = {version = "0.5.1", features = ["serde"]}
 clap = "2.33.0"
 diesel = { version = "1.4.2", features = ["mysql", "sqlite", "r2d2", "chrono"] }
 diesel_migrations = "1.4.0"

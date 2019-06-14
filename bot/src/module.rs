@@ -19,6 +19,7 @@ pub mod song;
 pub mod speedrun;
 pub mod swearjar;
 pub mod theme_admin;
+pub mod time;
 pub mod water;
 
 #[derive(Default)]

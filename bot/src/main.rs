@@ -470,6 +470,7 @@ async fn try_main(
         .boxed(),
     );
 
+    modules.push(Box::new(module::time::Module));
     modules.push(Box::new(module::song::Module));
     modules.push(Box::new(module::command_admin::Module));
     modules.push(Box::new(module::admin::Module::load()));

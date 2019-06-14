@@ -565,6 +565,7 @@ scopes! {
     (WaterUndo, "water/undo"),
     (AuthPermit, "auth/permit"),
     (ChatBypassUrlWhitelist, "chat/bypass-url-whitelist"),
+    (Time, "time"),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

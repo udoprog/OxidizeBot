@@ -329,3 +329,13 @@ types:
   speedrun/top:
     doc: "How many top runs to fetch (default: 20)."
     type: {id: number}
+
+  time/enabled:
+    doc: If the `!time` command is enabled.
+    type: {id: bool}
+  time/timezone:
+    doc: Time zone for the `!time` command.
+    type: {id: "time-zone"}
+  time/template:
+    doc: Template to use as a response.
+    type: {id: string}
