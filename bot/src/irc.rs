@@ -422,7 +422,11 @@ fn currency_loop<'a>(
     settings: &settings::Settings,
 ) -> Result<impl Future<Output = Result<(), Error>> + 'a, Error> {
     let reward = 10;
-    let interval_duration = time::Duration::from_secs(60 * 10);
+    let default_interval = Duration::seconds(60 * 10);
+
+    let (mut interval_stream, mut interval) = settings
+        .stream("irc/viewer-reward/interval")
+        .or_with(default_interval)?;
 
     let mut variables = settings.vars();
     let reward_percentage = variables.var("irc/viewer-reward%", 100)?;
@@ -463,13 +467,19 @@ fn currency_loop<'a>(
     futures.push(variables.run().boxed());
 
     return Ok(async move {
-        let mut interval = match viewer_reward {
-            true => Some(timer::Interval::new_interval(interval_duration.clone())),
-            false => None,
+        let new_timer = |interval: &Duration, viewer_reward: bool| match viewer_reward {
+            true if !interval.is_empty() => Some(timer::Interval::new_interval(interval.as_std())),
+            _ => None,
         };
+
+        let mut timer = new_timer(&interval, viewer_reward);
 
         loop {
             futures::select! {
+                update = interval_stream.select_next_some() => {
+                    interval = update;
+                    timer = new_timer(&interval, viewer_reward);
+                }
                 update = notify_rewards_stream.select_next_some() => {
                     notify_rewards = update;
                 }
@@ -498,12 +508,9 @@ fn currency_loop<'a>(
                     currency = build(injector, &builder);
                 }
                 viewer_reward = viewer_reward_stream.select_next_some() => {
-                    let mut interval = match viewer_reward {
-                        true => Some(timer::Interval::new_interval(interval_duration.clone())),
-                        false => None,
-                    };
+                    timer = new_timer(&interval, viewer_reward);
                 }
-                i = interval.select_next_some() => {
+                i = timer.select_next_some() => {
                     let currency = match currency.as_ref() {
                         Some(currency) => currency,
                         None => continue,
@@ -799,6 +806,7 @@ impl Handler<'_, '_, '_> {
                             name: &user.name,
                             target: &user.target,
                             count: command.count(),
+                            rest: it.rest(),
                         };
 
                         let response = command.render(&vars)?;
@@ -1055,6 +1063,7 @@ pub struct CommandVars<'a> {
     name: &'a str,
     target: &'a str,
     count: i32,
+    rest: &'a str,
 }
 
 // Future to refresh moderators every 5 minutes.
