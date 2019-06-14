@@ -389,3 +389,19 @@ You enable the `!speedrun` command by setting `speedrun/enabled` to `true`.
     * `--sub-category <name>` - Limit results to the given sub-category.
     * `--misc` - Include misc categories.
     * `--misc-only` - Only list misc categories.
+
+#### `!time` command
+
+You enable the `!time` command by setting `time/enabled` to `true`.
+
+The `!time` command shows the current time of the streamer (in the specified time zone).
+
+Available settings are:
+
+* `time/enabled` - if the command is enabled or not.
+* `time/timezone` - for setting the current time zone.
+* `time/template` - a template with the following variables:
+  * `{{time}}` - A HH:MM::SS formatted timestamp.
+  * `{{offset}}` - The timezone offset in UTC-format, like: `+0230`.
+  * `{{day}}`, `{{month}}`, `{{year}}` - Day, month, and year.
+  * `{{rfc2822}}` - An RFC-2822 formatted date time, like: `Thu, 01 Sep 2016 10:11:12 -0500`.

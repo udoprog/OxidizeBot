@@ -240,3 +240,8 @@ scopes:
     allow:
       - "@streamer"
       - "@moderator"
+  time:
+    doc: If you are allowed to run the `!time` command.
+    version: 0
+    allow:
+      - "@everyone"

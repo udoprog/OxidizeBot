@@ -1,8 +1,9 @@
 //! Utilities for dealing with dynamic configuration and settings.
 
 use crate::{auth::Scope, db, oauth2, prelude::*, utils};
+use chrono_tz::Tz;
 use diesel::prelude::*;
-use failure::{bail, Error, ResultExt};
+use failure::{bail, format_err, Error, ResultExt};
 use futures::ready;
 use hashbrown::HashMap;
 use parking_lot::RwLock;
@@ -758,6 +759,8 @@ pub enum Format {
     /// mysql://<user>:<password>@<host>/<database>
     #[serde(rename = "regex")]
     Regex { pattern: String },
+    #[serde(rename = "time-zone")]
+    TimeZone,
     #[serde(rename = "none")]
     None,
 }
@@ -808,6 +811,8 @@ pub enum Kind {
         value: Box<Type>,
         options: Vec<serde_json::Value>,
     },
+    #[serde(rename = "time-zone")]
+    TimeZone,
 }
 
 impl Type {
@@ -880,6 +885,11 @@ impl Type {
 
                 v
             }
+            TimeZone => {
+                let tz =
+                    str::parse::<Tz>(s).map_err(|s| format_err!("Invalid time zone: {}", s))?;
+                Value::String(format!("{:?}", tz))
+            }
         };
 
         Ok(value)
@@ -926,6 +936,7 @@ impl fmt::Display for Type {
             Text => write!(fmt, "text")?,
             Set { ref value } => write!(fmt, "Array<{}>", value)?,
             Select { ref value, .. } => write!(fmt, "Select<{}>", value)?,
+            TimeZone => write!(fmt, "TimeZone")?,
         };
 
         if self.optional {
