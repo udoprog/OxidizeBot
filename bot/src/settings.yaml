@@ -76,6 +76,9 @@ types:
   irc/viewer-reward/enabled:
     doc: If viewer rewards are enabled. If enabled, this will award viewers 1 unit of stream currency for every minute of watch time.
     type: {id: bool}
+  irc/viewer-reward/interval:
+    doc: The interval at which we give out user rewards.
+    type: {id: duration}
   irc/whitelisted-hosts:
     doc: Hosts that are whitelisted for linking to in chat.
     type: {id: set, value: {id: string}}

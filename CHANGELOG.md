@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `!speedrun game <game>` as a preferred alias for `!speedrun record`.
 - `!speedrun personal-bests <user>` as a way to query personal bests for a single user.
+- Commands can now use the `{{rest}}` parameter to expand to anything that comes after the command itself.
+- Introduced the `irc/viewer-reward/interval` setting to tweak how frequently viewer rewards are posted.
 
 ### Changed
 - Move most authorization checks to their own scopes (See [auth.yaml] for details) [#48].
