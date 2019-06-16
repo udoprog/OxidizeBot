@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.3.6...master
+
+## [0.3.6]
 
 ### Added
 - `time/timezone` for setting your current time zone.
@@ -12,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `system/run-on-startup` setting that can configure SetMod to run on system startup.
 
 [#45]: https://github.com/udoprog/setmod/issues/45
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.3.5...master
+[0.3.6]: https://github.com/udoprog/setmod/compare/0.3.5...0.3.6
 
 ## [0.3.5]
 

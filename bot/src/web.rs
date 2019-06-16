@@ -5,7 +5,7 @@ use crate::{
 use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
 use rust_embed::RustEmbed;
-use std::{fmt, net::SocketAddr, sync::Arc};
+use std::{borrow::Cow, fmt, net::SocketAddr, sync::Arc};
 use warp::{body, filters, http::Uri, path, Filter as _};
 
 pub const URL: &'static str = "http://localhost:12345";
@@ -1084,13 +1084,12 @@ pub fn setup(
     let routes = routes.or(ws_youtube.recover(recover));
     let routes = routes.or(ws_overlay.recover(recover));
 
-    let routes = routes.or(warp::get2()
-        .and(warp::path::end())
-        .and_then(|| serve("index.html")));
+    let fallback = Asset::get("index.html")
+        .ok_or_else(move || failure::format_err!("missing index.html from assets"))?;
 
     let routes = routes.or(warp::get2()
         .and(warp::path::tail())
-        .and_then(|tail: path::Tail| serve(tail.as_str())));
+        .and_then(move |tail: path::Tail| serve(tail.as_str(), fallback.clone())));
 
     let routes = routes.recover(recover);
     let service = warp::serve(routes);
@@ -1109,18 +1108,26 @@ pub fn setup(
 
     return Ok((server, server_future));
 
-    fn serve(path: &str) -> Result<impl warp::Reply, warp::Rejection> {
-        use std::borrow::Cow;
+    fn serve(
+        path: &str,
+        fallback: Cow<'static, [u8]>,
+    ) -> Result<impl warp::Reply, warp::Rejection> {
+        let (mime, asset) = match Asset::get(path) {
+            Some(asset) => {
+                let mime = mime_guess::guess_mime_type(path);
+                (mime, asset)
+            }
+            None => {
+                let mime = mime::TEXT_HTML_UTF_8;
+                (mime, fallback)
+            }
+        };
 
-        let mime = mime_guess::guess_mime_type(path);
-
-        let asset: Option<Cow<'static, [u8]>> = Asset::get(path);
-
-        let file = asset.ok_or_else(|| warp::reject::not_found())?;
-
-        Ok(warp::http::Response::builder()
+        let res = warp::http::Response::builder()
             .header("content-type", mime.to_string())
-            .body(file))
+            .body(asset);
+
+        Ok(res)
     }
 }
 
