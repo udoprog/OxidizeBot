@@ -137,21 +137,11 @@ impl std::str::FromStr for Duration {
                 }
                 Some(i) if s[i..].starts_with('m') => {
                     let n = str::parse::<u64>(&s[..i])?;
-
-                    if n > 59 {
-                        failure::bail!("minute out of bounds 0-59");
-                    }
-
                     seconds += n * 60;
                     s = &s[(i + 1)..];
                 }
                 Some(i) if s[i..].starts_with('s') => {
                     let n = str::parse::<u64>(&s[..i])?;
-
-                    if n > 59 {
-                        failure::bail!("second out of bounds 0-59");
-                    }
-
                     seconds += n;
                     s = &s[(i + 1)..];
                 }
@@ -212,5 +202,12 @@ mod tests {
             "6d5h2m1s",
             Duration::seconds(6 * 3600 * 24 + 5 * 3600 + 2 * 60 + 1).to_string()
         );
+        assert_eq!(
+            "1d12h",
+            str::parse::<Duration>("1d12h").unwrap().to_string()
+        );
+        assert_eq!("1d12h", str::parse::<Duration>("36h").unwrap().to_string());
+
+        assert_eq!("2h10m", str::parse::<Duration>("130m").unwrap().to_string());
     }
 }
