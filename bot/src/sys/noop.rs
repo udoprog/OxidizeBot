@@ -28,6 +28,18 @@ impl System {
     pub fn join(&self) -> Result<(), Error> {
         Ok(())
     }
+
+    pub fn is_installed(&self) -> Result<bool, Error> {
+        Ok(true)
+    }
+
+    pub fn install(&self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    pub fn uninstall(&self) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 pub fn setup(_root: &Path, _log_file: &Path) -> Result<System, Error> {

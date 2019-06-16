@@ -3,7 +3,7 @@
 #![windows_subsystem = "windows"]
 
 use backoff::backoff::Backoff as _;
-use failure::{format_err, Error, ResultExt};
+use failure::{bail, format_err, Error, ResultExt};
 use parking_lot::RwLock;
 use setmod::{
     api, auth, bus, config, db, injector, irc, module, oauth2, obs, player, prelude::*, secrets,
@@ -55,6 +55,11 @@ fn opts() -> clap::App<'static, 'static> {
                 .value_name("file")
                 .help("File to use for reading log configuration.")
                 .takes_value(true),
+        )
+        .arg(
+            clap::Arg::with_name("silent")
+                .long("silent")
+                .help("Start without sending a notification."),
         )
 }
 
@@ -141,6 +146,7 @@ fn main() -> Result<(), Error> {
     }
 
     let system = sys::setup(&root, &default_log_file)?;
+
     let mut error_backoff = backoff::ExponentialBackoff::default();
     error_backoff.current_interval = time::Duration::from_secs(30);
     error_backoff.initial_interval = time::Duration::from_secs(30);
@@ -148,8 +154,10 @@ fn main() -> Result<(), Error> {
     let mut current_backoff;
     let mut errored = false;
 
-    let startup = sys::Notification::new(format!("Started SetMod {}", setmod::VERSION));
-    system.notification(startup);
+    if !m.is_present("silent") {
+        let startup = sys::Notification::new(format!("Started SetMod {}", setmod::VERSION));
+        system.notification(startup);
+    }
 
     loop {
         if errored {
@@ -317,6 +325,8 @@ async fn try_main(
     let global_channel = Arc::new(RwLock::new(None));
 
     let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
+
+    futures.push(system_loop(settings.scoped("system"), system.clone()).boxed());
 
     let cache = db::Cache::load(db.clone())?;
     futures.push(cache.clone().run().boxed());
@@ -550,4 +560,23 @@ async fn try_main(
             Ok(())
         }
     }
+}
+
+/// Run the loop that handles installing this as a service.
+async fn system_loop(settings: settings::Settings, system: sys::System) -> Result<(), Error> {
+    settings.set("run-on-startup", system.is_installed()?)?;
+
+    let (mut run_on_startup_stream, _) = settings.stream("run-on-startup").or_with(false)?;
+
+    let build = move |run_on_startup: bool| match (run_on_startup, system.is_installed()?) {
+        (true, true) | (false, false) => Ok(()),
+        (true, false) => system.install(),
+        (false, true) => system.uninstall(),
+    };
+
+    while let Some(update) = run_on_startup_stream.next().await {
+        build(update)?;
+    }
+
+    bail!("run-on-startup stream ended");
 }
