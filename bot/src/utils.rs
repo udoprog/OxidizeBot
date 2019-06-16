@@ -265,6 +265,11 @@ pub fn compact_duration(duration: &time::Duration) -> String {
 
     let p = partition(duration);
 
+    parts.extend(match p.days {
+        0 => None,
+        n => Some(format!("{}d", n)),
+    });
+
     parts.extend(match p.hours {
         0 => None,
         n => Some(format!("{}h", n)),

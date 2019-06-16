@@ -1,19 +1,35 @@
+use self::assets::Asset;
 use crate::{
     api, auth, bus, currency::Currency, db, player, prelude::*, settings, template,
     track_id::TrackId, utils,
 };
 use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
-use rust_embed::RustEmbed;
 use std::{borrow::Cow, fmt, net::SocketAddr, sync::Arc};
 use warp::{body, filters, http::Uri, path, Filter as _};
 
 pub const URL: &'static str = "http://localhost:12345";
 pub const REDIRECT_URI: &'static str = "/redirect";
 
-#[derive(RustEmbed)]
-#[folder = "bot/ui/dist"]
-struct Asset;
+#[cfg(feature = "assets")]
+mod assets {
+    #[derive(rust_embed::RustEmbed)]
+    #[folder = "bot/ui/dist"]
+    pub struct Asset;
+}
+
+#[cfg(not(feature = "assets"))]
+mod assets {
+    use std::borrow::Cow;
+
+    pub struct Asset;
+
+    impl Asset {
+        pub fn get(_: &str) -> Option<Cow<'static, [u8]>> {
+            None
+        }
+    }
+}
 
 #[derive(Debug)]
 enum Error {
@@ -1084,8 +1100,7 @@ pub fn setup(
     let routes = routes.or(ws_youtube.recover(recover));
     let routes = routes.or(ws_overlay.recover(recover));
 
-    let fallback = Asset::get("index.html")
-        .ok_or_else(move || failure::format_err!("missing index.html from assets"))?;
+    let fallback = Asset::get("index.html");
 
     let routes = routes.or(warp::get2()
         .and(warp::path::tail())
@@ -1110,7 +1125,7 @@ pub fn setup(
 
     fn serve(
         path: &str,
-        fallback: Cow<'static, [u8]>,
+        fallback: Option<Cow<'static, [u8]>>,
     ) -> Result<impl warp::Reply, warp::Rejection> {
         let (mime, asset) = match Asset::get(path) {
             Some(asset) => {
@@ -1118,8 +1133,8 @@ pub fn setup(
                 (mime, asset)
             }
             None => {
-                let mime = mime::TEXT_HTML_UTF_8;
-                (mime, fallback)
+                let fallback = fallback.ok_or_else(|| warp::reject::not_found())?;
+                (mime::TEXT_HTML_UTF_8, fallback)
             }
         };
 
