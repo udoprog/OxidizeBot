@@ -43,13 +43,6 @@ fn opts() -> clap::App<'static, 'static> {
                 .help("If we should enable tracing in logs."),
         )
         .arg(
-            clap::Arg::with_name("web-root")
-                .long("web-root")
-                .value_name("dir")
-                .help("Directory to use as web root.")
-                .takes_value(true),
-        )
-        .arg(
             clap::Arg::with_name("log-config")
                 .long("log-config")
                 .value_name("file")
@@ -134,7 +127,6 @@ fn main() -> Result<(), Error> {
         .unwrap_or_else(|| root.join("config.toml"))
         .to_owned();
 
-    let web_root = m.value_of("web-root").map(PathBuf::from);
     let log_config = m.value_of("log-config").map(PathBuf::from);
     let default_log_file = root.join("setmod.log");
 
@@ -168,14 +160,9 @@ fn main() -> Result<(), Error> {
         let mut runtime = tokio::runtime::Runtime::new()?;
 
         let result = runtime.block_on(
-            try_main(
-                system.clone(),
-                root.clone(),
-                web_root.clone(),
-                config.clone(),
-            )
-            .boxed()
-            .compat(),
+            try_main(system.clone(), root.clone(), config.clone())
+                .boxed()
+                .compat(),
         );
 
         match result {
@@ -227,12 +214,7 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn try_main(
-    system: sys::System,
-    root: PathBuf,
-    web_root: Option<PathBuf>,
-    config: PathBuf,
-) -> Result<(), Error> {
+async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result<(), Error> {
     log::info!("Starting SetMod Version {}", setmod::VERSION);
 
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
@@ -338,7 +320,6 @@ async fn try_main(
     let currency = injector.var(&mut futures);
 
     let (web, future) = web::setup(
-        web_root.as_ref().map(|p| p.as_path()),
         global_bus.clone(),
         youtube_bus.clone(),
         after_streams.clone(),

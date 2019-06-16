@@ -18,6 +18,8 @@ import Aliases from "./components/Aliases";
 import Themes from "./components/Themes";
 import YouTube from "./components/YouTube";
 import Authorization from "./components/Authorization";
+import * as semver from "semver";
+import logo from "./logo.png";
 
 const RouteLayout = withRouter(props => <Layout {...props} />)
 
@@ -216,50 +218,39 @@ class IndexPage extends React.Component {
 
   render() {
     let version = <utils.Spinner />;
-    let newVersion = null;
+    let latest = null;
 
     if (this.state.version) {
       version = this.state.version.version;
-      let latest = this.state.version.latest;
+      latest = this.state.version.latest;
+    }
 
-      if (latest && latest.version != version) {
-        let dl = null;
+    let versionInfo = (
+      <Alert variant="info" style={{textAlign: "center"}}>
+        You're running the latest version of <b>SetMod</b> (<b>{version}</b>).
+      </Alert>
+    );
 
-        if (latest.asset) {
-          dl = (
-            <div>
-              Download it from:&nbsp;
-              <b><a href={latest.asset.download_url}>{latest.asset.name}</a></b>
-            </div>
-          );
-        } else {
-          let releases_url = `https://github.com/udoprog/setmod/releases/${latest.version}`;
+    if (latest && semver.gt(latest.version, version) && latest.asset) {
+      versionInfo = (
+        <Alert variant="warning" style={{textAlign: "center"}}>
+          <div className="mb-2" style={{fontSize: "150%"}}>
+            SetMod <b>{latest.version}</b> is available (current: <b>{version}</b>).
+          </div>
 
-          dl = (
-            <div>
-              Download is not ready <em>just yet</em>, but you can find it later at:&nbsp;
-              <b><a href={releases_url}>GitHub Releases</a></b>
-            </div>
-          )
-        }
-
-        newVersion = (
-          <Alert variant="info">
-            <b>Version {latest.version} of SetMod is available!</b>
-            {dl}
-          </Alert>
-        );
-      }
+          <div>
+            Download link:&nbsp;
+            <a href={latest.asset.download_url}>{latest.asset.name}</a>
+          </div>
+        </Alert>
+      );
     }
 
     return (
       <RouteLayout>
         <Row>
           <Col>
-            <p>
-              Congratulations on getting <b>SetMod {version}</b> running!
-            </p>
-            {newVersion}
+            {versionInfo}
           </Col>
         </Row>
 
@@ -296,7 +287,9 @@ function Layout(props) {
   return (
     <div>
       <Navbar bg="light" expand="sm">
-        <Navbar.Brand href="https://github.com/udoprog/setmod">setmod</Navbar.Brand>
+        <Navbar.Brand>
+          <img src={logo} alt="Logo" width="32" height="32"></img>
+        </Navbar.Brand>
         <Navbar.Toggle aria-controls="basic-navbar-nav" />
 
         <Navbar.Collapse id="basic-navbar-nav">
