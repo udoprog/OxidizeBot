@@ -5,35 +5,34 @@
 
 This is a high performance Twitch Bot written in Rust.
 
+## Features
+
+**Commands** &mdash; Aliases, custom commands, promotions, plus a bunch more [built-in commands](#built-in-commands).
+
+If there's something you're missing, feel free to [open an issue].
+
+**Rust** &mdash; Written in [Rust], promoting high performance, low utilization, and reliability.
+
+<img title="Rust" width="67" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/cuddlyferris.png" />
+
+**Configurable** &mdash; Everything is tweakable to suit your needs through a [hundred settings].
+Changes to settings applies immediately - no need to restart.
+
+<img title="Settings" width="140" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/setting.png" />
+
+**Integrated with Windows** &mdash; Runs in the background with a System Tray.
+Notifies you on issues.
+Starts automatically with Windows if you want it to.
+
+<img title="Windows Systray" width="131" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/windows-systray.png" />
+
+[open an issue]: https://github.com/udoprog/setmod/issues
+[Rust]: https://rust-lang.org
+[hundred settings]: /bot/src/settings.yaml
+
 ## Installing and Running
 
 You can download an installer or an archive from [releases](https://github.com/udoprog/setmod/releases) or [build the project yourself](#building).
-
-If you installed using an installer, SetMod will be in your start folder.
-Once started, it shows up as a systray icon.
-
-If you use an archive, you can unpack it in any directory.
-
-It is suggested that you run the bot through `setmod.ps1` since that will run the bot in a loop in case it crashes or is shut down through Twitch.
-On Windows, this can be done by right clicking and selecting `Run with PowerShell`.
-
-## Migrating from 0.2 to 0.3
-
-SetMod 0.3 completely removes the need for any configuration files.
-Everything is now managed through the `Settings` page in the UI.
-
-We've also moved where we expect the database to be, so if you have an old `0.2` database and a `config.toml` file you'll have to move it like this:
-
-1. Install SetMod `0.3.x`
-2. Start SetMod through the Start Menu.
-3. When SetMod is running it has a systray icon.
-   Click on it and select `Open Directory...`.
-4. Quit SetMod.
-5. Copy the following files into the directory that you just opened:
-   * Your old `config.toml`
-   * Your old `*.sql` database, which must be renamed to `setmod.sql`.
-6. Start SetMod again. This time it will migrate any existing configuration.
-7. Remove `config.toml`.
 
 ## Building
 
@@ -405,3 +404,21 @@ Available settings are:
   * `{{offset}}` - The timezone offset in UTC-format, like: `+0230`.
   * `{{day}}`, `{{month}}`, `{{year}}` - Day, month, and year.
   * `{{rfc2822}}` - An RFC-2822 formatted date time, like: `Thu, 01 Sep 2016 10:11:12 -0500`.
+
+## Migrating from 0.2 to 0.3
+
+SetMod 0.3 completely removes the need for any configuration files.
+Everything is now managed through the `Settings` page in the UI.
+
+We've also moved where we expect the database to be, so if you have an old `0.2` database and a `config.toml` file you'll have to move it like this:
+
+1. Install SetMod `0.3.x`
+2. Start SetMod through the Start Menu.
+3. When SetMod is running it has a systray icon.
+   Click on it and select `Open Directory...`.
+4. Quit SetMod.
+5. Copy the following files into the directory that you just opened:
+   * Your old `config.toml`
+   * Your old `*.sql` database, which must be renamed to `setmod.sql`.
+6. Start SetMod again. This time it will migrate any existing configuration.
+7. Remove `config.toml`.
