@@ -54,6 +54,8 @@ pin-utils = "0.1.0-alpha.4"
 smallvec = "0.6.9"
 dirs = "2.0.1"
 backoff = "0.1.5"
+rust-embed="4.3.0"
+mime_guess = "2.0.0-alpha.6"
 
 [dependencies.futures01]
 package = "futures"

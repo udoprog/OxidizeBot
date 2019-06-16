@@ -1,9 +1,12 @@
 const HtmlWebPackPlugin = require("html-webpack-plugin");
+const FaviconsWebpackPlugin = require('favicons-webpack-plugin')
 
 const htmlPlugin = new HtmlWebPackPlugin({
   template: "./src/index.html",
   filename: "./index.html"
 });
+
+const faviconPlugin = new FaviconsWebpackPlugin("../res/icon.png");
 
 module.exports = {
   module: {
@@ -22,10 +25,19 @@ module.exports = {
             "css-loader", // translates CSS into CommonJS
             "sass-loader" // compiles Sass to CSS, using Node Sass by default
         ]
-      }
+      },
+      {
+        test: /\.(png|jpe?g|gif)$/,
+        use: [
+          {
+            loader: 'file-loader',
+            options: {},
+          },
+        ],
+      },
     ]
   },
-  plugins: [htmlPlugin],
+  plugins: [htmlPlugin, faviconPlugin],
   devServer: {
     historyApiFallback: true,
     proxy: {

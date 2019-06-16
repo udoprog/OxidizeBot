@@ -4,14 +4,16 @@ use crate::{
 };
 use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
-use std::{fmt, net::SocketAddr, path::Path, sync::Arc};
+use rust_embed::RustEmbed;
+use std::{fmt, net::SocketAddr, sync::Arc};
 use warp::{body, filters, http::Uri, path, Filter as _};
 
 pub const URL: &'static str = "http://localhost:12345";
 pub const REDIRECT_URI: &'static str = "/redirect";
 
-const INDEX_HTML: &'static [u8] = include_bytes!("../ui/dist/index.html");
-const MAIN_JS: &'static [u8] = include_bytes!("../ui/dist/main.js");
+#[derive(RustEmbed)]
+#[folder = "bot/ui/dist"]
+struct Asset;
 
 #[derive(Debug)]
 enum Error {
@@ -920,7 +922,6 @@ impl Api {
 
 /// Set up the web endpoint.
 pub fn setup(
-    web_root: Option<&Path>,
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     after_streams: db::AfterStreams,
@@ -1083,44 +1084,44 @@ pub fn setup(
     let routes = routes.or(ws_youtube.recover(recover));
     let routes = routes.or(ws_overlay.recover(recover));
 
-    let server_future = if let Some(web_root) = web_root {
-        let app = warp::get2()
-            .and(warp::path("main.js"))
-            .and(filters::fs::file(web_root.join("main.js")));
-        let app = app.or(warp::get2().and(filters::fs::file(web_root.join("index.html"))));
-        let routes = routes.or(app.recover(recover));
+    let routes = routes.or(warp::get2()
+        .and(warp::path::end())
+        .and_then(|| serve("index.html")));
 
-        let service = warp::serve(routes);
+    let routes = routes.or(warp::get2()
+        .and(warp::path::tail())
+        .and_then(|tail: path::Tail| serve(tail.as_str())));
 
-        let server_future = service.bind(addr)?.map_err(|_| {
-            // TODO: do we know _why_?
-            failure::format_err!("web service errored")
-        });
+    let routes = routes.recover(recover);
+    let service = warp::serve(routes);
 
-        server_future.compat().boxed()
-    } else {
-        let app = warp::get2().and(warp::path("main.js")).map(|| {
-            use warp::http::Response;
-            Response::builder().body(MAIN_JS)
-        });
-        let app = app.or(warp::get2().map(|| warp::reply::html(INDEX_HTML)));
-        let routes = routes.or(app.recover(recover));
-        let service = warp::serve(routes);
+    let server_future = service.bind(addr)?.map_err(|_| {
+        // TODO: do we know _why_?
+        failure::format_err!("web service errored")
+    });
 
-        let server_future = service.bind(addr)?.map_err(|_| {
-            // TODO: do we know _why_?
-            failure::format_err!("web service errored")
-        });
-
-        server_future.compat().boxed()
-    };
+    let server_future = server_future.compat().boxed();
 
     let server = Server {
         player: player.clone(),
         token_callbacks: token_callbacks.clone(),
     };
 
-    Ok((server, server_future))
+    return Ok((server, server_future));
+
+    fn serve(path: &str) -> Result<impl warp::Reply, warp::Rejection> {
+        use std::borrow::Cow;
+
+        let mime = mime_guess::guess_mime_type(path);
+
+        let asset: Option<Cow<'static, [u8]>> = Asset::get(path);
+
+        let file = asset.ok_or_else(|| warp::reject::not_found())?;
+
+        Ok(warp::http::Response::builder()
+            .header("content-type", mime.to_string())
+            .body(file))
+    }
 }
 
 struct Fragment {
