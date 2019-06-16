@@ -1,5 +1,6 @@
 #![allow(unused)]
 
+use super::convert::{FromWide as _, ToWide as _};
 use crate::sys::Notification;
 use futures::{
     channel::{mpsc, oneshot},
@@ -38,17 +39,9 @@ use winapi::{
 
 thread_local!(static WININFO_STASH: RefCell<Option<WindowsLoopData>> = RefCell::new(None));
 
-/// Convert the given string into a wide string.
-pub fn to_wstring<S: AsRef<OsStr>>(s: S) -> Vec<u16> {
-    s.as_ref()
-        .encode_wide()
-        .chain(Some(0).into_iter())
-        .collect::<Vec<_>>()
-}
-
 /// Copy a wide string from a source to a destination.
 pub fn copy_wstring(dest: &mut [u16], source: &str) {
-    let source = to_wstring(source);
+    let source = source.to_wide_null();
     let len = usize::min(source.len(), dest.len());
     dest[..len].copy_from_slice(&source[..len]);
 }
@@ -146,7 +139,7 @@ fn new_menuitem() -> MENUITEMINFOW {
 }
 
 unsafe fn init_window(name: &str) -> Result<WindowInfo, io::Error> {
-    let class_name = to_wstring(name);
+    let class_name = name.to_wide_null();
 
     let hinstance: HINSTANCE = libloaderapi::GetModuleHandleA(std::ptr::null_mut());
 
@@ -167,10 +160,12 @@ unsafe fn init_window(name: &str) -> Result<WindowInfo, io::Error> {
         return Err(io::Error::last_os_error());
     }
 
+    let name = name.to_wide_null();
+
     let hwnd = winuser::CreateWindowExW(
         0,
         class_name.as_ptr(),
-        to_wstring(name).as_ptr(),
+        name.as_ptr(),
         WS_OVERLAPPEDWINDOW,
         winuser::CW_USEDEFAULT,
         0,
@@ -332,7 +327,7 @@ impl Window {
     }
 
     pub fn add_menu_entry(&self, item_idx: u32, item_name: &str) -> Result<(), io::Error> {
-        let mut st = to_wstring(item_name);
+        let mut st = item_name.to_wide_null();
         let mut item = new_menuitem();
         item.fMask = MIIM_FTYPE | MIIM_STRING | MIIM_ID | MIIM_STATE;
         item.fType = MFT_STRING;
@@ -398,29 +393,29 @@ impl Window {
 
     /// Set an icon from a resource.
     pub fn set_icon_from_resource(&self, resource_name: &str) -> Result<(), io::Error> {
+        let resource_name = resource_name.to_wide_null();
+
         let icon = unsafe {
-            let result = winuser::LoadImageW(
+            winuser::LoadImageW(
                 self.info.hinstance,
-                to_wstring(&resource_name).as_ptr(),
+                resource_name.as_ptr(),
                 IMAGE_ICON,
                 64,
                 64,
                 0,
-            ) as HICON;
-
-            if result == std::ptr::null_mut() {
-                return Err(io::Error::last_os_error());
-            }
-
-            result
+            )
         };
 
-        self.set_icon(icon)
+        if icon == std::ptr::null_mut() {
+            return Err(io::Error::last_os_error());
+        }
+
+        self.set_icon(icon as HICON)
     }
 
     /// Set the process icon from a file.
     pub fn set_icon_from_file(&self, icon_file: &str) -> Result<(), io::Error> {
-        let wstr_icon_file = to_wstring(&icon_file);
+        let wstr_icon_file = icon_file.to_wide_null();
 
         let hicon = unsafe {
             let result = winuser::LoadImageW(

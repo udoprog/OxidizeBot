@@ -1,5 +1,5 @@
 use crate::{prelude::*, sys::Notification, web};
-use failure::{bail, Error};
+use failure::{bail, format_err, Error};
 use parking_lot::Mutex;
 use std::{
     io,
@@ -13,6 +13,10 @@ use std::{
 };
 use winapi::um::{shellapi, winuser::SW_SHOW};
 
+#[path = "windows/convert.rs"]
+mod convert;
+#[path = "windows/registry.rs"]
+mod registry;
 #[path = "windows/window.rs"]
 mod window;
 
@@ -91,12 +95,57 @@ impl System {
 
         Ok(())
     }
+
+    /// Entry for automatic startup.
+    fn run_registry_entry() -> Result<String, Error> {
+        let exe = std::env::current_exe()?;
+
+        let exe = exe
+            .to_str()
+            .ok_or_else(|| format_err!("bad executable string"))?;
+
+        Ok(format!("\"{}\" --silent", exe))
+    }
+
+    /// If the program is installed to run at startup.
+    pub fn is_installed(&self) -> Result<bool, Error> {
+        let key = self::registry::RegistryKey::current_user(
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        )?;
+
+        let path = match key.get("SetMod")? {
+            Some(path) => path,
+            None => return Ok(false),
+        };
+
+        Ok(Self::run_registry_entry()?.as_str() == path)
+    }
+
+    pub fn install(&self) -> Result<(), Error> {
+        let key = self::registry::RegistryKey::current_user(
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        )?;
+
+        key.set("SetMod", &Self::run_registry_entry()?)?;
+        Ok(())
+    }
+
+    pub fn uninstall(&self) -> Result<(), Error> {
+        let key = self::registry::RegistryKey::current_user(
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        )?;
+
+        key.delete("SetMod")?;
+        Ok(())
+    }
 }
 
 /// Open the given directory.
 fn open_dir(path: &Path) -> io::Result<bool> {
-    let path = self::window::to_wstring(path);
-    let operation = self::window::to_wstring("open");
+    use self::convert::ToWide as _;
+
+    let path = path.to_wide_null();
+    let operation = "open".to_wide_null();
 
     let result = unsafe {
         shellapi::ShellExecuteW(

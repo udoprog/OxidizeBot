@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `time/timezone` for setting your current time zone.
 - `!time` command for showing the current time of the streamer (in the specified time zone) [#45].
+- `system/run-on-startup` setting that can configure SetMod to run on system startup.
 
 [#45]: https://github.com/udoprog/setmod/issues/45
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.3.5...master

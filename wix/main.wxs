@@ -56,10 +56,24 @@
 
         <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
         <Property Id='DiskPrompt' Value='SetMod Installation'/>
+        <Property Id="START_VIA_REGISTRY">1</Property>
 
         <Directory Id='TARGETDIR' Name='SourceDir'>
             <Directory Id="ProgramMenuFolder">
-                <Directory Id="ApplicationProgramsFolder" Name="SetMod"/>
+                <Directory Id="ApplicationProgramsFolder" Name="SetMod">
+                    <Component
+                        Id='ApplicationShortcut'
+                        Guid='{E26B4B0D-C9F9-46AB-A234-CF674CD1D4C3}'
+                        Win64='$(var.Win64)'>
+                        <Shortcut Id='ApplicationStartMenuShortcut'
+                                    Name='SetMod'
+                                    Description='SetMod Twitch Bot'
+                                    Target='[#setmod.exe]'
+                                    WorkingDirectory='APPLICATIONFOLDER'/>
+                        <RemoveFolder Id='CleanUpShortCut' Directory='ApplicationProgramsFolder' On='uninstall'/>
+                        <RegistryValue Root='HKCU' Key='Software\SetMod\SetMod' Name='installed' Type='integer' Value='1' KeyPath='yes'/>
+                    </Component>
+                </Directory>
             </Directory>
 
             <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
@@ -108,26 +122,28 @@
                             Source='build\dll\zlib1.dll'
                             KeyPath='yes'/>
                     </Component>
+
+                    <Component
+                        Id="RegistryAutostart"
+                        Guid="{7b3b025e-f7d6-4d3d-ae39-2edfad1691af}"
+                        Win64='$(var.Win64)'>
+                        <RegistryValue
+                            Root="HKCU"
+                            Action="write"
+                            Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                            Name="SetMod"
+                            Value='"[APPLICATIONFOLDER]setmod.exe" --silent'
+                            Type="string" />
+                        <Condition>START_VIA_REGISTRY</Condition>
+                    </Component>
                 </Directory>
             </Directory>
         </Directory>
 
-        <DirectoryRef Id='ApplicationProgramsFolder'>
-            <Component Id='ApplicationShortcut' Guid='{E26B4B0D-C9F9-46AB-A234-CF674CD1D4C3}'>
-                <Shortcut Id='ApplicationStartMenuShortcut'
-                            Name='SetMod'
-                            Description='SetMod Twitch Bot'
-                            Target='[#setmod.exe]'
-                            WorkingDirectory='APPLICATIONFOLDER'/>
-                <RemoveFolder Id='CleanUpShortCut' Directory='ApplicationProgramsFolder' On='uninstall'/>
-                <RegistryValue Root='HKCU' Key='Software\SetMod\SetMod' Name='installed' Type='integer' Value='1' KeyPath='yes'/>
-            </Component>
-        </DirectoryRef>
-
         <Feature
             Id='MainProgram'
-            Title='SetMod executable'
-            Description='Installs the SetMod executable.'
+            Title='SetMod'
+            Description='Installs SetMod.'
             Level='1'
             ConfigurableDirectory='APPLICATIONFOLDER'
             AllowAdvertise='no'
@@ -140,6 +156,18 @@
             <ComponentRef Id='libmysql.dll'/>
             <ComponentRef Id='zlib1.dll'/>
             <ComponentRef Id='ApplicationShortcut'/>
+        </Feature>
+
+        <Feature
+            Id='Autostart'
+            Title='Start with Windows'
+            Description='Starts SetMod with Windows.'
+            Level='1'
+            AllowAdvertise='no'
+            Display='expand'
+            Absent='allow'>
+
+            <ComponentRef Id='RegistryAutostart' />
         </Feature>
 
         <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
@@ -220,6 +248,7 @@
         <WixVariable Id='WixUIDialogBmp' Value='bot\res\dialog.bmp'/>
 
         <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch SetMod" />
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
         <Property Id="WixShellExecTarget" Value="[#setmod.exe]" />
         <CustomAction Id="LaunchApplication" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" />
     </Product>

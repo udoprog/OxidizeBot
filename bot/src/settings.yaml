@@ -5,6 +5,10 @@ migrations:
     to: song/youtube/enabled
 
 types:
+  system/run-on-startup:
+    doc: >
+      If SetMod should run on startup.
+    type: {id: bool}
   remote/api-url:
     doc: Endpoint to use for sending API updates to. One is provided for free at `https://setbac.tv`.
     type: {id: string, optional: true}
