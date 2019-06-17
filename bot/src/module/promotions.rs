@@ -16,7 +16,7 @@ impl<'a> command::Handler for Handler<'a> {
 
         let next = command_base!(ctx, self.promotions, "promotion", PromoEdit);
 
-        match next {
+        match next.as_ref().map(String::as_str) {
             Some("edit") => {
                 ctx.check_scope(auth::Scope::PromoEdit)?;
 
@@ -25,7 +25,7 @@ impl<'a> command::Handler for Handler<'a> {
                 let template = ctx_try!(ctx.rest_parse("<name> <frequency> <template..>"));
 
                 self.promotions
-                    .edit(ctx.user.target, name, frequency, template)?;
+                    .edit(ctx.user.target, &name, frequency, template)?;
                 ctx.respond("Edited promo.");
             }
             None | Some(..) => {

@@ -8,14 +8,14 @@ impl<'a> command::Handler for Handler<'a> {
     fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
         let next = command_base!(ctx, self.themes, "theme", ThemeEdit);
 
-        match next {
+        match next.as_ref().map(String::as_str) {
             Some("edit") => {
                 ctx.check_scope(auth::Scope::ThemeEdit)?;
 
                 let name = ctx_try!(ctx.next_str("<name> <track-id>"));
                 let track_id = ctx_try!(ctx.next_parse("<name> <track-id>"));
 
-                self.themes.edit(ctx.user.target, name, track_id)?;
+                self.themes.edit(ctx.user.target, &name, track_id)?;
                 ctx.respond("Edited theme.");
             }
             Some("edit-duration") => {
@@ -26,7 +26,7 @@ impl<'a> command::Handler for Handler<'a> {
                 let end = ctx_try!(ctx.next_parse_optional());
 
                 self.themes
-                    .edit_duration(ctx.user.target, name, start, end)?;
+                    .edit_duration(ctx.user.target, &name, start, end)?;
                 ctx.respond("Edited theme.");
             }
             None | Some(..) => {

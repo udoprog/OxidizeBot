@@ -22,7 +22,7 @@ macro_rules! vehicle {
     ($ctx:expr, $pfx:expr) => {
         match $ctx
             .next()
-            .map(str::to_lowercase)
+            .map(|s| s.to_lowercase())
             .and_then(Vehicle::from_id)
         {
             Some(vehicle) => vehicle,
@@ -653,7 +653,7 @@ impl Handler {
         &mut self,
         ctx: &mut command::Context<'_, '_>,
     ) -> Result<Option<(Command, u32)>, Error> {
-        let command = match ctx.next() {
+        let command = match ctx.next().as_ref().map(String::as_str) {
             Some("randomize-color") => Command::RandomizeColor,
             Some("randomize-weather") => Command::RandomizeWeather,
             Some("randomize-character") => Command::RandomizeCharacter,
@@ -688,7 +688,7 @@ impl Handler {
         &mut self,
         ctx: &mut command::Context<'_, '_>,
     ) -> Result<Option<(Command, u32)>, Error> {
-        let command = match ctx.next() {
+        let command = match ctx.next().as_ref().map(String::as_str) {
             Some("stumble") => Command::Stumble,
             Some("fall") => Command::Fall,
             Some("tires") => Command::BlowTires,
@@ -696,7 +696,7 @@ impl Handler {
             Some("weapon") => Command::TakeWeapon,
             Some("all-weapons") => Command::TakeAllWeapons,
             Some("health") => Command::TakeHealth,
-            Some("wanted") => match ctx.next().map(str::parse) {
+            Some("wanted") => match ctx.next().map(|s| str::parse(&s)) {
                 Some(Ok(n)) if n >= 1 && n <= 5 => Command::Wanted(n),
                 _ => {
                     ctx.respond("Expected number between 1 and 5");
@@ -705,7 +705,7 @@ impl Handler {
             },
             Some("brake") => Command::Brake,
             Some("ammo") => Command::TakeAmmo,
-            Some("enemy") => match ctx.next().map(str::parse) {
+            Some("enemy") => match ctx.next().map(|s| str::parse(&s)) {
                 None => Command::SpawnEnemy(1),
                 Some(Ok(n)) if n > 0 && n <= 5 => Command::SpawnEnemy(n),
                 Some(Ok(0)) => {
@@ -728,7 +728,7 @@ impl Handler {
             Some("make-peds-aggressive") => Command::MakePedsAggressive,
             Some("close-parachute") => Command::CloseParachute,
             Some("disable-control") => {
-                let control = match ctx.next().and_then(Control::from_id) {
+                let control = match ctx.next().and_then(|s| Control::from_id(&s)) {
                     Some(weapon) => weapon,
                     None => {
                         let controls = Control::all()
@@ -766,7 +766,7 @@ impl Handler {
         &mut self,
         ctx: &mut command::Context<'_, '_>,
     ) -> Result<Option<(Command, u32)>, Error> {
-        let command = match ctx.next() {
+        let command = match ctx.next().as_ref().map(String::as_str) {
             Some("car") => Command::SpawnRandomVehicle(Vehicle::random_car()),
             Some("vehicle") => {
                 let vehicle = vehicle!(ctx, "!gtav reward vehicle");
@@ -807,7 +807,7 @@ impl Handler {
             Some("exploding-punches") => Command::ExplodingPunches(30f32),
             Some("matrix-slam") => Command::MatrixSlam,
             Some("mod-vehicle") => {
-                let m = match ctx.next().and_then(VehicleMod::from_id) {
+                let m = match ctx.next().and_then(|s| VehicleMod::from_id(&s)) {
                     Some(weapon) => weapon,
                     None => {
                         let mods = VehicleMod::all()
@@ -862,7 +862,7 @@ impl command::Handler for Handler {
             }
         };
 
-        let (result, category_cooldown) = match ctx.next() {
+        let (result, category_cooldown) = match ctx.next().as_ref().map(String::as_str) {
             Some("other") => {
                 let command = self.handle_other(ctx)?;
                 (command, None)

@@ -39,7 +39,7 @@ impl command::Handler for Handler<'_> {
             }
         };
 
-        match ctx.next() {
+        match ctx.next().as_ref().map(String::as_str) {
             None => {
                 let user = ctx.user.as_owned_user();
 
@@ -95,7 +95,7 @@ impl command::Handler for Handler<'_> {
                 });
             }
             Some("give") => {
-                let taker = db::user_id(ctx_try!(ctx.next_str("<user> <amount>")));
+                let taker = db::user_id(&ctx_try!(ctx.next_str("<user> <amount>")));
                 let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>"));
 
                 if ctx.user.is(&taker) {
@@ -155,7 +155,7 @@ impl command::Handler for Handler<'_> {
             Some("boost") => {
                 ctx.check_scope(Scope::CurrencyBoost)?;
 
-                let boosted_user = db::user_id(ctx_try!(ctx.next_str("<user> <amount>")));
+                let boosted_user = db::user_id(&ctx_try!(ctx.next_str("<user> <amount>")));
                 let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>"));
 
                 if !ctx.user.is(ctx.user.streamer) && ctx.user.is(&boosted_user) {

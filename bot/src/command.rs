@@ -96,7 +96,7 @@ impl<'a, 'm> Context<'a, 'm> {
     }
 
     /// Get the next argument.
-    pub fn next(&mut self) -> Option<&'m str> {
+    pub fn next(&mut self) -> Option<String> {
         self.it.next()
     }
 
@@ -112,7 +112,7 @@ impl<'a, 'm> Context<'a, 'm> {
         T::Err: fmt::Display,
     {
         match self.next() {
-            Some(s) => match str::parse(s) {
+            Some(s) => match str::parse(&s) {
                 Ok(v) => Some(Some(v)),
                 Err(e) => {
                     self.respond(format!("Bad argument: {}: {}", s, e));
@@ -162,7 +162,7 @@ impl<'a, 'm> Context<'a, 'm> {
     }
 
     /// Take the next parameter.
-    pub fn next_str<M>(&mut self, m: M) -> Option<&'m str>
+    pub fn next_str<M>(&mut self, m: M) -> Option<String>
     where
         M: fmt::Display,
     {

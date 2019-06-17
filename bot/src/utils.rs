@@ -113,75 +113,107 @@ impl<'a> Iterator for QueryPairs<'a> {
 #[derive(Clone, Debug)]
 pub struct Words<'a> {
     string: &'a str,
+    it: std::str::CharIndices<'a>,
+    /// one character lookahead.
+    b0: Option<(usize, char)>,
+    buffer: String,
 }
 
 impl<'a> Words<'a> {
     /// Split the commandline.
     pub fn new(string: &str) -> Words<'_> {
-        Words { string }
+        let mut it = string.char_indices();
+        let b0 = it.next();
+        Words {
+            string,
+            it,
+            b0,
+            buffer: String::new(),
+        }
+    }
+
+    /// Take the next character.
+    pub fn take(&mut self) -> Option<(usize, char)> {
+        std::mem::replace(&mut self.b0, self.it.next())
+    }
+
+    /// Look at the next character.
+    pub fn peek(&self) -> Option<(usize, char)> {
+        self.b0.clone()
     }
 
     /// The rest of the input.
     pub fn rest(&self) -> &'a str {
-        self.string
+        let s = self.peek().map(|(i, _)| i).unwrap_or(self.string.len());
+        &self.string[s..]
+    }
+
+    /// Process an escape.
+    fn escape(&mut self) {
+        let c = match self.take() {
+            Some((_, c)) => c,
+            None => return,
+        };
+
+        match c {
+            't' => self.buffer.push('\t'),
+            'r' => self.buffer.push('\r'),
+            'n' => self.buffer.push('\n'),
+            o => self.buffer.push(o),
+        }
     }
 }
 
 impl<'a> Iterator for Words<'a> {
-    type Item = &'a str;
+    type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.string.is_empty() {
             return None;
         }
 
-        let mut it = self.string.char_indices();
-        let len = self.string.len();
-
-        while let Some((s, c)) = it.next() {
+        while let Some((_, c)) = self.take() {
             match c {
-                ' ' | '\t' | '\r' | '\n' => continue,
-                // parse string
-                '"' => {
-                    let s = it.next().map(|(i, _)| i).unwrap_or(len);
-                    let mut e = len;
-
-                    while let Some((i, c)) = it.next() {
-                        match c {
-                            '"' => {
-                                e = usize::min(i, len);
-                                break;
-                            }
-                            _ => (),
-                        }
-                    }
-
-                    let out = &self.string[s..e];
-                    let e = it.next().map(|(i, _)| i).unwrap_or(len);
-                    self.string = &self.string[e..];
-                    return Some(out);
-                }
-                _ => {
-                    let mut e = len;
-
-                    while let Some((i, c)) = it.next() {
+                ' ' | '\t' | '\r' | '\n' => {
+                    // Consume all whitespace so that `rest` behaves better.
+                    while let Some((_, c)) = self.peek() {
                         match c {
                             ' ' | '\t' | '\r' | '\n' => {
-                                e = usize::min(i, len);
-                                break;
+                                self.take();
                             }
-                            _ => (),
+                            _ => break,
                         }
                     }
 
-                    let (head, tail) = self.string.split_at(e);
-                    self.string = tail;
-                    return Some(&head[s..]);
+                    if !self.buffer.is_empty() {
+                        let ret = self.buffer.clone();
+                        self.buffer.clear();
+                        return Some(ret);
+                    }
+
+                    continue;
                 }
+                '\\' => self.escape(),
+                // parse string
+                '"' => {
+                    while let Some((_, c)) = self.take() {
+                        match c {
+                            '\\' => self.escape(),
+                            '"' => break,
+                            o => self.buffer.push(o),
+                        }
+                    }
+                }
+                o => self.buffer.push(o),
             }
         }
 
-        self.string = "";
+        if !self.buffer.is_empty() {
+            let ret = self.buffer.clone();
+            self.buffer.clear();
+            return Some(ret);
+        }
+
         None
     }
 }
@@ -754,6 +786,17 @@ mod tests {
     pub fn test_split_quoted() {
         let out = Words::new("   foo bar   \"baz  biz\" ").collect::<Vec<_>>();
         assert_eq!(out, vec!["foo", "bar", "baz  biz"]);
+
+        let out = Words::new("   foo\"baz  biz\" ").collect::<Vec<_>>();
+        assert_eq!(out, vec!["foobaz  biz"]);
+
+        let out = Words::new("   foo\\\"baz  biz").collect::<Vec<_>>();
+        assert_eq!(out, vec!["foo\"baz", "biz"]);
+
+        // test that rest kinda works.
+        let mut it = Words::new("   foo\\\"baz  biz \"is good\"");
+        assert_eq!(it.next().as_ref().map(String::as_str), Some("foo\"baz"));
+        assert_eq!(it.rest(), "biz \"is good\"");
     }
 
     #[test]

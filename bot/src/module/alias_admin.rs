@@ -9,13 +9,13 @@ impl<'a> command::Handler for Handler<'a> {
     fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
         let next = command_base!(ctx, self.aliases, "alias", AliasEdit);
 
-        match next {
+        match next.as_ref().map(String::as_str) {
             Some("edit") => {
                 ctx.check_scope(auth::Scope::AliasEdit)?;
 
                 let name = ctx_try!(ctx.next_str("<name>"));
                 let template = ctx_try!(ctx.rest_parse("<name> <template>"));
-                self.aliases.edit(ctx.user.target, name, template)?;
+                self.aliases.edit(ctx.user.target, &name, template)?;
 
                 ctx.respond("Edited alias");
             }

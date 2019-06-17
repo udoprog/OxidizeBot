@@ -35,7 +35,7 @@ impl Speedrun {
 
         category_filter.ty = Some(CategoryType::PerGame);
 
-        while let Some(arg) = ctx.next() {
+        while let Some(arg) = ctx.next().as_ref().map(String::as_str) {
             match arg {
                 "--game" => match ctx.next() {
                     Some(g) => match_game = Some(g.to_lowercase()),
@@ -88,7 +88,7 @@ impl Speedrun {
                     return Ok(());
                 }
                 other if query_user.is_none() => {
-                    query_user = Some(other);
+                    query_user = Some(other.to_lowercase());
                 }
                 _ => {
                     ctx.respond("did not expect more arguments");
@@ -97,7 +97,7 @@ impl Speedrun {
             }
         }
 
-        let query_user = query_user.unwrap_or(ctx.user.name).to_lowercase();
+        let query_user = query_user.unwrap_or_else(|| ctx.user.name.to_lowercase());
 
         let speedrun = self.speedrun.clone();
         let user = ctx.user.as_owned_user();
@@ -274,7 +274,7 @@ impl Speedrun {
 
         category_filter.ty = Some(CategoryType::PerGame);
 
-        while let Some(arg) = ctx.next() {
+        while let Some(arg) = ctx.next().as_ref().map(String::as_str) {
             match arg {
                 "--user" => match ctx.next() {
                     Some(u) => match_user = Some(u.to_lowercase()),
@@ -532,7 +532,7 @@ impl command::Handler for Speedrun {
             return Ok(());
         }
 
-        match ctx.next() {
+        match ctx.next().as_ref().map(String::as_str) {
             Some("personal-bests") => {
                 self.query_personal_bests(ctx)?;
             }
