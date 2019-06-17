@@ -263,7 +263,7 @@ impl Speedrun {
     fn query_game(&self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
         let top = *self.top.read();
 
-        let game_query = match ctx.next_str("<game> [options]", "!speedrun game") {
+        let game_query = match ctx.next_str("<game> [options]") {
             Some(game_query) => String::from(game_query),
             None => return Ok(()),
         };
@@ -540,10 +540,7 @@ impl command::Handler for Speedrun {
                 self.query_game(ctx)?;
             }
             _ => {
-                ctx.respond(format!(
-                    "Expected: {c} record",
-                    c = ctx.alias.unwrap_or("!speedrun record")
-                ));
+                ctx.respond("Expected argument: record, personal-bests.");
             }
         }
 

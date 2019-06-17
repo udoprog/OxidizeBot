@@ -788,12 +788,10 @@ impl Handler<'_, '_, '_> {
                 let mut it = utils::Words::new(message);
 
                 // NB: needs to store locally to maintain a reference to it.
-                let mut alias = None;
                 let a = self.aliases.lookup(user.target, it.clone());
 
-                if let Some((m, a)) = a.as_ref() {
+                if let Some(a) = &a {
                     it = utils::Words::new(a.as_str());
-                    alias = Some((*m, a.as_str()));
                 }
 
                 if let Some(command) = it.next() {
@@ -824,7 +822,6 @@ impl Handler<'_, '_, '_> {
                             user: user.clone(),
                             it: &mut it,
                             shutdown: self.shutdown,
-                            alias: command::Alias { alias },
                             scope_cooldowns: &mut self.scope_cooldowns,
                         };
 

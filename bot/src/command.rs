@@ -17,30 +17,6 @@ pub trait Handler {
     fn handle(&mut self, ctx: &mut Context<'_, '_>) -> Result<(), Error>;
 }
 
-/// The alias that was expanded for this command.
-pub struct Alias<'a> {
-    pub alias: Option<(&'a str, &'a str)>,
-}
-
-impl Alias<'_> {
-    /// Unwrap the given alias, or decode it.
-    pub fn unwrap_or(&self, default: &str) -> String {
-        let (alias, expanded) = match self.alias {
-            Some((alias, expanded)) => (alias, expanded),
-            None => return default.to_string(),
-        };
-
-        let mut out = Vec::new();
-        out.push(alias.to_string());
-
-        let skip = utils::Words::new(expanded).count();
-
-        out.extend(utils::Words::new(default).skip(skip).map(|s| s.to_string()));
-
-        out.join(" ")
-    }
-}
-
 /// Context for a single command invocation.
 pub struct Context<'a, 'm> {
     pub api_url: Option<&'a str>,
@@ -51,7 +27,6 @@ pub struct Context<'a, 'm> {
     pub user: irc::User<'m>,
     pub it: &'a mut utils::Words<'m>,
     pub shutdown: &'a utils::Shutdown,
-    pub alias: Alias<'a>,
     pub scope_cooldowns: &'a mut HashMap<Scope, utils::Cooldown>,
 }
 
@@ -149,7 +124,7 @@ impl<'a, 'm> Context<'a, 'm> {
     }
 
     /// Take the next parameter and parse as the given type.
-    pub fn next_parse<T, M>(&mut self, m: M, p: &str) -> Option<T>
+    pub fn next_parse<T, M>(&mut self, m: M) -> Option<T>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
@@ -158,18 +133,14 @@ impl<'a, 'm> Context<'a, 'm> {
         match self.next_parse_optional()? {
             Some(value) => Some(value),
             None => {
-                self.respond(format!(
-                    "Expected: {p} {m}",
-                    p = self.alias.unwrap_or(p),
-                    m = m
-                ));
+                self.respond(format!("Expected {m}", m = m));
                 None
             }
         }
     }
 
     /// Take the rest and parse as the given type.
-    pub fn rest_parse<T, M>(&mut self, m: M, p: &str) -> Option<T>
+    pub fn rest_parse<T, M>(&mut self, m: M) -> Option<T>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
@@ -177,11 +148,7 @@ impl<'a, 'm> Context<'a, 'm> {
     {
         match self.rest().trim() {
             "" => {
-                self.respond(format!(
-                    "Expected: {p} {m}",
-                    p = self.alias.unwrap_or(p),
-                    m = m
-                ));
+                self.respond(format!("Expected {m}", m = m));
                 None
             }
             s => match str::parse(s) {
@@ -195,18 +162,14 @@ impl<'a, 'm> Context<'a, 'm> {
     }
 
     /// Take the next parameter.
-    pub fn next_str<M>(&mut self, m: M, p: &str) -> Option<&'m str>
+    pub fn next_str<M>(&mut self, m: M) -> Option<&'m str>
     where
         M: fmt::Display,
     {
         match self.next() {
             Some(s) => Some(s),
             None => {
-                self.respond(format!(
-                    "Expected: {p} {m}",
-                    p = self.alias.unwrap_or(p),
-                    m = m
-                ));
+                self.respond(format!("Expected {m}", m = m));
                 None
             }
         }

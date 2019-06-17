@@ -34,11 +34,10 @@ macro_rules! vehicle {
                     .join(", ");
 
                 $ctx.respond(format!(
-                    "You give the streamer a vehicle using for example {c} random. \
+                    "You give the streamer a vehicle using for example `random`. \
                      You can pick a vehicle by its name or a category. \
                      Available names are listed here: {url} - \
                      Available categories are: {vehicles}. ",
-                    c = $ctx.alias.unwrap_or($pfx),
                     url = VEHICLE_URL,
                     vehicles = vehicles,
                 ));
@@ -668,15 +667,14 @@ impl Handler {
                 Command::Raw(ctx.rest().to_string())
             }
             Some(..) | None => {
-                ctx.respond(format!(
+                ctx.respond(
                     "Available mods are: \
-                     {c} randomize-color, \
-                     {c} randomize-weather, \
-                     {c} randomize-character, \
-                     {c} license <license>. \
+                     randomize-color, \
+                     randomize-weather, \
+                     randomize-character, \
+                     license <license>. \
                      See !chaos% for more details.",
-                    c = ctx.alias.unwrap_or("!gtav other"),
-                ));
+                );
 
                 return Ok(None);
             }
@@ -701,10 +699,7 @@ impl Handler {
             Some("wanted") => match ctx.next().map(str::parse) {
                 Some(Ok(n)) if n >= 1 && n <= 5 => Command::Wanted(n),
                 _ => {
-                    ctx.respond(format!(
-                        "Expected number between 1 and 5, like \"{} wanted 3\"",
-                        ctx.alias.unwrap_or("!gtav punish wanted")
-                    ));
+                    ctx.respond("Expected number between 1 and 5");
                     return Ok(None);
                 }
             },
@@ -722,10 +717,7 @@ impl Handler {
                     return Ok(None);
                 }
                 Some(Err(_)) => {
-                    ctx.respond(format!(
-                        "Expected {c} <number>",
-                        c = ctx.alias.unwrap_or("!gtav punish enemy")
-                    ));
+                    ctx.respond("Expected <number>");
                     return Ok(None);
                 }
             },
@@ -746,9 +738,8 @@ impl Handler {
                             .join(", ");
 
                         ctx.respond(format!(
-                            "You disable controls using for example {c} steering. \
+                            "You disable controls like `steering`. \
                              Available controls to disable are: {controls}. ",
-                            c = ctx.alias.unwrap_or("!gtav punish disable-control"),
                             controls = controls,
                         ));
 
@@ -778,7 +769,7 @@ impl Handler {
         let command = match ctx.next() {
             Some("car") => Command::SpawnRandomVehicle(Vehicle::random_car()),
             Some("vehicle") => {
-                let vehicle = vehicle!(ctx, "!gtav reward");
+                let vehicle = vehicle!(ctx, "!gtav reward vehicle");
                 Command::SpawnVehicle(vehicle)
             }
             Some("repair") => Command::Repair,
@@ -788,10 +779,7 @@ impl Handler {
                 let weapon = match ctx.next().and_then(Weapon::from_id) {
                     Some(weapon) => weapon,
                     None => {
-                        ctx.respond(format!(
-                            "No such weapon, sorry :(. You give a weapon using e.g.: {c} random.",
-                            c = ctx.alias.unwrap_or("!gtav reward weapon"),
-                        ));
+                        ctx.respond(format!("No such weapon, sorry :(.",));
 
                         return Ok(None);
                     }
@@ -829,9 +817,8 @@ impl Handler {
                             .join(", ");
 
                         ctx.respond(format!(
-                            "You give the streamer vehicle mods using for example {c} random. \
+                            "You give the streamer vehicle mods using for example `random`. \
                              Available mods are: {mods}. ",
-                            c = ctx.alias.unwrap_or("!gtav reward"),
                             mods = mods,
                         ));
 
@@ -846,7 +833,7 @@ impl Handler {
             Some("slow-down-time") => Command::SlowDownTime,
             Some("fire-proof") => Command::MakeFireProof(30f32),
             Some("change-current-vehicle") => {
-                let vehicle = vehicle!(ctx, "!gtav reward");
+                let vehicle = vehicle!(ctx, "!gtav reward change-current-vehicle");
                 Command::ChangeCurrentVehicle(vehicle)
             }
             Some("skyfall") => Command::Skyfall,
@@ -893,10 +880,9 @@ impl command::Handler for Handler {
             _ => {
                 ctx.respond(format!(
                     "You have the following actions available: \
-                        {c} reward - To reward the streamer, \
-                        {c} punish - To punish the streamer,
-                        {c} other - To do other kinds of modifications.",
-                    c = ctx.alias.unwrap_or("!gtav")
+                        reward - To reward the streamer, \
+                        punish - To punish the streamer,
+                        other - To do other kinds of modifications.",
                 ));
 
                 return Ok(());

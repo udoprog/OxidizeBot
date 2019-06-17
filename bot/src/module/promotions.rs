@@ -14,17 +14,15 @@ impl<'a> command::Handler for Handler<'a> {
             return Ok(());
         }
 
-        let next = command_base!(ctx, self.promotions, "!promo", "promotion", PromoEdit);
+        let next = command_base!(ctx, self.promotions, "promotion", PromoEdit);
 
         match next {
             Some("edit") => {
                 ctx.check_scope(auth::Scope::PromoEdit)?;
 
-                let name = ctx_try!(ctx.next_str("<name> <frequency> <template..>", "!promo edit"));
-                let frequency =
-                    ctx_try!(ctx.next_parse("<name> <frequency> <template..>", "!promo edit"));
-                let template =
-                    ctx_try!(ctx.rest_parse("<name> <frequency> <template..>", "!promo edit"));
+                let name = ctx_try!(ctx.next_str("<name> <frequency> <template..>"));
+                let frequency = ctx_try!(ctx.next_parse("<name> <frequency> <template..>"));
+                let template = ctx_try!(ctx.rest_parse("<name> <frequency> <template..>"));
 
                 self.promotions
                     .edit(ctx.user.target, name, frequency, template)?;

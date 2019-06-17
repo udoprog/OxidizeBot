@@ -1,15 +1,12 @@
 /// Helper macro for constructing an enable command.
 macro_rules! command_enable {
-    ($ctx:expr, $db:expr, $pfx:expr, $what:expr, $edit_scope:ident) => {{
+    ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
         $ctx.check_scope(crate::auth::Scope::$edit_scope)?;
 
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
-                $ctx.respond(format!(
-                    "Expected: {p} <name>",
-                    p = $ctx.alias.unwrap_or($pfx)
-                ));
+                $ctx.respond("Expected <name> to enable");
                 return Ok(());
             }
         };
@@ -25,16 +22,13 @@ macro_rules! command_enable {
 
 /// Helper macro for constructing an disable command.
 macro_rules! command_disable {
-    ($ctx:expr, $db:expr, $pfx:expr, $what:expr, $edit_scope:ident) => {{
+    ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
         $ctx.check_scope(crate::auth::Scope::$edit_scope)?;
 
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
-                $ctx.respond(format!(
-                    "Expected: {p} <name>",
-                    p = $ctx.alias.unwrap_or($pfx)
-                ));
+                $ctx.respond("Expected <name> to disable");
                 return Ok(());
             }
         };
@@ -50,16 +44,13 @@ macro_rules! command_disable {
 
 /// Helper macro for constructing a clear-group command.
 macro_rules! command_clear_group {
-    ($ctx:expr, $db:expr, $pfx:expr, $what:expr, $edit_scope:ident) => {{
+    ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
         $ctx.check_scope(crate::auth::Scope::$edit_scope)?;
 
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
-                $ctx.respond(format!(
-                    "Expected: {p} <name>",
-                    p = $ctx.alias.unwrap_or($pfx)
-                ));
+                $ctx.respond("Expected <name> to remove from a group");
                 return Ok(());
             }
         };
@@ -75,16 +66,13 @@ macro_rules! command_clear_group {
 
 /// Helper macro for constructing a build command.
 macro_rules! command_group {
-    ($ctx:expr, $db:expr, $pfx:expr, $what:expr, $edit_scope:ident) => {{
+    ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
         $ctx.check_scope(crate::auth::Scope::$edit_scope)?;
 
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
-                $ctx.respond(format!(
-                    "Expected: {p} <name>",
-                    p = $ctx.alias.unwrap_or($pfx)
-                ));
+                $ctx.respond("Expected <name> to add to a group");
                 return Ok(());
             }
         };
@@ -129,7 +117,7 @@ macro_rules! command_group {
 }
 
 macro_rules! command_list {
-    ($ctx:expr, $db:expr, $pfx:expr, $what:expr) => {{
+    ($ctx:expr, $db:expr, $what:expr) => {{
         let mut names = $db
             .list($ctx.user.target)
             .into_iter()
@@ -146,16 +134,13 @@ macro_rules! command_list {
 }
 
 macro_rules! command_delete {
-    ($ctx:expr, $db:expr, $pfx:expr, $what:expr, $edit_scope:ident) => {{
+    ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
         $ctx.check_scope(crate::auth::Scope::$edit_scope)?;
 
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
-                $ctx.respond(format!(
-                    "Expected: {p} <name>",
-                    p = $ctx.alias.unwrap_or($pfx)
-                ));
+                $ctx.respond("Expected <name>");
                 return Ok(());
             }
         };
@@ -169,16 +154,13 @@ macro_rules! command_delete {
 }
 
 macro_rules! command_rename {
-    ($ctx:expr, $db:expr, $pfx:expr, $what:expr, $edit_scope:ident) => {{
+    ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
         $ctx.check_scope(crate::auth::Scope::$edit_scope)?;
 
         let (from, to) = match ($ctx.next(), $ctx.next()) {
             (Some(from), Some(to)) => (from, to),
             _ => {
-                $ctx.respond(format!(
-                    "Expected: {p} <from> <to>",
-                    p = $ctx.alias.unwrap_or($pfx)
-                ));
+                $ctx.respond("Expected <from> <to>");
                 return Ok(());
             }
         };
@@ -196,14 +178,11 @@ macro_rules! command_rename {
 }
 
 macro_rules! command_show {
-    ($ctx:expr, $db:expr, $pfx:expr, $what:expr) => {{
+    ($ctx:expr, $db:expr, $what:expr) => {{
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
-                $ctx.respond(format!(
-                    "Expected: {p} <name>",
-                    p = $ctx.alias.unwrap_or($pfx)
-                ));
+                $ctx.respond("Expected <name> to show");
                 return Ok(());
             }
         };
@@ -222,38 +201,38 @@ macro_rules! command_show {
 }
 
 macro_rules! command_base {
-    ($ctx:expr, $db:expr, $pfx:expr, $what:expr, $edit_scope:ident) => {
+    ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {
         match $ctx.next() {
             Some("clear-group") => {
-                command_clear_group!($ctx, $db, concat!($pfx, " clear-group"), $what, $edit_scope);
+                command_clear_group!($ctx, $db, $what, $edit_scope);
                 return Ok(());
             }
             Some("group") => {
-                command_group!($ctx, $db, concat!($pfx, " group"), $what, $edit_scope);
+                command_group!($ctx, $db, $what, $edit_scope);
                 return Ok(());
             }
             Some("enable") => {
-                command_enable!($ctx, $db, concat!($pfx, " enable"), $what, $edit_scope);
+                command_enable!($ctx, $db, $what, $edit_scope);
                 return Ok(());
             }
             Some("disable") => {
-                command_disable!($ctx, $db, concat!($pfx, " disabled"), $what, $edit_scope);
+                command_disable!($ctx, $db, $what, $edit_scope);
                 return Ok(());
             }
             Some("list") => {
-                command_list!($ctx, $db, concat!($pfx, " list"), $what);
+                command_list!($ctx, $db, $what);
                 return Ok(());
             }
             Some("delete") => {
-                command_delete!($ctx, $db, concat!($pfx, " delete"), $what, $edit_scope);
+                command_delete!($ctx, $db, $what, $edit_scope);
                 return Ok(());
             }
             Some("rename") => {
-                command_rename!($ctx, $db, concat!($pfx, " rename"), $what, $edit_scope);
+                command_rename!($ctx, $db, $what, $edit_scope);
                 return Ok(());
             }
             Some("show") => {
-                command_show!($ctx, $db, concat!($pfx, " show"), $what);
+                command_show!($ctx, $db, $what);
                 return Ok(());
             }
             other => other,

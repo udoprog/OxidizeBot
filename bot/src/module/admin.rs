@@ -91,7 +91,7 @@ impl<'a> command::Handler for Handler<'a> {
             }
             // Insert a value into a setting.
             Some("push") => {
-                let key = match key(ctx, "!admin insert") {
+                let key = match key(ctx) {
                     Some(key) => key,
                     None => return Ok(()),
                 };
@@ -112,7 +112,7 @@ impl<'a> command::Handler for Handler<'a> {
             }
             // Delete a value from a setting.
             Some("delete") => {
-                let key = match key(ctx, "!admin delete") {
+                let key = match key(ctx) {
                     Some(key) => key,
                     None => return Ok(()),
                 };
@@ -135,10 +135,7 @@ impl<'a> command::Handler for Handler<'a> {
                 let group = match ctx.next() {
                     Some(group) => group,
                     None => {
-                        ctx.respond(format!(
-                            "Expected: {p} <group>",
-                            p = ctx.alias.unwrap_or("!alias enable-group")
-                        ));
+                        ctx.respond("Expected <group> to enable");
                         return Ok(());
                     }
                 };
@@ -154,10 +151,7 @@ impl<'a> command::Handler for Handler<'a> {
                 let group = match ctx.next() {
                     Some(group) => group,
                     None => {
-                        ctx.respond(format!(
-                            "Expected: {p} <group>",
-                            p = ctx.alias.unwrap_or("!alias disable-group")
-                        ));
+                        ctx.respond("Expected <group> to disable");
                         return Ok(());
                     }
                 };
@@ -171,7 +165,7 @@ impl<'a> command::Handler for Handler<'a> {
             }
             // Get or set settings.
             Some("settings") => {
-                let key = match key(ctx, "!admin settings") {
+                let key = match key(ctx) {
                     Some(key) => key,
                     None => return Ok(()),
                 };
@@ -231,14 +225,14 @@ impl<'a> command::Handler for Handler<'a> {
                 }
             }
             _ => {
-                ctx.respond(format!(
+                ctx.respond(
                     "Expected one of: \
-                     {p} refresh-mods, \
-                     {p} version, \
-                     {p} shutdown, \
-                     {p} setting.",
-                    p = ctx.alias.unwrap_or("!admin"),
-                ));
+                     refresh-mods, \
+                     refresh-vips, \
+                     version, \
+                     shutdown, \
+                     setting.",
+                );
             }
         }
 
@@ -285,15 +279,11 @@ impl<'a> Handler<'a> {
 }
 
 /// Extract a settings key from the context.
-fn key<'a>(ctx: &mut command::Context<'a, '_>, prefix: &str) -> Option<&'a str> {
+fn key<'a>(ctx: &mut command::Context<'a, '_>) -> Option<&'a str> {
     let key = match ctx.next() {
         Some(key) => key,
         None => {
-            ctx.respond(format!(
-                "Expected: {p} <key>",
-                p = ctx.alias.unwrap_or(prefix)
-            ));
-
+            ctx.respond("Expected <key>");
             return None;
         }
     };

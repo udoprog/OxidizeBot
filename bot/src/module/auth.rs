@@ -47,19 +47,17 @@ impl<'a> command::Handler for Handler<'a> {
             Some("permit") => {
                 ctx.check_scope(auth::Scope::AuthPermit)?;
 
-                let duration: Duration =
-                    match ctx.next_parse("<duration> <principal> <scope>", "!auth permit") {
-                        Some(duration) => duration,
-                        None => return Ok(()),
-                    };
+                let duration: Duration = match ctx.next_parse("<duration> <principal> <scope>") {
+                    Some(duration) => duration,
+                    None => return Ok(()),
+                };
 
-                let principal =
-                    match ctx.next_parse("<duration> <principal> <scope>", "!auth permit") {
-                        Some(principal) => principal,
-                        None => return Ok(()),
-                    };
+                let principal = match ctx.next_parse("<duration> <principal> <scope>") {
+                    Some(principal) => principal,
+                    None => return Ok(()),
+                };
 
-                let scope = match ctx.next_parse("<duration> <principal> <scope>", "!auth permit") {
+                let scope = match ctx.next_parse("<duration> <principal> <scope>") {
                     Some(scope) => scope,
                     None => return Ok(()),
                 };

@@ -67,7 +67,7 @@ impl command::Handler for Handler<'_> {
             }
             Some("show") => {
                 ctx.check_scope(Scope::CurrencyShow)?;
-                let to_show = ctx_try!(ctx.next_str("<user>", "!currency show")).to_string();
+                let to_show = ctx_try!(ctx.next_str("<user>")).to_string();
 
                 let user = ctx.user.as_owned_user();
 
@@ -95,9 +95,8 @@ impl command::Handler for Handler<'_> {
                 });
             }
             Some("give") => {
-                let taker =
-                    db::user_id(ctx_try!(ctx.next_str("<user> <amount>", "!currency give")));
-                let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>", "!currency give"));
+                let taker = db::user_id(ctx_try!(ctx.next_str("<user> <amount>")));
+                let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>"));
 
                 if ctx.user.is(&taker) {
                     ctx.respond("Giving to... yourself? But WHY?");
@@ -156,9 +155,8 @@ impl command::Handler for Handler<'_> {
             Some("boost") => {
                 ctx.check_scope(Scope::CurrencyBoost)?;
 
-                let boosted_user =
-                    db::user_id(ctx_try!(ctx.next_str("<user> <amount>", "!currency boost")));
-                let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>", "!currency boost"));
+                let boosted_user = db::user_id(ctx_try!(ctx.next_str("<user> <amount>")));
+                let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>"));
 
                 if !ctx.user.is(ctx.user.streamer) && ctx.user.is(&boosted_user) {
                     ctx.respond("You gonna have to play by the rules (or ask another mod) :(");
@@ -202,7 +200,7 @@ impl command::Handler for Handler<'_> {
                 ctx.check_scope(Scope::CurrencyWindfall)?;
 
                 let user = ctx.user.as_owned_user();
-                let amount: i64 = ctx_try!(ctx.next_parse("<amount>", "!currency windfall"));
+                let amount: i64 = ctx_try!(ctx.next_parse("<amount>"));
                 let sender = ctx.sender.clone();
 
                 ctx.spawn(async move {
