@@ -5,12 +5,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.3.7...master
+
+## [0.3.7]
 
 ### Changed
 - `utils::compact_duration` now includes `days` when formatting.
 - Don't use `flatMap` in since it's not supported in OBS's Browser Source.
 
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.3.6...master
+[0.3.7]: https://github.com/udoprog/setmod/compare/0.3.6...0.3.7
 
 ## [0.3.6]
 
