@@ -158,14 +158,14 @@ scopes:
       - "@streamer"
       - "@moderator"
   promo/edit:
-    doc: If you are allowed to run the `!promo` command to edit promos.
+    doc: If you are allowed to run the `!promo` command to edit promotions.
     version: 0
     risk: high
     allow:
       - "@streamer"
       - "@moderator"
   alias/edit:
-    doc: If you are allowed to run the `!alias` command to edit promos.
+    doc: If you are allowed to run the `!alias` command to edit aliases.
     version: 0
     risk: high
     allow:

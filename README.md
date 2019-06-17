@@ -94,9 +94,18 @@ This will cause the player to disappear while it is not playing anything.
 
 ## Built-in Commands
 
-#### `!admin`
+## Commands
 
-All admin commands are restricted to **moderators**.
+Every command is enabled through a Setting named `<command>/enabled`.
+
+To for example enable the `!admin` command, you'd have to make sure the `admin/enabled` setting is set.
+
+Authorizing the running of commands is done in the Authorization tab in the web UI.
+Each command has their own scope that can be tweaked.
+
+Some commands also has more granular permissions, like `game` and `game/edit` which distinguishes between read and write operations.
+
+#### `!admin` command
 
 * `!admin version` - Responds with the current version of the setmod-bot package.
 * `!admin refresh-mods` - Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running.
@@ -104,68 +113,38 @@ All admin commands are restricted to **moderators**.
 * `!admin settings <key> <value>` - Write the value of a setting.
 * `!admin push` - Push a value to a setting which is a collection.
 * `!admin delete <key> <value>` - Delete a value from a settings which is a collection.
-* `!admin shutdown` - Cause the mod to cleanly shut down, and hopefully being restarted by the management process.
+* `!admin shutdown` - Cause the mod to cleanly shut down and restart.
 * `!admin enable-group <group>` - Enable all commands, aliases, and promotions part of the specified group.
 * `!admin disable-group <group>` - Disable all commands, aliases, and promotions part of the specified group.
 
-## Bad Words
-
-Bad words filter looks at all words in a channel, converts them to singular and matches them phonetically against a word list.
-
-The word list can be stored in the database with the `!badword edit <why>` command.
-But you can also use a `bad_words.yml` file that looks like this:
-
-```yaml
-words:
- - word: cat
-   why: Please don't talk about cats here {{name}} -___-
- - word: trump
-```
-
-If a word matches, the message will be deleted.
-
-`why` is optional, but will be communicated to the user in case their message is deleted.
-It supports the following template variables:
-
-* `{{name}}` - the user who said the word.
-* `{{target}}` - the channel where the word was sent.
-
-## Commands
-
-Every command is enabled through a Setting named `<command>/enabled`.
-
-To for example enable the `!admin` command, you'd have to make sure the `admin/enabled` setting is set.
-
 #### Misc Commands
-
-You enable the `!admin` command by setting `admin/enabled` to `true`.
 
 Available commands:
 
-* `!uptime` - Get the current uptime.
-* `!title` - Get the current title.
+* `!uptime` - Get the current uptime. Enabled with `uptime/enabled`.
+* `!title` - Get the current title. Enabled with `title/enabled`.
 * `!title <title>` - Update the title to be `<title>`.
-* `!game` - Get the current game.
+* `!game` - Get the current game. Enabled with `game/enabled`.
 * `!game <game>` - Update the game to be `<game>`.
 
 #### `!command` command
 
+Allows editing custom commands.
+
 You enable custom command administration by setting `command/enabled` to `true`.
 
-Allows setting and requesting custom commands.
-
-A command is the bot responding with a pre-defined message based on a template.
+A custom command is a prefix the bot responds to with a templated message.
 
 Available commands:
 
-* `!command edit <name> <what>` - Set the command `<name>` to respond with `<what>` (**moderator**).
-* `!command clear-group <name>` - Clear the group for command `<name>` (**moderator**).
-* `!command group <name>` - Get the group the given command belongs to (**moderator**).
-* `!command group <name> <group>` - Set the command `<name>` to be in the group `<group>` (**moderator**).
-* `!command delete <name>` - Delete the command named `<name>` (**moderator**).
-* `!command rename <from> <to>` - Rename the command `<from>` to `<to>` (**moderator**).
+* `!command edit <name> <template...>` - Set the command `<name>` to respond with `<template...>`.
+* `!command clear-group <name>` - Clear the group for command `<name>`.
+* `!command group <name>` - Get the group the given command belongs to.
+* `!command group <name> <group>` - Set the command `<name>` to be in the group `<group>`.
+* `!command delete <name>` - Delete the command named `<name>`.
+* `!command rename <from> <to>` - Rename the command `<from>` to `<to>`.
 
-Template variables that can be used in `<what>`:
+Template variables that can be used in `<template...>`:
 
 * `{{count}}` - The number of times the command has been invoked.
 * `{{name}}` - The user who said the word.
@@ -181,12 +160,12 @@ This would allow us to invoke `!sr don't call me` and it would be processed as `
 
 Available commands:
 
-* `!alias edit <name> <what>` - Set the command `<name>` to alias to `<what>` (**moderator**).
-* `!alias clear-group <name>` - Clear the group for alias `<name>` (**moderator**).
-* `!alias group <name>` - Get the group the given alias belongs to (**moderator**).
-* `!alias group <name> <group>` - Set the alias `<name>` to be in the group `<group>` (**moderator**).
-* `!alias delete <name>` - Delete the command named `<name>` (**moderator**).
-* `!alias rename <from> <to>` - Rename the command `<from>` to `<to>` (**moderator**).
+* `!alias edit <name> <what>` - Set the command `<name>` to alias to `<what>`.
+* `!alias clear-group <name>` - Clear the group for alias `<name>`.
+* `!alias group <name>` - Get the group the given alias belongs to.
+* `!alias group <name> <group>` - Set the alias `<name>` to be in the group `<group>`.
+* `!alias delete <name>` - Delete the command named `<name>`.
+* `!alias rename <from> <to>` - Rename the command `<from>` to `<to>`.
 
 Template variables that can be used in `<what>`:
 
@@ -243,26 +222,26 @@ Available commands:
 * `!song request spotify:track:<id>` - Request a song through a Spotify URI.
 * `!song request https://open.spotify.com/track/<id>` - Request a song by spotify URL.
 * `!song request <search>` - Request a song by searching for it. The first hit will be used.
-* `!song skip` - Skip the current song (**moderator**).
-* `!song play` - Play the current song (**moderator**).
-* `!song pause` - Pause the current song (**moderator**).
-* `!song toggle` - Toggle the current song (Pause/Play) (**moderator**).
+* `!song skip` - Skip the current song.
+* `!song play` - Play the current song.
+* `!song pause` - Pause the current song.
+* `!song toggle` - Toggle the current song (Pause/Play).
 * `!song volume` - Get the current volume.
-* `!song volume <volume>` - Set the current volume to `<volume>` (**moderator**).
+* `!song volume <volume>` - Set the current volume to `<volume>`.
 * `!song length` - Get the current length of the queue.
 * `!song current` - Get information on the current song.
-* `!song delete last` - Delete the last song in the queue (**moderator**).
-* `!song delete last <user>` - Delete the last song in the queue added by the given `<user>` (**moderator**).
+* `!song delete last` - Delete the last song in the queue.
+* `!song delete last <user>` - Delete the last song in the queue added by the given `<user>`.
 * `!song delete mine` - A user is allowed to delete the last song that _they_ added.
-* `!song delete <position>` - Delete a song at the given position (**moderator**).
+* `!song delete <position>` - Delete a song at the given position.
 * `!song list` - Get the next three songs.
-* `!song list <n>` - Get the next `<n>` songs (**moderator**).
-* `!song theme <name>` - Play the specified theme song (**moderator**).
-* `!song close [reason]` - Close the song queue with an optional `[reason]` (**moderator**).
-* `!song open` - Open the song queue (**moderator**).
-* `!song promote <number>` - Promote the song at the given position `<number>` in the queue (**moderator**).
+* `!song list <n>` - Get the next `<n>` songs.
+* `!song theme <name>` - Play the specified theme song.
+* `!song close [reason]` - Close the song queue with an optional `[reason]`.
+* `!song open` - Open the song queue.
+* `!song promote <number>` - Promote the song at the given position `<number>` in the queue.
 * `!song when` - Find out when your song will play.
-* `!song when <user>` - Find out when the song for a specific user will play (**moderator**).
+* `!song when <user>` - Find out when the song for a specific user will play.
 
 #### `!clip` command
 
@@ -293,9 +272,9 @@ Enabled commands depend on the `name` of your currency, so we are gonna assume t
 
 - `!thingies` - Get your current balance.
 - `!thingies give <user> <amount>` - Give `<user>` `<amount>` of the given currency. This will _transfer_ the specified amount from your account to another.
-- `!thingies boost <user> <amount>` - Give the specified `<user>` an `<amount>` of currency. Can be negative to take away (**moderator**).
-- `!thingies windfall <amount>` - Give away `<amount>` currency to all current viewers (**moderator**).
-- `!thingies show <user>` - Show the amount of currency for the given user (**moderator**).
+- `!thingies boost <user> <amount>` - Give the specified `<user>` an `<amount>` of currency. Can be negative to take away.
+- `!thingies windfall <amount>` - Give away `<amount>` currency to all current viewers.
+- `!thingies show <user>` - Show the amount of currency for the given user.
 
 #### `!swearjar` command
 
@@ -346,9 +325,9 @@ Available commands:
 * `!promo list` - List all available promotions.
 * `!promo edit <id> <frequency> <what>` - Set the promotion identified by `<id>` to send the message `<what>` every `<frequency>`.
   - Example: `!promo edit discord 30m Hey, did you know I have a Discord? Join it at http://example.com!`
-* `!promo clear-group <name>` - Clear the group for promotion `<name>` (**moderator**).
-* `!promo group <name>` - Get the group the given promotion belongs to (**moderator**).
-* `!promo group <name> <group>` - Set the promotion `<name>` to be in the group `<group>` (**moderator**).
+* `!promo clear-group <name>` - Clear the group for promotion `<name>`.
+* `!promo group <name>` - Get the group the given promotion belongs to.
+* `!promo group <name> <group>` - Set the promotion `<name>` to be in the group `<group>`.
 * `!promo delete <id>` - Delete the promotion with the given id.
 * `!promo rename <from> <to>` - Delete the promotion with the given id.
 
