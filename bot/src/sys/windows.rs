@@ -1,6 +1,7 @@
 use crate::{prelude::*, sys::Notification, web};
 use failure::{bail, format_err, Error};
 use parking_lot::Mutex;
+use std::collections::VecDeque;
 use std::{
     io,
     path::Path,
@@ -188,6 +189,8 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
         window.add_menu_separator(5)?;
         window.add_menu_entry(6, "Quit Bot")?;
 
+        let mut notification_on_click = VecDeque::new();
+
         loop {
             futures::select! {
                 event = events_rx.select_next_some() => {
@@ -200,7 +203,8 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                             window.set_tooltip(&message)?;
                             window.set_icon_from_buffer(ICON_ERROR, 128, 128)?;
                         }
-                        Event::Notification(n) => {
+                        Event::Notification(mut n) => {
+                            notification_on_click.push_back(n.on_click.take());
                             window.send_notification(n)?;
                         }
                     }
@@ -234,6 +238,14 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                         window::Event::Shutdown => {
                             break;
                         }
+                        window::Event::BalloonClicked => {
+                            if let Some(Some(mut cb)) = notification_on_click.pop_front() {
+                                cb()?;
+                            }
+                        }
+                        window::Event::BalloonTimeout => {
+                            notification_on_click.pop_front();
+                        }
                     }
                 }
             }
@@ -243,13 +255,13 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
             let _ = tx.send(());
         }
 
-        Ok::<_, io::Error>(())
+        Ok::<_, Error>(())
     };
 
     let thread = thread::spawn(move || match futures::executor::block_on(window_loop) {
         Ok(()) => (),
         Err(e) => {
-            log::error!("systray errored: {}", e);
+            log_err!(e, "Windows system tray errored");
         }
     });
 

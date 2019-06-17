@@ -1,3 +1,4 @@
+use failure::Error;
 use std::time::Duration;
 
 #[cfg(target_os = "windows")]
@@ -30,13 +31,15 @@ impl NotificationIcon {
     }
 }
 
+type Callback = Box<dyn FnMut() -> Result<(), Error> + Send + 'static>;
+
 /// A single notification.
-#[derive(Debug, Clone)]
 pub struct Notification {
     pub message: String,
     pub title: Option<String>,
     pub icon: NotificationIcon,
     pub timeout: Option<Duration>,
+    pub on_click: Option<Callback>,
 }
 
 impl Notification {
@@ -50,6 +53,7 @@ impl Notification {
             title: None,
             icon: NotificationIcon::Info,
             timeout: Some(Duration::from_secs(1)),
+            on_click: None,
         }
     }
 
@@ -68,6 +72,17 @@ impl Notification {
     pub fn timeout(self, timeout: Duration) -> Self {
         Self {
             timeout: Some(timeout),
+            ..self
+        }
+    }
+
+    /// What should happen if we click the notification.
+    pub fn on_click<F>(self, on_click: F) -> Self
+    where
+        F: FnMut() -> Result<(), Error> + Send + 'static,
+    {
+        Self {
+            on_click: Some(Box::new(on_click)),
             ..self
         }
     }

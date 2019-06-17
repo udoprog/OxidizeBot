@@ -7,7 +7,7 @@ use failure::{bail, format_err, Error, ResultExt};
 use parking_lot::RwLock;
 use setmod::{
     api, auth, bus, config, db, injector, irc, module, oauth2, obs, player, prelude::*, secrets,
-    settings, sys, updater, utils, web,
+    settings, stream_info, sys, updater, utils, web,
 };
 use std::{
     fs,
@@ -493,6 +493,12 @@ async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result
     let future = obs::setup(&settings, &injector)?;
     futures.push(future.boxed());
 
+    let (stream_state_tx, stream_state_rx) = mpsc::channel(64);
+
+    let notify_after_streams =
+        notify_after_streams(stream_state_rx, after_streams.clone(), system.clone());
+    futures.push(notify_after_streams.boxed());
+
     let irc = irc::Irc {
         db: db,
         youtube,
@@ -514,6 +520,7 @@ async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result
         auth,
         global_channel,
         injector: injector.clone(),
+        stream_state_tx,
     };
 
     futures.push(irc.run().boxed());
@@ -542,6 +549,40 @@ async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result
         Err(None) => {
             log::info!("Shutting down...");
             Ok(())
+        }
+    }
+}
+
+/// Notify if there are any after streams.
+///
+/// If this is clicked, open the after-streams page.
+async fn notify_after_streams(
+    mut rx: mpsc::Receiver<stream_info::StreamState>,
+    after_streams: db::AfterStreams,
+    system: sys::System,
+) -> Result<(), Error> {
+    loop {
+        match rx.select_next_some().await {
+            stream_info::StreamState::Started => {
+                log::info!("Stream started");
+            }
+            stream_info::StreamState::Stopped => {
+                let list = after_streams.list()?;
+
+                if list.len() > 0 {
+                    let reminder = sys::Notification::new(format!(
+                        "You have {} afterstream messages.\nClick to open...",
+                        list.len()
+                    ));
+
+                    let reminder = reminder.on_click(|| {
+                        webbrowser::open(&format!("{}/after-streams", web::URL))?;
+                        Ok(())
+                    });
+
+                    system.notification(reminder);
+                }
+            }
         }
     }
 }

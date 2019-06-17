@@ -31,7 +31,7 @@ pub mod secrets;
 pub mod settings;
 mod song_file;
 mod spotify_id;
-mod stream_info;
+pub mod stream_info;
 pub mod sys;
 pub mod template;
 mod timer;

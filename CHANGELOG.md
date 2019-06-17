@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added `!poll` command to run polls.
 - Added `!weather` command to check the current weather.
+- Notification after stream has ended if you have afterstream messages.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.3.7...master
 

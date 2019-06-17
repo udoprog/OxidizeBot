@@ -109,8 +109,6 @@ impl Themes {
         let mut inner = self.inner.write();
 
         if let Some(theme) = self.db.edit(&key, &track_id)? {
-            log::info!("inserting theme in-memory");
-
             let start = utils::Offset::milliseconds(theme.start as u32);
             let end = theme.end.map(|s| utils::Offset::milliseconds(s as u32));
 

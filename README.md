@@ -13,18 +13,25 @@ If there's something you're missing, feel free to [open an issue].
 
 **Rust** &mdash; Written in [Rust], promoting high performance, low utilization, and reliability.
 
-<img title="Rust" width="67" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/cuddlyferris.png" />
+<p>
+<img style="float: left;"  title="Rust" width="67" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/cuddlyferris.png" />
+</p>
 
 **Configurable** &mdash; Everything is tweakable to suit your needs through a [hundred settings].
 Changes to settings applies immediately - no need to restart.
 
-<img title="Settings" width="140" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/setting.png" />
+<p>
+<img style="float: left;" title="Settings" width="140" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/setting.png" />
+</p>
 
 **Integrated with Windows** &mdash; Runs in the background with a System Tray.
 Notifies you on issues.
 Starts automatically with Windows if you want it to.
 
-<img title="Windows Systray" width="131" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/windows-systray.png" />
+<p>
+<img style="float: left;" title="Windows Systray" width="131" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/windows-systray.png" />
+<img style="float: left;" title="Reminder" width="120" height="50" src="https://github.com/udoprog/setmod/raw/reminders/gfx/windows-reminder.png" />
+</p>
 
 [open an issue]: https://github.com/udoprog/setmod/issues
 [Rust]: https://rust-lang.org

@@ -1,4 +1,5 @@
 use crate::{api, prelude::*, timer};
+use failure::{format_err, Error};
 use hashbrown::HashSet;
 use parking_lot::RwLock;
 use std::{sync::Arc, time};
@@ -13,6 +14,12 @@ pub struct Data {
     pub subs_set: HashSet<String>,
 }
 
+/// Notify on changes in stream state.
+pub enum StreamState {
+    Started,
+    Stopped,
+}
+
 #[derive(Debug, Clone)]
 pub struct StreamInfo {
     pub data: Arc<RwLock<Data>>,
@@ -25,7 +32,12 @@ impl StreamInfo {
     }
 
     /// Refresh the stream info.
-    pub async fn refresh<'a>(&'a self, twitch: &'a api::Twitch, streamer: &'a str) {
+    pub async fn refresh<'a>(
+        &'a self,
+        twitch: &'a api::Twitch,
+        streamer: &'a str,
+        stream_state_tx: &'a mut mpsc::Sender<StreamState>,
+    ) -> Result<(), Error> {
         let stream = twitch.stream_by_login(streamer);
         let channel = twitch.channel_by_login(streamer);
 
@@ -58,9 +70,24 @@ impl StreamInfo {
             Ok(result) => result,
             Err(e) => {
                 log_err!(e, "failed to refresh stream info");
-                return;
+                return Ok(());
             }
         };
+
+        let stream_is_some = self.data.read().stream.is_some();
+
+        let update = match (stream_is_some, stream.is_some()) {
+            (true, false) => Some(StreamState::Stopped),
+            (false, true) => Some(StreamState::Started),
+            _ => None,
+        };
+
+        if let Some(update) = update {
+            stream_state_tx
+                .send(update)
+                .await
+                .map_err(|_| format_err!("failed to send stream state update"))?;
+        }
 
         let mut info = self.data.write();
         info.user = streamer;
@@ -76,6 +103,8 @@ impl StreamInfo {
                 .map(|s| s.user_name.to_lowercase())
                 .collect();
         }
+
+        Ok(())
     }
 }
 
@@ -86,8 +115,11 @@ pub fn setup<'a>(
     twitch: api::Twitch,
 ) -> (
     StreamInfo,
-    impl Future<Output = Result<(), failure::Error>> + 'a,
+    mpsc::Receiver<StreamState>,
+    impl Future<Output = Result<(), Error>> + 'a,
 ) {
+    let (mut stream_state_tx, stream_state_rx) = mpsc::channel(64);
+
     let stream_info = StreamInfo {
         data: Default::default(),
     };
@@ -100,11 +132,13 @@ pub fn setup<'a>(
         twitch.token.wait_until_ready().await?;
 
         while let Some(_) = interval.next().await.transpose()? {
-            future_info.refresh(&twitch, streamer).await;
+            future_info
+                .refresh(&twitch, streamer, &mut stream_state_tx)
+                .await?;
         }
 
-        Ok(())
+        Err(format_err!("update interval ended"))
     };
 
-    (stream_info, future)
+    (stream_info, stream_state_rx, future)
 }

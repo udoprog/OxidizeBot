@@ -37,6 +37,8 @@ use winapi::{
     },
 };
 
+const ICON_MSG_ID: UINT = WM_USER + 1;
+
 thread_local!(static WININFO_STASH: RefCell<Option<WindowsLoopData>> = RefCell::new(None));
 
 /// Copy a wide string from a source to a destination.
@@ -62,6 +64,10 @@ pub enum Event {
     MenuClicked(u32),
     /// Shutdown was requested.
     Shutdown,
+    /// Balloon was clicked.
+    BalloonClicked,
+    /// Balloon timed out.
+    BalloonTimeout,
 }
 
 #[derive(Clone)]
@@ -76,49 +82,77 @@ unsafe extern "system" fn window_proc(
     w_param: WPARAM,
     l_param: LPARAM,
 ) -> LRESULT {
-    if msg == winuser::WM_MENUCOMMAND {
-        WININFO_STASH.with(|stash| {
-            let stash = stash.borrow();
-            let stash = stash.as_ref().expect("stash");
-            let menu_id = winuser::GetMenuItemID(stash.info.hmenu, w_param as i32) as i32;
-            if menu_id != -1 {
-                stash
-                    .events_tx
-                    .unbounded_send(Event::MenuClicked(menu_id as u32))
-                    .expect("events sender to be open");
+    match msg {
+        ICON_MSG_ID => {
+            match l_param as UINT {
+                // clicked balloon
+                shellapi::NIN_BALLOONUSERCLICK => {
+                    WININFO_STASH.with(|stash| {
+                        let stash = stash.borrow();
+                        let stash = stash.as_ref().expect("stash");
+
+                        stash
+                            .events_tx
+                            .unbounded_send(Event::BalloonClicked)
+                            .expect("events sender to be open");
+                    });
+                }
+                shellapi::NIN_BALLOONHIDE => {}
+                shellapi::NIN_BALLOONTIMEOUT => {
+                    WININFO_STASH.with(|stash| {
+                        let stash = stash.borrow();
+                        let stash = stash.as_ref().expect("stash");
+
+                        stash
+                            .events_tx
+                            .unbounded_send(Event::BalloonTimeout)
+                            .expect("events sender to be open");
+                    });
+                }
+                winuser::WM_LBUTTONUP | winuser::WM_RBUTTONUP => {
+                    let mut p = POINT::default();
+
+                    if winuser::GetCursorPos(&mut p as *mut POINT) == FALSE {
+                        return 1;
+                    }
+
+                    winuser::SetForegroundWindow(h_wnd);
+
+                    WININFO_STASH.with(|stash| {
+                        let stash = stash.borrow();
+                        let stash = stash.as_ref().expect("stash");
+
+                        winuser::TrackPopupMenu(
+                            stash.info.hmenu,
+                            0,
+                            p.x,
+                            p.y,
+                            (winuser::TPM_BOTTOMALIGN | winuser::TPM_LEFTALIGN) as i32,
+                            h_wnd,
+                            std::ptr::null_mut(),
+                        );
+                    });
+                }
+                _ => (),
             }
-        });
-    }
-
-    if msg == WM_USER + 1 {
-        if l_param as UINT == winuser::WM_LBUTTONUP || l_param as UINT == winuser::WM_RBUTTONUP {
-            let mut p = POINT::default();
-
-            if winuser::GetCursorPos(&mut p as *mut POINT) == FALSE {
-                return 1;
-            }
-
-            winuser::SetForegroundWindow(h_wnd);
-
+        }
+        winuser::WM_DESTROY => {
+            winuser::PostQuitMessage(0);
+        }
+        winuser::WM_MENUCOMMAND => {
             WININFO_STASH.with(|stash| {
                 let stash = stash.borrow();
                 let stash = stash.as_ref().expect("stash");
-
-                winuser::TrackPopupMenu(
-                    stash.info.hmenu,
-                    0,
-                    p.x,
-                    p.y,
-                    (winuser::TPM_BOTTOMALIGN | winuser::TPM_LEFTALIGN) as i32,
-                    h_wnd,
-                    std::ptr::null_mut(),
-                );
+                let menu_id = winuser::GetMenuItemID(stash.info.hmenu, w_param as i32) as i32;
+                if menu_id != -1 {
+                    stash
+                        .events_tx
+                        .unbounded_send(Event::MenuClicked(menu_id as u32))
+                        .expect("events sender to be open");
+                }
             });
         }
-    }
-
-    if msg == winuser::WM_DESTROY {
-        winuser::PostQuitMessage(0);
+        _ => (),
     }
 
     return winuser::DefWindowProcW(h_wnd, msg, w_param, l_param);
@@ -183,7 +217,7 @@ unsafe fn init_window(name: &str) -> Result<WindowInfo, io::Error> {
 
     let mut nid = new_nid(&hwnd);
     nid.uFlags = shellapi::NIF_MESSAGE;
-    nid.uCallbackMessage = WM_USER + 1;
+    nid.uCallbackMessage = ICON_MSG_ID;
 
     let result = shellapi::Shell_NotifyIconW(
         shellapi::NIM_ADD,

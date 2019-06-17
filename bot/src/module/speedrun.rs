@@ -882,7 +882,6 @@ fn match_levels<'a>(level: Option<&String>, levels: &'a [Level]) -> Option<&'a L
         None => return None,
     };
 
-    log::info!("run level: {} ({:?})", level, levels);
     levels.iter().find(|l| l.id == *level)
 }
 
