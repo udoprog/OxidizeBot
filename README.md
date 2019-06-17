@@ -405,6 +405,20 @@ Available settings are:
   * `{{day}}`, `{{month}}`, `{{year}}` - Day, month, and year.
   * `{{rfc2822}}` - An RFC-2822 formatted date time, like: `Thu, 01 Sep 2016 10:11:12 -0500`.
 
+#### `!poll` command
+
+You enable the `!poll` command by setting `poll/enabled` to `true`.
+
+Chat votes based on keywords determined by you when running the poll.
+
+This enabled the following commands:
+* `!poll run <question> <options...>` - Runs a poll.
+  * `<question>` must be a quoted question, like `"Should I eat breakfast?"`.
+  * `<options...>` is a collection of options. Like `yes no ?="don't care"`.
+    Note the option `?` which is named `don't care` in the results.
+  * Example: `!poll run "Should I eat breakfast" yes no ???="don't care"` - chat can now vote by typing `yes`, `no`, or `???`.
+* `!poll close [question]` - Closes a poll. If `[question]` is not specified, closes the last poll opened.
+
 ## Migrating from 0.2 to 0.3
 
 SetMod 0.3 completely removes the need for any configuration files.

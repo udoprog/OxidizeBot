@@ -245,3 +245,9 @@ scopes:
     version: 0
     allow:
       - "@everyone"
+  poll:
+    doc: If you are allowed to run the `!poll` command.
+    version: 0
+    allow:
+      - "@streamer"
+      - "@moderator"

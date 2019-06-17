@@ -14,6 +14,7 @@ pub mod countdown;
 pub mod eight_ball;
 pub mod gtav;
 pub mod misc;
+pub mod poll;
 pub mod promotions;
 pub mod song;
 pub mod speedrun;
