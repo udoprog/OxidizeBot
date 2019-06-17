@@ -57,31 +57,37 @@ export function decode(type) {
 const timezoneOptions = buildTimezoneOptions();
 
 function buildTimezoneOptions() {
-  return timezones.flatMap(p => p.utc.map(tz => {
-    let name = tz;
-    let n = name.indexOf('/');
+  let out = [];
 
-    if (n > 0) {
-      name = name.substring(n + 1);
-    } else {
-      name = name;
+  for (let p of timezones) {
+    for (let tz of p.utc) {
+      let name = tz;
+      let n = name.indexOf('/');
+
+      if (n > 0) {
+        name = name.substring(n + 1);
+      } else {
+        name = name;
+      }
+
+      name = name.replace('_', ' ');
+
+      let id = null;
+
+      if (p.offset >= 0) {
+        id = `UTC+${tzOffset(p.offset)}`;
+      } else {
+        id = `UTC-${tzOffset(-p.offset)}`;
+      }
+
+      out.push({
+        title: `${id} - ${name} (${p.abbr})`,
+        value: tz,
+      });
     }
+  }
 
-    name = name.replace('_', ' ');
-
-    let id = null;
-
-    if (p.offset >= 0) {
-      id = `UTC+${tzOffset(p.offset)}`;
-    } else {
-      id = `UTC-${tzOffset(-p.offset)}`;
-    }
-
-    return {
-      title: `${id} - ${name} (${p.abbr})`,
-      value: tz,
-    }
-  }));
+  return out;
 }
 
 function tzOffset(offset) {

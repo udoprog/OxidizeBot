@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `utils::compact_duration` now includes `days` when formatting.
+- Don't use `flatMap` in since it's not supported in OBS's Browser Source.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.3.6...master
 
