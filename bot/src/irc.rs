@@ -242,9 +242,8 @@ impl Irc {
             futures.push(vars.run().boxed());
 
             let stream_info = {
-                let interval = time::Duration::from_secs(60);
                 let (stream_info, mut stream_state_rx, future) =
-                    stream_info::setup(streamer, interval, streamer_twitch.clone());
+                    stream_info::setup(streamer, streamer_twitch.clone());
 
                 let mut stream_state_tx = stream_state_tx.clone();
 

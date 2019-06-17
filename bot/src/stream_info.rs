@@ -31,45 +31,83 @@ impl StreamInfo {
         self.data.read().subs_set.contains(name)
     }
 
-    /// Refresh the stream info.
-    pub async fn refresh<'a>(
+    /// Refresh the known list of subscribers.
+    pub async fn refresh_subs<'a>(
         &'a self,
         twitch: &'a api::Twitch,
-        streamer: &'a str,
-        stream_state_tx: &'a mut mpsc::Sender<StreamState>,
-    ) -> Result<(), Error> {
-        let stream = twitch.stream_by_login(streamer);
-        let channel = twitch.channel_by_login(streamer);
+        streamer: &'a api::twitch::User,
+    ) {
+        let subs = twitch
+            .stream_subscriptions(&streamer.id, vec![])
+            .try_concat();
 
-        let streamer = async {
-            let streamer = twitch.user_by_login(streamer).await?;
-
-            let streamer = match streamer {
-                Some(streamer) => streamer,
-                None => return Ok((None, None)),
-            };
-
-            let subs = twitch
-                .stream_subscriptions(&streamer.id, vec![])
-                .try_concat();
-
-            let subs = match subs.await {
-                Ok(subs) => Some(subs),
-                Err(e) => {
-                    log_err!(e, "failed to fetch subscriptions");
-                    None
-                }
-            };
-
-            Ok((Some(streamer), subs))
+        let subs = match subs.await {
+            Ok(subs) => subs,
+            Err(e) => {
+                log_err!(e, "failed to fetch subscriptions");
+                return;
+            }
         };
 
-        let result = future::try_join3(stream, channel, streamer).await;
+        let mut info = self.data.write();
+        info.subs = subs;
+        info.subs_set = info
+            .subs
+            .iter()
+            .map(|s| s.user_name.to_lowercase())
+            .collect();
+    }
 
-        let (stream, channel, (streamer, subs)) = match result {
-            Ok(result) => result,
+    /// Get streamer information.
+    pub async fn fetch_streamer<'a>(
+        &'a self,
+        twitch: &'a api::Twitch,
+        streamer_id: &'a str,
+    ) -> Option<api::twitch::User> {
+        let user = match twitch.user_by_login(streamer_id).await {
+            Ok(user) => user,
             Err(e) => {
-                log_err!(e, "failed to refresh stream info");
+                log_err!(e, "failed to fetch streamer");
+                return None;
+            }
+        };
+
+        let mut info = self.data.write();
+        info.user = user.clone();
+        user
+    }
+
+    /// Refresh channel.
+    pub async fn refresh_channel<'a>(
+        &'a self,
+        twitch: &'a api::Twitch,
+        streamer_id: &'a str,
+    ) -> Result<(), Error> {
+        let channel = match twitch.channel_by_login(streamer_id).await {
+            Ok(channel) => channel,
+            Err(e) => {
+                log_err!(e, "failed to refresh channel");
+                return Ok(());
+            }
+        };
+
+        let mut info = self.data.write();
+        info.title = Some(channel.status);
+        info.game = channel.game;
+        Ok(())
+    }
+
+    /// Refresh the stream info.
+    pub async fn refresh_stream<'a>(
+        &'a self,
+        twitch: &'a api::Twitch,
+        streamer_id: &'a str,
+        stream_state_tx: &'a mut mpsc::Sender<StreamState>,
+    ) -> Result<(), Error> {
+        let stream = match twitch.stream_by_login(streamer_id).await {
+            Ok(stream) => stream,
+            Err(e) => {
+                log_err!(e, "failed to refresh stream");
                 return Ok(());
             }
         };
@@ -90,28 +128,14 @@ impl StreamInfo {
         }
 
         let mut info = self.data.write();
-        info.user = streamer;
         info.stream = stream;
-        info.title = Some(channel.status);
-        info.game = channel.game;
-
-        if let Some(subs) = subs {
-            info.subs = subs;
-            info.subs_set = info
-                .subs
-                .iter()
-                .map(|s| s.user_name.to_lowercase())
-                .collect();
-        }
-
         Ok(())
     }
 }
 
 /// Set up a reward loop.
 pub fn setup<'a>(
-    streamer: &'a str,
-    interval: time::Duration,
+    streamer_id: &'a str,
     twitch: api::Twitch,
 ) -> (
     StreamInfo,
@@ -124,20 +148,52 @@ pub fn setup<'a>(
         data: Default::default(),
     };
 
-    let mut interval = timer::Interval::new(time::Instant::now(), interval);
+    let now = time::Instant::now();
+    let mut stream_interval = timer::Interval::new(now.clone(), time::Duration::from_secs(30));
+    let mut subs_interval = timer::Interval::new(now.clone(), time::Duration::from_secs(60 * 10));
+    let mut streamer_interval = timer::Interval::new(
+        now.clone() + time::Duration::from_secs(60),
+        time::Duration::from_secs(60),
+    );
 
     let future_info = stream_info.clone();
 
     let future = async move {
         twitch.token.wait_until_ready().await?;
 
-        while let Some(_) = interval.next().await.transpose()? {
-            future_info
-                .refresh(&twitch, streamer, &mut stream_state_tx)
-                .await?;
-        }
+        let mut streamer = future_info.fetch_streamer(&twitch, streamer_id).await;
 
-        Err(format_err!("update interval ended"))
+        loop {
+            futures::select! {
+                update = subs_interval.select_next_some() => {
+                    update?;
+
+                    if let Some(streamer) = streamer.as_ref() {
+                        future_info.refresh_subs(&twitch, streamer).await;
+                    }
+                }
+                update = streamer_interval.select_next_some() => {
+                    update?;
+
+                    let update = future_info.fetch_streamer(&twitch, streamer_id).await;
+
+                    if let Some(update) = update {
+                        streamer = Some(update);
+                    }
+                }
+                update = stream_interval.select_next_some() => {
+                    update?;
+
+                    let stream = future_info
+                        .refresh_stream(&twitch, streamer_id, &mut stream_state_tx);
+
+                    let channel = future_info
+                        .refresh_channel(&twitch, streamer_id);
+
+                    future::try_join(stream, channel).await?;
+                }
+            }
+        }
     };
 
     (stream_info, stream_state_rx, future)

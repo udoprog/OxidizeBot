@@ -2,6 +2,7 @@
 
 use crate::{api, auth, command, irc, module, prelude::*, stream_info, utils};
 use chrono::Utc;
+use failure::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -16,7 +17,7 @@ impl command::Handler for Uptime {
         Some(auth::Scope::Uptime)
     }
 
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -82,7 +83,7 @@ impl command::Handler for Title<'_> {
         Some(auth::Scope::Title)
     }
 
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -95,15 +96,22 @@ impl command::Handler for Title<'_> {
             ctx.check_scope(auth::Scope::TitleEdit)?;
 
             let twitch = self.twitch.clone();
-            let user = ctx.user.as_owned_user();
             let title = rest.to_string();
+            let stream_info = self.stream_info.clone();
+            let streamer_id = ctx.user.streamer.to_owned();
 
-            ctx.spawn(async move {
-                let channel_id = user.target.trim_start_matches('#').to_string();
+            let future = async move {
                 let mut request = api::twitch::UpdateChannelRequest::default();
                 request.channel.status = Some(title);
+                twitch.update_channel(&streamer_id, request).await?;
+                stream_info.refresh_channel(&twitch, &streamer_id).await?;
+                Ok::<(), Error>(())
+            };
 
-                match twitch.update_channel(channel_id.as_str(), request).await {
+            let user = ctx.user.as_owned_user();
+
+            ctx.spawn(async move {
+                match future.await {
                     Ok(()) => {
                         user.respond("Title updated!");
                     }
@@ -146,7 +154,7 @@ impl command::Handler for Game<'_> {
         Some(auth::Scope::Game)
     }
 
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -161,15 +169,22 @@ impl command::Handler for Game<'_> {
         ctx.check_scope(auth::Scope::GameEdit)?;
 
         let twitch = self.twitch.clone();
-        let user = ctx.user.as_owned_user();
         let game = rest.to_string();
+        let stream_info = self.stream_info.clone();
+        let streamer_id = ctx.user.streamer.to_owned();
 
-        ctx.spawn(async move {
-            let channel_id = user.target.trim_start_matches('#').to_string();
+        let future = async move {
             let mut request = api::twitch::UpdateChannelRequest::default();
             request.channel.game = Some(game);
+            twitch.update_channel(&streamer_id, request).await?;
+            stream_info.refresh_channel(&twitch, &streamer_id).await?;
+            Ok::<(), Error>(())
+        };
 
-            match twitch.update_channel(channel_id.as_str(), request).await {
+        let user = ctx.user.as_owned_user();
+
+        ctx.spawn(async move {
+            match future.await {
                 Ok(()) => {
                     user.respond("Game updated!");
                 }
@@ -201,7 +216,7 @@ impl super::Module for Module {
             futures,
             ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), Error> {
         let mut vars = settings.vars();
 
         handlers.insert(
