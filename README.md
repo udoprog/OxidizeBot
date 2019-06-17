@@ -411,13 +411,30 @@ You enable the `!poll` command by setting `poll/enabled` to `true`.
 
 Chat votes based on keywords determined by you when running the poll.
 
-This enabled the following commands:
+This enables the following commands:
+
 * `!poll run <question> <options...>` - Runs a poll.
   * `<question>` must be a quoted question, like `"Should I eat breakfast?"`.
   * `<options...>` is a collection of options. Like `yes no ?="don't care"`.
     Note the option `?` which is named `don't care` in the results.
   * Example: `!poll run "Should I eat breakfast" yes no ???="don't care"` - chat can now vote by typing `yes`, `no`, or `???`.
 * `!poll close [question]` - Closes a poll. If `[question]` is not specified, closes the last poll opened.
+
+#### `!weather` command
+
+You enable the `!weather` command by setting `weather/enabled` to `true`.
+
+This also requires `weather/api-key` to be set with a valid [OpenWeatherMap] API key.
+This requires you to register an account, but is otherwise free for limited use.
+
+Chat votes based on keywords determined by you when running the poll.
+
+This enables the following commands:
+
+* `!weather current [location...]` - Query for weather data for a specific location.
+  * Example: `!weather current` - Would query for weather data for the location that the streamer has configured `weather/location`.
+
+[OpenWeatherMap]: https://openweathermap.org
 
 ## Migrating from 0.2 to 0.3
 

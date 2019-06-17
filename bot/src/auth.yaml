@@ -251,3 +251,8 @@ scopes:
     allow:
       - "@streamer"
       - "@moderator"
+  weather:
+    doc: If you are allowed to run the `!weather` command.
+    version: 0
+    allow:
+      - "@everyone"

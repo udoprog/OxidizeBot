@@ -422,6 +422,7 @@ async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result
     };
 
     futures.push(future.boxed());
+    futures.push(api::open_weather_map::setup(settings.clone(), injector.clone())?.boxed());
 
     let (shutdown, shutdown_rx) = utils::Shutdown::new();
 
@@ -479,6 +480,7 @@ async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result
     modules.push(Box::new(module::speedrun::Module));
     modules.push(Box::new(module::auth::Module));
     modules.push(Box::new(module::poll::Module));
+    modules.push(Box::new(module::weather::Module));
 
     if config.obs.is_some() {
         log::warn!("`[obs]` setting has been deprecated from the configuration");

@@ -145,19 +145,6 @@ impl RequestBuilder {
     }
 
     /// Send request and expect a JSON response.
-    pub async fn json_or<T>(self) -> Result<Option<T>, Error>
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        return self
-            .json_option(|status| match *status {
-                StatusCode::NO_CONTENT => true,
-                _ => false,
-            })
-            .await;
-    }
-
-    /// Send request and expect a JSON response.
     pub async fn json_option<T>(
         self,
         condition: impl FnOnce(&StatusCode) -> bool,
@@ -166,6 +153,10 @@ impl RequestBuilder {
         T: serde::de::DeserializeOwned,
     {
         let (status, body) = self.execute().await?;
+
+        if condition(&status) {
+            return Ok(None);
+        }
 
         if !status.is_success() {
             let body = String::from_utf8_lossy(body.as_ref());
@@ -176,10 +167,6 @@ impl RequestBuilder {
                 status,
                 body
             );
-        }
-
-        if condition(&status) {
-            return Ok(None);
         }
 
         match serde_json::from_slice(body.as_ref()) {

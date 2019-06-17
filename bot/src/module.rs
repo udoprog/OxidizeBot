@@ -22,6 +22,7 @@ pub mod swearjar;
 pub mod theme_admin;
 pub mod time;
 pub mod water;
+pub mod weather;
 
 #[derive(Default)]
 pub struct Handlers<'a> {

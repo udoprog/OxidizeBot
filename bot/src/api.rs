@@ -1,6 +1,7 @@
 mod base;
 pub mod github;
 pub mod nightbot;
+pub mod open_weather_map;
 pub mod setbac;
 pub mod speedrun;
 pub mod spotify;
@@ -10,6 +11,7 @@ pub mod youtube;
 pub use self::base::RequestBuilder;
 pub use self::github::GitHub;
 pub use self::nightbot::NightBot;
+pub use self::open_weather_map::OpenWeatherMap;
 pub use self::setbac::SetBac;
 pub use self::speedrun::Speedrun;
 pub use self::spotify::Spotify;

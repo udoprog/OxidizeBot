@@ -346,3 +346,22 @@ types:
   poll/enabled:
     doc: If the `!poll` command is enabled.
     type: {id: bool}
+  weather/enabled:
+    doc: If the `!weather` command is enabled.
+    type: {id: bool}
+  weather/api-key:
+    doc: API-key to [OpenWeatherMap](https://openweathermap.org). You'll have to register an account.
+    type: {id: string, optional: true}
+    secret: true
+  weather/temperature-unit:
+    doc: Temperature unit to use.
+    type:
+      id: select
+      value: {id: string}
+      options:
+        - {title: "Degrees Celsius (°C)", value: "degrees-celsius"}
+        - {title: "Degrees Fahrenheit (°F)", value: "degrees-fahrenheit"}
+        - {title: "Kelvin (K)", value: "kelvin"}
+  weather/location:
+    doc: Default location to use. Like `New York`, or `Stockholm`.
+    type: {id: string, optional: true}

@@ -567,6 +567,7 @@ scopes! {
     (ChatBypassUrlWhitelist, "chat/bypass-url-whitelist"),
     (Time, "time"),
     (Poll, "poll"),
+    (Weather, "weather"),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
