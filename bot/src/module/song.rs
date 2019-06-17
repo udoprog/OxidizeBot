@@ -327,7 +327,7 @@ impl command::Handler for Handler {
             }
         };
 
-        match ctx.next() {
+        match ctx.next().as_ref().map(String::as_str) {
             Some("theme") => {
                 ctx.check_scope(Scope::SongTheme)?;
                 let name = ctx_try!(ctx.next_str("<name>")).to_string();
@@ -351,7 +351,7 @@ impl command::Handler for Handler {
             Some("promote") => {
                 ctx.check_scope(Scope::SongEditQueue)?;
 
-                let index = match ctx.next().and_then(|n| parse_queue_position(&ctx.user, n)) {
+                let index = match ctx.next().and_then(|n| parse_queue_position(&ctx.user, &n)) {
                     Some(index) => index,
                     None => return Ok(()),
                 };
@@ -391,7 +391,7 @@ impl command::Handler for Handler {
                 if let Some(n) = ctx.next() {
                     ctx.check_scope(Scope::SongListLimit)?;
 
-                    if let Ok(n) = str::parse(n) {
+                    if let Ok(n) = str::parse(&n) {
                         limit = n;
                     }
                 }
@@ -441,7 +441,9 @@ impl command::Handler for Handler {
             }
             // print when your next song will play.
             Some("when") => {
-                let (your, user) = match ctx.next() {
+                let user = ctx.next();
+
+                let (your, user) = match user.as_ref().map(String::as_str) {
                     Some(user) => (false, user),
                     None => (true, ctx.user.name),
                 };
@@ -485,7 +487,7 @@ impl command::Handler for Handler {
                 }
             }
             Some("delete") => {
-                let removed = match ctx.next() {
+                let removed = match ctx.next().as_ref().map(String::as_str) {
                     Some("last") => match ctx.next() {
                         Some(last_user) => {
                             let last_user = last_user.to_lowercase();
@@ -520,7 +522,7 @@ impl command::Handler for Handler {
                 }
             }
             Some("volume") => {
-                match ctx.next() {
+                match ctx.next().as_ref().map(String::as_str) {
                     // setting volume
                     Some(other) => {
                         ctx.check_scope(Scope::SongVolume)?;
@@ -633,7 +635,7 @@ impl command::Handler for Handler {
                 alts.push("delete");
                 alts.push("request");
                 alts.push("length");
-                ctx.respond(format!("Expected argument: {}.", alts.join(" ")));
+                ctx.respond(format!("Expected argument: {}.", alts.join(", ")));
             }
         }
 

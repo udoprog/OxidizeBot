@@ -166,7 +166,7 @@ impl Alias {
     /// Test if the given input matches and return the corresonding replacement if it does.
     pub fn matches<'a>(&self, mut it: utils::Words<'a>) -> Option<String> {
         match it.next() {
-            Some(value) if value.to_lowercase() == self.key.name => {
+            Some(ref value) if value.to_lowercase() == self.key.name => {
                 let data = Data { rest: it.rest() };
 
                 match self.template.render_to_string(&data) {

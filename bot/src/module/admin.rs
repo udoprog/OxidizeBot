@@ -65,7 +65,7 @@ impl<'a> command::Handler for Handler<'a> {
     }
 
     fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
-        match ctx.next() {
+        match ctx.next().as_ref().map(String::as_str) {
             Some("refresh-mods") => {
                 ctx.privmsg("/mods");
                 ctx.respond("Refreshed information on mods");
@@ -96,18 +96,18 @@ impl<'a> command::Handler for Handler<'a> {
                     None => return Ok(()),
                 };
 
-                let value = match self.value_in_set(ctx, key) {
+                let value = match self.value_in_set(ctx, &key) {
                     Some(ty) => ty,
                     None => return Ok(()),
                 };
 
                 let mut values = self
                     .settings
-                    .get::<Vec<serde_json::Value>>(key)?
+                    .get::<Vec<serde_json::Value>>(&key)?
                     .unwrap_or_default();
 
                 values.push(value);
-                self.settings.set(key, values)?;
+                self.settings.set(&key, values)?;
                 ctx.respond(format!("Updated the {} setting", key));
             }
             // Delete a value from a setting.
@@ -117,18 +117,18 @@ impl<'a> command::Handler for Handler<'a> {
                     None => return Ok(()),
                 };
 
-                let value = match self.value_in_set(ctx, key) {
+                let value = match self.value_in_set(ctx, &key) {
                     Some(ty) => ty,
                     None => return Ok(()),
                 };
 
                 let mut values = self
                     .settings
-                    .get::<Vec<serde_json::Value>>(key)?
+                    .get::<Vec<serde_json::Value>>(&key)?
                     .unwrap_or_default();
 
                 values.retain(|v| v != &value);
-                self.settings.set(key, values)?;
+                self.settings.set(&key, values)?;
                 ctx.respond(format!("Updated the {} setting", key));
             }
             Some("enable-group") => {
@@ -140,10 +140,10 @@ impl<'a> command::Handler for Handler<'a> {
                     }
                 };
 
-                self.aliases.enable_group(ctx.user.target, group)?;
-                self.commands.enable_group(ctx.user.target, group)?;
-                self.promotions.enable_group(ctx.user.target, group)?;
-                self.themes.enable_group(ctx.user.target, group)?;
+                self.aliases.enable_group(ctx.user.target, &group)?;
+                self.commands.enable_group(ctx.user.target, &group)?;
+                self.promotions.enable_group(ctx.user.target, &group)?;
+                self.themes.enable_group(ctx.user.target, &group)?;
 
                 ctx.respond(format!("Enabled group {}", group));
             }
@@ -156,10 +156,10 @@ impl<'a> command::Handler for Handler<'a> {
                     }
                 };
 
-                self.aliases.disable_group(ctx.user.target, group)?;
-                self.commands.disable_group(ctx.user.target, group)?;
-                self.promotions.disable_group(ctx.user.target, group)?;
-                self.themes.disable_group(ctx.user.target, group)?;
+                self.aliases.disable_group(ctx.user.target, &group)?;
+                self.commands.disable_group(ctx.user.target, &group)?;
+                self.promotions.disable_group(ctx.user.target, &group)?;
+                self.themes.disable_group(ctx.user.target, &group)?;
 
                 ctx.respond(format!("Disabled group {}", group));
             }
@@ -173,7 +173,7 @@ impl<'a> command::Handler for Handler<'a> {
                 match ctx.rest().trim() {
                     "" => {
                         let setting =
-                            match self.settings.setting::<Option<serde_json::Value>>(key)? {
+                            match self.settings.setting::<Option<serde_json::Value>>(&key)? {
                                 Some(value) => value,
                                 None => return self.list_settings_by_prefix(ctx, &key),
                             };
@@ -190,7 +190,7 @@ impl<'a> command::Handler for Handler<'a> {
                         ));
                     }
                     value => {
-                        let schema = match self.settings.lookup(key) {
+                        let schema = match self.settings.lookup(&key) {
                             Some(schema) => schema,
                             None => {
                                 ctx.respond("No such setting");
@@ -219,7 +219,7 @@ impl<'a> command::Handler for Handler<'a> {
                         }
 
                         let value_string = serde_json::to_string(&value)?;
-                        self.settings.set_json(key, value)?;
+                        self.settings.set_json(&key, value)?;
                         ctx.respond(format!("Updated setting {} = {}", key, value_string));
                     }
                 }
@@ -279,7 +279,7 @@ impl<'a> Handler<'a> {
 }
 
 /// Extract a settings key from the context.
-fn key<'a>(ctx: &mut command::Context<'a, '_>) -> Option<&'a str> {
+fn key(ctx: &mut command::Context<'_, '_>) -> Option<String> {
     let key = match ctx.next() {
         Some(key) => key,
         None => {

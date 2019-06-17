@@ -795,7 +795,7 @@ impl Handler<'_, '_, '_> {
                 }
 
                 if let Some(command) = it.next() {
-                    if let Some(command) = self.commands.get(user.target, command) {
+                    if let Some(command) = self.commands.get(user.target, &command) {
                         if command.has_var("count") {
                             self.commands.increment(&*command)?;
                         }

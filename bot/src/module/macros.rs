@@ -11,7 +11,7 @@ macro_rules! command_enable {
             }
         };
 
-        if !$db.enable($ctx.user.target, name)? {
+        if !$db.enable($ctx.user.target, &name)? {
             $ctx.respond(format!("No {} named `{}`.", $what, name));
             return Ok(());
         }
@@ -33,7 +33,7 @@ macro_rules! command_disable {
             }
         };
 
-        if !$db.disable($ctx.user.target, name)? {
+        if !$db.disable($ctx.user.target, &name)? {
             $ctx.respond(format!("No {} named `{}`.", $what, name));
             return Ok(());
         }
@@ -55,7 +55,7 @@ macro_rules! command_clear_group {
             }
         };
 
-        if !$db.edit_group($ctx.user.target, name, None)? {
+        if !$db.edit_group($ctx.user.target, &name, None)? {
             $ctx.respond(format!("No {} named `{}`.", $what, name));
             return Ok(());
         }
@@ -107,7 +107,7 @@ macro_rules! command_group {
             }
         };
 
-        if !$db.edit_group($ctx.user.target, name, Some(group.clone()))? {
+        if !$db.edit_group($ctx.user.target, &name, Some(group.clone()))? {
             $ctx.respond(format!("no such {}", $what));
             return Ok(());
         }
@@ -145,7 +145,7 @@ macro_rules! command_delete {
             }
         };
 
-        if $db.delete($ctx.user.target, name)? {
+        if $db.delete($ctx.user.target, &name)? {
             $ctx.respond(format!("Deleted {} `{}`", $what, name));
         } else {
             $ctx.respond(format!("No such {}", $what));
@@ -165,7 +165,7 @@ macro_rules! command_rename {
             }
         };
 
-        match $db.rename($ctx.user.target, from, to) {
+        match $db.rename($ctx.user.target, &from, &to) {
             Ok(()) => $ctx.respond(format!("Renamed {} {} -> {}.", $what, from, to)),
             Err(crate::db::RenameError::Conflict) => {
                 $ctx.respond(format!("Already an {} named `{}`.", $what, to))
@@ -201,8 +201,10 @@ macro_rules! command_show {
 }
 
 macro_rules! command_base {
-    ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {
-        match $ctx.next() {
+    ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
+        let arg = $ctx.next();
+
+        match arg.as_ref().map(String::as_str) {
             Some("clear-group") => {
                 command_clear_group!($ctx, $db, $what, $edit_scope);
                 return Ok(());
@@ -235,7 +237,7 @@ macro_rules! command_base {
                 command_show!($ctx, $db, $what);
                 return Ok(());
             }
-            other => other,
+            _ => arg,
         }
-    };
+    }};
 }

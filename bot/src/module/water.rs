@@ -70,7 +70,9 @@ impl command::Handler for Handler {
             return Ok(());
         }
 
-        match ctx.next() {
+        let a = ctx.next();
+
+        match a.as_ref().map(String::as_str) {
             Some("undo") => {
                 ctx.check_scope(auth::Scope::WaterUndo)?;
 

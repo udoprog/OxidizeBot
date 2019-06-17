@@ -24,7 +24,7 @@ impl command::Handler for Handler {
             return Ok(());
         }
 
-        match ctx.next() {
+        match ctx.next().as_ref().map(String::as_str) {
             Some("set") => {
                 let duration = ctx_try!(ctx.next_parse("<duration> <template>"));
                 let template = ctx_try!(ctx.rest_parse("<duration> <template>"));
