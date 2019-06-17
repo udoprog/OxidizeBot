@@ -6,14 +6,14 @@ pub struct Handler<'a> {
 
 impl<'a> command::Handler for Handler<'a> {
     fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
-        let next = command_base!(ctx, self.themes, "!theme", "theme", ThemeEdit);
+        let next = command_base!(ctx, self.themes, "theme", ThemeEdit);
 
         match next {
             Some("edit") => {
                 ctx.check_scope(auth::Scope::ThemeEdit)?;
 
-                let name = ctx_try!(ctx.next_str("<name> <track-id>", "!theme edit"));
-                let track_id = ctx_try!(ctx.next_parse("<name> <track-id>", "!theme edit"));
+                let name = ctx_try!(ctx.next_str("<name> <track-id>"));
+                let track_id = ctx_try!(ctx.next_parse("<name> <track-id>"));
 
                 self.themes.edit(ctx.user.target, name, track_id)?;
                 ctx.respond("Edited theme.");
@@ -21,9 +21,8 @@ impl<'a> command::Handler for Handler<'a> {
             Some("edit-duration") => {
                 ctx.check_scope(auth::Scope::ThemeEdit)?;
 
-                let name = ctx_try!(ctx.next_str("<name> <start> <end>", "!theme edit-duration"));
-                let start =
-                    ctx_try!(ctx.next_parse("<name> <start> <end>", "!theme edit-duration"));
+                let name = ctx_try!(ctx.next_str("<name> <start> <end>"));
+                let start = ctx_try!(ctx.next_parse("<name> <start> <end>"));
                 let end = ctx_try!(ctx.next_parse_optional());
 
                 self.themes

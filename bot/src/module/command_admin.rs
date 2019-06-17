@@ -17,14 +17,14 @@ impl<'a> command::Handler for Handler<'a> {
             return Ok(());
         }
 
-        let next = command_base!(ctx, self.commands, "!command", "command", CommandEdit);
+        let next = command_base!(ctx, self.commands, "command", CommandEdit);
 
         match next {
             Some("edit") => {
                 ctx.check_scope(auth::Scope::CommandEdit)?;
 
-                let name = ctx_try!(ctx.next_str("<name>", "!command edit"));
-                let template = ctx_try!(ctx.rest_parse("<name> <template>", "!command edit"));
+                let name = ctx_try!(ctx.next_str("<name>"));
+                let template = ctx_try!(ctx.rest_parse("<name> <template>"));
                 self.commands.edit(ctx.user.target, name, template)?;
 
                 ctx.respond("Edited command.");

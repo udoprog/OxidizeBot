@@ -77,7 +77,7 @@ impl Aliases {
     }
 
     /// Lookup an alias based on a command prefix.
-    pub fn lookup<'a>(&self, channel: &str, it: utils::Words<'a>) -> Option<(&'a str, String)> {
+    pub fn lookup<'a>(&self, channel: &str, it: utils::Words<'a>) -> Option<String> {
         let it = it.into_iter();
 
         let inner = self.inner.read();
@@ -87,8 +87,8 @@ impl Aliases {
                 continue;
             }
 
-            if let Some((m, out)) = alias.matches(it.clone()) {
-                return Some((m, out));
+            if let Some(out) = alias.matches(it.clone()) {
+                return Some(out);
             }
         }
 
@@ -164,13 +164,13 @@ impl Alias {
     }
 
     /// Test if the given input matches and return the corresonding replacement if it does.
-    pub fn matches<'a>(&self, mut it: utils::Words<'a>) -> Option<(&'a str, String)> {
+    pub fn matches<'a>(&self, mut it: utils::Words<'a>) -> Option<String> {
         match it.next() {
             Some(value) if value.to_lowercase() == self.key.name => {
                 let data = Data { rest: it.rest() };
 
                 match self.template.render_to_string(&data) {
-                    Ok(s) => return Some((value, s)),
+                    Ok(s) => return Some(s),
                     Err(e) => {
                         log::error!("failed to render alias: {}", e);
                     }

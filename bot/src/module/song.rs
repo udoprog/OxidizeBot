@@ -297,8 +297,7 @@ impl Handler {
 
         let mut response = format!(
             "You can request a song from Spotify with \
-                {prefix} <search>, like \"{prefix} {search}\". You can also use an URI or an URL if you feel adventurous PogChamp",
-            prefix = ctx.alias.unwrap_or("!song request"),
+                <search>, like \"{search}\". You can also use an URI or an URL if you feel adventurous PogChamp",
             search = EXAMPLE_SEARCH,
         );
 
@@ -331,7 +330,7 @@ impl command::Handler for Handler {
         match ctx.next() {
             Some("theme") => {
                 ctx.check_scope(Scope::SongTheme)?;
-                let name = ctx_try!(ctx.next_str("<name>", "!song theme")).to_string();
+                let name = ctx_try!(ctx.next_str("<name>")).to_string();
 
                 let player = player.clone();
                 let user = ctx.user.as_owned_user();
@@ -603,11 +602,38 @@ impl command::Handler for Handler {
                     }
                 }
             }
-            None | Some(_) => {
-                ctx.respond(format!(
-                    "Expected argument to {prefix} command.",
-                    prefix = ctx.alias.unwrap_or("!song"),
-                ));
+            _ => {
+                let mut alts = Vec::new();
+
+                if ctx.user.has_scope(Scope::SongTheme) {
+                    alts.push("theme");
+                }
+
+                if ctx.user.has_scope(Scope::SongEditQueue) {
+                    alts.push("promote");
+                    alts.push("close");
+                    alts.push("open");
+                    alts.push("purge");
+                }
+
+                if ctx.user.has_scope(Scope::SongVolume) {
+                    alts.push("volume");
+                }
+
+                if ctx.user.has_scope(Scope::SongPlaybackControl) {
+                    alts.push("skip");
+                    alts.push("toggle");
+                    alts.push("play");
+                    alts.push("pause");
+                }
+
+                alts.push("list");
+                alts.push("current");
+                alts.push("when");
+                alts.push("delete");
+                alts.push("request");
+                alts.push("length");
+                ctx.respond(format!("Expected argument: {}.", alts.join(" ")));
             }
         }
 

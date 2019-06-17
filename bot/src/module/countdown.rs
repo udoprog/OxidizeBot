@@ -26,8 +26,8 @@ impl command::Handler for Handler {
 
         match ctx.next() {
             Some("set") => {
-                let duration = ctx_try!(ctx.next_parse("<duration> <template>", "!countdown set"));
-                let template = ctx_try!(ctx.rest_parse("<duration> <template>", "!countdown set"));
+                let duration = ctx_try!(ctx.next_parse("<duration> <template>"));
+                let template = ctx_try!(ctx.rest_parse("<duration> <template>"));
 
                 match self.sender.unbounded_send(Event::Set(duration, template)) {
                     Ok(()) => {
