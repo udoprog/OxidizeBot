@@ -343,3 +343,6 @@ types:
   time/template:
     doc: Template to use as a response.
     type: {id: string}
+  poll/enabled:
+    doc: If the `!poll` command is enabled.
+    type: {id: bool}

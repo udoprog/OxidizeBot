@@ -17,6 +17,12 @@ pub trait Handler {
     fn handle(&mut self, ctx: &mut Context<'_, '_>) -> Result<(), Error>;
 }
 
+/// A trait for peeking into chat messages.
+pub trait MessageHook: std::any::Any + Send {
+    /// Peek the given message.
+    fn peek(&mut self, user: &irc::User<'_>, m: &str) -> Result<(), Error>;
+}
+
 /// Context for a single command invocation.
 pub struct Context<'a, 'm> {
     pub api_url: Option<&'a str>,
@@ -28,6 +34,7 @@ pub struct Context<'a, 'm> {
     pub it: &'a mut utils::Words<'m>,
     pub shutdown: &'a utils::Shutdown,
     pub scope_cooldowns: &'a mut HashMap<Scope, utils::Cooldown>,
+    pub message_hooks: &'a mut HashMap<String, Box<dyn MessageHook>>,
 }
 
 impl<'a, 'm> Context<'a, 'm> {

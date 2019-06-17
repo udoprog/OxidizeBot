@@ -348,6 +348,7 @@ impl Irc {
                 currency_handler,
                 url_whitelist_enabled,
                 bad_words_enabled,
+                message_hooks: Default::default(),
             };
 
             let mut client_stream = client.stream().compat().fuse();
@@ -585,6 +586,8 @@ struct Handler<'a, 'to, 'h> {
     currency_handler: currency_admin::Handler<'h>,
     bad_words_enabled: Arc<RwLock<bool>>,
     url_whitelist_enabled: Arc<RwLock<bool>>,
+    /// A hook that can be installed to peek at all incoming messages.
+    message_hooks: HashMap<String, Box<dyn command::MessageHook>>,
 }
 
 /// Handle a command.
@@ -780,6 +783,11 @@ impl Handler<'_, '_, '_> {
                     auth: &self.auth,
                 };
 
+                for (key, hook) in &mut self.message_hooks {
+                    hook.peek(&user, message)
+                        .with_context(|_| format_err!("hook `{}` failed", key))?;
+                }
+
                 // only non-moderators and non-streamer bumps the idle counter.
                 if !self.moderators.contains(user.name) && user.name != self.streamer {
                     self.idle.seen();
@@ -823,6 +831,7 @@ impl Handler<'_, '_, '_> {
                             it: &mut it,
                             shutdown: self.shutdown,
                             scope_cooldowns: &mut self.scope_cooldowns,
+                            message_hooks: &mut self.message_hooks,
                         };
 
                         let result = process_command(

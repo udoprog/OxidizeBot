@@ -478,6 +478,7 @@ async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result
     modules.push(Box::new(module::eight_ball::Module));
     modules.push(Box::new(module::speedrun::Module));
     modules.push(Box::new(module::auth::Module));
+    modules.push(Box::new(module::poll::Module));
 
     if config.obs.is_some() {
         log::warn!("`[obs]` setting has been deprecated from the configuration");
