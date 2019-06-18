@@ -2,9 +2,9 @@ use crate::{prelude::*, settings::Settings, timer, web};
 use chrono::{DateTime, Utc};
 use failure::{bail, format_err, Error};
 use oauth2::{
-    basic::{BasicErrorField, BasicTokenResponse, BasicTokenType},
     AccessToken, AuthUrl, AuthorizationCode, Client, ClientId, ClientSecret, CsrfToken,
-    RedirectUrl, RefreshToken, RequestTokenError, Scope, TokenResponse, TokenUrl,
+    RedirectUrl, RefreshToken, RequestTokenError, Scope, StandardTokenResponse, TokenResponse,
+    TokenType, TokenUrl,
 };
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use std::collections::VecDeque;
@@ -66,15 +66,15 @@ impl Type {
                     .await
             }
             Type::Spotify => {
-                self.refresh_token_impl::<BasicTokenResponse>(config, client, refresh_token)
+                self.refresh_token_impl::<StandardTokenResponse>(config, client, refresh_token)
                     .await
             }
             Type::YouTube => {
-                self.refresh_token_impl::<BasicTokenResponse>(config, client, refresh_token)
+                self.refresh_token_impl::<StandardTokenResponse>(config, client, refresh_token)
                     .await
             }
             Type::NightBot => {
-                self.refresh_token_impl::<BasicTokenResponse>(config, client, refresh_token)
+                self.refresh_token_impl::<StandardTokenResponse>(config, client, refresh_token)
                     .await
             }
         }
@@ -93,15 +93,15 @@ impl Type {
                     .await
             }
             Type::Spotify => {
-                self.exchange_token_impl::<BasicTokenResponse>(config, client, received_token)
+                self.exchange_token_impl::<StandardTokenResponse>(config, client, received_token)
                     .await
             }
             Type::YouTube => {
-                self.exchange_token_impl::<BasicTokenResponse>(config, client, received_token)
+                self.exchange_token_impl::<StandardTokenResponse>(config, client, received_token)
                     .await
             }
             Type::NightBot => {
-                self.exchange_token_impl::<BasicTokenResponse>(config, client, received_token)
+                self.exchange_token_impl::<StandardTokenResponse>(config, client, received_token)
                     .await
             }
         }
@@ -892,7 +892,7 @@ impl Flow {
 pub struct TwitchTokenResponse {
     access_token: AccessToken,
     #[serde(deserialize_with = "oauth2::helpers::deserialize_untagged_enum_case_insensitive")]
-    token_type: BasicTokenType,
+    token_type: TokenType,
     #[serde(skip_serializing_if = "Option::is_none")]
     expires_in: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -904,14 +904,11 @@ pub struct TwitchTokenResponse {
 }
 
 impl TokenResponse for TwitchTokenResponse {
-    type TokenType = BasicTokenType;
-    type ErrorField = BasicErrorField;
-
     fn access_token(&self) -> &AccessToken {
         &self.access_token
     }
 
-    fn token_type(&self) -> &BasicTokenType {
+    fn token_type(&self) -> &TokenType {
         &self.token_type
     }
 
