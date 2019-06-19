@@ -14,7 +14,7 @@ pub trait Handler {
     }
 
     /// Handle the command.
-    fn handle(&mut self, ctx: &mut Context<'_, '_>) -> Result<(), Error>;
+    fn handle(&mut self, ctx: Context<'_>) -> Result<(), Error>;
 }
 
 /// A trait for peeking into chat messages.
@@ -24,20 +24,19 @@ pub trait MessageHook: std::any::Any + Send {
 }
 
 /// Context for a single command invocation.
-pub struct Context<'a, 'm> {
+pub struct Context<'a> {
     pub api_url: Option<&'a str>,
     /// Sender associated with the command.
     pub sender: &'a irc::Sender,
-    pub moderator_cooldown: Option<&'a mut utils::Cooldown>,
     pub thread_pool: &'a ThreadPool,
-    pub user: irc::User<'m>,
-    pub it: &'a mut utils::Words<'m>,
+    pub user: irc::User<'a>,
+    pub it: utils::Words<'a>,
     pub shutdown: &'a utils::Shutdown,
     pub scope_cooldowns: &'a mut HashMap<Scope, utils::Cooldown>,
     pub message_hooks: &'a mut HashMap<String, Box<dyn MessageHook>>,
 }
 
-impl<'a, 'm> Context<'a, 'm> {
+impl<'a> Context<'a> {
     /// Spawn the given result and log on errors.
     pub fn spawn_result<F>(&self, id: &'static str, future: F)
     where
@@ -108,7 +107,7 @@ impl<'a, 'm> Context<'a, 'm> {
     }
 
     /// Get the rest of the commandline.
-    pub fn rest(&self) -> &'m str {
+    pub fn rest(&self) -> &'a str {
         self.it.rest()
     }
 

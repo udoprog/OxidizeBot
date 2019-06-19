@@ -29,7 +29,7 @@ impl Handler<'_> {
 }
 
 impl command::Handler for Handler<'_> {
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
+    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         let currency = self.currency.read();
         let currency = match currency.as_ref() {
             Some(currency) => currency.clone(),

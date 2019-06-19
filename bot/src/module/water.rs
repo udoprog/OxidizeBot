@@ -23,7 +23,7 @@ pub struct Handler {
 impl Handler {
     fn check_waters(
         &mut self,
-        ctx: &mut command::Context<'_, '_>,
+        ctx: &mut command::Context<'_>,
     ) -> Option<(DateTime<Utc>, Option<Reward>)> {
         if let Some((when, user)) = self.waters.last() {
             return Some((when.clone(), user.clone()));
@@ -51,7 +51,7 @@ impl Handler {
 }
 
 impl command::Handler for Handler {
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -76,7 +76,7 @@ impl command::Handler for Handler {
             Some("undo") => {
                 ctx.check_scope(auth::Scope::WaterUndo)?;
 
-                let (_, reward) = match self.check_waters(ctx) {
+                let (_, reward) = match self.check_waters(&mut ctx) {
                     Some(water) => water,
                     None => return Ok(()),
                 };
@@ -110,7 +110,7 @@ impl command::Handler for Handler {
                 });
             }
             None => {
-                let (last, _) = match self.check_waters(ctx) {
+                let (last, _) = match self.check_waters(&mut ctx) {
                     Some(water) => water,
                     None => return Ok(()),
                 };

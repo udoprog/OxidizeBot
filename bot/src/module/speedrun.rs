@@ -26,7 +26,7 @@ pub struct Speedrun {
 
 impl Speedrun {
     /// Query a user.
-    fn query_personal_bests(&self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
+    fn query_personal_bests(&self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         let mut query_user = None;
         let mut category_filter = CategoryFilter::default();
         let mut match_game = None;
@@ -260,7 +260,7 @@ impl Speedrun {
     }
 
     /// Query a game.
-    fn query_game(&self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
+    fn query_game(&self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         let top = *self.top.read();
 
         let game_query = match ctx.next_str("<game> [options]") {
@@ -527,7 +527,7 @@ impl command::Handler for Speedrun {
         Some(auth::Scope::Speedrun)
     }
 
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
+    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

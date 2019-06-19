@@ -19,7 +19,7 @@ impl command::Handler for Time {
         Some(auth::Scope::Time)
     }
 
-    fn handle<'m>(&mut self, ctx: &mut command::Context<'_, 'm>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

@@ -20,7 +20,7 @@ impl command::Handler for Clip<'_> {
         Some(auth::Scope::Clip)
     }
 
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

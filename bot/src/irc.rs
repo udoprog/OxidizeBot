@@ -400,7 +400,7 @@ impl Irc {
                         },
                         message = client_stream.next() => {
                             if let Some(m) = message.transpose()? {
-                                if let Err(e) = handler.handle(&m) {
+                                if let Err(e) = handler.handle(m).await {
                                     log::error!("Failed to handle message: {}", e);
                                 }
                             }
@@ -555,7 +555,7 @@ fn currency_loop<'a>(
 }
 
 /// Handler for incoming messages.
-struct Handler<'a, 'to, 'h> {
+struct Handler<'a> {
     /// Current Streamer.
     streamer: &'a str,
     /// Queue for sending messages.
@@ -581,13 +581,13 @@ struct Handler<'a, 'to, 'h> {
     /// Active moderator cooldown.
     moderator_cooldown: Option<Cooldown>,
     /// Handlers for specific commands like `!skip`.
-    handlers: module::Handlers<'h>,
+    handlers: module::Handlers<'a>,
     /// Handler for shutting down the service.
     shutdown: &'a utils::Shutdown,
     /// Build idle detection.
     idle: &'a idle::Idle,
     /// Pong timeout currently running.
-    pong_timeout: &'to mut Option<timer::Delay>,
+    pong_timeout: &'a mut Option<timer::Delay>,
     /// OAuth 2.0 Token used to authenticate with IRC.
     token: &'a oauth2::SyncToken,
     /// Force a shutdown.
@@ -599,7 +599,7 @@ struct Handler<'a, 'to, 'h> {
     /// Active scope cooldowns.
     scope_cooldowns: HashMap<Scope, Cooldown>,
     /// Handler for currencies.
-    currency_handler: currency_admin::Handler<'h>,
+    currency_handler: currency_admin::Handler<'a>,
     bad_words_enabled: Arc<RwLock<bool>>,
     url_whitelist_enabled: Arc<RwLock<bool>>,
     /// A hook that can be installed to peek at all incoming messages.
@@ -607,12 +607,12 @@ struct Handler<'a, 'to, 'h> {
 }
 
 /// Handle a command.
-pub fn process_command<'a: 'h, 'h>(
-    command: &str,
-    ctx: &mut command::Context<'_, '_>,
-    global_bus: &Arc<bus::Bus<bus::Global>>,
-    currency_handler: &'h mut currency_admin::Handler<'a>,
-    handlers: &'h mut module::Handlers<'a>,
+pub async fn process_command<'a, 'b: 'a>(
+    command: &'a str,
+    mut ctx: command::Context<'a>,
+    global_bus: &'a Arc<bus::Bus<bus::Global>>,
+    currency_handler: &'a mut currency_admin::Handler<'b>,
+    handlers: &'a mut module::Handlers<'b>,
 ) -> Result<(), Error> {
     match command {
         "ping" => {
@@ -662,7 +662,7 @@ pub fn process_command<'a: 'h, 'h>(
     Ok(())
 }
 
-impl Handler<'_, '_, '_> {
+impl<'a> Handler<'a> {
     /// Extract tags from message.
     fn tags<'local>(m: &'local Message) -> Tags<'local> {
         let mut id = None;
@@ -774,7 +774,7 @@ impl Handler<'_, '_, '_> {
     }
 
     /// Handle the given command.
-    pub fn handle<'local>(&mut self, m: &'local Message) -> Result<(), Error> {
+    pub async fn handle(&mut self, m: Message) -> Result<(), Error> {
         match m.command {
             Command::PRIVMSG(_, ref message) => {
                 let tags = Self::tags(&m);
@@ -838,13 +838,12 @@ impl Handler<'_, '_, '_> {
                     if command.starts_with('!') {
                         let command = &command[1..];
 
-                        let mut ctx = command::Context {
+                        let ctx = command::Context {
                             api_url: self.api_url.as_ref().map(|s| s.as_str()),
                             sender: &self.sender,
-                            moderator_cooldown: self.moderator_cooldown.as_mut(),
                             thread_pool: &self.thread_pool,
                             user: user.clone(),
-                            it: &mut it,
+                            it,
                             shutdown: self.shutdown,
                             scope_cooldowns: &mut self.scope_cooldowns,
                             message_hooks: &mut self.message_hooks,
@@ -852,13 +851,13 @@ impl Handler<'_, '_, '_> {
 
                         let result = process_command(
                             command,
-                            &mut ctx,
+                            ctx,
                             &self.global_bus,
                             &mut self.currency_handler,
                             &mut self.handlers,
                         );
 
-                        if let Err(e) = result {
+                        if let Err(e) = result.await {
                             log_err!(e, "failed to process command");
                         }
                     }

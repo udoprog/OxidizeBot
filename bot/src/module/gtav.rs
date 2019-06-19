@@ -538,7 +538,7 @@ pub struct Handler {
 
 impl Handler {
     /// Play the specified theme song.
-    fn play_theme_song(&mut self, ctx: &mut command::Context<'_, '_>, id: &str) {
+    fn play_theme_song(&mut self, ctx: &command::Context<'_>, id: &str) {
         let player = self.player.read();
 
         if let Some(player) = player.as_ref() {
@@ -563,7 +563,7 @@ impl Handler {
     /// Check if the given user is subject to cooldown right now.
     fn check_cooldown(
         &mut self,
-        ctx: &mut command::Context<'_, '_>,
+        ctx: &command::Context<'_>,
         command: &Command,
         category_cooldown: Option<Arc<RwLock<Cooldown>>>,
     ) -> Option<(&'static str, time::Duration)> {
@@ -651,14 +651,14 @@ impl Handler {
     /// Handle the other commands.
     fn handle_other(
         &mut self,
-        ctx: &mut command::Context<'_, '_>,
+        ctx: &mut command::Context<'_>,
     ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next().as_ref().map(String::as_str) {
             Some("randomize-color") => Command::RandomizeColor,
             Some("randomize-weather") => Command::RandomizeWeather,
             Some("randomize-character") => Command::RandomizeCharacter,
             Some("randomize-doors") => Command::RandomizeDoors,
-            Some("license") => match license(ctx.rest(), ctx) {
+            Some("license") => match license(ctx.rest(), &ctx) {
                 Some(license) => Command::License(license),
                 None => return Ok(None),
             },
@@ -686,7 +686,7 @@ impl Handler {
     /// Handle the punish command.
     fn handle_punish(
         &mut self,
-        ctx: &mut command::Context<'_, '_>,
+        ctx: &mut command::Context<'_>,
     ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next().as_ref().map(String::as_str) {
             Some("stumble") => Command::Stumble,
@@ -764,7 +764,7 @@ impl Handler {
     /// Handle the reward command.
     fn handle_reward(
         &mut self,
-        ctx: &mut command::Context<'_, '_>,
+        ctx: &mut command::Context<'_>,
     ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next().as_ref().map(String::as_str) {
             Some("car") => Command::SpawnRandomVehicle(Vehicle::random_car()),
@@ -791,11 +791,11 @@ impl Handler {
             Some("armor") => Command::GiveArmor,
             Some("boost") => Command::Boost,
             Some("superboost") => {
-                self.play_theme_song(ctx, "gtav/superboost");
+                self.play_theme_song(&ctx, "gtav/superboost");
                 Command::SuperBoost
             }
             Some("superspeed") => {
-                self.play_theme_song(ctx, "gtav/superspeed");
+                self.play_theme_song(&ctx, "gtav/superspeed");
                 Command::SuperSpeed(30f32)
             }
             Some("superswim") => Command::SuperSwim(30f32),
@@ -848,7 +848,7 @@ impl Handler {
 }
 
 impl command::Handler for Handler {
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
+    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -864,16 +864,16 @@ impl command::Handler for Handler {
 
         let (result, category_cooldown) = match ctx.next().as_ref().map(String::as_str) {
             Some("other") => {
-                let command = self.handle_other(ctx)?;
+                let command = self.handle_other(&mut ctx)?;
                 (command, None)
             }
             Some("punish") => {
-                let command = self.handle_punish(ctx)?;
+                let command = self.handle_punish(&mut ctx)?;
                 let cooldown = self.punish_cooldown.clone();
                 (command, Some(cooldown))
             }
             Some("reward") => {
-                let command = self.handle_reward(ctx)?;
+                let command = self.handle_reward(&mut ctx)?;
                 let cooldown = self.reward_cooldown.clone();
                 (command, Some(cooldown))
             }
@@ -913,7 +913,8 @@ impl command::Handler for Handler {
         let bypass_cooldown = ctx.user.has_scope(Scope::GtavBypassCooldown);
 
         if !bypass_cooldown {
-            if let Some((what, remaining)) = self.check_cooldown(ctx, &command, category_cooldown) {
+            if let Some((what, remaining)) = self.check_cooldown(&ctx, &command, category_cooldown)
+            {
                 ctx.respond(format!(
                     "{} cooldown in effect, please wait at least {}!",
                     what,
@@ -992,7 +993,7 @@ impl command::Handler for Handler {
 }
 
 /// Parse a license plate.Arc
-fn license(input: &str, ctx: &mut command::Context<'_, '_>) -> Option<String> {
+fn license(input: &str, ctx: &command::Context<'_>) -> Option<String> {
     match input {
         "" => None,
         license if license.len() > 8 => {

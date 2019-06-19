@@ -8,7 +8,7 @@ pub struct Handler<'a> {
 }
 
 impl<'a> command::Handler for Handler<'a> {
-    fn handle<'m>(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
+    fn handle<'m>(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         match ctx.next().as_ref().map(String::as_str) {
             Some("scopes") => {
                 let filter = ctx.next();

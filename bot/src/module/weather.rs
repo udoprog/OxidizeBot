@@ -52,7 +52,7 @@ impl command::Handler for Weather {
         Some(auth::Scope::Weather)
     }
 
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
+    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

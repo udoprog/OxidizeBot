@@ -5,7 +5,7 @@ pub struct Handler<'a> {
 }
 
 impl<'a> command::Handler for Handler<'a> {
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
         let next = command_base!(ctx, self.themes, "theme", ThemeEdit);
 
         match next.as_ref().map(String::as_str) {

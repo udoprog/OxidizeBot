@@ -16,7 +16,7 @@ impl command::Handler for Poll {
         Some(auth::Scope::Poll)
     }
 
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

@@ -28,11 +28,7 @@ pub struct Handler {
 }
 
 impl Handler {
-    fn handle_request(
-        &mut self,
-        ctx: &mut command::Context<'_, '_>,
-        player: Player,
-    ) -> Result<(), Error> {
+    fn handle_request(&mut self, ctx: command::Context<'_>, player: Player) -> Result<(), Error> {
         let q = ctx.rest().trim().to_string();
 
         if q.is_empty() {
@@ -286,7 +282,7 @@ impl Handler {
     }
 
     /// Provide a help message instructing the user how to perform song requests.
-    fn request_help(&mut self, ctx: &mut command::Context<'_, '_>, reason: Option<&str>) {
+    fn request_help(&mut self, ctx: command::Context<'_>, reason: Option<&str>) {
         if !self.request_help_cooldown.is_open() {
             if let Some(reason) = reason {
                 ctx.respond(reason);
@@ -314,7 +310,7 @@ impl command::Handler for Handler {
         Some(Scope::Song)
     }
 
-    fn handle(&mut self, mut ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
+    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -572,7 +568,7 @@ impl command::Handler for Handler {
                 player.skip()?;
             }
             Some("request") => {
-                self.handle_request(&mut ctx, player)?;
+                self.handle_request(ctx, player)?;
             }
             Some("toggle") => {
                 ctx.check_scope(Scope::SongPlaybackControl)?;

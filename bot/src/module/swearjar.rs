@@ -24,7 +24,7 @@ impl<'a> command::Handler for Handler<'a> {
         Some(Scope::SwearJar)
     }
 
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), failure::Error> {
+    fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

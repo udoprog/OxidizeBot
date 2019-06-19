@@ -12,11 +12,7 @@ pub struct Handler<'a> {
 
 impl Handler<'_> {
     /// List settings by prefix.
-    fn list_settings_by_prefix(
-        &self,
-        ctx: &mut command::Context<'_, '_>,
-        key: &str,
-    ) -> Result<(), Error> {
+    fn list_settings_by_prefix(&self, ctx: command::Context<'_>, key: &str) -> Result<(), Error> {
         let mut results = Vec::new();
 
         let settings = self.settings.list_by_prefix(key)?;
@@ -64,7 +60,7 @@ impl<'a> command::Handler for Handler<'a> {
         Some(auth::Scope::Admin)
     }
 
-    fn handle(&mut self, ctx: &mut command::Context<'_, '_>) -> Result<(), Error> {
+    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         match ctx.next().as_ref().map(String::as_str) {
             Some("refresh-mods") => {
                 ctx.privmsg("/mods");
@@ -91,12 +87,12 @@ impl<'a> command::Handler for Handler<'a> {
             }
             // Insert a value into a setting.
             Some("push") => {
-                let key = match key(ctx) {
+                let key = match key(&mut ctx) {
                     Some(key) => key,
                     None => return Ok(()),
                 };
 
-                let value = match self.value_in_set(ctx, &key) {
+                let value = match self.value_in_set(&ctx, &key) {
                     Some(ty) => ty,
                     None => return Ok(()),
                 };
@@ -112,12 +108,12 @@ impl<'a> command::Handler for Handler<'a> {
             }
             // Delete a value from a setting.
             Some("delete") => {
-                let key = match key(ctx) {
+                let key = match key(&mut ctx) {
                     Some(key) => key,
                     None => return Ok(()),
                 };
 
-                let value = match self.value_in_set(ctx, &key) {
+                let value = match self.value_in_set(&ctx, &key) {
                     Some(ty) => ty,
                     None => return Ok(()),
                 };
@@ -165,7 +161,7 @@ impl<'a> command::Handler for Handler<'a> {
             }
             // Get or set settings.
             Some("settings") => {
-                let key = match key(ctx) {
+                let key = match key(&mut ctx) {
                     Some(key) => key,
                     None => return Ok(()),
                 };
@@ -242,11 +238,7 @@ impl<'a> command::Handler for Handler<'a> {
 
 impl<'a> Handler<'a> {
     /// Get a value that corresponds with the given set.
-    fn value_in_set(
-        &mut self,
-        ctx: &mut command::Context<'_, '_>,
-        key: &str,
-    ) -> Option<serde_json::Value> {
+    fn value_in_set(&mut self, ctx: &command::Context<'_>, key: &str) -> Option<serde_json::Value> {
         let schema = match self.settings.lookup(key) {
             Some(schema) => schema,
             None => {
@@ -279,7 +271,7 @@ impl<'a> Handler<'a> {
 }
 
 /// Extract a settings key from the context.
-fn key(ctx: &mut command::Context<'_, '_>) -> Option<String> {
+fn key(ctx: &mut command::Context<'_>) -> Option<String> {
     let key = match ctx.next() {
         Some(key) => key,
         None => {
