@@ -421,21 +421,3 @@ This enables the following commands:
   * Example: `!weather current` - Would query for weather data for the location that the streamer has configured `weather/location`.
 
 [OpenWeatherMap]: https://openweathermap.org
-
-## Migrating from 0.2 to 0.3
-
-SetMod 0.3 completely removes the need for any configuration files.
-Everything is now managed through the `Settings` page in the UI.
-
-We've also moved where we expect the database to be, so if you have an old `0.2` database and a `config.toml` file you'll have to move it like this:
-
-1. Install SetMod `0.3.x`
-2. Start SetMod through the Start Menu.
-3. When SetMod is running it has a systray icon.
-   Click on it and select `Open Directory...`.
-4. Quit SetMod.
-5. Copy the following files into the directory that you just opened:
-   * Your old `config.toml`
-   * Your old `*.sql` database, which must be renamed to `setmod.sql`.
-6. Start SetMod again. This time it will migrate any existing configuration.
-7. Remove `config.toml`.
