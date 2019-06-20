@@ -216,7 +216,21 @@ class IndexPage extends React.Component {
     });
   }
 
-  render() {
+  /**
+   * Get default version information.
+   */
+  defaultVersionInfo(version) {
+    return (
+      <Alert variant="info" style={{textAlign: "center"}}>
+        You're running the latest version of <b>SetMod</b> (<b>{version}</b>).
+      </Alert>
+    );
+  }
+
+  /**
+   * Get information on new versions available, or the current version of the bot.
+   */
+  versionInfo() {
     let version = <utils.Spinner />;
     let latest = null;
 
@@ -225,26 +239,30 @@ class IndexPage extends React.Component {
       latest = this.state.version.latest;
     }
 
-    let versionInfo = (
-      <Alert variant="info" style={{textAlign: "center"}}>
-        You're running the latest version of <b>SetMod</b> (<b>{version}</b>).
+    if (!latest || !semver.valid(latest.version)) {
+      return this.defaultVersionInfo(version);
+    }
+
+    if (!semver.gt(latest.version, version) || !latest.asset) {
+      return this.defaultVersionInfo(version);
+    }
+
+    return (
+      <Alert variant="warning" style={{textAlign: "center"}}>
+        <div className="mb-2" style={{fontSize: "150%"}}>
+          SetMod <b>{latest.version}</b> is available (current: <b>{version}</b>).
+        </div>
+
+        <div>
+          Download link:&nbsp;
+          <a href={latest.asset.download_url}>{latest.asset.name}</a>
+        </div>
       </Alert>
     );
+  }
 
-    if (latest && semver.gt(latest.version, version) && latest.asset) {
-      versionInfo = (
-        <Alert variant="warning" style={{textAlign: "center"}}>
-          <div className="mb-2" style={{fontSize: "150%"}}>
-            SetMod <b>{latest.version}</b> is available (current: <b>{version}</b>).
-          </div>
-
-          <div>
-            Download link:&nbsp;
-            <a href={latest.asset.download_url}>{latest.asset.name}</a>
-          </div>
-        </Alert>
-      );
-    }
+  render() {
+    let versionInfo = this.versionInfo();
 
     return (
       <RouteLayout>
