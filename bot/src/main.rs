@@ -437,7 +437,6 @@ async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
         nightbot,
         streamer_twitch,
         bot_twitch,
-        token: bot_token,
         commands,
         aliases,
         promotions,

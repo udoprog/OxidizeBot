@@ -40,7 +40,6 @@ pub struct Irc {
     pub nightbot: Arc<api::NightBot>,
     pub streamer_twitch: api::Twitch,
     pub bot_twitch: api::Twitch,
-    pub token: oauth2::SyncToken,
     pub commands: db::Commands,
     pub aliases: db::Aliases,
     pub promotions: db::Promotions,
@@ -65,7 +64,6 @@ impl Irc {
             nightbot,
             streamer_twitch,
             bot_twitch,
-            token,
             commands,
             aliases,
             promotions,
@@ -87,7 +85,7 @@ impl Irc {
 
             future::try_join(
                 streamer_twitch.token.wait_until_ready(),
-                token.wait_until_ready(),
+                bot_twitch.token.wait_until_ready(),
             )
             .await?;
 
@@ -96,6 +94,22 @@ impl Irc {
                 streamer_twitch.validate_token(),
             )
             .await?;
+
+            // Force refresh if tokens cannot be validated.
+            let (streamer_info, bot_info) = match (streamer_info, bot_info) {
+                (Some(streamer_info), Some(bot_info)) => (streamer_info, bot_info),
+                (streamer_info, bot_info) => {
+                    if streamer_info.is_none() {
+                        streamer_twitch.token.force_refresh()?;
+                    }
+
+                    if bot_info.is_none() {
+                        bot_twitch.token.force_refresh()?;
+                    }
+
+                    continue;
+                }
+            };
 
             let bot = bot_info.login.to_lowercase();
             let bot = bot.as_str();
@@ -107,7 +121,7 @@ impl Irc {
 
             *global_channel.write() = Some(channel.to_string());
 
-            let access_token = token.read()?.access_token().to_string();
+            let access_token = bot_twitch.token.read()?.access_token().to_string();
 
             let irc_client_config = client::data::config::Config {
                 nickname: Some(bot.to_string()),
@@ -239,7 +253,7 @@ impl Irc {
                 shutdown: &shutdown,
                 idle: &idle,
                 pong_timeout: &mut pong_timeout,
-                token: &token,
+                token: &bot_twitch.token,
                 handler_shutdown: false,
                 stream_info: &stream_info,
                 auth: &auth,

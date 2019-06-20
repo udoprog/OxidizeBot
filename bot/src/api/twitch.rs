@@ -7,7 +7,7 @@ use failure::{Error, ResultExt};
 use reqwest::{
     header,
     r#async::{Client, Decoder},
-    Method, Url,
+    Method, StatusCode, Url,
 };
 use std::mem;
 
@@ -172,7 +172,7 @@ impl Twitch {
     }
 
     // Validate the specified token through twitch validation API.
-    pub async fn validate_token(&self) -> Result<ValidateToken, Error> {
+    pub async fn validate_token(&self) -> Result<Option<ValidateToken>, Error> {
         let mut url = self.id_url.clone();
 
         url.path_segments_mut()
@@ -184,7 +184,18 @@ impl Twitch {
             .client_id_header("Client-ID")
             .use_oauth2_header();
 
-        Ok(request.json().await.context("validate token error")?)
+        return Ok(request
+            .json_option(unauthorized)
+            .await
+            .context("validate token error")?);
+
+        /// Handle not found as a missing body.
+        fn unauthorized(status: &StatusCode) -> bool {
+            match *status {
+                StatusCode::UNAUTHORIZED => true,
+                _ => false,
+            }
+        }
     }
 }
 

@@ -603,31 +603,51 @@ impl TokenBuilder {
 
         let expires = self.expires.clone();
 
-        let update = match self.token.as_ref() {
-            // existing expired token.
-            Some(token) if token.expires_within(expires)? || self.force_refresh => {
-                self.force_refresh = false;
-                let new_token = self
-                    .ty
-                    .refresh_token(config, client, token.refresh_token.clone())
-                    .await?;
-                let new_token = self.validate_token(config, client, new_token).await?;
-                self.token = new_token.clone();
-                Some(new_token)
-            }
-            // Existing token is fine.
-            Some(..) => None,
-            // No existing token, request a new one.
-            None => {
-                let new_token = self.request_new_token(config, client).await?;
-                let new_token = self.validate_token(config, client, new_token).await?;
-                self.token = new_token.clone();
-                Some(new_token)
-            }
-        };
+        loop {
+            let update = match self.token.as_ref() {
+                // existing expired token.
+                Some(token) if token.expires_within(expires)? || self.force_refresh => {
+                    self.force_refresh = false;
 
-        self.initial = false;
-        Ok(update)
+                    let result = self
+                        .ty
+                        .refresh_token(config, client, token.refresh_token.clone())
+                        .await;
+
+                    let new_token = match result {
+                        Ok(new_token) => new_token,
+                        Err(e) => {
+                            log::warn!("{}: Failed to refresh token: {}", self.what, e);
+                            self.token = None;
+                            continue;
+                        }
+                    };
+
+                    let new_token = match self.validate_token(config, client, new_token).await? {
+                        Some(new_token) => new_token,
+                        None => {
+                            self.token = None;
+                            continue;
+                        }
+                    };
+
+                    self.token = Some(new_token.clone());
+                    Some(Some(new_token))
+                }
+                // Existing token is fine.
+                Some(..) => None,
+                // No existing token, request a new one.
+                None => {
+                    let new_token = self.request_new_token(config, client).await?;
+                    let new_token = self.validate_token(config, client, new_token).await?;
+                    self.token = new_token.clone();
+                    Some(new_token)
+                }
+            };
+
+            self.initial = false;
+            return Ok(update);
+        }
     }
 
     /// Request a new token from the authentication flow.
