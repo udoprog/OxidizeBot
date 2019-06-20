@@ -1,6 +1,6 @@
 use crate::{
     auth::Scope,
-    command, config, currency, irc, module, player,
+    command, currency, irc, module, player,
     prelude::*,
     utils::{compact_duration, Cooldown, Duration},
 };
@@ -1008,33 +1008,7 @@ fn license(input: &str, ctx: &command::Context<'_>) -> Option<String> {
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
-pub struct Config {
-    #[serde(default)]
-    cooldown: Option<Cooldown>,
-}
-
-pub struct Module {
-    default_cooldown: Option<Cooldown>,
-}
-
-impl Module {
-    pub fn load(config: &config::Config) -> Self {
-        let mut default_cooldown = None;
-
-        for m in &config.modules {
-            match *m {
-                module::Config::Gtav(ref config) => {
-                    log::warn!("`[[modules]] type = \"gtav\"` configuration is deprecated");
-                    default_cooldown = config.cooldown.clone();
-                }
-                _ => (),
-            }
-        }
-
-        Module { default_cooldown }
-    }
-}
+pub struct Module;
 
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
@@ -1055,11 +1029,6 @@ impl super::Module for Module {
         let currency = injector.var(futures);
         let settings = settings.scoped("gtav");
 
-        let default_cooldown = self
-            .default_cooldown
-            .clone()
-            .unwrap_or_else(|| Cooldown::from_duration(Duration::seconds(1)));
-
         let default_reward_cooldown = Cooldown::from_duration(Duration::seconds(60));
         let default_punish_cooldown = Cooldown::from_duration(Duration::seconds(60));
         let default_per_user_cooldown = Cooldown::from_duration(Duration::seconds(60));
@@ -1069,7 +1038,7 @@ impl super::Module for Module {
         let enabled = Arc::new(RwLock::new(enabled));
 
         let mut vars = settings.vars();
-        let cooldown = vars.var("cooldown", default_cooldown)?;
+        let cooldown = vars.var("cooldown", Cooldown::from_duration(Duration::seconds(1)))?;
         let reward_cooldown = vars.var("reward-cooldown", default_reward_cooldown)?;
         let punish_cooldown = vars.var("punish-cooldown", default_punish_cooldown)?;
         let per_user_cooldown = vars.var("per-user-cooldown", default_per_user_cooldown)?;

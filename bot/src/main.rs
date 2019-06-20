@@ -6,11 +6,10 @@ use backoff::backoff::Backoff as _;
 use failure::{bail, format_err, Error, ResultExt};
 use parking_lot::RwLock;
 use setmod::{
-    api, auth, bus, config, db, injector, irc, module, oauth2, obs, player, prelude::*, secrets,
-    settings, stream_info, sys, updater, utils, web,
+    api, auth, bus, config, db, injector, irc, module, oauth2, obs, player, prelude::*, settings,
+    stream_info, sys, updater, utils, web,
 };
 use std::{
-    fs,
     path::{Path, PathBuf},
     sync::Arc,
     time,
@@ -121,16 +120,20 @@ fn main() -> Result<(), Error> {
 
     let trace = m.is_present("trace");
 
+    let log_config = m.value_of("log-config").map(PathBuf::from);
+    let default_log_file = root.join("setmod.log");
+
+    setup_logs(&root, log_config, &default_log_file, trace).context("failed to setup logs")?;
+
     let config = m
         .value_of("config")
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join("config.toml"))
         .to_owned();
 
-    let log_config = m.value_of("log-config").map(PathBuf::from);
-    let default_log_file = root.join("setmod.log");
-
-    setup_logs(&root, log_config, &default_log_file, trace).context("failed to setup logs")?;
+    if config.is_file() {
+        log::warn!("Configuration file is deprecated: {}", config.display());
+    }
 
     if !root.is_dir() {
         log::info!("Creating SetMod directory: {}", root.display());
@@ -159,11 +162,7 @@ fn main() -> Result<(), Error> {
 
         let mut runtime = tokio::runtime::Runtime::new()?;
 
-        let result = runtime.block_on(
-            try_main(system.clone(), root.clone(), config.clone())
-                .boxed()
-                .compat(),
-        );
+        let result = runtime.block_on(try_main(system.clone(), root.clone()).boxed().compat());
 
         match result {
             Err(e) => {
@@ -214,32 +213,14 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result<(), Error> {
+async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
     log::info!("Starting SetMod Version {}", setmod::VERSION);
 
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
 
-    let config: config::Config = if config.is_file() {
-        log::info!("Loaded configuration from: {}", config.display());
-        log::warn!("A configuration file is now optional, please consider removing it!");
-
-        fs::read_to_string(&config)
-            .map_err(Error::from)
-            .and_then(|s| toml::de::from_str(&s).map_err(Error::from))
-            .with_context(|_| format_err!("failed to read configuration: {}", config.display()))?
-    } else {
-        Default::default()
-    };
-
-    let config = Arc::new(config);
-
     let mut modules = Vec::<Box<dyn module::Module>>::new();
 
-    let database_path = config
-        .database_url
-        .as_ref()
-        .map(|url| url.to_path(&root))
-        .unwrap_or_else(|| root.join("setmod.sql"));
+    let database_path = root.join("setmod.sql");
 
     let db = db::Database::open(&database_path, Arc::clone(&thread_pool))
         .with_context(|_| format_err!("failed to open database at: {}", database_path.display()))?;
@@ -262,45 +243,6 @@ async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result
     let aliases = db::Aliases::load(db.clone())?;
     let promotions = db::Promotions::load(db.clone())?;
     let themes = db::Themes::load(db.clone())?;
-
-    if !config.whitelisted_hosts.is_empty() {
-        log::warn!("The `whitelisted_hosts` section in the configuration is now deprecated.");
-    }
-
-    if let Some(path) = config.bad_words.as_ref() {
-        let path = path.to_path(&root);
-        bad_words
-            .load_from_path(&path)
-            .with_context(|_| format_err!("failed to load bad words from: {}", path.display()))?;
-    };
-
-    let secrets_path = root.join("secrets.yml");
-
-    let secrets = if secrets_path.is_file() {
-        secrets::Secrets::open(&secrets_path)?
-    } else {
-        secrets::Secrets::empty()
-    };
-
-    if let Some(config) = secrets.load::<oauth2::Config>("spotify::oauth2")? {
-        if !settings.has("secrets/oauth2/twitch/config")? {
-            log::warn!(
-                "migrating secret `spotify::oauth2` from {}",
-                secrets_path.display()
-            );
-            settings.set("secrets/oauth2/spotify/config", config)?;
-        }
-    }
-
-    if let Some(config) = secrets.load::<oauth2::Config>("twitch::oauth2")? {
-        if !settings.has("secrets/oauth2/twitch/config")? {
-            log::warn!(
-                "migrating secret `twitch::oauth2` from {}",
-                secrets_path.display()
-            );
-            settings.set("secrets/oauth2/twitch/config", config)?;
-        }
-    }
 
     let global_bus = Arc::new(bus::Bus::new());
     let youtube_bus = Arc::new(bus::Bus::new());
@@ -437,7 +379,6 @@ async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result
         db.clone(),
         spotify.clone(),
         youtube.clone(),
-        config.clone(),
         global_bus.clone(),
         youtube_bus.clone(),
         settings.clone(),
@@ -453,7 +394,6 @@ async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result
 
     futures.push(
         api::setbac::run(
-            &config,
             &settings,
             &injector,
             streamer_token.clone(),
@@ -465,14 +405,14 @@ async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result
     modules.push(Box::new(module::time::Module));
     modules.push(Box::new(module::song::Module));
     modules.push(Box::new(module::command_admin::Module));
-    modules.push(Box::new(module::admin::Module::load()));
-    modules.push(Box::new(module::alias_admin::Module::load()));
-    modules.push(Box::new(module::theme_admin::Module::load()));
-    modules.push(Box::new(module::promotions::Module::load(&config)));
-    modules.push(Box::new(module::swearjar::Module::load(&config)));
-    modules.push(Box::new(module::countdown::Module::load(&config)));
-    modules.push(Box::new(module::gtav::Module::load(&config)));
-    modules.push(Box::new(module::water::Module::load(&config)));
+    modules.push(Box::new(module::admin::Module));
+    modules.push(Box::new(module::alias_admin::Module));
+    modules.push(Box::new(module::theme_admin::Module));
+    modules.push(Box::new(module::promotions::Module));
+    modules.push(Box::new(module::swearjar::Module));
+    modules.push(Box::new(module::countdown::Module));
+    modules.push(Box::new(module::gtav::Module));
+    modules.push(Box::new(module::water::Module));
     modules.push(Box::new(module::misc::Module));
     modules.push(Box::new(module::after_stream::Module));
     modules.push(Box::new(module::clip::Module));
@@ -481,14 +421,6 @@ async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result
     modules.push(Box::new(module::auth::Module));
     modules.push(Box::new(module::poll::Module));
     modules.push(Box::new(module::weather::Module));
-
-    if config.obs.is_some() {
-        log::warn!("`[obs]` setting has been deprecated from the configuration");
-    }
-
-    if config.features.is_some() {
-        log::warn!("`features` setting has been deprecated from the configuration");
-    }
 
     let future = obs::setup(&settings, &injector)?;
     futures.push(future.boxed());
@@ -505,7 +437,6 @@ async fn try_main(system: sys::System, root: PathBuf, config: PathBuf) -> Result
         nightbot,
         streamer_twitch,
         bot_twitch,
-        config,
         token: bot_token,
         commands,
         aliases,

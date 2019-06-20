@@ -1,5 +1,5 @@
 use crate::{
-    api, bus, config,
+    api, bus,
     currency::Currency,
     db,
     prelude::*,
@@ -43,31 +43,6 @@ pub enum Source {
     Automatic,
     /// Event was generated from user input. Broadcast feedback.
     Manual,
-}
-
-#[derive(Debug, Default, serde::Deserialize)]
-pub struct Config {
-    /// The max queue length of the player.
-    #[serde(default)]
-    max_queue_length: Option<u32>,
-    /// The max number of songs per user.
-    #[serde(default)]
-    max_songs_per_user: Option<u32>,
-    /// Playlist to fall back on. Will otherwise use the saved songs of the user.
-    #[serde(default)]
-    playlist: Option<String>,
-    /// Volume of player.
-    #[serde(default)]
-    volume: Option<u32>,
-    /// Whether or not to echo current song.
-    #[serde(default)]
-    echo_current_song: Option<bool>,
-    /// Device to use with connect player.
-    #[serde(default)]
-    device: Option<String>,
-    /// Interval at which to try to sync the remote player with the local state.
-    #[serde(default)]
-    sync_player_interval: utils::Duration,
 }
 
 /// Information on a single track.
@@ -206,7 +181,6 @@ pub fn run(
     db: db::Database,
     spotify: Arc<api::Spotify>,
     youtube: Arc<api::YouTube>,
-    config: Arc<config::Config>,
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     settings: settings::Settings,
@@ -241,27 +215,6 @@ pub fn run(
         false => Some(timer::Interval::new_interval(song_update_interval.as_std())),
     };
 
-    if !config.player.sync_player_interval.is_empty() {
-        log::warn!("### DEPRECATION WARNING");
-        log::warn!("[player] sync_player_interval - configuration has been deprecated since it was too unreliable.");
-    }
-
-    if config.current_song.path.is_some() {
-        log::warn!("`[current_song] path` configuration is deprecated.");
-    }
-
-    if config.current_song.template.is_some() {
-        log::warn!("`[current_song] template` configuration is deprecated.");
-    }
-
-    if config.current_song.not_playing.is_some() {
-        log::warn!("`[current_song] not_playing` configuration is deprecated.");
-    }
-
-    if !config.current_song.update_interval.is_empty() {
-        log::warn!("`[current_song] update_interval` configuration is deprecated.");
-    }
-
     let (commands_tx, commands) = mpsc::unbounded();
 
     let (detached_stream, detached) = settings.stream("detached").or_default()?;
@@ -269,38 +222,11 @@ pub fn run(
 
     let duplicate_duration = vars.var("duplicate-duration", utils::Duration::default())?;
 
-    let song_switch_feedback = vars.var(
-        "song-switch-feedback",
-        match config.player.echo_current_song.clone() {
-            Some(value) => {
-                log::warn!("`[player] echo_current_song` configuration is deprecated");
-                value
-            }
-            None => true,
-        },
-    )?;
+    let song_switch_feedback = vars.var("song-switch-feedback", true)?;
 
-    let max_songs_per_user = vars.var(
-        "max-songs-per-user",
-        match config.player.max_songs_per_user.clone() {
-            Some(value) => {
-                log::warn!("`[player] max_songs_per_user` configuration is deprecated");
-                value
-            }
-            None => 2,
-        },
-    )?;
+    let max_songs_per_user = vars.var("max-songs-per-user", 2)?;
 
-    let max_queue_length = vars.var(
-        "max-queue-length",
-        match config.player.max_queue_length.clone() {
-            Some(value) => {
-                log::warn!("`[player] max_queue_length` configuration is deprecated");
-                value
-            }
-            None => 30,
-        },
-    )?;
+    let max_queue_length = vars.var("max-queue-length", 30)?;
 
     futures.push(vars.run().boxed());
 
@@ -360,7 +286,6 @@ pub fn run(
         };
 
         let future = PlaybackFuture {
-            config: config.clone(),
             spotify: spotify.clone(),
             connect_stream,
             connect_player: connect_player.clone(),
@@ -1437,7 +1362,6 @@ pub enum State {
 
 /// Future associated with driving audio playback.
 pub struct PlaybackFuture {
-    config: Arc<config::Config>,
     spotify: Arc<api::Spotify>,
     connect_stream: self::connect::ConnectStream,
     connect_player: self::connect::ConnectPlayer,
@@ -1474,42 +1398,23 @@ impl PlaybackFuture {
     pub async fn run(mut self, settings: settings::Settings) -> Result<(), Error> {
         let song_file = settings.scoped("song-file");
 
-        let (mut path_stream, path) = song_file
-            .stream("path")
-            .or_else(|| self.config.current_song.path.clone())
-            .optional()?;
-
-        let default_template = Some(
-            self.config
-                .current_song
-                .template
-                .clone()
-                .map(Ok)
-                .unwrap_or_else(|| Template::compile(DEFAULT_CURRENT_SONG_TEMPLATE))?,
-        );
-
-        let default_stopped_template = Some(
-            self.config
-                .current_song
-                .not_playing
-                .clone()
-                .map(Ok)
-                .unwrap_or_else(|| Template::compile(DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE))?,
-        );
+        let (mut path_stream, path) = song_file.stream("path").optional()?;
 
         let (mut template_stream, template) = song_file
             .stream("template")
-            .or(default_template)
+            .or(Some(Template::compile(DEFAULT_CURRENT_SONG_TEMPLATE)?))
             .optional()?;
 
         let (mut stopped_template_stream, stopped_template) = song_file
             .stream("stopped-template")
-            .or(default_stopped_template)
+            .or(Some(Template::compile(
+                DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE,
+            )?))
             .optional()?;
 
         let (mut update_interval_stream, update_interval) = song_file
             .stream("update-interval")
-            .or_with(self.config.current_song.update_interval.clone())?;
+            .or_with(utils::Duration::seconds(1))?;
 
         let (mut enabled_stream, enabled) = song_file.stream("enabled").or_default()?;
 

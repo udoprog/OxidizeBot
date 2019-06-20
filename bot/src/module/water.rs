@@ -1,6 +1,4 @@
-use crate::{
-    auth, command, config, currency::Currency, db, module, prelude::*, stream_info, utils,
-};
+use crate::{auth, command, currency::Currency, db, module, prelude::*, stream_info, utils};
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -158,33 +156,7 @@ impl command::Handler for Handler {
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
-pub struct Config {
-    #[serde(default)]
-    cooldown: Option<utils::Cooldown>,
-}
-
-pub struct Module {
-    default_cooldown: Option<utils::Cooldown>,
-}
-
-impl Module {
-    pub fn load(config: &config::Config) -> Self {
-        let mut default_cooldown = None;
-
-        for m in &config.modules {
-            match *m {
-                module::Config::Water(ref config) => {
-                    log::warn!("`[[modules]] type = \"water\"` configuration is deprecated");
-                    default_cooldown = config.cooldown.clone();
-                }
-                _ => (),
-            }
-        }
-
-        Module { default_cooldown }
-    }
-}
+pub struct Module;
 
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
@@ -203,14 +175,12 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        let default_cooldown = self
-            .default_cooldown
-            .clone()
-            .unwrap_or_else(|| utils::Cooldown::from_duration(utils::Duration::seconds(60)));
-
         let mut vars = settings.vars();
         let enabled = vars.var("water/enabled", false)?;
-        let cooldown = vars.var("water/cooldown", default_cooldown)?;
+        let cooldown = vars.var(
+            "water/cooldown",
+            utils::Cooldown::from_duration(utils::Duration::seconds(60)),
+        )?;
         let reward_multiplier = vars.var("water/reward%", 100)?;
         futures.push(vars.run().boxed());
 

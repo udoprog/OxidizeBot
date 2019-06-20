@@ -1,7 +1,7 @@
 use crate::{
     api,
     auth::Scope,
-    command, config,
+    command,
     currency::Currency,
     module,
     prelude::*,
@@ -91,42 +91,7 @@ impl<'a> command::Handler for Handler<'a> {
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
-pub struct Config {
-    /// Amount payed out for each swear.
-    #[serde(default)]
-    reward: Option<i64>,
-    #[serde(default)]
-    cooldown: Option<Duration>,
-}
-
-pub struct Module {
-    default_reward: Option<i64>,
-    default_cooldown: Option<Duration>,
-}
-
-impl Module {
-    pub fn load(config: &config::Config) -> Self {
-        let mut default_reward = None;
-        let mut default_cooldown = None;
-
-        for m in &config.modules {
-            match *m {
-                module::Config::SwearJar(ref config) => {
-                    log::warn!("`[[modules]] type = \"swearjar\"` configuration is deprecated");
-                    default_reward = config.reward.clone();
-                    default_cooldown = config.cooldown.clone();
-                }
-                _ => (),
-            }
-        }
-
-        Module {
-            default_reward,
-            default_cooldown,
-        }
-    }
-}
+pub struct Module;
 
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
@@ -145,19 +110,14 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        let default_reward = self.default_reward.unwrap_or(10);
         let mut vars = settings.vars();
         let enabled = vars.var("swearjar/enabled", false)?;
-        let reward = vars.var("swearjar/reward", default_reward)?;
+        let reward = vars.var("swearjar/reward", 10)?;
         futures.push(vars.run().boxed());
 
-        let default_cooldown = self
-            .default_cooldown
-            .clone()
-            .unwrap_or(Duration::seconds(60 * 10));
         let (mut cooldown_stream, cooldown) = settings
             .stream("swearjar/cooldown")
-            .or_with(default_cooldown)?;
+            .or_with(Duration::seconds(60 * 10))?;
 
         let cooldown = Arc::new(RwLock::new(Cooldown::from_duration(cooldown)));
 

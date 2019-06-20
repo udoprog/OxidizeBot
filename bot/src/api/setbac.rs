@@ -2,7 +2,6 @@
 
 use crate::{
     bus,
-    config::Config,
     injector::Injector,
     oauth2,
     player::{self, Player},
@@ -70,7 +69,6 @@ struct Remote {
 
 /// Run update loop shipping information to the remote server.
 pub fn run(
-    config: &Config,
     settings: &Settings,
     injector: &Injector,
     token: oauth2::SyncToken,
@@ -78,23 +76,12 @@ pub fn run(
 ) -> Result<impl Future<Output = Result<(), failure::Error>>, failure::Error> {
     let settings = settings.scoped("remote");
 
-    if config.api_url.is_some() {
-        log::warn!("`api_url` configuration has been deprecated");
-    }
+    let (mut api_url_stream, api_url) = settings
+        .stream("api-url")
+        .or(Some(String::from(DEFAULT_API_URL)))
+        .optional()?;
 
-    let default_api_url = Some(
-        config
-            .api_url
-            .clone()
-            .unwrap_or_else(|| String::from(DEFAULT_API_URL)),
-    );
-
-    let (mut api_url_stream, api_url) =
-        settings.stream("api-url").or(default_api_url).optional()?;
-
-    let (mut enabled_stream, enabled) = settings
-        .stream("enabled")
-        .or_with(config.api_url.is_some())?;
+    let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(false)?;
 
     let (mut player_stream, player) = injector.stream::<Player>();
 

@@ -1,4 +1,4 @@
-use crate::{auth, command, config, module, prelude::*, template, timer, utils};
+use crate::{auth, command, module, prelude::*, template, timer, utils};
 use parking_lot::RwLock;
 use std::{fs, path::PathBuf, sync::Arc, time};
 
@@ -58,33 +58,7 @@ impl command::Handler for Handler {
     }
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct Config {
-    path: Option<PathBuf>,
-}
-
-pub struct Module {
-    config_path: Option<PathBuf>,
-}
-
-impl Module {
-    /// Load the given module configuration with backwards compatibility.
-    pub fn load(config: &config::Config) -> Self {
-        let mut config_path = None;
-
-        for m in &config.modules {
-            match *m {
-                module::Config::Countdown(ref config) => {
-                    log::warn!("`[[modules]] type = \"countdown\"` configuration is deprecated");
-                    config_path = config.path.clone();
-                }
-                _ => (),
-            }
-        }
-
-        Module { config_path }
-    }
-}
+pub struct Module;
 
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
@@ -106,13 +80,7 @@ impl super::Module for Module {
         let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(true)?;
         let enabled = Arc::new(RwLock::new(enabled));
 
-        let (mut path_stream, mut path) = settings.stream::<PathBuf>("path").optional()?;
-
-        if let (None, Some(config_path)) = (path.as_ref(), self.config_path.clone()) {
-            log::warn!("[countdown] configuration has been deprecated.");
-            settings.set("path", &config_path)?;
-            path = Some(config_path);
-        }
+        let (mut path_stream, path) = settings.stream::<PathBuf>("path").optional()?;
 
         let mut writer = FileWriter::default();
         writer.path = path;

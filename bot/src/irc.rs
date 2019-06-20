@@ -1,13 +1,13 @@
 use crate::{
     api,
     auth::{Auth, Role, Scope},
-    bus, command, config,
+    bus, command,
     currency::{Currency, CurrencyBuilder},
     db, idle,
     injector::Injector,
     module, oauth2,
     prelude::*,
-    settings, stream_info, template, timer,
+    settings, stream_info, timer,
     utils::{self, Cooldown, Duration},
 };
 use failure::{bail, format_err, Error, ResultExt as _};
@@ -33,33 +33,6 @@ const SERVER: &'static str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &'static str = "twitch.tv/tags";
 const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
 
-/// Configuration for twitch integration.
-#[derive(Debug, Default, serde::Deserialize)]
-pub struct Config {
-    bot: Option<String>,
-    /// Cooldown for moderator actions.
-    #[serde(default)]
-    moderator_cooldown: Option<Cooldown>,
-    /// Cooldown for creating clips.
-    #[serde(default)]
-    pub clip_cooldown: Option<Cooldown>,
-    /// Cooldown for creating afterstream reminders.
-    #[serde(default = "default_cooldown")]
-    afterstream_cooldown: Cooldown,
-    /// Name of the channel to join.
-    pub channel: Option<String>,
-    /// Whether or not to notify on currency rewards.
-    #[serde(default)]
-    notify_rewards: Option<bool>,
-    /// Notify when bot starts.
-    #[serde(default)]
-    startup_message: Option<String>,
-}
-
-fn default_cooldown() -> Cooldown {
-    Cooldown::from_duration(Duration::seconds(15))
-}
-
 /// Helper struct to construct IRC integration.
 pub struct Irc {
     pub db: db::Database,
@@ -67,7 +40,6 @@ pub struct Irc {
     pub nightbot: Arc<api::NightBot>,
     pub streamer_twitch: api::Twitch,
     pub bot_twitch: api::Twitch,
-    pub config: Arc<config::Config>,
     pub token: oauth2::SyncToken,
     pub commands: db::Commands,
     pub aliases: db::Aliases,
@@ -93,7 +65,6 @@ impl Irc {
             nightbot,
             streamer_twitch,
             bot_twitch,
-            config,
             token,
             commands,
             aliases,
@@ -110,38 +81,6 @@ impl Irc {
             injector,
             stream_state_tx,
         } = self;
-
-        if config.streamer.is_some() {
-            log::warn!("`streamer` setting has been deprecated from the configuration");
-        }
-
-        if config.irc.bot.is_some() {
-            log::warn!("`[irc] bot` setting has been deprecated from the configuration");
-        }
-
-        if config.irc.channel.is_some() {
-            log::warn!("`[irc] channel` setting has been deprecated from the configuration");
-        }
-
-        if config.irc.moderator_cooldown.is_some() {
-            log::warn!(
-                "`[irc] moderator_cooldown` setting has been deprecated from the configuration"
-            );
-        }
-
-        if config.irc.notify_rewards.is_some() {
-            log::warn!("`[irc] notify_rewards` setting has been deprecated from the configuration");
-        }
-
-        if config.irc.startup_message.is_some() {
-            log::warn!(
-                "`[irc] startup_message` setting has been deprecated from the configuration"
-            );
-        }
-
-        if config.currency.is_some() {
-            log::warn!("`[currency]` setting has been deprecated from the configuration");
-        }
 
         loop {
             log::trace!("Waiting for token to become ready");
@@ -165,50 +104,6 @@ impl Irc {
             let streamer = streamer.as_str();
 
             let channel = Arc::new(format!("#{}", streamer));
-
-            // TODO: remove this migration next major release.
-            if !config.aliases.is_empty() {
-                log::warn!("The [[aliases]] section in the configuration is now deprecated.");
-
-                if !settings
-                    .get::<bool>("migration/aliases-migrated")?
-                    .unwrap_or_default()
-                {
-                    log::warn!("Performing a one time migration of aliases from configuration.");
-
-                    for alias in &config.aliases {
-                        let template = template::Template::compile(&alias.replace)?;
-                        aliases.edit(channel.as_str(), &alias.r#match, template)?;
-                    }
-
-                    settings.set("migration/aliases-migrated", true)?;
-                }
-            }
-
-            // TODO: remove this migration next major release.
-            if !config.themes.themes.is_empty() {
-                log::warn!("The [themes] section in the configuration is now deprecated.");
-
-                if !settings
-                    .get::<bool>("migration/themes-migrated")?
-                    .unwrap_or_default()
-                {
-                    log::warn!("Performing a one time migration of themes from configuration.");
-
-                    for (name, theme) in &config.themes.themes {
-                        let track_id = theme.track.clone();
-                        themes.edit(channel.as_str(), name.as_str(), track_id)?;
-                        themes.edit_duration(
-                            channel.as_str(),
-                            name.as_str(),
-                            theme.offset.clone(),
-                            theme.end.clone(),
-                        )?;
-                    }
-
-                    settings.set("migration/themes-migrated", true)?;
-                }
-            }
 
             *global_channel.write() = Some(channel.to_string());
 
@@ -277,7 +172,6 @@ impl Irc {
                     futures: &mut futures,
                     stream_info: &stream_info,
                     idle: &idle,
-                    config: &*config,
                     db: &db,
                     commands: &commands,
                     aliases: &aliases,
@@ -315,17 +209,6 @@ impl Irc {
 
             futures.push(future.boxed());
             futures.push(send_future.compat().map_err(Error::from).boxed());
-
-            if !config.whitelisted_hosts.is_empty() {
-                if !settings
-                    .get::<bool>("migration/whitelisted-hosts-migrated")?
-                    .unwrap_or_default()
-                {
-                    log::warn!("Performing a one time migration of hosts from configuration.");
-                    settings.set("irc/whitelisted-hosts", &config.whitelisted_hosts)?;
-                    settings.set("migration/whitelisted-hosts-migrated", true)?;
-                }
-            }
 
             let (mut whitelisted_hosts_stream, whitelisted_hosts) =
                 settings.stream("irc/whitelisted-hosts").or_default()?;
@@ -609,7 +492,7 @@ struct Handler<'a> {
 /// Handle a command.
 pub async fn process_command<'a, 'b: 'a>(
     command: &'a str,
-    mut ctx: command::Context<'a>,
+    ctx: command::Context<'a>,
     global_bus: &'a Arc<bus::Bus<bus::Global>>,
     currency_handler: &'a mut currency_admin::Handler<'b>,
     handlers: &'a mut module::Handlers<'b>,

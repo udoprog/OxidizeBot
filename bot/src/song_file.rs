@@ -1,19 +1,6 @@
 use crate::{player, template::Template, timer, utils};
 use std::{fs::File, path::PathBuf};
 
-/// Configuration which has been deprecated.
-#[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct Config {
-    #[serde(default)]
-    pub path: Option<PathBuf>,
-    #[serde(default)]
-    pub template: Option<Template>,
-    #[serde(default)]
-    pub not_playing: Option<Template>,
-    #[serde(default)]
-    pub update_interval: utils::Duration,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct SongFileBuilder {
     pub enabled: bool,

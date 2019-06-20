@@ -1,7 +1,7 @@
 use crate::{db, template};
 use hashbrown::HashMap;
 use parking_lot::{RwLock, RwLockReadGuard};
-use std::{fs::File, path::Path, sync::Arc};
+use std::sync::Arc;
 
 /// Tokenize the given word.
 pub fn tokenize(word: &str) -> String {
@@ -73,21 +73,6 @@ impl Words {
         })
     }
 
-    /// Load bad words configuration from a file.
-    ///
-    /// This will not store them in the database, and will prevent them from being deleted.
-    pub fn load_from_path(&self, path: &Path) -> Result<(), failure::Error> {
-        let config: Config = serde_yaml::from_reader(File::open(path)?)?;
-
-        let mut inner = self.inner.write();
-
-        for word in config.words {
-            inner.insert(&word.word, word.why.as_ref().map(|s| s.as_str()))?;
-        }
-
-        Ok(())
-    }
-
     /// Insert a word into the bad words list.
     pub fn edit(&self, word: &str, why: Option<&str>) -> Result<(), failure::Error> {
         self.db.edit(word, why)?;
@@ -135,17 +120,6 @@ impl Tester<'_> {
 
         None
     }
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct Config {
-    words: Vec<WordConfig>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct WordConfig {
-    pub word: String,
-    pub why: Option<String>,
 }
 
 #[derive(Debug)]

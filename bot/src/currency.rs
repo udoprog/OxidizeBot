@@ -211,12 +211,6 @@ impl Backend {
     }
 }
 
-/// Configuration for a currency.
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct Config {
-    pub name: String,
-}
-
 struct Inner {
     backend: Backend,
     twitch: api::Twitch,

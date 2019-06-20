@@ -88,7 +88,6 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            config,
             handlers,
             settings,
             futures,
@@ -100,22 +99,13 @@ impl super::Module for Module {
         let settings = settings.scoped("clip");
         let mut vars = settings.vars();
 
-        if config.irc.clip_cooldown.is_some() {
-            log::warn!("`[irc] clip_cooldown` is deprecated in the configuration");
-        }
-
-        let default_cooldown = config
-            .irc
-            .clip_cooldown
-            .clone()
-            .unwrap_or_else(|| Cooldown::from_duration(Duration::seconds(30)));
-
         handlers.insert(
             "clip",
             Clip {
                 enabled: vars.var("enabled", true)?,
                 stream_info: stream_info.clone(),
-                clip_cooldown: vars.var("cooldown", default_cooldown)?,
+                clip_cooldown: vars
+                    .var("cooldown", Cooldown::from_duration(Duration::seconds(30)))?,
                 twitch,
             },
         );

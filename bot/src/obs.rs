@@ -3,9 +3,6 @@ use failure::{format_err, Error};
 use std::time;
 use websocket::{ClientBuilder, OwnedMessage};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Config {}
-
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(tag = "request-type")]
 pub enum Kind {

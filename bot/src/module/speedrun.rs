@@ -417,7 +417,7 @@ impl Speedrun {
                 if let Some(players) = records.players {
                     for p in players.data {
                         if let Players::User(p) = p {
-                            embedded_players.insert(p.id.clone(), p);
+                            let _ = embedded_players.insert(p.id.clone(), p);
                         }
                     }
                 }

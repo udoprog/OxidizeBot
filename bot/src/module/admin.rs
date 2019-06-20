@@ -290,12 +290,6 @@ fn key(ctx: &mut command::Context<'_>) -> Option<String> {
 
 pub struct Module;
 
-impl Module {
-    pub fn load() -> Self {
-        Module
-    }
-}
-
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
         "admin"

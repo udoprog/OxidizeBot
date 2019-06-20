@@ -1,4 +1,4 @@
-use crate::{auth, command, config, db, irc, module, prelude::*, timer, utils};
+use crate::{auth, command, db, irc, module, prelude::*, timer, utils};
 use chrono::Utc;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -37,32 +37,7 @@ impl<'a> command::Handler for Handler<'a> {
     }
 }
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct Config {
-    frequency: Option<utils::Duration>,
-}
-
-pub struct Module {
-    default_frequency: Option<utils::Duration>,
-}
-
-impl Module {
-    pub fn load(config: &config::Config) -> Self {
-        let mut default_frequency = None;
-
-        for m in &config.modules {
-            match *m {
-                module::Config::Promotions(ref config) => {
-                    log::warn!("`[[modules]] type = \"countdown\"` configuration is deprecated");
-                    default_frequency = config.frequency.clone();
-                }
-                _ => (),
-            }
-        }
-
-        Module { default_frequency }
-    }
-}
+pub struct Module;
 
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
@@ -85,12 +60,9 @@ impl super::Module for Module {
         let enabled = vars.var("promotions/enabled", false)?;
         futures.push(vars.run().boxed());
 
-        let (mut setting, frequency) =
-            settings.stream("promotions/frequency").or_with_else(|| {
-                self.default_frequency
-                    .clone()
-                    .unwrap_or_else(|| utils::Duration::seconds(5 * 60))
-            })?;
+        let (mut setting, frequency) = settings
+            .stream("promotions/frequency")
+            .or_with_else(|| utils::Duration::seconds(5 * 60))?;
 
         handlers.insert(
             "promo",

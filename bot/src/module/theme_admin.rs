@@ -42,12 +42,6 @@ impl<'a> command::Handler for Handler<'a> {
 
 pub struct Module;
 
-impl Module {
-    pub fn load() -> Self {
-        Module
-    }
-}
-
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
         "theme"

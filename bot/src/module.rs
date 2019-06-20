@@ -1,4 +1,4 @@
-use crate::{api, command, config, db, idle, injector, irc, settings, stream_info, utils};
+use crate::{api, command, db, idle, injector, irc, settings, stream_info, utils};
 use hashbrown::HashMap;
 use std::sync::Arc;
 
@@ -42,21 +42,6 @@ impl<'a> Handlers<'a> {
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
-#[serde(tag = "type")]
-pub enum Config {
-    #[serde(rename = "countdown")]
-    Countdown(countdown::Config),
-    #[serde(rename = "swearjar")]
-    SwearJar(swearjar::Config),
-    #[serde(rename = "water")]
-    Water(water::Config),
-    #[serde(rename = "promotions")]
-    Promotions(promotions::Config),
-    #[serde(rename = "gtav")]
-    Gtav(gtav::Config),
-}
-
 /// Context for a hook.
 pub struct HookContext<'a: 'm, 'm> {
     pub handlers: &'m mut Handlers<'a>,
@@ -64,7 +49,6 @@ pub struct HookContext<'a: 'm, 'm> {
     pub stream_info: &'m stream_info::StreamInfo,
     pub idle: &'m idle::Idle,
     pub injector: &'m injector::Injector,
-    pub config: &'a config::Config,
     pub db: &'a db::Database,
     pub commands: &'a db::Commands,
     pub aliases: &'a db::Aliases,

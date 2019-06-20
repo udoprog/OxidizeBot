@@ -213,7 +213,7 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                     match e {
                         window::Event::MenuClicked(idx) => match idx {
                             0 => {
-                                webbrowser::open(web::URL)?;
+                                let _ = webbrowser::open(web::URL)?;
                             }
                             2 => {
                                 let _ = open_dir(&log_file)?;
@@ -240,11 +240,11 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                         }
                         window::Event::BalloonClicked => {
                             if let Some(Some(mut cb)) = notification_on_click.pop_front() {
-                                cb()?;
+                                let _ = cb()?;
                             }
                         }
                         window::Event::BalloonTimeout => {
-                            notification_on_click.pop_front();
+                            let _ = notification_on_click.pop_front();
                         }
                     }
                 }
