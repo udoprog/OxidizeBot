@@ -36,6 +36,12 @@ export class Typeahead extends Base {
 
     let current = this.options.find(o => o.value === value);
 
+    if (current) {
+      current = current.title;
+    } else {
+      current = "";
+    }
+
     return (
       <th.Typeahead
         id="select"
@@ -43,7 +49,7 @@ export class Typeahead extends Base {
         value={value}
         options={this.options}
         placeholder={`Choose a ${this.what}...`}
-        defaultInputValue={current.title}
+        defaultInputValue={current}
         onChange={onChange}
       />
     );

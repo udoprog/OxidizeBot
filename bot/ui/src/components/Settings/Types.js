@@ -10,7 +10,7 @@ import {Select} from "./Select";
 import {Typeahead} from "./Typeahead";
 import {Oauth2Config} from "./Oauth2Config";
 import * as format from "./Format";
-import * as timezones from "timezones.json";
+import * as moment from "moment-timezone";
 
 /**
  * Decode the given type and value.
@@ -59,40 +59,35 @@ const timezoneOptions = buildTimezoneOptions();
 function buildTimezoneOptions() {
   let out = [];
 
-  for (let p of timezones) {
-    for (let tz of p.utc) {
-      let name = tz;
-      let n = name.indexOf('/');
+  for (let name of moment.tz.names()) {
+    let now = moment();
+    let zone = moment.tz.zone(name);
 
-      if (n > 0) {
-        name = name.substring(n + 1);
-      } else {
-        name = name;
-      }
+    let offset = zone.utcOffset(now);
+    let abbr = zone.abbr(now);
 
-      name = name.replace('_', ' ');
+    let id = null;
 
-      let id = null;
-
-      if (p.offset >= 0) {
-        id = `UTC+${tzOffset(p.offset)}`;
-      } else {
-        id = `UTC-${tzOffset(-p.offset)}`;
-      }
-
-      out.push({
-        title: `${id} - ${name} (${p.abbr})`,
-        value: tz,
-      });
+    if (offset >= 0) {
+      id = `UTC-${tzOffset(offset)}`;
+    } else {
+      id = `UTC+${tzOffset(-offset)}`;
     }
+
+    name = name.split("/").map(n => n.replace('_', ' ')).join(' / ');
+
+    out.push({
+      title: `${id} - ${name} (${abbr})`,
+      value: zone.name,
+    });
   }
 
   return out;
 }
 
 function tzOffset(offset) {
-  let rest = offset % 1;
-  return `${pad(offset - rest, 2)}${pad(60 * rest, 2)}`;
+  let rest = offset % 60;
+  return `${pad((offset - rest) / 60, 2)}${pad(rest, 2)}`;
 
   function pad(num, size) {
     var s = num + "";

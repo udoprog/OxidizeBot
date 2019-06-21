@@ -17,6 +17,7 @@
     "@fortawesome/free-solid-svg-icons": "^5.8.1",
     "@fortawesome/react-fontawesome": "^0.1.4",
     "bootstrap": "^4.3.1",
+    "moment-timezone": "^0.5.25",
     "npm": "^6.9.0",
     "react": "^16.8.6",
     "react-bootstrap": "^1.0.0-beta.8",
@@ -26,7 +27,6 @@
     "react-markdown": "^4.0.8",
     "react-websocket": "^2.0.1",
     "semver": "^6.1.1",
-    "timezones.json": "^1.5.0",
     "yaml": "^1.6.0"
   },
   "devDependencies": {
