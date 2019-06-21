@@ -30,7 +30,7 @@ Starts automatically with Windows if you want it to.
 
 <p>
 <img style="float: left;" title="Windows Systray" width="131" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/windows-systray.png" />
-<img style="float: left;" title="Reminder" width="120" height="50" src="https://github.com/udoprog/setmod/raw/reminders/gfx/windows-reminder.png" />
+<img style="float: left;" title="Reminder" width="120" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/windows-reminder.png" />
 </p>
 
 [open an issue]: https://github.com/udoprog/setmod/issues
