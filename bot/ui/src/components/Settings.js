@@ -9,7 +9,12 @@ export default class Settings extends React.Component {
   constructor(props) {
     super(props);
 
-    var search = new URLSearchParams(this.props.location.search);
+    let filter = "";
+
+    if (this.props.location) {
+      let search = new URLSearchParams(this.props.location.search);
+      filter = search.get("q") || "";
+    }
 
     this.api = this.props.api;
 
@@ -18,7 +23,7 @@ export default class Settings extends React.Component {
       error: null,
       data: null,
       // current filter being applied to filter visible settings.
-      filter: search.get("q") || "",
+      filter,
     };
   }
 
@@ -34,15 +39,18 @@ export default class Settings extends React.Component {
    * Update the current filter.
    */
   setFilter(filter) {
-    var path = `${this.props.location.pathname}`;
+    if (this.props.location) {
+      let path = `${this.props.location.pathname}`;
 
-    if (!!filter) {
-      var search = new URLSearchParams(this.props.location.search);
-      search.set("q", filter);
-      path = `${path}?${search}`
+      if (!!filter) {
+        let search = new URLSearchParams(this.props.location.search);
+        search.set("q", filter);
+        path = `${path}?${search}`
+      }
+
+      this.props.history.replace(path);
     }
 
-    this.props.history.replace(path);
     this.setState({filter});
   }
 
