@@ -10,6 +10,7 @@ use crate::{
     timer,
     track_id::TrackId,
     utils::{self, PtDuration},
+    Uri,
 };
 
 use chrono::{DateTime, Utc};
@@ -1418,6 +1419,15 @@ impl PlaybackFuture {
 
         let (mut enabled_stream, enabled) = song_file.stream("enabled").or_default()?;
 
+        // TODO: Remove fallback-uri migration next major release.
+        if let Some(fallback_uri) = settings.get::<String>("fallback-uri")? {
+            if let Err(_) = str::parse::<Uri>(&fallback_uri) {
+                if let Ok(id) = SpotifyId::from_base62(&fallback_uri) {
+                    settings.set("fallback-uri", Uri::SpotifyPlaylist(id))?;
+                }
+            }
+        }
+
         let (mut fallback_stream, fallback) = settings.stream("fallback-uri").optional()?;
         self.update_fallback_items(fallback.clone()).await;
 
@@ -1506,13 +1516,18 @@ impl PlaybackFuture {
     }
 
     /// Update fallback items based on an URI.
-    async fn update_fallback_items(&mut self, uri: Option<String>) {
+    async fn update_fallback_items(&mut self, uri: Option<Uri>) {
         let result = match uri.as_ref() {
             Some(uri) => {
-                let result = match parse_playlist_id(uri) {
-                    Some(id) => Self::playlist_to_items(&self.spotify, id.to_string()).await,
-                    None => Self::playlist_to_items(&self.spotify, uri.clone()).await,
+                let id = match uri {
+                    Uri::SpotifyPlaylist(id) => id,
+                    uri => {
+                        log::warn!("Bad fallback URI `{}`, expected Spotify Playlist", uri);
+                        return;
+                    }
                 };
+
+                let result = Self::playlist_to_items(&self.spotify, id.to_string()).await;
 
                 match result {
                     Ok((name, items)) => Ok((Some(name), items)),
@@ -1555,17 +1570,6 @@ impl PlaybackFuture {
 
         self.mixer.fallback_items = items;
         self.mixer.fallback_queue.clear();
-
-        fn parse_playlist_id<'a>(s: &'a str) -> Option<&'a str> {
-            let mut p = s.split(":");
-
-            match (p.next(), p.next(), p.next(), p.next(), p.next()) {
-                (Some("spotify"), Some("user"), Some(_user), Some("playlist"), Some(id)) => {
-                    Some(id)
-                }
-                _ => None,
-            }
-        }
     }
 
     /// Convert a playlist into items.

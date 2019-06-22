@@ -10,6 +10,7 @@ import Devices from "./components/Devices.js";
 import AfterStreams from "./components/AfterStreams.js";
 import Overlay from "./components/Overlay.js";
 import Settings from "./components/Settings.js";
+import Modules from "./components/Modules.js";
 import ImportExport from "./components/ImportExport.js";
 import Commands from "./components/Commands.js";
 import '@fortawesome/fontawesome-free-solid'
@@ -18,9 +19,14 @@ import Aliases from "./components/Aliases";
 import Themes from "./components/Themes";
 import YouTube from "./components/YouTube";
 import Authorization from "./components/Authorization";
+import ConfigurationPrompt from "./components/ConfigurationPrompt";
 import * as semver from "semver";
 import logo from "./logo.png";
 
+/**
+ * Required spotify configuration.
+ */
+const SPOTIFY_CONFIG = "secrets/oauth2/spotify/config";
 const RouteLayout = withRouter(props => <Layout {...props} />)
 
 class AfterStreamsPage extends React.Component {
@@ -42,79 +48,6 @@ class AfterStreamsPage extends React.Component {
   }
 }
 
-const SPOTIFY_CONFIG = "secrets/oauth2/spotify/config";
-
-class ConfigurationPrompt extends React.Component {
-  constructor(props) {
-    super(props);
-
-    this.state = {
-      configured: true,
-      loading: false,
-      error: null,
-    }
-  }
-
-  componentWillMount() {
-    if (this.state.loading) {
-      return;
-    }
-
-    this.list();
-  }
-
-  list() {
-    this.setState({
-      loading: true,
-    });
-
-    this.props.api.settings({keyFilter: this.props.keyFilter})
-      .then(settings => {
-        this.setState({
-          configured: settings.every(s => s.value !== null),
-          loading: false,
-        })
-      },
-      e => {
-        this.setState({
-          error: e,
-          loading: false,
-        })
-      });
-  }
-
-  render() {
-    if (this.state.configured) {
-      return null;
-    }
-
-    let error = null;
-
-    if (this.state.error) {
-      error = <Alert key="error" variant="warning">{this.state.error}</Alert>;
-    }
-
-    return [
-      error,
-
-      <Row key="help">
-        <Col>
-          {this.props.children}
-        </Col>
-      </Row>,
-
-      <Row key="settings">
-        <Col>
-          <Settings
-            api={this.props.api}
-            keyFilter={this.props.keyFilter}
-            filterable={false} />
-        </Col>
-      </Row>,
-    ];
-  }
-}
-
 class SettingsPage extends React.Component {
   constructor(props) {
     super(props);
@@ -128,9 +61,24 @@ class SettingsPage extends React.Component {
 
         <Row>
           <Col>
-            <Settings api={this.api} filterable={true} {...this.props} />
+            <Settings group={true} api={this.api} filterable={true} {...this.props} />
           </Col>
         </Row>
+      </RouteLayout>
+    );
+  }
+}
+
+class ModulesPage extends React.Component {
+  constructor(props) {
+    super(props);
+    this.api = new Api(utils.apiUrl());
+  }
+
+  render() {
+    return (
+      <RouteLayout>
+        <Modules api={this.api} {...this.props} />
       </RouteLayout>
     );
   }
@@ -282,7 +230,7 @@ class IndexPage extends React.Component {
           </Col>
         </Row>
 
-        <ConfigurationPrompt api={this.api} keyFilter={[SPOTIFY_CONFIG]}>
+        <ConfigurationPrompt api={this.api} hideWhenConfigured={true} filter={{key: [SPOTIFY_CONFIG]}}>
           <h4><b>Action Required</b>: OAuth 2.0 Configuration for Spotify</h4>
 
           <p>
@@ -303,31 +251,47 @@ function Layout(props) {
   let path = props.location.pathname;
 
   return (
-    <div>
-      <Navbar bg="light" expand="sm">
+    <Container className="content">
+      <Navbar bg="light" expand="sm" className="mb-3">
         <Navbar.Brand>
           <img src={logo} alt="Logo" width="32" height="32"></img>
         </Navbar.Brand>
         <Navbar.Toggle aria-controls="basic-navbar-nav" />
 
         <Navbar.Collapse id="basic-navbar-nav">
-          <Nav className="mr-auto">
+          <Nav>
             <Nav.Link as={Link} active={path === "/"} to="/">
               Home
             </Nav.Link>
-            <Nav.Link as={Link} active={path === "/settings"} to="/settings">
-              Settings
+            <Nav.Link as={Link} active={path.startsWith("/modules")} to="/modules">
+              Modules
             </Nav.Link>
             <Nav.Link as={Link} active={path === "/authorization"} to="/authorization">
               Authorization
             </Nav.Link>
 
             <NavDropdown title="Chat">
-              <NavDropdown.Item as={Link} active={path === "/after-streams"} to="/after-streams">After Streams</NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/aliases"} to="/aliases">Aliases</NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/commands"} to="/commands">Commands</NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/promotions"} to="/promotions">Promotions</NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/themes"} to="/themes">Themes</NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/after-streams"} to="/after-streams">
+                After Streams
+              </NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/aliases"} to="/aliases">
+                Aliases
+              </NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/commands"} to="/commands">
+                Commands
+              </NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/promotions"} to="/promotions">
+                Promotions
+              </NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/themes"} to="/themes">
+                Themes
+              </NavDropdown.Item>
+            </NavDropdown>
+
+            <NavDropdown title="Advanced">
+              <NavDropdown.Item as={Link} active={path === "/settings"} to="/settings">
+                Settings
+              </NavDropdown.Item>
             </NavDropdown>
 
             <NavDropdown title="Misc">
@@ -348,10 +312,8 @@ function Layout(props) {
         </Navbar.Collapse>
       </Navbar>
 
-      <Container className="content">
-        {props.children}
-      </Container>
-    </div>
+      {props.children}
+    </Container>
   );
 }
 
@@ -361,6 +323,7 @@ function AppRouter() {
       <Route path="/" exact component={IndexPage} />
       <Route path="/after-streams" exact component={AfterStreamsPage} />
       <Route path="/settings" exact component={SettingsPage} />
+      <Route path="/modules" component={ModulesPage} />
       <Route path="/authorization" exact component={props => (
         <AuthorizedPage><Authorization {...props} /></AuthorizedPage>
       )} />

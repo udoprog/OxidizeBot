@@ -13,7 +13,11 @@ types:
     doc: Endpoint to use for sending API updates to. One is provided for free at `https://setbac.tv`.
     type: {id: string, optional: true}
   remote/enabled:
-    doc: If remote updates are enabled.
+    title: Remote Updates
+    feature: true
+    doc: >
+      If remote updates are enabled.
+      For example, to update player information on <https://setbac.tv>.
     type: {id: bool}
   first-run:
     doc: Indicates whether the bot has run at least once.
@@ -25,6 +29,8 @@ types:
       [Available names](https://github.com/udoprog/setmod/blob/master/bot/src/module/gtav.rs#L208).
     type: {id: set, value: {id: raw}}
   gtav/enabled:
+    title: ChaosMod
+    feature: true
     doc: If the `!gtav` module is enabled.
     type: {id: bool}
   gtav/chat-prefix:
@@ -78,6 +84,8 @@ types:
     doc: Scaling for viewer rewards.
     type: {id: percentage}
   irc/viewer-reward/enabled:
+    title: Viewer Rewards
+    feature: true
     doc: If viewer rewards are enabled. If enabled, this will award viewers 1 unit of stream currency for every minute of watch time.
     type: {id: bool}
   irc/viewer-reward/interval:
@@ -87,9 +95,13 @@ types:
     doc: Hosts that are whitelisted for linking to in chat.
     type: {id: set, value: {id: string}}
   irc/url-whitelist/enabled:
+    title: URL whitelisting
+    feature: true
     doc: If URL whitelisting is enabled in chat.
     type: {id: bool}
   irc/bad-words/enabled:
+    title: Bad-words filtering
+    feature: true
     doc: If bad words filtering is enabled in chat (Experimental).
     type: {id: bool}
   irc/bad-words/path:
@@ -105,7 +117,10 @@ types:
     doc: If themes have been migrated from the configuration file.
     type: {id: bool}
   player/fallback-uri:
-    doc: The fallback URI (Spotify) to use when no other songs are queued up. Removing this setting causes the bot to use your library.
+    doc: >
+      The fallback URI (Spotify) to use when no other songs are queued up.
+      Removing this setting causes the bot to use your starred songs.
+      Example: `spotify:playlist:1ZTlxhxQ4FGJdUMBEd9pn`
     type: {id: string, optional: true}
   player/duplicate-duration:
     doc: The minimum amount of time that has to have been passed to allow adding a song that has already been queued.
@@ -142,7 +157,10 @@ types:
     doc: Scaling to apply to volume. A value of 50% would mean that that would effectively be the maximum volume.
     type: {id: percentage}
   player/song-file/enabled:
-    doc: If file-based current song information is enabled.
+    title: Song file
+    feature: true
+    doc: >
+      If file-based current song information is enabled.
     type: {id: bool}
   player/song-file/path:
     doc: The path to write the current song information to.
@@ -157,12 +175,16 @@ types:
     doc: Template to use when the player doesn't have any songs loaded.
     type: {id: text, optional: true}
   promotions/enabled:
+    title: Promotions
+    feature: true
     doc: If the `!promo` module is enabled.
     type: {id: bool}
   promotions/frequency:
     doc: The highest frequency at which promotions are posted.
     type: {id: duration}
   swearjar/enabled:
+    title: Swear Jar
+    feature: true
     doc: If the `!swearjar` module is enabled.
     type: {id: bool}
   swearjar/reward:
@@ -196,6 +218,8 @@ types:
     type: {id: raw, optional: true}
     secret: true
   song/enabled:
+    title: Song Requests
+    feature: true
     doc: If the `!song` module is enabled.
     type: {id: bool}
   song/chat-feedback:
@@ -208,6 +232,8 @@ types:
     doc: If only subscribers can request songs.
     type: {id: bool}
   song/spotify/enabled:
+    title: Spotify Song Requests
+    feature: true
     doc: If we accept Spotify song requests.
     type: {id: bool}
   song/spotify/min-currency:
@@ -226,6 +252,8 @@ types:
       **Deprecated** in favor of `song/spotify` scope (see Authentication).
     type: {id: bool, optional: true}
   song/youtube/enabled:
+    title: YouTube Song Requests
+    feature: true
     doc: If we accept YouTube song requests (Experimental).
     type: {id: bool}
   song/youtube/min-currency:
@@ -249,6 +277,8 @@ types:
       **Deprecated** in favor of `song/spotify` scope (see Authentication).
     type: {id: bool, optional: true}
   water/enabled:
+    title: Water Reminders
+    feature: true
     doc: If the `!water` module is enabled.
     type: {id: bool}
   water/cooldown:
@@ -258,6 +288,8 @@ types:
     doc: Reward scaling for doing a water reminder.
     type: {id: percentage}
   countdown/enabled:
+    title: Countdowns
+    feature: true
     doc: If the `!countdown` module is enabled.
     type: {id: bool}
   countdown/path:
@@ -286,10 +318,16 @@ types:
     doc: Custom schema to use for `mysql` type backends.
     type: {id: raw}
   currency/enabled:
+    title: Stream Currency
+    feature: true
     doc: If stream currency is enabled.
     type: {id: bool}
   currency/command-enabled:
-    doc: If the `!<currency>` command is enabled.
+    title: Stream Currency Command
+    feature: true
+    doc: >
+      If the `!<currency>` command is enabled.
+      This is used to for example check your balance or transfer funds.
     type: {id: bool}
   currency/name:
     doc: The name used for the current stream currency.
@@ -301,40 +339,57 @@ types:
     doc: The URL to use when connecting to OBS.
     type: {id: string, optional: true}
   uptime/enabled:
+    title: Uptime Command
+    feature: true
     doc: If the `!uptime` command is enabled.
     type: {id: bool}
   game/enabled:
+    title: Game Command
+    feature: true
     doc: If the `!game` command is enabled.
     type: {id: bool}
   title/enabled:
+    title: Title Command
+    feature: true
     doc: If the `!title` command is enabled.
     type: {id: bool}
   afterstream/enabled:
+    title: After Streams
+    feature: true
     doc: If the `!afterstream` command is enabled.
     type: {id: bool}
   afterstream/cooldown:
     doc: Required cooldown between each `!afterstream` call.
     type: {id: duration}
   clip/enabled:
+    title: Clip Command
+    feature: true
     doc: If the `!clip` command is enabled.
     type: {id: bool}
   clip/cooldown:
     doc: Required cooldown between each `!clip` call.
     type: {id: duration}
   8ball/enabled:
+    title: 8 Ball Command
+    feature: true
     doc: If the `!8ball` command is enabled.
     type: {id: bool}
   command/enabled:
+    title: Command Administration
+    feature: true
     doc: If the `!command` command is enabled. It's used for custom command administration.
     type: {id: bool}
   speedrun/enabled:
+    title: speedrun.com command
+    feature: true
     doc: If the `!speedrun` command is enabled.
     type: {id: bool}
   speedrun/top:
     doc: "How many top runs to fetch (default: 20)."
     type: {id: number}
-
   time/enabled:
+    title: Time Command
+    feature: true
     doc: If the `!time` command is enabled.
     type: {id: bool}
   time/timezone:
@@ -344,9 +399,13 @@ types:
     doc: Template to use as a response.
     type: {id: string}
   poll/enabled:
+    title: Polling
+    feature: true
     doc: If the `!poll` command is enabled.
     type: {id: bool}
   weather/enabled:
+    title: Weather Information
+    feature: true
     doc: If the `!weather` command is enabled.
     type: {id: bool}
   weather/api-key:

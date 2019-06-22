@@ -35,5 +35,8 @@ pub mod template;
 mod timer;
 mod track_id;
 pub mod updater;
+mod uri;
 pub mod utils;
 pub mod web;
+
+use self::uri::Uri;

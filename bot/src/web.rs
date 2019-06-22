@@ -121,6 +121,16 @@ pub struct DisabledBody {
     disabled: bool,
 }
 
+#[derive(serde::Deserialize)]
+struct SettingsQuery {
+    #[serde(default)]
+    key: Option<String>,
+    #[serde(default)]
+    prefix: Option<String>,
+    #[serde(default)]
+    feature: Option<bool>,
+}
+
 /// Settings endpoint.
 #[derive(Clone)]
 struct Settings(settings::Settings);
@@ -130,10 +140,10 @@ impl Settings {
         let api = Settings(settings);
 
         let list = warp::get2()
-            .and(warp::path("settings").and(warp::query::<ListQuery>()))
+            .and(warp::path("settings").and(warp::query::<SettingsQuery>()))
             .and_then({
                 let api = api.clone();
-                move |query: ListQuery| api.settings(query.key).map_err(warp::reject::custom)
+                move |query: SettingsQuery| api.settings(query).map_err(warp::reject::custom)
             })
             .boxed();
 
@@ -175,19 +185,24 @@ impl Settings {
             .boxed();
 
         return list.or(get).or(delete).or(edit).boxed();
-
-        #[derive(serde::Deserialize)]
-        struct ListQuery {
-            #[serde(default)]
-            key: Option<String>,
-        }
     }
 
     /// Get the list of all settings in the bot.
-    fn settings(&self, key: Option<String>) -> Result<impl warp::Reply, failure::Error> {
-        let mut settings = self.0.list()?;
+    fn settings(&self, query: SettingsQuery) -> Result<impl warp::Reply, failure::Error> {
+        let mut settings = match query.prefix {
+            Some(prefix) => {
+                let mut out = Vec::new();
 
-        if let Some(key) = key {
+                for prefix in prefix.split(",") {
+                    out.extend(self.0.list_by_prefix(&prefix)?);
+                }
+
+                out
+            }
+            None => self.0.list()?,
+        };
+
+        if let Some(key) = query.key {
             let key = key
                 .split(",")
                 .map(|s| s.to_string())
@@ -197,6 +212,18 @@ impl Settings {
 
             for s in settings {
                 if key.contains(&s.key) {
+                    out.push(s);
+                }
+            }
+
+            settings = out;
+        }
+
+        if let Some(feature) = query.feature {
+            let mut out = Vec::with_capacity(settings.len());
+
+            for s in settings {
+                if s.schema.feature == feature {
                     out.push(s);
                 }
             }

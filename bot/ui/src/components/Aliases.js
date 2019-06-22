@@ -72,14 +72,10 @@ export default class Aliases extends React.Component {
       error = <Alert variant="warning">{this.state.error}</Alert>;
     }
 
-    let refresh = null;
     let loading = null;
 
     if (this.state.loading) {
       loading = <Spinner />;
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh right" />;
-    } else {
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh clickable right" onClick={() => this.list()} />;
     }
 
     let content = null;
@@ -135,10 +131,7 @@ export default class Aliases extends React.Component {
 
     return (
       <div>
-        <h2>
-          Aliases
-          {refresh}
-        </h2>
+        <h3>Aliases</h3>
         {error}
         {content}
         {loading}

@@ -111,10 +111,7 @@ export function apiUrl() {
     scheme = "https";
   }
 
-  let path = loc.pathname.split("/");
-  path = path.slice(0, path.length - 1).join("/");
-
-  return `${scheme}://${loc.host}${path}/api`;
+  return `${scheme}://${loc.host}/api`;
 }
 
 /**

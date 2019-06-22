@@ -2,6 +2,7 @@ import {Spinner} from "../utils.js";
 import React from "react";
 import {Button, Alert, Table} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+import ConfigurationPrompt from "./ConfigurationPrompt";
 
 export default class AfterStreams extends React.Component {
   constructor(props) {
@@ -130,10 +131,10 @@ export default class AfterStreams extends React.Component {
 
     return (
       <div>
-        <h2>
-          After Streams
-          {refresh}
-        </h2>
+        <h3>Settings</h3>
+        <ConfigurationPrompt api={this.api} filter={{prefix: ["afterstream"]}} />
+
+        <h3>After Streams</h3>
         {error}
         {content}
         {loading}

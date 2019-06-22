@@ -236,18 +236,32 @@ export default class Setting extends React.Component {
       );
     }
 
+    let key = keyOverride || setting.key;
+
+    if (this.props.useTitle && !!setting.title) {
+      key = <ReactMarkdown source={setting.title} />
+    }
+
+    let doc = null;
+
+    if (!this.props.disableDoc) {
+      doc = (
+        <div className="settings-key-doc">
+          <ReactMarkdown source={setting.doc} />
+        </div>
+      );
+    }
+
     return (
       <tr>
         <td>
           <Row>
-            <Col lg="3" className="settings-key mb-1">
-              <div className="settings-key-name mb-1">{keyOverride || setting.key}</div>
-              <div className="settings-key-doc">
-                <ReactMarkdown source={setting.doc} />
-              </div>
+            <Col lg="4" className="settings-key mb-1">
+              <div className="settings-key-name mb-1">{key}</div>
+              {doc}
             </Col>
 
-            <Col lg="9">
+            <Col lg="8">
               <div className="d-flex align-items-top">
                 <div className="flex-fill align-middle">{value}</div>
                 {buttons}

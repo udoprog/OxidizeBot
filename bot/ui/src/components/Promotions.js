@@ -2,6 +2,7 @@ import {Spinner} from "../utils.js";
 import React from "react";
 import {Button, Alert, Table} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+import ConfigurationPrompt from "./ConfigurationPrompt";
 
 export default class Promotions extends React.Component {
   constructor(props) {
@@ -72,14 +73,10 @@ export default class Promotions extends React.Component {
       error = <Alert variant="warning">{this.state.error}</Alert>;
     }
 
-    let refresh = null;
     let loading = null;
 
     if (this.state.loading) {
       loading = <Spinner />;
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh right" />;
-    } else {
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh clickable right" onClick={() => this.list()} />;
     }
 
     let content = null;
@@ -135,10 +132,10 @@ export default class Promotions extends React.Component {
 
     return (
       <div>
-        <h2>
-          Promotions
-          {refresh}
-        </h2>
+        <h3>Settings</h3>
+        <ConfigurationPrompt api={this.api} filter={{prefix: ["promotions"]}} />
+
+        <h3>Promotions</h3>
         {error}
         {content}
         {loading}

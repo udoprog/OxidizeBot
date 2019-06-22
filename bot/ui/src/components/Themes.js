@@ -161,10 +161,7 @@ export default class Themes extends React.Component {
 
     return (
       <div>
-        <h2>
-          Themes
-          {refresh}
-        </h2>
+        <h3>Themes</h3>
         {error}
         {content}
         {loading}

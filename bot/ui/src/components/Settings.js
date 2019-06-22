@@ -1,7 +1,6 @@
 import React from "react";
 import {Spinner, partition} from "../utils";
 import {Form, Button, Alert, Table, InputGroup} from "react-bootstrap";
-import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import * as types from "./Settings/Types.js";
 import Setting from "./Setting";
 
@@ -62,11 +61,7 @@ export default class Settings extends React.Component {
       loading: true,
     });
 
-    let params = {
-      keyFilter: this.props.keyFilter
-    };
-
-    this.api.settings(params)
+    this.api.settings(this.props.filter)
       .then(data => {
         data = data.map(d => {
           let control = types.decode(d.schema.type);
@@ -81,8 +76,7 @@ export default class Settings extends React.Component {
             key: d.key,
             control,
             value,
-            doc: d.schema.doc,
-            secret: d.schema.secret,
+            ...d.schema,
           }
         });
 
@@ -173,7 +167,17 @@ export default class Settings extends React.Component {
     let parts = this.state.filter.split(" ").map(f => f.toLowerCase());
 
     return data.filter(d => {
-      return parts.every(p => d.key.toLowerCase().indexOf(p) != -1);
+      return parts.every(p => {
+        if (d.key.toLowerCase().indexOf(p) != -1) {
+          return true;
+        }
+
+        if (d.title && d.title.toLowerCase().indexOf(p) != -1) {
+          return true;
+        }
+
+        return false;
+      });
     });
   }
 
@@ -208,6 +212,94 @@ export default class Settings extends React.Component {
     return out;
   }
 
+  content() {
+    if (!this.state.data) {
+      return null;
+    }
+
+    if (this.state.data.length === 0) {
+      return (
+        <Alert variant="info">No Settings!</Alert>
+      );
+    }
+
+    let settingProps = {
+      useTitle: !!this.props.useTitle,
+      disableDoc: !!this.props.disableDoc,
+    };
+
+    let data = this.filtered(this.state.data);
+
+    if (!this.props.group) {
+      return (
+        <div>
+          <Table className="mb-0">
+            <tbody>
+              {data.map(s => {
+                return <Setting
+                  key={s.key}
+                  setting={s}
+                  onEdit={this.edit.bind(this)}
+                  onDelete={this.delete.bind(this)}
+                  {...settingProps} />;
+              })}
+            </tbody>
+          </Table>
+        </div>
+      );
+    }
+
+    let {order, groups, def} = partition(data, d => d.key);
+
+    return (
+      <div>
+        <Table className="mb-0">
+          <tbody>
+            {def.map(s => {
+              return <Setting
+                key={s.key}
+                setting={s}
+                onEdit={this.edit.bind(this)}
+                onDelete={this.delete.bind(this)}
+                {...settingProps} />;
+            })}
+          </tbody>
+        </Table>
+
+        {order.map(name => {
+          let group = groups[name];
+          let title = null;
+
+          if (this.props.filterable) {
+            title = this.filterLinks(name);
+          } else {
+            title = name;
+          }
+
+          return (
+            <Table className="mb-0" key={name}>
+              <tbody>
+                <tr>
+                  <th className="settings-group">{title}</th>
+                </tr>
+
+                {group.map(({short, data}) => {
+                  return <Setting
+                    key={data.key}
+                    setting={data}
+                    onEdit={this.edit.bind(this)}
+                    onDelete={this.delete.bind(this)}
+                    keyOverride={short}
+                    {...settingProps} />;
+                })}
+              </tbody>
+            </Table>
+          );
+        })}
+      </div>
+    );
+  }
+
   render() {
     let error = null;
 
@@ -221,66 +313,7 @@ export default class Settings extends React.Component {
       loading = <Spinner />;
     }
 
-    let content = null;
-
-    if (this.state.data) {
-      if (this.state.data.length === 0) {
-        content = (
-          <Alert variant="info">
-            No Settings!
-          </Alert>
-        );
-      } else {
-        let {order, groups, def} = partition(this.filtered(this.state.data), d => d.key);
-
-        content = (
-          <div>
-            <Table className="mb-0">
-              <tbody>
-                {def.map(s => {
-                  return <Setting
-                    key={s.key}
-                    setting={s}
-                    onEdit={this.edit.bind(this)}
-                    onDelete={this.delete.bind(this)} />;
-                })}
-              </tbody>
-            </Table>
-
-            {order.map(name => {
-              let group = groups[name];
-              let title = null;
-
-              if (this.props.filterable) {
-                title = this.filterLinks(name);
-              } else {
-                title = name;
-              }
-
-              return (
-                <Table className="mb-0" key={name}>
-                  <tbody>
-                    <tr>
-                      <th className="settings-group">{title}</th>
-                    </tr>
-
-                    {group.map(({short, data}) => {
-                      return <Setting
-                        key={data.key}
-                        setting={data}
-                        onEdit={this.edit.bind(this)}
-                        onDelete={this.delete.bind(this)}
-                        keyOverride={short} />;
-                    })}
-                  </tbody>
-                </Table>
-              );
-            })}
-          </div>
-        );
-      }
-    }
-
+    let content = this.content();
     let filter = null;
 
     if (this.props.filterable) {
@@ -300,7 +333,7 @@ export default class Settings extends React.Component {
       filter = (
         <Form className="mt-4 mb-4">
           <InputGroup>
-            <Form.Control value={this.state.filter} placeholder="Filter Settings" onChange={filterOnChange}></Form.Control>
+            <Form.Control value={this.state.filter} placeholder="Search" onChange={filterOnChange}></Form.Control>
             {clear}
           </InputGroup>
         </Form>

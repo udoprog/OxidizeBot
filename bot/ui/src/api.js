@@ -77,12 +77,21 @@ export class Api {
   /**
    * Get the list of settings.
    */
-  settings(params = {}) {
+  settings(filter = {}) {
     let queries = [];
 
-    if (!!params.keyFilter) {
-      let value = params.keyFilter.join(",");
+    if (!!filter.key) {
+      let value = filter.key.join(",");
       queries.push(`key=${value}`);
+    }
+
+    if (!!filter.prefix) {
+      let value = filter.prefix.join(",");
+      queries.push(`prefix=${value}`);
+    }
+
+    if (filter.feature !== undefined) {
+      queries.push(`feature=true`);
     }
 
     let query = "";

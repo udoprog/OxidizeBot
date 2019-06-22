@@ -64,6 +64,12 @@ pub struct SchemaType {
     /// If the value is a secret value or not.
     #[serde(default)]
     pub secret: bool,
+    /// If the setting is a feature toggle.
+    #[serde(default)]
+    pub feature: bool,
+    /// A human-readable title for the setting.
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 const SCHEMA: &'static [u8] = include_bytes!("settings.yaml");
@@ -73,6 +79,35 @@ pub struct Schema {
     #[serde(default)]
     migrations: Vec<Migration>,
     types: HashMap<String, SchemaType>,
+}
+
+impl Schema {
+    /// Convert schema into prefix data.
+    fn as_prefixes(&self) -> HashMap<String, Prefix> {
+        let mut prefixes = HashMap::<String, Prefix>::new();
+
+        for key in self.types.keys() {
+            let mut buf = String::new();
+
+            let mut p = key.split(SEPARATOR).peekable();
+
+            while let Some(part) = p.next() {
+                buf.push_str(&part);
+
+                prefixes
+                    .entry(buf.clone())
+                    .or_default()
+                    .keys
+                    .push(key.clone());
+
+                if p.peek().is_some() {
+                    buf.push(SEPARATOR);
+                }
+            }
+        }
+
+        prefixes
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -100,12 +135,21 @@ impl Schema {
     }
 }
 
+/// Information on a given prefix.
+#[derive(Default)]
+struct Prefix {
+    /// All keys that belongs to the given prefix.
+    keys: Vec<String>,
+}
+
 pub struct Inner {
     db: db::Database,
     /// Maps setting prefixes to subscriptions.
     subscriptions: Subscriptions,
     /// Schema for every corresponding type.
     pub schema: Arc<Schema>,
+    /// Information about all prefixes.
+    prefixes: Arc<HashMap<String, Prefix>>,
 }
 
 /// A container for settings from which we can subscribe for updates.
@@ -117,12 +161,15 @@ pub struct Settings {
 
 impl Settings {
     pub fn new(db: db::Database, schema: Schema) -> Self {
+        let prefixes = schema.as_prefixes();
+
         Self {
             scope: String::from(""),
             inner: Arc::new(Inner {
                 db,
                 subscriptions: Default::default(),
                 schema: Arc::new(schema),
+                prefixes: Arc::new(prefixes),
             }),
         }
     }
@@ -182,6 +229,11 @@ impl Settings {
 
         let c = self.inner.db.pool.lock();
 
+        let prefix = match self.inner.prefixes.get(prefix.as_ref()) {
+            Some(prefix) => prefix,
+            None => return Ok(Vec::default()),
+        };
+
         let mut settings = Vec::new();
 
         let values = dsl::settings
@@ -191,10 +243,11 @@ impl Settings {
             .into_iter()
             .collect::<HashMap<_, _>>();
 
-        for (key, schema) in &self.inner.schema.types {
-            if !key.starts_with(prefix.as_ref()) {
-                continue;
-            }
+        for key in &prefix.keys {
+            let schema = match self.inner.schema.types.get(key) {
+                Some(schema) => schema,
+                None => continue,
+            };
 
             let value = match values.get(key) {
                 Some(value) => serde_json::from_str(value)?,
