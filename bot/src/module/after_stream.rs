@@ -14,28 +14,33 @@ impl command::Handler for AfterStream<'_> {
         Some(auth::Scope::AfterStream)
     }
 
-    fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), failure::Error> {
-        if !*self.enabled.read() {
-            return Ok(());
-        }
+    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
+        &'slf mut self,
+        ctx: command::Context<'ctx>,
+    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
+        Box::pin(async move {
+            if !*self.enabled.read() {
+                return Ok(());
+            }
 
-        if !self.cooldown.write().is_open() {
-            ctx.respond("An afterstream was already created recently.");
-            return Ok(());
-        }
+            if !self.cooldown.write().is_open() {
+                ctx.respond("An afterstream was already created recently.");
+                return Ok(());
+            }
 
-        if ctx.rest().trim().is_empty() {
-            ctx.respond(
-                "You add a reminder by calling !afterstream <reminder>, \
-                 like \"!afterstream remember that you are awesome <3\"",
-            );
-            return Ok(());
-        }
+            if ctx.rest().trim().is_empty() {
+                ctx.respond(
+                    "You add a reminder by calling !afterstream <reminder>, \
+                     like \"!afterstream remember that you are awesome <3\"",
+                );
+                return Ok(());
+            }
 
-        self.after_streams
-            .push(ctx.user.target, ctx.user.name, ctx.rest())?;
-        ctx.respond("Reminder added.");
-        Ok(())
+            self.after_streams
+                .push(ctx.user.target, ctx.user.name, ctx.rest())?;
+            ctx.respond("Reminder added.");
+            Ok(())
+        })
     }
 }
 

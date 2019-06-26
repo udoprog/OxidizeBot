@@ -19,41 +19,46 @@ impl command::Handler for Time {
         Some(auth::Scope::Time)
     }
 
-    fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), failure::Error> {
-        if !*self.enabled.read() {
+    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
+        &'slf mut self,
+        ctx: command::Context<'ctx>,
+    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
+        return Box::pin(async move {
+            if !*self.enabled.read() {
+                return Ok(());
+            }
+
+            let tz = self.timezone.read().clone();
+            let now = Utc::now();
+
+            let offset = tz.offset_from_utc_datetime(&now.naive_utc());
+            let offset = offset.fix().local_minus_utc();
+            let offset = format_time_zone(offset);
+
+            let now = now.with_timezone(&tz);
+
+            let time = now.time();
+            let time = format!(
+                "{:02}:{:02}:{:02}",
+                time.hour(),
+                time.minute(),
+                time.second()
+            );
+
+            let rfc2822 = now.to_rfc2822();
+
+            let response = self.template.read().render_to_string(Vars {
+                day: now.day(),
+                month: now.month(),
+                year: now.year(),
+                offset: &offset,
+                time: &time,
+                rfc2822: &rfc2822,
+            })?;
+
+            ctx.respond(response);
             return Ok(());
-        }
-
-        let tz = self.timezone.read().clone();
-        let now = Utc::now();
-
-        let offset = tz.offset_from_utc_datetime(&now.naive_utc());
-        let offset = offset.fix().local_minus_utc();
-        let offset = format_time_zone(offset);
-
-        let now = now.with_timezone(&tz);
-
-        let time = now.time();
-        let time = format!(
-            "{:02}:{:02}:{:02}",
-            time.hour(),
-            time.minute(),
-            time.second()
-        );
-
-        let rfc2822 = now.to_rfc2822();
-
-        let response = self.template.read().render_to_string(Vars {
-            day: now.day(),
-            month: now.month(),
-            year: now.year(),
-            offset: &offset,
-            time: &time,
-            rfc2822: &rfc2822,
-        })?;
-
-        ctx.respond(response);
-        return Ok(());
+        });
 
         #[derive(serde::Serialize)]
         struct Vars<'a> {

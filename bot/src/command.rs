@@ -14,17 +14,6 @@ pub trait Handler {
     }
 
     /// Handle the command.
-    fn handle(&mut self, ctx: Context<'_>) -> Result<(), Error>;
-}
-
-/// An async handler trait for a given command.
-pub trait AsyncHandler {
-    /// Scope required to run command.
-    fn scope(&self) -> Option<Scope> {
-        None
-    }
-
-    /// Handle the command.
     fn handle<'slf: 'a, 'ctx: 'a, 'a>(
         &'slf mut self,
         ctx: Context<'ctx>,

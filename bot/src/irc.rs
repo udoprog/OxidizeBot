@@ -550,7 +550,7 @@ pub async fn process_command<'a, 'b: 'a>(
                     }
                 }
 
-                handler.handle(ctx)?;
+                handler.handle(ctx).await?;
                 return Ok(());
             }
         }

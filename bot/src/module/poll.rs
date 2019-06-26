@@ -16,96 +16,101 @@ impl command::Handler for Poll {
         Some(auth::Scope::Poll)
     }
 
-    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
-        if !*self.enabled.read() {
-            return Ok(());
-        }
+    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
+        &'slf mut self,
+        mut ctx: command::Context<'ctx>,
+    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
+        Box::pin(async move {
+            if !*self.enabled.read() {
+                return Ok(());
+            }
 
-        match ctx.next().as_ref().map(String::as_str) {
-            Some("run") => {
-                let question = ctx_try!(ctx.next_str("<question> <options...>"));
+            match ctx.next().as_ref().map(String::as_str) {
+                Some("run") => {
+                    let question = ctx_try!(ctx.next_str("<question> <options...>"));
 
-                let mut options = HashMap::new();
+                    let mut options = HashMap::new();
 
-                while let Some(option) = ctx.next() {
-                    let (key, description) = match option.find('=') {
-                        Some(i) => {
-                            let (keyword, description) = option.split_at(i);
-                            (keyword.to_string(), Some(description[1..].to_string()))
-                        }
-                        None => (option, None),
+                    while let Some(option) = ctx.next() {
+                        let (key, description) = match option.find('=') {
+                            Some(i) => {
+                                let (keyword, description) = option.split_at(i);
+                                (keyword.to_string(), Some(description[1..].to_string()))
+                            }
+                            None => (option, None),
+                        };
+
+                        options.insert(key.to_lowercase(), description);
+                    }
+
+                    let poll = ActivePoll {
+                        inner: Arc::new(RwLock::new(Inner {
+                            voted: Default::default(),
+                            votes: Default::default(),
+                            options,
+                            created_at: Utc::now(),
+                        })),
                     };
 
-                    options.insert(key.to_lowercase(), description);
+                    ctx.message_hooks
+                        .insert(format!("poll/{}", question), Box::new(poll.clone()));
+                    self.polls.insert(question.clone(), poll);
+
+                    ctx.respond(format!("Started poll `{}`", question));
                 }
+                Some("close") => {
+                    let question = match ctx.next() {
+                        Some(question) => question,
+                        None => {
+                            let latest = self
+                                .polls
+                                .iter()
+                                .max_by_key(|e| e.1.inner.read().created_at.clone());
 
-                let poll = ActivePoll {
-                    inner: Arc::new(RwLock::new(Inner {
-                        voted: Default::default(),
-                        votes: Default::default(),
-                        options,
-                        created_at: Utc::now(),
-                    })),
-                };
-
-                ctx.message_hooks
-                    .insert(format!("poll/{}", question), Box::new(poll.clone()));
-                self.polls.insert(question.clone(), poll);
-
-                ctx.respond(format!("Started poll `{}`", question));
-            }
-            Some("close") => {
-                let question = match ctx.next() {
-                    Some(question) => question,
-                    None => {
-                        let latest = self
-                            .polls
-                            .iter()
-                            .max_by_key(|e| e.1.inner.read().created_at.clone());
-
-                        match latest {
-                            Some((question, _)) => question.to_string(),
-                            None => {
-                                ctx.respond("No running polls");
-                                return Ok(());
+                            match latest {
+                                Some((question, _)) => question.to_string(),
+                                None => {
+                                    ctx.respond("No running polls");
+                                    return Ok(());
+                                }
                             }
                         }
-                    }
-                };
-
-                let mut poll = match self.polls.remove(&question) {
-                    Some(poll) => poll,
-                    None => {
-                        ctx.respond(format!("No poll named `{}`!", question));
-                        return Ok(());
-                    }
-                };
-
-                ctx.message_hooks.remove(&format!("poll/{}", question));
-                let results = poll.close();
-
-                let total = results.iter().map(|(_, c)| c).sum::<u32>();
-
-                let mut formatted = Vec::new();
-
-                for (key, votes) in results {
-                    let p = utils::percentage(votes, total);
-
-                    let votes = match votes {
-                        0 => format!("no votes"),
-                        1 => format!("one vote"),
-                        n => format!("{} votes", n),
                     };
 
-                    formatted.push(format!("{} = {} ({})", key, votes, p));
+                    let mut poll = match self.polls.remove(&question) {
+                        Some(poll) => poll,
+                        None => {
+                            ctx.respond(format!("No poll named `{}`!", question));
+                            return Ok(());
+                        }
+                    };
+
+                    ctx.message_hooks.remove(&format!("poll/{}", question));
+                    let results = poll.close();
+
+                    let total = results.iter().map(|(_, c)| c).sum::<u32>();
+
+                    let mut formatted = Vec::new();
+
+                    for (key, votes) in results {
+                        let p = utils::percentage(votes, total);
+
+                        let votes = match votes {
+                            0 => format!("no votes"),
+                            1 => format!("one vote"),
+                            n => format!("{} votes", n),
+                        };
+
+                        formatted.push(format!("{} = {} ({})", key, votes, p));
+                    }
+
+                    ctx.respond(format!("{} -> {}.", question, formatted.join(", ")));
                 }
-
-                ctx.respond(format!("{} -> {}.", question, formatted.join(", ")));
+                _ => ctx.respond("Expected: run, close."),
             }
-            _ => ctx.respond("Expected: run, close."),
-        }
 
-        return Ok(());
+            return Ok(());
+        })
     }
 }
 

@@ -527,24 +527,29 @@ impl command::Handler for Speedrun {
         Some(auth::Scope::Speedrun)
     }
 
-    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
-        if !*self.enabled.read() {
-            return Ok(());
-        }
+    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
+        &'slf mut self,
+        mut ctx: command::Context<'ctx>,
+    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
+        Box::pin(async move {
+            if !*self.enabled.read() {
+                return Ok(());
+            }
 
-        match ctx.next().as_ref().map(String::as_str) {
-            Some("personal-bests") => {
-                self.query_personal_bests(ctx)?;
+            match ctx.next().as_ref().map(String::as_str) {
+                Some("personal-bests") => {
+                    self.query_personal_bests(ctx)?;
+                }
+                Some("record") | Some("game") => {
+                    self.query_game(ctx)?;
+                }
+                _ => {
+                    ctx.respond("Expected argument: record, personal-bests.");
+                }
             }
-            Some("record") | Some("game") => {
-                self.query_game(ctx)?;
-            }
-            _ => {
-                ctx.respond("Expected argument: record, personal-bests.");
-            }
-        }
 
-        Ok(())
+            Ok(())
+        })
     }
 }
 

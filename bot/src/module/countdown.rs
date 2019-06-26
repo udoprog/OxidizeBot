@@ -19,42 +19,49 @@ impl command::Handler for Handler {
         Some(auth::Scope::Countdown)
     }
 
-    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
-        if !*self.enabled.read() {
-            return Ok(());
-        }
-
-        match ctx.next().as_ref().map(String::as_str) {
-            Some("set") => {
-                let duration = ctx_try!(ctx.next_parse("<duration> <template>"));
-                let template = ctx_try!(ctx.rest_parse("<duration> <template>"));
-
-                match self.sender.unbounded_send(Event::Set(duration, template)) {
-                    Ok(()) => {
-                        ctx.respond("Countdown set!");
-                    }
-                    Err(_) => {
-                        ctx.respond("Could not set countdown :(");
-                        return Ok(());
-                    }
-                }
-            }
-            Some("clear") => match self.sender.unbounded_send(Event::Clear) {
-                Ok(()) => {
-                    ctx.respond("Countdown cleared!");
-                }
-                Err(_) => {
-                    ctx.respond("Could not clear countdown :(");
-                    return Ok(());
-                }
-            },
-            _ => {
-                ctx.respond("Expected: !countdown set <duration> <template>, or !countdown clear");
+    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
+        &'slf mut self,
+        mut ctx: command::Context<'ctx>,
+    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
+        Box::pin(async move {
+            if !*self.enabled.read() {
                 return Ok(());
             }
-        }
 
-        Ok(())
+            match ctx.next().as_ref().map(String::as_str) {
+                Some("set") => {
+                    let duration = ctx_try!(ctx.next_parse("<duration> <template>"));
+                    let template = ctx_try!(ctx.rest_parse("<duration> <template>"));
+
+                    match self.sender.unbounded_send(Event::Set(duration, template)) {
+                        Ok(()) => {
+                            ctx.respond("Countdown set!");
+                        }
+                        Err(_) => {
+                            ctx.respond("Could not set countdown :(");
+                            return Ok(());
+                        }
+                    }
+                }
+                Some("clear") => match self.sender.unbounded_send(Event::Clear) {
+                    Ok(()) => {
+                        ctx.respond("Countdown cleared!");
+                    }
+                    Err(_) => {
+                        ctx.respond("Could not clear countdown :(");
+                        return Ok(());
+                    }
+                },
+                _ => {
+                    ctx.respond(
+                        "Expected: !countdown set <duration> <template>, or !countdown clear",
+                    );
+                    return Ok(());
+                }
+            }
+
+            Ok(())
+        })
     }
 }
 

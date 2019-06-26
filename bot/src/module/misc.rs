@@ -17,41 +17,46 @@ impl command::Handler for Uptime {
         Some(auth::Scope::Uptime)
     }
 
-    fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), Error> {
-        if !*self.enabled.read() {
-            return Ok(());
-        }
-
-        let started_at = self
-            .stream_info
-            .data
-            .read()
-            .stream
-            .as_ref()
-            .map(|s| s.started_at.clone());
-
-        let now = Utc::now();
-
-        match started_at {
-            // NB: very important to check that _now_ is after started at.
-            Some(ref started_at) if now > *started_at => {
-                let uptime =
-                    utils::compact_duration(&(now - *started_at).to_std().unwrap_or_default());
-
-                ctx.respond(format!(
-                    "Stream has been live for {uptime}.",
-                    uptime = uptime
-                ));
+    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
+        &'slf mut self,
+        ctx: command::Context<'ctx>,
+    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
+        Box::pin(async move {
+            if !*self.enabled.read() {
+                return Ok(());
             }
-            Some(_) => {
-                ctx.respond("Stream is live, but start time is weird!");
-            }
-            None => {
-                ctx.respond("Stream is not live right now, try again later!");
-            }
-        }
 
-        Ok(())
+            let started_at = self
+                .stream_info
+                .data
+                .read()
+                .stream
+                .as_ref()
+                .map(|s| s.started_at.clone());
+
+            let now = Utc::now();
+
+            match started_at {
+                // NB: very important to check that _now_ is after started at.
+                Some(ref started_at) if now > *started_at => {
+                    let uptime =
+                        utils::compact_duration(&(now - *started_at).to_std().unwrap_or_default());
+
+                    ctx.respond(format!(
+                        "Stream has been live for {uptime}.",
+                        uptime = uptime
+                    ));
+                }
+                Some(_) => {
+                    ctx.respond("Stream is live, but start time is weird!");
+                }
+                None => {
+                    ctx.respond("Stream is not live right now, try again later!");
+                }
+            }
+
+            Ok(())
+        })
     }
 }
 
@@ -83,46 +88,51 @@ impl command::Handler for Title<'_> {
         Some(auth::Scope::Title)
     }
 
-    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
-        if !*self.enabled.read() {
-            return Ok(());
-        }
+    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
+        &'slf mut self,
+        mut ctx: command::Context<'ctx>,
+    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
+        Box::pin(async move {
+            if !*self.enabled.read() {
+                return Ok(());
+            }
 
-        let rest = ctx.rest();
+            let rest = ctx.rest();
 
-        if rest.is_empty() {
-            self.show(&ctx.user);
-        } else {
-            ctx.check_scope(auth::Scope::TitleEdit)?;
+            if rest.is_empty() {
+                self.show(&ctx.user);
+            } else {
+                ctx.check_scope(auth::Scope::TitleEdit)?;
 
-            let twitch = self.twitch.clone();
-            let title = rest.to_string();
-            let stream_info = self.stream_info.clone();
-            let streamer_id = ctx.user.streamer.to_owned();
+                let twitch = self.twitch.clone();
+                let title = rest.to_string();
+                let stream_info = self.stream_info.clone();
+                let streamer_id = ctx.user.streamer.to_owned();
 
-            let future = async move {
-                let mut request = api::twitch::UpdateChannelRequest::default();
-                request.channel.status = Some(title);
-                twitch.update_channel(&streamer_id, request).await?;
-                stream_info.refresh_channel(&twitch, &streamer_id).await?;
-                Ok::<(), Error>(())
-            };
+                let future = async move {
+                    let mut request = api::twitch::UpdateChannelRequest::default();
+                    request.channel.status = Some(title);
+                    twitch.update_channel(&streamer_id, request).await?;
+                    stream_info.refresh_channel(&twitch, &streamer_id).await?;
+                    Ok::<(), Error>(())
+                };
 
-            let user = ctx.user.as_owned_user();
+                let user = ctx.user.as_owned_user();
 
-            ctx.spawn(async move {
-                match future.await {
-                    Ok(()) => {
-                        user.respond("Title updated!");
+                ctx.spawn(async move {
+                    match future.await {
+                        Ok(()) => {
+                            user.respond("Title updated!");
+                        }
+                        Err(e) => {
+                            log_err!(e, "failed to update title");
+                        }
                     }
-                    Err(e) => {
-                        log_err!(e, "failed to update title");
-                    }
-                }
-            });
-        }
+                });
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 }
 
@@ -154,47 +164,52 @@ impl command::Handler for Game<'_> {
         Some(auth::Scope::Game)
     }
 
-    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
-        if !*self.enabled.read() {
-            return Ok(());
-        }
-
-        let rest = ctx.rest();
-
-        if rest.is_empty() {
-            self.show(&ctx.user);
-            return Ok(());
-        }
-
-        ctx.check_scope(auth::Scope::GameEdit)?;
-
-        let twitch = self.twitch.clone();
-        let game = rest.to_string();
-        let stream_info = self.stream_info.clone();
-        let streamer_id = ctx.user.streamer.to_owned();
-
-        let future = async move {
-            let mut request = api::twitch::UpdateChannelRequest::default();
-            request.channel.game = Some(game);
-            twitch.update_channel(&streamer_id, request).await?;
-            stream_info.refresh_channel(&twitch, &streamer_id).await?;
-            Ok::<(), Error>(())
-        };
-
-        let user = ctx.user.as_owned_user();
-
-        ctx.spawn(async move {
-            match future.await {
-                Ok(()) => {
-                    user.respond("Game updated!");
-                }
-                Err(e) => {
-                    log_err!(e, "failed to update game");
-                }
+    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
+        &'slf mut self,
+        mut ctx: command::Context<'ctx>,
+    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
+        Box::pin(async move {
+            if !*self.enabled.read() {
+                return Ok(());
             }
-        });
 
-        Ok(())
+            let rest = ctx.rest();
+
+            if rest.is_empty() {
+                self.show(&ctx.user);
+                return Ok(());
+            }
+
+            ctx.check_scope(auth::Scope::GameEdit)?;
+
+            let twitch = self.twitch.clone();
+            let game = rest.to_string();
+            let stream_info = self.stream_info.clone();
+            let streamer_id = ctx.user.streamer.to_owned();
+
+            let future = async move {
+                let mut request = api::twitch::UpdateChannelRequest::default();
+                request.channel.game = Some(game);
+                twitch.update_channel(&streamer_id, request).await?;
+                stream_info.refresh_channel(&twitch, &streamer_id).await?;
+                Ok::<(), Error>(())
+            };
+
+            let user = ctx.user.as_owned_user();
+
+            ctx.spawn(async move {
+                match future.await {
+                    Ok(()) => {
+                        user.respond("Game updated!");
+                    }
+                    Err(e) => {
+                        log_err!(e, "failed to update game");
+                    }
+                }
+            });
+
+            Ok(())
+        })
     }
 }
 

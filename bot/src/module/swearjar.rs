@@ -19,75 +19,80 @@ pub struct Handler<'a> {
     twitch: &'a api::Twitch,
 }
 
-impl<'a> command::Handler for Handler<'a> {
+impl command::Handler for Handler<'_> {
     fn scope(&self) -> Option<Scope> {
         Some(Scope::SwearJar)
     }
 
-    fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), failure::Error> {
-        if !*self.enabled.read() {
-            return Ok(());
-        }
-
-        let currency = self.currency.read();
-        let currency = match currency.as_ref() {
-            Some(currency) => currency.clone(),
-            None => {
-                ctx.respond("No currency configured for stream, sorry :(");
+    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
+        &'slf mut self,
+        ctx: command::Context<'ctx>,
+    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
+        Box::pin(async move {
+            if !*self.enabled.read() {
                 return Ok(());
             }
-        };
 
-        if !self.cooldown.write().is_open() {
-            ctx.respond("A !swearjar command was recently issued, please wait a bit longer!");
-            return Ok(());
-        }
+            let currency = self.currency.read();
+            let currency = match currency.as_ref() {
+                Some(currency) => currency.clone(),
+                None => {
+                    ctx.respond("No currency configured for stream, sorry :(");
+                    return Ok(());
+                }
+            };
 
-        let twitch = self.twitch.clone();
-        let sender = ctx.sender.clone();
-        let streamer = ctx.user.streamer.to_string();
-        let channel = ctx.user.target.to_string();
-        let reward = *self.reward.read();
-
-        let future = async move {
-            let chatters = twitch.chatters(channel.clone()).await?;
-
-            let mut u = HashSet::new();
-            u.extend(chatters.viewers);
-            u.extend(chatters.moderators);
-
-            if u.is_empty() {
-                failure::bail!("no chatters to reward");
+            if !self.cooldown.write().is_open() {
+                ctx.respond("A !swearjar command was recently issued, please wait a bit longer!");
+                return Ok(());
             }
 
-            let total_reward = reward * u.len() as i64;
+            let twitch = self.twitch.clone();
+            let sender = ctx.sender.clone();
+            let streamer = ctx.user.streamer.to_string();
+            let channel = ctx.user.target.to_string();
+            let reward = *self.reward.read();
 
-            currency
-                .balance_add(channel.clone(), streamer.clone(), -total_reward)
-                .await?;
+            let future = async move {
+                let chatters = twitch.chatters(channel.clone()).await?;
 
-            currency
-                .balances_increment(channel.clone(), u, reward)
-                .await?;
+                let mut u = HashSet::new();
+                u.extend(chatters.viewers);
+                u.extend(chatters.moderators);
 
-            sender.privmsg(
+                if u.is_empty() {
+                    failure::bail!("no chatters to reward");
+                }
+
+                let total_reward = reward * u.len() as i64;
+
+                currency
+                    .balance_add(channel.clone(), streamer.clone(), -total_reward)
+                    .await?;
+
+                currency
+                    .balances_increment(channel.clone(), u, reward)
+                    .await?;
+
+                sender.privmsg(
                 format!(
                     "/me has taken {} {currency} from {streamer} and given it to the viewers for listening to their bad mouth!",
                     total_reward, currency = currency.name, streamer = streamer,
                 ),
             );
 
+                Ok(())
+            };
+
+            ctx.spawn(future.map(|result| match result {
+                Ok(()) => (),
+                Err(e) => {
+                    log_err!(e, "Failed to reward users for !swearjar");
+                }
+            }));
+
             Ok(())
-        };
-
-        ctx.spawn(future.map(|result| match result {
-            Ok(()) => (),
-            Err(e) => {
-                log_err!(e, "Failed to reward users for !swearjar");
-            }
-        }));
-
-        Ok(())
+        })
     }
 }
 

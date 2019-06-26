@@ -7,34 +7,39 @@ pub struct Handler<'a> {
     pub commands: &'a db::Commands,
 }
 
-impl<'a> command::Handler for Handler<'a> {
+impl command::Handler for Handler<'_> {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::Command)
     }
 
-    fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
-        if !*self.enabled.read() {
-            return Ok(());
-        }
-
-        let next = command_base!(ctx, self.commands, "command", CommandEdit);
-
-        match next.as_ref().map(String::as_str) {
-            Some("edit") => {
-                ctx.check_scope(auth::Scope::CommandEdit)?;
-
-                let name = ctx_try!(ctx.next_str("<name>"));
-                let template = ctx_try!(ctx.rest_parse("<name> <template>"));
-                self.commands.edit(ctx.user.target, &name, template)?;
-
-                ctx.respond("Edited command.");
+    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
+        &'slf mut self,
+        mut ctx: command::Context<'ctx>,
+    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
+        Box::pin(async move {
+            if !*self.enabled.read() {
+                return Ok(());
             }
-            None | Some(..) => {
-                ctx.respond("Expected: show, list, edit, delete, enable, disable, or group.");
-            }
-        }
 
-        Ok(())
+            let next = command_base!(ctx, self.commands, "command", CommandEdit);
+
+            match next.as_ref().map(String::as_str) {
+                Some("edit") => {
+                    ctx.check_scope(auth::Scope::CommandEdit)?;
+
+                    let name = ctx_try!(ctx.next_str("<name>"));
+                    let template = ctx_try!(ctx.rest_parse("<name> <template>"));
+                    self.commands.edit(ctx.user.target, &name, template)?;
+
+                    ctx.respond("Edited command.");
+                }
+                None | Some(..) => {
+                    ctx.respond("Expected: show, list, edit, delete, enable, disable, or group.");
+                }
+            }
+
+            Ok(())
+        })
     }
 }
 

@@ -27,23 +27,12 @@ pub mod weather;
 #[derive(Default)]
 pub struct Handlers<'a> {
     handlers: HashMap<String, Box<dyn command::Handler + Send + 'a>>,
-    async_handlers: HashMap<String, Box<dyn command::AsyncHandler + Send + 'a>>,
 }
 
 impl<'a> Handlers<'a> {
     /// Insert the given handler.
     pub fn insert(&mut self, command: impl AsRef<str>, handler: impl command::Handler + Send + 'a) {
         self.handlers
-            .insert(command.as_ref().to_string(), Box::new(handler));
-    }
-
-    /// Insert the given async handler.
-    pub fn insert_async(
-        &mut self,
-        command: impl AsRef<str>,
-        handler: impl command::AsyncHandler + Send + 'a,
-    ) {
-        self.async_handlers
             .insert(command.as_ref().to_string(), Box::new(handler));
     }
 

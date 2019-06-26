@@ -30,7 +30,7 @@ pub struct EightBall {
     enabled: Arc<RwLock<bool>>,
 }
 
-impl command::AsyncHandler for EightBall {
+impl command::Handler for EightBall {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::EightBall)
     }
@@ -84,7 +84,7 @@ impl super::Module for Module {
     ) -> Result<(), failure::Error> {
         let mut vars = settings.vars();
 
-        handlers.insert_async(
+        handlers.insert(
             "8ball",
             EightBall {
                 enabled: vars.var("8ball/enabled", true)?,
