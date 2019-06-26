@@ -30,33 +30,38 @@ pub struct EightBall {
     enabled: Arc<RwLock<bool>>,
 }
 
-impl command::Handler for EightBall {
+impl command::AsyncHandler for EightBall {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::EightBall)
     }
 
-    fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), failure::Error> {
+    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
+        &'slf mut self,
+        ctx: command::Context<'ctx>,
+    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
         use rand::Rng as _;
 
-        if !*self.enabled.read() {
-            return Ok(());
-        }
+        Box::pin(async move {
+            if !*self.enabled.read() {
+                return Ok(());
+            }
 
-        let rest = ctx.rest();
+            let rest = ctx.rest();
 
-        if rest.trim().is_empty() {
-            ctx.respond("Ask a question.");
-            return Ok(());
-        }
+            if rest.trim().is_empty() {
+                ctx.respond("Ask a question.");
+                return Ok(());
+            }
 
-        let mut rng = rand::thread_rng();
-        let index = rng.gen_range(0, MAGIC_8BALL_ANSWER.len());
+            let mut rng = rand::thread_rng();
+            let index = rng.gen_range(0, MAGIC_8BALL_ANSWER.len());
 
-        if let Some(answer) = MAGIC_8BALL_ANSWER.get(index) {
-            ctx.respond(answer);
-        }
+            if let Some(answer) = MAGIC_8BALL_ANSWER.get(index) {
+                ctx.respond(answer);
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 }
 
@@ -79,7 +84,7 @@ impl super::Module for Module {
     ) -> Result<(), failure::Error> {
         let mut vars = settings.vars();
 
-        handlers.insert(
+        handlers.insert_async(
             "8ball",
             EightBall {
                 enabled: vars.var("8ball/enabled", true)?,

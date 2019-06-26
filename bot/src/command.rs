@@ -17,6 +17,20 @@ pub trait Handler {
     fn handle(&mut self, ctx: Context<'_>) -> Result<(), Error>;
 }
 
+/// An async handler trait for a given command.
+pub trait AsyncHandler {
+    /// Scope required to run command.
+    fn scope(&self) -> Option<Scope> {
+        None
+    }
+
+    /// Handle the command.
+    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
+        &'slf mut self,
+        ctx: Context<'ctx>,
+    ) -> future::BoxFuture<'a, Result<(), Error>>;
+}
+
 /// A trait for peeking into chat messages.
 pub trait MessageHook: std::any::Any + Send {
     /// Peek the given message.
