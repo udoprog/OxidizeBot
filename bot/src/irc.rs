@@ -560,28 +560,6 @@ pub async fn process_command<'a, 'b: 'a>(
 }
 
 impl<'a> Handler<'a> {
-    /// Extract tags from message.
-    fn tags<'local>(m: &'local Message) -> Tags<'local> {
-        let mut id = None;
-        let mut msg_id = None;
-
-        if let Some(tags) = m.tags.as_ref() {
-            for t in tags {
-                match *t {
-                    Tag(ref name, Some(ref value)) if name == "id" => {
-                        id = Some(value.as_str());
-                    }
-                    Tag(ref name, Some(ref value)) if name == "msg-id" => {
-                        msg_id = Some(value.as_str());
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        Tags { id, msg_id }
-    }
-
     /// Delete the given message.
     fn delete_message(&self, user: &User<'_>) -> Result<(), Error> {
         let id = match user.tags.id {
@@ -674,7 +652,7 @@ impl<'a> Handler<'a> {
     pub async fn handle(&mut self, m: Message) -> Result<(), Error> {
         match m.command {
             Command::PRIVMSG(_, ref message) => {
-                let tags = Self::tags(&m);
+                let tags = Tags::from_tags(m.tags.as_ref());
 
                 let name = m
                     .source_nickname()
@@ -801,7 +779,7 @@ impl<'a> Handler<'a> {
                 log::trace!("Raw: {:?}", m);
             }
             Command::NOTICE(_, ref message) => {
-                let tags = Self::tags(&m);
+                let tags = Tags::from_tags(m.tags.as_ref());
 
                 match tags.msg_id {
                     _ if message == "Login authentication failed" => {
@@ -848,9 +826,19 @@ pub struct OwnedUser {
 }
 
 impl OwnedUser {
+    /// Get the display name of the user.
+    pub fn display_name(&self) -> &str {
+        self.tags
+            .display_name
+            .as_ref()
+            .unwrap_or(&self.name)
+            .as_str()
+    }
+
     /// Respond to the user with a message.
     pub fn respond(&self, m: impl fmt::Display) {
-        self.sender.privmsg(format!("{} -> {}", self.name, m));
+        self.sender
+            .privmsg(format!("{} -> {}", self.display_name(), m));
     }
 }
 
@@ -873,9 +861,15 @@ impl<'a> User<'a> {
         self.name == name.to_lowercase()
     }
 
+    /// Get the display name of the user.
+    pub fn display_name(&self) -> &str {
+        self.tags.display_name.unwrap_or(self.name)
+    }
+
     /// Respond to the user with a message.
     pub fn respond(&self, m: impl fmt::Display) {
-        self.sender.privmsg(format!("{} -> {}", self.name, m));
+        self.sender
+            .privmsg(format!("{} -> {}", self.display_name(), m));
     }
 
     /// Convert into an owned user.
@@ -941,18 +935,54 @@ impl<'a> User<'a> {
 /// Struct of tags.
 #[derive(Debug, Clone)]
 pub struct Tags<'m> {
-    /// contents of the id tag if present.
+    /// Contents of the id tag if present.
     id: Option<&'m str>,
-    /// contents of the msg-id tag if present.
+    /// Contents of the msg-id tag if present.
     msg_id: Option<&'m str>,
+    /// The display name of the user.
+    display_name: Option<&'m str>,
+    /// The ID of the user.
+    user_id: Option<&'m str>,
 }
 
 impl<'m> Tags<'m> {
+    /// Extract tags from message.
+    fn from_tags(tags: Option<&'m Vec<Tag>>) -> Tags<'m> {
+        let mut id = None;
+        let mut msg_id = None;
+        let mut display_name = None;
+        let mut user_id = None;
+
+        if let Some(tags) = tags {
+            for t in tags {
+                match t {
+                    Tag(name, Some(value)) => match name.as_str() {
+                        "id" => id = Some(value.as_str()),
+                        "msg-id" => msg_id = Some(value.as_str()),
+                        "display-name" => display_name = Some(value.as_str()),
+                        "user-id" => user_id = Some(value.as_str()),
+                        _ => (),
+                    },
+                    _ => (),
+                }
+            }
+        }
+
+        Tags {
+            id,
+            msg_id,
+            display_name,
+            user_id,
+        }
+    }
+
     /// Convert into an owned set of tags.
     fn as_owned_tags(&self) -> OwnedTags {
         OwnedTags {
             id: self.id.map(|id| id.to_string()),
             msg_id: self.msg_id.map(|id| id.to_owned()),
+            display_name: self.display_name.map(|id| id.to_owned()),
+            user_id: self.user_id.map(|id| id.to_owned()),
         }
     }
 }
@@ -962,6 +992,8 @@ impl<'m> Tags<'m> {
 pub struct OwnedTags {
     id: Option<String>,
     msg_id: Option<String>,
+    display_name: Option<String>,
+    user_id: Option<String>,
 }
 
 #[derive(Debug)]
