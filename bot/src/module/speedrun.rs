@@ -97,10 +97,10 @@ impl Speedrun {
             }
         }
 
-        let query_user = query_user.unwrap_or_else(|| ctx.user.name.to_lowercase());
+        let query_user = query_user.unwrap_or_else(|| ctx.user.name().to_lowercase());
 
         let speedrun = self.speedrun.clone();
-        let user = ctx.user.as_owned_user();
+        let user = ctx.user.clone();
         let async_user = user.clone();
 
         let future = async move {
@@ -319,7 +319,7 @@ impl Speedrun {
         }
 
         let speedrun = self.speedrun.clone();
-        let user = ctx.user.as_owned_user();
+        let user = ctx.user.clone();
         let async_user = user.clone();
 
         let future = async move {

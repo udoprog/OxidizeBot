@@ -29,7 +29,7 @@ impl command::Handler for Handler<'_> {
 
                     let name = ctx_try!(ctx.next_str("<name>"));
                     let template = ctx_try!(ctx.rest_parse("<name> <template>"));
-                    self.commands.edit(ctx.user.target, &name, template)?;
+                    self.commands.edit(ctx.user.target(), &name, template)?;
 
                     ctx.respond("Edited command.");
                 }

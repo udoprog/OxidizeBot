@@ -37,7 +37,7 @@ impl command::Handler for AfterStream<'_> {
             }
 
             self.after_streams
-                .push(ctx.user.target, ctx.user.name, ctx.rest())?;
+                .push(ctx.user.target(), ctx.user.name(), ctx.rest())?;
             ctx.respond("Reminder added.");
             Ok(())
         })

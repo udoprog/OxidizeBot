@@ -49,8 +49,8 @@ impl command::Handler for Handler<'_> {
 
             let twitch = self.twitch.clone();
             let sender = ctx.sender.clone();
-            let streamer = ctx.user.streamer.to_string();
-            let channel = ctx.user.target.to_string();
+            let streamer = ctx.user.streamer().to_string();
+            let channel = ctx.user.target().to_string();
             let reward = *self.reward.read();
 
             let future = async move {

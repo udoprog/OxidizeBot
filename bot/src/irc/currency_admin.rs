@@ -45,11 +45,11 @@ impl command::Handler for Handler<'_> {
 
             match ctx.next().as_ref().map(String::as_str) {
                 None => {
-                    let user = ctx.user.as_owned_user();
+                    let user = ctx.user.clone();
 
                     ctx.spawn(async move {
                         let result = currency
-                            .balance_of(user.target.clone(), user.name.clone())
+                            .balance_of(user.target().to_string(), user.name().to_string())
                             .await;
 
                         match result {
@@ -73,11 +73,11 @@ impl command::Handler for Handler<'_> {
                     ctx.check_scope(Scope::CurrencyShow)?;
                     let to_show = ctx_try!(ctx.next_str("<user>")).to_string();
 
-                    let user = ctx.user.as_owned_user();
+                    let user = ctx.user.clone();
 
                     ctx.spawn(async move {
                         let result = currency
-                            .balance_of(user.target.clone(), to_show.clone())
+                            .balance_of(user.target().to_string(), to_show.clone())
                             .await;
 
                         match result {
@@ -115,15 +115,15 @@ impl command::Handler for Handler<'_> {
                         return Ok(());
                     }
 
-                    let target = ctx.user.target.to_owned();
-                    let giver = ctx.user.as_owned_user();
-                    let is_streamer = ctx.user.is(ctx.user.streamer);
+                    let target = ctx.user.target().to_string();
+                    let giver = ctx.user.clone();
+                    let is_streamer = ctx.user.is_streamer();
 
                     ctx.spawn(async move {
                         let result = currency
                             .balance_transfer(
                                 target,
-                                giver.name.clone(),
+                                giver.name().to_string(),
                                 taker.clone(),
                                 amount,
                                 is_streamer,
@@ -162,17 +162,17 @@ impl command::Handler for Handler<'_> {
                     let boosted_user = db::user_id(&ctx_try!(ctx.next_str("<user> <amount>")));
                     let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>"));
 
-                    if !ctx.user.is(ctx.user.streamer) && ctx.user.is(&boosted_user) {
+                    if !ctx.user.is_streamer() && ctx.user.is(&boosted_user) {
                         ctx.respond("You gonna have to play by the rules (or ask another mod) :(");
                         return Ok(());
                     }
 
-                    let user = ctx.user.as_owned_user();
+                    let user = ctx.user.clone();
                     let currency = currency.clone();
 
                     ctx.spawn(async move {
                         let result = currency
-                            .balance_add(user.target.clone(), boosted_user.clone(), amount)
+                            .balance_add(user.target().to_string(), boosted_user.clone(), amount)
                             .await;
 
                         match result {
@@ -203,12 +203,14 @@ impl command::Handler for Handler<'_> {
                 Some("windfall") => {
                     ctx.check_scope(Scope::CurrencyWindfall)?;
 
-                    let user = ctx.user.as_owned_user();
+                    let user = ctx.user.clone();
                     let amount: i64 = ctx_try!(ctx.next_parse("<amount>"));
                     let sender = ctx.sender.clone();
 
                     ctx.spawn(async move {
-                        let result = currency.add_channel_all(user.target.clone(), amount).await;
+                        let result = currency
+                            .add_channel_all(user.target().to_string(), amount)
+                            .await;
 
                         match result {
                             Ok(_) => {

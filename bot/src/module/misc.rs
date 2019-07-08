@@ -69,7 +69,7 @@ pub struct Title<'a> {
 
 impl Title<'_> {
     /// Handle the title command.
-    fn show(&mut self, user: &irc::User<'_>) {
+    fn show(&mut self, user: &irc::User) {
         let title = self.stream_info.data.read().title.clone();
 
         match title {
@@ -107,17 +107,20 @@ impl command::Handler for Title<'_> {
                 let twitch = self.twitch.clone();
                 let title = rest.to_string();
                 let stream_info = self.stream_info.clone();
-                let streamer_id = ctx.user.streamer.to_owned();
+
+                let user = ctx.user.clone();
 
                 let future = async move {
                     let mut request = api::twitch::UpdateChannelRequest::default();
                     request.channel.status = Some(title);
-                    twitch.update_channel(&streamer_id, request).await?;
-                    stream_info.refresh_channel(&twitch, &streamer_id).await?;
+                    twitch.update_channel(user.streamer(), request).await?;
+                    stream_info
+                        .refresh_channel(&twitch, user.streamer())
+                        .await?;
                     Ok::<(), Error>(())
                 };
 
-                let user = ctx.user.as_owned_user();
+                let user = ctx.user.clone();
 
                 ctx.spawn(async move {
                     match future.await {
@@ -145,7 +148,7 @@ pub struct Game<'a> {
 
 impl Game<'_> {
     /// Handle the game command.
-    fn show(&mut self, user: &irc::User<'_>) {
+    fn show(&mut self, user: &irc::User) {
         let game = self.stream_info.data.read().game.clone();
 
         match game {
@@ -185,17 +188,20 @@ impl command::Handler for Game<'_> {
             let twitch = self.twitch.clone();
             let game = rest.to_string();
             let stream_info = self.stream_info.clone();
-            let streamer_id = ctx.user.streamer.to_owned();
+
+            let user = ctx.user.clone();
 
             let future = async move {
                 let mut request = api::twitch::UpdateChannelRequest::default();
                 request.channel.game = Some(game);
-                twitch.update_channel(&streamer_id, request).await?;
-                stream_info.refresh_channel(&twitch, &streamer_id).await?;
+                twitch.update_channel(user.streamer(), request).await?;
+                stream_info
+                    .refresh_channel(&twitch, user.streamer())
+                    .await?;
                 Ok::<(), Error>(())
             };
 
-            let user = ctx.user.as_owned_user();
+            let user = ctx.user.clone();
 
             ctx.spawn(async move {
                 match future.await {

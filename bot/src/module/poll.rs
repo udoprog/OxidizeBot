@@ -146,10 +146,10 @@ impl ActivePoll {
 }
 
 impl command::MessageHook for ActivePoll {
-    fn peek(&mut self, user: &irc::User<'_>, m: &str) -> Result<(), Error> {
+    fn peek(&mut self, user: &irc::User, m: &str) -> Result<(), Error> {
         let mut inner = self.inner.write();
 
-        if inner.voted.contains(user.name) {
+        if inner.voted.contains(user.name()) {
             return Ok(());
         }
 
@@ -159,7 +159,7 @@ impl command::MessageHook for ActivePoll {
             }
 
             *inner.votes.entry(word.to_string()).or_default() += 1;
-            inner.voted.insert(user.name.to_string());
+            inner.voted.insert(user.name().to_string());
             break;
         }
 

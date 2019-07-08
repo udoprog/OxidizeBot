@@ -23,7 +23,7 @@ pub trait Handler {
 /// A trait for peeking into chat messages.
 pub trait MessageHook: std::any::Any + Send {
     /// Peek the given message.
-    fn peek(&mut self, user: &irc::User<'_>, m: &str) -> Result<(), Error>;
+    fn peek(&mut self, user: &irc::User, m: &str) -> Result<(), Error>;
 }
 
 /// Context for a single command invocation.
@@ -32,7 +32,7 @@ pub struct Context<'a> {
     /// Sender associated with the command.
     pub sender: &'a irc::Sender,
     pub thread_pool: &'a ThreadPool,
-    pub user: irc::User<'a>,
+    pub user: irc::User,
     pub it: utils::Words<'a>,
     pub shutdown: &'a utils::Shutdown,
     pub scope_cooldowns: &'a mut HashMap<Scope, utils::Cooldown>,
@@ -66,13 +66,13 @@ impl<'a> Context<'a> {
         if !self.user.has_scope(scope) {
             self.privmsg(format!(
                 "Do you think this is a democracy {name}? LUL",
-                name = self.user.name
+                name = self.user.display_name()
             ));
 
             failure::bail!(
                 "Scope `{}` not associated with user `{}`",
                 scope,
-                self.user.name
+                self.user.name()
             );
         }
 

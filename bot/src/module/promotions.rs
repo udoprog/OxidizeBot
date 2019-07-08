@@ -29,7 +29,7 @@ impl command::Handler for Handler<'_> {
                     let template = ctx_try!(ctx.rest_parse("<name> <frequency> <template..>"));
 
                     self.promotions
-                        .edit(ctx.user.target, &name, frequency, template)?;
+                        .edit(ctx.user.target(), &name, frequency, template)?;
                     ctx.respond("Edited promo.");
                 }
                 None | Some(..) => {

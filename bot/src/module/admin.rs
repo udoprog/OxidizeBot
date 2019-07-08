@@ -140,10 +140,10 @@ impl command::Handler for Handler<'_> {
                         }
                     };
 
-                    self.aliases.enable_group(ctx.user.target, &group)?;
-                    self.commands.enable_group(ctx.user.target, &group)?;
-                    self.promotions.enable_group(ctx.user.target, &group)?;
-                    self.themes.enable_group(ctx.user.target, &group)?;
+                    self.aliases.enable_group(ctx.user.target(), &group)?;
+                    self.commands.enable_group(ctx.user.target(), &group)?;
+                    self.promotions.enable_group(ctx.user.target(), &group)?;
+                    self.themes.enable_group(ctx.user.target(), &group)?;
 
                     ctx.respond(format!("Enabled group {}", group));
                 }
@@ -156,10 +156,10 @@ impl command::Handler for Handler<'_> {
                         }
                     };
 
-                    self.aliases.disable_group(ctx.user.target, &group)?;
-                    self.commands.disable_group(ctx.user.target, &group)?;
-                    self.promotions.disable_group(ctx.user.target, &group)?;
-                    self.themes.disable_group(ctx.user.target, &group)?;
+                    self.aliases.disable_group(ctx.user.target(), &group)?;
+                    self.commands.disable_group(ctx.user.target(), &group)?;
+                    self.promotions.disable_group(ctx.user.target(), &group)?;
+                    self.themes.disable_group(ctx.user.target(), &group)?;
 
                     ctx.respond(format!("Disabled group {}", group));
                 }

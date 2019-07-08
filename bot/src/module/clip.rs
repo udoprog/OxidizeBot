@@ -51,7 +51,7 @@ impl command::Handler for Clip<'_> {
             };
 
             let twitch = self.twitch.clone();
-            let user = ctx.user.as_owned_user();
+            let user = ctx.user.clone();
 
             ctx.spawn(async move {
                 match twitch.create_clip(user_id.as_str()).await {

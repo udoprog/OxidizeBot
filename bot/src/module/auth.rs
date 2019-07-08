@@ -26,12 +26,16 @@ impl command::Handler for Handler<'_> {
                             .collect::<Vec<_>>()
                     };
 
-                    let by_user = filter(self.auth.scopes_for_user(ctx.user.name));
+                    let by_user = filter(self.auth.scopes_for_user(ctx.user.name()));
 
                     let mut result = Vec::new();
 
                     if !by_user.is_empty() {
-                        result.push(format!("Your ({}): {}", ctx.user.name, by_user.join(", ")));
+                        result.push(format!(
+                            "Your ({}): {}",
+                            ctx.user.display_name(),
+                            by_user.join(", ")
+                        ));
                     }
 
                     for role in ctx.user.roles() {

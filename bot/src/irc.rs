@@ -114,8 +114,7 @@ impl Irc {
             let bot = bot_info.login.to_lowercase();
             let bot = bot.as_str();
 
-            let streamer = streamer_info.login.to_lowercase();
-            let streamer = streamer.as_str();
+            let streamer = Arc::new(streamer_info.login.to_lowercase());
 
             let channel = Arc::new(format!("#{}", streamer));
 
@@ -152,7 +151,7 @@ impl Irc {
 
             let stream_info = {
                 let (stream_info, mut stream_state_rx, future) =
-                    stream_info::setup(streamer, streamer_twitch.clone());
+                    stream_info::setup(streamer.clone(), streamer_twitch.clone());
 
                 let mut stream_state_tx = stream_state_tx.clone();
 
@@ -239,8 +238,8 @@ impl Irc {
             let mut handler = Handler {
                 streamer,
                 sender: sender.clone(),
-                moderators: HashSet::default(),
-                vips: HashSet::default(),
+                moderators: Default::default(),
+                vips: Default::default(),
                 whitelisted_hosts,
                 commands: &commands,
                 bad_words: &bad_words,
@@ -454,13 +453,13 @@ fn currency_loop<'a>(
 /// Handler for incoming messages.
 struct Handler<'a> {
     /// Current Streamer.
-    streamer: &'a str,
+    streamer: Arc<String>,
     /// Queue for sending messages.
     sender: Sender,
     /// Moderators.
-    moderators: HashSet<String>,
+    moderators: Arc<RwLock<HashSet<String>>>,
     /// VIPs.
-    vips: HashSet<String>,
+    vips: Arc<RwLock<HashSet<String>>>,
     /// Whitelisted hosts for links.
     whitelisted_hosts: HashSet<String>,
     /// All registered commands.
@@ -542,7 +541,7 @@ pub async fn process_command<'a, 'b: 'a>(
                         } else {
                             ctx.privmsg(format!(
                                 "Do you think this is a democracy {name}? LUL",
-                                name = ctx.user.name
+                                name = ctx.user.display_name()
                             ));
                         }
 
@@ -561,21 +560,21 @@ pub async fn process_command<'a, 'b: 'a>(
 
 impl<'a> Handler<'a> {
     /// Delete the given message.
-    fn delete_message(&self, user: &User<'_>) -> Result<(), Error> {
-        let id = match user.tags.id {
+    fn delete_message(&self, user: &User) -> Result<(), Error> {
+        let id = match &user.inner.tags.id {
             Some(id) => id,
             None => return Ok(()),
         };
 
         log::info!("Attempting to delete message: {}", id);
-        user.sender.delete(id);
+        user.inner.sender.delete(id);
         Ok(())
     }
 
     /// Test if the message should be deleted.
-    fn should_be_deleted(&self, user: &User<'_>, message: &str) -> bool {
+    fn should_be_deleted(&self, user: &User, message: &str) -> bool {
         // Moderators can say whatever they want.
-        if self.moderators.contains(user.name) {
+        if self.moderators.read().contains(user.name()) {
             return false;
         }
 
@@ -583,8 +582,8 @@ impl<'a> Handler<'a> {
             if let Some(word) = self.test_bad_words(message) {
                 if let Some(why) = word.why.as_ref() {
                     let why = why.render_to_string(&BadWordsVars {
-                        name: user.name,
-                        target: user.target,
+                        name: user.display_name(),
+                        target: user.target(),
                     });
 
                     match why {
@@ -649,29 +648,33 @@ impl<'a> Handler<'a> {
     }
 
     /// Handle the given command.
-    pub async fn handle(&mut self, m: Message) -> Result<(), Error> {
+    pub async fn handle(&mut self, mut m: Message) -> Result<(), Error> {
         match m.command {
             Command::PRIVMSG(_, ref message) => {
-                let tags = Tags::from_tags(m.tags.as_ref());
+                let tags = Tags::from_tags(m.tags.take());
 
                 let name = m
                     .source_nickname()
-                    .ok_or_else(|| format_err!("expected user info"))?;
+                    .ok_or_else(|| format_err!("expected user info"))?
+                    .to_string();
 
                 let target = m
                     .response_target()
-                    .ok_or_else(|| format_err!("expected user info"))?;
+                    .ok_or_else(|| format_err!("expected user info"))?
+                    .to_string();
 
                 let user = User {
-                    tags,
-                    sender: self.sender.clone(),
-                    name,
-                    target,
-                    streamer: self.streamer,
-                    moderators: &self.moderators,
-                    vips: &self.vips,
-                    stream_info: &self.stream_info,
-                    auth: &self.auth,
+                    inner: Arc::new(UserInner {
+                        tags,
+                        sender: self.sender.clone(),
+                        name,
+                        target,
+                        streamer: self.streamer.clone(),
+                        moderators: self.moderators.clone(),
+                        vips: self.vips.clone(),
+                        stream_info: self.stream_info.clone(),
+                        auth: self.auth.clone(),
+                    }),
                 };
 
                 for (key, hook) in &mut self.message_hooks {
@@ -680,28 +683,28 @@ impl<'a> Handler<'a> {
                 }
 
                 // only non-moderators and non-streamer bumps the idle counter.
-                if !self.moderators.contains(user.name) && user.name != self.streamer {
+                if !user.is_streamer() {
                     self.idle.seen();
                 }
 
                 let mut it = utils::Words::new(message);
 
                 // NB: needs to store locally to maintain a reference to it.
-                let a = self.aliases.lookup(user.target, it.clone());
+                let a = self.aliases.lookup(user.target(), it.clone());
 
                 if let Some(a) = &a {
                     it = utils::Words::new(a.as_str());
                 }
 
                 if let Some(command) = it.next() {
-                    if let Some(command) = self.commands.get(user.target, &command) {
+                    if let Some(command) = self.commands.get(user.target(), &command) {
                         if command.has_var("count") {
                             self.commands.increment(&*command)?;
                         }
 
                         let vars = CommandVars {
-                            name: &user.name,
-                            target: &user.target,
+                            name: user.display_name(),
+                            target: user.target(),
                             count: command.count(),
                             rest: it.rest(),
                         };
@@ -779,26 +782,26 @@ impl<'a> Handler<'a> {
                 log::trace!("Raw: {:?}", m);
             }
             Command::NOTICE(_, ref message) => {
-                let tags = Tags::from_tags(m.tags.as_ref());
+                let tags = Tags::from_tags(m.tags.take());
 
-                match tags.msg_id {
+                match tags.msg_id.as_ref().map(|id| id.as_str()) {
                     _ if message == "Login authentication failed" => {
                         self.token.force_refresh()?;
                         self.handler_shutdown = true;
                     }
                     Some("no_mods") => {
-                        self.moderators.clear();
+                        self.moderators.write().clear();
                     }
                     // Response to /mods request.
                     Some("room_mods") => {
-                        self.moderators = parse_room_members(message);
+                        *self.moderators.write() = parse_room_members(message);
                     }
                     Some("no_vips") => {
-                        self.vips.clear();
+                        self.vips.write().clear();
                     }
                     // Response to /vips request.
                     Some("vips_success") => {
-                        self.vips = parse_room_members(message);
+                        *self.vips.write() = parse_room_members(message);
                     }
                     Some(msg_id) => {
                         log::info!("unhandled notice w/ msg_id: {:?}: {:?}", msg_id, m);
@@ -817,69 +820,60 @@ impl<'a> Handler<'a> {
     }
 }
 
-#[derive(Clone)]
-pub struct OwnedUser {
-    tags: OwnedTags,
+/// Inner struct for User to make it cheaper to clone.
+struct UserInner {
+    tags: Tags,
     sender: Sender,
-    pub name: String,
-    pub target: String,
+    name: String,
+    target: String,
+    streamer: Arc<String>,
+    moderators: Arc<RwLock<HashSet<String>>>,
+    vips: Arc<RwLock<HashSet<String>>>,
+    stream_info: stream_info::StreamInfo,
+    auth: Auth,
 }
 
-impl OwnedUser {
+#[derive(Clone)]
+pub struct User {
+    inner: Arc<UserInner>,
+}
+
+impl User {
+    /// Get the name of the user.
+    pub fn name(&self) -> &str {
+        self.inner.name.as_str()
+    }
+
     /// Get the display name of the user.
     pub fn display_name(&self) -> &str {
-        self.tags
+        self.inner
+            .tags
             .display_name
             .as_ref()
-            .unwrap_or(&self.name)
-            .as_str()
+            .map(|d| d.as_str())
+            .unwrap_or_else(|| self.inner.name.as_str())
     }
 
-    /// Respond to the user with a message.
-    pub fn respond(&self, m: impl fmt::Display) {
-        self.sender
-            .privmsg(format!("{} -> {}", self.display_name(), m));
+    /// Get the target of the user.
+    pub fn target(&self) -> &str {
+        self.inner.target.as_str()
     }
-}
 
-#[derive(Clone)]
-pub struct User<'a> {
-    pub tags: Tags<'a>,
-    sender: Sender,
-    pub name: &'a str,
-    pub target: &'a str,
-    pub streamer: &'a str,
-    pub moderators: &'a HashSet<String>,
-    pub vips: &'a HashSet<String>,
-    pub stream_info: &'a stream_info::StreamInfo,
-    pub auth: &'a Auth,
-}
+    /// Get the name of the streamer.
+    pub fn streamer(&self) -> &str {
+        self.inner.streamer.as_str()
+    }
 
-impl<'a> User<'a> {
     /// Test if the current user is the given user.
     pub fn is(&self, name: &str) -> bool {
-        self.name == name.to_lowercase()
-    }
-
-    /// Get the display name of the user.
-    pub fn display_name(&self) -> &str {
-        self.tags.display_name.unwrap_or(self.name)
+        self.inner.name == name.to_lowercase()
     }
 
     /// Respond to the user with a message.
     pub fn respond(&self, m: impl fmt::Display) {
-        self.sender
+        self.inner
+            .sender
             .privmsg(format!("{} -> {}", self.display_name(), m));
-    }
-
-    /// Convert into an owned user.
-    pub fn as_owned_user(&self) -> OwnedUser {
-        OwnedUser {
-            tags: self.tags.as_owned_tags(),
-            sender: self.sender.clone(),
-            name: self.name.to_owned(),
-            target: self.target.to_owned(),
-        }
     }
 
     /// Get a list of all roles the current requester belongs to.
@@ -908,46 +902,55 @@ impl<'a> User<'a> {
 
     /// Test if the current user has the given scope.
     pub fn has_scope(&self, scope: Scope) -> bool {
-        self.auth.test_any(scope, self.name, self.roles())
+        self.inner
+            .auth
+            .test_any(scope, self.inner.name.as_str(), self.roles())
     }
 
     /// Test if streamer.
     fn is_streamer(&self) -> bool {
-        self.name == self.streamer
+        self.inner.name == *self.inner.streamer
     }
 
     /// Test if moderator.
     pub fn is_moderator(&self) -> bool {
-        self.moderators.contains(self.name)
+        self.inner
+            .moderators
+            .read()
+            .contains(self.inner.name.as_str())
     }
 
     /// Test if subscriber.
     fn is_subscriber(&self) -> bool {
-        self.is_streamer() || self.stream_info.is_subscriber(self.name)
+        self.is_streamer()
+            || self
+                .inner
+                .stream_info
+                .is_subscriber(self.inner.name.as_str())
     }
 
     /// Test if vip.
     fn is_vip(&self) -> bool {
-        self.vips.contains(self.name)
+        self.inner.vips.read().contains(self.inner.name.as_str())
     }
 }
 
 /// Struct of tags.
 #[derive(Debug, Clone)]
-pub struct Tags<'m> {
+pub struct Tags {
     /// Contents of the id tag if present.
-    id: Option<&'m str>,
+    id: Option<String>,
     /// Contents of the msg-id tag if present.
-    msg_id: Option<&'m str>,
+    msg_id: Option<String>,
     /// The display name of the user.
-    display_name: Option<&'m str>,
+    display_name: Option<String>,
     /// The ID of the user.
-    user_id: Option<&'m str>,
+    user_id: Option<String>,
 }
 
-impl<'m> Tags<'m> {
+impl Tags {
     /// Extract tags from message.
-    fn from_tags(tags: Option<&'m Vec<Tag>>) -> Tags<'m> {
+    fn from_tags(tags: Option<Vec<Tag>>) -> Tags {
         let mut id = None;
         let mut msg_id = None;
         let mut display_name = None;
@@ -957,10 +960,10 @@ impl<'m> Tags<'m> {
             for t in tags {
                 match t {
                     Tag(name, Some(value)) => match name.as_str() {
-                        "id" => id = Some(value.as_str()),
-                        "msg-id" => msg_id = Some(value.as_str()),
-                        "display-name" => display_name = Some(value.as_str()),
-                        "user-id" => user_id = Some(value.as_str()),
+                        "id" => id = Some(value),
+                        "msg-id" => msg_id = Some(value),
+                        "display-name" => display_name = Some(value),
+                        "user-id" => user_id = Some(value),
                         _ => (),
                     },
                     _ => (),
@@ -975,25 +978,6 @@ impl<'m> Tags<'m> {
             user_id,
         }
     }
-
-    /// Convert into an owned set of tags.
-    fn as_owned_tags(&self) -> OwnedTags {
-        OwnedTags {
-            id: self.id.map(|id| id.to_string()),
-            msg_id: self.msg_id.map(|id| id.to_owned()),
-            display_name: self.display_name.map(|id| id.to_owned()),
-            user_id: self.user_id.map(|id| id.to_owned()),
-        }
-    }
-}
-
-/// Struct of tags.
-#[derive(Debug, Clone)]
-pub struct OwnedTags {
-    id: Option<String>,
-    msg_id: Option<String>,
-    display_name: Option<String>,
-    user_id: Option<String>,
 }
 
 #[derive(Debug)]

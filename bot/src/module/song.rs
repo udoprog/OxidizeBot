@@ -40,10 +40,7 @@ impl Handler {
         let request_reward = *self.request_reward.read();
         let spotify = self.spotify.clone();
         let youtube = self.youtube.clone();
-        let user = ctx.user.as_owned_user();
-        let has_spotify_scope = ctx.user.has_scope(Scope::SongSpotify);
-        let has_youtube_scope = ctx.user.has_scope(Scope::SongYouTube);
-        let has_bypass_constraints = ctx.user.has_scope(Scope::SongBypassConstraints);
+        let user = ctx.user.clone();
 
         let track_id = match TrackId::parse_with_urls(&q) {
             Ok(track_id) => Some(track_id),
@@ -53,7 +50,7 @@ impl Handler {
                     track_id::ParseTrackIdError::MissingUriPrefix => (),
                     // show other errors.
                     e => {
-                        log::warn!("bad song request by {}: {}", ctx.user.name, e);
+                        log::warn!("bad song request by {}: {}", ctx.user.name(), e);
                         let e = format!("{} :(", e);
                         self.request_help(ctx, Some(e.as_str()));
                         return Ok(());
@@ -82,11 +79,11 @@ impl Handler {
             let (what, has_scope, enabled) = match track_id {
                 TrackId::Spotify(..) => {
                     let enabled = *spotify.enabled.read();
-                    ("Spotify", has_spotify_scope, enabled)
+                    ("Spotify", user.has_scope(Scope::SongSpotify), enabled)
                 }
                 TrackId::YouTube(..) => {
                     let enabled = *youtube.enabled.read();
-                    ("YouTube", has_youtube_scope, enabled)
+                    ("YouTube", user.has_scope(Scope::SongYouTube), enabled)
                 }
             };
 
@@ -116,11 +113,13 @@ impl Handler {
                 TrackId::YouTube(_) => youtube.min_currency.read().clone(),
             };
 
+            let has_bypass_constraints = user.has_scope(Scope::SongBypassConstraints);
+
             let result = player
                 .add_track(
                     currency.clone(),
-                    user.target.clone(),
-                    user.name.clone(),
+                    user.target().to_string(),
+                    user.name().to_string(),
                     track_id,
                     has_bypass_constraints,
                     max_duration,
@@ -185,7 +184,7 @@ impl Handler {
                     let limit = utils::compact_duration(&limit);
 
                     let who = match who {
-                        Some(ref who) if *who == user.name => String::from(" by you"),
+                        Some(ref who) if who == user.name() => String::from(" by you"),
                         Some(ref who) => format!(" by {}", who),
                         None => String::from(""),
                     };
@@ -244,8 +243,8 @@ impl Handler {
 
             match currency
                 .balance_add(
-                    user.target.clone(),
-                    user.name.clone(),
+                    user.target().to_string(),
+                    user.name().to_string(),
                     request_reward as i64,
                 )
                 .await
@@ -267,7 +266,7 @@ impl Handler {
             Ok(())
         };
 
-        let user = ctx.user.as_owned_user();
+        let user = ctx.user.clone();
 
         let future = future.map(move |result| match result {
             Ok(()) => (),
@@ -333,10 +332,10 @@ impl command::Handler for Handler {
                     let name = ctx_try!(ctx.next_str("<name>")).to_string();
 
                     let player = player.clone();
-                    let user = ctx.user.as_owned_user();
+                    let user = ctx.user.clone();
 
                     ctx.spawn(async move {
-                        match player.play_theme(user.target.clone(), name).await {
+                        match player.play_theme(user.target().to_string(), name).await {
                             Ok(()) => (),
                             Err(PlayThemeError::NoSuchTheme) => {
                                 user.respond("No such theme :(");
@@ -356,7 +355,7 @@ impl command::Handler for Handler {
                         None => return Ok(()),
                     };
 
-                    if let Some(item) = player.promote_song(ctx.user.name, index) {
+                    if let Some(item) = player.promote_song(ctx.user.name(), index) {
                         ctx.respond(format!("Promoted song to head of queue: {}", item.what()));
                     } else {
                         ctx.respond("No such song to promote");
@@ -381,7 +380,8 @@ impl command::Handler for Handler {
                     if let Some(api_url) = ctx.api_url {
                         ctx.respond(format!(
                             "You can find the queue at {}/player/{}",
-                            api_url, ctx.user.streamer
+                            api_url,
+                            ctx.user.streamer()
                         ));
                         return Ok(());
                     }
@@ -443,9 +443,9 @@ impl command::Handler for Handler {
                 Some("when") => {
                     let user = ctx.next();
 
-                    let (your, user) = match user.as_ref().map(String::as_str) {
-                        Some(user) => (false, user),
-                        None => (true, ctx.user.name),
+                    let (your, user) = match &user {
+                        Some(user) => (false, user.as_str()),
+                        None => (true, ctx.user.name()),
                     };
 
                     let user = user.to_lowercase();
@@ -504,7 +504,7 @@ impl command::Handler for Handler {
                                 player.remove_last()?
                             }
                         },
-                        Some("mine") => player.remove_last_by_user(&ctx.user.name)?,
+                        Some("mine") => player.remove_last_by_user(ctx.user.name())?,
                         Some(n) => {
                             ctx.check_scope(Scope::SongEditQueue)?;
 
@@ -759,7 +759,7 @@ impl Constraint {
 }
 
 /// Parse a queue position.
-fn parse_queue_position(user: &irc::User<'_>, n: &str) -> Option<usize> {
+fn parse_queue_position(user: &irc::User, n: &str) -> Option<usize> {
     match str::parse::<usize>(n) {
         Ok(0) => {
             user.respond("Can't mess with the current song :(");
@@ -775,7 +775,7 @@ fn parse_queue_position(user: &irc::User<'_>, n: &str) -> Option<usize> {
 
 /// Display the collection of songs.
 fn display_songs(
-    user: &irc::User<'_>,
+    user: &irc::User,
     has_more: Option<usize>,
     it: impl IntoIterator<Item = Arc<Item>>,
 ) {

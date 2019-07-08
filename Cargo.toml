@@ -7,3 +7,9 @@ members = [
 
 [patch.crates-io]
 backtrace = {git = "https://github.com/rust-lang/backtrace-rs"}
+
+[profile.release]
+opt-level = 'z'
+lto = true
+codegen-units = 1
+panic = 'abort'

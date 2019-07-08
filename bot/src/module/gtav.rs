@@ -530,7 +530,7 @@ pub struct Handler {
     reward_percentage: Arc<RwLock<u32>>,
     success_feedback: Arc<RwLock<bool>>,
     id_counter: usize,
-    tx: mpsc::UnboundedSender<(irc::OwnedUser, usize, Command)>,
+    tx: mpsc::UnboundedSender<(irc::User, usize, Command)>,
     per_user_cooldowns: HashMap<String, Cooldown>,
     per_command_cooldowns: HashMap<&'static str, Cooldown>,
     per_command_configs: Arc<RwLock<HashMap<String, CommandSetting>>>,
@@ -543,7 +543,7 @@ impl Handler {
 
         if let Some(player) = player.as_ref() {
             let player = player.clone();
-            let target = ctx.user.target.to_string();
+            let target = ctx.user.target().to_string();
             let id = id.to_string();
 
             ctx.spawn(async move {
@@ -569,7 +569,7 @@ impl Handler {
     ) -> Option<(&'static str, time::Duration)> {
         let per_user_cooldown = self.per_user_cooldown.read();
 
-        let user_cooldown = match self.per_user_cooldowns.entry(ctx.user.name.to_string()) {
+        let user_cooldown = match self.per_user_cooldowns.entry(ctx.user.name().to_string()) {
             hash_map::Entry::Vacant(e) => e.insert(per_user_cooldown.clone()),
             hash_map::Entry::Occupied(e) => {
                 let cooldown = e.into_mut();
@@ -934,7 +934,7 @@ impl command::Handler for Handler {
             self.id_counter += 1;
 
             let cost = cost * percentage / 100;
-            let user = ctx.user.as_owned_user();
+            let user = ctx.user.clone();
             let sender = ctx.sender.clone();
             let prefix = self.prefix.read().clone();
             let success_feedback = self.success_feedback.clone();
@@ -942,7 +942,7 @@ impl command::Handler for Handler {
 
             let future = async move {
                 let balance = currency
-                    .balance_of(user.target.clone(), user.name.clone())
+                    .balance_of(user.target().to_string(), user.name().to_string())
                     .await?
                     .unwrap_or_default();
 
@@ -964,14 +964,18 @@ impl command::Handler for Handler {
                 }
 
                 currency
-                    .balance_add(user.target.clone(), user.name.clone(), -(cost as i64))
+                    .balance_add(
+                        user.target().to_string(),
+                        user.name().to_string(),
+                        -(cost as i64),
+                    )
                     .await?;
 
                 if *success_feedback.read() {
                     sender.privmsg(format!(
                         "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
                         prefix = prefix,
-                        user = user.name,
+                        user = user.display_name(),
                         what = command.what(),
                         command = command,
                         cost = cost,
@@ -1116,7 +1120,7 @@ impl super::Module for Module {
                     }
                     command = receiver.next() => {
                         if let Some((user, id, command)) = command {
-                            let message = format!("{} {} {}", user.name, id, command.command());
+                            let message = format!("{} {} {}", user.name(), id, command.command());
                             log::info!("sent: {}", message);
 
                             match socket.poll_send(message.as_bytes()) {

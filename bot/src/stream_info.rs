@@ -134,13 +134,13 @@ impl StreamInfo {
 }
 
 /// Set up a reward loop.
-pub fn setup<'a>(
-    streamer_id: &'a str,
+pub fn setup(
+    streamer_id: Arc<String>,
     twitch: api::Twitch,
 ) -> (
     StreamInfo,
     mpsc::Receiver<StreamState>,
-    impl Future<Output = Result<(), Error>> + 'a,
+    impl Future<Output = Result<(), Error>>,
 ) {
     let (mut stream_state_tx, stream_state_rx) = mpsc::channel(64);
 
@@ -161,7 +161,9 @@ pub fn setup<'a>(
     let future = async move {
         twitch.token.wait_until_ready().await?;
 
-        let mut streamer = future_info.fetch_streamer(&twitch, streamer_id).await;
+        let mut streamer = future_info
+            .fetch_streamer(&twitch, streamer_id.as_str())
+            .await;
 
         loop {
             futures::select! {
@@ -175,7 +177,7 @@ pub fn setup<'a>(
                 update = streamer_interval.select_next_some() => {
                     update?;
 
-                    let update = future_info.fetch_streamer(&twitch, streamer_id).await;
+                    let update = future_info.fetch_streamer(&twitch, streamer_id.as_str()).await;
 
                     if let Some(update) = update {
                         streamer = Some(update);
@@ -185,10 +187,10 @@ pub fn setup<'a>(
                     update?;
 
                     let stream = future_info
-                        .refresh_stream(&twitch, streamer_id, &mut stream_state_tx);
+                        .refresh_stream(&twitch, streamer_id.as_str(), &mut stream_state_tx);
 
                     let channel = future_info
-                        .refresh_channel(&twitch, streamer_id);
+                        .refresh_channel(&twitch, streamer_id.as_str());
 
                     future::try_join(stream, channel).await?;
                 }

@@ -84,7 +84,7 @@ impl command::Handler for Weather {
                         }
                     };
 
-                    let user = ctx.user.as_owned_user();
+                    let user = ctx.user.clone();
                     let user2 = user.clone();
                     let temperature_unit = *self.temperature_unit.read();
 
