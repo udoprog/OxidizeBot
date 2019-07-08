@@ -157,10 +157,10 @@ impl Spotify {
     }
 
     /// Search for tracks.
-    pub async fn search_track(&self, q: String) -> Result<Page<FullTrack>, Error> {
+    pub async fn search_track(&self, q: &str) -> Result<Page<FullTrack>, Error> {
         self.request(Method::GET, &["search"])
             .query_param("type", "track")
-            .query_param("q", &q)
+            .query_param("q", q)
             .json::<search::SearchTracks>()
             .await
             .map(|r| r.tracks)

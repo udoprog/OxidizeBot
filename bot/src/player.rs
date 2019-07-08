@@ -268,9 +268,9 @@ pub fn run(
         // Add tracks from database.
         for song in db.list()? {
             let item = convert_item(
-                spotify.clone(),
-                youtube.clone(),
-                song.user.clone(),
+                &*spotify,
+                &*youtube,
+                song.user.as_ref().map(|user| user.as_str()),
                 song.track_id,
                 None,
             )
@@ -710,9 +710,9 @@ impl Player {
     }
 
     /// Search for a track.
-    pub async fn search_track(&self, q: String) -> Result<Option<TrackId>, Error> {
+    pub async fn search_track(&self, q: &str) -> Result<Option<TrackId>, Error> {
         if q.starts_with("youtube:") {
-            let q = q.trim_start_matches("youtube:").to_string();
+            let q = q.trim_start_matches("youtube:");
             let results = self.inner.youtube.search(q).await?;
 
             let result = results.items.into_iter().filter(|r| match r.id.kind {
@@ -725,7 +725,7 @@ impl Player {
         }
 
         let q = if q.starts_with("spotify:") {
-            q.trim_start_matches("spotify:").to_string()
+            q.trim_start_matches("spotify:")
         } else {
             q
         };
@@ -742,8 +742,8 @@ impl Player {
     }
 
     /// Play a theme track.
-    pub async fn play_theme(&self, channel: String, name: String) -> Result<(), PlayThemeError> {
-        let theme = match self.inner.themes.get(&channel, &name) {
+    pub async fn play_theme(&self, channel: &str, name: &str) -> Result<(), PlayThemeError> {
+        let theme = match self.inner.themes.get(channel, name) {
             Some(theme) => theme,
             None => return Err(PlayThemeError::NoSuchTheme),
         };
@@ -751,8 +751,8 @@ impl Player {
         let duration = theme.end.clone().map(|o| o.as_duration());
 
         let item = convert_item(
-            self.inner.spotify.clone(),
-            self.inner.youtube.clone(),
+            &*self.inner.spotify,
+            &*self.inner.youtube,
             None,
             theme.track_id.clone(),
             duration,
@@ -777,8 +777,8 @@ impl Player {
     pub async fn add_track(
         &self,
         currency: Option<Currency>,
-        channel: String,
-        user: String,
+        channel: &str,
+        user: &str,
         track_id: TrackId,
         bypass_constraints: bool,
         max_duration: Option<utils::Duration>,
@@ -846,7 +846,7 @@ impl Player {
                     };
 
                     let balance = currency
-                        .balance_of(channel, user.clone())
+                        .balance_of(channel, user)
                         .await
                         .map_err(AddTrackError::Error)?
                         .unwrap_or_default();
@@ -869,8 +869,8 @@ impl Player {
         }
 
         let mut item = convert_item(
-            self.inner.spotify.clone(),
-            self.inner.youtube.clone(),
+            &*self.inner.spotify,
+            &*self.inner.youtube,
             Some(user),
             track_id,
             None,
@@ -2027,9 +2027,9 @@ impl PlaybackFuture {
 
 /// Converts a track into an Item.
 async fn convert_item(
-    spotify: Arc<api::Spotify>,
-    youtube: Arc<api::YouTube>,
-    user: Option<String>,
+    spotify: &api::Spotify,
+    youtube: &api::YouTube,
+    user: Option<&str>,
     track_id: TrackId,
     duration_override: Option<Duration>,
 ) -> Result<Item, Error> {
@@ -2042,11 +2042,8 @@ async fn convert_item(
             (Track::Spotify { track }, duration)
         }
         TrackId::YouTube(ref id) => {
-            let id = id.to_string();
             let video_info = youtube.get_video_info(id.clone());
-            let video = youtube
-                .clone()
-                .videos_by_id(id.clone(), String::from("contentDetails,snippet"));
+            let video = youtube.videos_by_id(id, "contentDetails,snippet");
             let (video_info, video) = future::try_join(video_info, video).await?;
 
             log::trace!("info = {:?}", video_info);
@@ -2074,7 +2071,7 @@ async fn convert_item(
     return Ok(Item {
         track_id,
         track,
-        user,
+        user: user.map(|user| user.to_string()),
         duration,
     });
 }

@@ -171,7 +171,7 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, channel: String, user: String) -> Result<Option<i64>, Error> {
+    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i64>, Error> {
         use self::Backend::*;
 
         match *self {
@@ -274,7 +274,7 @@ impl Currency {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, channel: String, user: String) -> Result<Option<i64>, Error> {
+    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i64>, Error> {
         self.inner.backend.balance_of(channel, user).await
     }
 

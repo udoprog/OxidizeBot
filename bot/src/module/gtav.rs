@@ -547,7 +547,7 @@ impl Handler {
             let id = id.to_string();
 
             ctx.spawn(async move {
-                match player.play_theme(target, id.clone()).await {
+                match player.play_theme(target.as_str(), id.as_str()).await {
                     Ok(()) => (),
                     Err(player::PlayThemeError::NoSuchTheme) => {
                         log::error!("you need to configure the theme `{}`", id);
@@ -942,7 +942,7 @@ impl command::Handler for Handler {
 
             let future = async move {
                 let balance = currency
-                    .balance_of(user.target().to_string(), user.name().to_string())
+                    .balance_of(user.target(), user.name())
                     .await?
                     .unwrap_or_default();
 

@@ -117,9 +117,10 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, channel: String, user: String) -> Result<Option<i64>, Error> {
+    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i64>, Error> {
         use self::schema::balances::dsl;
 
+        let channel = channel.to_string();
         let user = user_id(&user);
         let pool = self.db.pool.clone();
 

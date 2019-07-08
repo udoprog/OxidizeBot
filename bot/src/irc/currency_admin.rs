@@ -48,9 +48,7 @@ impl command::Handler for Handler<'_> {
                     let user = ctx.user.clone();
 
                     ctx.spawn(async move {
-                        let result = currency
-                            .balance_of(user.target().to_string(), user.name().to_string())
-                            .await;
+                        let result = currency.balance_of(user.target(), user.name()).await;
 
                         match result {
                             Ok(balance) => {
@@ -71,14 +69,12 @@ impl command::Handler for Handler<'_> {
                 }
                 Some("show") => {
                     ctx.check_scope(Scope::CurrencyShow)?;
-                    let to_show = ctx_try!(ctx.next_str("<user>")).to_string();
+                    let to_show = ctx_try!(ctx.next_str("<user>"));
 
                     let user = ctx.user.clone();
 
                     ctx.spawn(async move {
-                        let result = currency
-                            .balance_of(user.target().to_string(), to_show.clone())
-                            .await;
+                        let result = currency.balance_of(user.target(), to_show.as_str()).await;
 
                         match result {
                             Ok(balance) => {

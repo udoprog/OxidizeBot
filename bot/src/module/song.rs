@@ -65,7 +65,7 @@ impl Handler {
         let future = async move {
             let track_id = match track_id {
                 Some(track_id) => Some(track_id),
-                None => player.search_track(q).await?,
+                None => player.search_track(q.as_str()).await?,
             };
 
             let track_id = match track_id {
@@ -118,8 +118,8 @@ impl Handler {
             let result = player
                 .add_track(
                     currency.clone(),
-                    user.target().to_string(),
-                    user.name().to_string(),
+                    user.target(),
+                    user.name(),
                     track_id,
                     has_bypass_constraints,
                     max_duration,
@@ -335,7 +335,7 @@ impl command::Handler for Handler {
                     let user = ctx.user.clone();
 
                     ctx.spawn(async move {
-                        match player.play_theme(user.target().to_string(), name).await {
+                        match player.play_theme(user.target(), name.as_str()).await {
                             Ok(()) => (),
                             Err(PlayThemeError::NoSuchTheme) => {
                                 user.respond("No such theme :(");

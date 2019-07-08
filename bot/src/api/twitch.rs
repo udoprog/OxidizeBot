@@ -85,13 +85,13 @@ impl Twitch {
     }
 
     /// Get information on a user.
-    pub fn user_by_login(&self, login: &str) -> impl Future<Output = Result<Option<User>, Error>> {
+    pub async fn user_by_login(&self, login: &str) -> Result<Option<User>, Error> {
         let req = self
             .new_api(Method::GET, &["users"])
             .query_param("login", login)
             .json::<Data<User>>();
 
-        async move { Ok(req.await?.data.into_iter().next()) }
+        Ok(req.await?.data.into_iter().next())
     }
 
     /// Get information on a user.
@@ -117,16 +117,13 @@ impl Twitch {
     }
 
     /// Create a clip for the given broadcaster.
-    pub fn create_clip(
-        &self,
-        broadcaster_id: &str,
-    ) -> impl Future<Output = Result<Option<Clip>, Error>> {
+    pub async fn create_clip(&self, broadcaster_id: &str) -> Result<Option<Clip>, Error> {
         let req = self
             .new_api(Method::POST, &["clips"])
             .query_param("broadcaster_id", broadcaster_id)
             .json::<Data<Clip>>();
 
-        async move { Ok(req.await?.data.into_iter().next()) }
+        Ok(req.await?.data.into_iter().next())
     }
 
     /// Get the channela associated with the current authentication.
@@ -135,21 +132,20 @@ impl Twitch {
     }
 
     /// Get the channela associated with the current authentication.
-    pub fn channel_by_login(&self, login: &str) -> impl Future<Output = Result<Channel, Error>> {
-        self.v5(Method::GET, &["channels", login]).json::<Channel>()
+    pub async fn channel_by_login(&self, login: &str) -> Result<Channel, Error> {
+        self.v5(Method::GET, &["channels", login])
+            .json::<Channel>()
+            .await
     }
 
     /// Get stream information.
-    pub fn stream_by_login(
-        &self,
-        login: &str,
-    ) -> impl Future<Output = Result<Option<Stream>, Error>> {
+    pub async fn stream_by_login(&self, login: &str) -> Result<Option<Stream>, Error> {
         let req = self
             .new_api(Method::GET, &["streams"])
             .query_param("user_login", login)
             .json::<Page<Stream>>();
 
-        async move { Ok(req.await?.data.into_iter().next()) }
+        Ok(req.await?.data.into_iter().next())
     }
 
     /// Get chatters for the given channel using TMI.

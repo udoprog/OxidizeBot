@@ -233,7 +233,7 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, _channel: String, user: String) -> Result<Option<i64>, Error> {
+    pub async fn balance_of(&self, _channel: &str, user: &str) -> Result<Option<i64>, Error> {
         let user = user_id(&user);
         let pool = self.pool.clone();
         let queries = self.queries.clone();

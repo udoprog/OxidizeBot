@@ -54,33 +54,31 @@ impl YouTube {
     }
 
     /// Update the channel information.
-    pub fn videos_by_id(
+    pub async fn videos_by_id(
         &self,
-        video_id: String,
-        part: String,
-    ) -> impl Future<Output = Result<Option<Video>, failure::Error>> {
+        video_id: &str,
+        part: &str,
+    ) -> Result<Option<Video>, failure::Error> {
         let req = self
             .v3(Method::GET, &["videos"])
-            .query_param("part", part.as_str())
-            .query_param("id", video_id.as_str())
+            .query_param("part", part)
+            .query_param("id", video_id)
             .json::<Videos>();
 
-        async move { Ok(req.await?.and_then(|v| v.items.into_iter().next())) }
+        Ok(req.await?.and_then(|v| v.items.into_iter().next()))
     }
 
     /// Search YouTube.
-    pub fn search(&self, q: String) -> impl Future<Output = Result<SearchResults, failure::Error>> {
+    pub async fn search(&self, q: &str) -> Result<SearchResults, failure::Error> {
         let req = self
             .v3(Method::GET, &["search"])
             .query_param("part", "snippet")
-            .query_param("q", q.as_str())
+            .query_param("q", q)
             .json::<SearchResults>();
 
-        async move {
-            match req.await? {
-                Some(result) => Ok(result),
-                None => failure::bail!("got empty response"),
-            }
+        match req.await? {
+            Some(result) => Ok(result),
+            None => failure::bail!("got empty response"),
         }
     }
 
