@@ -1,6 +1,6 @@
 use self::assets::Asset;
 use crate::{
-    api, auth, bus, currency::Currency, db, player, prelude::*, settings, template,
+    api, auth, bus, currency::Currency, db, message_log, player, prelude::*, settings, template,
     track_id::TrackId, utils,
 };
 use hashbrown::{HashMap, HashSet};
@@ -791,6 +791,34 @@ impl Auth {
     }
 }
 
+/// Chat endpoints.
+#[derive(Clone)]
+struct Chat {
+    message_log: message_log::MessageLog,
+}
+
+impl Chat {
+    fn route(message_log: message_log::MessageLog) -> filters::BoxedFilter<(impl warp::Reply,)> {
+        let api = Chat { message_log };
+
+        let route = warp::get2()
+            .and(warp::path!("messages").and(path::end()))
+            .and_then({
+                let api = api.clone();
+                move || api.messages().map_err(warp::reject::custom)
+            })
+            .boxed();
+
+        return route;
+    }
+
+    /// Get all stored messages.
+    fn messages(&self) -> Result<impl warp::Reply, failure::Error> {
+        let messages = self.message_log.messages();
+        Ok(warp::reply::json(&*messages))
+    }
+}
+
 /// API to manage device.
 #[derive(Clone)]
 struct Api {
@@ -965,6 +993,8 @@ impl Api {
 
 /// Set up the web endpoint.
 pub fn setup(
+    message_log: message_log::MessageLog,
+    message_bus: Arc<bus::Bus<message_log::Event>>,
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     after_streams: db::AfterStreams,
@@ -1094,6 +1124,8 @@ pub fn setup(
         let route = route.or(Themes::route(themes));
         let route = route.or(Settings::route(settings));
 
+        let route = route.or(warp::path("chat").and(Chat::route(message_log)).boxed());
+
         let route = route
             .or(
                 warp::get2().and(path!("current").and(path::end()).and_then(move || {
@@ -1114,6 +1146,10 @@ pub fn setup(
         warp::path("api").and(route)
     };
 
+    let ws_messages = warp::get2()
+        .and(warp::path!("ws" / "messages"))
+        .and(send_bus(message_bus).recover(recover));
+
     let ws_overlay = warp::get2()
         .and(warp::path!("ws" / "overlay"))
         .and(send_bus(global_bus).recover(recover));
@@ -1124,8 +1160,9 @@ pub fn setup(
 
     let routes = oauth2_redirect.recover(recover);
     let routes = routes.or(api.recover(recover));
-    let routes = routes.or(ws_youtube.recover(recover));
+    let routes = routes.or(ws_messages.recover(recover));
     let routes = routes.or(ws_overlay.recover(recover));
+    let routes = routes.or(ws_youtube.recover(recover));
 
     let fallback = Asset::get("index.html");
 

@@ -59,17 +59,23 @@ export function formatDuration(duration) {
   let seconds = duration % 60;
   let minutes = Math.floor(duration / 60);
 
-  return pad(minutes, 2) + ":" + pad(seconds, 2);
+  return zeroPad(minutes, 2) + ":" + zeroPad(seconds, 2);
+}
 
-  function pad(num, size) {
-    var s = num + "";
+/**
+ * Pad a number with zeroes.
+ *
+ * @param {number} num number to pad
+ * @param {number} size width of the padding
+ */
+export function zeroPad(num, size) {
+  var s = num + "";
 
-    while (s.length < size) {
-      s = "0" + s;
-    }
-
-    return s;
+  while (s.length < size) {
+    s = "0" + s;
   }
+
+  return s;
 }
 
 /**

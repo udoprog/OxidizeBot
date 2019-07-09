@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Show display name when responding to users.
+- Experimental support for viewing chat.
+  * Support for only showing first message per user.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.4.3...master
 

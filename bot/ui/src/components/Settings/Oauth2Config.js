@@ -1,5 +1,5 @@
 import React from "react";
-import {Form, Row, Col} from "react-bootstrap";
+import {Form} from "react-bootstrap";
 import {Base} from "./Base";
 import YAML from 'yaml'
 

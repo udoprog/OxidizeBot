@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 pub trait Message: 'static + Clone + Send + Sync + serde::Serialize {
     /// The ID of a bussed message.
-    fn id(&self) -> Option<&'static str>;
+    fn id(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 pub type Reader<T> = tokio_bus::BusReader<T>;

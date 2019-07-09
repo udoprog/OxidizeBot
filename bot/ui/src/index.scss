@@ -350,3 +350,97 @@ body.youtube-body {
 .align-center {
   text-align: center;
 }
+
+body.chat-body {
+  background-color: black;
+  color: white;
+}
+
+.chat-obs {
+  color: white;
+  background-color: #333;
+  padding: 0.5em;
+}
+
+.chat-settings {
+  color: black;
+}
+
+#chat {
+  .edit-button {
+    position: absolute;
+    right: 0.2em;
+    top: 0.1em;
+
+    a:hover {
+      color: #ccc;
+      cursor: pointer;
+    }
+  }
+
+  .close-button {
+    position: absolute;
+    right: 0.2em;
+    top: 0.1em;
+    top: 0;
+
+    a:hover {
+      color: #ccc;
+      cursor: pointer;
+    }
+  }
+
+  .chat {
+    &-message-deleted {
+      text-decoration: line-through;
+    }
+
+    &-messages {
+      -webkit-transition: opacity 0.1s ease-in-out;
+      -moz-transition: opacity 0.1s ease-in-out;
+      -ms-transition: opacity 0.1s ease-in-out;
+      -o-transition: opacity 0.1s ease-in-out;
+      transition: opacity 0.1s ease-in-out;
+
+      &.hidden {
+        -webkit-transition: opacity 1s ease-in-out;
+        -moz-transition: opacity 1s ease-in-out;
+        -ms-transition: opacity 1s ease-in-out;
+        -o-transition: opacity 1s ease-in-out;
+        transition: opacity 1s ease-in-out;
+      }
+    }
+
+    &-no-messages {
+      padding: 0.1em 0.2em;
+      background-color: #333;
+    }
+
+    &-message {
+      padding-left: 0.2em;
+      padding-right: 0.2em;
+      padding-bottom: 0.1em;
+
+      &:first-child {
+        padding-top: 0.1em;
+      }
+
+      &:nth-child(even) {
+        background-color: #222;
+      }
+
+      &:nth-child(odd) {
+        background-color: #333;
+      }
+    }
+
+    &-timestamp {
+      margin-right: 0.2em;
+    }
+
+    &-name {
+      font-weight: bold;
+      margin-right: 0.2em;
+    }
+  }
+}

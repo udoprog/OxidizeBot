@@ -18,6 +18,7 @@ import Promotions from "./components/Promotions";
 import Aliases from "./components/Aliases";
 import Themes from "./components/Themes";
 import YouTube from "./components/YouTube";
+import Chat from "./components/Chat";
 import Authorization from "./components/Authorization";
 import ConfigurationPrompt from "./components/ConfigurationPrompt";
 import * as semver from "semver";
@@ -307,6 +308,9 @@ function Layout(props) {
               <NavDropdown.Item as={Link} active={path === "/youtube"} to="/youtube" target="youtube">
                 YouTube Player
               </NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/chat"} to="/chat" target="chat">
+                Chat
+              </NavDropdown.Item>
             </NavDropdown>
           </Nav>
         </Navbar.Collapse>
@@ -342,6 +346,7 @@ function AppRouter() {
       )} />
       <Route path="/overlay/" component={Overlay} />
       <Route path="/youtube" component={YouTube} />
+      <Route path="/chat" component={Chat} />
     </Router>
   );
 }

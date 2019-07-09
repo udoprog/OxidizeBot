@@ -291,6 +291,13 @@ export class Api {
       method: "DELETE",
     });
   }
+
+  /**
+   * Get all existing chat messages.
+   */
+  chatMessages() {
+    return this.fetch(["chat", "messages"]);
+  }
 }
 
 function encodePath(path) {

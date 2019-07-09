@@ -21,6 +21,7 @@ pub mod db;
 mod idle;
 pub mod injector;
 pub mod irc;
+pub mod message_log;
 pub mod module;
 pub mod oauth2;
 pub mod obs;

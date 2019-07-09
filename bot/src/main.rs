@@ -6,8 +6,8 @@ use backoff::backoff::Backoff as _;
 use failure::{bail, format_err, Error, ResultExt};
 use parking_lot::RwLock;
 use setmod::{
-    api, auth, bus, config, db, injector, irc, module, oauth2, obs, player, prelude::*, settings,
-    stream_info, sys, updater, utils, web,
+    api, auth, bus, config, db, injector, irc, message_log, module, oauth2, obs, player,
+    prelude::*, settings, stream_info, sys, updater, utils, web,
 };
 use std::{
     path::{Path, PathBuf},
@@ -244,6 +244,7 @@ async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
     let promotions = db::Promotions::load(db.clone())?;
     let themes = db::Themes::load(db.clone())?;
 
+    let message_bus = Arc::new(bus::Bus::new());
     let global_bus = Arc::new(bus::Bus::new());
     let youtube_bus = Arc::new(bus::Bus::new());
     let global_channel = Arc::new(RwLock::new(None));
@@ -261,7 +262,14 @@ async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
 
     let currency = injector.var(&mut futures);
 
+    let message_log = message_log::MessageLog::builder()
+        .bus(message_bus.clone())
+        .limit(512)
+        .build();
+
     let (web, future) = web::setup(
+        message_log.clone(),
+        message_bus.clone(),
         global_bus.clone(),
         youtube_bus.clone(),
         after_streams.clone(),
@@ -432,7 +440,7 @@ async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
     futures.push(notify_after_streams.boxed());
 
     let irc = irc::Irc {
-        db: db,
+        db,
         youtube,
         nightbot,
         streamer_twitch,
@@ -451,6 +459,7 @@ async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
         global_channel,
         injector: injector.clone(),
         stream_state_tx,
+        message_log,
     };
 
     futures.push(irc.run().boxed());

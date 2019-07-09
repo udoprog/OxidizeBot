@@ -5,6 +5,7 @@ use crate::{
     currency::{Currency, CurrencyBuilder},
     db, idle,
     injector::Injector,
+    message_log::MessageLog,
     module, oauth2,
     prelude::*,
     settings, stream_info, timer,
@@ -54,6 +55,7 @@ pub struct Irc {
     pub global_channel: Arc<RwLock<Option<String>>>,
     pub injector: Injector,
     pub stream_state_tx: mpsc::Sender<stream_info::StreamState>,
+    pub message_log: MessageLog,
 }
 
 impl Irc {
@@ -78,6 +80,7 @@ impl Irc {
             global_channel,
             injector,
             stream_state_tx,
+            message_log,
         } = self;
 
         loop {
@@ -261,6 +264,7 @@ impl Irc {
                 url_whitelist_enabled,
                 bad_words_enabled,
                 message_hooks: Default::default(),
+                message_log: message_log.clone(),
             };
 
             let mut client_stream = client.stream().compat().fuse();
@@ -500,6 +504,8 @@ struct Handler<'a> {
     url_whitelist_enabled: Arc<RwLock<bool>>,
     /// A hook that can be installed to peek at all incoming messages.
     message_hooks: HashMap<String, Box<dyn command::MessageHook>>,
+    /// Log to add messages to.
+    message_log: MessageLog,
 }
 
 /// Handle a command.
@@ -663,6 +669,8 @@ impl<'a> Handler<'a> {
                     .ok_or_else(|| format_err!("expected user info"))?
                     .to_string();
 
+                self.message_log.push_back(&tags, &name, message);
+
                 let user = User {
                     inner: Arc::new(UserInner {
                         tags,
@@ -778,9 +786,6 @@ impl<'a> Handler<'a> {
                 log::trace!("Received PONG, clearing PING timeout");
                 *self.pong_timeout = None;
             }
-            Command::Raw(..) => {
-                log::trace!("Raw: {:?}", m);
-            }
             Command::NOTICE(_, ref message) => {
                 let tags = Tags::from_tags(m.tags.take());
 
@@ -811,6 +816,24 @@ impl<'a> Handler<'a> {
                     }
                 }
             }
+            Command::Raw(ref command, _, ref tail) => match command.as_str() {
+                "CLEARMSG" => {
+                    if let Some(tags) = ClearMsgTags::from_tags(m.tags) {
+                        self.message_log.delete_by_id(&tags.target_msg_id);
+                    }
+                }
+                "CLEARCHAT" => match tail {
+                    Some(user) => {
+                        self.message_log.delete_by_user(user);
+                    }
+                    None => {
+                        self.message_log.delete_all();
+                    }
+                },
+                _ => {
+                    log::trace!("Raw: {:?}", m);
+                }
+            },
             _ => {
                 log::info!("unhandled: {:?}", m);
             }
@@ -839,6 +862,11 @@ pub struct User {
 }
 
 impl User {
+    /// Get tags associated with the message.
+    pub fn tags(&self) -> &Tags {
+        &self.inner.tags
+    }
+
     /// Get the name of the user.
     pub fn name(&self) -> &str {
         self.inner.name.as_str()
@@ -939,13 +967,15 @@ impl User {
 #[derive(Debug, Clone)]
 pub struct Tags {
     /// Contents of the id tag if present.
-    id: Option<String>,
+    pub id: Option<String>,
     /// Contents of the msg-id tag if present.
-    msg_id: Option<String>,
+    pub msg_id: Option<String>,
     /// The display name of the user.
-    display_name: Option<String>,
+    pub display_name: Option<String>,
     /// The ID of the user.
-    user_id: Option<String>,
+    pub user_id: Option<String>,
+    /// Color of the user.
+    pub color: Option<String>,
 }
 
 impl Tags {
@@ -955,6 +985,7 @@ impl Tags {
         let mut msg_id = None;
         let mut display_name = None;
         let mut user_id = None;
+        let mut color = None;
 
         if let Some(tags) = tags {
             for t in tags {
@@ -964,6 +995,7 @@ impl Tags {
                         "msg-id" => msg_id = Some(value),
                         "display-name" => display_name = Some(value),
                         "user-id" => user_id = Some(value),
+                        "color" => color = Some(value),
                         _ => (),
                     },
                     _ => (),
@@ -976,7 +1008,36 @@ impl Tags {
             msg_id,
             display_name,
             user_id,
+            color,
         }
+    }
+}
+
+/// Tags associated with a CLEARMSG.
+struct ClearMsgTags {
+    target_msg_id: String,
+}
+
+impl ClearMsgTags {
+    /// Extract tags from message.
+    fn from_tags(tags: Option<Vec<Tag>>) -> Option<ClearMsgTags> {
+        let mut target_msg_id = None;
+
+        if let Some(tags) = tags {
+            for t in tags {
+                match t {
+                    Tag(name, Some(value)) => match name.as_str() {
+                        "target-msg-id" => target_msg_id = Some(value),
+                        _ => (),
+                    },
+                    _ => (),
+                }
+            }
+        }
+
+        Some(ClearMsgTags {
+            target_msg_id: target_msg_id?,
+        })
     }
 }
 
