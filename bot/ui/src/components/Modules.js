@@ -64,6 +64,24 @@ function Currency(props) {
   );
 }
 
+function ChatLog(props) {
+  return (
+    <div>
+      <h3>Chat Log</h3>
+
+      <p>
+        Experimental Chat Log Support
+      </p>
+
+      <ConfigurationPrompt
+        group={true}
+        filter={{prefix: ["chat-log"]}}
+        {...props}
+        />
+    </div>
+  );
+}
+
 function Index(props) {
   return (
     <div>
@@ -99,6 +117,9 @@ export default class Modules extends React.Component {
             <Nav.Link as={Link} active={path === "/modules/currency"} to="/modules/currency">
               Stream Currency
             </Nav.Link>
+            <Nav.Link as={Link} active={path === "/modules/chat-log"} to="/modules/chat-log">
+              Chat Log
+            </Nav.Link>
             <Nav.Link as={Link} active={path === "/modules/gtav"} to="/modules/gtav">
               ChaosMod
             </Nav.Link>
@@ -108,6 +129,7 @@ export default class Modules extends React.Component {
           <Route path="/modules" exact render={props => <Index api={this.props.api} {...props} />} />
           <Route path="/modules/player" render={props => <Player api={this.props.api} {...props} />} />
           <Route path="/modules/currency" render={props => <Currency api={this.props.api} {...props} />} />
+          <Route path="/modules/chat-log" render={props => <ChatLog api={this.props.api} {...props} />} />
           <Route path="/modules/gtav" render={props => <Gtav api={this.props.api} {...props} />} />
         </Col>
       </Row>

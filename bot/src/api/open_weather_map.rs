@@ -67,12 +67,8 @@ impl OpenWeatherMap {
     }
 
     pub async fn current(&self, q: String) -> Result<Option<Current>, Error> {
-        let data = self
-            .v2(Method::GET, &["weather"])
-            .query_param("q", &q)
-            .json_option(not_found)
-            .await?;
-        Ok(data)
+        let req = self.v2(Method::GET, &["weather"]).query_param("q", &q);
+        Ok(req.execute().await?.json_option(not_found)?)
     }
 }
 

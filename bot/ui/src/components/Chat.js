@@ -1,5 +1,6 @@
 import React from "react";
-import {Form, Col, Modal, Button} from "react-bootstrap";
+import {Form, Col, Modal, Alert} from "react-bootstrap";
+import {Link} from "react-router-dom";
 import {websocketUrl} from "../utils.js";
 import Websocket from "react-websocket";
 import * as utils from "../utils.js";
@@ -143,11 +144,13 @@ export default class Chat extends React.Component {
     this.api = new Api(utils.apiUrl());
     this.bottomRef = React.createRef();
     this.inactivityTimeout = null;
+    this.cachedEmotes = {};
 
     let search = new URLSearchParams(this.props.location.search);
     let {limit, limitText} = searchLimit(search);
     let unique = searchBoolean(search, "unique");
     let showDeleted = searchBoolean(search, "show-deleted");
+    let highResEmotes = searchBoolean(search, "high-res-emotes");
     let {inactivity, inactivityText} = searchInactivity(search);
 
     this.state = {
@@ -156,6 +159,7 @@ export default class Chat extends React.Component {
       limitText,
       unique,
       showDeleted,
+      highResEmotes,
       inactivity,
       inactivityText,
       seen: {},
@@ -163,6 +167,7 @@ export default class Chat extends React.Component {
       edit: false,
       changed: false,
       visible: true,
+      enabled: true,
     };
   }
 
@@ -316,10 +321,101 @@ export default class Chat extends React.Component {
         });
 
         break;
+      case "enabled":
+        this.setState({enabled: data.enabled}, this.bumpInactivity.bind(this));
+        break;
       default:
-        console.log(data);
         break;
     }
+  }
+
+  /**
+   * Create a new element.
+   */
+  createEmote(rendered, item) {
+    let emote = rendered.emotes[item.emote];
+
+    if (!emote) {
+      return <span className="text failed-emote">{item.emote}</span>;
+    }
+
+    let emoteUrl = this.pickEmoteUrl(emote);
+
+    let props = {src: emoteUrl.url};
+
+    props.height = calculateHeight(emote);
+
+    if (emoteUrl.size !== null) {
+      props.width = calculateWidth(props.height, emoteUrl.size);
+    }
+
+    return <img {...props} />;
+
+    /**
+     * Calculate the height to use.
+     */
+    function calculateHeight(emote) {
+      let small = emote.urls.small;
+
+      if (small === null || small.size === null) {
+        return 32;
+      }
+
+      return Math.min(32, small.size.height);
+    }
+
+    function calculateWidth(height, size) {
+      return Math.round(size.width * (height / size.height));
+    }
+  }
+
+  /**
+   * Create a new cached emote.
+   */
+  cachedEmote(key, rendered, item) {
+    let img = this.cachedEmotes[item.emote];
+
+    if (!img) {
+      img = this.createEmote(rendered, item);
+      this.cachedEmotes[item.emote] = img;
+    }
+
+    return React.cloneElement(img, {key});
+  }
+
+  renderText(m) {
+    let rendered = m.rendered;
+
+    if (rendered === null) {
+      return <span className="text">{m.text}</span>;
+    }
+
+    return rendered.items.map((item, i) => {
+      switch (item.type) {
+        case "text":
+          return <span className="text" key={i}>{item.text}</span>;
+        case "emote":
+          return this.cachedEmote(i, rendered, item);
+        default:
+          return <em key={i}>?</em>;
+      }
+    });
+  }
+
+  pickEmoteUrl(emote) {
+    let alts = [emote.urls.large, emote.urls.medium, emote.urls.small];
+
+    if (!this.state.highResEmotes) {
+      alts = [emote.urls.small, emote.urls.medium, emote.urls.large]
+    }
+
+    for (var alt of alts) {
+      if (alt !== null) {
+        return alt;
+      }
+    }
+
+    return emote.urls.small;
   }
 
   renderMessages(messages) {
@@ -343,11 +439,13 @@ export default class Chat extends React.Component {
         name = `${name} (${m.user.name})`;
       }
 
+      let text = this.renderText(m);
+
       return (
         <div className={`chat-message ${messageClasses}`} key={m.id}>
           <span className="overlay-hidden chat-timestamp">{timestamp}</span>
           <span className="chat-name" style={nameStyle}>{name}:</span>
-          <span className="chat-text">{m.text}</span>
+          <span className="chat-text">{text}</span>
         </div>
       );
     });
@@ -381,6 +479,13 @@ export default class Chat extends React.Component {
       set = true;
     } else {
       search.delete("show-deleted");
+    }
+
+    if (!!this.state.highResEmotes) {
+      search.set("high-res-emotes", this.state.highResEmotes.toString());
+      set = true;
+    } else {
+      search.delete("high-res-emotes");
     }
 
     if (this.state.inactivity !== null) {
@@ -435,6 +540,14 @@ export default class Chat extends React.Component {
     });
   }
 
+  highResEmotesChanged(e) {
+    this.cachedEmotes = {};
+
+    this.setState({highResEmotes: e.target.checked, changed: true}, () => {
+      this.updateSearch();
+    });
+  }
+
   toggleEdit() {
     let changed = this.state.changed;
 
@@ -470,6 +583,9 @@ export default class Chat extends React.Component {
             </Form.Group>
             <Form.Group as={Col}>
               <Form.Check id="show-deleted" label="Show deleted messages" type="checkbox" checked={this.state.showDeleted} onChange={this.showDeletedChanged.bind(this)} />
+            </Form.Group>
+            <Form.Group as={Col}>
+              <Form.Check id="high-res-emotes" label="Use high resolution emotes" type="checkbox" checked={this.state.highResEmotes} onChange={this.highResEmotesChanged.bind(this)} />
             </Form.Group>
             <div>
               <Col>
@@ -519,10 +635,22 @@ export default class Chat extends React.Component {
       );
     }
 
+    let enabled = null;
+
+    if (!this.state.enabled) {
+      enabled = (
+        <Alert className="chat-warning" variant="warning">
+          Chat not enabled in <Link to="/modules/chat-log">settings</Link>:<br />
+          <code>chat-log/enabled = false</code>
+        </Alert>
+      );
+    }
+
     return (
       <div id="chat">
         {ws}
         {messages}
+        {enabled}
         <div style={{clear: "both"}} ref={this.bottomRef}></div>
         {form}
         {edit}

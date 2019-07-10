@@ -361,9 +361,13 @@ async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
     let (bot_token, future) = {
         let flow = oauth2::twitch(web.clone(), token_settings.scoped("twitch-bot"))?
             .with_scopes(vec![
+                // Perform moderator actions in channel.
                 String::from("channel:moderate"),
+                // Edit chat.
                 String::from("chat:edit"),
+                // Read chat.
                 String::from("chat:read"),
+                // Edit clips.
                 String::from("clips:edit"),
             ])
             .build(String::from("Twitch Bot"))?;

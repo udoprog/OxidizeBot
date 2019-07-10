@@ -27,6 +27,7 @@ use tokio_threadpool::ThreadPool;
 // re-exports
 pub use self::sender::Sender;
 
+mod chat_log;
 mod currency_admin;
 mod sender;
 
@@ -236,6 +237,12 @@ impl Irc {
 
             let startup_message = settings.get::<String>("irc/startup-message")?;
 
+            let mut chat_log_builder = chat_log::Builder::new(
+                message_log.clone(),
+                bot_twitch.clone(),
+                settings.scoped("chat-log"),
+            )?;
+
             let mut pong_timeout = None;
 
             let mut handler = Handler {
@@ -264,7 +271,7 @@ impl Irc {
                 url_whitelist_enabled,
                 bad_words_enabled,
                 message_hooks: Default::default(),
-                message_log: message_log.clone(),
+                chat_log: chat_log_builder.build()?,
             };
 
             let mut client_stream = client.stream().compat().fuse();
@@ -281,6 +288,14 @@ impl Irc {
 
                 loop {
                     futures::select! {
+                        update = chat_log_builder.enabled_stream.select_next_some() => {
+                            chat_log_builder.enabled(update);
+                            handler.chat_log = chat_log_builder.build()?;
+                        }
+                        update = chat_log_builder.emotes_enabled_stream.select_next_some() => {
+                            chat_log_builder.emotes_enabled = update;
+                            handler.chat_log = chat_log_builder.build()?;
+                        }
                         update = api_url_stream.select_next_some() => {
                             handler.api_url = update;
                         }
@@ -504,8 +519,8 @@ struct Handler<'a> {
     url_whitelist_enabled: Arc<RwLock<bool>>,
     /// A hook that can be installed to peek at all incoming messages.
     message_hooks: HashMap<String, Box<dyn command::MessageHook>>,
-    /// Log to add messages to.
-    message_log: MessageLog,
+    /// Handler for chat logs.
+    chat_log: Option<chat_log::ChatLog>,
 }
 
 /// Handle a command.
@@ -669,7 +684,19 @@ impl<'a> Handler<'a> {
                     .ok_or_else(|| format_err!("expected user info"))?
                     .to_string();
 
-                self.message_log.push_back(&tags, &name, message);
+                if let Some(chat_log) = self.chat_log.as_ref().cloned() {
+                    let tags = tags.clone();
+                    let target = target.clone();
+                    let name = name.clone();
+                    let message = message.clone();
+
+                    let future = async move {
+                        chat_log.observe(&tags, &target, &name, &message).await;
+                    };
+
+                    self.thread_pool
+                        .spawn(Compat::new(Box::pin(future.unit_error())));
+                }
 
                 let user = User {
                     inner: Arc::new(UserInner {
@@ -818,18 +845,24 @@ impl<'a> Handler<'a> {
             }
             Command::Raw(ref command, _, ref tail) => match command.as_str() {
                 "CLEARMSG" => {
-                    if let Some(tags) = ClearMsgTags::from_tags(m.tags) {
-                        self.message_log.delete_by_id(&tags.target_msg_id);
+                    if let Some(chat_log) = self.chat_log.as_ref() {
+                        if let Some(tags) = ClearMsgTags::from_tags(m.tags) {
+                            chat_log.message_log.delete_by_id(&tags.target_msg_id);
+                        }
                     }
                 }
-                "CLEARCHAT" => match tail {
-                    Some(user) => {
-                        self.message_log.delete_by_user(user);
+                "CLEARCHAT" => {
+                    if let Some(chat_log) = self.chat_log.as_ref() {
+                        match tail {
+                            Some(user) => {
+                                chat_log.message_log.delete_by_user(user);
+                            }
+                            None => {
+                                chat_log.message_log.delete_all();
+                            }
+                        }
                     }
-                    None => {
-                        self.message_log.delete_all();
-                    }
-                },
+                }
                 _ => {
                     log::trace!("Raw: {:?}", m);
                 }
@@ -976,6 +1009,8 @@ pub struct Tags {
     pub user_id: Option<String>,
     /// Color of the user.
     pub color: Option<String>,
+    /// Emotes part of the message.
+    pub emotes: Option<String>,
 }
 
 impl Tags {
@@ -986,6 +1021,7 @@ impl Tags {
         let mut display_name = None;
         let mut user_id = None;
         let mut color = None;
+        let mut emotes = None;
 
         if let Some(tags) = tags {
             for t in tags {
@@ -996,6 +1032,7 @@ impl Tags {
                         "display-name" => display_name = Some(value),
                         "user-id" => user_id = Some(value),
                         "color" => color = Some(value),
+                        "emotes" => emotes = Some(value),
                         _ => (),
                     },
                     _ => (),
@@ -1009,6 +1046,7 @@ impl Tags {
             display_name,
             user_id,
             color,
+            emotes,
         }
     }
 }

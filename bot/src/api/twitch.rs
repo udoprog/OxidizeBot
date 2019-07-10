@@ -4,6 +4,7 @@ use crate::{api::RequestBuilder, oauth2, prelude::*};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use failure::{Error, ResultExt};
+use hashbrown::HashMap;
 use reqwest::{
     header,
     r#async::{Client, Decoder},
@@ -68,30 +69,30 @@ impl Twitch {
     }
 
     /// Update the channel information.
-    pub fn update_channel(
+    pub async fn update_channel(
         &self,
         channel_id: &str,
         request: UpdateChannelRequest,
-    ) -> impl Future<Output = Result<(), Error>> {
+    ) -> Result<(), Error> {
+        let body = Bytes::from(serde_json::to_vec(&request)?);
+
         let req = self
             .v5(Method::PUT, &["channels", channel_id])
-            .header(header::CONTENT_TYPE, "application/json");
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(body);
 
-        async move {
-            let body = Bytes::from(serde_json::to_vec(&request)?);
-            let _ = req.body(body).json::<serde_json::Value>().await?;
-            Ok(())
-        }
+        req.execute().await?.ok()
     }
 
     /// Get information on a user.
     pub async fn user_by_login(&self, login: &str) -> Result<Option<User>, Error> {
         let req = self
             .new_api(Method::GET, &["users"])
-            .query_param("login", login)
-            .json::<Data<User>>();
+            .query_param("login", login);
 
-        Ok(req.await?.data.into_iter().next())
+        let res = req.execute().await?.json::<Data<User>>()?;
+
+        Ok(res.data.into_iter().next())
     }
 
     /// Get information on a user.
@@ -108,7 +109,9 @@ impl Twitch {
             request = request.query_param("user_id", &user_id);
         }
 
-        let initial = request.clone().json::<Page<Subscription>>();
+        let req = request.clone();
+
+        let initial = async move { req.execute().await?.json::<Page<Subscription>>() };
 
         Paged {
             request,
@@ -120,32 +123,44 @@ impl Twitch {
     pub async fn create_clip(&self, broadcaster_id: &str) -> Result<Option<Clip>, Error> {
         let req = self
             .new_api(Method::POST, &["clips"])
-            .query_param("broadcaster_id", broadcaster_id)
-            .json::<Data<Clip>>();
+            .query_param("broadcaster_id", broadcaster_id);
 
-        Ok(req.await?.data.into_iter().next())
+        let res = req.execute().await?.json::<Data<Clip>>()?;
+
+        Ok(res.data.into_iter().next())
     }
 
     /// Get the channela associated with the current authentication.
     pub async fn channel(&self) -> Result<Channel, Error> {
-        self.v5(Method::GET, &["channel"]).json::<Channel>().await
+        let req = self.v5(Method::GET, &["channel"]);
+
+        req.execute().await?.json::<Channel>()
     }
 
     /// Get the channela associated with the current authentication.
     pub async fn channel_by_login(&self, login: &str) -> Result<Channel, Error> {
-        self.v5(Method::GET, &["channels", login])
-            .json::<Channel>()
-            .await
+        let req = self.v5(Method::GET, &["channels", login]);
+
+        req.execute().await?.json::<Channel>()
     }
 
     /// Get stream information.
     pub async fn stream_by_login(&self, login: &str) -> Result<Option<Stream>, Error> {
         let req = self
             .new_api(Method::GET, &["streams"])
-            .query_param("user_login", login)
-            .json::<Page<Stream>>();
+            .query_param("user_login", login);
 
-        Ok(req.await?.data.into_iter().next())
+        let res = req.execute().await?.json::<Page<Stream>>()?;
+
+        Ok(res.data.into_iter().next())
+    }
+
+    /// Get emotes by sets.
+    pub async fn chat_emoticon_images(&self, emote_sets: &str) -> Result<EmoticonSets, Error> {
+        let req = self
+            .v5(Method::GET, &["chat", "emoticon_images"])
+            .query_param("emotesets", emote_sets);
+        req.execute().await?.json::<EmoticonSets>()
     }
 
     /// Get chatters for the given channel using TMI.
@@ -181,8 +196,9 @@ impl Twitch {
             .use_oauth2_header();
 
         return Ok(request
+            .execute()
+            .await?
             .json_option(unauthorized)
-            .await
             .context("validate token error")?);
 
         /// Handle not found as a missing body.
@@ -229,7 +245,8 @@ where
 
                             if let Some(cursor) = pagination.and_then(|p| p.cursor) {
                                 let req = self.request.clone().query_param("after", &cursor);
-                                self.as_mut().page = Some(req.json().boxed());
+                                self.as_mut().page =
+                                    Some(async move { req.execute().await?.json() }.boxed());
                             }
 
                             return Poll::Ready(Some(Ok(data)));
@@ -375,4 +392,15 @@ pub struct ValidateToken {
     pub login: String,
     pub scopes: Vec<String>,
     pub user_id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct Emote {
+    pub code: String,
+    pub id: u64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct EmoticonSets {
+    pub emoticon_sets: HashMap<String, Vec<Emote>>,
 }

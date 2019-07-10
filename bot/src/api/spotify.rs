@@ -50,18 +50,15 @@ impl Spotify {
 
     /// Get my playlists.
     pub async fn playlist(&self, id: String) -> Result<FullPlaylist, Error> {
-        self.request(Method::GET, &["playlists", id.as_str()])
-            .json()
-            .await
+        let req = self.request(Method::GET, &["playlists", id.as_str()]);
+
+        req.execute().await?.json()
     }
 
     /// Get my devices.
     pub async fn my_player_devices(&self) -> Result<Vec<Device>, Error> {
-        let r = self
-            .request(Method::GET, &["me", "player", "devices"])
-            .json::<Response>()
-            .await?;
-
+        let req = self.request(Method::GET, &["me", "player", "devices"]);
+        let r = req.execute().await?.json::<Response>()?;
         return Ok(r.devices);
 
         #[derive(serde::Deserialize)]
@@ -99,9 +96,9 @@ impl Spotify {
 
     /// Information on the current playback.
     pub async fn me_player(&self) -> Result<Option<FullPlayingContext>, Error> {
-        self.request(Method::GET, &["me", "player"])
-            .json_option(not_found)
-            .await
+        let req = self.request(Method::GET, &["me", "player"]);
+
+        req.execute().await?.json_option(not_found)
     }
 
     /// Start playing a track.
@@ -116,14 +113,16 @@ impl Spotify {
             position_ms,
         };
 
+        let body = Bytes::from(serde_json::to_vec(&request)?);
+
         let r = self
             .request(Method::PUT, &["me", "player", "play"])
             .optional_query_param("device_id", device_id)
             .header(header::CONTENT_TYPE, "application/json")
-            .header(header::ACCEPT, "application/json");
+            .header(header::ACCEPT, "application/json")
+            .body(body);
 
-        let body = Bytes::from(serde_json::to_vec(&request)?);
-        return r.body(body).json_map(device_control).await;
+        return r.json_map(device_control).await;
 
         #[derive(serde::Serialize)]
         struct Request {
@@ -136,33 +135,39 @@ impl Spotify {
 
     /// Get my playlists.
     pub async fn my_playlists(&self) -> Result<Page<SimplifiedPlaylist>, Error> {
-        self.request(Method::GET, &["me", "playlists"]).json().await
+        let req = self.request(Method::GET, &["me", "playlists"]);
+        req.execute().await?.json()
     }
 
     /// Get my songs.
     pub async fn my_tracks(&self) -> Result<Page<SavedTrack>, Error> {
-        self.request(Method::GET, &["me", "tracks"]).json().await
+        let req = self.request(Method::GET, &["me", "tracks"]);
+        req.execute().await?.json()
     }
 
     /// Get my songs.
     pub fn my_tracks_stream(&self) -> PageStream<SavedTrack> {
-        self.page_stream(self.request(Method::GET, &["me", "tracks"]).json())
+        let req = self.request(Method::GET, &["me", "tracks"]);
+        self.page_stream(async move { req.execute().await?.json() })
     }
 
     /// Get the full track by ID.
     pub async fn track(&self, id: String) -> Result<FullTrack, Error> {
-        self.request(Method::GET, &["tracks", id.as_str()])
-            .json()
-            .await
+        let req = self.request(Method::GET, &["tracks", id.as_str()]);
+
+        req.execute().await?.json()
     }
 
     /// Search for tracks.
     pub async fn search_track(&self, q: &str) -> Result<Page<FullTrack>, Error> {
-        self.request(Method::GET, &["search"])
+        let req = self
+            .request(Method::GET, &["search"])
             .query_param("type", "track")
-            .query_param("q", q)
+            .query_param("q", q);
+
+        req.execute()
+            .await?
             .json::<search::SearchTracks>()
-            .await
             .map(|r| r.tracks)
     }
 
@@ -217,9 +222,10 @@ where
 {
     /// Get the next page for a type.
     pub fn next_page(&self, url: Url) -> impl Future<Output = Result<Page<T>, Error>> {
-        RequestBuilder::new(self.client.clone(), Method::GET, url)
-            .token(self.token.clone())
-            .json()
+        let req =
+            RequestBuilder::new(self.client.clone(), Method::GET, url).token(self.token.clone());
+
+        async move { req.execute().await?.json() }
     }
 }
 

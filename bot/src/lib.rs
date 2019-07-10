@@ -18,6 +18,7 @@ mod command;
 pub mod config;
 pub mod currency;
 pub mod db;
+pub mod emotes;
 mod idle;
 pub mod injector;
 pub mod irc;

@@ -424,3 +424,9 @@ types:
   weather/location:
     doc: Default location to use. Like `New York`, or `Stockholm`.
     type: {id: string, optional: true}
+  chat-log/enabled:
+    doc: Store a number of messages in the chat log (experimental).
+    type: {id: bool}
+  chat-log/emotes-enabled:
+    doc: Render emotes in the chat log (experimental).
+    type: {id: bool}

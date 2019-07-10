@@ -1,4 +1,6 @@
 mod base;
+pub mod bttv;
+pub mod ffz;
 pub mod github;
 pub mod nightbot;
 pub mod open_weather_map;
@@ -9,6 +11,8 @@ pub mod twitch;
 pub mod youtube;
 
 pub use self::base::RequestBuilder;
+pub use self::bttv::BetterTTV;
+pub use self::ffz::FrankerFaceZ;
 pub use self::github::GitHub;
 pub use self::nightbot::NightBot;
 pub use self::open_weather_map::OpenWeatherMap;

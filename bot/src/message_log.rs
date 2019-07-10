@@ -1,4 +1,4 @@
-use crate::{bus, irc};
+use crate::{bus, emotes, irc};
 use chrono::{DateTime, Utc};
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use std::{collections::VecDeque, sync::Arc};
@@ -6,6 +6,9 @@ use std::{collections::VecDeque, sync::Arc};
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
 pub enum Event {
+    /// Indicates if the system is enabled or not.
+    #[serde(rename = "enabled")]
+    Enabled { enabled: bool },
     /// Indicate that the given message has been received.
     #[serde(rename = "message")]
     Message(Message),
@@ -20,7 +23,15 @@ pub enum Event {
     DeleteAll,
 }
 
-impl bus::Message for Event {}
+impl bus::Message for Event {
+    /// The ID of a bussed message.
+    fn id(&self) -> Option<&'static str> {
+        match *self {
+            Event::Enabled { .. } => Some("enabled"),
+            _ => None,
+        }
+    }
+}
 
 /// A builder for MessageLog.
 #[derive(Default)]
@@ -83,6 +94,13 @@ impl MessageLog {
         RwLockReadGuard::map(self.inner.read(), |i| &i.messages)
     }
 
+    /// Indicate if the log is enabled or not.
+    pub fn enabled(&self, enabled: bool) {
+        if let Some(bus) = self.inner.read().bus.as_ref() {
+            bus.send(Event::Enabled { enabled });
+        }
+    }
+
     /// Mark the given message as deleted.
     pub fn delete_by_id(&self, id: &str) {
         let mut inner = self.inner.write();
@@ -129,7 +147,13 @@ impl MessageLog {
     }
 
     /// Push a message to the back of the log.
-    pub fn push_back(&self, tags: &irc::Tags, name: &str, text: &str) {
+    pub fn push_back(
+        &self,
+        tags: &irc::Tags,
+        name: &str,
+        text: &str,
+        rendered: Option<emotes::Rendered>,
+    ) {
         let mut inner = self.inner.write();
 
         if !inner.enabled {
@@ -169,6 +193,7 @@ impl MessageLog {
             id: id.to_string(),
             user,
             text: text.to_string(),
+            rendered,
             deleted: false,
         };
 
@@ -194,5 +219,6 @@ pub struct Message {
     id: String,
     user: User,
     text: String,
+    rendered: Option<emotes::Rendered>,
     deleted: bool,
 }

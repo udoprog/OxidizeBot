@@ -40,11 +40,8 @@ impl Speedrun {
 
     /// Fetch the user by id.
     pub async fn user_by_id(&self, user: String) -> Result<Option<User>, Error> {
-        let data: Option<Data<User>> = self
-            .v1(Method::GET, &["users", user.as_str()])
-            .json_option(no_content)
-            .await?;
-
+        let req = self.v1(Method::GET, &["users", user.as_str()]);
+        let data: Option<Data<User>> = req.execute().await?.json_option(no_content)?;
         Ok(data.map(|d| d.data))
     }
 
@@ -60,16 +57,14 @@ impl Speedrun {
             request = request.query_param("embed", q.as_str());
         }
 
-        let data: Option<Data<Vec<Run>>> = request.json_option(no_content).await?;
+        let data: Option<Data<Vec<Run>>> = request.execute().await?.json_option(no_content)?;
         Ok(data.map(|d| d.data))
     }
 
     /// Get a game by id.
     pub async fn game_by_id(&self, game: String) -> Result<Option<Game>, Error> {
-        let data: Option<Data<Game>> = self
-            .v1(Method::GET, &["games", game.as_str()])
-            .json_option(no_content)
-            .await?;
+        let req = self.v1(Method::GET, &["games", game.as_str()]);
+        let data: Option<Data<Game>> = req.execute().await?.json_option(no_content)?;
         Ok(data.map(|d| d.data))
     }
 
@@ -85,14 +80,14 @@ impl Speedrun {
             request = request.query_param("embed", q.as_str());
         }
 
-        let data: Option<Data<Vec<Category>>> = request.json_option(no_content).await?;
+        let data: Option<Data<Vec<Category>>> = request.execute().await?.json_option(no_content)?;
         Ok(data.map(|d| d.data))
     }
 
     /// Get game levels.
     pub async fn game_levels(&self, game: String) -> Result<Option<Vec<Level>>, Error> {
         let request = self.v1(Method::GET, &["games", game.as_str(), "levels"]);
-        let data: Option<Data<Vec<Level>>> = request.json_option(no_content).await?;
+        let data: Option<Data<Vec<Level>>> = request.execute().await?.json_option(no_content)?;
         Ok(data.map(|d| d.data))
     }
 
@@ -101,11 +96,8 @@ impl Speedrun {
         &self,
         category: String,
     ) -> Result<Option<Vec<Variable>>, Error> {
-        let data: Option<Data<Vec<Variable>>> = self
-            .v1(Method::GET, &["categories", category.as_str(), "variables"])
-            .json_option(no_content)
-            .await?;
-
+        let req = self.v1(Method::GET, &["categories", category.as_str(), "variables"]);
+        let data: Option<Data<Vec<Variable>>> = req.execute().await?.json_option(no_content)?;
         Ok(data.map(|d| d.data))
     }
 
@@ -115,12 +107,11 @@ impl Speedrun {
         category: String,
         top: u32,
     ) -> Result<Option<Page<GameRecord>>, Error> {
-        let data: Option<Page<GameRecord>> = self
+        let req = self
             .v1(Method::GET, &["categories", category.as_str(), "records"])
-            .query_param("top", top.to_string().as_str())
-            .json_option(no_content)
-            .await?;
-        Ok(data)
+            .query_param("top", top.to_string().as_str());
+
+        Ok(req.execute().await?.json_option(no_content)?)
     }
 
     /// Get all records associated with a category.
@@ -147,7 +138,7 @@ impl Speedrun {
             request = request.query_param(&format!("var-{}", key), &value);
         }
 
-        let data: Option<Data<GameRecord>> = request.json_option(no_content).await?;
+        let data: Option<Data<GameRecord>> = request.execute().await?.json_option(no_content)?;
         Ok(data.map(|d| d.data))
     }
 }

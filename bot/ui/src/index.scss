@@ -2,6 +2,10 @@
 
 $title-fonts: "monospace";
 
+* {
+  box-sizing: border-box;
+}
+
 #index {
   width: 100%;
   height: 100%;
@@ -395,6 +399,10 @@ body.chat-body {
       text-decoration: line-through;
     }
 
+    &-warning {
+      margin: 1em;
+    }
+
     &-messages {
       -webkit-transition: opacity 0.1s ease-in-out;
       -moz-transition: opacity 0.1s ease-in-out;
@@ -417,13 +425,7 @@ body.chat-body {
     }
 
     &-message {
-      padding-left: 0.2em;
-      padding-right: 0.2em;
-      padding-bottom: 0.1em;
-
-      &:first-child {
-        padding-top: 0.1em;
-      }
+      overflow: hidden;
 
       &:nth-child(even) {
         background-color: #222;
@@ -435,12 +437,31 @@ body.chat-body {
     }
 
     &-timestamp {
-      margin-right: 0.2em;
+      line-height: 32px;
+      vertical-align: middle;
+      margin-right: 0.4em;
     }
 
     &-name {
+      line-height: 32px;
+      vertical-align: middle;
+      margin-right: 0.4em;
       font-weight: bold;
-      margin-right: 0.2em;
+    }
+
+    &-text {
+      word-wrap: break-word;
+
+      span {
+        &.text {
+          line-height: 32px;
+          vertical-align: middle;
+        }
+
+        img {
+          vertical-align: middle;
+        }
+      }
     }
   }
 }

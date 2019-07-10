@@ -85,40 +85,6 @@ impl RequestBuilder {
         self
     }
 
-    /// Send request and expect a JSON response.
-    pub async fn json<T>(self) -> Result<T, Error>
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        let (status, body) = self.execute().await?;
-
-        if !status.is_success() {
-            let body = String::from_utf8_lossy(body.as_ref());
-            failure::bail!(
-                "Bad response: {}: {}: {}: {}",
-                self.method,
-                self.url,
-                status,
-                body
-            );
-        }
-
-        match serde_json::from_slice(body.as_ref()) {
-            Ok(body) => Ok(body),
-            Err(e) => {
-                let body = String::from_utf8_lossy(body.as_ref());
-                failure::bail!(
-                    "Bad response: {}: {}: {}: {}: {}",
-                    self.method,
-                    self.url,
-                    status,
-                    e,
-                    body
-                );
-            }
-        }
-    }
-
     /// Send request and only return status.
     pub async fn json_map<T>(
         self,
@@ -127,7 +93,7 @@ impl RequestBuilder {
     where
         T: serde::de::DeserializeOwned,
     {
-        let (status, body) = self.execute().await?;
+        let Response { status, body, .. } = self.execute().await?;
 
         if let Some(output) = m(&status, &body)? {
             return Ok(output);
@@ -144,49 +110,8 @@ impl RequestBuilder {
         );
     }
 
-    /// Send request and expect a JSON response.
-    pub async fn json_option<T>(
-        self,
-        condition: impl FnOnce(&StatusCode) -> bool,
-    ) -> Result<Option<T>, Error>
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        let (status, body) = self.execute().await?;
-
-        if condition(&status) {
-            return Ok(None);
-        }
-
-        if !status.is_success() {
-            let body = String::from_utf8_lossy(body.as_ref());
-            failure::bail!(
-                "Bad response: {}: {}: {}: {}",
-                self.method,
-                self.url,
-                status,
-                body
-            );
-        }
-
-        match serde_json::from_slice(body.as_ref()) {
-            Ok(body) => Ok(body),
-            Err(e) => {
-                let body = String::from_utf8_lossy(body.as_ref());
-                failure::bail!(
-                    "Bad response: {}: {}: {}: {}: {}",
-                    self.method,
-                    self.url,
-                    status,
-                    e,
-                    body
-                );
-            }
-        }
-    }
-
     /// Execute the request.
-    async fn execute(&self) -> Result<(StatusCode, Chunk), Error> {
+    pub async fn execute(&self) -> Result<Response<'_>, Error> {
         // NB: scope to only lock the token over the request setup.
         let req = {
             log::trace!("Request: {}: {}", self.method, self.url);
@@ -247,6 +172,84 @@ impl RequestBuilder {
             }
         }
 
-        Ok((status, body))
+        Ok(Response {
+            method: &self.method,
+            url: &self.url,
+            status,
+            body,
+        })
+    }
+}
+
+pub struct Response<'a> {
+    method: &'a Method,
+    url: &'a Url,
+    status: StatusCode,
+    body: Chunk,
+}
+
+impl Response<'_> {
+    /// Expect a successful response.
+    pub fn ok(self) -> Result<(), Error> {
+        if self.status.is_success() {
+            return Ok(());
+        }
+
+        let body = String::from_utf8_lossy(self.body.as_ref());
+
+        failure::bail!(
+            "Bad response: {}: {}: {}: {}",
+            self.method,
+            self.url,
+            self.status,
+            body
+        );
+    }
+
+    /// Expect a JSON response of the given type.
+    pub fn json<T>(self) -> Result<T, Error>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        if !self.status.is_success() {
+            let body = String::from_utf8_lossy(self.body.as_ref());
+            failure::bail!(
+                "Bad response: {}: {}: {}: {}",
+                self.method,
+                self.url,
+                self.status,
+                body
+            );
+        }
+
+        match serde_json::from_slice(self.body.as_ref()) {
+            Ok(body) => Ok(body),
+            Err(e) => {
+                let body = String::from_utf8_lossy(self.body.as_ref());
+                failure::bail!(
+                    "Bad response: {}: {}: {}: {}: {}",
+                    self.method,
+                    self.url,
+                    self.status,
+                    e,
+                    body
+                );
+            }
+        }
+    }
+
+    /// Send request and expect an optional JSON response.
+    pub fn json_option<T>(
+        self,
+        condition: impl FnOnce(&StatusCode) -> bool,
+    ) -> Result<Option<T>, Error>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        if condition(&self.status) {
+            return Ok(None);
+        }
+
+        Ok(Some(self.json()?))
     }
 }
