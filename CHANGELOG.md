@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show display name when responding to users.
 - Experimental support for viewing chat.
   * Support for only showing first message per user.
+- `bypass-cooldowns` scope to bypass command and scope cooldowns.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.4.3...master
 

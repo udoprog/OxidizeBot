@@ -530,6 +530,7 @@ impl Default for Risk {
 }
 
 scopes! {
+    (BypassCooldowns, "bypass-cooldowns"),
     (PlayerDetachDetach, "player/attach-detach"),
     (Admin, "admin"),
     (Song, "song"),

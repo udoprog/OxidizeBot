@@ -11,6 +11,11 @@ roles:
     doc: Role containing everyone.
 
 scopes:
+  bypass-cooldowns:
+    doc: If you are allowed to bypass cooldowns.
+    version: 0
+    allow:
+      - "@streamer"
   player/attach-detach:
     doc: If you are allowed to attach or detach the music player.
     version: 0

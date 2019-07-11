@@ -115,16 +115,42 @@ impl Handler {
 
             let has_bypass_constraints = user.has_scope(Scope::SongBypassConstraints);
 
+            if !has_bypass_constraints {
+                match min_currency {
+                    // don't test if min_currency is not defined.
+                    0 => (),
+                    min_currency => {
+                        let currency = match currency.as_ref() {
+                            Some(currency) => currency,
+                            None => {
+                                user.respond(
+                                    "No currency configured for stream, but it is required.",
+                                );
+                                return Ok(());
+                            }
+                        };
+
+                        let balance = currency
+                            .balance_of(user.target(), user.name())
+                            .await?
+                            .unwrap_or_default();
+
+                        if balance < min_currency {
+                            user.respond(format!(
+                                "You don't have enough {currency} to request songs. Need {required}, but you have {balance}, sorry :(",
+                                currency = currency.name,
+                                required = min_currency,
+                                balance = balance,
+                            ));
+
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+
             let result = player
-                .add_track(
-                    currency.clone(),
-                    user.target(),
-                    user.name(),
-                    track_id,
-                    has_bypass_constraints,
-                    max_duration,
-                    min_currency,
-                )
+                .add_track(user.name(), track_id, has_bypass_constraints, max_duration)
                 .await;
 
             let (pos, item) = match result {
@@ -200,25 +226,6 @@ impl Handler {
                         who = who,
                         duration = duration,
                         limit = limit,
-                    ));
-
-                    return Ok(());
-                }
-                Err(AddTrackError::NoCurrency) => {
-                    user.respond("No currency configured for stream, but it is required.");
-                    return Ok(());
-                }
-                Err(AddTrackError::NotEnoughCurrency { balance, required }) => {
-                    let currency = match currency.as_ref() {
-                        Some(currency) => currency.name.to_string(),
-                        None => String::from("currency"),
-                    };
-
-                    user.respond(format!(
-                        "You don't have enough {currency} to request songs. Need {required}, but you have {balance}, sorry :(",
-                        currency = currency,
-                        required = required,
-                        balance = balance,
                     ));
 
                     return Ok(());

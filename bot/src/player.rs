@@ -1,7 +1,5 @@
 use crate::{
-    api, bus,
-    currency::Currency,
-    db,
+    api, bus, db,
     prelude::*,
     settings,
     song_file::{SongFile, SongFileBuilder},
@@ -776,13 +774,10 @@ impl Player {
     /// Returns the item added.
     pub async fn add_track(
         &self,
-        currency: Option<Currency>,
-        channel: &str,
         user: &str,
         track_id: TrackId,
         bypass_constraints: bool,
         max_duration: Option<utils::Duration>,
-        min_currency: i64,
     ) -> Result<(usize, Arc<Item>), AddTrackError> {
         let (user_count, len) = {
             let queue_inner = self.inner.queue.queue.read();
@@ -834,32 +829,6 @@ impl Player {
 
             (user_count, len)
         };
-
-        if !bypass_constraints {
-            match min_currency {
-                // don't test if min_currency is not defined.
-                0 => (),
-                min_currency => {
-                    let currency = match currency.as_ref() {
-                        Some(currency) => currency,
-                        None => return Err(AddTrackError::NoCurrency),
-                    };
-
-                    let balance = currency
-                        .balance_of(channel, user)
-                        .await
-                        .map_err(AddTrackError::Error)?
-                        .unwrap_or_default();
-
-                    if balance < min_currency {
-                        return Err(AddTrackError::NotEnoughCurrency {
-                            balance,
-                            required: min_currency,
-                        });
-                    }
-                }
-            }
-        }
 
         let max_songs_per_user = *self.inner.max_songs_per_user.read();
 
@@ -1032,10 +1001,6 @@ pub enum AddTrackError {
     PlayerClosed(Option<Arc<String>>),
     /// Duplicate song that was added at the specified time by the specified user.
     Duplicate(DateTime<Utc>, Option<String>, Duration),
-    /// No currency configured.
-    NoCurrency,
-    /// Not enough currency to request songs.
-    NotEnoughCurrency { required: i64, balance: i64 },
     /// Other generic error happened.
     Error(Error),
 }

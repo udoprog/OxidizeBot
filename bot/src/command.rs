@@ -76,6 +76,10 @@ impl<'a> Context<'a> {
             );
         }
 
+        if self.user.has_scope(Scope::BypassCooldowns) {
+            return Ok(());
+        }
+
         if let Some(cooldown) = self.scope_cooldowns.get_mut(&scope) {
             let now = Instant::now();
 
