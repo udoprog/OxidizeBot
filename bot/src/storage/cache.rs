@@ -1,27 +1,35 @@
 use crate::{prelude::*, timer::Interval, utils};
+use ccl::dhashmap::DHashMap;
 use chrono::{DateTime, Duration, Utc};
+use crossbeam::queue::SegQueue;
 use failure::Error;
-use hashbrown::HashMap;
-use parking_lot::RwLock;
+use hashbrown::HashSet;
+use serde_cbor as cbor;
 use serde_json as json;
-use std::{collections::VecDeque, sync::Arc, time};
+use std::{sync::Arc, time};
 use tokio_threadpool::ThreadPool;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct Entry {
     expires_at: DateTime<Utc>,
-    value: json::Value,
+    value: cbor::Value,
 }
 
-struct Entries {
-    inserted: VecDeque<String>,
-    map: HashMap<String, Entry>,
+impl Entry {
+    /// Test if entry is expired.
+    fn is_expired(&self, now: DateTime<Utc>) -> bool {
+        self.expires_at < now
+    }
 }
 
 struct Inner {
     db: Arc<rocksdb::DB>,
-    /// Current entries.
-    entries: RwLock<Entries>,
+    /// Entries marked as expired after trying to access them.
+    expired: SegQueue<String>,
+    /// Entries inserted.
+    inserted: SegQueue<String>,
+    /// Underlying storage.
+    map: DHashMap<String, Entry>,
 }
 
 #[derive(Clone)]
@@ -32,59 +40,108 @@ pub struct Cache {
 impl Cache {
     /// Load the cache from the database.
     pub fn load(db: Arc<rocksdb::DB>) -> Result<Cache, Error> {
-        let entries = {
-            let mut map = HashMap::new();
+        let now = Utc::now();
+
+        let inner = {
+            let map = DHashMap::default();
+            let expired = SegQueue::default();
 
             for (key, value) in db.iterator(rocksdb::IteratorMode::Start) {
                 let key = std::str::from_utf8(&*key)?;
-                let entry: Entry = json::from_slice(&*value)?;
+
+                let entry: Entry = match cbor::from_slice(&*value) {
+                    Ok(entry) => entry,
+                    Err(e) => {
+                        if log::log_enabled!(log::Level::Trace) {
+                            log::warn!(
+                                "{}: failed to load: {}: {}",
+                                key,
+                                e,
+                                String::from_utf8_lossy(&*value)
+                            );
+                        } else {
+                            log::warn!("{}: failed to load: {}", key, e);
+                        }
+
+                        expired.push(key.to_string());
+                        continue;
+                    }
+                };
+
+                if entry.is_expired(now) {
+                    expired.push(key.to_string());
+                    continue;
+                }
+
                 map.insert(key.to_string(), entry);
             }
 
-            Entries {
+            Inner {
+                db,
+                expired,
                 inserted: Default::default(),
                 map,
             }
         };
 
-        let inner = Inner {
-            db,
-            entries: RwLock::new(entries),
+        let cache = Cache {
+            inner: Arc::new(inner),
         };
 
-        Ok(Cache {
-            inner: Arc::new(inner),
-        })
+        cache.cleanup()?;
+        Ok(cache)
     }
 
     /// Store and clean cache.
     fn cleanup(&self) -> Result<(), Error> {
-        let now = Utc::now();
+        let mut to_delete = HashSet::new();
+        let mut to_insert = HashSet::new();
 
-        let mut entries = self.inner.entries.write();
-
-        while let Some(insert) = entries.inserted.pop_front() {
-            if let Some(entry) = entries.map.get(&insert) {
-                let value = json::to_vec(&entry)?;
-                self.inner.db.put(&insert, &value)?;
-            }
+        while let Ok(delete) = self.inner.expired.pop() {
+            to_delete.insert(delete);
         }
 
-        let to_delete: Vec<String> = entries
-            .map
-            .iter()
-            .filter(|(_, e)| e.expires_at < now)
-            .map(|(k, _)| k.to_string())
-            .collect();
-
-        if log::log_enabled!(log::Level::Debug) && to_delete.len() > 0 {
-            log::trace!("Deleting expired: {}", to_delete.join(", "));
+        while let Ok(insert) = self.inner.inserted.pop() {
+            to_delete.remove(&insert);
+            to_insert.insert(insert);
         }
 
-        // delete expired local entries.
+        if to_delete.is_empty() && to_insert.is_empty() {
+            return Ok(());
+        }
+
+        if log::log_enabled!(log::Level::Trace) && !to_delete.is_empty() {
+            log::trace!(
+                "Deleting: {}",
+                to_delete
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+
+        if log::log_enabled!(log::Level::Trace) && !to_insert.is_empty() {
+            log::trace!(
+                "Inserting: {}",
+                to_insert
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+
         for key in to_delete {
             self.inner.db.delete(&key)?;
-            entries.map.remove(&key);
+            self.inner.map.remove(&key);
+        }
+
+        for insert in to_insert {
+            if let Some(entry) = self.inner.map.get(&insert) {
+                let value = cbor::to_vec(&*entry)?;
+                self.inner.db.put(&insert, &value)?;
+            }
         }
 
         log::trace!("compacting database");
@@ -95,7 +152,7 @@ impl Cache {
     /// Run the cache loop.
     pub async fn run(self) -> Result<(), Error> {
         let thread_pool = ThreadPool::new();
-        let mut interval = Interval::new_interval(time::Duration::from_secs(2 * 60));
+        let mut interval = Interval::new_interval(time::Duration::from_secs(10));
 
         loop {
             futures::select! {
@@ -117,7 +174,7 @@ impl Cache {
     where
         T: serde::ser::Serialize,
     {
-        let value = match json::to_value(value) {
+        let value = match cbor::value::to_value(value) {
             Ok(value) => value,
             Err(e) => {
                 log::trace!("store:{} *errored*", key);
@@ -128,9 +185,10 @@ impl Cache {
         log::trace!("store:{}", key);
 
         let expires_at = Utc::now() + age;
-        let mut entries = self.inner.entries.write();
-        entries.inserted.push_back(key.clone());
-        entries.map.insert(key, Entry { expires_at, value });
+        self.inner
+            .map
+            .insert(key.clone(), Entry { expires_at, value });
+        self.inner.inserted.push(key);
         Ok(())
     }
 
@@ -139,12 +197,8 @@ impl Cache {
     where
         T: serde::de::DeserializeOwned,
     {
-        let value;
-
-        {
-            let entries = self.inner.entries.read();
-
-            let entry = match entries.map.get(&key) {
+        let value = {
+            let entry = match self.inner.map.get(&key) {
                 Some(entry) => entry,
                 None => {
                     log::trace!("load:{} -> null (missing)", key);
@@ -152,18 +206,36 @@ impl Cache {
                 }
             };
 
-            if entry.expires_at < Utc::now() {
+            if entry.is_expired(Utc::now()) {
                 log::trace!("load:{} -> null (expired)", key);
+                self.inner.expired.push(key);
                 return Ok(None);
             }
 
-            value = entry.value.clone();
-        }
+            entry.value.clone()
+        };
 
-        let value = match json::from_value(value.clone()) {
+        let value = match cbor::value::from_value(value.clone()) {
             Ok(value) => value,
             Err(e) => {
-                log::warn!("{}: failed to deserialize: {}", key, e);
+                if log::log_enabled!(log::Level::Trace) {
+                    match json::to_string(&value) {
+                        Ok(value) => {
+                            log::warn!("{}: failed to load: {}: {}", key, e, value);
+                        }
+                        Err(string_e) => {
+                            log::warn!(
+                                "{}: failed to load: {}: *failed to serialize*: {}",
+                                key,
+                                e,
+                                string_e
+                            );
+                        }
+                    }
+                } else {
+                    log::warn!("{}: failed to load: {}", key, e);
+                }
+
                 log::trace!("load:{} -> null (error)", key);
                 return Ok(None);
             }

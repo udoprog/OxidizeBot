@@ -25,6 +25,7 @@ relative-path = { version = "0.4.0", features = ["serde"] }
 reqwest = "0.9.17"
 serde = { version = "1.0.91", features = ["rc"] }
 serde_json = "1.0.39"
+serde_cbor = "0.10.1"
 serde_yaml = "0.8.9"
 serde_urlencoded = "0.5.5"
 toml = "0.5.1"
@@ -58,7 +59,9 @@ rust-embed = {version = "4.3.0", optional = true}
 mime = "0.3.13"
 mime_guess = "2.0.0-alpha.6"
 uom = "0.23.1"
+ccl = "4.8.1"
 rocksdb = "0.12.2"
+crossbeam = "0.7.1"
 
 [dependencies.futures01]
 package = "futures"
