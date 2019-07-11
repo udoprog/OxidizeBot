@@ -198,6 +198,12 @@ enum Command {
     RandomizeDoors,
     /// Shoot the player up in the air with a parachute.
     Skyfall,
+    /// Taze the player.
+    Taze,
+    /// Taze people around the player.
+    TazeOthers,
+    /// Reduce gravity.
+    ReduceGravity,
     /// Send a raw command to ChaosMod.
     Raw(String),
 }
@@ -258,6 +264,9 @@ impl Command {
             ChangeCurrentVehicle(..) => "ChangeCurrentVehicle",
             RandomizeDoors => "RandomizeDoors",
             Skyfall => "Skyfall",
+            Taze => "Taze",
+            TazeOthers => "TazeOthers",
+            ReduceGravity => "ReduceGravity",
             Raw(..) => "Raw",
         }
     }
@@ -317,6 +326,9 @@ impl Command {
             ChangeCurrentVehicle(..) => "rewarded",
             RandomizeDoors => "rewarded",
             Skyfall => "rewarded",
+            Taze => "punished",
+            TazeOthers => "punished",
+            ReduceGravity => "rewarded",
             Raw(..) => "?",
         }
     }
@@ -376,6 +388,9 @@ impl Command {
             ChangeCurrentVehicle(ref vehicle) => format!("change-current-vehicle {}", vehicle),
             RandomizeDoors => format!("randomize-doors"),
             Skyfall => format!("skyfall"),
+            Taze => format!("taze"),
+            TazeOthers => format!("taze-others"),
+            ReduceGravity => format!("reduce-gravity"),
             Raw(ref cmd) => cmd.to_string(),
         }
     }
@@ -437,6 +452,9 @@ impl Command {
             ChangeCurrentVehicle(ref vehicle) => vehicle.cost(),
             RandomizeDoors => 0,
             Skyfall => 50,
+            Taze => 25,
+            TazeOthers => 50,
+            ReduceGravity => 25,
             Raw(..) => 0,
         }
     }
@@ -504,6 +522,9 @@ impl fmt::Display for Command {
             ChangeCurrentVehicle(..) => write!(fmt, "changing their current vehicle"),
             RandomizeDoors => write!(fmt, "randomizing their doors and windows"),
             Skyfall => write!(fmt, "causing them to skyfall"),
+            Taze => write!(fmt, "tazing them"),
+            TazeOthers => write!(fmt, "tazing everyone around them"),
+            ReduceGravity => write!(fmt, "reducing their gravity"),
             Raw(..) => write!(fmt, "sending a raw command"),
         }
     }
@@ -751,6 +772,8 @@ impl Handler {
             }
             Some("eject") => Command::Eject,
             Some("leak-fuel") => Command::FuelLeakage,
+            Some("taze") => Command::Taze,
+            Some("taze-others") => Command::TazeOthers,
             _ => {
                 ctx.respond(format!("See !chaos% for available punishments.",));
 
@@ -837,6 +860,7 @@ impl Handler {
                 Command::ChangeCurrentVehicle(vehicle)
             }
             Some("skyfall") => Command::Skyfall,
+            Some("reduce-gravity") => Command::ReduceGravity,
             _ => {
                 ctx.respond(format!("See !chaos% for available rewards."));
                 return Ok(None);

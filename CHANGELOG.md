@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Experimental support for viewing chat.
   * Support for only showing first message per user.
 - `bypass-cooldowns` scope to bypass command and scope cooldowns.
+- Support for ChaosMod 1.3.0.
 
 [Unreleased]: https://github.com/udoprog/setmod/compare/0.4.3...master
 
