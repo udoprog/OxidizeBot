@@ -4,9 +4,10 @@ use chrono::{DateTime, Duration, Utc};
 use crossbeam::queue::SegQueue;
 use failure::Error;
 use hashbrown::HashSet;
+use hex::ToHex as _;
 use serde_cbor as cbor;
 use serde_json as json;
-use std::{sync::Arc, time};
+use std::{fmt, sync::Arc, time};
 use tokio_threadpool::ThreadPool;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -25,15 +26,16 @@ impl Entry {
 struct Inner {
     db: Arc<rocksdb::DB>,
     /// Entries marked as expired after trying to access them.
-    expired: SegQueue<String>,
+    expired: SegQueue<Vec<u8>>,
     /// Entries inserted.
-    inserted: SegQueue<String>,
+    inserted: SegQueue<Vec<u8>>,
     /// Underlying storage.
-    map: DHashMap<String, Entry>,
+    map: DHashMap<Vec<u8>, Entry>,
 }
 
 #[derive(Clone)]
 pub struct Cache {
+    ns: Option<Arc<String>>,
     inner: Arc<Inner>,
 }
 
@@ -47,33 +49,31 @@ impl Cache {
             let expired = SegQueue::default();
 
             for (key, value) in db.iterator(rocksdb::IteratorMode::Start) {
-                let key = std::str::from_utf8(&*key)?;
-
                 let entry: Entry = match cbor::from_slice(&*value) {
                     Ok(entry) => entry,
                     Err(e) => {
                         if log::log_enabled!(log::Level::Trace) {
                             log::warn!(
                                 "{}: failed to load: {}: {}",
-                                key,
+                                KeyFormat(&*key),
                                 e,
-                                String::from_utf8_lossy(&*value)
+                                KeyFormat(&*value)
                             );
                         } else {
-                            log::warn!("{}: failed to load: {}", key, e);
+                            log::warn!("{}: failed to load: {}", KeyFormat(&*key), e);
                         }
 
-                        expired.push(key.to_string());
+                        expired.push(key.to_vec());
                         continue;
                     }
                 };
 
                 if entry.is_expired(now) {
-                    expired.push(key.to_string());
+                    expired.push(key.to_vec());
                     continue;
                 }
 
-                map.insert(key.to_string(), entry);
+                map.insert(key.to_vec(), entry);
             }
 
             Inner {
@@ -85,11 +85,22 @@ impl Cache {
         };
 
         let cache = Cache {
+            ns: None,
             inner: Arc::new(inner),
         };
 
         cache.cleanup()?;
         Ok(cache)
+    }
+
+    /// Create a namespaced cache.
+    ///
+    /// The namespace must be unique to avoid conflicts.
+    pub fn namespaced(&self, ns: impl AsRef<str>) -> Self {
+        Self {
+            ns: Some(Arc::new(ns.as_ref().to_string())),
+            inner: self.inner.clone(),
+        }
     }
 
     /// Store and clean cache.
@@ -115,7 +126,7 @@ impl Cache {
                 "Deleting: {}",
                 to_delete
                     .iter()
-                    .map(String::as_str)
+                    .map(|k| KeyFormat(k).to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
             );
@@ -126,7 +137,7 @@ impl Cache {
                 "Inserting: {}",
                 to_insert
                     .iter()
-                    .map(String::as_str)
+                    .map(|k| KeyFormat(k).to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
             );
@@ -169,46 +180,82 @@ impl Cache {
         }
     }
 
-    /// Insert a value into the cache.
-    pub fn insert<T>(&self, key: String, age: Duration, value: T) -> Result<(), Error>
+    /// Helper to serialize the key with a namespace.
+    fn key<T>(&self, key: T) -> Result<Vec<u8>, Error>
     where
-        T: serde::ser::Serialize,
+        T: serde::Serialize,
+    {
+        let key = match self.ns.as_ref() {
+            Some(ns) => Key(Some(&*ns), key),
+            None => Key(None, key),
+        };
+
+        return cbor::to_vec(&key).map_err(Into::into);
+
+        #[derive(serde::Serialize)]
+        struct Key<'a, T>(Option<&'a str>, T);
+    }
+
+    /// Insert a value into the cache.
+    pub fn insert<K, T>(&self, key: K, age: Duration, value: T) -> Result<(), Error>
+    where
+        K: serde::Serialize,
+        T: serde::Serialize,
+    {
+        let key = self.key(&key)?;
+        self.inner_insert(&key, age, value)
+    }
+
+    /// Insert a value into the cache.
+    fn inner_insert<T>(&self, key: &Vec<u8>, age: Duration, value: T) -> Result<(), Error>
+    where
+        T: serde::Serialize,
     {
         let value = match cbor::value::to_value(value) {
             Ok(value) => value,
             Err(e) => {
-                log::trace!("store:{} *errored*", key);
+                log::trace!("store:{} *errored*", KeyFormat(key));
                 return Err(e.into());
             }
         };
 
-        log::trace!("store:{}", key);
+        log::trace!("store:{}", KeyFormat(key));
 
         let expires_at = Utc::now() + age;
         self.inner
             .map
-            .insert(key.clone(), Entry { expires_at, value });
-        self.inner.inserted.push(key);
+            .insert(key.to_vec(), Entry { expires_at, value });
+        self.inner.inserted.push(key.to_vec());
         Ok(())
     }
 
     /// Load an entry from the cache.
-    pub fn get<T>(&self, key: String) -> Result<Option<T>, Error>
+    pub fn get<K, T>(&self, key: K) -> Result<Option<T>, Error>
+    where
+        K: serde::Serialize,
+        T: serde::de::DeserializeOwned,
+    {
+        let key = self.key(&key)?;
+        self.inner_get(&key)
+    }
+
+    /// Load an entry from the cache.
+    fn inner_get<T>(&self, key: &Vec<u8>) -> Result<Option<T>, Error>
     where
         T: serde::de::DeserializeOwned,
     {
         let value = {
-            let entry = match self.inner.map.get(&key) {
+            let entry = match self.inner.map.get(key) {
                 Some(entry) => entry,
                 None => {
-                    log::trace!("load:{} -> null (missing)", key);
+                    log::trace!("load:{} -> null (missing)", KeyFormat(key));
                     return Ok(None);
                 }
             };
 
             if entry.is_expired(Utc::now()) {
-                log::trace!("load:{} -> null (expired)", key);
-                self.inner.expired.push(key);
+                log::trace!("load:{} -> null (expired)", KeyFormat(key));
+                self.inner.expired.push(key.to_vec());
                 return Ok(None);
             }
 
@@ -221,46 +268,68 @@ impl Cache {
                 if log::log_enabled!(log::Level::Trace) {
                     match json::to_string(&value) {
                         Ok(value) => {
-                            log::warn!("{}: failed to load: {}: {}", key, e, value);
+                            log::warn!("{}: failed to load: {}: {}", KeyFormat(key), e, value);
                         }
                         Err(string_e) => {
                             log::warn!(
                                 "{}: failed to load: {}: *failed to serialize*: {}",
-                                key,
+                                KeyFormat(key),
                                 e,
                                 string_e
                             );
                         }
                     }
                 } else {
-                    log::warn!("{}: failed to load: {}", key, e);
+                    log::warn!("{}: failed to load: {}", KeyFormat(key), e);
                 }
 
-                log::trace!("load:{} -> null (error)", key);
+                log::trace!("load:{} -> null (error)", KeyFormat(key));
                 return Ok(None);
             }
         };
 
-        log::trace!("load:{} -> *value*", key);
+        log::trace!("load:{} -> *value*", KeyFormat(key));
         Ok(Some(value))
     }
 
     /// Wrap the result of the given future to load and store from cache.
-    pub async fn wrap<T>(
+    pub async fn wrap<K, T>(
         &self,
-        key: String,
+        key: K,
         age: utils::Duration,
         future: impl Future<Output = Result<T, Error>>,
     ) -> Result<T, Error>
     where
+        K: serde::Serialize,
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
-        if let Some(output) = self.get(key.clone())? {
+        let key = self.key(&key)?;
+
+        if let Some(output) = self.inner_get(&key)? {
             return Ok(output);
         }
 
         let output = future.await?;
-        self.insert(key, age.as_chrono(), output.clone())?;
+        self.inner_insert(&key, age.as_chrono(), output.clone())?;
         Ok(output)
+    }
+}
+
+/// Helper formatter to convert cbor bytes to JSON or hex.
+struct KeyFormat<'a>(&'a [u8]);
+
+impl fmt::Display for KeyFormat<'_> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match cbor::from_slice::<cbor::Value>(self.0) {
+            Ok(value) => value,
+            Err(_) => return self.0.write_hex(fmt),
+        };
+
+        let value = match json::to_string(&value) {
+            Ok(value) => value,
+            Err(_) => return self.0.write_hex(fmt),
+        };
+
+        value.fmt(fmt)
     }
 }

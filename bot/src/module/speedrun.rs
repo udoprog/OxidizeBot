@@ -106,7 +106,7 @@ impl Speedrun {
             let user = async_user;
             let match_level = match_level.as_ref().map(|s| s.as_str());
 
-            let u = match speedrun.user_by_id(query_user.clone()).await? {
+            let u = match speedrun.user_by_id(&query_user).await? {
                 Some(u) => u,
                 None => {
                     user.respond(format!("No user on speedrun.com named `{}`", query_user));
@@ -117,7 +117,7 @@ impl Speedrun {
             let mut embeds = Embeds::default();
             embeds.push(Embed::Game);
             embeds.push(Embed::Category);
-            let personal_bests = speedrun.user_personal_bests(u.id.clone(), embeds).await?;
+            let personal_bests = speedrun.user_personal_bests(&u.id, &embeds).await?;
 
             let personal_bests = match personal_bests {
                 Some(personal_bests) => personal_bests,
@@ -150,8 +150,8 @@ impl Speedrun {
                     continue;
                 }
 
-                let levels = speedrun.game_levels(game.id.clone());
-                let variables = speedrun.category_variables(run.run.category.clone());
+                let levels = speedrun.game_levels(&game.id);
+                let variables = speedrun.category_variables(&run.run.category);
 
                 let (levels, variables) = future::try_join(levels, variables).await?;
 
@@ -334,7 +334,7 @@ impl Speedrun {
             let user = async_user;
             let match_user = match_user.as_ref().map(|s| s.as_str());
 
-            let game = speedrun.game_by_id(game_query.clone()).await?;
+            let game = speedrun.game_by_id(&game_query).await?;
 
             let game = match game {
                 Some(game) => game,
@@ -347,9 +347,7 @@ impl Speedrun {
             let mut embeds = Embeds::default();
             embeds.push(Embed::Variables);
 
-            let categories = speedrun
-                .game_categories_by_id(game.id.clone(), embeds)
-                .await?;
+            let categories = speedrun.game_categories_by_id(&game.id, &embeds).await?;
 
             let categories = match categories {
                 Some(categories) => categories,
@@ -392,7 +390,7 @@ impl Speedrun {
                     let mut name = category.name.clone();
                     let mut variables = Variables::default();
 
-                    variables.variables.insert(c.key, c.value);
+                    variables.insert(c.key, c.value);
 
                     if abbrev {
                         name = format!("{} {}", name, abbreviate_text(&c.label));
@@ -410,13 +408,7 @@ impl Speedrun {
 
             for (name, variables, category) in categories_to_use {
                 let records = speedrun
-                    .leaderboard(
-                        game.id.clone(),
-                        category.id.clone(),
-                        top,
-                        variables,
-                        embeds.clone(),
-                    )
+                    .leaderboard(&game.id, &category.id, top, &variables, &embeds)
                     .await?;
 
                 let records = match records {
@@ -507,7 +499,7 @@ impl Speedrun {
             RelatedPlayer::Player(ref player) => {
                 let user = match embedded_players.get(&player.id) {
                     Some(user) => user.clone(),
-                    None => match speedrun.user_by_id(player.id.clone()).await? {
+                    None => match speedrun.user_by_id(&player.id).await? {
                         Some(user) => user,
                         None => return Ok(None),
                     },
@@ -565,6 +557,42 @@ impl command::Handler for Speedrun {
     }
 }
 
+#[derive(serde::Serialize)]
+#[serde(tag = "method")]
+pub enum Key<'a> {
+    UserById {
+        user: &'a str,
+    },
+    UserPersonalBests {
+        user_id: &'a str,
+        embeds: &'a Embeds,
+    },
+    CategoryVariables {
+        category_id: &'a str,
+    },
+    CategoryRecordsById {
+        category_id: &'a str,
+        top: u32,
+    },
+    GameById {
+        game_id: &'a str,
+    },
+    GameCategoriesById {
+        game_id: &'a str,
+        embeds: &'a Embeds,
+    },
+    GameLevels {
+        game_id: &'a str,
+    },
+    Leaderboard {
+        game_id: &'a str,
+        category_id: &'a str,
+        top: u32,
+        variables: &'a Variables,
+        embeds: &'a Embeds,
+    },
+}
+
 #[derive(Clone)]
 struct CachedSpeedrun {
     cache: Cache,
@@ -573,94 +601,124 @@ struct CachedSpeedrun {
 
 impl CachedSpeedrun {
     /// Get cached user information by ID.
-    pub async fn user_by_id(&self, user: String) -> Result<Option<User>, Error> {
-        let key = format!("speedrun:users/{}", user);
-        let future = self.speedrun.user_by_id(user);
-        self.cache.wrap(key, Duration::hours(24 * 7), future).await
+    pub async fn user_by_id(&self, user: &str) -> Result<Option<User>, Error> {
+        self.cache
+            .wrap(
+                Key::UserById { user },
+                Duration::hours(24 * 7),
+                self.speedrun.user_by_id(user),
+            )
+            .await
     }
 
     /// Get personal bests by user.
     pub async fn user_personal_bests(
         &self,
-        user_id: String,
-        embeds: Embeds,
+        user_id: &str,
+        embeds: &Embeds,
     ) -> Result<Option<Vec<Run>>, Error> {
-        let embeds_key = embeds.to_query().unwrap_or_default();
-        let key = format!(
-            "speedrun:users/{}/personal-bests/embed:{}",
-            user_id, embeds_key
-        );
-        let future = self.speedrun.user_personal_bests(user_id, embeds);
-        self.cache.wrap(key, Duration::hours(2), future).await
+        self.cache
+            .wrap(
+                Key::UserPersonalBests {
+                    user_id,
+                    embeds: &embeds,
+                },
+                Duration::hours(2),
+                self.speedrun.user_personal_bests(user_id, &embeds),
+            )
+            .await
     }
 
     /// Get the variables of a category.
     pub async fn category_variables(
         &self,
-        category_id: String,
+        category_id: &str,
     ) -> Result<Option<Vec<Variable>>, Error> {
-        let key = format!("speedrun:categories/{}/variables", category_id);
-        let future = self.speedrun.category_variables(category_id);
-        self.cache.wrap(key, Duration::hours(2), future).await
+        self.cache
+            .wrap(
+                Key::CategoryVariables { category_id },
+                Duration::hours(2),
+                self.speedrun.category_variables(category_id),
+            )
+            .await
     }
 
     /// Get cached user information by ID.
     #[allow(unused)]
     pub async fn category_records_by_id(
         &self,
-        category: String,
+        category_id: &str,
         top: u32,
     ) -> Result<Option<Page<GameRecord>>, Error> {
-        let key = format!("speedrun:categories/{}/records/top:{}", category, top);
-        let future = self.speedrun.category_records_by_id(category, top);
-        self.cache.wrap(key, Duration::hours(24), future).await
+        self.cache
+            .wrap(
+                Key::CategoryRecordsById { category_id, top },
+                Duration::hours(24),
+                self.speedrun.category_records_by_id(category_id, top),
+            )
+            .await
     }
 
     /// Get cached game record by ID.
-    pub async fn game_by_id(&self, game: String) -> Result<Option<Game>, Error> {
-        let key = format!("speedrun:games/{}", game);
-        let future = self.speedrun.game_by_id(game);
-        self.cache.wrap(key, Duration::hours(24 * 7), future).await
+    pub async fn game_by_id(&self, game_id: &str) -> Result<Option<Game>, Error> {
+        self.cache
+            .wrap(
+                Key::GameById { game_id },
+                Duration::hours(24 * 7),
+                self.speedrun.game_by_id(game_id),
+            )
+            .await
     }
 
     /// Get cached game categories by ID.
     pub async fn game_categories_by_id(
         &self,
-        game: String,
-        embeds: Embeds,
+        game_id: &str,
+        embeds: &Embeds,
     ) -> Result<Option<Vec<Category>>, Error> {
-        let embeds_key = embeds.to_query().unwrap_or_default();
-        let key = format!("speedrun:games/{}/categories/embed:{}", game, embeds_key);
-        let future = self.speedrun.game_categories_by_id(game, embeds);
-        self.cache.wrap(key, Duration::hours(24), future).await
+        self.cache
+            .wrap(
+                Key::GameCategoriesById { game_id, embeds },
+                Duration::hours(24),
+                self.speedrun.game_categories_by_id(game_id, embeds),
+            )
+            .await
     }
 
     /// Get cached game levels by ID.
-    pub async fn game_levels(&self, game: String) -> Result<Option<Vec<Level>>, Error> {
-        let key = format!("speedrun:games/{}/levels", game);
-        let future = self.speedrun.game_levels(game);
-        self.cache.wrap(key, Duration::hours(72), future).await
+    pub async fn game_levels(&self, game_id: &str) -> Result<Option<Vec<Level>>, Error> {
+        self.cache
+            .wrap(
+                Key::GameLevels { game_id },
+                Duration::hours(72),
+                self.speedrun.game_levels(game_id),
+            )
+            .await
     }
 
     /// Get the specified leaderboard.
     pub async fn leaderboard(
         &self,
-        game: String,
-        category: String,
+        game_id: &str,
+        category_id: &str,
         top: u32,
-        variables: Variables,
-        embeds: Embeds,
+        variables: &Variables,
+        embeds: &Embeds,
     ) -> Result<Option<GameRecord>, Error> {
-        let variables_key = variables.cache_key();
-        let embeds_key = embeds.to_query().unwrap_or_default();
-        let key = format!(
-            "speedrun:leaderboards/{}/category/{}/top:{}/variables:{}/embed:{}",
-            game, category, top, variables_key, embeds_key,
-        );
-        let future = self
-            .speedrun
-            .leaderboard(game, category, top, variables, embeds);
-        self.cache.wrap(key, Duration::hours(6), future).await
+        self.cache
+            .wrap(
+                Key::Leaderboard {
+                    game_id,
+                    category_id,
+                    top,
+                    variables,
+                    embeds,
+                },
+                Duration::hours(6),
+                self.speedrun
+                    .leaderboard(game_id, category_id, top, variables, embeds),
+            )
+            .await
     }
 }
 
@@ -684,12 +742,15 @@ impl super::Module for Module {
     ) -> Result<(), Error> {
         let mut vars = settings.vars();
 
-        let cache = injector.get().ok_or_else(|| format_err!("missing cache"))?;
+        let cache: Cache = injector.get().ok_or_else(|| format_err!("missing cache"))?;
         let speedrun = injector
             .get()
             .ok_or_else(|| format_err!("missing speedrun api"))?;
 
-        let speedrun = CachedSpeedrun { cache, speedrun };
+        let speedrun = CachedSpeedrun {
+            cache: cache.namespaced("speedrun"),
+            speedrun,
+        };
 
         handlers.insert(
             "speedrun",

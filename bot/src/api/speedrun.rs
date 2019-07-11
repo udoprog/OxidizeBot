@@ -1,11 +1,11 @@
-//! Twitch API helpers.
+//! speedrun.com API client.
 
 use crate::{api::RequestBuilder, utils::PtDuration};
 use chrono::{DateTime, NaiveDate, Utc};
 use failure::Error;
 use hashbrown::HashMap;
 use reqwest::{header, r#async::Client, Method, StatusCode, Url};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const V1_URL: &'static str = "https://speedrun.com/api/v1";
 
@@ -39,8 +39,8 @@ impl Speedrun {
     }
 
     /// Fetch the user by id.
-    pub async fn user_by_id(&self, user: String) -> Result<Option<User>, Error> {
-        let req = self.v1(Method::GET, &["users", user.as_str()]);
+    pub async fn user_by_id(&self, user: &str) -> Result<Option<User>, Error> {
+        let req = self.v1(Method::GET, &["users", user]);
         let data: Option<Data<User>> = req.execute().await?.json_option(no_content)?;
         Ok(data.map(|d| d.data))
     }
@@ -48,10 +48,10 @@ impl Speedrun {
     /// Fetch the user by id.
     pub async fn user_personal_bests(
         &self,
-        user_id: String,
-        embeds: Embeds,
+        user_id: &str,
+        embeds: &Embeds,
     ) -> Result<Option<Vec<Run>>, Error> {
-        let mut request = self.v1(Method::GET, &["users", user_id.as_str(), "personal-bests"]);
+        let mut request = self.v1(Method::GET, &["users", user_id, "personal-bests"]);
 
         if let Some(q) = embeds.to_query() {
             request = request.query_param("embed", q.as_str());
@@ -62,8 +62,8 @@ impl Speedrun {
     }
 
     /// Get a game by id.
-    pub async fn game_by_id(&self, game: String) -> Result<Option<Game>, Error> {
-        let req = self.v1(Method::GET, &["games", game.as_str()]);
+    pub async fn game_by_id(&self, game: &str) -> Result<Option<Game>, Error> {
+        let req = self.v1(Method::GET, &["games", game]);
         let data: Option<Data<Game>> = req.execute().await?.json_option(no_content)?;
         Ok(data.map(|d| d.data))
     }
@@ -71,10 +71,10 @@ impl Speedrun {
     /// Get game categories by game id.
     pub async fn game_categories_by_id(
         &self,
-        game: String,
-        embeds: Embeds,
+        game_id: &str,
+        embeds: &Embeds,
     ) -> Result<Option<Vec<Category>>, Error> {
-        let mut request = self.v1(Method::GET, &["games", game.as_str(), "categories"]);
+        let mut request = self.v1(Method::GET, &["games", game_id, "categories"]);
 
         if let Some(q) = embeds.to_query() {
             request = request.query_param("embed", q.as_str());
@@ -85,18 +85,15 @@ impl Speedrun {
     }
 
     /// Get game levels.
-    pub async fn game_levels(&self, game: String) -> Result<Option<Vec<Level>>, Error> {
-        let request = self.v1(Method::GET, &["games", game.as_str(), "levels"]);
+    pub async fn game_levels(&self, game_id: &str) -> Result<Option<Vec<Level>>, Error> {
+        let request = self.v1(Method::GET, &["games", game_id, "levels"]);
         let data: Option<Data<Vec<Level>>> = request.execute().await?.json_option(no_content)?;
         Ok(data.map(|d| d.data))
     }
 
     /// Get all variables associated with a category.
-    pub async fn category_variables(
-        &self,
-        category: String,
-    ) -> Result<Option<Vec<Variable>>, Error> {
-        let req = self.v1(Method::GET, &["categories", category.as_str(), "variables"]);
+    pub async fn category_variables(&self, category: &str) -> Result<Option<Vec<Variable>>, Error> {
+        let req = self.v1(Method::GET, &["categories", category, "variables"]);
         let data: Option<Data<Vec<Variable>>> = req.execute().await?.json_option(no_content)?;
         Ok(data.map(|d| d.data))
     }
@@ -104,11 +101,11 @@ impl Speedrun {
     /// Get all records associated with a category.
     pub async fn category_records_by_id(
         &self,
-        category: String,
+        category_id: &str,
         top: u32,
     ) -> Result<Option<Page<GameRecord>>, Error> {
         let req = self
-            .v1(Method::GET, &["categories", category.as_str(), "records"])
+            .v1(Method::GET, &["categories", category_id, "records"])
             .query_param("top", top.to_string().as_str());
 
         Ok(req.execute().await?.json_option(no_content)?)
@@ -117,16 +114,16 @@ impl Speedrun {
     /// Get all records associated with a category.
     pub async fn leaderboard(
         &self,
-        game: String,
-        category: String,
+        game_id: &str,
+        category_id: &str,
         top: u32,
-        variables: Variables,
-        embeds: Embeds,
+        variables: &Variables,
+        embeds: &Embeds,
     ) -> Result<Option<GameRecord>, Error> {
         let mut request = self
             .v1(
                 Method::GET,
-                &["leaderboards", game.as_str(), "category", category.as_str()],
+                &["leaderboards", game_id, "category", category_id],
             )
             .query_param("top", top.to_string().as_str());
 
@@ -134,7 +131,7 @@ impl Speedrun {
             request = request.query_param("embed", q.as_str());
         }
 
-        for (key, value) in variables.variables {
+        for (key, value) in &variables.0 {
             request = request.query_param(&format!("var-{}", key), &value);
         }
 
@@ -191,17 +188,23 @@ impl Names {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct Variables {
-    pub variables: BTreeMap<String, String>,
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct Variables(BTreeMap<String, String>);
+
+impl Variables {
+    /// Insert a variable to query for.
+    pub fn insert(&mut self, key: impl AsRef<str>, value: impl AsRef<str>) {
+        self.0
+            .insert(key.as_ref().to_string(), value.as_ref().to_string());
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, serde::Serialize)]
 pub enum Embed {
+    Category,
+    Game,
     Players,
     Variables,
-    Game,
-    Category,
 }
 
 impl Embed {
@@ -210,23 +213,21 @@ impl Embed {
         use self::Embed::*;
 
         match *self {
+            Category => "category",
+            Game => "game",
             Players => "players",
             Variables => "variables",
-            Game => "game",
-            Category => "category",
         }
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct Embeds {
-    embeds: Vec<Embed>,
-}
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct Embeds(BTreeSet<Embed>);
 
 impl Embeds {
     /// Convert into a query.
     pub fn to_query(&self) -> Option<String> {
-        let mut it = self.embeds.iter().peekable();
+        let mut it = self.0.iter().peekable();
 
         if !it.peek().is_some() {
             return None;
@@ -247,18 +248,7 @@ impl Embeds {
 
     /// Add the given embed parameter.
     pub fn push(&mut self, embed: Embed) {
-        self.embeds.push(embed);
-    }
-}
-
-impl Variables {
-    /// Generate a unique cache key for this collection of variables.
-    pub fn cache_key(&self) -> String {
-        self.variables
-            .iter()
-            .map(|(k, v)| format!("{}:{}", k, v))
-            .collect::<Vec<_>>()
-            .join("/")
+        self.0.insert(embed);
     }
 }
 

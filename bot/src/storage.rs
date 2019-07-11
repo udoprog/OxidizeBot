@@ -24,10 +24,15 @@ impl Storage {
 
 /// Create a new environment based on the given path.
 fn create_db(path: &Path) -> Result<Arc<rocksdb::DB>, Error> {
+    if !path.is_dir() {
+        std::fs::create_dir_all(path)?;
+    }
+
     let mut options = rocksdb::Options::default();
     options.set_compression_type(rocksdb::DBCompressionType::Snappy);
     options.set_disable_auto_compactions(true);
     options.set_keep_log_file_num(16);
+    options.create_if_missing(true);
 
     Ok(Arc::new(rocksdb::DB::open(&options, path)?))
 }

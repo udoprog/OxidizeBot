@@ -62,6 +62,7 @@ uom = "0.23.1"
 ccl = "4.8.1"
 rocksdb = "0.12.2"
 crossbeam = "0.7.1"
+hex = "0.3.2"
 
 [dependencies.futures01]
 package = "futures"
