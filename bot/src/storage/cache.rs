@@ -1,21 +1,16 @@
-use crate::{
-    db::{self, models},
-    prelude::*,
-    timer::Interval,
-    utils,
-};
+use crate::{prelude::*, timer::Interval, utils};
 use chrono::{DateTime, Duration, Utc};
 use failure::Error;
 use hashbrown::HashMap;
 use parking_lot::RwLock;
+use serde_json as json;
 use std::{collections::VecDeque, sync::Arc, time};
 use tokio_threadpool::ThreadPool;
 
-use diesel::prelude::*;
-
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct Entry {
     expires_at: DateTime<Utc>,
-    value: serde_json::Value,
+    value: json::Value,
 }
 
 struct Entries {
@@ -24,39 +19,26 @@ struct Entries {
 }
 
 struct Inner {
-    db: db::Database,
+    db: Arc<rocksdb::DB>,
     /// Current entries.
     entries: RwLock<Entries>,
 }
 
 #[derive(Clone)]
-pub struct Cache(Arc<Inner>);
+pub struct Cache {
+    inner: Arc<Inner>,
+}
 
 impl Cache {
     /// Load the cache from the database.
-    pub fn load(db: db::Database) -> Result<Cache, Error> {
-        use db::schema::cache::dsl;
-
-        let entries = {
-            let c = db.pool.lock();
-            dsl::cache.load::<models::CacheEntry>(&*c)?
-        };
-
+    pub fn load(db: Arc<rocksdb::DB>) -> Result<Cache, Error> {
         let entries = {
             let mut map = HashMap::new();
 
-            for entry in entries {
-                let expires_at = DateTime::from_utc(entry.expires_at, Utc);
-
-                let value = match serde_json::from_str(&entry.value) {
-                    Ok(value) => value,
-                    Err(e) => {
-                        log::warn!("{}: failed to deserialize: {}", entry.key, e);
-                        continue;
-                    }
-                };
-
-                map.insert(entry.key, Entry { expires_at, value });
+            for (key, value) in db.iterator(rocksdb::IteratorMode::Start) {
+                let key = std::str::from_utf8(&*key)?;
+                let entry: Entry = json::from_slice(&*value)?;
+                map.insert(key.to_string(), entry);
             }
 
             Entries {
@@ -70,73 +52,50 @@ impl Cache {
             entries: RwLock::new(entries),
         };
 
-        Ok(Cache(Arc::new(inner)))
+        Ok(Cache {
+            inner: Arc::new(inner),
+        })
     }
 
     /// Store and clean cache.
-    fn store_and_load(&self) -> Result<(), Error> {
-        use db::schema::cache::dsl;
+    fn cleanup(&self) -> Result<(), Error> {
+        let now = Utc::now();
 
-        let now = Utc::now().naive_utc();
-
-        let c = self.0.db.pool.lock();
-        let mut entries = self.0.entries.write();
+        let mut entries = self.inner.entries.write();
 
         while let Some(insert) = entries.inserted.pop_front() {
             if let Some(entry) = entries.map.get(&insert) {
-                let filter = dsl::cache.filter(dsl::key.eq(&insert));
-
-                let e = filter.clone().first::<models::CacheEntry>(&*c).optional()?;
-
-                match e {
-                    None => {
-                        let entry = models::CacheEntry {
-                            key: insert,
-                            expires_at: entry.expires_at.naive_utc(),
-                            value: serde_json::to_string(&entry.value)?,
-                        };
-
-                        diesel::insert_into(dsl::cache).values(entry).execute(&*c)?;
-                    }
-                    Some(_) => {
-                        let set = models::UpdateCacheEntry {
-                            value: serde_json::to_string(&entry.value)?,
-                        };
-
-                        diesel::update(filter).set(&set).execute(&*c)?;
-                    }
-                }
+                let value = json::to_vec(&entry)?;
+                self.inner.db.put(&insert, &value)?;
             }
         }
 
-        let to_delete;
+        let to_delete: Vec<String> = entries
+            .map
+            .iter()
+            .filter(|(_, e)| e.expires_at < now)
+            .map(|(k, _)| k.to_string())
+            .collect();
 
-        // delete from database.
-        {
-            to_delete = dsl::cache
-                .select(dsl::key)
-                .filter(dsl::expires_at.lt(&now))
-                .load::<String>(&*c)?;
-
-            if log::log_enabled!(log::Level::Debug) && to_delete.len() > 0 {
-                log::trace!("Deleting expired: {}", to_delete.join(", "));
-            }
-
-            diesel::delete(dsl::cache.filter(dsl::key.eq_any(&to_delete))).execute(&*c)?;
+        if log::log_enabled!(log::Level::Debug) && to_delete.len() > 0 {
+            log::trace!("Deleting expired: {}", to_delete.join(", "));
         }
 
         // delete expired local entries.
         for key in to_delete {
+            self.inner.db.delete(&key)?;
             entries.map.remove(&key);
         }
 
+        log::trace!("compacting database");
+        self.inner.db.compact_range::<[u8; 0], [u8; 0]>(None, None);
         Ok(())
     }
 
     /// Run the cache loop.
     pub async fn run(self) -> Result<(), Error> {
         let thread_pool = ThreadPool::new();
-        let mut interval = Interval::new_interval(time::Duration::from_secs(60 * 5));
+        let mut interval = Interval::new_interval(time::Duration::from_secs(2 * 60));
 
         loop {
             futures::select! {
@@ -144,7 +103,7 @@ impl Cache {
                     let cache = self.clone();
 
                     let future = thread_pool.spawn_handle(future01::lazy(move || {
-                        cache.store_and_load()
+                        cache.cleanup()
                     }));
 
                     future.compat().await?;
@@ -158,7 +117,7 @@ impl Cache {
     where
         T: serde::ser::Serialize,
     {
-        let value = match serde_json::to_value(value) {
+        let value = match json::to_value(value) {
             Ok(value) => value,
             Err(e) => {
                 log::trace!("store:{} *errored*", key);
@@ -169,7 +128,7 @@ impl Cache {
         log::trace!("store:{}", key);
 
         let expires_at = Utc::now() + age;
-        let mut entries = self.0.entries.write();
+        let mut entries = self.inner.entries.write();
         entries.inserted.push_back(key.clone());
         entries.map.insert(key, Entry { expires_at, value });
         Ok(())
@@ -183,7 +142,7 @@ impl Cache {
         let value;
 
         {
-            let entries = self.0.entries.read();
+            let entries = self.inner.entries.read();
 
             let entry = match entries.map.get(&key) {
                 Some(entry) => entry,
@@ -201,7 +160,7 @@ impl Cache {
             value = entry.value.clone();
         }
 
-        let value = match serde_json::from_value(value.clone()) {
+        let value = match json::from_value(value.clone()) {
             Ok(value) => value,
             Err(e) => {
                 log::warn!("{}: failed to deserialize: {}", key, e);

@@ -6,10 +6,9 @@ use crate::{
             RelatedPlayer, Run, RunInfo, User, Variable, Variables,
         },
     },
-    auth, command,
-    db::Cache,
-    module,
+    auth, command, module,
     prelude::*,
+    storage::Cache,
     utils::{self, Duration},
 };
 use failure::{format_err, Error};
@@ -29,7 +28,7 @@ impl Speedrun {
     fn query_personal_bests(&self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         let mut query_user = None;
         let mut category_filter = CategoryFilter::default();
-        let mut match_game = None;
+        let mut games = Vec::new();
         let mut match_level = None;
         let mut abbrev = false;
 
@@ -38,7 +37,7 @@ impl Speedrun {
         while let Some(arg) = ctx.next().as_ref().map(String::as_str) {
             match arg {
                 "--game" => match ctx.next() {
-                    Some(g) => match_game = Some(g.to_lowercase()),
+                    Some(g) => games.push(g.to_lowercase()),
                     None => {
                         ctx.respond("Expected argument to `--game`");
                         return Ok(());
@@ -136,8 +135,8 @@ impl Speedrun {
                     None => continue,
                 };
 
-                if let Some(match_game) = match_game.as_ref() {
-                    if !game.matches(match_game) {
+                if !games.is_empty() {
+                    if !games.iter().any(|g| game.matches(g)) {
                         continue;
                     }
                 }
@@ -173,7 +172,12 @@ impl Speedrun {
                     if abbrev {
                         name = format!("{} {}", name, abbreviate_text(&c.label));
                     } else {
-                        name = format!("{} ({})", name, c.label);
+                        name = format!("{} / {}", name, c.label);
+                    }
+                } else {
+                    // skip if we are filtering over sub categories.
+                    if category_filter.sub_category_name.is_some() {
+                        continue;
                     }
                 }
 
@@ -210,16 +214,20 @@ impl Speedrun {
                     runs.push(format!("{}: {} (#{})", name, duration, run.place));
                 }
 
-                results.push(format!("{}: {}", group.game.names.name(), runs.join(", ")));
+                results.push(format!(
+                    "{} ({}) -> {}",
+                    group.game.names.name(),
+                    group.game.abbreviation,
+                    runs.join(" - ")
+                ));
             }
 
             match results.as_slice() {
-                [] => {
-                    user.respond("*no runs*");
-                }
-                results => {
-                    let results = format!("{}.", results.join("; "));
-                    user.respond(format!("{}", results));
+                [] => user.respond("*no runs*"),
+                _ => {
+                    for part in partition_response(results, 400, " | ") {
+                        user.respond(part);
+                    }
                 }
             };
 
@@ -368,26 +376,31 @@ impl Speedrun {
                 let sub_categories = SubCategory::from_variables(variables);
 
                 if sub_categories.is_empty() {
-                    categories_to_use.push((category.name.clone(), Variables::default(), category));
-                } else {
-                    for c in sub_categories {
-                        if !category_filter.match_sub_category(&c) {
-                            continue;
-                        }
-
-                        let mut name = category.name.clone();
-                        let mut variables = Variables::default();
-
-                        variables.variables.insert(c.key, c.value);
-
-                        if abbrev {
-                            name = format!("{} {}", name, abbreviate_text(&c.label));
-                        } else {
-                            name = format!("{} ({})", name, c.label);
-                        }
-
-                        categories_to_use.push((name, variables, category));
+                    if category_filter.sub_category_name.is_some() {
+                        continue;
                     }
+
+                    categories_to_use.push((category.name.clone(), Variables::default(), category));
+                    continue;
+                }
+
+                for c in sub_categories {
+                    if !category_filter.match_sub_category(&c) {
+                        continue;
+                    }
+
+                    let mut name = category.name.clone();
+                    let mut variables = Variables::default();
+
+                    variables.variables.insert(c.key, c.value);
+
+                    if abbrev {
+                        name = format!("{} {}", name, abbreviate_text(&c.label));
+                    } else {
+                        name = format!("{} ({})", name, c.label);
+                    }
+
+                    categories_to_use.push((name, variables, category));
                 }
             }
 
@@ -452,19 +465,18 @@ impl Speedrun {
 
                 let runs = match runs.as_slice() {
                     [] => continue,
-                    runs => format!("{}", runs.join(", ")),
+                    runs => runs.join(" - "),
                 };
 
                 results.push(format!("{} -> {}", name, runs));
             }
 
             match results.as_slice() {
-                [] => {
-                    user.respond("*no runs*");
-                }
-                results => {
-                    let results = format!("{}.", results.join("; "));
-                    user.respond(format!("{}", results));
+                [] => user.respond("*no runs*"),
+                _ => {
+                    for part in partition_response(results, 400, " | ") {
+                        user.respond(part);
+                    }
                 }
             };
 
@@ -878,6 +890,48 @@ impl CategoryFilter {
 
         true
     }
+}
+
+/// Partition the results to fit the given width, using a separator defined in `part`.
+fn partition_response(results: Vec<String>, width: usize, sep: &str) -> Vec<String> {
+    use std::mem;
+
+    const TAIL: &'static str = "...";
+
+    let mut current = Vec::new();
+    let mut current_len = 0;
+    let mut out = Vec::new();
+
+    for result in results {
+        loop {
+            if current_len + result.len() < width {
+                current_len += result.len() + sep.len();
+                current.push(result);
+                break;
+            }
+
+            // we don't have a choice, force an entry even if it's too wide.
+            if current.is_empty() {
+                let mut index = usize::min(result.len(), width - TAIL.len());
+
+                while index > 0 && !result.is_char_boundary(index) {
+                    index -= 1;
+                }
+
+                out.push(format!("{}{}", &result[..index], TAIL));
+                break;
+            }
+
+            out.push(mem::replace(&mut current, vec![]).join(sep));
+            current_len = 0;
+        }
+    }
+
+    if !current.is_empty() {
+        out.push(current.join(sep));
+    }
+
+    out
 }
 
 /// Match all known levels against the specified run.

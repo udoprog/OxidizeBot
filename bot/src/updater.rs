@@ -1,4 +1,6 @@
-use crate::{api, db::Cache, injector::Injector, prelude::*, timer::Interval, utils::Duration};
+use crate::{
+    api, injector::Injector, prelude::*, storage::Cache, timer::Interval, utils::Duration,
+};
 use failure::Error;
 use parking_lot::RwLock;
 use std::{sync::Arc, time::Instant};

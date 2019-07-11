@@ -1,5 +1,5 @@
 use super::schema::{
-    after_streams, aliases, bad_words, balances, cache, commands, promotions, songs, themes,
+    after_streams, aliases, bad_words, balances, commands, promotions, songs, themes,
 };
 use crate::track_id::TrackId;
 use chrono::NaiveDateTime;
@@ -190,20 +190,4 @@ pub struct UpdateTheme<'a> {
     pub end: i32,
     pub group: Option<&'a str>,
     pub disabled: Option<bool>,
-}
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
-#[table_name = "cache"]
-pub struct CacheEntry {
-    pub key: String,
-    /// When the entry expires.
-    pub expires_at: NaiveDateTime,
-    /// Value of the entry.
-    pub value: String,
-}
-
-#[derive(Debug, Clone, Default, diesel::AsChangeset)]
-#[table_name = "cache"]
-pub struct UpdateCacheEntry {
-    pub value: String,
 }

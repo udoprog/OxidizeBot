@@ -31,6 +31,7 @@ pub mod prelude;
 pub mod settings;
 mod song_file;
 mod spotify_id;
+pub mod storage;
 pub mod stream_info;
 pub mod sys;
 pub mod template;

@@ -2,7 +2,6 @@
 mod macros;
 mod after_streams;
 mod aliases;
-mod cache;
 mod commands;
 pub(crate) mod models;
 mod promotions;
@@ -16,7 +15,6 @@ use std::path::Path;
 pub use self::{
     after_streams::{AfterStream, AfterStreams},
     aliases::{Alias, Aliases},
-    cache::Cache,
     commands::{Command, Commands},
     promotions::{Promotion, Promotions},
     themes::{Theme, Themes},
@@ -25,7 +23,7 @@ pub use self::{
 
 use chrono::Utc;
 use diesel::prelude::*;
-use failure::Error;
+use failure::{format_err, Error, ResultExt as _};
 use parking_lot::Mutex;
 use std::sync::Arc;
 use tokio_threadpool::ThreadPool;
@@ -48,8 +46,16 @@ impl Database {
 
         let pool = SqliteConnection::establish(&url)?;
 
-        // Run all migrations.
-        embedded_migrations::run_with_output(&pool, &mut std::io::stdout())?;
+        let mut output = Vec::new();
+
+        // Run all migrations and provide some diagnostics on errors.
+        let result = embedded_migrations::run_with_output(&pool, &mut output);
+        let output = String::from_utf8_lossy(&output);
+        result.with_context(|_| format_err!("error when running migrations: {}", output))?;
+
+        if !output.is_empty() {
+            log::trace!("migrations output:\n{}", output);
+        }
 
         Ok(Database {
             pool: Arc::new(Mutex::new(pool)),

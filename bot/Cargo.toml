@@ -58,6 +58,7 @@ rust-embed = {version = "4.3.0", optional = true}
 mime = "0.3.13"
 mime_guess = "2.0.0-alpha.6"
 uom = "0.23.1"
+rocksdb = "0.12.2"
 
 [dependencies.futures01]
 package = "futures"

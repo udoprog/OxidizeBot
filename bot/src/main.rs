@@ -7,7 +7,7 @@ use failure::{bail, format_err, Error, ResultExt};
 use parking_lot::RwLock;
 use setmod::{
     api, auth, bus, config, db, injector, irc, message_log, module, oauth2, obs, player,
-    prelude::*, settings, stream_info, sys, updater, utils, web,
+    prelude::*, settings, storage, stream_info, sys, updater, utils, web,
 };
 use std::{
     path::{Path, PathBuf},
@@ -253,7 +253,10 @@ async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
 
     futures.push(system_loop(settings.scoped("system"), system.clone()).boxed());
 
-    let cache = db::Cache::load(db.clone())?;
+    let storage = storage::Storage::open(&root.join("storage"))?;
+
+    let cache = storage.cache()?;
+
     futures.push(cache.clone().run().boxed());
     injector.update(cache);
 

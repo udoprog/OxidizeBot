@@ -308,8 +308,8 @@ pub struct Link {
 #[serde(rename_all = "kebab-case")]
 pub struct Asset {
     pub uri: String,
-    pub width: u32,
-    pub height: u32,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
