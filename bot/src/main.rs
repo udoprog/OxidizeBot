@@ -254,11 +254,7 @@ async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
     futures.push(system_loop(settings.scoped("system"), system.clone()).boxed());
 
     let storage = storage::Storage::open(&root.join("storage"))?;
-
-    let cache = storage.cache()?;
-
-    futures.push(cache.clone().run().boxed());
-    injector.update(cache);
+    injector.update(storage.cache()?);
 
     let (latest, future) = updater::run(&injector);
     futures.push(future.boxed());

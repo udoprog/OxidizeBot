@@ -222,15 +222,7 @@ impl Speedrun {
                 ));
             }
 
-            match results.as_slice() {
-                [] => user.respond("*no runs*"),
-                _ => {
-                    for part in partition_response(results, 400, " | ") {
-                        user.respond(part);
-                    }
-                }
-            };
-
+            user.respond_lines(results, "*no runs*");
             Ok::<(), Error>(())
         };
 
@@ -463,15 +455,7 @@ impl Speedrun {
                 results.push(format!("{} -> {}", name, runs));
             }
 
-            match results.as_slice() {
-                [] => user.respond("*no runs*"),
-                _ => {
-                    for part in partition_response(results, 400, " | ") {
-                        user.respond(part);
-                    }
-                }
-            };
-
+            user.respond_lines(results, "*no runs*");
             Ok(())
         };
 
@@ -951,48 +935,6 @@ impl CategoryFilter {
 
         true
     }
-}
-
-/// Partition the results to fit the given width, using a separator defined in `part`.
-fn partition_response(results: Vec<String>, width: usize, sep: &str) -> Vec<String> {
-    use std::mem;
-
-    const TAIL: &'static str = "...";
-
-    let mut current = Vec::new();
-    let mut current_len = 0;
-    let mut out = Vec::new();
-
-    for result in results {
-        loop {
-            if current_len + result.len() < width {
-                current_len += result.len() + sep.len();
-                current.push(result);
-                break;
-            }
-
-            // we don't have a choice, force an entry even if it's too wide.
-            if current.is_empty() {
-                let mut index = usize::min(result.len(), width - TAIL.len());
-
-                while index > 0 && !result.is_char_boundary(index) {
-                    index -= 1;
-                }
-
-                out.push(format!("{}{}", &result[..index], TAIL));
-                break;
-            }
-
-            out.push(mem::replace(&mut current, vec![]).join(sep));
-            current_len = 0;
-        }
-    }
-
-    if !current.is_empty() {
-        out.push(current.join(sep));
-    }
-
-    out
 }
 
 /// Match all known levels against the specified run.

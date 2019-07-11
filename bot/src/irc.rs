@@ -937,6 +937,26 @@ impl User {
             .privmsg(format!("{} -> {}", self.display_name(), m));
     }
 
+    /// Pretty render the results.
+    pub fn respond_lines<F>(&self, results: impl IntoIterator<Item = F>, empty: &str)
+    where
+        F: fmt::Display,
+    {
+        let mut output = partition_response(results, 360, " | ");
+
+        if let Some(line) = output.next() {
+            let count = output.count();
+
+            if count > 0 {
+                self.respond(format!("{} ... {} line(s) not shown", line, count,));
+            } else {
+                self.respond(line);
+            }
+        } else {
+            self.respond(empty);
+        }
+    }
+
     /// Get a list of all roles the current requester belongs to.
     pub fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
         let mut roles = smallvec::SmallVec::new();
@@ -993,6 +1013,92 @@ impl User {
     /// Test if vip.
     fn is_vip(&self) -> bool {
         self.inner.vips.read().contains(self.inner.name.as_str())
+    }
+}
+
+struct PartitionResponse<'a, I> {
+    iter: I,
+    width: usize,
+    sep: &'a str,
+    // composition of current line.
+    line_buf: String,
+    // buffer for current item.
+    item_buf: String,
+}
+
+impl<F, I> Iterator for PartitionResponse<'_, I>
+where
+    I: Iterator<Item = F>,
+    F: fmt::Display,
+{
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use std::fmt::Write as _;
+        const TAIL: &'static str = "...";
+
+        self.line_buf.clear();
+        // length of current line.
+        let mut len = 0;
+
+        while let Some(result) = self.iter.next() {
+            self.item_buf.clear();
+            write!(&mut self.item_buf, "{}", result).expect("a Display implementation returned an error unexpectedly");
+
+            loop {
+                if len + self.item_buf.len() <= self.width {
+                    if len > 0 {
+                        self.line_buf.push_str(self.sep);
+                    }
+
+                    self.line_buf.push_str(&self.item_buf);
+                    len += self.item_buf.len() + self.sep.len();
+                    break;
+                }
+
+                // we don't have a choice, force an entry even if it's too wide.
+                if self.line_buf.is_empty() {
+                    let mut index = usize::min(self.item_buf.len(), self.width - TAIL.len());
+
+                    while index > 0 && !self.item_buf.is_char_boundary(index) {
+                        index -= 1;
+                    }
+
+                    return Some(format!("{}{}", &self.item_buf[..index], TAIL));
+                }
+
+                let output = self.line_buf.clone();
+                self.line_buf.clear();
+                return Some(output);
+            }
+        }
+
+        if !self.line_buf.is_empty() {
+            let output = self.line_buf.clone();
+            self.line_buf.clear();
+            return Some(output);
+        }
+
+        None
+    }
+}
+
+/// Partition the results to fit the given width, using a separator defined in `part`.
+fn partition_response<'a, I, F>(
+    iter: I,
+    width: usize,
+    sep: &'a str,
+) -> PartitionResponse<'a, I::IntoIter>
+where
+    I: IntoIterator<Item = F>,
+    F: fmt::Display,
+{
+    PartitionResponse {
+        iter: iter.into_iter(),
+        width,
+        sep,
+        line_buf: String::new(),
+        item_buf: String::new(),
     }
 }
 
