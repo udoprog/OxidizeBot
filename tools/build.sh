@@ -9,7 +9,7 @@ fi
 
 version=$TRAVIS_TAG
 
-if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
     exit "bad version: $version"
     exit 1
 fi

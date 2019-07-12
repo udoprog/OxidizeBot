@@ -1043,7 +1043,8 @@ where
 
         while let Some(result) = self.iter.next() {
             self.item_buf.clear();
-            write!(&mut self.item_buf, "{}", result).expect("a Display implementation returned an error unexpectedly");
+            write!(&mut self.item_buf, "{}", result)
+                .expect("a Display implementation returned an error unexpectedly");
 
             loop {
                 if len + self.item_buf.len() <= self.width {

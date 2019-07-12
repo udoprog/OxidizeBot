@@ -1,6 +1,6 @@
 [package]
 name = "setmod"
-version = "0.4.3"
+version = "0.4.4-beta.1"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2018"
 license = "MIT/Apache-2.0"
@@ -15,7 +15,7 @@ diesel_migrations = "1.4.0"
 eudex = "0.1.1"
 hashbrown = { version = "0.3.0", features = ["serde"] }
 hyper = "0.12.29"
-warp = {version = "0.1.15", git = "https://github.com/udoprog/warp"}
+warp = "0.1.17"
 irc = {version = "0.13", git = "https://github.com/aatxe/irc", rev = "47d9c4c78b1580bf7a6114ec682bd7d3d3498539"}
 log = "0.4.6"
 oauth2 = {version = "2.0.0-alpha.5", git = "https://github.com/udoprog/oauth2-rs", branch = "async"}

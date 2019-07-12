@@ -1173,7 +1173,7 @@ pub fn setup(
     let routes = routes.recover(recover);
     let service = warp::serve(routes);
 
-    let server_future = service.bind(addr)?.map_err(|_| {
+    let server_future = service.try_bind_ephemeral(addr)?.1.map_err(|_| {
         // TODO: do we know _why_?
         failure::format_err!("web service errored")
     });

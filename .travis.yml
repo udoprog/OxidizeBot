@@ -12,6 +12,7 @@ script:
 deploy:
   provider: releases
   skip_cleanup: true
+  draft: true
   file_glob: true
   file: target/upload/*
   on:
