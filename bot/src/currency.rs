@@ -4,7 +4,6 @@ use crate::{api, db::Database};
 use failure::Error;
 use hashbrown::HashSet;
 use std::sync::Arc;
-use tokio_threadpool::ThreadPool;
 
 mod builtin;
 mod mysql;
@@ -19,7 +18,6 @@ pub struct CurrencyBuilder {
     pub twitch: api::Twitch,
     pub mysql_url: Option<String>,
     pub mysql_schema: mysql::Schema,
-    pub thread_pool: Arc<ThreadPool>,
 }
 
 impl CurrencyBuilder {
@@ -34,7 +32,6 @@ impl CurrencyBuilder {
             twitch,
             mysql_url: None,
             mysql_schema,
-            thread_pool: Arc::new(ThreadPool::new()),
         }
     }
 
@@ -55,10 +52,8 @@ impl CurrencyBuilder {
                 let channel = String::from("");
                 let url = self.mysql_url.clone()?;
                 let schema = self.mysql_schema.clone();
-                let thread_pool = self.thread_pool.clone();
 
-                let backend = match self::mysql::Backend::connect(channel, url, schema, thread_pool)
-                {
+                let backend = match self::mysql::Backend::connect(channel, url, schema) {
                     Ok(backend) => backend,
                     Err(e) => {
                         log_err!(e, "failed to establish connection");
@@ -66,7 +61,7 @@ impl CurrencyBuilder {
                     }
                 };
 
-                Backend::Honkos(backend)
+                Backend::MySql(backend)
             }
             BackendType::Honkos => {
                 let channel = String::from("");
@@ -76,10 +71,8 @@ impl CurrencyBuilder {
                     user_column: String::from("username"),
                     balance_column: String::from("honko_balance"),
                 };
-                let thread_pool = self.thread_pool.clone();
 
-                let backend = match self::mysql::Backend::connect(channel, url, schema, thread_pool)
-                {
+                let backend = match self::mysql::Backend::connect(channel, url, schema) {
                     Ok(backend) => backend,
                     Err(e) => {
                         log_err!(e, "failed to establish connection");
@@ -87,7 +80,7 @@ impl CurrencyBuilder {
                     }
                 };
 
-                Backend::Honkos(backend)
+                Backend::MySql(backend)
             }
         };
 
@@ -121,7 +114,7 @@ impl Default for BackendType {
 
 enum Backend {
     BuiltIn(self::builtin::Backend),
-    Honkos(self::mysql::Backend),
+    MySql(self::mysql::Backend),
 }
 
 impl Backend {
@@ -142,7 +135,7 @@ impl Backend {
                     .balance_transfer(channel, giver, taker, amount, override_balance)
                     .await
             }
-            Honkos(ref backend) => {
+            MySql(ref backend) => {
                 backend
                     .balance_transfer(channel, giver, taker, amount, override_balance)
                     .await
@@ -156,7 +149,7 @@ impl Backend {
 
         match *self {
             BuiltIn(ref backend) => backend.export_balances().await,
-            Honkos(ref backend) => backend.export_balances().await,
+            MySql(ref backend) => backend.export_balances().await,
         }
     }
 
@@ -166,7 +159,7 @@ impl Backend {
 
         match *self {
             BuiltIn(ref backend) => backend.import_balances(balances).await,
-            Honkos(ref backend) => backend.import_balances(balances).await,
+            MySql(ref backend) => backend.import_balances(balances).await,
         }
     }
 
@@ -176,7 +169,7 @@ impl Backend {
 
         match *self {
             BuiltIn(ref backend) => backend.balance_of(channel, user).await,
-            Honkos(ref backend) => backend.balance_of(channel, user).await,
+            MySql(ref backend) => backend.balance_of(channel, user).await,
         }
     }
 
@@ -191,22 +184,26 @@ impl Backend {
 
         match *self {
             BuiltIn(ref backend) => backend.balance_add(channel, user, amount).await,
-            Honkos(ref backend) => backend.balance_add(channel, user, amount).await,
+            MySql(ref backend) => backend.balance_add(channel, user, amount).await,
         }
     }
 
     /// Add balance to users.
-    pub async fn balances_increment(
+    pub async fn balances_increment<I>(
         &self,
         channel: String,
-        users: impl IntoIterator<Item = String> + Send + 'static,
+        users: I,
         amount: i64,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error>
+    where
+        I: IntoIterator<Item = String> + Send + 'static,
+        I::IntoIter: Send + 'static,
+    {
         use self::Backend::*;
 
         match *self {
             BuiltIn(ref backend) => backend.balances_increment(channel, users, amount).await,
-            Honkos(ref backend) => backend.balances_increment(channel, users, amount).await,
+            MySql(ref backend) => backend.balances_increment(channel, users, amount).await,
         }
     }
 }
@@ -289,12 +286,16 @@ impl Currency {
     }
 
     /// Add balance to users.
-    pub async fn balances_increment(
+    pub async fn balances_increment<I>(
         &self,
         channel: String,
-        users: impl IntoIterator<Item = String> + Send + 'static,
+        users: I,
         amount: i64,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error>
+    where
+        I: IntoIterator<Item = String> + Send + 'static,
+        I::IntoIter: Send + 'static,
+    {
         self.inner
             .backend
             .balances_increment(channel, users, amount)
@@ -322,14 +323,14 @@ impl From<diesel::result::Error> for BalanceTransferError {
     }
 }
 
-impl From<diesel::r2d2::Error> for BalanceTransferError {
-    fn from(value: diesel::r2d2::Error) -> Self {
+impl From<std::num::TryFromIntError> for BalanceTransferError {
+    fn from(value: std::num::TryFromIntError) -> Self {
         BalanceTransferError::Other(value.into())
     }
 }
 
-impl From<std::num::TryFromIntError> for BalanceTransferError {
-    fn from(value: std::num::TryFromIntError) -> Self {
+impl From<mysql_async::error::Error> for BalanceTransferError {
+    fn from(value: mysql_async::error::Error) -> Self {
         BalanceTransferError::Other(value.into())
     }
 }

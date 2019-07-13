@@ -10,7 +10,8 @@ description = "SetMod Twitch Bot"
 chrono = { version = "0.4.6", features = ["serde"] }
 chrono-tz = {version = "0.5.1", features = ["serde"]}
 clap = "2.33.0"
-diesel = { version = "1.4.2", features = ["mysql", "sqlite", "r2d2", "chrono"] }
+mysql_async = {git = "https://github.com/blackbeam/mysql_async.git"}
+diesel = { version = "1.4.2", features = ["sqlite", "chrono"] }
 diesel_migrations = "1.4.0"
 eudex = "0.1.1"
 hashbrown = { version = "0.3.0", features = ["serde"] }
@@ -86,9 +87,6 @@ version = "0.1.5"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = {version = "0.3.7", features = ["shellapi", "impl-default"]}
-
-[package.metadata.deb]
-depends = "libssl1.0.0 (>= 1.0.2g), libmysqlclient20 (>= 5.7.26)"
 
 [features]
 default = ["assets"]

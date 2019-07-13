@@ -13,15 +13,11 @@ use crate::{
     prelude::*,
 };
 
-use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager, Pool};
-use diesel::{
-    expression::dsl::sql,
-    sql_types::{Integer, Text},
-};
 use failure::Error;
+use mysql_async as mysql;
 use std::{convert::TryInto as _, sync::Arc};
-use tokio_threadpool::ThreadPool;
+
+use mysql::prelude::*;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Schema {
@@ -46,98 +42,156 @@ struct Queries {
 
 impl Queries {
     /// Select all balances.
-    fn select_balances(&self, c: &MysqlConnection) -> Result<Vec<(String, i32)>, Error> {
-        let sql = sql::<(Text, Integer)>(&format!(
-            "SELECT ({user_column}, {balance_column}) \
-             FROM {table}",
+    async fn select_balances<Tx>(&self, tx: Tx) -> Result<(Tx, Vec<(String, i32)>), Error>
+    where
+        Tx: Queryable,
+    {
+        let query = format!(
+            "SELECT (`{user_column}`, `{balance_column}`) FROM `{table}`",
             table = self.schema.table,
             balance_column = self.schema.balance_column,
             user_column = self.schema.user_column,
-        ));
+        );
 
-        let balances = sql.load::<(String, i32)>(c)?;
-        Ok(balances)
+        log::trace!("select_balances: {}", query);
+
+        let rows = tx.prep_exec(query, ()).compat().await?;
+
+        let (tx, result) = rows
+            .map_and_drop(|row| mysql::from_row::<(String, i32)>(row))
+            .compat()
+            .await?;
+
+        Ok((tx, result))
     }
 
     /// Select the given balance.
-    fn select_balance(&self, c: &MysqlConnection, user: &str) -> Result<Option<i32>, Error> {
-        let sql = sql::<Integer>(&format!(
-            "SELECT {balance_column} \
-             FROM {table} \
-             WHERE {user_column} = ",
+    async fn select_balance<Tx>(&self, tx: Tx, user: &str) -> Result<(Tx, Option<i32>), Error>
+    where
+        Tx: Queryable,
+    {
+        let query = format!(
+            "SELECT `{balance_column}` \
+             FROM `{table}` \
+             WHERE `{user_column}` = :user \
+             LIMIT 1",
             table = self.schema.table,
             balance_column = self.schema.balance_column,
             user_column = self.schema.user_column,
-        ))
-        .bind::<Text, _>(user)
-        .sql(" LIMIT 1");
+        );
 
-        let balance = sql.load::<i32>(c)?.into_iter().next();
-        Ok(balance)
+        let params = params! {
+            "user" => user,
+        };
+
+        log::trace!("select_balance: {} {:?}", query, params);
+        let result = tx.prep_exec(query, params).compat().await?;
+
+        let (tx, results) = result
+            .map_and_drop(|row| mysql::from_row::<(i32,)>(row))
+            .compat()
+            .await?;
+
+        Ok((tx, results.into_iter().map(|(c,)| c).next()))
+    }
+
+    /// Helper to insert or update a single balance.
+    async fn modify_balance<Tx>(&self, tx: Tx, user: &str, amount: i32) -> Result<Tx, Error>
+    where
+        Tx: Queryable,
+    {
+        // TODO: when mysql_async moves to async/await we can probably remove this budged ownership.
+        self.upsert_balances(tx, vec![user.to_string()], amount)
+            .await
+    }
+
+    /// Update or insert a batch of balances.
+    async fn upsert_balances<Tx, I>(&self, tx: Tx, users: I, amount: i32) -> Result<Tx, Error>
+    where
+        Tx: Queryable,
+        I: IntoIterator<Item = String> + Send + 'static,
+        I::IntoIter: Send + 'static,
+    {
+        let query = format! {
+            "INSERT INTO `{table}` (`{user_column}`, `{balance_column}`) \
+            VALUES (:user, :amount) \
+            ON DUPLICATE KEY UPDATE  `{balance_column}` = `{balance_column}` + :amount",
+            table = self.schema.table,
+            user_column = self.schema.user_column,
+            balance_column = self.schema.balance_column,
+        };
+
+        let params = users.into_iter().map(move |user| {
+            params! {
+                "user" => user,
+                "amount" => amount,
+            }
+        });
+
+        log::trace!("upsert_balances: {}", query);
+        Ok(tx.batch_exec(query, params).compat().await?)
     }
 
     /// Insert the given balance.
-    fn insert_balance(&self, c: &MysqlConnection, user: &str, balance: i32) -> Result<(), Error> {
-        let sql = sql::<()>(&format!(
-            "INSERT INTO {table}({user_column}, {balance_column}) \
-             VALUES(",
+    async fn insert_balance<Tx>(&self, tx: Tx, user: &str, balance: i32) -> Result<Tx, Error>
+    where
+        Tx: Queryable,
+    {
+        let query = format!(
+            "INSERT INTO `{table}` (`{user_column}`, `{balance_column}`) \
+             VALUES (:user, :balance)",
             table = self.schema.table,
             user_column = self.schema.user_column,
             balance_column = self.schema.balance_column,
-        ))
-        .bind::<Text, _>(user)
-        .sql(", ")
-        .bind::<Integer, _>(balance)
-        .sql(")");
+        );
 
-        sql.execute(c)?;
-        Ok(())
+        let params = params! {
+            "user" => user,
+            "balance" => balance,
+        };
+
+        log::trace!("insert_balance: {} {:?}", query, params);
+        Ok(tx.drop_exec(query, params).compat().await?)
     }
 
     /// Update the given balance.
-    fn update_balance(&self, c: &MysqlConnection, user: &str, balance: i32) -> Result<(), Error> {
-        let sql = sql::<()>(&format!(
-            "UPDATE {table} SET {balance_column} = ",
+    async fn update_balance<Tx>(&self, tx: Tx, user: &str, balance: i32) -> Result<Tx, Error>
+    where
+        Tx: Queryable,
+    {
+        let query = format!(
+            "UPDATE `{table}` SET `{balance_column}` = :balance WHERE `{user_column}` = :user",
             table = self.schema.table,
             balance_column = self.schema.balance_column,
-        ))
-        .bind::<Integer, _>(balance)
-        .sql(&format!(
-            " WHERE {user_column} = ",
             user_column = self.schema.user_column,
-        ))
-        .bind::<Text, _>(user);
+        );
 
-        sql.execute(c)?;
-        Ok(())
+        let params = params! {
+            "balance" => balance,
+            "user" => user,
+        };
+
+        log::trace!("update_balance: {} {:?}", query, params);
+        Ok(tx.drop_exec(query, params).compat().await?)
     }
 }
 
 pub struct Backend {
     channel: Arc<String>,
-    pool: Pool<ConnectionManager<MysqlConnection>>,
-    thread_pool: Arc<ThreadPool>,
+    pool: mysql::Pool,
     queries: Arc<Queries>,
 }
 
 impl Backend {
     /// Construct a new built-in backend.
-    pub fn connect(
-        channel: String,
-        url: String,
-        schema: Schema,
-        thread_pool: Arc<ThreadPool>,
-    ) -> Result<Self, Error> {
+    pub fn connect(channel: String, url: String, schema: Schema) -> Result<Self, Error> {
         let channel = Arc::new(channel);
-        let manager = ConnectionManager::<MysqlConnection>::new(url);
-        let pool = Pool::builder().build(manager)?;
-
+        let pool = mysql::Pool::new(url);
         let queries = Arc::new(Queries { schema });
 
         Ok(Backend {
             channel,
             pool,
-            thread_pool,
             queries,
         })
     }
@@ -152,105 +206,83 @@ impl Backend {
         override_balance: bool,
     ) -> Result<(), BalanceTransferError> {
         let amount: i32 = amount.try_into()?;
-
         let taker = user_id(&taker);
         let giver = user_id(&giver);
-        let pool = self.pool.clone();
-        let queries = self.queries.clone();
 
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
-            let c = pool
-                .get()
-                .map_err(|e| BalanceTransferError::Other(e.into()))?;
+        let opts = mysql::TransactionOptions::new();
+        let tx = self.pool.start_transaction(opts).compat().await?;
 
-            c.transaction(|| {
-                let balance = queries
-                    .select_balance(&*c, &giver)
-                    .map_err(|e| BalanceTransferError::Other(e.into()))?
-                    .unwrap_or_default();
+        let (tx, balance) = self.queries.select_balance(tx, &giver).await?;
 
-                if balance < amount && !override_balance {
-                    return Err(BalanceTransferError::NoBalance);
-                }
+        let balance = balance.unwrap_or_default();
 
-                modify_balance(&c, &*queries, &taker, amount)?;
-                modify_balance(&c, &*queries, &giver, -amount)?;
-                Ok(())
-            })
-        }));
+        if balance < amount && !override_balance {
+            return Err(BalanceTransferError::NoBalance);
+        }
 
-        future.compat().await
+        let tx = self.queries.modify_balance(tx, &taker, amount).await?;
+        let tx = self.queries.modify_balance(tx, &giver, -amount).await?;
+
+        tx.commit().compat().await?;
+        Ok(())
     }
 
     /// Get balances for all users.
     pub async fn export_balances(&self) -> Result<Vec<Balance>, Error> {
         let channel = self.channel.to_string();
-        let pool = self.pool.clone();
-        let queries = self.queries.clone();
+        let mut output = Vec::new();
 
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
-            let mut balances = Vec::new();
-            let c = pool.get()?;
+        let opts = mysql::TransactionOptions::new();
+        let tx = self.pool.start_transaction(opts).compat().await?;
 
-            for (user, balance) in queries.select_balances(&*c)? {
-                balances.push(Balance {
-                    channel: channel.clone(),
-                    user: user,
-                    amount: balance as i64,
-                });
-            }
+        let (_, balances) = self.queries.select_balances(tx).await?;
 
-            Ok(balances)
-        }));
+        for (user, balance) in balances {
+            output.push(Balance {
+                channel: channel.clone(),
+                user: user,
+                amount: balance as i64,
+            });
+        }
 
-        future.compat().await
+        Ok(output)
     }
 
     /// Import balances for all users.
     pub async fn import_balances(&self, balances: Vec<Balance>) -> Result<(), Error> {
-        let pool = self.pool.clone();
-        let queries = self.queries.clone();
+        let opts = mysql::TransactionOptions::new();
+        let mut tx = self.pool.start_transaction(opts).compat().await?;
 
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
-            let c = pool.get()?;
+        for balance in balances {
+            let amount: i32 = balance.amount.try_into()?;
+            let user = user_id(&balance.user);
 
-            for balance in balances {
-                let user = user_id(&balance.user);
+            let (new_tx, results) = self.queries.select_balance(tx, &user).await?;
 
-                match queries.select_balance(&*c, &user)? {
-                    None => queries.insert_balance(&*c, &user, 0)?,
-                    Some(_) => {
-                        let amount: i32 = balance.amount.try_into()?;
-                        queries.update_balance(&*c, &user, amount)?;
-                    }
-                }
+            tx = match results {
+                None => self.queries.insert_balance(new_tx, &user, 0).await?,
+                Some(_) => self.queries.update_balance(new_tx, &user, amount).await?,
             }
+        }
 
-            Ok(())
-        }));
-
-        future.compat().await
+        tx.commit().compat().await?;
+        Ok(())
     }
 
     /// Find user balance.
     pub async fn balance_of(&self, _channel: &str, user: &str) -> Result<Option<i64>, Error> {
         let user = user_id(&user);
-        let pool = self.pool.clone();
-        let queries = self.queries.clone();
+        let opts = mysql::TransactionOptions::new();
+        let tx = self.pool.start_transaction(opts).compat().await?;
 
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
-            let c = pool.get()?;
-            let balance = queries.select_balance(&*c, &user)?;
+        let (_, balance) = self.queries.select_balance(tx, &user).await?;
 
-            let balance = match balance {
-                Some(b) => Some(b.try_into()?),
-                None => None,
-            };
+        let balance = match balance {
+            Some(b) => Some(b.try_into()?),
+            None => None,
+        };
 
-            Ok(balance)
-        }));
-
-        future.compat().await
+        Ok(balance)
     }
 
     /// Add (or subtract) from the balance for a single user.
@@ -262,65 +294,35 @@ impl Backend {
     ) -> Result<(), Error> {
         let user = user_id(&user);
         let amount = amount.try_into()?;
-        let pool = self.pool.clone();
-        let queries = self.queries.clone();
 
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
-            let c = pool.get()?;
-            modify_balance(&*c, &*queries, &user, amount)
-        }));
+        let opts = mysql::TransactionOptions::new();
+        let tx = self.pool.start_transaction(opts).compat().await?;
 
-        future.compat().await
+        let tx = self.queries.modify_balance(tx, &user, amount).await?;
+
+        tx.commit().compat().await?;
+        Ok(())
     }
 
     /// Add balance to users.
-    pub async fn balances_increment(
+    pub async fn balances_increment<I>(
         &self,
         _channel: String,
-        users: impl IntoIterator<Item = String> + Send + 'static,
+        users: I,
         amount: i64,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error>
+    where
+        I: IntoIterator<Item = String> + Send + 'static,
+        I::IntoIter: Send + 'static,
+    {
         let amount = amount.try_into()?;
+        let opts = mysql::TransactionOptions::new();
+        let tx = self.pool.start_transaction(opts).compat().await?;
 
-        let pool = self.pool.clone();
-        let queries = self.queries.clone();
+        let users = users.into_iter().map(|u| user_id(&u));
+        let tx = self.queries.upsert_balances(tx, users, amount).await?;
 
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
-            let c = pool.get()?;
-
-            for user in users {
-                let user = user_id(&user);
-
-                match queries.select_balance(&*c, &user)? {
-                    None => queries.insert_balance(&*c, &user, 0)?,
-                    Some(balance) => {
-                        let balance = balance.saturating_add(amount);
-                        queries.update_balance(&*c, &user, balance)?;
-                    }
-                }
-            }
-
-            Ok(())
-        }));
-
-        future.compat().await
+        tx.commit().compat().await?;
+        Ok(())
     }
-}
-
-/// Common function to modify the balance for the given user.
-fn modify_balance(
-    c: &MysqlConnection,
-    queries: &Queries,
-    user: &str,
-    amount: i32,
-) -> Result<(), Error> {
-    match queries.select_balance(c, user)? {
-        None => queries.insert_balance(c, user, amount)?,
-        Some(balance) => {
-            let amount = balance.saturating_add(amount);
-            queries.update_balance(c, user, amount)?;
-        }
-    }
-
-    Ok(())
 }
