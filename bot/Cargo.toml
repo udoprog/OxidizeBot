@@ -16,7 +16,7 @@ eudex = "0.1.1"
 hashbrown = { version = "0.3.0", features = ["serde"] }
 hyper = "0.12.29"
 warp = "0.1.17"
-irc = {version = "0.13", git = "https://github.com/aatxe/irc", rev = "47d9c4c78b1580bf7a6114ec682bd7d3d3498539"}
+irc = {version = "0.13", git = "https://github.com/aatxe/irc", branch = "0.14"}
 log = "0.4.6"
 oauth2 = {version = "2.0.0-alpha.5", git = "https://github.com/udoprog/oauth2-rs", branch = "async"}
 ratelimit = "0.4.4"

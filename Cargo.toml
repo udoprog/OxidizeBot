@@ -5,9 +5,6 @@ members = [
     "web",
 ]
 
-[patch.crates-io]
-backtrace = {git = "https://github.com/rust-lang/backtrace-rs"}
-
 [profile.release]
 opt-level = 'z'
 lto = true
