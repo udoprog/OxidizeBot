@@ -16,6 +16,7 @@ pub const CLIPS_URL: &'static str = "http://clips.twitch.tv";
 const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";
 const API_TWITCH_URL: &'static str = "https://api.twitch.tv";
 const ID_TWITCH_URL: &'static str = "https://id.twitch.tv";
+const BADGES_TWITCH_URL: &'static str = "https://badges.twitch.tv";
 
 /// API integration.
 #[derive(Clone, Debug)]
@@ -23,6 +24,7 @@ pub struct Twitch {
     client: Client,
     api_url: Url,
     id_url: Url,
+    badges_url: Url,
     pub token: oauth2::SyncToken,
 }
 
@@ -33,6 +35,7 @@ impl Twitch {
             client: Client::new(),
             api_url: str::parse::<Url>(API_TWITCH_URL)?,
             id_url: str::parse::<Url>(ID_TWITCH_URL)?,
+            badges_url: str::parse::<Url>(BADGES_TWITCH_URL)?,
             token,
         })
     }
@@ -63,9 +66,23 @@ impl Twitch {
         }
 
         RequestBuilder::new(self.client.clone(), method, url)
+            .header(header::ACCEPT, "application/vnd.twitchtv.v5+json")
             .token(self.token.clone())
             .client_id_header("Client-ID")
             .use_oauth2_header()
+    }
+
+    /// Get request against Badges API.
+    fn badges_v1(&self, method: Method, path: &[&str]) -> RequestBuilder {
+        let mut url = self.badges_url.clone();
+
+        {
+            let mut url_path = url.path_segments_mut().expect("bad base");
+            url_path.push("v1");
+            url_path.extend(path);
+        }
+
+        RequestBuilder::new(self.client.clone(), method, url)
     }
 
     /// Update the channel information.
@@ -85,12 +102,12 @@ impl Twitch {
     }
 
     /// Get information on a user.
-    pub async fn user_by_login(&self, login: &str) -> Result<Option<User>, Error> {
+    pub async fn user_by_login(&self, login: &str) -> Result<Option<NewUser>, Error> {
         let req = self
             .new_api(Method::GET, &["users"])
             .query_param("login", login);
 
-        let res = req.execute().await?.json::<Data<User>>()?;
+        let res = req.execute().await?.json::<Data<NewUser>>()?;
 
         Ok(res.data.into_iter().next())
     }
@@ -131,6 +148,12 @@ impl Twitch {
     }
 
     /// Get the channela associated with the current authentication.
+    pub async fn user(&self) -> Result<User, Error> {
+        let req = self.v5(Method::GET, &["user"]);
+        req.execute().await?.json()
+    }
+
+    /// Get the channela associated with the current authentication.
     pub async fn channel(&self) -> Result<Channel, Error> {
         let req = self.v5(Method::GET, &["channel"]);
 
@@ -138,9 +161,8 @@ impl Twitch {
     }
 
     /// Get the channela associated with the current authentication.
-    pub async fn channel_by_login(&self, login: &str) -> Result<Channel, Error> {
-        let req = self.v5(Method::GET, &["channels", login]);
-
+    pub async fn channel_by_id(&self, channel_id: &str) -> Result<Channel, Error> {
+        let req = self.v5(Method::GET, &["channels", channel_id]);
         req.execute().await?.json::<Channel>()
     }
 
@@ -164,8 +186,7 @@ impl Twitch {
     }
 
     /// Get chatters for the given channel using TMI.
-    pub async fn chatters(&self, channel: String) -> Result<Chatters, Error> {
-        let channel = channel.trim_start_matches('#');
+    pub async fn chatters(&self, channel: &str) -> Result<Chatters, Error> {
         let url = format!("{}/group/user/{}/chatters", TMI_TWITCH_URL, channel);
 
         let mut res = self.client.get(&url).send().compat().await?;
@@ -200,14 +221,44 @@ impl Twitch {
             .await?
             .json_option(unauthorized)
             .context("validate token error")?);
+    }
 
-        /// Handle not found as a missing body.
-        fn unauthorized(status: &StatusCode) -> bool {
-            match *status {
-                StatusCode::UNAUTHORIZED => true,
-                _ => false,
-            }
-        }
+    /// Get badge URLs for the specified channel.
+    pub async fn badges_display(&self, channel_id: &str) -> Result<Option<BadgesDisplay>, Error> {
+        let req = self.badges_v1(Method::GET, &["badges", "channels", &channel_id, "display"]);
+
+        Ok(req
+            .execute()
+            .await?
+            .json_option(not_found)
+            .context("request badges")?)
+    }
+
+    /// Get all badge URLs for the given chat.
+    pub async fn chat_badges(&self, channel_id: &str) -> Result<Option<ChatBadges>, Error> {
+        let req = self.v5(Method::GET, &["chat", &channel_id, "badges"]);
+
+        Ok(req
+            .execute()
+            .await?
+            .json_option(not_found)
+            .context("request chat badges")?)
+    }
+}
+
+/// Handle unahtorized as a missing body.
+fn unauthorized(status: &StatusCode) -> bool {
+    match *status {
+        StatusCode::UNAUTHORIZED => true,
+        _ => false,
+    }
+}
+
+/// Handle not found as a missing body.
+fn not_found(status: &StatusCode) -> bool {
+    match *status {
+        StatusCode::NOT_FOUND => true,
+        _ => false,
     }
 }
 
@@ -278,7 +329,7 @@ pub struct UpdateChannel {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct User {
+pub struct NewUser {
     pub id: String,
     pub login: String,
     pub display_name: String,
@@ -291,6 +342,25 @@ pub struct User {
     pub view_count: u64,
     #[serde(default)]
     pub email: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct User {
+    #[serde(rename = "_id")]
+    pub id: String,
+    pub name: String,
+    pub display_name: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub bio: Option<String>,
+    pub email: String,
+    pub email_verified: bool,
+    pub logo: Option<String>,
+    pub notifications: HashMap<String, bool>,
+    pub partnered: bool,
+    pub twitter_connected: bool,
+    #[serde(rename = "type")]
+    pub ty: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -335,7 +405,7 @@ pub struct Channel {
     pub game: Option<String>,
     pub language: Option<String>,
     #[serde(rename = "_id")]
-    pub id: u64,
+    pub id: String,
     pub name: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -403,4 +473,39 @@ pub struct Emote {
 #[derive(Debug, serde::Deserialize)]
 pub struct EmoticonSets {
     pub emoticon_sets: HashMap<String, Vec<Emote>>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct Badge {
+    pub image_url_1x: String,
+    pub image_url_2x: String,
+    pub image_url_4x: String,
+    pub description: String,
+    pub title: String,
+    pub click_action: String,
+    pub click_url: String,
+    pub last_updated: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct BadgeSet {
+    pub versions: HashMap<String, Badge>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct BadgesDisplay {
+    pub badge_sets: HashMap<String, BadgeSet>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct BadgeTypes {
+    pub alpha: Option<String>,
+    pub image: Option<String>,
+    pub svg: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct ChatBadges {
+    #[serde(flatten)]
+    pub badges: HashMap<String, BadgeTypes>,
 }

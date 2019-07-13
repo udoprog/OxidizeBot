@@ -121,9 +121,9 @@ impl Backend {
     /// Add (or subtract) from the balance for a single user.
     pub async fn balance_transfer(
         &self,
-        channel: String,
-        giver: String,
-        taker: String,
+        channel: &str,
+        giver: &str,
+        taker: &str,
         amount: i64,
         override_balance: bool,
     ) -> Result<(), BalanceTransferError> {
@@ -174,12 +174,7 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(
-        &self,
-        channel: String,
-        user: String,
-        amount: i64,
-    ) -> Result<(), Error> {
+    pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<(), Error> {
         use self::Backend::*;
 
         match *self {
@@ -191,7 +186,7 @@ impl Backend {
     /// Add balance to users.
     pub async fn balances_increment<I>(
         &self,
-        channel: String,
+        channel: &str,
         users: I,
         amount: i64,
     ) -> Result<(), Error>
@@ -225,10 +220,10 @@ impl Currency {
     /// Reward all users.
     pub async fn add_channel_all(
         &self,
-        channel: String,
+        channel: &str,
         reward: i64,
     ) -> Result<usize, failure::Error> {
-        let chatters = self.inner.twitch.chatters(channel.clone()).await?;
+        let chatters = self.inner.twitch.chatters(channel).await?;
 
         let mut users = HashSet::new();
         users.extend(chatters.viewers);
@@ -248,9 +243,9 @@ impl Currency {
     /// Add (or subtract) from the balance for a single user.
     pub async fn balance_transfer(
         &self,
-        channel: String,
-        giver: String,
-        taker: String,
+        channel: &str,
+        giver: &str,
+        taker: &str,
         amount: i64,
         override_balance: bool,
     ) -> Result<(), BalanceTransferError> {
@@ -276,19 +271,14 @@ impl Currency {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(
-        &self,
-        channel: String,
-        user: String,
-        amount: i64,
-    ) -> Result<(), Error> {
+    pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<(), Error> {
         self.inner.backend.balance_add(channel, user, amount).await
     }
 
     /// Add balance to users.
     pub async fn balances_increment<I>(
         &self,
-        channel: String,
+        channel: &str,
         users: I,
         amount: i64,
     ) -> Result<(), Error>

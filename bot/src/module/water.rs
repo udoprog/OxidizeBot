@@ -1,4 +1,4 @@
-use crate::{auth, command, currency::Currency, db, module, prelude::*, stream_info, utils};
+use crate::{auth, command, currency::Currency, module, prelude::*, stream_info, utils};
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -98,10 +98,10 @@ impl command::Handler for Handler {
                         user = reward.user
                     ));
 
-                    let target = ctx.user.target().to_string();
+                    let user = ctx.user.clone();
 
                     ctx.spawn(async move {
-                        let op = currency.balance_add(target, reward.user, -reward.amount);
+                        let op = currency.balance_add(user.target(), &reward.user, -reward.amount);
 
                         match op.await {
                             Ok(()) => (),
@@ -121,27 +121,26 @@ impl command::Handler for Handler {
                     let diff = now.clone() - last;
                     let amount = i64::max(0i64, diff.num_minutes());
                     let amount = (amount * *self.reward_multiplier.read() as i64) / 100i64;
-                    let user = db::user_id(ctx.user.name());
 
                     self.waters.push((
                         now,
                         Some(Reward {
-                            user: user.clone(),
+                            user: ctx.user.name().to_string(),
                             amount,
                         }),
                     ));
 
                     ctx.respond(format!(
-                    "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.", streamer = ctx.user.streamer(),
-                    user = ctx.user.display_name(),
-                    amount = amount,
-                    currency = currency.name
-                ));
+                        "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.", streamer = ctx.user.streamer().display_name,
+                        user = ctx.user.display_name(),
+                        amount = amount,
+                        currency = currency.name
+                    ));
 
-                    let target = ctx.user.target().to_string();
+                    let user = ctx.user.clone();
 
                     ctx.spawn(async move {
-                        let op = currency.balance_add(target, user, amount);
+                        let op = currency.balance_add(user.target(), user.name(), amount);
 
                         match op.await {
                             Ok(()) => (),

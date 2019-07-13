@@ -373,6 +373,7 @@ async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
     let (streamer_token, future) = {
         let flow = oauth2::twitch(web.clone(), token_settings.scoped("twitch-streamer"))?
             .with_scopes(vec![
+                String::from("user_read"),
                 String::from("channel_editor"),
                 String::from("channel_read"),
                 String::from("channel:read:subscriptions"),
@@ -387,6 +388,8 @@ async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
     let (bot_token, future) = {
         let flow = oauth2::twitch(web.clone(), token_settings.scoped("twitch-bot"))?
             .with_scopes(vec![
+                // Read user information on bot.
+                String::from("user_read"),
                 // Perform moderator actions in channel.
                 String::from("channel:moderate"),
                 // Edit chat.

@@ -1,5 +1,5 @@
 use crate::{
-    api,
+    api::{self, twitch},
     auth::{Auth, Role, Scope},
     bus, command,
     currency::{Currency, CurrencyBuilder},
@@ -93,42 +93,50 @@ impl Irc {
             )
             .await?;
 
-            let (bot_info, streamer_info) = future::try_join(
-                bot_twitch.validate_token(),
-                streamer_twitch.validate_token(),
-            )
-            .await?;
+            let (bot, streamer) = {
+                let (bot, streamer) = future::try_join(
+                    bot_twitch.validate_token(),
+                    streamer_twitch.validate_token(),
+                )
+                .await?;
 
-            // Force refresh if tokens cannot be validated.
-            let (streamer_info, bot_info) = match (streamer_info, bot_info) {
-                (Some(streamer_info), Some(bot_info)) => (streamer_info, bot_info),
-                (streamer_info, bot_info) => {
-                    if streamer_info.is_none() {
-                        streamer_twitch.token.force_refresh()?;
-                    }
+                let mut any = false;
 
-                    if bot_info.is_none() {
-                        bot_twitch.token.force_refresh()?;
-                    }
+                if streamer.is_none() {
+                    any = true;
+                    log::warn!("Failed to validate streamer token");
+                    streamer_twitch.token.force_refresh()?;
+                }
 
+                if bot.is_none() {
+                    any = true;
+                    log::warn!("Failed to validate bot token");
+                    bot_twitch.token.force_refresh()?;
+                }
+
+                if any {
                     continue;
                 }
+
+                let (bot, streamer) =
+                    future::try_join(bot_twitch.user(), streamer_twitch.user()).await?;
+                (Arc::new(bot), Arc::new(streamer))
             };
 
-            let bot = bot_info.login.to_lowercase();
-            let bot = bot.as_str();
+            let channel = Arc::new(streamer_twitch.channel().await?);
 
-            let streamer = Arc::new(streamer_info.login.to_lowercase());
+            log::trace!("Channel: {:?}", channel);
+            log::trace!("Streamer: {:?}", streamer);
+            log::trace!("Bot: {:?}", bot);
 
-            let channel = Arc::new(format!("#{}", streamer));
-
-            *global_channel.write() = Some(channel.to_string());
+            let chat_channel = format!("#{}", channel.name);
+            *global_channel.write() = Some(chat_channel.clone());
 
             let access_token = bot_twitch.token.read()?.access_token().to_string();
 
             let irc_client_config = client::data::config::Config {
-                nickname: Some(bot.to_string()),
-                channels: Some(vec![(*channel).clone()]),
+                nickname: Some(bot.name.to_string()),
+                channels: Some(vec![chat_channel.clone()]),
                 password: Some(format!("oauth:{}", access_token)),
                 server: Some(String::from(SERVER)),
                 port: Some(6697),
@@ -148,7 +156,12 @@ impl Irc {
             let threshold = vars.var("idle-detection/threshold", 5)?;
             let idle = idle::Idle::new(threshold);
 
-            let sender = Sender::new(sender_ty, channel.clone(), client.clone(), nightbot.clone());
+            let sender = Sender::new(
+                sender_ty,
+                chat_channel.clone(),
+                client.clone(),
+                nightbot.clone(),
+            );
 
             let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
             futures.push(vars.run().boxed());
@@ -238,6 +251,7 @@ impl Irc {
             let startup_message = settings.get::<String>("irc/startup-message")?;
 
             let mut chat_log_builder = chat_log::Builder::new(
+                &injector,
                 message_log.clone(),
                 bot_twitch.clone(),
                 settings.scoped("chat-log"),
@@ -272,6 +286,7 @@ impl Irc {
                 bad_words_enabled,
                 message_hooks: Default::default(),
                 chat_log: chat_log_builder.build()?,
+                channel,
             };
 
             let mut client_stream = client.stream().compat().fuse();
@@ -288,6 +303,10 @@ impl Irc {
 
                 loop {
                     futures::select! {
+                        cache = chat_log_builder.cache_stream.select_next_some() => {
+                            chat_log_builder.cache = cache;
+                            handler.chat_log = chat_log_builder.build()?;
+                        }
                         update = chat_log_builder.enabled_stream.select_next_some() => {
                             chat_log_builder.enabled(update);
                             handler.chat_log = chat_log_builder.build()?;
@@ -347,7 +366,7 @@ fn currency_loop<'a>(
     futures: &mut utils::Futures,
     db: db::Database,
     twitch: api::Twitch,
-    channel: Arc<String>,
+    channel: Arc<twitch::Channel>,
     sender: Sender,
     idle: idle::Idle,
     injector: &'a Injector,
@@ -454,7 +473,7 @@ fn currency_loop<'a>(
 
                     let reward = (reward * *reward_percentage.read() as i64) / 100i64;
                     let count = currency
-                        .add_channel_all(channel.to_string(), reward)
+                        .add_channel_all(&channel.name, reward)
                         .await?;
 
                     if notify_rewards && count > 0 && !idle.is_idle() {
@@ -472,7 +491,7 @@ fn currency_loop<'a>(
 /// Handler for incoming messages.
 struct Handler<'a> {
     /// Current Streamer.
-    streamer: Arc<String>,
+    streamer: Arc<twitch::User>,
     /// Queue for sending messages.
     sender: Sender,
     /// Moderators.
@@ -521,6 +540,8 @@ struct Handler<'a> {
     message_hooks: HashMap<String, Box<dyn command::MessageHook>>,
     /// Handler for chat logs.
     chat_log: Option<chat_log::ChatLog>,
+    /// Information on the current channel.
+    channel: Arc<twitch::Channel>,
 }
 
 /// Handle a command.
@@ -686,12 +707,12 @@ impl<'a> Handler<'a> {
 
                 if let Some(chat_log) = self.chat_log.as_ref().cloned() {
                     let tags = tags.clone();
-                    let target = target.clone();
+                    let channel = self.channel.clone();
                     let name = name.clone();
                     let message = message.clone();
 
                     let future = async move {
-                        chat_log.observe(&tags, &target, &name, &message).await;
+                        chat_log.observe(&tags, &*channel, &name, &message).await;
                     };
 
                     self.thread_pool
@@ -882,7 +903,7 @@ struct UserInner {
     sender: Sender,
     name: String,
     target: String,
-    streamer: Arc<String>,
+    streamer: Arc<twitch::User>,
     moderators: Arc<RwLock<HashSet<String>>>,
     vips: Arc<RwLock<HashSet<String>>>,
     stream_info: stream_info::StreamInfo,
@@ -895,11 +916,6 @@ pub struct User {
 }
 
 impl User {
-    /// Get tags associated with the message.
-    pub fn tags(&self) -> &Tags {
-        &self.inner.tags
-    }
-
     /// Get the name of the user.
     pub fn name(&self) -> &str {
         self.inner.name.as_str()
@@ -915,14 +931,24 @@ impl User {
             .unwrap_or_else(|| self.inner.name.as_str())
     }
 
+    /// Get tags associated with the message.
+    pub fn tags(&self) -> &Tags {
+        &self.inner.tags
+    }
+
+    /// Access the sender associated with the user.
+    pub fn sender(&self) -> &Sender {
+        &self.inner.sender
+    }
+
     /// Get the target of the user.
     pub fn target(&self) -> &str {
         self.inner.target.as_str()
     }
 
     /// Get the name of the streamer.
-    pub fn streamer(&self) -> &str {
-        self.inner.streamer.as_str()
+    pub fn streamer(&self) -> &twitch::User {
+        &*self.inner.streamer
     }
 
     /// Test if the current user is the given user.
@@ -990,7 +1016,7 @@ impl User {
 
     /// Test if streamer.
     fn is_streamer(&self) -> bool {
-        self.inner.name == *self.inner.streamer
+        self.inner.name == self.inner.streamer.name
     }
 
     /// Test if moderator.
@@ -1118,6 +1144,8 @@ pub struct Tags {
     pub color: Option<String>,
     /// Emotes part of the message.
     pub emotes: Option<String>,
+    /// Badges part of the message.
+    pub badges: Option<String>,
 }
 
 impl Tags {
@@ -1129,6 +1157,7 @@ impl Tags {
         let mut user_id = None;
         let mut color = None;
         let mut emotes = None;
+        let mut badges = None;
 
         if let Some(tags) = tags {
             for t in tags {
@@ -1140,6 +1169,7 @@ impl Tags {
                         "user-id" => user_id = Some(value),
                         "color" => color = Some(value),
                         "emotes" => emotes = Some(value),
+                        "badges" => badges = Some(value),
                         _ => (),
                     },
                     _ => (),
@@ -1154,6 +1184,7 @@ impl Tags {
             user_id,
             color,
             emotes,
+            badges,
         }
     }
 }

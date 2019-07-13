@@ -22,14 +22,17 @@ impl Backend {
     /// Add (or subtract) from the balance for a single user.
     pub async fn balance_transfer(
         &self,
-        channel: String,
-        giver: String,
-        taker: String,
+        channel: &str,
+        giver: &str,
+        taker: &str,
         amount: i64,
         override_balance: bool,
     ) -> Result<(), BalanceTransferError> {
         use self::schema::balances::dsl;
 
+        let channel = channel_id(channel);
+        let giver = giver.to_string();
+        let taker = taker.to_string();
         let taker = user_id(&taker);
         let giver = user_id(&giver);
         let pool = self.db.pool.clone();
@@ -87,10 +90,11 @@ impl Backend {
 
             for balance in balances {
                 let balance = balance.checked();
+                let channel = channel_id(&balance.channel);
 
                 let filter = dsl::balances.filter(
                     dsl::channel
-                        .eq(balance.channel.as_str())
+                        .eq(channel.as_str())
                         .and(dsl::user.eq(&balance.user)),
                 );
 
@@ -120,7 +124,7 @@ impl Backend {
     pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i64>, Error> {
         use self::schema::balances::dsl;
 
-        let channel = channel.to_string();
+        let channel = channel_id(channel);
         let user = user_id(&user);
         let pool = self.db.pool.clone();
 
@@ -140,13 +144,9 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(
-        &self,
-        channel: String,
-        user: String,
-        amount: i64,
-    ) -> Result<(), Error> {
-        let user = user_id(&user);
+    pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<(), Error> {
+        let channel = channel_id(channel);
+        let user = user_id(user);
         let pool = self.db.pool.clone();
 
         let future = self.db.thread_pool.spawn_handle(future01::lazy(move || {
@@ -160,12 +160,14 @@ impl Backend {
     /// Add balance to users.
     pub async fn balances_increment(
         &self,
-        channel: String,
+        channel: &str,
         users: impl IntoIterator<Item = String> + Send + 'static,
         amount: i64,
     ) -> Result<(), Error> {
         use self::schema::balances::dsl;
 
+        // NB: for legacy reasons, channel is stored with a hash.
+        let channel = format!("#{}", channel);
         let pool = self.db.pool.clone();
 
         let future = self.db.thread_pool.spawn_handle(future01::lazy(move || {
@@ -241,4 +243,9 @@ fn modify_balance(
     }
 
     Ok(())
+}
+
+/// Normalize channel.
+fn channel_id(channel: &str) -> String {
+    format!("#{}", channel.trim_start_matches('#'))
 }

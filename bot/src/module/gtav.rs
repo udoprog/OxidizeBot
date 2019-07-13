@@ -988,11 +988,7 @@ impl command::Handler for Handler {
                 }
 
                 currency
-                    .balance_add(
-                        user.target().to_string(),
-                        user.name().to_string(),
-                        -(cost as i64),
-                    )
+                    .balance_add(user.target(), user.name(), -(cost as i64))
                     .await?;
 
                 if *success_feedback.read() {

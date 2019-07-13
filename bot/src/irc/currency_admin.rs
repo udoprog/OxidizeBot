@@ -111,16 +111,15 @@ impl command::Handler for Handler<'_> {
                         return Ok(());
                     }
 
-                    let target = ctx.user.target().to_string();
-                    let giver = ctx.user.clone();
+                    let user = ctx.user.clone();
                     let is_streamer = ctx.user.is_streamer();
 
                     ctx.spawn(async move {
                         let result = currency
                             .balance_transfer(
-                                target,
-                                giver.name().to_string(),
-                                taker.clone(),
+                                user.target(),
+                                user.name(),
+                                &taker,
                                 amount,
                                 is_streamer,
                             )
@@ -128,7 +127,7 @@ impl command::Handler for Handler<'_> {
 
                         match result {
                             Ok(()) => {
-                                giver.respond(format!(
+                                user.respond(format!(
                                     "Gave {user} {amount} {currency}!",
                                     user = taker,
                                     amount = amount,
@@ -136,14 +135,14 @@ impl command::Handler for Handler<'_> {
                                 ));
                             }
                             Err(BalanceTransferError::NoBalance) => {
-                                giver.respond(format!(
+                                user.respond(format!(
                                     "Not enough {currency} to transfer {amount}",
                                     currency = currency.name,
                                     amount = amount,
                                 ));
                             }
                             Err(BalanceTransferError::Other(e)) => {
-                                giver.respond(format!(
+                                user.respond(format!(
                                     "Failed to give {currency}, sorry :(",
                                     currency = currency.name
                                 ));
@@ -168,7 +167,7 @@ impl command::Handler for Handler<'_> {
 
                     ctx.spawn(async move {
                         let result = currency
-                            .balance_add(user.target().to_string(), boosted_user.clone(), amount)
+                            .balance_add(user.target(), &boosted_user, amount)
                             .await;
 
                         match result {
@@ -204,9 +203,7 @@ impl command::Handler for Handler<'_> {
                     let sender = ctx.sender.clone();
 
                     ctx.spawn(async move {
-                        let result = currency
-                            .add_channel_all(user.target().to_string(), amount)
-                            .await;
+                        let result = currency.add_channel_all(user.target(), amount).await;
 
                         match result {
                             Ok(_) => {

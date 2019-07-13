@@ -372,13 +372,22 @@ body.chat-body {
 
 #chat {
   .edit-button {
+    display: table;
     position: absolute;
-    right: 0.2em;
-    top: 0.1em;
+    right: 0;
+    top: 0;
+    padding: 2px 0.4em;
+    height: 36px;
 
-    a:hover {
-      color: #ccc;
-      cursor: pointer;
+    a {
+      vertical-align: middle;
+      display: table-cell;
+      opacity: 0.5;
+
+      &:hover {
+        cursor: pointer;
+        opacity: 1.0;
+      }
     }
   }
 
@@ -420,11 +429,16 @@ body.chat-body {
     }
 
     &-no-messages {
-      padding: 0.1em 0.2em;
+      height: 36px;
+      line-height: 32px;
+      padding: 0 2px;
+      font-size: 0.8em;
       background-color: #333;
+      text-align: center;
     }
 
     &-message {
+      padding: 2px 0.4em;
       overflow: hidden;
 
       &:nth-child(even) {
@@ -442,14 +456,43 @@ body.chat-body {
       margin-right: 0.4em;
     }
 
+    &-badges {
+      display: inline-block;
+      height: 18px;
+      vertical-align: middle;
+    }
+
+    &-badge {
+      display: inline-block;
+      margin-right: 0.2em;
+      width: 18px;
+      height: 18px;
+      vertical-align: top;
+
+      &.rounded {
+        border-radius: 20%;
+      }
+
+      & > img {
+        vertical-align: top;
+        width: 18px;
+        height: 18px;
+      }
+
+      &:last-child {
+        margin-right: 0.4em;
+      }
+    }
+
     &-name {
-      line-height: 32px;
+      display: inline-block;
       vertical-align: middle;
       margin-right: 0.4em;
       font-weight: bold;
     }
 
     &-text {
+      height: 32px;
       word-wrap: break-word;
 
       span {
@@ -457,10 +500,11 @@ body.chat-body {
           line-height: 32px;
           vertical-align: middle;
         }
+      }
 
-        img {
-          vertical-align: middle;
-        }
+      img {
+        height: 28px;
+        vertical-align: middle;
       }
     }
   }

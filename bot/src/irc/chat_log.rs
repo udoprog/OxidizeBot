@@ -1,9 +1,15 @@
-use crate::{api, emotes, irc, message_log, settings};
+use crate::{
+    api::{twitch::Channel, Twitch},
+    emotes, injector, irc, message_log, settings,
+    storage::Cache,
+};
 use failure::Error;
 
 pub struct Builder {
     message_log: message_log::MessageLog,
-    twitch: api::Twitch,
+    twitch: Twitch,
+    pub cache_stream: injector::Stream<Cache>,
+    pub cache: Option<Cache>,
     pub enabled_stream: settings::Stream<bool>,
     enabled: bool,
     pub emotes_enabled_stream: settings::Stream<bool>,
@@ -12,10 +18,13 @@ pub struct Builder {
 
 impl Builder {
     pub fn new(
+        injector: &injector::Injector,
         message_log: message_log::MessageLog,
-        twitch: api::Twitch,
+        twitch: Twitch,
         settings: settings::Settings,
     ) -> Result<Self, Error> {
+        let (cache_stream, cache) = injector.stream::<Cache>();
+
         let (enabled_stream, enabled) = settings.stream("enabled").or_default()?;
 
         let (emotes_enabled_stream, emotes_enabled) =
@@ -26,6 +35,8 @@ impl Builder {
         Ok(Self {
             message_log,
             twitch,
+            cache_stream,
+            cache,
             enabled_stream,
             enabled,
             emotes_enabled_stream,
@@ -45,9 +56,9 @@ impl Builder {
             return Ok(None);
         }
 
-        let emotes = match self.emotes_enabled {
-            true => Some(emotes::Emotes::new(self.twitch.clone())?),
-            false => None,
+        let emotes = match (self.emotes_enabled, self.cache.as_ref()) {
+            (true, Some(cache)) => Some(emotes::Emotes::new(cache.clone(), self.twitch.clone())?),
+            _ => None,
         };
 
         Ok(Some(ChatLog {
@@ -66,9 +77,9 @@ pub struct ChatLog {
 }
 
 impl ChatLog {
-    pub async fn observe(&self, tags: &irc::Tags, target: &str, name: &str, message: &str) {
+    pub async fn observe(&self, tags: &irc::Tags, channel: &Channel, name: &str, message: &str) {
         let rendered = match self.emotes.as_ref() {
-            Some(emotes) => match emotes.render(&tags, &target, &message).await {
+            Some(emotes) => match emotes.render(&tags, channel, name, message).await {
                 Ok(rendered) => Some(rendered),
                 Err(e) => {
                     log::warn!("failed to render emotes: {}", e);

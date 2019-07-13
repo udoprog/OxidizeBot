@@ -25,7 +25,7 @@ impl Default for Type {
 }
 
 struct Inner {
-    target: Arc<String>,
+    target: String,
     client: IrcClient,
     thread_pool: ThreadPool,
     limiter: Mutex<ratelimit::Limiter>,
@@ -43,7 +43,7 @@ impl Sender {
     /// Create a new sender.
     pub fn new(
         ty: Arc<RwLock<Type>>,
-        target: Arc<String>,
+        target: String,
         client: IrcClient,
         nightbot: Arc<api::NightBot>,
     ) -> Sender {
@@ -123,20 +123,14 @@ impl Sender {
                 return;
             }
             Type::Chat => {
-                self.send(Command::PRIVMSG(
-                    (*self.inner.target).clone(),
-                    f.to_string(),
-                ));
+                self.send(Command::PRIVMSG(self.inner.target.clone(), f.to_string()));
             }
         }
     }
 
     /// Send a PRIVMSG without rate limiting.
     pub fn privmsg_immediate(&self, f: impl fmt::Display) {
-        self.send_immediate(Command::PRIVMSG(
-            (*self.inner.target).clone(),
-            f.to_string(),
-        ))
+        self.send_immediate(Command::PRIVMSG(self.inner.target.clone(), f.to_string()))
     }
 
     /// Send a capability request.

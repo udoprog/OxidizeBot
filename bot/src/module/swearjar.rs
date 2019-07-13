@@ -48,13 +48,11 @@ impl command::Handler for Handler<'_> {
             }
 
             let twitch = self.twitch.clone();
-            let sender = ctx.sender.clone();
-            let streamer = ctx.user.streamer().to_string();
-            let channel = ctx.user.target().to_string();
+            let user = ctx.user.clone();
             let reward = *self.reward.read();
 
             let future = async move {
-                let chatters = twitch.chatters(channel.clone()).await?;
+                let chatters = twitch.chatters(user.target()).await?;
 
                 let mut u = HashSet::new();
                 u.extend(chatters.viewers);
@@ -67,19 +65,17 @@ impl command::Handler for Handler<'_> {
                 let total_reward = reward * u.len() as i64;
 
                 currency
-                    .balance_add(channel.clone(), streamer.clone(), -total_reward)
+                    .balance_add(user.target(), &user.streamer().name, -total_reward)
                     .await?;
 
                 currency
-                    .balances_increment(channel.clone(), u, reward)
+                    .balances_increment(user.target(), u, reward)
                     .await?;
 
-                sender.privmsg(
-                format!(
+                user.sender().privmsg(format!(
                     "/me has taken {} {currency} from {streamer} and given it to the viewers for listening to their bad mouth!",
-                    total_reward, currency = currency.name, streamer = streamer,
-                ),
-            );
+                    total_reward, currency = currency.name, streamer = user.streamer().display_name,
+                ));
 
                 Ok(())
             };

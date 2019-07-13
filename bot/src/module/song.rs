@@ -249,11 +249,7 @@ impl Handler {
             };
 
             match currency
-                .balance_add(
-                    user.target().to_string(),
-                    user.name().to_string(),
-                    request_reward as i64,
-                )
+                .balance_add(user.target(), user.name(), request_reward as i64)
                 .await
             {
                 Ok(()) => {
@@ -388,7 +384,7 @@ impl command::Handler for Handler {
                         ctx.respond(format!(
                             "You can find the queue at {}/player/{}",
                             api_url,
-                            ctx.user.streamer()
+                            ctx.user.streamer().name
                         ));
                         return Ok(());
                     }

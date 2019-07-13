@@ -199,15 +199,15 @@ impl Backend {
     /// Add (or subtract) from the balance for a single user.
     pub async fn balance_transfer(
         &self,
-        _channel: String,
-        giver: String,
-        taker: String,
+        _channel: &str,
+        giver: &str,
+        taker: &str,
         amount: i64,
         override_balance: bool,
     ) -> Result<(), BalanceTransferError> {
         let amount: i32 = amount.try_into()?;
-        let taker = user_id(&taker);
-        let giver = user_id(&giver);
+        let taker = user_id(taker);
+        let giver = user_id(giver);
 
         let opts = mysql::TransactionOptions::new();
         let tx = self.pool.start_transaction(opts).compat().await?;
@@ -286,12 +286,7 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(
-        &self,
-        _channel: String,
-        user: String,
-        amount: i64,
-    ) -> Result<(), Error> {
+    pub async fn balance_add(&self, _channel: &str, user: &str, amount: i64) -> Result<(), Error> {
         let user = user_id(&user);
         let amount = amount.try_into()?;
 
@@ -307,7 +302,7 @@ impl Backend {
     /// Add balance to users.
     pub async fn balances_increment<I>(
         &self,
-        _channel: String,
+        _channel: &str,
         users: I,
         amount: i64,
     ) -> Result<(), Error>

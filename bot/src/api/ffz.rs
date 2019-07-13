@@ -36,6 +36,13 @@ impl FrankerFaceZ {
         req.header(header::ACCEPT, "application/json")
     }
 
+    /// Get information on a single user.
+    pub async fn user(&self, user: &str) -> Result<Option<UserInfo>, Error> {
+        let req = self.v1(Method::GET, &["user", user]);
+        let data = req.execute().await?.json_option(not_found)?;
+        Ok(data)
+    }
+
     /// Get the set associated with the room.
     pub async fn room(&self, room: &str) -> Result<Option<Room>, Error> {
         let req = self.v1(Method::GET, &["room", room]);
@@ -62,21 +69,21 @@ fn not_found(status: &StatusCode) -> bool {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RoomInfo {
     #[serde(rename = "_id")]
-    id: u64,
+    pub id: u64,
     #[serde(rename = "id")]
-    name_id: String,
-    css: serde_json::Value,
-    display_name: String,
-    is_group: bool,
-    mod_urls: serde_json::Value,
-    moderator_badge: serde_json::Value,
-    set: u64,
-    twitch_id: u64,
-    user_badges: serde_json::Value,
+    pub name_id: String,
+    pub css: serde_json::Value,
+    pub display_name: String,
+    pub is_group: bool,
+    pub mod_urls: serde_json::Value,
+    pub moderator_badge: serde_json::Value,
+    pub set: u64,
+    pub twitch_id: u64,
+    pub user_badges: serde_json::Value,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct User {
+pub struct EmoticonUser {
     #[serde(rename = "_id")]
     pub id: u64,
     pub display_name: String,
@@ -105,7 +112,7 @@ pub struct Emoticon {
     pub modifier: bool,
     pub name: String,
     pub offset: serde_json::Value,
-    pub owner: User,
+    pub owner: EmoticonUser,
     pub public: bool,
     pub urls: Urls,
 }
@@ -132,4 +139,36 @@ pub struct Room {
 pub struct Sets {
     pub default_sets: Vec<u64>,
     pub sets: HashMap<String, Set>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct User {
+    pub avatar: String,
+    pub badges: Vec<u64>,
+    pub display_name: String,
+    pub emote_sets: Vec<u64>,
+    pub id: u64,
+    pub is_donor: bool,
+    pub name: String,
+    pub twitch_id: u64,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Badge {
+    pub color: String,
+    pub css: serde_json::Value,
+    pub id: u64,
+    pub image: String,
+    pub name: String,
+    pub replaces: serde_json::Value,
+    pub slot: u32,
+    pub title: String,
+    pub urls: Urls,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct UserInfo {
+    pub badges: HashMap<String, Badge>,
+    pub sets: HashMap<String, Set>,
+    pub user: User,
 }

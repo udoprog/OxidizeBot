@@ -57,7 +57,7 @@ function filterMessages(messages, limit, ids) {
 }
 
 /**
- * Filter unique messages.
+ * Filter first messages.
  */
 function filterUnique(messages) {
   let seen = {};
@@ -148,18 +148,20 @@ export default class Chat extends React.Component {
 
     let search = new URLSearchParams(this.props.location.search);
     let {limit, limitText} = searchLimit(search);
-    let unique = searchBoolean(search, "unique");
-    let showDeleted = searchBoolean(search, "show-deleted");
-    let highResEmotes = searchBoolean(search, "high-res-emotes");
+    let first = searchBoolean(search, "first");
+    let deleted = searchBoolean(search, "deleted");
+    let highRes = searchBoolean(search, "highres");
+    let rounded = searchBoolean(search, "rounded");
     let {inactivity, inactivityText} = searchInactivity(search);
 
     this.state = {
       messages: [],
       limit,
       limitText,
-      unique,
-      showDeleted,
-      highResEmotes,
+      first,
+      deleted,
+      highRes,
+      rounded,
       inactivity,
       inactivityText,
       seen: {},
@@ -198,13 +200,13 @@ export default class Chat extends React.Component {
    */
   reloadChatMessages() {
     this.api.chatMessages().then(messages => {
-      if (!this.state.showDeleted) {
+      if (!this.state.deleted) {
         messages = messages.filter(m => !m.deleted);
       }
 
       let update = filterMessages(messages, this.state.limit, this.state.ids);
 
-      if (this.state.unique) {
+      if (this.state.first) {
         update = filterUnique(update.messages);
       }
 
@@ -248,7 +250,7 @@ export default class Chat extends React.Component {
 
     switch (data.type) {
       case "message":
-        if (this.state.unique && !!this.state.seen[data.user.name]) {
+        if (this.state.first && !!this.state.seen[data.user.name]) {
           return;
         }
 
@@ -263,7 +265,7 @@ export default class Chat extends React.Component {
           ids[data.id] = true;
           let update = filterMessages(messages, s.limit, ids);
 
-          if (!s.unique) {
+          if (!s.first) {
             return update;
           }
 
@@ -339,14 +341,25 @@ export default class Chat extends React.Component {
       return <span className="text failed-emote">{item.emote}</span>;
     }
 
-    let emoteUrl = this.pickEmoteUrl(emote);
+    let emoteUrl = this.pickUrl(emote.urls);
 
-    let props = {src: emoteUrl.url};
+    let props = {src: emoteUrl.url, title: item.emote};
 
-    props.height = calculateHeight(emote);
+    let width = null;
+    let height = calculateHeight(emote);
 
     if (emoteUrl.size !== null) {
-      props.width = calculateWidth(props.height, emoteUrl.size);
+      width = calculateWidth(height, emoteUrl.size);
+    }
+
+    props.style = {};
+
+    if (height !== null) {
+      props.style.height = `${height}px`;
+    }
+
+    if (width !== null) {
+      props.style.width = `${width}px`;
     }
 
     return <img {...props} />;
@@ -358,13 +371,17 @@ export default class Chat extends React.Component {
       let small = emote.urls.small;
 
       if (small === null || small.size === null) {
-        return 32;
+        return null;
       }
 
       return Math.min(32, small.size.height);
     }
 
     function calculateWidth(height, size) {
+      if (height === null) {
+        return null;
+      }
+
       return Math.round(size.width * (height / size.height));
     }
   }
@@ -381,6 +398,37 @@ export default class Chat extends React.Component {
     }
 
     return React.cloneElement(img, {key});
+  }
+
+  /**
+   * Renders all badges as elements.
+   */
+  renderBadges(m) {
+    let rendered = m.rendered;
+
+    if (rendered === null) {
+      return null;
+    }
+
+    return rendered.badges.map((badge, i) => {
+      let badgeUrl = this.pickUrl(badge.urls);
+      let props = {};
+      props.src = badgeUrl.url;
+      props.title = badge.title;
+
+      let className = "chat-badge";
+
+      if (this.state.rounded) {
+        className = `${className} rounded`;
+      }
+
+      if (badge.bg_color !== null) {
+        let style = {backgroundColor: badge.bg_color};
+        return <span key={i} style={style} className={className}><img key={i} {...props} /></span>;
+      }
+
+      return <img key={i} className={className} {...props} />;
+    });
   }
 
   renderText(m) {
@@ -402,11 +450,14 @@ export default class Chat extends React.Component {
     });
   }
 
-  pickEmoteUrl(emote) {
-    let alts = [emote.urls.large, emote.urls.medium, emote.urls.small];
+  /**
+   * Pick an appropriate URL depending on settings.
+   */
+  pickUrl(urls) {
+    let alts = [urls.large, urls.medium, urls.small];
 
-    if (!this.state.highResEmotes) {
-      alts = [emote.urls.small, emote.urls.medium, emote.urls.large]
+    if (!this.state.highRes) {
+      alts = [urls.small, urls.medium, urls.large]
     }
 
     for (var alt of alts) {
@@ -415,7 +466,7 @@ export default class Chat extends React.Component {
       }
     }
 
-    return emote.urls.small;
+    return urls.small;
   }
 
   renderMessages(messages) {
@@ -439,11 +490,17 @@ export default class Chat extends React.Component {
         name = `${name} (${m.user.name})`;
       }
 
+      let badges = this.renderBadges(m);
       let text = this.renderText(m);
+
+      if (badges !== null) {
+        badges = <div className="chat-badges">{badges}</div>;
+      }
 
       return (
         <div className={`chat-message ${messageClasses}`} key={m.id}>
           <span className="overlay-hidden chat-timestamp">{timestamp}</span>
+          {badges}
           <span className="chat-name" style={nameStyle}>{name}:</span>
           <span className="chat-text">{text}</span>
         </div>
@@ -467,25 +524,32 @@ export default class Chat extends React.Component {
       search.delete("limit");
     }
 
-    if (!!this.state.unique) {
-      search.set("unique", this.state.unique.toString());
+    if (!!this.state.first) {
+      search.set("first", this.state.first.toString());
       set = true;
     } else {
-      search.delete("unique");
+      search.delete("first");
     }
 
-    if (!!this.state.showDeleted) {
-      search.set("show-deleted", this.state.showDeleted.toString());
+    if (!!this.state.deleted) {
+      search.set("deleted", this.state.deleted.toString());
       set = true;
     } else {
-      search.delete("show-deleted");
+      search.delete("deleted");
     }
 
-    if (!!this.state.highResEmotes) {
-      search.set("high-res-emotes", this.state.highResEmotes.toString());
+    if (!!this.state.highRes) {
+      search.set("highres", this.state.highRes.toString());
       set = true;
     } else {
-      search.delete("high-res-emotes");
+      search.delete("highres");
+    }
+
+    if (!!this.state.rounded) {
+      search.set("rounded", this.state.rounded.toString());
+      set = true;
+    } else {
+      search.delete("rounded");
     }
 
     if (this.state.inactivity !== null) {
@@ -506,7 +570,7 @@ export default class Chat extends React.Component {
     let limitText = e.target.value;
     let limit = parseInt(limitText);
 
-    if (!isFinite(limit)) {
+    if (!isFinite(limit) || limit === 0) {
       limit = null;
     }
 
@@ -519,7 +583,7 @@ export default class Chat extends React.Component {
     let inactivityText = e.target.value;
     let inactivity = parseInt(inactivityText);
 
-    if (!isFinite(inactivity)) {
+    if (!isFinite(inactivity) || inactivity === 0) {
       inactivity = null;
     }
 
@@ -528,22 +592,28 @@ export default class Chat extends React.Component {
     });
   }
 
-  uniqueChanged(e) {
-    this.setState({unique: e.target.checked, changed: true}, () => {
+  firstChanged(e) {
+    this.setState({first: e.target.checked, changed: true}, () => {
       this.updateSearch();
     });
   }
 
-  showDeletedChanged(e) {
-    this.setState({showDeleted: e.target.checked, changed: true}, () => {
+  deletedChanged(e) {
+    this.setState({deleted: e.target.checked, changed: true}, () => {
       this.updateSearch();
     });
   }
 
-  highResEmotesChanged(e) {
+  highResChanged(e) {
     this.cachedEmotes = {};
 
-    this.setState({highResEmotes: e.target.checked, changed: true}, () => {
+    this.setState({highRes: e.target.checked, changed: true}, () => {
+      this.updateSearch();
+    });
+  }
+
+  roundedChanged(e) {
+    this.setState({rounded: e.target.checked, changed: true}, () => {
       this.updateSearch();
     });
   }
@@ -565,29 +635,40 @@ export default class Chat extends React.Component {
     let form = (
       <Modal className="chat-settings" show={this.state.edit} onHide={this.toggleEdit.bind(this)}>
         <Modal.Header closeButton>
-          <Modal.Title>Settings</Modal.Title>
+          <Modal.Title>Configuration</Modal.Title>
         </Modal.Header>
 
         <Modal.Body>
+          <p>
+            Configuration options are stored in the URL and can be copy-pasted into the URL used for OBS.
+          </p>
+
           <Form>
+            <Form.Row>
+              <Form.Group as={Col}>
+                <Form.Label>Limit on number of messages:</Form.Label>
+                <Form.Control placeholder="Disabled" type="number" value={this.state.limitText} onChange={this.limitChanged.bind(this)} />
+              </Form.Group>
+              <Form.Group as={Col}>
+                <Form.Label>Inactivity timeout in seconds:</Form.Label>
+                <Form.Control placeholder="Disabled" type="number" value={this.state.inactivityText} onChange={this.inactivityChanged.bind(this)} />
+              </Form.Group>
+            </Form.Row>
             <Form.Group as={Col}>
-              <Form.Label>Limit on number of messages:</Form.Label>
-              <Form.Control type="number" value={this.state.limitText} onChange={this.limitChanged.bind(this)} />
+              <Form.Check id="first" label="Only show first message" type="checkbox" checked={this.state.first} onChange={this.firstChanged.bind(this)} />
             </Form.Group>
             <Form.Group as={Col}>
-              <Form.Label>Inactivity timeout (seconds):</Form.Label>
-              <Form.Control type="number" value={this.state.inactivityText} onChange={this.inactivityChanged.bind(this)} />
+              <Form.Check id="deleted" label="Show deleted" type="checkbox" checked={this.state.deleted} onChange={this.deletedChanged.bind(this)} />
             </Form.Group>
             <Form.Group as={Col}>
-              <Form.Check id="unique" label="Only show first message from each user" type="checkbox" checked={this.state.unique} onChange={this.uniqueChanged.bind(this)} />
+              <Form.Check id="highres" label="High resolution graphics" type="checkbox" checked={this.state.highRes} onChange={this.highResChanged.bind(this)} />
             </Form.Group>
             <Form.Group as={Col}>
-              <Form.Check id="show-deleted" label="Show deleted messages" type="checkbox" checked={this.state.showDeleted} onChange={this.showDeletedChanged.bind(this)} />
-            </Form.Group>
-            <Form.Group as={Col}>
-              <Form.Check id="high-res-emotes" label="Use high resolution emotes" type="checkbox" checked={this.state.highResEmotes} onChange={this.highResEmotesChanged.bind(this)} />
+              <Form.Check id="rounded" label="Uses rounded badges" type="checkbox" checked={this.state.rounded} onChange={this.roundedChanged.bind(this)} />
             </Form.Group>
             <div>
+              <hr />
+
               <Col>
                 <p>
                   If you want to embed this into OBS, please add the following Custom CSS:
@@ -613,7 +694,7 @@ export default class Chat extends React.Component {
 
     let messages = this.state.messages;
 
-    if (!this.state.showDeleted) {
+    if (!this.state.deleted) {
       messages = messages.filter(m => !m.deleted);
     }
 
