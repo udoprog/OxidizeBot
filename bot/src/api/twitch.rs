@@ -318,13 +318,13 @@ pub struct UpdateChannelRequest {
 
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct UpdateChannel {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delay: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel_feed_enabled: Option<bool>,
 }
 
@@ -352,9 +352,11 @@ pub struct User {
     pub display_name: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default)]
     pub bio: Option<String>,
     pub email: String,
     pub email_verified: bool,
+    #[serde(default)]
     pub logo: Option<String>,
     pub notifications: HashMap<String, bool>,
     pub partnered: bool,
@@ -385,7 +387,9 @@ pub struct Stream {
     pub id: String,
     pub user_id: String,
     pub user_name: String,
+    #[serde(default)]
     pub game_id: Option<String>,
+    #[serde(default)]
     pub community_ids: Vec<String>,
     #[serde(rename = "type")]
     pub ty: String,
@@ -400,9 +404,13 @@ pub struct Stream {
 pub struct Channel {
     pub mature: bool,
     pub status: String,
+    #[serde(default)]
     pub broadcaster_language: Option<String>,
+    #[serde(default)]
     pub display_name: Option<String>,
+    #[serde(default)]
     pub game: Option<String>,
+    #[serde(default)]
     pub language: Option<String>,
     #[serde(rename = "_id")]
     pub id: String,
@@ -410,15 +418,22 @@ pub struct Channel {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub partner: bool,
+    #[serde(default)]
     pub logo: Option<String>,
+    #[serde(default)]
     pub video_banner: Option<String>,
+    #[serde(default)]
     pub profile_banner: Option<String>,
+    #[serde(default)]
     pub profile_banner_background_color: Option<String>,
     pub url: String,
     pub views: u64,
     pub followers: u64,
+    #[serde(default)]
     pub broadcaster_type: Option<String>,
+    #[serde(default)]
     pub stream_key: Option<String>,
+    #[serde(default)]
     pub email: Option<String>,
 }
 
@@ -441,12 +456,14 @@ pub struct Clip {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Pagination {
+    #[serde(default)]
     pub cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Page<T> {
     pub data: Vec<T>,
+    #[serde(default)]
     pub pagination: Option<Pagination>,
 }
 
@@ -484,6 +501,7 @@ pub struct Badge {
     pub title: String,
     pub click_action: String,
     pub click_url: String,
+    #[serde(default)]
     pub last_updated: Option<serde_json::Value>,
 }
 
@@ -499,8 +517,11 @@ pub struct BadgesDisplay {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct BadgeTypes {
+    #[serde(default)]
     pub alpha: Option<String>,
+    #[serde(default)]
     pub image: Option<String>,
+    #[serde(default)]
     pub svg: Option<String>,
 }
 
