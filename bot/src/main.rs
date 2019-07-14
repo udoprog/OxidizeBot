@@ -1,6 +1,6 @@
 #![feature(async_await)]
 #![recursion_limit = "128"]
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 
 use backoff::backoff::Backoff as _;
 use failure::{bail, format_err, Error, ResultExt};
@@ -281,7 +281,8 @@ async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
     futures.push(system_loop(settings.scoped("system"), system.clone()).boxed());
 
     let storage = storage::Storage::open(&root.join("storage"))?;
-    injector.update(storage.cache()?);
+    let cache = storage.cache()?;
+    injector.update(cache.clone());
 
     let (latest, future) = updater::run(&injector);
     futures.push(future.boxed());
@@ -301,6 +302,7 @@ async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
         after_streams.clone(),
         db.clone(),
         settings.clone(),
+        cache.clone(),
         auth.clone(),
         aliases.clone(),
         commands.clone(),

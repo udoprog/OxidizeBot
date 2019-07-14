@@ -8,24 +8,33 @@ use std::{fmt, sync::Arc};
 
 pub enum EntryKind<T> {
     /// Entry is fresh and can be used.
-    Fresh { storage: Storage<T> },
+    Fresh { storage: StoredEntry<T> },
     /// Entry exists, but is expired.
     /// Cache is referenced so that the value can be removed if needed.
-    Expired { storage: Storage<T> },
+    Expired { storage: StoredEntry<T> },
     /// No entry.
     Missing,
 }
 
-pub struct Entry<'a, T> {
+/// Entry with a reference to the underlying cache.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct JsonEntry {
+    pub key: serde_json::Value,
+    #[serde(flatten)]
+    pub stored: StoredEntry<serde_json::Value>,
+}
+
+/// Entry with a reference to the underlying cache.
+pub struct EntryRef<'a, T> {
     cache: &'a Cache,
     pub key: Vec<u8>,
     pub kind: EntryKind<T>,
 }
 
-impl<'a, T> Entry<'a, T> {
+impl<'a, T> EntryRef<'a, T> {
     /// Create a fresh entry.
-    pub fn fresh(cache: &'a Cache, key: Vec<u8>, storage: Storage<T>) -> Self {
-        Entry {
+    pub fn fresh(cache: &'a Cache, key: Vec<u8>, storage: StoredEntry<T>) -> Self {
+        EntryRef {
             cache,
             key,
             kind: EntryKind::Fresh { storage },
@@ -33,8 +42,8 @@ impl<'a, T> Entry<'a, T> {
     }
 
     /// Create an expired entry.
-    pub fn expired(cache: &'a Cache, key: Vec<u8>, storage: Storage<T>) -> Self {
-        Entry {
+    pub fn expired(cache: &'a Cache, key: Vec<u8>, storage: StoredEntry<T>) -> Self {
+        EntryRef {
             cache,
             key,
             kind: EntryKind::Expired { storage },
@@ -43,7 +52,7 @@ impl<'a, T> Entry<'a, T> {
 
     /// Create a missing entry.
     pub fn missing(cache: &'a Cache, key: Vec<u8>) -> Self {
-        Entry {
+        EntryRef {
             cache,
             key,
             kind: EntryKind::Missing,
@@ -73,12 +82,12 @@ impl<'a, T> Entry<'a, T> {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub struct Storage<T> {
+pub struct StoredEntry<T> {
     expires_at: DateTime<Utc>,
     value: T,
 }
 
-impl<T> Storage<T> {
+impl<T> StoredEntry<T> {
     /// Test if entry is expired.
     fn is_expired(&self, now: DateTime<Utc>) -> bool {
         self.expires_at < now
@@ -86,11 +95,11 @@ impl<T> Storage<T> {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct PartialStorage {
+struct PartialStoredEntry {
     expires_at: DateTime<Utc>,
 }
 
-impl PartialStorage {
+impl PartialStoredEntry {
     /// Test if entry is expired.
     fn is_expired(&self, now: DateTime<Utc>) -> bool {
         self.expires_at < now
@@ -112,6 +121,39 @@ impl Cache {
         Ok(cache)
     }
 
+    /// Delete the given key from the specified namespace.
+    pub fn delete_with_ns<K>(&self, ns: Option<&str>, key: K) -> Result<(), Error>
+    where
+        K: serde::Serialize,
+    {
+        let key = self.key_with_ns(ns, key)?;
+        self.db.delete(&key)?;
+        Ok(())
+    }
+
+    /// List all cache entries as JSON.
+    pub fn list_json(&self) -> Result<Vec<JsonEntry>, Error> {
+        let mut out = Vec::new();
+
+        for (key, value) in self.db.iterator(rocksdb::IteratorMode::Start) {
+            let key: json::Value = match cbor::from_slice(&*key) {
+                Ok(key) => key,
+                // key is malformed.
+                Err(_) => continue,
+            };
+
+            let stored = match cbor::from_slice(&*value) {
+                Ok(storage) => storage,
+                // something weird stored in there.
+                Err(_) => continue,
+            };
+
+            out.push(JsonEntry { key, stored });
+        }
+
+        Ok(out)
+    }
+
     /// Clean up stale entries.
     ///
     /// This could be called periodically if you want to reclaim space.
@@ -119,7 +161,7 @@ impl Cache {
         let now = Utc::now();
 
         for (key, value) in self.db.iterator(rocksdb::IteratorMode::Start) {
-            let entry: PartialStorage = match cbor::from_slice(&*value) {
+            let entry: PartialStoredEntry = match cbor::from_slice(&*value) {
                 Ok(entry) => entry,
                 Err(e) => {
                     if log::log_enabled!(log::Level::Trace) {
@@ -175,7 +217,7 @@ impl Cache {
     {
         let expires_at = Utc::now() + age;
 
-        let value = match cbor::to_vec(&Storage { expires_at, value }) {
+        let value = match cbor::to_vec(&StoredEntry { expires_at, value }) {
             Ok(value) => value,
             Err(e) => {
                 log::trace!("store:{} *errored*", KeyFormat(key));
@@ -189,7 +231,7 @@ impl Cache {
     }
 
     /// Load an entry from the cache.
-    pub fn get<K, T>(&self, key: K) -> Result<Entry<'_, T>, Error>
+    pub fn get<K, T>(&self, key: K) -> Result<EntryRef<'_, T>, Error>
     where
         K: serde::Serialize,
         T: serde::de::DeserializeOwned,
@@ -200,7 +242,7 @@ impl Cache {
 
     /// Load an entry from the cache.
     #[inline(always)]
-    fn inner_get<T>(&self, key: Vec<u8>) -> Result<Entry<'_, T>, Error>
+    fn inner_get<T>(&self, key: Vec<u8>) -> Result<EntryRef<'_, T>, Error>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -208,11 +250,11 @@ impl Cache {
             Some(value) => value,
             None => {
                 log::trace!("load:{} -> null (missing)", KeyFormat(&key));
-                return Ok(Entry::missing(self, key));
+                return Ok(EntryRef::missing(self, key));
             }
         };
 
-        let storage: Storage<T> = match cbor::from_slice(&value) {
+        let storage: StoredEntry<T> = match cbor::from_slice(&value) {
             Ok(value) => value,
             Err(e) => {
                 if log::log_enabled!(log::Level::Trace) {
@@ -227,17 +269,17 @@ impl Cache {
                 }
 
                 log::trace!("load:{} -> null (deserialize error)", KeyFormat(&key));
-                return Ok(Entry::missing(self, key));
+                return Ok(EntryRef::missing(self, key));
             }
         };
 
         if storage.is_expired(Utc::now()) {
             log::trace!("load:{} -> null (expired)", KeyFormat(&key));
-            return Ok(Entry::expired(self, key, storage));
+            return Ok(EntryRef::expired(self, key, storage));
         }
 
         log::trace!("load:{} -> *value*", KeyFormat(&key));
-        Ok(Entry::fresh(self, key, storage))
+        Ok(EntryRef::fresh(self, key, storage))
     }
 
     /// Wrap the result of the given future to load and store from cache.
@@ -252,7 +294,7 @@ impl Cache {
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
         let key = match self.get(key)? {
-            Entry { key, kind, .. } => match kind {
+            EntryRef { key, kind, .. } => match kind {
                 EntryKind::Fresh { storage } => return Ok(storage.value),
                 EntryKind::Expired { .. } | EntryKind::Missing => key,
             },
@@ -263,16 +305,20 @@ impl Cache {
         Ok(output)
     }
 
-    /// Helper to serialize the key with a namespace.
+    /// Helper to serialize the key with the default namespace.
     fn key<T>(&self, key: T) -> Result<Vec<u8>, Error>
     where
         T: serde::Serialize,
     {
-        let key = match self.ns.as_ref() {
-            Some(ns) => Key(Some(&*ns), key),
-            None => Key(None, key),
-        };
+        self.key_with_ns(self.ns.as_ref().map(|ns| ns.as_str()), key)
+    }
 
+    /// Helper to serialize the key with a specific namespace.
+    fn key_with_ns<T>(&self, ns: Option<&str>, key: T) -> Result<Vec<u8>, Error>
+    where
+        T: serde::Serialize,
+    {
+        let key = Key(ns, key);
         return cbor::to_vec(&key).map_err(Into::into);
 
         #[derive(serde::Serialize)]

@@ -107,6 +107,28 @@ export class Api {
   }
 
   /**
+   * Get all cache entries.
+   */
+  cacheDelete(k) {
+    let [ns, key] = k;
+
+    return this.fetch("cache", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ ns, key }),
+    });
+  }
+
+  /**
+   * Get all cache entries.
+   */
+  cache() {
+    return this.fetch("cache");
+  }
+
+  /**
    * Delete a setting.
    *
    * @param {string} key the key of the setting to delete.

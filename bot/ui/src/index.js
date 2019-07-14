@@ -10,6 +10,7 @@ import Devices from "./components/Devices.js";
 import AfterStreams from "./components/AfterStreams.js";
 import Overlay from "./components/Overlay.js";
 import Settings from "./components/Settings.js";
+import Cache from "./components/Cache";
 import Modules from "./components/Modules.js";
 import ImportExport from "./components/ImportExport.js";
 import Commands from "./components/Commands.js";
@@ -63,6 +64,27 @@ class SettingsPage extends React.Component {
         <Row>
           <Col>
             <Settings group={true} api={this.api} filterable={true} {...this.props} />
+          </Col>
+        </Row>
+      </RouteLayout>
+    );
+  }
+}
+
+class CachePage extends React.Component {
+  constructor(props) {
+    super(props);
+    this.api = new Api(utils.apiUrl());
+  }
+
+  render() {
+    return (
+      <RouteLayout>
+        <h2>Cache</h2>
+
+        <Row>
+          <Col>
+            <Cache api={this.api} {...this.props} />
           </Col>
         </Row>
       </RouteLayout>
@@ -293,6 +315,9 @@ function Layout(props) {
               <NavDropdown.Item as={Link} active={path === "/settings"} to="/settings">
                 Settings
               </NavDropdown.Item>
+              <NavDropdown.Item as={Link} active={path === "/cache"} to="/cache">
+                Cache
+              </NavDropdown.Item>
             </NavDropdown>
 
             <NavDropdown title="Misc">
@@ -327,6 +352,7 @@ function AppRouter() {
       <Route path="/" exact component={IndexPage} />
       <Route path="/after-streams" exact component={AfterStreamsPage} />
       <Route path="/settings" exact component={SettingsPage} />
+      <Route path="/cache" exact component={CachePage} />
       <Route path="/modules" component={ModulesPage} />
       <Route path="/authorization" exact component={props => (
         <AuthorizedPage><Authorization {...props} /></AuthorizedPage>

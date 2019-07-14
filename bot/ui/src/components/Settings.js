@@ -89,7 +89,7 @@ export default class Settings extends React.Component {
       e => {
         this.setState({
           loading: false,
-          error: `failed to request after streams: ${e}`,
+          error: `failed to request settings: ${e}`,
           data: null,
         });
       });

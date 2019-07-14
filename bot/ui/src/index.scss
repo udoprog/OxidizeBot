@@ -509,3 +509,14 @@ body.chat-body {
     }
   }
 }
+
+.cache {
+  &-action {
+    cursor: pointer;
+  }
+
+  &-namespace-header {
+    font-size: 120%;
+    font-weight: bold;
+  }
+}

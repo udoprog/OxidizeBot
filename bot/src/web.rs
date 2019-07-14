@@ -1,12 +1,17 @@
 use self::assets::Asset;
 use crate::{
-    api, auth, bus, currency::Currency, db, message_log, player, prelude::*, settings, template,
+    api, auth, bus, currency::Currency, db, message_log, player, prelude::*, template,
     track_id::TrackId, utils,
 };
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::{borrow::Cow, fmt, net::SocketAddr, sync::Arc};
 use warp::{body, filters, http::Uri, path, Filter as _};
+
+mod cache;
+mod settings;
+
+use self::{cache::Cache, settings::Settings};
 
 pub const URL: &'static str = "http://localhost:12345";
 pub const REDIRECT_URI: &'static str = "/redirect";
@@ -111,153 +116,9 @@ pub struct Current {
     channel: Option<String>,
 }
 
-#[derive(serde::Deserialize)]
-pub struct PutSetting {
-    value: serde_json::Value,
-}
-
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct DisabledBody {
     disabled: bool,
-}
-
-#[derive(serde::Deserialize)]
-struct SettingsQuery {
-    #[serde(default)]
-    key: Option<String>,
-    #[serde(default)]
-    prefix: Option<String>,
-    #[serde(default)]
-    feature: Option<bool>,
-}
-
-/// Settings endpoint.
-#[derive(Clone)]
-struct Settings(settings::Settings);
-
-impl Settings {
-    fn route(settings: settings::Settings) -> filters::BoxedFilter<(impl warp::Reply,)> {
-        let api = Settings(settings);
-
-        let list = warp::get2()
-            .and(warp::path("settings").and(warp::query::<SettingsQuery>()))
-            .and_then({
-                let api = api.clone();
-                move |query: SettingsQuery| api.settings(query).map_err(warp::reject::custom)
-            })
-            .boxed();
-
-        let get = warp::get2()
-            .and(warp::path("settings").and(path::tail()).and_then({
-                let api = api.clone();
-                move |key: path::Tail| {
-                    let key = str::parse::<Fragment>(key.as_str()).map_err(warp::reject::custom)?;
-                    api.get_setting(key.as_str()).map_err(warp::reject::custom)
-                }
-            }))
-            .boxed();
-
-        let delete = warp::delete2()
-            .and(warp::path("settings").and(path::tail()).and_then({
-                let api = api.clone();
-                move |key: path::Tail| {
-                    let key = str::parse::<Fragment>(key.as_str()).map_err(warp::reject::custom)?;
-                    api.delete_setting(key.as_str())
-                        .map_err(warp::reject::custom)
-                }
-            }))
-            .boxed();
-
-        let edit = warp::put2()
-            .and(
-                warp::path("settings")
-                    .and(path::tail().and(body::json()))
-                    .and_then({
-                        let api = api.clone();
-                        move |key: path::Tail, body: PutSetting| {
-                            let key = str::parse::<Fragment>(key.as_str())
-                                .map_err(warp::reject::custom)?;
-                            api.edit_setting(key.as_str(), body.value)
-                                .map_err(warp::reject::custom)
-                        }
-                    }),
-            )
-            .boxed();
-
-        return list.or(get).or(delete).or(edit).boxed();
-    }
-
-    /// Get the list of all settings in the bot.
-    fn settings(&self, query: SettingsQuery) -> Result<impl warp::Reply, failure::Error> {
-        let mut settings = match query.prefix {
-            Some(prefix) => {
-                let mut out = Vec::new();
-
-                for prefix in prefix.split(",") {
-                    out.extend(self.0.list_by_prefix(&prefix)?);
-                }
-
-                out
-            }
-            None => self.0.list()?,
-        };
-
-        if let Some(key) = query.key {
-            let key = key
-                .split(",")
-                .map(|s| s.to_string())
-                .collect::<HashSet<_>>();
-
-            let mut out = Vec::with_capacity(settings.len());
-
-            for s in settings {
-                if key.contains(&s.key) {
-                    out.push(s);
-                }
-            }
-
-            settings = out;
-        }
-
-        if let Some(feature) = query.feature {
-            let mut out = Vec::with_capacity(settings.len());
-
-            for s in settings {
-                if s.schema.feature == feature {
-                    out.push(s);
-                }
-            }
-
-            settings = out;
-        }
-
-        Ok(warp::reply::json(&settings))
-    }
-
-    /// Delete the given setting by key.
-    fn delete_setting(&self, key: &str) -> Result<impl warp::Reply, failure::Error> {
-        self.0.clear(key)?;
-        Ok(warp::reply::json(&EMPTY))
-    }
-
-    /// Get the given setting by key.
-    fn get_setting(&self, key: &str) -> Result<impl warp::Reply, failure::Error> {
-        let setting: Option<settings::Setting> = self
-            .0
-            .setting::<serde_json::Value>(key)?
-            .map(|s| s.to_setting());
-        Ok(warp::reply::json(&setting))
-    }
-
-    /// Delete the given setting by key.
-    fn edit_setting(
-        &self,
-        key: &str,
-        value: serde_json::Value,
-    ) -> Result<impl warp::Reply, failure::Error> {
-        self.0.set_json(key, value)?;
-        Ok(warp::reply::json(&EMPTY))
-    }
 }
 
 /// Aliases endpoint.
@@ -999,7 +860,8 @@ pub fn setup(
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     after_streams: db::AfterStreams,
     db: db::Database,
-    settings: settings::Settings,
+    settings: crate::settings::Settings,
+    cache: crate::storage::Cache,
     auth: auth::Auth,
     aliases: db::Aliases,
     commands: db::Commands,
@@ -1123,6 +985,7 @@ pub fn setup(
         let route = route.or(Promotions::route(promotions));
         let route = route.or(Themes::route(themes));
         let route = route.or(Settings::route(settings));
+        let route = route.or(Cache::route(cache));
 
         let route = route.or(warp::path("chat").and(Chat::route(message_log)).boxed());
 
@@ -1210,7 +1073,7 @@ pub fn setup(
     }
 }
 
-struct Fragment {
+pub struct Fragment {
     string: String,
 }
 
