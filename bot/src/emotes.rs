@@ -399,7 +399,7 @@ impl Emotes {
     async fn twitch_chat_badges(
         &self,
         channel: &Channel,
-        others: &[&str],
+        chat_badges: impl Iterator<Item = (&str, u32)>,
     ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
         let badges = self
             .inner
@@ -420,8 +420,31 @@ impl Emotes {
             None => return Ok(out),
         };
 
-        for other in others {
-            let badge = match badges.badges.remove(*other) {
+        for (name, version) in chat_badges {
+            let name = match name {
+                "admin" => "admin",
+                "broadcaster" => "broadcaster",
+                "global_mod" => "global_mod",
+                "moderator" => "mod",
+                "staff" => "staff",
+                "turbo" => "turbo",
+                "subscriber" => {
+                    // NB: subscriber badges are handled separately.
+                    out.extend(self.twitch_subscriber_badge(channel, version).await?);
+                    continue;
+                }
+                "bits" => {
+                    // NB: bits badges are not supported.
+                    continue;
+                }
+                name => {
+                    // NB: not supported.
+                    log::trace!("Unsupported badge: {}", name);
+                    continue;
+                }
+            };
+
+            let badge = match badges.badges.remove(name) {
                 Some(badge) => badge,
                 None => continue,
             };
@@ -435,7 +458,7 @@ impl Emotes {
             urls.small = Some(image.into());
 
             out.push(Badge {
-                title: other.to_string(),
+                title: name.to_string(),
                 urls,
                 bg_color: None,
             });
@@ -454,23 +477,17 @@ impl Emotes {
         let mut out = SmallVec::new();
 
         if let Some(badges) = tags.badges.as_ref() {
-            for (badge, version) in split_badges(badges) {
-                let mut others = SmallVec::<[&str; 16]>::new();
-
-                match badge {
-                    "subscriber" => {
-                        out.extend(self.twitch_subscriber_badge(channel, version).await?)
-                    }
-                    other => others.push(other),
-                }
-
-                if !others.is_empty() {
-                    out.extend(self.twitch_chat_badges(channel, &others).await?);
-                }
+            match self.twitch_chat_badges(channel, split_badges(badges)).await {
+                Ok(badges) => out.extend(badges),
+                Err(e) => log::warn!("failed to get twitch chat badges: {}", e),
             }
         }
 
-        out.extend(self.ffz_chat_badges(name).await?);
+        match self.ffz_chat_badges(name).await {
+            Ok(badges) => out.extend(badges),
+            Err(e) => log::warn!("failed to get ffz chat badges: {}", e),
+        }
+
         return Ok(out);
 
         /// Split all the badges.
