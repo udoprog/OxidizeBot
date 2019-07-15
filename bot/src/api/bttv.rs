@@ -41,6 +41,12 @@ impl BetterTTV {
         let data = req.execute().await?.json_option(not_found)?;
         Ok(data)
     }
+
+    pub async fn emotes(&self) -> Result<Emotes, Error> {
+        let req = self.v2(Method::GET, &["emotes"]);
+        let data = req.execute().await?.json()?;
+        Ok(data)
+    }
 }
 
 /// Handle as not found.
@@ -61,9 +67,17 @@ pub struct Channel {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Emotes {
+    pub status: u32,
+    pub url_template: String,
+    pub emotes: Vec<Emote>,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Emote {
     pub id: String,
-    pub channel: String,
+    pub channel: Option<String>,
     pub code: String,
     pub image_type: String,
 }

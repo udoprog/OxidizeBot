@@ -1,4 +1,4 @@
-mod cache;
+pub mod cache;
 
 use failure::Error;
 use std::{path::Path, sync::Arc};

@@ -1,12 +1,14 @@
 use crate::{
-    api::{ffz, twitch::Channel, BetterTTV, FrankerFaceZ, Twitch},
+    api::{bttv, ffz, twitch::Channel, BetterTTV, FrankerFaceZ, Tduva, Twitch},
     irc,
-    storage::Cache,
+    prelude::*,
+    storage::{cache, Cache},
     template,
     utils::Duration,
 };
 use failure::Error;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
+use parking_lot::RwLock;
 use smallvec::SmallVec;
 use std::{mem, sync::Arc};
 
@@ -81,16 +83,37 @@ enum Key<'a> {
     TwitchChatBadges { target: &'a str },
     /// FFZ information for a given user.
     FfzUser { name: &'a str },
+    /// All badges for the given room and name combo.
+    RoomBadges { target: &'a str, name: &'a str },
     /// Emotes associated with a single room.
     RoomEmotes { target: &'a str },
     /// Global emotes.
     GlobalEmotes,
+    /// Badges from tduva.
+    TduvaBadges,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct TduvaBadge {
+    id: String,
+    version: String,
+    image_url: String,
+    color: Option<String>,
+    title: String,
+    usernames: HashSet<String>,
+}
+
+#[derive(Default)]
+struct TduvaData {
+    chatty: Vec<TduvaBadge>,
 }
 
 struct Inner {
     cache: Cache,
     ffz: FrankerFaceZ,
     bttv: BetterTTV,
+    tduva: Tduva,
+    tduva_data: RwLock<Option<TduvaData>>,
     twitch: Twitch,
 }
 
@@ -107,6 +130,8 @@ impl Emotes {
                 cache: cache.namespaced("emotes"),
                 ffz: FrankerFaceZ::new()?,
                 bttv: BetterTTV::new()?,
+                tduva: Tduva::new()?,
+                tduva_data: Default::default(),
                 twitch,
             }),
         })
@@ -124,7 +149,7 @@ impl Emotes {
     async fn room_emotes_from_ffz(&self, channel: &Channel) -> Result<EmoteByCode, Error> {
         let mut emotes = EmoteByCode::default();
 
-        let (global, room) = futures::future::try_join(
+        let (global, room) = future::try_join(
             self.inner.ffz.set_global(),
             self.inner.ffz.room(&channel.name),
         )
@@ -143,18 +168,17 @@ impl Emotes {
         Ok(emotes)
     }
 
-    /// Construct a set of room emotes from bttv.
-    async fn room_emotes_from_bttv(&self, channel: &Channel) -> Result<EmoteByCode, Error> {
-        let mut emotes = EmoteByCode::default();
+    /// Convert emotes from BTTV.
+    fn convert_emotes_from_bttv(
+        &self,
+        emotes: Vec<bttv::Emote>,
+        url_template: String,
+    ) -> Result<EmoteByCode, Error> {
+        let mut out = EmoteByCode::default();
 
-        let channel = match self.inner.bttv.channels(&channel.name).await? {
-            Some(channel) => channel,
-            None => return Ok(emotes),
-        };
+        let url_template = template::Template::compile(&url_template)?;
 
-        let url_template = template::Template::compile(&channel.url_template)?;
-
-        for e in channel.emotes {
+        for e in emotes {
             let mut urls = Urls::default();
 
             let options = vec![
@@ -172,16 +196,26 @@ impl Emotes {
                 *dest = Some(Url { url, size: None });
             }
 
-            emotes.insert(e.code, Arc::new(Emote { urls }));
+            out.insert(e.code, Arc::new(Emote { urls }));
         }
 
-        return Ok(emotes);
+        return Ok(out);
 
         #[derive(Debug, serde::Serialize)]
         struct Args<'a> {
             id: &'a str,
             image: &'a str,
         }
+    }
+
+    /// Construct a set of room emotes from bttv.
+    async fn room_emotes_from_bttv(&self, channel: &Channel) -> Result<EmoteByCode, Error> {
+        let channel = match self.inner.bttv.channels(&channel.name).await? {
+            Some(channel) => channel,
+            None => return Ok(Default::default()),
+        };
+
+        self.convert_emotes_from_bttv(channel.emotes, channel.url_template)
     }
 
     /// Construct a twitch emote.
@@ -217,6 +251,12 @@ impl Emotes {
         Ok(emotes)
     }
 
+    /// Construct a set of room emotes from ffz.
+    async fn emote_sets_from_bttv(&self) -> Result<EmoteByCode, Error> {
+        let emotes = self.inner.bttv.emotes().await?;
+        self.convert_emotes_from_bttv(emotes.emotes, emotes.url_template)
+    }
+
     /// Get all room emotes.
     async fn room_emotes(&self, channel: &Channel) -> Result<Arc<EmoteByCode>, Error> {
         self.inner
@@ -228,7 +268,7 @@ impl Emotes {
                 Duration::hours(6),
                 async {
                     let mut emotes = EmoteByCode::default();
-                    let (a, b) = futures::future::try_join(
+                    let (a, b) = future::try_join(
                         self.room_emotes_from_ffz(channel),
                         self.room_emotes_from_bttv(channel),
                     )
@@ -295,7 +335,15 @@ impl Emotes {
         self.inner
             .cache
             .wrap(Key::GlobalEmotes, Duration::hours(72), async {
-                let emotes = self.emote_sets_from_twitch("0").await?;
+                let (twitch, bttv) = future::try_join(
+                    self.emote_sets_from_twitch("0"),
+                    self.emote_sets_from_bttv(),
+                )
+                .await?;
+
+                let mut emotes = EmoteByCode::default();
+                emotes.extend(twitch);
+                emotes.extend(bttv);
                 Ok(Arc::new(emotes))
             })
             .await
@@ -395,6 +443,65 @@ impl Emotes {
         Ok(out)
     }
 
+    /// Get tduva chat badges.
+    async fn tduva_chat_badges(
+        &self,
+        name: &str,
+    ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
+        let mut out = SmallVec::new();
+
+        if let Some(d) = self.inner.tduva_data.read().as_ref() {
+            let entry = self.inner.cache.test(Key::TduvaBadges)?;
+
+            if let cache::State::Fresh(..) = entry.state {
+                for b in &d.chatty {
+                    if b.usernames.contains(name) {
+                        out.push((18, 18, b).into());
+                    }
+                }
+
+                return Ok(out);
+            }
+        }
+
+        let badges = self
+            .inner
+            .cache
+            .wrap(
+                Key::TduvaBadges,
+                Duration::hours(72),
+                self.inner.tduva.res_badges(),
+            )
+            .await?;
+
+        let mut d = TduvaData::default();
+
+        for badge in badges {
+            match badge.id.as_str() {
+                "chatty" => {
+                    d.chatty.push(TduvaBadge {
+                        id: badge.id,
+                        version: badge.version,
+                        image_url: badge.image_url,
+                        color: badge.color,
+                        title: badge.meta_title,
+                        usernames: badge.usernames.into_iter().collect(),
+                    });
+                }
+                _ => (),
+            }
+        }
+
+        for b in &d.chatty {
+            if b.usernames.contains(name) {
+                out.push((18, 18, b).into());
+            }
+        }
+
+        *self.inner.tduva_data.write() = Some(d);
+        Ok(out)
+    }
+
     /// Get twitch chat badges.
     async fn twitch_chat_badges(
         &self,
@@ -474,21 +581,52 @@ impl Emotes {
         channel: &Channel,
         name: &str,
     ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
-        let mut out = SmallVec::new();
+        let key = Key::RoomBadges {
+            target: &channel.name,
+            name,
+        };
 
-        if let Some(badges) = tags.badges.as_ref() {
-            match self.twitch_chat_badges(channel, split_badges(badges)).await {
-                Ok(badges) => out.extend(badges),
-                Err(e) => log::warn!("failed to get twitch chat badges: {}", e),
-            }
-        }
+        return self
+            .inner
+            .cache
+            .wrap(key, Duration::hours(1), async {
+                let mut out = SmallVec::new();
 
-        match self.ffz_chat_badges(name).await {
-            Ok(badges) => out.extend(badges),
-            Err(e) => log::warn!("failed to get ffz chat badges: {}", e),
-        }
+                if let Some(badges) = tags.badges.as_ref() {
+                    match self.twitch_chat_badges(channel, split_badges(badges)).await {
+                        Ok(badges) => out.extend(badges),
+                        Err(e) => log::warn!(
+                            "{}/{}: failed to get twitch chat badges: {}",
+                            channel.name,
+                            name,
+                            e
+                        ),
+                    }
+                }
 
-        return Ok(out);
+                match self.ffz_chat_badges(name).await {
+                    Ok(badges) => out.extend(badges),
+                    Err(e) => log::warn!(
+                        "{}/{}: failed to get ffz chat badges: {}",
+                        channel.name,
+                        name,
+                        e
+                    ),
+                }
+
+                match self.tduva_chat_badges(name).await {
+                    Ok(badges) => out.extend(badges),
+                    Err(e) => log::warn!(
+                        "{}/{}: failed to get tduva chat badges: {}",
+                        channel.name,
+                        name,
+                        e
+                    ),
+                }
+
+                Ok(out)
+            })
+            .await;
 
         /// Split all the badges.
         fn split_badges<'a>(badges: &'a str) -> impl Iterator<Item = (&'a str, u32)> {
@@ -508,8 +646,6 @@ impl Emotes {
         name: &str,
         message: &str,
     ) -> Result<Rendered, Error> {
-        use futures::future;
-
         let (badges, room_emotes, global_emotes) = future::try_join3(
             self.room_badges(tags, channel, name),
             self.room_emotes(channel),
@@ -545,6 +681,23 @@ pub struct Badge {
     urls: Urls,
     /// Optional background color.
     bg_color: Option<String>,
+}
+
+impl<'a> From<(u32, u32, &'a TduvaBadge)> for Badge {
+    fn from((width, height, value): (u32, u32, &'a TduvaBadge)) -> Self {
+        Badge {
+            title: value.title.clone(),
+            urls: Urls {
+                small: Some(Url {
+                    url: value.image_url.clone(),
+                    size: Some(Size { width, height }),
+                }),
+                medium: None,
+                large: None,
+            },
+            bg_color: value.color.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

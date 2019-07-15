@@ -6,12 +6,12 @@ use serde_cbor as cbor;
 use serde_json as json;
 use std::{fmt, sync::Arc};
 
-pub enum EntryKind<T> {
+pub enum State<T> {
     /// Entry is fresh and can be used.
-    Fresh { storage: StoredEntry<T> },
+    Fresh(StoredEntry<T>),
     /// Entry exists, but is expired.
     /// Cache is referenced so that the value can be removed if needed.
-    Expired { storage: StoredEntry<T> },
+    Expired(StoredEntry<T>),
     /// No entry.
     Missing,
 }
@@ -28,25 +28,25 @@ pub struct JsonEntry {
 pub struct EntryRef<'a, T> {
     cache: &'a Cache,
     pub key: Vec<u8>,
-    pub kind: EntryKind<T>,
+    pub state: State<T>,
 }
 
 impl<'a, T> EntryRef<'a, T> {
     /// Create a fresh entry.
-    pub fn fresh(cache: &'a Cache, key: Vec<u8>, storage: StoredEntry<T>) -> Self {
+    pub fn fresh(cache: &'a Cache, key: Vec<u8>, stored: StoredEntry<T>) -> Self {
         EntryRef {
             cache,
             key,
-            kind: EntryKind::Fresh { storage },
+            state: State::Fresh(stored),
         }
     }
 
     /// Create an expired entry.
-    pub fn expired(cache: &'a Cache, key: Vec<u8>, storage: StoredEntry<T>) -> Self {
+    pub fn expired(cache: &'a Cache, key: Vec<u8>, stored: StoredEntry<T>) -> Self {
         EntryRef {
             cache,
             key,
-            kind: EntryKind::Expired { storage },
+            state: State::Expired(stored),
         }
     }
 
@@ -55,26 +55,24 @@ impl<'a, T> EntryRef<'a, T> {
         EntryRef {
             cache,
             key,
-            kind: EntryKind::Missing,
+            state: State::Missing,
         }
     }
 
     /// Get as an option, regardless if it's expired or not.
     pub fn get(self) -> Option<T> {
-        match self.kind {
-            EntryKind::Fresh { storage, .. } | EntryKind::Expired { storage, .. } => {
-                Some(storage.value)
-            }
-            EntryKind::Missing { .. } => None,
+        match self.state {
+            State::Fresh(e) | State::Expired(e) => Some(e.value),
+            State::Missing => None,
         }
     }
 
     /// Get the value, but delete if it is expired.
     pub fn delete_if_expired(self) -> Result<Option<T>, Error> {
-        match self.kind {
-            EntryKind::Fresh { storage } => return Ok(Some(storage.value)),
-            EntryKind::Expired { .. } => self.cache.db.delete(&self.key)?,
-            EntryKind::Missing => (),
+        match self.state {
+            State::Fresh(e) => return Ok(Some(e.value)),
+            State::Expired(..) => self.cache.db.delete(&self.key)?,
+            State::Missing => (),
         }
 
         Ok(None)
@@ -103,6 +101,14 @@ impl PartialStoredEntry {
     /// Test if entry is expired.
     fn is_expired(&self, now: DateTime<Utc>) -> bool {
         self.expires_at < now
+    }
+
+    /// Convert into a stored entry.
+    fn into_stored_entry(self) -> StoredEntry<()> {
+        StoredEntry {
+            expires_at: self.expires_at,
+            value: (),
+        }
     }
 }
 
@@ -230,6 +236,54 @@ impl Cache {
         Ok(())
     }
 
+    /// Test an entry from the cache.
+    pub fn test<K>(&self, key: K) -> Result<EntryRef<'_, ()>, Error>
+    where
+        K: serde::Serialize,
+    {
+        let key = self.key(&key)?;
+        self.inner_test(key)
+    }
+
+    /// Load an entry from the cache.
+    #[inline(always)]
+    fn inner_test(&self, key: Vec<u8>) -> Result<EntryRef<'_, ()>, Error> {
+        let value = match self.db.get(&key)? {
+            Some(value) => value,
+            None => {
+                log::trace!("test:{} -> null (missing)", KeyFormat(&key));
+                return Ok(EntryRef::missing(self, key));
+            }
+        };
+
+        let storage: PartialStoredEntry = match cbor::from_slice(&value) {
+            Ok(value) => value,
+            Err(e) => {
+                if log::log_enabled!(log::Level::Trace) {
+                    log::warn!(
+                        "{}: failed to deserialize: {}: {}",
+                        KeyFormat(&key),
+                        e,
+                        KeyFormat(&value)
+                    );
+                } else {
+                    log::warn!("{}: failed to deserialize: {}", KeyFormat(&key), e);
+                }
+
+                log::trace!("test:{} -> null (deserialize error)", KeyFormat(&key));
+                return Ok(EntryRef::missing(self, key));
+            }
+        };
+
+        if storage.is_expired(Utc::now()) {
+            log::trace!("test:{} -> null (expired)", KeyFormat(&key));
+            return Ok(EntryRef::expired(self, key, storage.into_stored_entry()));
+        }
+
+        log::trace!("test:{} -> *value*", KeyFormat(&key));
+        Ok(EntryRef::fresh(self, key, storage.into_stored_entry()))
+    }
+
     /// Load an entry from the cache.
     pub fn get<K, T>(&self, key: K) -> Result<EntryRef<'_, T>, Error>
     where
@@ -294,9 +348,9 @@ impl Cache {
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
         let key = match self.get(key)? {
-            EntryRef { key, kind, .. } => match kind {
-                EntryKind::Fresh { storage } => return Ok(storage.value),
-                EntryKind::Expired { .. } | EntryKind::Missing => key,
+            EntryRef { key, state, .. } => match state {
+                State::Fresh(e) => return Ok(e.value),
+                State::Expired(..) | State::Missing => key,
             },
         };
 
