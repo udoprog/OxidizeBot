@@ -15,6 +15,8 @@ use std::{mem, sync::Arc};
 /// Number of badges inlined for performance reasons.
 /// Should be a value larger than the typical number of badges you'd see.
 const INLINED_BADGES: usize = 8;
+const DEFAULT_BADGE_SIZE: u32 = 18;
+const BTTV_BOT_BADGE: &'static str = "https://cdn.betterttv.net/tags/bot.png";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Url {
@@ -243,15 +245,15 @@ impl Emotes {
             return Ok(None);
         }
 
-        let mut url = Url::from(String::from("https://cdn.betterttv.net/tags/bot.png"));
+        let mut url = Url::from(String::from(BTTV_BOT_BADGE));
 
         url.size = Some(Size {
-            width: 18,
-            height: 18,
+            width: DEFAULT_BADGE_SIZE,
+            height: DEFAULT_BADGE_SIZE,
         });
 
         Ok(Some(Badge {
-            title: String::from("BetterTTV Bot Badge"),
+            title: String::from("Bot"),
             badge_url: None,
             urls: url.into(),
             bg_color: None,
@@ -494,7 +496,7 @@ impl Emotes {
         };
 
         for (_, badge) in user.badges {
-            let urls = (18u32, 18u32, badge.urls).into();
+            let urls = (DEFAULT_BADGE_SIZE, DEFAULT_BADGE_SIZE, badge.urls).into();
 
             out.push(Badge {
                 title: badge.title,
@@ -520,7 +522,7 @@ impl Emotes {
             if let cache::State::Fresh(..) = entry.state {
                 for b in &d.chatty {
                     if b.usernames.contains(name) {
-                        out.push((18, 18, b).into());
+                        out.push((DEFAULT_BADGE_SIZE, DEFAULT_BADGE_SIZE, b).into());
                     }
                 }
 
@@ -558,7 +560,7 @@ impl Emotes {
 
         for b in &d.chatty {
             if b.usernames.contains(name) {
-                out.push((18, 18, b).into());
+                out.push((DEFAULT_BADGE_SIZE, DEFAULT_BADGE_SIZE, b).into());
             }
         }
 
