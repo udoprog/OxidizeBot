@@ -400,6 +400,7 @@ impl Emotes {
 
             return Ok(Some(Badge {
                 title: badge.title,
+                badge_url: None,
                 urls,
                 bg_color: None,
             }));
@@ -435,6 +436,7 @@ impl Emotes {
 
             out.push(Badge {
                 title: badge.title,
+                badge_url: None,
                 urls,
                 bg_color: Some(badge.color),
             });
@@ -566,6 +568,7 @@ impl Emotes {
 
             out.push(Badge {
                 title: name.to_string(),
+                badge_url: None,
                 urls,
                 bg_color: None,
             });
@@ -671,12 +674,16 @@ enum Item {
     Text { text: String },
     #[serde(rename = "emote")]
     Emote { emote: String },
+    #[serde(rename = "url")]
+    Url { url: String },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Badge {
     /// Title for badge.
     title: String,
+    /// Add a link to the badge.
+    badge_url: Option<String>,
     /// Urls to pick for badge.
     urls: Urls,
     /// Optional background color.
@@ -687,6 +694,7 @@ impl<'a> From<(u32, u32, &'a TduvaBadge)> for Badge {
     fn from((width, height, value): (u32, u32, &'a TduvaBadge)) -> Self {
         Badge {
             title: value.title.clone(),
+            badge_url: Some(value.image_url.clone()),
             urls: Urls {
                 small: Some(Url {
                     url: value.image_url.clone(),
@@ -716,42 +724,61 @@ impl Rendered {
         message_emotes: &EmoteByCode,
         global_emotes: &EmoteByCode,
     ) -> Rendered {
+        use url::Url;
+
         let mut buf = text;
 
         let mut emotes = HashMap::new();
         let mut items = Vec::new();
 
+        let emote = |word| {
+            room_emotes
+                .get(word)
+                .or_else(|| message_emotes.get(word))
+                .or_else(|| global_emotes.get(word))
+        };
+
         'outer: loop {
             let mut it = Words::new(buf);
 
             while let Some((idx, word)) = it.next() {
-                let emote = match room_emotes
-                    .get(word)
-                    .or_else(|| message_emotes.get(word))
-                    .or_else(|| global_emotes.get(word))
-                {
-                    Some(emote) => emote,
-                    None => continue,
-                };
+                if let Some(emote) = emote(word) {
+                    if !emotes.contains_key(word) {
+                        emotes.insert(word.to_string(), emote.clone());
+                    }
 
-                if !emotes.contains_key(word) {
-                    emotes.insert(word.to_string(), emote.clone());
-                }
+                    let text = &buf[..idx];
 
-                let text = &buf[..idx];
+                    if !text.is_empty() {
+                        items.push(Item::Text {
+                            text: text.to_string(),
+                        });
+                    }
 
-                if !text.is_empty() {
-                    items.push(Item::Text {
-                        text: text.to_string(),
+                    items.push(Item::Emote {
+                        emote: word.to_string(),
                     });
+
+                    buf = &buf[(idx + word.len())..];
+                    continue 'outer;
                 }
 
-                items.push(Item::Emote {
-                    emote: word.to_string(),
-                });
+                if let Ok(url) = Url::parse(word) {
+                    let text = &buf[..idx];
 
-                buf = &buf[(idx + word.len())..];
-                continue 'outer;
+                    if !text.is_empty() {
+                        items.push(Item::Text {
+                            text: text.to_string(),
+                        });
+                    }
+
+                    items.push(Item::Url {
+                        url: url.to_string(),
+                    });
+
+                    buf = &buf[(idx + word.len())..];
+                    continue 'outer;
+                }
             }
 
             break;

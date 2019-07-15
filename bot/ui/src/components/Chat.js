@@ -427,6 +427,10 @@ export default class Chat extends React.Component {
         return <span key={i} style={style} className={className}><img key={i} {...props} /></span>;
       }
 
+      if (badge.badge_url !== null) {
+        return <a href={badge.badge_url}><img key={i} className={className} {...props} /></a>;
+      }
+
       return <img key={i} className={className} {...props} />;
     });
   }
@@ -442,6 +446,8 @@ export default class Chat extends React.Component {
       switch (item.type) {
         case "text":
           return <span className="text" key={i}>{item.text}</span>;
+        case "url":
+          return <a className="url" href={item.url} key={i}>{item.url}</a>;
         case "emote":
           return this.cachedEmote(i, rendered, item);
         default:

@@ -495,11 +495,15 @@ body.chat-body {
       height: 32px;
       word-wrap: break-word;
 
-      span {
-        &.text {
-          line-height: 32px;
-          vertical-align: middle;
-        }
+      span.text {
+        line-height: 32px;
+        vertical-align: middle;
+      }
+
+      a.url {
+        color: white;
+        line-height: 32px;
+        vertical-align: middle;
       }
 
       img {
