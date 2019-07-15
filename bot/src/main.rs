@@ -1,13 +1,13 @@
 #![feature(async_await)]
 #![recursion_limit = "128"]
-// #![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 
 use backoff::backoff::Backoff as _;
 use failure::{bail, format_err, Error, ResultExt};
 use parking_lot::RwLock;
 use setmod::{
     api, auth, bus, config, db, injector, irc, message_log, module, oauth2, obs, player,
-    prelude::*, settings, storage, stream_info, sys, updater, utils, web,
+    prelude::*, settings, storage, stream_info, sys, timer, updater, utils, web,
 };
 use std::{
     path::{Path, PathBuf},
@@ -127,8 +127,6 @@ fn setup_logs(
 }
 
 fn main() -> Result<(), Error> {
-    use std::thread;
-
     let opts = opts();
     let m = opts.get_matches();
 
@@ -181,13 +179,17 @@ fn main() -> Result<(), Error> {
         system.notification(startup);
     }
 
+    let mut runtime = tokio::runtime::Runtime::new()?;
+
     loop {
+        if !system.is_running() {
+            break;
+        }
+
         if errored {
             system.clear();
             errored = false;
         }
-
-        let mut runtime = tokio::runtime::Runtime::new()?;
 
         let result = runtime.block_on(try_main(system.clone(), root.clone()).boxed().compat());
 
@@ -218,7 +220,6 @@ fn main() -> Result<(), Error> {
         }
 
         if !system.is_running() {
-            log::info!("Exiting...");
             break;
         }
 
@@ -227,7 +228,25 @@ fn main() -> Result<(), Error> {
                 "Restarting in {}...",
                 utils::compact_duration(current_backoff)
             );
-            thread::sleep(current_backoff.clone());
+
+            let system = system.clone();
+
+            let system_interrupt = async move {
+                future::select(
+                    system.wait_for_shutdown().boxed(),
+                    system.wait_for_restart().boxed(),
+                )
+                .await;
+            };
+
+            let delay = timer::Delay::new(time::Instant::now() + *current_backoff);
+
+            let _ = runtime.block_on(
+                future::select(system_interrupt.boxed(), delay)
+                    .unit_error()
+                    .boxed()
+                    .compat(),
+            );
         }
 
         if !errored {
@@ -236,6 +255,7 @@ fn main() -> Result<(), Error> {
         }
     }
 
+    log::info!("Exiting...");
     system.join()?;
     Ok(())
 }

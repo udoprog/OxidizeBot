@@ -37,7 +37,7 @@ pub mod storage;
 pub mod stream_info;
 pub mod sys;
 pub mod template;
-mod timer;
+pub mod timer;
 mod track_id;
 pub mod updater;
 mod uri;
