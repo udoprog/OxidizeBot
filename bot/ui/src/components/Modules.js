@@ -9,7 +9,7 @@ function Player(props) {
       <h3>Music Player</h3>
 
       <p>
-        Handles playing music in SetMod.
+        Handles playing music and taking song requests in Oxidize Bot.
       </p>
 
       <ConfigurationPrompt
@@ -48,10 +48,7 @@ function Currency(props) {
 
       <p>
         A stream currency is a kind of loyalty points system.
-      </p>
-
-      <p>
-        SetMod has a sophisticated system that integrated with many parts of the bot, and different database backends.
+        It integrated with many other components and can be configured to reward viewers for watching, requesting songs, or other activities.
       </p>
 
       <ConfigurationPrompt

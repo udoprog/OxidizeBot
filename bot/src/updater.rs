@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use std::{sync::Arc, time::Instant};
 
 const USER: &'static str = "udoprog";
-const REPO: &'static str = "setmod";
+const REPO: &'static str = "OxidizeBot";
 
 pub fn run(
     injector: &Injector,

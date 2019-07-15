@@ -1,1 +1,1 @@
-DELETE FROM cache;
+DROP TABLE cache;

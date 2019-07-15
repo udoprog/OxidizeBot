@@ -4,22 +4,25 @@
 
 use backoff::backoff::Backoff as _;
 use failure::{bail, format_err, Error, ResultExt};
-use parking_lot::RwLock;
-use setmod::{
+use oxidize::{
     api, auth, bus, config, db, injector, irc, message_log, module, oauth2, obs, player,
     prelude::*, settings, storage, stream_info, sys, timer, updater, utils, web,
 };
+use parking_lot::RwLock;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
     time,
 };
 
+const OLD_CONFIG_DIR: &'static str = "SetMod";
+const CONFIG_DIR: &'static str = "OxidizeBot";
+
 fn opts() -> clap::App<'static, 'static> {
-    clap::App::new("SetMod Bot")
-        .version(setmod::VERSION)
+    clap::App::new("Oxidize Bot")
+        .version(oxidize::VERSION)
         .author("John-John Tedro <udoprog@tedro.se>")
-        .about("Bot component of SetMod.")
+        .about("Oxidize Twitch Bot.")
         .arg(
             clap::Arg::with_name("root")
                 .short("r")
@@ -91,7 +94,7 @@ fn default_log_config(
         Logger::builder()
             .appender("file")
             .additive(false)
-            .build("setmod", level),
+            .build("oxidize", level),
     );
 
     for m in modules {
@@ -130,11 +133,15 @@ fn main() -> Result<(), Error> {
     let opts = opts();
     let m = opts.get_matches();
 
-    let root = match m.value_of("root") {
-        Some(root) => PathBuf::from(root),
-        None => dirs::config_dir()
-            .ok_or_else(|| format_err!("no standard configuration directory available"))?
-            .join("SetMod"),
+    let (old_root, root) = match m.value_of("root") {
+        Some(root) => (None, PathBuf::from(root)),
+        None => {
+            let base = dirs::config_dir()
+                .ok_or_else(|| format_err!("no standard configuration directory available"))?;
+            let old = base.join(OLD_CONFIG_DIR);
+            let new = base.join(CONFIG_DIR);
+            (Some(old), new)
+        }
     };
 
     let trace = m.is_present("trace");
@@ -145,23 +152,13 @@ fn main() -> Result<(), Error> {
     };
 
     let log_config = m.value_of("log-config").map(PathBuf::from);
-    let default_log_file = root.join("setmod.log");
+    let default_log_file = root.join("oxidize.log");
 
     setup_logs(&root, log_config, &default_log_file, trace, log_modules)
         .context("failed to setup logs")?;
 
-    let config = m
-        .value_of("config")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| root.join("config.toml"))
-        .to_owned();
-
-    if config.is_file() {
-        log::warn!("Configuration file is deprecated: {}", config.display());
-    }
-
     if !root.is_dir() {
-        log::info!("Creating SetMod directory: {}", root.display());
+        log::info!("Creating config directory: {}", root.display());
         std::fs::create_dir_all(&root)?;
     }
 
@@ -175,7 +172,7 @@ fn main() -> Result<(), Error> {
     let mut errored = false;
 
     if !m.is_present("silent") {
-        let startup = sys::Notification::new(format!("Started SetMod {}", setmod::VERSION));
+        let startup = sys::Notification::new(format!("Started Oxidize {}", oxidize::VERSION));
         system.notification(startup);
     }
 
@@ -191,7 +188,11 @@ fn main() -> Result<(), Error> {
             errored = false;
         }
 
-        let result = runtime.block_on(try_main(system.clone(), root.clone()).boxed().compat());
+        let result = runtime.block_on(
+            try_main(system.clone(), old_root.clone(), root.clone())
+                .boxed()
+                .compat(),
+        );
 
         match result {
             Err(e) => {
@@ -210,7 +211,7 @@ fn main() -> Result<(), Error> {
 
                 system.notification(n);
                 system.error(String::from("Bot crashed, see log for more details."));
-                setmod::log_err!(e, "Bot crashed");
+                oxidize::log_err!(e, "Bot crashed");
             }
             Ok(()) => {
                 error_backoff.reset();
@@ -260,14 +261,41 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn try_main(system: sys::System, root: PathBuf) -> Result<(), Error> {
-    log::info!("Starting SetMod Version {}", setmod::VERSION);
+async fn try_main(
+    system: sys::System,
+    old_root: Option<PathBuf>,
+    root: PathBuf,
+) -> Result<(), Error> {
+    log::info!("Starting Oxidize Bot Version {}", oxidize::VERSION);
+
+    if !root.is_dir() {
+        std::fs::create_dir_all(&root)
+            .with_context(|_| format_err!("failed to create root: {}", root.display()))?;
+    }
 
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
 
     let mut modules = Vec::<Box<dyn module::Module>>::new();
 
-    let database_path = root.join("setmod.sql");
+    let database_path = {
+        let new = root.join("oxidize.sql");
+
+        if let Some(old) = old_root {
+            let old = old.join("setmod.sql");
+
+            if old.is_file() && !new.is_file() {
+                std::fs::copy(&old, &new).with_context(|_| {
+                    format_err!(
+                        "failed to copy database: {} to {}",
+                        old.display(),
+                        new.display()
+                    )
+                })?;
+            }
+        }
+
+        new
+    };
 
     let db = db::Database::open(&database_path, Arc::clone(&thread_pool))
         .with_context(|_| format_err!("failed to open database at: {}", database_path.display()))?;

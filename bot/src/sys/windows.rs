@@ -114,7 +114,7 @@ impl System {
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
         )?;
 
-        let path = match key.get("SetMod")? {
+        let path = match key.get("OxidizeBot")? {
             Some(path) => path,
             None => return Ok(false),
         };
@@ -127,7 +127,7 @@ impl System {
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
         )?;
 
-        key.set("SetMod", &Self::run_registry_entry()?)?;
+        key.set("OxidizeBot", &Self::run_registry_entry()?)?;
         Ok(())
     }
 
@@ -136,7 +136,7 @@ impl System {
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
         )?;
 
-        key.delete("SetMod")?;
+        key.delete("OxidizeBot")?;
         Ok(())
     }
 }
@@ -177,7 +177,7 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
     let (events, mut events_rx) = mpsc::unbounded::<Event>();
 
     let window_loop = async move {
-        let mut window = window::Window::new(String::from("SetMod")).await?;
+        let mut window = window::Window::new(String::from("OxidizeBot")).await?;
 
         window.set_icon_from_buffer(ICON, 128, 128)?;
 

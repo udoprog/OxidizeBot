@@ -142,7 +142,7 @@ impl RequestBuilder {
 
             req = req.header(
                 header::USER_AGENT,
-                concat!("setmod/", env!("CARGO_PKG_VERSION")),
+                concat!("OxidizeBot/", env!("CARGO_PKG_VERSION")),
             );
 
             req

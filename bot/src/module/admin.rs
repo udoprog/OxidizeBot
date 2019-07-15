@@ -80,7 +80,7 @@ impl command::Handler for Handler<'_> {
                     ctx.respond("Refreshed information on mods and vips");
                 }
                 Some("version") => {
-                    ctx.respond(format!("Bot Version {}", crate::VERSION));
+                    ctx.respond(format!("OxidizeBot Version {}", crate::VERSION));
                 }
                 Some("shutdown") | Some("restart") => {
                     if ctx.shutdown.shutdown() {

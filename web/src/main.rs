@@ -1,13 +1,13 @@
 use futures::Future as _;
-use setmod_web::web;
+use oxidize_web::web;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 fn opts() -> clap::App<'static, 'static> {
-    clap::App::new("SetMod Web")
+    clap::App::new("Oxidize Web")
         .version(VERSION)
         .author("John-John Tedro <udoprog@tedro.se>")
-        .about("Web Components of SetMod")
+        .about("Web Components of Oxidize")
         .arg(
             clap::Arg::with_name("no-auth")
                 .long("no-auth")

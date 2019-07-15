@@ -4,7 +4,7 @@ appenders:
     kind: console
   file:
     kind: file
-    path: "setmod.log"
+    path: "oxidize.log"
     encoder:
       pattern: "{d} {l} {t} - {m}{n}"
 root:
@@ -12,7 +12,7 @@ root:
   appenders:
     - stdout
 loggers:
-  setmod:
+  oxidize:
     level: info
     appenders:
       - file

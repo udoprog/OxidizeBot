@@ -238,6 +238,6 @@ mod tests {
 
     #[test]
     fn test_user_id() {
-        assert_eq!("setmod", user_id("@SetMod"));
+        assert_eq!("oxidizebot", user_id("@OxidizeBot"));
     }
 }

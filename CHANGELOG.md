@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.4.4...master
+[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/0.4.4...master
 
 ## [0.4.4]
 
@@ -17,28 +17,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bypass-cooldowns` scope to bypass command and scope cooldowns.
 - Support for ChaosMod 1.3.0.
 
-[0.4.4]: https://github.com/udoprog/setmod/compare/0.4.3...0.4.4
+[0.4.4]: https://github.com/udoprog/OxidizeBot/compare/0.4.3...0.4.4
 
 ## [0.4.3]
 
 ### Changed
 - Switch to moment-timezone for list of timezones in UI.
 
-[0.4.3]: https://github.com/udoprog/setmod/compare/0.4.2...0.4.3
+[0.4.3]: https://github.com/udoprog/OxidizeBot/compare/0.4.2...0.4.3
 
 ## [0.4.2]
 
 ### Changed
 - Make location optional in Settings component (causes blank page).
 
-[0.4.2]: https://github.com/udoprog/setmod/compare/0.4.1...0.4.2
+[0.4.2]: https://github.com/udoprog/OxidizeBot/compare/0.4.1...0.4.2
 
 ## [0.4.1]
 
 ### Changed
 - UI doesn't break on bad semver latest releases.
 
-[0.4.1]: https://github.com/udoprog/setmod/compare/0.4.0...0.4.1
+[0.4.1]: https://github.com/udoprog/OxidizeBot/compare/0.4.0...0.4.1
 
 ## [0.4.0]
 
@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Don't crash if a user removes a the Twitch connection.
 - Deprecate use of configuration file fully.
 
-[0.4.0]: https://github.com/udoprog/setmod/compare/0.3.8...0.4.0
+[0.4.0]: https://github.com/udoprog/OxidizeBot/compare/0.3.8...0.4.0
 
 ## [0.3.8]
 
@@ -55,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `!weather` command to check the current weather.
 - Notification after stream has ended if you have afterstream messages.
 
-[0.3.8]: https://github.com/udoprog/setmod/compare/0.3.7...0.3.8
+[0.3.8]: https://github.com/udoprog/OxidizeBot/compare/0.3.7...0.3.8
 
 ## [0.3.7]
 
@@ -63,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `utils::compact_duration` now includes `days` when formatting.
 - Don't use `flatMap` in since it's not supported in OBS's Browser Source.
 
-[0.3.7]: https://github.com/udoprog/setmod/compare/0.3.6...0.3.7
+[0.3.7]: https://github.com/udoprog/OxidizeBot/compare/0.3.6...0.3.7
 
 ## [0.3.6]
 
@@ -72,8 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `!time` command for showing the current time of the streamer (in the specified time zone) [#45].
 - `system/run-on-startup` setting that can configure SetMod to run on system startup.
 
-[#45]: https://github.com/udoprog/setmod/issues/45
-[0.3.6]: https://github.com/udoprog/setmod/compare/0.3.5...0.3.6
+[#45]: https://github.com/udoprog/OxidizeBot/issues/45
+[0.3.6]: https://github.com/udoprog/OxidizeBot/compare/0.3.5...0.3.6
 
 ## [0.3.5]
 
@@ -103,9 +103,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix issue where player feedback shuts down first time it's disabled.
 
 [auth.yaml]: bot/src/auth.yaml
-[#48]: https://github.com/udoprog/setmod/issues/48
-[#47]: https://github.com/udoprog/setmod/issues/47
-[0.3.5]: https://github.com/udoprog/setmod/compare/0.3.4...0.3.5
+[#48]: https://github.com/udoprog/OxidizeBot/issues/48
+[#47]: https://github.com/udoprog/OxidizeBot/issues/47
+[0.3.5]: https://github.com/udoprog/OxidizeBot/compare/0.3.4...0.3.5
 
 ## [0.3.4]
 
@@ -117,7 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed player sync on startup not setting state correctly.
 - Fixed issue where Spotify can't be controlled unless it is started before the bot.
 
-[0.3.4]: https://github.com/udoprog/setmod/compare/0.3.3...0.3.4
+[0.3.4]: https://github.com/udoprog/OxidizeBot/compare/0.3.3...0.3.4
 
 ## [0.3.3]
 
@@ -126,7 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed issue where non-mods cannot request songs without stream currency enabled even though `song/*/min-currency` was set to `0`.
 - `song/*/max-duration` is not optional and unset by default, and can be deleted.
 
-[0.3.3]: https://github.com/udoprog/setmod/compare/0.3.2...0.3.3
+[0.3.3]: https://github.com/udoprog/OxidizeBot/compare/0.3.2...0.3.3
 
 ## [0.3.2]
 
@@ -137,7 +137,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed issue when picking device and simplified how device ID is stored.
 - Fixed issue where delete dialog does not disappear.
 
-[0.3.2]: https://github.com/udoprog/setmod/compare/0.3.1..0.3.2
+[0.3.2]: https://github.com/udoprog/OxidizeBot/compare/0.3.1..0.3.2
 
 ## [0.3.1]
 
@@ -151,7 +151,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reverted fix for Twitch API, since they fixed it themselves :|.
 - Fixed broken link to player on setbac.tv.
 
-[0.3.1]: https://github.com/udoprog/setmod/compare/0.3.0...0.3.1
+[0.3.1]: https://github.com/udoprog/OxidizeBot/compare/0.3.0...0.3.1
 
 ## [0.3.0]
 
@@ -162,7 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added an installer for SetMod which is recommended to use on Windows.
 
-[0.2.10]: https://github.com/udoprog/setmod/compare/0.2.10...0.3.0
+[0.2.10]: https://github.com/udoprog/OxidizeBot/compare/0.2.10...0.3.0
 
 ## [0.2.10]
 
@@ -171,14 +171,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Commands can now be quoted to support spaces in arguments.
   * Example: `!speedrun game sm64 --category "120 Star"`
 
-[0.2.10]: https://github.com/udoprog/setmod/compare/0.2.9...0.2.10
+[0.2.10]: https://github.com/udoprog/OxidizeBot/compare/0.2.9...0.2.10
 
 ## [0.2.9]
 
 ### Changed
 - Fixed bug where new tokens weren't stored locally properly.
 
-[0.2.9]: https://github.com/udoprog/setmod/compare/0.2.8...0.2.9
+[0.2.9]: https://github.com/udoprog/OxidizeBot/compare/0.2.8...0.2.9
 
 ## [0.2.8]
 
@@ -203,7 +203,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `!speedrun` command to get records from speedrun.com.
 
 [auth.yaml]: bot/src/auth.yaml
-[0.2.8]: https://github.com/udoprog/setmod/compare/0.2.7...0.2.8
+[0.2.8]: https://github.com/udoprog/OxidizeBot/compare/0.2.7...0.2.8
 
 ## [0.2.7]
 
@@ -239,15 +239,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `song/*/min-currency`, for a minimum currency limit to request songs.
 - Added `song/*/subscriber-only` and `song/subscriber-only` to limit song requests to subscribers only.
 
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.2.6...HEAD
-[#27]: https://github.com/udoprog/setmod/issues/27
-[#32]: https://github.com/udoprog/setmod/issues/32
-[#33]: https://github.com/udoprog/setmod/issues/33
-[#35]: https://github.com/udoprog/setmod/issues/35
-[#36]: https://github.com/udoprog/setmod/issues/36
-[#37]: https://github.com/udoprog/setmod/issues/37
+[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/0.2.6...HEAD
+[#27]: https://github.com/udoprog/OxidizeBot/issues/27
+[#32]: https://github.com/udoprog/OxidizeBot/issues/32
+[#33]: https://github.com/udoprog/OxidizeBot/issues/33
+[#35]: https://github.com/udoprog/OxidizeBot/issues/35
+[#36]: https://github.com/udoprog/OxidizeBot/issues/36
+[#37]: https://github.com/udoprog/OxidizeBot/issues/37
 
-[0.2.7]: https://github.com/udoprog/setmod/compare/0.2.6...0.2.7
+[0.2.7]: https://github.com/udoprog/OxidizeBot/compare/0.2.6...0.2.7
 
 ## [0.2.6]
 
@@ -259,8 +259,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - gtav: Add vehicle by name from https://bit.ly/gtavvehicles
 - gtav: more commands
 
-[0.2.6]: https://github.com/udoprog/setmod/compare/0.2.5...0.2.6
-[#30]: https://github.com/udoprog/setmod/issues/30
+[0.2.6]: https://github.com/udoprog/OxidizeBot/compare/0.2.5...0.2.6
+[#30]: https://github.com/udoprog/OxidizeBot/issues/30
 
 ## [0.2.5]
 
@@ -281,14 +281,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [`gtav` configuration]: README.md#gtav
 [ChaosMod]: https://github.com/udoprog/ChaosMod
 
-[#26]: https://github.com/udoprog/setmod/issues/26
+[#26]: https://github.com/udoprog/OxidizeBot/issues/26
 
 ### Changed
 - Fixed bug where `Settings` frontend would make the value into a string before sending it to backend.
 
-[#26]: https://github.com/udoprog/setmod/issues/26
+[#26]: https://github.com/udoprog/OxidizeBot/issues/26
 
-[0.2.5]: https://github.com/udoprog/setmod/compare/0.2.4...0.2.5
+[0.2.5]: https://github.com/udoprog/OxidizeBot/compare/0.2.4...0.2.5
 
 ## [0.2.4]
 
@@ -308,7 +308,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved log configuration to external file (see [example log4rs.yaml]).
 - No longer raise an error on bad input.
 - UI is now built in React ([#23]).
-  * This adds the `-WebRoot` option to [`tools/setmod.ps1`] to override where to load files from for development purposes.
+  * This adds the `-WebRoot` option to `tools/setmod.ps1` to override where to load files from for development purposes.
 - `.oauth2` state is now stored in the database under settings.
 
 ### Removed
@@ -318,16 +318,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [`alias configuration`]: README.md#alias
 [`promotions configuration`]: README.md#promotions
 [example log4rs.yaml]: log4rs.yaml
-[`tools/setmod.ps1`]: tools/setmod.ps1
 
-[#18]: https://github.com/udoprog/setmod/issues/18
-[#19]: https://github.com/udoprog/setmod/issues/19
-[#22]: https://github.com/udoprog/setmod/issues/22
-[#23]: https://github.com/udoprog/setmod/issues/23
-[#24]: https://github.com/udoprog/setmod/issues/24
-[#25]: https://github.com/udoprog/setmod/issues/25
+[#18]: https://github.com/udoprog/OxidizeBot/issues/18
+[#19]: https://github.com/udoprog/OxidizeBot/issues/19
+[#22]: https://github.com/udoprog/OxidizeBot/issues/22
+[#23]: https://github.com/udoprog/OxidizeBot/issues/23
+[#24]: https://github.com/udoprog/OxidizeBot/issues/24
+[#25]: https://github.com/udoprog/OxidizeBot/issues/25
 
-[0.2.4]: https://github.com/udoprog/setmod/compare/0.2.3...0.2.4
+[0.2.4]: https://github.com/udoprog/OxidizeBot/compare/0.2.3...0.2.4
 
 ## [0.2.3]
 
@@ -341,9 +340,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [`parking_lot`]: https://github.com/Amanieu/parking_lot
 
-[#21]: https://github.com/udoprog/setmod/issues/21
+[#21]: https://github.com/udoprog/OxidizeBot/issues/21
 
-[0.2.3]: https://github.com/udoprog/setmod/compare/0.2.2...0.2.3
+[0.2.3]: https://github.com/udoprog/OxidizeBot/compare/0.2.2...0.2.3
 
 ## [0.2.2]
 
@@ -360,10 +359,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Informing you more clearly when you need to authenticate.
   - Provide hint on how to configure persistent device.
 
-[#17]: https://github.com/udoprog/setmod/issues/17
-[#20]: https://github.com/udoprog/setmod/issues/20
+[#17]: https://github.com/udoprog/OxidizeBot/issues/17
+[#20]: https://github.com/udoprog/OxidizeBot/issues/20
 
-[0.2.2]: https://github.com/udoprog/setmod/compare/0.2.1...0.2.2
+[0.2.2]: https://github.com/udoprog/OxidizeBot/compare/0.2.1...0.2.2
 
 ## [0.2.1]
 
@@ -392,18 +391,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed configuration format to flatten it more ([#11]).
 - Reduced the number of scopes requested for tokens to a minimum.
 
-[example configuration]: https://github.com/udoprog/setmod/blob/master/config.toml
-[#2]: https://github.com/udoprog/setmod/issues/2
-[#3]: https://github.com/udoprog/setmod/issues/3
-[#4]: https://github.com/udoprog/setmod/issues/4
-[#5]: https://github.com/udoprog/setmod/issues/5
-[#6]: https://github.com/udoprog/setmod/issues/6
-[#7]: https://github.com/udoprog/setmod/issues/7
-[#8]: https://github.com/udoprog/setmod/issues/8
-[#9]: https://github.com/udoprog/setmod/issues/9
-[#10]: https://github.com/udoprog/setmod/issues/10
-[#11]: https://github.com/udoprog/setmod/issues/11
-[#13]: https://github.com/udoprog/setmod/issues/13
-[#14]: https://github.com/udoprog/setmod/issues/14
+[example configuration]: https://github.com/udoprog/OxidizeBot/blob/master/config.toml
+[#2]: https://github.com/udoprog/OxidizeBot/issues/2
+[#3]: https://github.com/udoprog/OxidizeBot/issues/3
+[#4]: https://github.com/udoprog/OxidizeBot/issues/4
+[#5]: https://github.com/udoprog/OxidizeBot/issues/5
+[#6]: https://github.com/udoprog/OxidizeBot/issues/6
+[#7]: https://github.com/udoprog/OxidizeBot/issues/7
+[#8]: https://github.com/udoprog/OxidizeBot/issues/8
+[#9]: https://github.com/udoprog/OxidizeBot/issues/9
+[#10]: https://github.com/udoprog/OxidizeBot/issues/10
+[#11]: https://github.com/udoprog/OxidizeBot/issues/11
+[#13]: https://github.com/udoprog/OxidizeBot/issues/13
+[#14]: https://github.com/udoprog/OxidizeBot/issues/14
 
-[0.2.1]: https://github.com/udoprog/setmod/compare/0.0.1...0.2.1
+[0.2.1]: https://github.com/udoprog/OxidizeBot/compare/0.0.1...0.2.1

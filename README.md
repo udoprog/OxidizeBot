@@ -1,7 +1,7 @@
-# ![alt text](https://raw.githubusercontent.com/udoprog/setmod/master/bot/res/icon48.png "SetMod Rust Bot") SetMod
+# ![alt text](https://raw.githubusercontent.com/udoprog/OxidizeBot/master/bot/res/icon48.png "Oxidize Twitch Bot") OxidizeBot
 
-[![Build Status](https://travis-ci.org/udoprog/setmod.svg?branch=master)](https://travis-ci.org/udoprog/setmod)
-[![Build status](https://ci.appveyor.com/api/projects/status/cxagsq3idti252a4/branch/master?svg=true)](https://ci.appveyor.com/project/udoprog/setmod/branch/master)
+[![Build Status](https://travis-ci.org/udoprog/OxidizeBot.svg?branch=master)](https://travis-ci.org/udoprog/OxidizeBot)
+[![Build status](https://ci.appveyor.com/api/projects/status/cxagsq3idti252a4/branch/master?svg=true)](https://ci.appveyor.com/project/udoprog/OxidizeBot/branch/master)
 
 This is a high performance Twitch Bot written in Rust.
 
@@ -14,14 +14,14 @@ If there's something you're missing, feel free to [open an issue].
 **Rust** &mdash; Written in [Rust], promoting high performance, low utilization, and reliability.
 
 <p>
-<img style="float: left;"  title="Rust" width="67" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/cuddlyferris.png" />
+<img style="float: left;"  title="Rust" width="67" height="50" src="https://github.com/udoprog/OxidizeBot/raw/master/gfx/cuddlyferris.png" />
 </p>
 
 **Configurable** &mdash; Everything is tweakable to suit your needs through a [hundred settings].
 Changes to settings applies immediately - no need to restart.
 
 <p>
-<img style="float: left;" title="Settings" width="140" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/setting.png" />
+<img style="float: left;" title="Settings" width="140" height="50" src="https://github.com/udoprog/OxidizeBot/raw/master/gfx/setting.png" />
 </p>
 
 **Integrated with Windows** &mdash; Runs in the background with a System Tray.
@@ -29,17 +29,17 @@ Notifies you on issues.
 Starts automatically with Windows if you want it to.
 
 <p>
-<img style="float: left;" title="Windows Systray" width="131" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/windows-systray.png" />
-<img style="float: left;" title="Reminder" width="120" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/windows-reminder.png" />
+<img style="float: left;" title="Windows Systray" width="131" height="50" src="https://github.com/udoprog/OxidizeBot/raw/master/gfx/windows-systray.png" />
+<img style="float: left;" title="Reminder" width="120" height="50" src="https://github.com/udoprog/OxidizeBot/raw/master/gfx/windows-reminder.png" />
 </p>
 
-[open an issue]: https://github.com/udoprog/setmod/issues
+[open an issue]: https://github.com/udoprog/OxidizeBot/issues
 [Rust]: https://rust-lang.org
 [hundred settings]: /bot/src/settings.yaml
 
 ## Installing and Running
 
-You can download an installer or an archive from [releases](https://github.com/udoprog/setmod/releases) or [build the project yourself](#building).
+You can download an installer or an archive from [releases](https://github.com/udoprog/OxidizeBot/releases) or [build the project yourself](#building).
 
 ## Building
 
@@ -53,40 +53,21 @@ rustup toolchain install nightly
 rustup default nightly
 ```
 
-On **Windows**, you will need to setup some environment variables.
-You can do that in PowerShell by running the following in the shell:
-
-```
-./tools/env.ps1
-```
-
 After this, you build the project using cargo:
 
 ```
 cargo +nightly build --release
 ```
 
-If you want to build and run the project in one go, there is a helper script in [`tools/setmod.ps1`] that you can run from anywhere in a powershell terminal, like this:
-
-```
-C:\setmod\> C:\Projects\setmod\tools\setmod.ps1
-```
-
-[`tools/setmod.ps1`]: tools/setmod.ps1
-
 ## Settings
 
-SetMod is moving towards storing settings in the database.
+You can find all settings by navigating to `Advanced -> Settings` in the UI.
 
-These settings are stored as slash-separated strings, like `player/max-songs-per-user`.
-
-You can find all available settings and their types in [`settings.yaml`](bot/src/settings.yaml).
-
-When the bot is running, you can find all settings under `Internal -> Settings`.
+Each setting has a slash-separated name, like `song/enabled` which indicates which component the setting belongs to.
 
 ## YouTube Player
 
-setmod has support for playing YouTube videos.
+Oxidize has support for playing YouTube videos.
 
 This is enabled through the `song/youtube/support` setting and requires you to run the YouTube Player in the web UI.
 
@@ -114,7 +95,7 @@ Some commands also has more granular permissions, like `game` and `game/edit` wh
 
 #### `!admin` command
 
-* `!admin version` - Responds with the current version of the setmod-bot package.
+* `!admin version` - Responds with the current version of Oxidize Bot package.
 * `!admin refresh-mods` - Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running.
 * `!admin settings <key>` - Read the value of a setting.
 * `!admin settings <key> <value>` - Write the value of a setting.
@@ -243,7 +224,7 @@ Available commands:
 * `!song delete <position>` - Delete a song at the given position.
 * `!song list` - Get the next three songs.
 * `!song list <n>` - Get the next `<n>` songs.
-* `!song theme <name>` - Play the specified theme song.
+* `!song theme <name>` - Play the specified theme song (see `!theme` command).
 * `!song close [reason]` - Close the song queue with an optional `[reason]`.
 * `!song open` - Open the song queue.
 * `!song promote <number>` - Promote the song at the given position `<number>` in the queue.
@@ -337,6 +318,22 @@ Available commands:
 * `!promo group <name> <group>` - Set the promotion `<name>` to be in the group `<group>`.
 * `!promo delete <id>` - Delete the promotion with the given id.
 * `!promo rename <from> <to>` - Delete the promotion with the given id.
+
+
+#### `!theme` command
+
+Available commands:
+
+* `!theme list` - List all available themes.
+* `!theme edit <id> <track-uri>` - Set the theme identified by `<id>` to play the track `<track-uri>`.
+  - Example: `!theme edit setup spotify:track:2fZpKgrcAlWzWYwQeFG43O`
+* `!theme edit-duration <start> [end]` - Set the playback duration of the theme from `<start>` up until an optional `[end]`.
+  - Example: `!theme edit-duration setup 00:10`.
+* `!theme clear-group <name>` - Clear the group for theme `<name>`.
+* `!theme group <name>` - Get the group the given theme belongs to.
+* `!theme group <name> <group>` - Set the theme `<name>` to be in the group `<group>`.
+* `!theme delete <id>` - Delete the theme with the given id.
+* `!theme rename <from> <to>` - Delete the theme with the given id.
 
 #### `!gtav` command
 

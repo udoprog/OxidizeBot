@@ -193,7 +193,7 @@ class IndexPage extends React.Component {
   defaultVersionInfo(version) {
     return (
       <Alert variant="info" style={{textAlign: "center"}}>
-        You're running the latest version of <b>SetMod</b> (<b>{version}</b>).
+        You're running the latest version of <b>OxidizeBot</b> (<b>{version}</b>).
       </Alert>
     );
   }
@@ -221,7 +221,7 @@ class IndexPage extends React.Component {
     return (
       <Alert variant="warning" style={{textAlign: "center"}}>
         <div className="mb-2" style={{fontSize: "150%"}}>
-          SetMod <b>{latest.version}</b> is available (current: <b>{version}</b>).
+          OxidizeBot <b>{latest.version}</b> is available (current: <b>{version}</b>).
         </div>
 
         <div>

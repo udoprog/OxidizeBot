@@ -21,14 +21,14 @@ if [[ -z $arch ]]; then
     exit 1
 fi
 
-zip=$PWD/setmod-$version-$TRAVIS_OS_NAME-$arch.zip
+zip=$PWD/oxidize-$version-$TRAVIS_OS_NAME-$arch.zip
 
-cargo build --release --bin setmod
+cargo build --release --bin oxidize
 mkdir target/build
 
 case $TRAVIS_OS_NAME in
 "linux")
-    cp target/release/setmod target/build
+    cp target/release/oxidize target/build
     cp log4rs.yaml target/build
     (cd target/build; zip -r $zip *)
     ;;
@@ -42,5 +42,5 @@ mkdir -p target/upload
 cp $zip target/upload/
 
 (cd bot && cargo deb)
-cp target/debian/setmod_${version}_amd64.deb target/upload/
+cp target/debian/oxidize_${version}_amd64.deb target/upload/
 exit 0

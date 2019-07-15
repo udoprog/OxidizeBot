@@ -1,216 +1,85 @@
 <?xml version='1.0' encoding='windows-1252'?>
 <!--
-  Copyright (C) 2017 Christopher R. Field.
-
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-  http://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
--->
-
-<!--
   Please do not remove these pre-processor If-Else blocks. These are used with
   the `cargo wix` subcommand to automatically determine the installation
   destination for 32-bit versus 64-bit installers. Removal of these lines will
   cause installation errors.
 -->
 <?if $(var.Platform) = x64 ?>
-    <?define Win64 = "yes" ?>
-    <?define PlatformProgramFilesFolder = "ProgramFiles64Folder" ?>
+<?define Win64 = "yes" ?>
+<?define PlatformProgramFilesFolder = "ProgramFiles64Folder" ?>
 <?else ?>
-  <?define Win64 = "no" ?>
-  <?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
+<?define Win64 = "no" ?>
+<?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
 <?endif ?>
 
 <Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+  <Product Id='*' Name='OxidizeBot' UpgradeCode='08DA9A41-F232-49DC-BA6A-A29893BAEC5C' Manufacturer='John-John Tedro' Language='1033' Codepage='1252' Version='$(var.Version)'>
+    <Package Id='*' Keywords='Installer' Manufacturer='John-John Tedro' InstallerVersion='450' Languages='1033' Compressed='yes' InstallScope='perMachine' SummaryCodepage='1252' Platform='$(var.Platform)'/>
 
-    <Product
-        Id='*'
-        Name='SetMod'
-        UpgradeCode='08DA9A41-F232-49DC-BA6A-A29893BAEC5C'
-        Manufacturer='John-John Tedro'
-        Language='1033'
-        Codepage='1252'
-        Version='$(var.Version)'>
+    <MajorUpgrade Schedule='afterInstallInitialize' DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.'/>
 
-        <Package Id='*'
-            Keywords='Installer'
-            Manufacturer='John-John Tedro'
-            InstallerVersion='450'
-            Languages='1033'
-            Compressed='yes'
-            InstallScope='perMachine'
-            SummaryCodepage='1252'
-            Platform='$(var.Platform)'/>
+    <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
+    <Property Id='DiskPrompt' Value='OxidizeBot Installation'/>
+    <Property Id="START_VIA_REGISTRY">1</Property>
 
-        <MajorUpgrade
-            Schedule='afterInstallInitialize'
-            DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.'/>
-
-        <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
-        <Property Id='DiskPrompt' Value='SetMod Installation'/>
-        <Property Id="START_VIA_REGISTRY">1</Property>
-
-        <Directory Id='TARGETDIR' Name='SourceDir'>
-            <Directory Id="ProgramMenuFolder">
-                <Directory Id="ApplicationProgramsFolder" Name="SetMod">
-                    <Component
-                        Id='ApplicationShortcut'
-                        Guid='{E26B4B0D-C9F9-46AB-A234-CF674CD1D4C3}'
-                        Win64='$(var.Win64)'>
-                        <Shortcut Id='ApplicationStartMenuShortcut'
-                                    Name='SetMod'
-                                    Description='SetMod Twitch Bot'
-                                    Target='[#setmod.exe]'
-                                    WorkingDirectory='APPLICATIONFOLDER'/>
-                        <RemoveFolder Id='CleanUpShortCut' Directory='ApplicationProgramsFolder' On='uninstall'/>
-                        <RegistryValue Root='HKCU' Key='Software\SetMod\SetMod' Name='installed' Type='integer' Value='1' KeyPath='yes'/>
-                    </Component>
-                </Directory>
-            </Directory>
-
-            <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
-                <Directory Id='APPLICATIONFOLDER' Name='SetMod'>
-                    <Component Id='setmod.exe' Guid='{968B8316-90C9-4532-A8BA-35F193B815DB}' Win64='$(var.Win64)'>
-                        <File
-                            Id='setmod.exe'
-                            Name='setmod.exe'
-                            DiskId='1'
-                            Source='target\release\setmod.exe'
-                            KeyPath='yes'/>
-                    </Component>
-
-                    <Component
-                        Id="RegistryAutostart"
-                        Guid="{7b3b025e-f7d6-4d3d-ae39-2edfad1691af}"
-                        Win64='$(var.Win64)'>
-                        <RegistryValue
-                            Root="HKCU"
-                            Action="write"
-                            Key="Software\Microsoft\Windows\CurrentVersion\Run"
-                            Name="SetMod"
-                            Value='"[APPLICATIONFOLDER]setmod.exe" --silent'
-                            Type="string" />
-                        <Condition>START_VIA_REGISTRY</Condition>
-                    </Component>
-                </Directory>
-            </Directory>
+    <Directory Id='TARGETDIR' Name='SourceDir'>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="OxidizeBot">
+          <Component Id='ApplicationShortcut' Guid='{9458d268-a228-415c-ba3c-03059ebe889d}' Win64='$(var.Win64)'>
+            <Shortcut Id='ApplicationStartMenuShortcut' Name='OxidizeBot' Description='Oxidize Twitch Bot' Target='[!oxidize.exe]' WorkingDirectory='APPLICATIONFOLDER'/>
+            <RemoveFolder Id='CleanUpShortCut' Directory='ApplicationProgramsFolder' On='uninstall'/>
+            <RegistryValue Root='HKCU' Key='Software\OxidizeBot\OxidizeBot' Name='installed' Type='integer' Value='1' KeyPath='yes'/>
+          </Component>
         </Directory>
+      </Directory>
 
-        <Feature
-            Id='MainProgram'
-            Title='SetMod'
-            Description='Installs SetMod.'
-            Level='1'
-            ConfigurableDirectory='APPLICATIONFOLDER'
-            AllowAdvertise='no'
-            Display='expand'
-            Absent='disallow'>
+      <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
+        <Directory Id='APPLICATIONFOLDER' Name='OxidizeBot'>
+          <Component Id='oxidize.exe' Guid='{dd1e4a01-ff62-4d96-a9ce-a5d7d7548fad}' Win64='$(var.Win64)'>
+            <File Id='oxidize.exe' Name='oxidize.exe' DiskId='1' Source='target\release\oxidize.exe' KeyPath='yes'/>
+          </Component>
 
-            <ComponentRef Id='setmod.exe'/>
-            <ComponentRef Id='ApplicationShortcut'/>
-        </Feature>
+          <Component Id="RegistryAutostart" Guid="{35977dfa-73b2-4418-a713-c3fa83c6076a}" Win64='$(var.Win64)'>
+            <RegistryValue Root="HKCU" Action="write" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="OxidizeBot" Value='"[APPLICATIONFOLDER]oxidize.exe" --silent' Type="string" />
+            <Condition>START_VIA_REGISTRY</Condition>
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
 
-        <Feature
-            Id='Autostart'
-            Title='Start with Windows'
-            Description='Starts SetMod with Windows.'
-            Level='1'
-            AllowAdvertise='no'
-            Display='expand'
-            Absent='allow'>
+    <Feature Id='MainProgram' Title='OxidizeBot' Description='Installs Oxidize Bot.' Level='1' ConfigurableDirectory='APPLICATIONFOLDER' AllowAdvertise='no' Display='expand' Absent='disallow'>
+      <ComponentRef Id='oxidize.exe'/>
+      <ComponentRef Id='ApplicationShortcut'/>
+    </Feature>
 
-            <ComponentRef Id='RegistryAutostart' />
-        </Feature>
+    <Feature Id='Autostart' Title='Start with Windows' Description='Starts Oxidize Bot with Windows.' Level='1' AllowAdvertise='no' Display='expand' Absent='allow'>
+      <ComponentRef Id='RegistryAutostart' />
+    </Feature>
 
-        <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
+    <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
 
-
-        <!--
-          Uncomment the following `Icon` and `Property` tags to change the product icon.
-
-          The product icon is the graphic that appears in the Add/Remove
-          Programs control panel for the application.
-        -->
-        <Icon Id='ProductICO' SourceFile='bot\res\icon.ico'/>
-        <Property Id='ARPPRODUCTICON' Value='ProductICO' />
+    <Icon Id='ProductICO' SourceFile='bot\res\icon.ico'/>
+    <Property Id='ARPPRODUCTICON' Value='ProductICO' />
 
 
-        <!--
-          Adding a URL to Add/Remove Programs control panel listing for the
-          application is a two step process:
+    <Property Id='ARPHELPLINK' Value='https://github.com/udoprog/oxidize'/>
 
-          1. Uncomment the following `Property` tag with the "ARPHELPLINK" Id
-             attribute value.
-          2. Change the value for `Value` attribute of the following
-             `Property` tag to a valid URL.
-        -->
-        <Property Id='ARPHELPLINK' Value='https://github.com/udoprog/setmod'/>
+    <UI>
+      <UIRef Id='WixUI_FeatureTree'/>
 
-        <UI>
-            <UIRef Id='WixUI_FeatureTree'/>
+      <Publish Dialog='WelcomeDlg' Control='Next' Event='NewDialog' Value='CustomizeDlg' Order='2'>1</Publish>
 
-            <!--
-              Enabling the EULA dialog in the installer is a three step process:
+      <Publish Dialog='CustomizeDlg' Control='Back' Event='NewDialog' Value='WelcomeDlg' Order='2'>1</Publish>
 
-                1. Comment out or remove the two `Publish` tags that follow the
-                   `WixVariable` tag.
-                2. Uncomment the `<WixVariable Id='WixUILicenseRtf' Value='Path\to\Eula.rft'>` tag futher down
-                3. Replace the `Value` attribute of the `WixVariable` tag with
-                   the path to a RTF file that will be used as the EULA and
-                   displayed in the license agreement dialog.
-            -->
-            <Publish Dialog='WelcomeDlg' Control='Next' Event='NewDialog' Value='CustomizeDlg' Order='2'>1</Publish>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="LaunchApplication">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>
+    </UI>
 
-            <Publish Dialog='CustomizeDlg' Control='Back' Event='NewDialog' Value='WelcomeDlg' Order='2'>1</Publish>
+    <WixVariable Id='WixUIDialogBmp' Value='bot\res\dialog.bmp'/>
 
-            <Publish Dialog="ExitDialog"
-                Control="Finish"
-                Event="DoAction"
-                Value="LaunchApplication">WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed</Publish>
-        </UI>
-
-
-        <!--
-          Enabling the EULA dialog in the installer requires uncommenting
-          the following `WixUILicenseRTF` tag and changing the `Value`
-          attribute.
-        -->
-        <!-- <WixVariable Id='WixUILicenseRtf' Value='Relative\Path\to\Eula.rtf'/> -->
-
-
-        <!--
-          Uncomment the next `WixVaraible` tag to customize the installer's
-          Graphical User Interface (GUI) and add a custom banner image across
-          the top of each screen. See the WiX Toolset documentation for details
-          about customization.
-
-          The banner BMP dimensions are 493 x 58 pixels.
-        -->
-        <!--<WixVariable Id='WixUIBannerBmp' Value='res\banner.bmp'/>-->
-
-
-        <!--
-          Uncomment the next `WixVariable` tag to customize the installer's
-          Graphical User Interface (GUI) and add a custom image to the first
-          dialog, or screen. See the WiX Toolset documentation for details about
-          customization.
-
-          The dialog BMP dimensions are 493 x 312 pixels.
-        -->
-        <WixVariable Id='WixUIDialogBmp' Value='bot\res\dialog.bmp'/>
-
-        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch SetMod" />
-        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
-        <Property Id="WixShellExecTarget" Value="[#setmod.exe]" />
-        <CustomAction Id="LaunchApplication" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" />
-    </Product>
-
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch OxidizeBot" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WixShellExecTarget" Value="[#oxidize.exe]" />
+    <CustomAction Id="LaunchApplication" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" />
+  </Product>
 </Wix>
