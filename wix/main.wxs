@@ -33,7 +33,7 @@
 
     <Product
         Id='*'
-        Name='SetMod'
+        Name='OxidizeBot'
         UpgradeCode='08DA9A41-F232-49DC-BA6A-A29893BAEC5C'
         Manufacturer='John-John Tedro'
         Language='1033'
@@ -55,35 +55,35 @@
             DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.'/>
 
         <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
-        <Property Id='DiskPrompt' Value='SetMod Installation'/>
+        <Property Id='DiskPrompt' Value='OxidizeBot Installation'/>
         <Property Id="START_VIA_REGISTRY">1</Property>
 
         <Directory Id='TARGETDIR' Name='SourceDir'>
             <Directory Id="ProgramMenuFolder">
-                <Directory Id="ApplicationProgramsFolder" Name="SetMod">
+                <Directory Id="ApplicationProgramsFolder" Name="OxidizeBot">
                     <Component
                         Id='ApplicationShortcut'
                         Guid='{E26B4B0D-C9F9-46AB-A234-CF674CD1D4C3}'
                         Win64='$(var.Win64)'>
                         <Shortcut Id='ApplicationStartMenuShortcut'
-                                    Name='SetMod'
-                                    Description='SetMod Twitch Bot'
-                                    Target='[#setmod.exe]'
+                                    Name='OxidizeBot'
+                                    Description='Oxidize Twitch Bot'
+                                    Target='[#oxidize.exe]'
                                     WorkingDirectory='APPLICATIONFOLDER'/>
                         <RemoveFolder Id='CleanUpShortCut' Directory='ApplicationProgramsFolder' On='uninstall'/>
-                        <RegistryValue Root='HKCU' Key='Software\SetMod\SetMod' Name='installed' Type='integer' Value='1' KeyPath='yes'/>
+                        <RegistryValue Root='HKCU' Key='Software\OxidizeBot\OxidizeBot' Name='installed' Type='integer' Value='1' KeyPath='yes'/>
                     </Component>
                 </Directory>
             </Directory>
 
             <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
-                <Directory Id='APPLICATIONFOLDER' Name='SetMod'>
-                    <Component Id='setmod.exe' Guid='{968B8316-90C9-4532-A8BA-35F193B815DB}' Win64='$(var.Win64)'>
+                <Directory Id='APPLICATIONFOLDER' Name='OxidizeBot'>
+                    <Component Id='oxidize.exe' Guid='{968B8316-90C9-4532-A8BA-35F193B815DB}' Win64='$(var.Win64)'>
                         <File
-                            Id='setmod.exe'
-                            Name='setmod.exe'
+                            Id='oxidize.exe'
+                            Name='oxidize.exe'
                             DiskId='1'
-                            Source='target\release\setmod.exe'
+                            Source='target\release\oxidize.exe'
                             KeyPath='yes'/>
                     </Component>
 
@@ -95,8 +95,8 @@
                             Root="HKCU"
                             Action="write"
                             Key="Software\Microsoft\Windows\CurrentVersion\Run"
-                            Name="SetMod"
-                            Value='"[APPLICATIONFOLDER]setmod.exe" --silent'
+                            Name="OxidizeBot"
+                            Value='"[APPLICATIONFOLDER]oxidize.exe" --silent'
                             Type="string" />
                         <Condition>START_VIA_REGISTRY</Condition>
                     </Component>
@@ -106,22 +106,22 @@
 
         <Feature
             Id='MainProgram'
-            Title='SetMod'
-            Description='Installs SetMod.'
+            Title='OxidizeBot'
+            Description='Installs OxidizeBot.'
             Level='1'
             ConfigurableDirectory='APPLICATIONFOLDER'
             AllowAdvertise='no'
             Display='expand'
             Absent='disallow'>
 
-            <ComponentRef Id='setmod.exe'/>
+            <ComponentRef Id='oxidize.exe'/>
             <ComponentRef Id='ApplicationShortcut'/>
         </Feature>
 
         <Feature
             Id='Autostart'
             Title='Start with Windows'
-            Description='Starts SetMod with Windows.'
+            Description='Starts OxidizeBot with Windows.'
             Level='1'
             AllowAdvertise='no'
             Display='expand'
@@ -152,7 +152,7 @@
           2. Change the value for `Value` attribute of the following
              `Property` tag to a valid URL.
         -->
-        <Property Id='ARPHELPLINK' Value='https://github.com/udoprog/setmod'/>
+        <Property Id='ARPHELPLINK' Value='https://github.com/udoprog/oxidize'/>
 
         <UI>
             <UIRef Id='WixUI_FeatureTree'/>
@@ -207,9 +207,9 @@
         -->
         <WixVariable Id='WixUIDialogBmp' Value='bot\res\dialog.bmp'/>
 
-        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch SetMod" />
+        <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch OxidizeBot" />
         <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
-        <Property Id="WixShellExecTarget" Value="[#setmod.exe]" />
+        <Property Id="WixShellExecTarget" Value="[#oxidize.exe]" />
         <CustomAction Id="LaunchApplication" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" />
     </Product>
 

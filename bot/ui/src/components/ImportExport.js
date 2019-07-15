@@ -84,7 +84,7 @@ class PhantomBotImportCsvForm extends React.Component {
   }
 
   /**
-   * Import PhantomBot CSV to setmod.
+   * Import PhantomBot CSV to OxidizeBot.
    *
    * @param {*} e the event being handled.
    */

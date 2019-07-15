@@ -84,7 +84,7 @@ impl RequestBuilder {
         req = req.header(header::ACCEPT, "application/json");
         req = req.header(
             header::USER_AGENT,
-            concat!("setmod/", env!("CARGO_PKG_VERSION")),
+            concat!("OxidizeBot/", env!("CARGO_PKG_VERSION")),
         );
         let mut res = req.send().compat().await?;
 

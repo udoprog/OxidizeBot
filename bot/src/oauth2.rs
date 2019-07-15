@@ -17,22 +17,22 @@ use url::Url;
 
 /// Note:
 /// These values obviously aren't secret. But due to the nature of this project, it's not possible to keep them that way.
-/// Anyone can effectively use this information to impersonate setmod.
+/// Anyone can effectively use this information to impersonate OxidizeBot.
 ///
 /// We protect against abuse the following ways:
 /// * We only permit closed redirects to http://localhost:12345/redirect to receive the token.
-///   - This makes it effectively useless to use for online services trying to impersonate setmod.
+///   - This makes it effectively useless to use for online services trying to impersonate OxidizeBot.
 /// * We assume that a user would pay attention when downloading and running an application.
 ///   - If they don't, they have bigger problems on their hands.
 static YOUTUBE_CLIENT_ID: &'static str =
-    "104600448660-l5qspsirgqsnq7uv4tu3fpfmtbs2c234.apps.googleusercontent.com";
-static YOUTUBE_CLIENT_SECRET: &'static str = "xQMzQtFvXadhJh1cqoe6G0zH";
+    "520353465977-ctptr5kbqm86t8tb0e03g6gdl528hik5.apps.googleusercontent.com";
+static YOUTUBE_CLIENT_SECRET: &'static str = "nMMXuPh8KrEuKDBD4-8EdfY3";
 
-static NIGHTBOT_CLIENT_ID: &'static str = "08068f96a94dbb3286f61e26afa9bd6d";
-static NIGHTBOT_CLIENT_SECRET: &'static str = "d9afb0ee6092af477f671c3195109e54";
+static NIGHTBOT_CLIENT_ID: &'static str = "cb1295f19d5bf423b82705808cc7df67";
+static NIGHTBOT_CLIENT_SECRET: &'static str = "92f0ba5e9e4efdaab8cec43fb265d91e";
 
-static TWITCH_CLIENT_ID: &'static str = "y9mvigagkxy2p9dyhmarv9tb8b7nkq";
-static TWITCH_CLIENT_SECRET: &'static str = "l3nwijji8t3ds8cxudkas8fcudave8";
+static TWITCH_CLIENT_ID: &'static str = "0n6sfb4ucob1djsb1owk2pwy5hto19";
+static TWITCH_CLIENT_SECRET: &'static str = "h7o98dbp8gnq2wmfwa00e1gc5w280e";
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Config {

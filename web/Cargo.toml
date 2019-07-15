@@ -1,5 +1,5 @@
 [package]
-name = "setmod-web"
+name = "oxidize-web"
 version = "0.0.2"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2018"

@@ -1,16 +1,16 @@
 [package]
-name = "setmod"
+name = "oxidize"
 version = "0.4.4-beta.5"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2018"
 license = "MIT/Apache-2.0"
-description = "SetMod Twitch Bot"
+description = "Oxidize Bot is a high octane Twitch bot powered by Rust"
 
 [dependencies]
 chrono = {version = "0.4.6", features = ["serde"]}
 chrono-tz = {version = "0.5.1", features = ["serde"]}
 clap = "2.33.0"
-mysql_async = {git = "https://github.com/udoprog/mysql_async.git", branch = "dropped-broken-cleanup"}
+mysql_async = {git = "https://github.com/blackbeam/mysql_async.git"}
 diesel = { version = "1.4.2", features = ["sqlite", "chrono"] }
 diesel_migrations = "1.4.0"
 eudex = "0.1.1"

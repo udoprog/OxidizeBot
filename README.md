@@ -1,7 +1,7 @@
-# ![alt text](https://raw.githubusercontent.com/udoprog/setmod/master/bot/res/icon48.png "SetMod Rust Bot") SetMod
+# ![alt text](https://raw.githubusercontent.com/udoprog/OxidizeBot/master/bot/res/icon48.png "Oxidize Twitch Bot") SetMod
 
-[![Build Status](https://travis-ci.org/udoprog/setmod.svg?branch=master)](https://travis-ci.org/udoprog/setmod)
-[![Build status](https://ci.appveyor.com/api/projects/status/cxagsq3idti252a4/branch/master?svg=true)](https://ci.appveyor.com/project/udoprog/setmod/branch/master)
+[![Build Status](https://travis-ci.org/udoprog/OxidizeBot.svg?branch=master)](https://travis-ci.org/udoprog/OxidizeBot)
+[![Build status](https://ci.appveyor.com/api/projects/status/cxagsq3idti252a4/branch/master?svg=true)](https://ci.appveyor.com/project/udoprog/OxidizeBot/branch/master)
 
 This is a high performance Twitch Bot written in Rust.
 
@@ -14,14 +14,14 @@ If there's something you're missing, feel free to [open an issue].
 **Rust** &mdash; Written in [Rust], promoting high performance, low utilization, and reliability.
 
 <p>
-<img style="float: left;"  title="Rust" width="67" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/cuddlyferris.png" />
+<img style="float: left;"  title="Rust" width="67" height="50" src="https://github.com/udoprog/OxidizeBot/raw/master/gfx/cuddlyferris.png" />
 </p>
 
 **Configurable** &mdash; Everything is tweakable to suit your needs through a [hundred settings].
 Changes to settings applies immediately - no need to restart.
 
 <p>
-<img style="float: left;" title="Settings" width="140" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/setting.png" />
+<img style="float: left;" title="Settings" width="140" height="50" src="https://github.com/udoprog/OxidizeBot/raw/master/gfx/setting.png" />
 </p>
 
 **Integrated with Windows** &mdash; Runs in the background with a System Tray.
@@ -29,17 +29,17 @@ Notifies you on issues.
 Starts automatically with Windows if you want it to.
 
 <p>
-<img style="float: left;" title="Windows Systray" width="131" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/windows-systray.png" />
-<img style="float: left;" title="Reminder" width="120" height="50" src="https://github.com/udoprog/setmod/raw/master/gfx/windows-reminder.png" />
+<img style="float: left;" title="Windows Systray" width="131" height="50" src="https://github.com/udoprog/OxidizeBot/raw/master/gfx/windows-systray.png" />
+<img style="float: left;" title="Reminder" width="120" height="50" src="https://github.com/udoprog/OxidizeBot/raw/master/gfx/windows-reminder.png" />
 </p>
 
-[open an issue]: https://github.com/udoprog/setmod/issues
+[open an issue]: https://github.com/udoprog/OxidizeBot/issues
 [Rust]: https://rust-lang.org
 [hundred settings]: /bot/src/settings.yaml
 
 ## Installing and Running
 
-You can download an installer or an archive from [releases](https://github.com/udoprog/setmod/releases) or [build the project yourself](#building).
+You can download an installer or an archive from [releases](https://github.com/udoprog/OxidizeBot/releases) or [build the project yourself](#building).
 
 ## Building
 
@@ -66,14 +66,6 @@ After this, you build the project using cargo:
 cargo +nightly build --release
 ```
 
-If you want to build and run the project in one go, there is a helper script in [`tools/setmod.ps1`] that you can run from anywhere in a powershell terminal, like this:
-
-```
-C:\setmod\> C:\Projects\setmod\tools\setmod.ps1
-```
-
-[`tools/setmod.ps1`]: tools/setmod.ps1
-
 ## Settings
 
 SetMod is moving towards storing settings in the database.
@@ -86,7 +78,7 @@ When the bot is running, you can find all settings under `Internal -> Settings`.
 
 ## YouTube Player
 
-setmod has support for playing YouTube videos.
+Oxidize has support for playing YouTube videos.
 
 This is enabled through the `song/youtube/support` setting and requires you to run the YouTube Player in the web UI.
 
@@ -114,7 +106,7 @@ Some commands also has more granular permissions, like `game` and `game/edit` wh
 
 #### `!admin` command
 
-* `!admin version` - Responds with the current version of the setmod-bot package.
+* `!admin version` - Responds with the current version of Oxidize Bot package.
 * `!admin refresh-mods` - Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running.
 * `!admin settings <key>` - Read the value of a setting.
 * `!admin settings <key> <value>` - Write the value of a setting.

@@ -10,7 +10,7 @@ use std::{
 };
 
 static SPOTIFY_TRACK_URL: &'static str = "https://open.spotify.com/track";
-static GITHUB_URL: &'static str = "https://github.com/udoprog/setmod";
+static GITHUB_URL: &'static str = "https://github.com/udoprog/OxidizeBot";
 
 pub fn setup(
     no_auth: bool,

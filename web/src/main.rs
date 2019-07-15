@@ -1,5 +1,5 @@
 use futures::Future as _;
-use setmod_web::web;
+use oxidize_web::web;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 

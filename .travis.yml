@@ -16,7 +16,7 @@ deploy:
   file_glob: true
   file: target/upload/*
   on:
-    repo: udoprog/setmod
+    repo: udoprog/OxidizeBot
     tags: true
   api_key:
     secure: LxYZN2p2Ou7Hro/RHcfaEomWdcFXiT0hv1lFVlyI4hI7InTK7jvN5aaYYPeQFUOMDLAkG3aynTp8JLLhiwfcxWjJMfXPxQxBmelif91JB27dCA0AL8rntpAdrSnSyu5fQacaLGwEJMwXgi57UfMY0Hpu2nFrzclj3NmAUoEloLY5QvkcRUQTzanNR7GyRqssOe8GDcFaL7znkJoSNAfjjalYlatq2EB46neWYQyH82dQpRYldvAOeTOk/4CecaJ4W5VCSRLBfneMawrk5SxvZuTVidHQufGvaOukLoCdzs2eTDtBqwFelAcBkn0E8fUz9WFZ5MVMYCsDwwSFzH7wC/nIGzhc+qkHtGrirRBAb9yo9REUQgKz3PLkFD5V5T01OoKgyKcq6kT4qT9HVX56yJkW3uo1krFKbaUnUlAxNPc1SYCn7X5GplFhcMViOSSNfRPkLpqR3Hy/XHDBQmQHfr0YTVC+wa0JJky3NE+0RDZ4Po9dUELry4qsx+sv7+d0+lBsTncFYV/UFhZRchi/1c9IiSHwZJNbiliDFSefnIOJxX56HZtPyS+UiptHgwMVhiDf8dIb0cZOxl26rA6mf9j34c7oHlMZYFNdIMTeTmtS9+o4Thyvhq2KI2Hmwpe7URWZHYk+PAtGvUVg0psZupshLroq1e0tvgDNhzLRqrM=

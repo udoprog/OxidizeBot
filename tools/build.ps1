@@ -51,19 +51,19 @@ if (!($env:APPVEYOR_REPO_TAG_NAME -match '^(\d+)\.(\d+)\.(\d+)(-.+\.(\d+))?$')) 
 $version=$env:APPVEYOR_REPO_TAG_NAME
 $msi_version=Msi-Version $Matches[1] $Matches[2] $Matches[3] $Matches[5]
 
-if (!(Run-Cargo "build","--release","--bin","setmod")) {
+if (!(Run-Cargo "build","--release","--bin","oxidize")) {
     throw "Failed to build binary"
 }
 
-if (!(Run-Cargo "wix","-n","setmod","--install-version",$msi_version,"--nocapture")) {
+if (!(Run-Cargo "wix","-n","oxidize","--install-version",$msi_version,"--nocapture")) {
     throw "Failed to build wix package"
 }
 
 $root="$PSScriptRoot/.."
-$zip="setmod-$version-windows-x86_64.zip"
+$zip="oxidize-$version-windows-x86_64.zip"
 
 Get-ChildItem -Path $root/target/wix -Include *.msi -Recurse | Copy-Item -Destination $root
 
 7z a $zip $root/log4rs.yaml
-7z a $zip $root/target/release/setmod.exe
+7z a $zip $root/target/release/oxidize.exe
 7z a $zip $root/build/dll/*.dll
