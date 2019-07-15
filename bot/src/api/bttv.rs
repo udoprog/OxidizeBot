@@ -2,6 +2,7 @@
 
 use crate::api::RequestBuilder;
 use failure::Error;
+use hashbrown::HashSet;
 use reqwest::{header, r#async::Client, Method, StatusCode, Url};
 
 const V2_URL: &'static str = "https://api.betterttv.net/2";
@@ -61,7 +62,7 @@ fn not_found(status: &StatusCode) -> bool {
 #[serde(rename_all = "camelCase")]
 pub struct Channel {
     pub url_template: String,
-    pub bots: Vec<String>,
+    pub bots: HashSet<String>,
     pub emotes: Vec<Emote>,
 }
 

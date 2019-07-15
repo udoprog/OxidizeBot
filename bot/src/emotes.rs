@@ -61,6 +61,16 @@ impl From<(u32, u32, ffz::Urls)> for Urls {
     }
 }
 
+impl From<Url> for Urls {
+    fn from(value: Url) -> Self {
+        Urls {
+            small: Some(value),
+            medium: None,
+            large: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Size {
     width: u32,
@@ -85,6 +95,8 @@ enum Key<'a> {
     FfzUser { name: &'a str },
     /// All badges for the given room and name combo.
     RoomBadges { target: &'a str, name: &'a str },
+    /// Channel information from BTTV.
+    BttvChannel { target: &'a str },
     /// Emotes associated with a single room.
     RoomEmotes { target: &'a str },
     /// Global emotes.
@@ -209,8 +221,58 @@ impl Emotes {
     }
 
     /// Construct a set of room emotes from bttv.
+    async fn bttv_bot_badge(&self, channel: &Channel, name: &str) -> Result<Option<Badge>, Error> {
+        let channel = self
+            .inner
+            .cache
+            .wrap(
+                Key::BttvChannel {
+                    target: &channel.name,
+                },
+                Duration::hours(72),
+                self.inner.bttv.channels(&channel.name),
+            )
+            .await?;
+
+        let channel = match channel {
+            Some(channel) => channel,
+            None => return Ok(Default::default()),
+        };
+
+        if !channel.bots.contains(name) {
+            return Ok(None);
+        }
+
+        let mut url = Url::from(String::from("https://cdn.betterttv.net/tags/bot.png"));
+
+        url.size = Some(Size {
+            width: 18,
+            height: 18,
+        });
+
+        Ok(Some(Badge {
+            title: String::from("BetterTTV Bot Badge"),
+            badge_url: None,
+            urls: url.into(),
+            bg_color: None,
+        }))
+    }
+
+    /// Construct a set of room emotes from bttv.
     async fn room_emotes_from_bttv(&self, channel: &Channel) -> Result<EmoteByCode, Error> {
-        let channel = match self.inner.bttv.channels(&channel.name).await? {
+        let channel = self
+            .inner
+            .cache
+            .wrap(
+                Key::BttvChannel {
+                    target: &channel.name,
+                },
+                Duration::hours(72),
+                self.inner.bttv.channels(&channel.name),
+            )
+            .await?;
+
+        let channel = match channel {
             Some(channel) => channel,
             None => return Ok(Default::default()),
         };
@@ -607,7 +669,13 @@ impl Emotes {
                     }
                 }
 
-                match self.ffz_chat_badges(name).await {
+                let ffz = self.ffz_chat_badges(name);
+                let tduva = self.tduva_chat_badges(name);
+                let bttv = self.bttv_bot_badge(channel, name);
+
+                let (ffz, tduva, bttv) = future::join3(ffz, tduva, bttv).await;
+
+                match ffz {
                     Ok(badges) => out.extend(badges),
                     Err(e) => log::warn!(
                         "{}/{}: failed to get ffz chat badges: {}",
@@ -617,10 +685,20 @@ impl Emotes {
                     ),
                 }
 
-                match self.tduva_chat_badges(name).await {
+                match tduva {
                     Ok(badges) => out.extend(badges),
                     Err(e) => log::warn!(
                         "{}/{}: failed to get tduva chat badges: {}",
+                        channel.name,
+                        name,
+                        e
+                    ),
+                }
+
+                match bttv {
+                    Ok(badges) => out.extend(badges),
+                    Err(e) => log::warn!(
+                        "{}/{}: failed to get bttv chat badges: {}",
                         channel.name,
                         name,
                         e
