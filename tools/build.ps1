@@ -9,23 +9,22 @@ function Msi-Version($maj, $min, $patch, $pre) {
     The computed patch component must fit within 65535
     #>
 
-    if ([int]$patch -gt 65) {
-        throw "Patch version must not be greater than 65: $patch"
+    if ([int]$patch -gt 64) {
+        throw "Patch version must not be greater than 64: $patch"
     }
 
-    $patch=[string]$patch
+    if ([int]$pre -ge 999) {
+        throw "Prerelease version must not be greater than 998: $pre"
+    }
 
-    if ($pre) {
-        if ([int]$pre -gt 534) {
-            throw "Pre-release version must not be greater than 534: $pre"
-        }
-
-        $pre=$pre.PadLeft(3, '0')
+    if (!$pre) {
+        $last = 999
     } else {
-        $pre = "535"
+        $last = [int]$pre
     }
 
-    "$maj.$min.$patch$pre"
+    $last += [int]$patch * 1000;
+    "$maj.$min.$last"
 }
 
 Function Run-Cargo([string[]]$Arguments) {
