@@ -64,6 +64,7 @@ ccl = "4.8.1"
 rocksdb = "0.12.2"
 crossbeam = "0.7.1"
 hex = "0.3.2"
+graphql_client = "0.8.0"
 
 [dependencies.futures01]
 package = "futures"

@@ -1,0 +1,116 @@
+"""
+Communicates a user's status in chat.
+"""
+type Badge {
+  """
+  The URL to redirect to if the badge's onClickAction is VISIT_URL.
+  """
+  clickURL: String
+
+  """
+  A localized, human-friendly description of the badge.
+  Defaults to English if no translation exists for the requested locale.
+  """
+  description: String!
+
+  """
+  The badge's unique identifier.
+  """
+  id: ID!
+
+  """
+  A URL to the badge's image.
+  """
+  imageURL(size: BadgeImageSize = NORMAL): String!
+
+  """
+  Identifies an action to trigger when this badge is clicked.
+  """
+  onClickAction: BadgeClickAction
+
+  """
+  The identifier of the set which this badge belongs (e.g. "subscriber").
+  """
+  setID: ID!
+
+  """
+  A localized, human-friendly title for the badge.
+  Defaults to English if no translation exists for the requested locale.
+  """
+  title: String!
+
+  """
+  The badge's version (e.g. "1mo").
+  """
+  version: String!
+}
+
+"""
+Enumerates possible badge click actions.
+"""
+enum BadgeClickAction {
+  """
+  Go to the user's subscription page.
+  """
+  SUBSCRIBE
+
+  """
+  Go to the Twitch Turbo purchasing page.
+  """
+  GET_TURBO
+
+  """
+  Go to the Bits purchasing page.
+  """
+  GET_BITS
+
+  """
+  Redirect the user to the badge click URL.
+  """
+  VISIT_URL
+}
+
+"""
+Twitch user.
+"""
+type User {
+  """
+  Lists the chat badges that should be displayed by the user's display name in
+  features like chat and whispers. If a channelID is passed in, fetches the
+  display badges that user will have in that channel's context.
+  Includes the following badges:
+  - global authority (staff/admin/global mod)
+  - channel authority (broadcaster/mod, if channelID is set)
+  - subscriber (if channelID is set)
+  - channel selected (bits) or global selected (prime, turbo, ...).
+  """
+  displayBadges(channelID: ID, channelLogin: String): [Badge]!
+}
+
+"""
+The available types of lookups for a user query.
+"""
+enum UserLookupType {
+  """
+  Retrieves only active users without TOS/DMCA violations.
+  """
+  ACTIVE
+
+  """
+  Includes suspended or deleted users in the results.
+  """
+  ALL
+}
+
+"""
+Root fields to access the Twitch API.
+"""
+type Query {
+  """
+  Get a user by their ID or login.
+  If no ID or login is provided, null is returned.
+  Lookup type can tell the resolver to include all users (inclusing deleted and
+  suspended accounts) on the lookup, defaults to only retrieve active users.
+  """
+  user(id: ID, login: String, lookupType: UserLookupType = ACTIVE): User
+}

@@ -17,6 +17,11 @@ const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";
 const API_TWITCH_URL: &'static str = "https://api.twitch.tv";
 const ID_TWITCH_URL: &'static str = "https://id.twitch.tv";
 const BADGES_TWITCH_URL: &'static str = "https://badges.twitch.tv";
+const GQL_URL: &'static str = "https://gql.twitch.tv/gql";
+
+const GQL_CLIENT_ID: &'static str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
+
+mod gql;
 
 /// API integration.
 #[derive(Clone, Debug)]
@@ -25,6 +30,7 @@ pub struct Twitch {
     api_url: Url,
     id_url: Url,
     badges_url: Url,
+    gql_url: Url,
     pub token: oauth2::SyncToken,
 }
 
@@ -36,6 +42,7 @@ impl Twitch {
             api_url: str::parse::<Url>(API_TWITCH_URL)?,
             id_url: str::parse::<Url>(ID_TWITCH_URL)?,
             badges_url: str::parse::<Url>(BADGES_TWITCH_URL)?,
+            gql_url: str::parse::<Url>(GQL_URL)?,
             token,
         })
     }
@@ -83,6 +90,19 @@ impl Twitch {
         }
 
         RequestBuilder::new(self.client.clone(), method, url)
+    }
+
+    /// Access GQL client.
+    fn gql(&self) -> Result<RequestBuilder, Error> {
+        let req = RequestBuilder::new(self.client.clone(), Method::POST, self.gql_url.clone())
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::ACCEPT, "application/json")
+            .header(
+                str::parse::<header::HeaderName>("Client-ID")?,
+                GQL_CLIENT_ID,
+            );
+
+        Ok(req)
     }
 
     /// Update the channel information.
@@ -243,6 +263,30 @@ impl Twitch {
             .await?
             .json_option(not_found)
             .context("request chat badges")?)
+    }
+
+    /// Get display badges through GQL.
+    pub async fn gql_display_badges(
+        &self,
+        login: &str,
+        channel: &str,
+    ) -> Result<Option<self::gql::badges::ResponseData>, Error> {
+        use graphql_client::{GraphQLQuery as _, Response};
+
+        let body = self::gql::Badges::build_query(self::gql::badges::Variables {
+            login: login.to_string(),
+            channel_login: channel.to_string(),
+        });
+
+        let req = self.gql()?.body(serde_json::to_vec(&body)?);
+
+        let res = req
+            .execute()
+            .await?
+            .json::<Response<self::gql::badges::ResponseData>>()?
+            .data;
+
+        Ok(res)
     }
 }
 

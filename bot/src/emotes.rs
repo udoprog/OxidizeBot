@@ -41,10 +41,10 @@ impl From<(u32, u32, ffz::Urls)> for Urls {
     fn from((width, height, urls): (u32, u32, ffz::Urls)) -> Self {
         let mut out = Urls::default();
 
-        let options = vec![
-            (1, &mut out.small, urls.x1),
-            (2, &mut out.medium, urls.x2),
-            (4, &mut out.large, urls.x4),
+        let options: SmallVec<[(u32, &mut Option<Url>, Option<String>); 3]> = smallvec![
+            (1u32, &mut out.small, urls.x1),
+            (2u32, &mut out.medium, urls.x2),
+            (4u32, &mut out.large, urls.x4),
         ];
 
         for (factor, dest, url) in options {
@@ -87,20 +87,22 @@ pub struct Emote {
 type EmoteByCode = HashMap<String, Arc<Emote>>;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(tag = "key")]
+#[serde(tag = "k", content = "c")]
 enum Key<'a> {
     /// Twitch badges for the given room.
-    TwitchSubscriberBadges(&'a str),
+    TwitchSubscriberBadges { target: &'a str },
+    /// GQL Twitch badges for the given chat (channel/name).
+    GqlTwitchChatBadges { target: &'a str, name: &'a str },
     /// Twitch badges for the given chat (channel).
-    TwitchChatBadges(&'a str),
+    TwitchChatBadges { target: &'a str },
     /// FFZ information for a given user.
-    FfzUser(&'a str),
+    FfzUser { name: &'a str },
     /// All badges for the given room and name combo.
-    RoomBadges(&'a str, &'a str),
+    RoomBadges { target: &'a str, name: &'a str },
     /// Channel information from BTTV.
-    BttvChannel(&'a str),
+    BttvChannel { target: &'a str },
     /// Emotes associated with a single room.
-    RoomEmotes(&'a str),
+    RoomEmotes { target: &'a str },
     /// Global emotes.
     GlobalEmotes,
     /// Badges from tduva.
@@ -195,13 +197,13 @@ impl Emotes {
         for e in emotes {
             let mut urls = Urls::default();
 
-            let options = vec![
+            let options: SmallVec<[(&mut Option<Url>, &str); 3]> = smallvec![
                 (&mut urls.small, "1x"),
                 (&mut urls.medium, "2x"),
                 (&mut urls.large, "3x"),
             ];
 
-            for (dest, size) in options.into_iter() {
+            for (dest, size) in options {
                 let url = url_template.render_to_string(Args {
                     id: e.id.as_str(),
                     image: size,
@@ -228,7 +230,9 @@ impl Emotes {
             .inner
             .cache
             .wrap(
-                Key::BttvChannel(&channel.name),
+                Key::BttvChannel {
+                    target: &channel.name,
+                },
                 Duration::hours(72),
                 self.inner.bttv.channels(&channel.name),
             )
@@ -264,7 +268,9 @@ impl Emotes {
             .inner
             .cache
             .wrap(
-                Key::BttvChannel(&channel.name),
+                Key::BttvChannel {
+                    target: &channel.name,
+                },
                 Duration::hours(72),
                 self.inner.bttv.channels(&channel.name),
             )
@@ -282,7 +288,7 @@ impl Emotes {
     fn twitch_emote(id: u64) -> Arc<Emote> {
         let mut urls = Urls::default();
 
-        let options = vec![
+        let options: SmallVec<[(&mut Option<Url>, &str); 3]> = smallvec![
             (&mut urls.small, "1.0"),
             (&mut urls.medium, "2.0"),
             (&mut urls.large, "3.0"),
@@ -321,17 +327,23 @@ impl Emotes {
     async fn room_emotes(&self, channel: &Channel) -> Result<Arc<EmoteByCode>, Error> {
         self.inner
             .cache
-            .wrap(Key::RoomEmotes(&channel.name), Duration::hours(6), async {
-                let mut emotes = EmoteByCode::default();
-                let (a, b) = future::try_join(
-                    self.room_emotes_from_ffz(channel),
-                    self.room_emotes_from_bttv(channel),
-                )
-                .await?;
-                emotes.extend(a);
-                emotes.extend(b);
-                Ok(Arc::new(emotes))
-            })
+            .wrap(
+                Key::RoomEmotes {
+                    target: &channel.name,
+                },
+                Duration::hours(6),
+                async {
+                    let mut emotes = EmoteByCode::default();
+                    let (a, b) = future::try_join(
+                        self.room_emotes_from_ffz(channel),
+                        self.room_emotes_from_bttv(channel),
+                    )
+                    .await?;
+                    emotes.extend(a);
+                    emotes.extend(b);
+                    Ok(Arc::new(emotes))
+                },
+            )
             .await
     }
 
@@ -413,7 +425,9 @@ impl Emotes {
             .inner
             .cache
             .wrap(
-                Key::TwitchSubscriberBadges(&channel.name),
+                Key::TwitchSubscriberBadges {
+                    target: &channel.name,
+                },
                 Duration::hours(24),
                 self.inner.twitch.badges_display(&channel.id),
             )
@@ -470,7 +484,7 @@ impl Emotes {
             .inner
             .cache
             .wrap(
-                Key::FfzUser(name),
+                Key::FfzUser { name },
                 Duration::hours(24),
                 self.inner.ffz.user(name),
             )
@@ -557,16 +571,21 @@ impl Emotes {
     }
 
     /// Get twitch chat badges.
+    ///
+    /// Deprecated for as long as GQL works since it's _much_ better.
+    #[allow(unused)]
     async fn twitch_chat_badges(
         &self,
         channel: &Channel,
-        chat_badges: impl Iterator<Item = (&str, u32)>,
+        chat_badges: &str,
     ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
         let badges = self
             .inner
             .cache
             .wrap(
-                Key::TwitchChatBadges(&channel.name),
+                Key::TwitchChatBadges {
+                    target: &channel.name,
+                },
                 Duration::hours(72),
                 self.inner.twitch.chat_badges(&channel.id),
             )
@@ -579,7 +598,7 @@ impl Emotes {
             None => return Ok(out),
         };
 
-        for (name, version) in chat_badges {
+        for (name, version) in split_badges(chat_badges) {
             let name = match name {
                 "admin" => "admin",
                 "broadcaster" => "broadcaster",
@@ -624,13 +643,103 @@ impl Emotes {
             });
         }
 
+        return Ok(out);
+
+        /// Split all the badges.
+        fn split_badges<'a>(badges: &'a str) -> impl Iterator<Item = (&'a str, u32)> {
+            badges.split(',').flat_map(|b| {
+                let mut it = b.split('/');
+                let badge = it.next()?;
+                let version = str::parse::<u32>(it.next()?).ok()?;
+                Some((badge, version))
+            })
+        }
+    }
+
+    /// Get chat badges through GQL.
+    async fn gql_twitch_chat_badges(
+        &self,
+        channel: &Channel,
+        name: &str,
+    ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
+        let badges = self
+            .inner
+            .cache
+            .wrap(
+                Key::GqlTwitchChatBadges {
+                    target: &channel.name,
+                    name,
+                },
+                Duration::hours(72),
+                self.inner.twitch.gql_display_badges(&channel.name, name),
+            )
+            .await?;
+
+        let mut out = SmallVec::new();
+
+        let badges = match badges {
+            Some(badges) => badges,
+            None => return Ok(out),
+        };
+
+        let user = match badges.user {
+            Some(user) => user,
+            None => return Ok(out),
+        };
+
+        for badge in user.display_badges {
+            let badge = match badge {
+                Some(badge) => badge,
+                None => continue,
+            };
+
+            let mut url = match url::Url::parse(&badge.image_url) {
+                Ok(url) => url,
+                Err(_) => continue,
+            };
+
+            let mut urls = Urls::default();
+
+            let things: SmallVec<[(&mut Option<Url>, &str, u32); 3]> = smallvec![
+                (&mut urls.small, "1", 1),
+                (&mut urls.medium, "2", 2),
+                (&mut urls.large, "3", 3),
+            ];
+
+            for (dest, segment, factor) in things {
+                {
+                    let mut path = match url.path_segments_mut() {
+                        Ok(path) => path,
+                        Err(()) => continue,
+                    };
+
+                    path.pop();
+                    path.push(segment);
+                }
+
+                *dest = Some(Url {
+                    url: url.to_string(),
+                    size: Some(Size {
+                        width: DEFAULT_BADGE_SIZE * factor,
+                        height: DEFAULT_BADGE_SIZE * factor,
+                    }),
+                });
+            }
+
+            out.push(Badge {
+                title: badge.description,
+                badge_url: badge.click_url,
+                urls,
+                bg_color: None,
+            });
+        }
+
         Ok(out)
     }
 
     /// Render all room badges.
     async fn room_badges(
         &self,
-        tags: &irc::Tags,
         channel: &Channel,
         name: &str,
     ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
@@ -638,28 +747,30 @@ impl Emotes {
             .inner
             .cache
             .wrap(
-                Key::RoomBadges(&channel.name, name),
+                Key::RoomBadges {
+                    target: &channel.name,
+                    name,
+                },
                 Duration::hours(1),
                 async {
                     let mut out = SmallVec::new();
 
-                    if let Some(badges) = tags.badges.as_ref() {
-                        match self.twitch_chat_badges(channel, split_badges(badges)).await {
-                            Ok(badges) => out.extend(badges),
-                            Err(e) => log::warn!(
-                                "{}/{}: failed to get twitch chat badges: {}",
-                                channel.name,
-                                name,
-                                e
-                            ),
-                        }
-                    }
-
+                    let twitch = self.gql_twitch_chat_badges(channel, name);
                     let ffz = self.ffz_chat_badges(name);
                     let tduva = self.tduva_chat_badges(name);
                     let bttv = self.bttv_bot_badge(channel, name);
 
-                    let (ffz, tduva, bttv) = future::join3(ffz, tduva, bttv).await;
+                    let (twitch, ffz, tduva, bttv) = future::join4(twitch, ffz, tduva, bttv).await;
+
+                    match twitch {
+                        Ok(badges) => out.extend(badges),
+                        Err(e) => log::warn!(
+                            "{}/{}: failed to get twitch chat badges: {}",
+                            channel.name,
+                            name,
+                            e
+                        ),
+                    }
 
                     match ffz {
                         Ok(badges) => out.extend(badges),
@@ -695,16 +806,6 @@ impl Emotes {
                 },
             )
             .await;
-
-        /// Split all the badges.
-        fn split_badges<'a>(badges: &'a str) -> impl Iterator<Item = (&'a str, u32)> {
-            badges.split(',').flat_map(|b| {
-                let mut it = b.split('/');
-                let badge = it.next()?;
-                let version = str::parse::<u32>(it.next()?).ok()?;
-                Some((badge, version))
-            })
-        }
     }
 
     pub async fn render(
@@ -715,7 +816,7 @@ impl Emotes {
         message: &str,
     ) -> Result<Rendered, Error> {
         let (badges, room_emotes, global_emotes) = future::try_join3(
-            self.room_badges(tags, channel, name),
+            self.room_badges(channel, name),
             self.room_emotes(channel),
             self.global_emotes(),
         )

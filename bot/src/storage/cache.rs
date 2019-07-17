@@ -373,6 +373,8 @@ impl Cache {
         T: serde::Serialize,
     {
         let key = Key(ns, key);
+        // NB: needed to make sure key serialization is consistently ordered.
+        let key = cbor::value::to_value(key)?;
         return cbor::to_vec(&key).map_err(Into::into);
 
         #[derive(serde::Serialize)]

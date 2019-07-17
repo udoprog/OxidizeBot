@@ -1,0 +1,13 @@
+query Badges($login: String!, $channelLogin: String!) {
+  user(login: $login) {
+    displayBadges(channelLogin: $channelLogin) {
+      id
+      imageURL
+      version
+      title
+      clickURL
+      onClickAction
+      description
+    }
+  }
+}

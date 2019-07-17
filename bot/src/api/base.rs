@@ -59,8 +59,8 @@ impl RequestBuilder {
     }
 
     /// Change the body of the request.
-    pub fn body(mut self, body: Bytes) -> Self {
-        self.body = Some(body);
+    pub fn body(mut self, body: impl Into<Bytes>) -> Self {
+        self.body = Some(body.into());
         self
     }
 

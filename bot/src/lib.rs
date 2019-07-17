@@ -8,6 +8,8 @@ extern crate diesel;
 extern crate diesel_migrations;
 #[macro_use]
 extern crate mysql_async;
+#[macro_use]
+extern crate smallvec;
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
