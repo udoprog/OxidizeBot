@@ -251,9 +251,9 @@ impl Irc {
             let startup_message = settings.get::<String>("irc/startup-message")?;
 
             let mut chat_log_builder = chat_log::Builder::new(
+                bot_twitch.clone(),
                 &injector,
                 message_log.clone(),
-                bot_twitch.clone(),
                 settings.scoped("chat-log"),
             )?;
 
@@ -308,7 +308,8 @@ impl Irc {
                             handler.chat_log = chat_log_builder.build()?;
                         }
                         update = chat_log_builder.enabled_stream.select_next_some() => {
-                            chat_log_builder.enabled(update);
+                            chat_log_builder.enabled = update;
+                            chat_log_builder.message_log.enabled(update);
                             handler.chat_log = chat_log_builder.build()?;
                         }
                         update = chat_log_builder.emotes_enabled_stream.select_next_some() => {

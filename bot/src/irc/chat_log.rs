@@ -6,21 +6,21 @@ use crate::{
 use failure::Error;
 
 pub struct Builder {
-    message_log: message_log::MessageLog,
     twitch: Twitch,
-    pub cache_stream: injector::Stream<Cache>,
-    pub cache: Option<Cache>,
-    pub enabled_stream: settings::Stream<bool>,
-    enabled: bool,
-    pub emotes_enabled_stream: settings::Stream<bool>,
-    pub emotes_enabled: bool,
+    pub(crate) message_log: message_log::MessageLog,
+    pub(crate) cache_stream: injector::Stream<Cache>,
+    pub(crate) cache: Option<Cache>,
+    pub(crate) enabled_stream: settings::Stream<bool>,
+    pub(crate) enabled: bool,
+    pub(crate) emotes_enabled_stream: settings::Stream<bool>,
+    pub(crate) emotes_enabled: bool,
 }
 
 impl Builder {
     pub fn new(
+        twitch: Twitch,
         injector: &injector::Injector,
         message_log: message_log::MessageLog,
-        twitch: Twitch,
         settings: settings::Settings,
     ) -> Result<Self, Error> {
         let (cache_stream, cache) = injector.stream::<Cache>();
@@ -33,8 +33,8 @@ impl Builder {
         message_log.enabled(enabled);
 
         Ok(Self {
-            message_log,
             twitch,
+            message_log,
             cache_stream,
             cache,
             enabled_stream,
@@ -42,12 +42,6 @@ impl Builder {
             emotes_enabled_stream,
             emotes_enabled,
         })
-    }
-
-    /// Set if this is enabled or not.
-    pub fn enabled(&mut self, enabled: bool) {
-        self.enabled = enabled;
-        self.message_log.enabled(enabled);
     }
 
     /// Construct a new chat log with the specified configuration.
