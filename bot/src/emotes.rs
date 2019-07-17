@@ -90,17 +90,17 @@ type EmoteByCode = HashMap<String, Arc<Emote>>;
 #[serde(tag = "key")]
 enum Key<'a> {
     /// Twitch badges for the given room.
-    TwitchSubscriberBadges { target: &'a str },
+    TwitchSubscriberBadges(&'a str),
     /// Twitch badges for the given chat (channel).
-    TwitchChatBadges { target: &'a str },
+    TwitchChatBadges(&'a str),
     /// FFZ information for a given user.
-    FfzUser { name: &'a str },
+    FfzUser(&'a str),
     /// All badges for the given room and name combo.
-    RoomBadges { target: &'a str, name: &'a str },
+    RoomBadges(&'a str, &'a str),
     /// Channel information from BTTV.
-    BttvChannel { target: &'a str },
+    BttvChannel(&'a str),
     /// Emotes associated with a single room.
-    RoomEmotes { target: &'a str },
+    RoomEmotes(&'a str),
     /// Global emotes.
     GlobalEmotes,
     /// Badges from tduva.
@@ -228,9 +228,7 @@ impl Emotes {
             .inner
             .cache
             .wrap(
-                Key::BttvChannel {
-                    target: &channel.name,
-                },
+                Key::BttvChannel(&channel.name),
                 Duration::hours(72),
                 self.inner.bttv.channels(&channel.name),
             )
@@ -266,9 +264,7 @@ impl Emotes {
             .inner
             .cache
             .wrap(
-                Key::BttvChannel {
-                    target: &channel.name,
-                },
+                Key::BttvChannel(&channel.name),
                 Duration::hours(72),
                 self.inner.bttv.channels(&channel.name),
             )
@@ -325,23 +321,17 @@ impl Emotes {
     async fn room_emotes(&self, channel: &Channel) -> Result<Arc<EmoteByCode>, Error> {
         self.inner
             .cache
-            .wrap(
-                Key::RoomEmotes {
-                    target: &channel.name,
-                },
-                Duration::hours(6),
-                async {
-                    let mut emotes = EmoteByCode::default();
-                    let (a, b) = future::try_join(
-                        self.room_emotes_from_ffz(channel),
-                        self.room_emotes_from_bttv(channel),
-                    )
-                    .await?;
-                    emotes.extend(a);
-                    emotes.extend(b);
-                    Ok(Arc::new(emotes))
-                },
-            )
+            .wrap(Key::RoomEmotes(&channel.name), Duration::hours(6), async {
+                let mut emotes = EmoteByCode::default();
+                let (a, b) = future::try_join(
+                    self.room_emotes_from_ffz(channel),
+                    self.room_emotes_from_bttv(channel),
+                )
+                .await?;
+                emotes.extend(a);
+                emotes.extend(b);
+                Ok(Arc::new(emotes))
+            })
             .await
     }
 
@@ -423,9 +413,7 @@ impl Emotes {
             .inner
             .cache
             .wrap(
-                Key::TwitchSubscriberBadges {
-                    target: &channel.name,
-                },
+                Key::TwitchSubscriberBadges(&channel.name),
                 Duration::hours(24),
                 self.inner.twitch.badges_display(&channel.id),
             )
@@ -482,7 +470,7 @@ impl Emotes {
             .inner
             .cache
             .wrap(
-                Key::FfzUser { name },
+                Key::FfzUser(name),
                 Duration::hours(24),
                 self.inner.ffz.user(name),
             )
@@ -578,9 +566,7 @@ impl Emotes {
             .inner
             .cache
             .wrap(
-                Key::TwitchChatBadges {
-                    target: &channel.name,
-                },
+                Key::TwitchChatBadges(&channel.name),
                 Duration::hours(72),
                 self.inner.twitch.chat_badges(&channel.id),
             )
@@ -648,67 +634,66 @@ impl Emotes {
         channel: &Channel,
         name: &str,
     ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
-        let key = Key::RoomBadges {
-            target: &channel.name,
-            name,
-        };
-
         return self
             .inner
             .cache
-            .wrap(key, Duration::hours(1), async {
-                let mut out = SmallVec::new();
+            .wrap(
+                Key::RoomBadges(&channel.name, name),
+                Duration::hours(1),
+                async {
+                    let mut out = SmallVec::new();
 
-                if let Some(badges) = tags.badges.as_ref() {
-                    match self.twitch_chat_badges(channel, split_badges(badges)).await {
+                    if let Some(badges) = tags.badges.as_ref() {
+                        match self.twitch_chat_badges(channel, split_badges(badges)).await {
+                            Ok(badges) => out.extend(badges),
+                            Err(e) => log::warn!(
+                                "{}/{}: failed to get twitch chat badges: {}",
+                                channel.name,
+                                name,
+                                e
+                            ),
+                        }
+                    }
+
+                    let ffz = self.ffz_chat_badges(name);
+                    let tduva = self.tduva_chat_badges(name);
+                    let bttv = self.bttv_bot_badge(channel, name);
+
+                    let (ffz, tduva, bttv) = future::join3(ffz, tduva, bttv).await;
+
+                    match ffz {
                         Ok(badges) => out.extend(badges),
                         Err(e) => log::warn!(
-                            "{}/{}: failed to get twitch chat badges: {}",
+                            "{}/{}: failed to get ffz chat badges: {}",
                             channel.name,
                             name,
                             e
                         ),
                     }
-                }
 
-                let ffz = self.ffz_chat_badges(name);
-                let tduva = self.tduva_chat_badges(name);
-                let bttv = self.bttv_bot_badge(channel, name);
+                    match tduva {
+                        Ok(badges) => out.extend(badges),
+                        Err(e) => log::warn!(
+                            "{}/{}: failed to get tduva chat badges: {}",
+                            channel.name,
+                            name,
+                            e
+                        ),
+                    }
 
-                let (ffz, tduva, bttv) = future::join3(ffz, tduva, bttv).await;
+                    match bttv {
+                        Ok(badges) => out.extend(badges),
+                        Err(e) => log::warn!(
+                            "{}/{}: failed to get bttv chat badges: {}",
+                            channel.name,
+                            name,
+                            e
+                        ),
+                    }
 
-                match ffz {
-                    Ok(badges) => out.extend(badges),
-                    Err(e) => log::warn!(
-                        "{}/{}: failed to get ffz chat badges: {}",
-                        channel.name,
-                        name,
-                        e
-                    ),
-                }
-
-                match tduva {
-                    Ok(badges) => out.extend(badges),
-                    Err(e) => log::warn!(
-                        "{}/{}: failed to get tduva chat badges: {}",
-                        channel.name,
-                        name,
-                        e
-                    ),
-                }
-
-                match bttv {
-                    Ok(badges) => out.extend(badges),
-                    Err(e) => log::warn!(
-                        "{}/{}: failed to get bttv chat badges: {}",
-                        channel.name,
-                        name,
-                        e
-                    ),
-                }
-
-                Ok(out)
-            })
+                    Ok(out)
+                },
+            )
             .await;
 
         /// Split all the badges.
