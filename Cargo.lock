@@ -1834,7 +1834,7 @@ dependencies = [
  "uuid 0.7.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "warp 0.1.17 (registry+https://github.com/rust-lang/crates.io-index)",
  "webbrowser 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "websocket 0.22.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "websocket 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "winapi 0.3.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "winres 0.1.11 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -3278,7 +3278,7 @@ dependencies = [
 
 [[package]]
 name = "websocket"
-version = "0.22.4"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "base64 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -3736,7 +3736,7 @@ dependencies = [
 "checksum warp 0.1.17 (registry+https://github.com/rust-lang/crates.io-index)" = "fd48199af71a5473f6ea87f53badcfe4d3ef2157abbbee03fb4061c6b1dae565"
 "checksum webbrowser 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "f08b2530d0f0c96ae77672bd927d07cec2ea33b07d1a8f74cfcf35e61f98fd0e"
 "checksum webbrowser 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "c01efd7cb6939b7f34983f1edff0550e5b21b49e2db4495656295922df8939ac"
-"checksum websocket 0.22.4 (registry+https://github.com/rust-lang/crates.io-index)" = "0adcd2a64c5746c9702b354a1b992802b0c363df1dfa324a74cb7aebe10e0cbf"
+"checksum websocket 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)" = "b255b190f412e45000c35be7fe9b48b39a2ac5eb90d093d421694e5dae8b335c"
 "checksum which 2.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "b57acb10231b9493c8472b20cb57317d0679a49e0bdbee44b3b803a6473af164"
 "checksum widestring 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)" = "effc0e4ff8085673ea7b9b2e3c73f6bd4d118810c9009ed8f1e16bd96c331db6"
 "checksum winapi 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)" = "167dc9d6949a9b857f3451275e911c3f44255842c1f7a76f33c55103a909087a"

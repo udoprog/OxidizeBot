@@ -1,7 +1,7 @@
 pub use futures::{
     channel::{mpsc, oneshot},
     compat::Compat,
-    compat::{Future01CompatExt as _, Sink01CompatExt, Stream01CompatExt as _},
+    compat::{Future01CompatExt as _, Sink01CompatExt as _, Stream01CompatExt as _},
     future,
     prelude::*,
     stream, OptionExt as _,
