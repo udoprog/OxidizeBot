@@ -12,6 +12,8 @@ use reqwest::{
 };
 use std::mem;
 
+pub use self::pubsub::PubSub;
+
 pub const CLIPS_URL: &'static str = "http://clips.twitch.tv";
 const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";
 const API_TWITCH_URL: &'static str = "https://api.twitch.tv";
@@ -22,6 +24,7 @@ const GQL_URL: &'static str = "https://gql.twitch.tv/gql";
 const GQL_CLIENT_ID: &'static str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
 mod gql;
+pub mod pubsub;
 
 /// API integration.
 #[derive(Clone, Debug)]
