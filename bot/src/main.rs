@@ -176,12 +176,12 @@ fn main() -> Result<(), Error> {
         system.notification(startup);
     }
 
-    let mut runtime = tokio::runtime::Runtime::new()?;
-
     loop {
         if !system.is_running() {
             break;
         }
+
+        let mut runtime = tokio::runtime::Runtime::new()?;
 
         if errored {
             system.clear();
