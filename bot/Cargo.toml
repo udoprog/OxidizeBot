@@ -1,6 +1,6 @@
 [package]
 name = "setmod"
-version = "0.4.4"
+version = "0.4.5"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2018"
 license = "MIT/Apache-2.0"
@@ -10,7 +10,7 @@ description = "SetMod Twitch Bot"
 chrono = {version = "0.4.6", features = ["serde"]}
 chrono-tz = {version = "0.5.1", features = ["serde"]}
 clap = "2.33.0"
-mysql_async = {git = "https://github.com/udoprog/mysql_async.git", branch = "dropped-broken-cleanup"}
+mysql_async = {git = "https://github.com/blackbeam/mysql_async"}
 diesel = { version = "1.4.2", features = ["sqlite", "chrono"] }
 diesel_migrations = "1.4.0"
 eudex = "0.1.1"
@@ -61,7 +61,7 @@ mime = "0.3.13"
 mime_guess = "2.0.0-alpha.6"
 uom = "0.23.1"
 ccl = "4.8.1"
-rocksdb = "0.12.2"
+rocksdb = {version = "0.12.3", git = "https://github.com/rust-rocksdb/rust-rocksdb.git"}
 crossbeam = "0.7.1"
 hex = "0.3.2"
 graphql_client = "0.8.0"

@@ -32,7 +32,7 @@ deploy:
   - release: $(appveyor_repo_tag_name)
     provider: GitHub
     auth_token:
-      secure: QlcWMc/7j2eVy1J8j0CFm3tUev+ZC6zXh7SrP2aFuE1trzhtf0IDbx2eTnYzta0h
+      secure: opsYSU1MsMMLlC3c/VJLZ0b4XGEMdVEJ0WZ2dRF+GtXjoVa5zy+wnxxrhg5gHP+G
     artifact: /.*\.(zip|msi)/
     draft: true
     prerelease: false

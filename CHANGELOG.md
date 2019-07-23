@@ -6,7 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.4.4...master
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.4.5...master
+
+## [0.4.5]
+
+### Changed
+- Upgraded RocksDB to support directories with unicode characters in them.
+
+[0.4.4]: https://github.com/udoprog/setmod/compare/0.4.4...0.4.5
 
 ## [0.4.4]
 
