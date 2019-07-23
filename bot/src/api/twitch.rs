@@ -242,7 +242,8 @@ impl Twitch {
         return Ok(request
             .execute()
             .await?
-            .json_option(unauthorized)
+            .empty_on_status(StatusCode::UNAUTHORIZED)
+            .json()
             .context("validate token error")?);
     }
 
@@ -253,7 +254,8 @@ impl Twitch {
         Ok(req
             .execute()
             .await?
-            .json_option(not_found)
+            .not_found()
+            .json()
             .context("request badges")?)
     }
 
@@ -264,7 +266,8 @@ impl Twitch {
         Ok(req
             .execute()
             .await?
-            .json_option(not_found)
+            .not_found()
+            .json()
             .context("request chat badges")?)
     }
 
@@ -290,22 +293,6 @@ impl Twitch {
             .data;
 
         Ok(res)
-    }
-}
-
-/// Handle unahtorized as a missing body.
-fn unauthorized(status: &StatusCode) -> bool {
-    match *status {
-        StatusCode::UNAUTHORIZED => true,
-        _ => false,
-    }
-}
-
-/// Handle not found as a missing body.
-fn not_found(status: &StatusCode) -> bool {
-    match *status {
-        StatusCode::NOT_FOUND => true,
-        _ => false,
     }
 }
 

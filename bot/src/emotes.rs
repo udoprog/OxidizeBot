@@ -2,11 +2,11 @@ use crate::{
     api::{bttv, ffz, twitch::Channel, BetterTTV, FrankerFaceZ, Tduva, Twitch},
     irc,
     prelude::*,
-    storage::{cache, Cache},
+    storage::Cache,
     template,
-    utils::Duration,
 };
 use failure::Error;
+use futures_cache as cache;
 use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
 use smallvec::SmallVec;
@@ -143,7 +143,7 @@ impl Emotes {
     pub fn new(cache: Cache, twitch: Twitch) -> Result<Self, Error> {
         Ok(Self {
             inner: Arc::new(Inner {
-                cache: cache.namespaced("emotes"),
+                cache: cache.namespaced(&"emotes")?,
                 ffz: FrankerFaceZ::new()?,
                 bttv: BetterTTV::new()?,
                 tduva: Tduva::new()?,
@@ -233,7 +233,7 @@ impl Emotes {
                 Key::BttvChannel {
                     target: &channel.name,
                 },
-                Duration::hours(72),
+                chrono::Duration::hours(72),
                 self.inner.bttv.channels(&channel.name),
             )
             .await?;
@@ -271,7 +271,7 @@ impl Emotes {
                 Key::BttvChannel {
                     target: &channel.name,
                 },
-                Duration::hours(72),
+                chrono::Duration::hours(72),
                 self.inner.bttv.channels(&channel.name),
             )
             .await?;
@@ -331,7 +331,7 @@ impl Emotes {
                 Key::RoomEmotes {
                     target: &channel.name,
                 },
-                Duration::hours(6),
+                chrono::Duration::hours(6),
                 async {
                     let mut emotes = EmoteByCode::default();
                     let (a, b) = future::try_join(
@@ -400,7 +400,7 @@ impl Emotes {
     async fn global_emotes(&self) -> Result<Arc<EmoteByCode>, Error> {
         self.inner
             .cache
-            .wrap(Key::GlobalEmotes, Duration::hours(72), async {
+            .wrap(Key::GlobalEmotes, chrono::Duration::hours(72), async {
                 let (twitch, bttv) = future::try_join(
                     self.emote_sets_from_twitch("0"),
                     self.emote_sets_from_bttv(),
@@ -428,7 +428,7 @@ impl Emotes {
                 Key::TwitchSubscriberBadges {
                     target: &channel.name,
                 },
-                Duration::hours(24),
+                chrono::Duration::hours(24),
                 self.inner.twitch.badges_display(&channel.id),
             )
             .await?;
@@ -485,7 +485,7 @@ impl Emotes {
             .cache
             .wrap(
                 Key::FfzUser { name },
-                Duration::hours(24),
+                chrono::Duration::hours(24),
                 self.inner.ffz.user(name),
             )
             .await?;
@@ -521,7 +521,7 @@ impl Emotes {
         if let Some(d) = self.inner.tduva_data.read().as_ref() {
             let entry = self.inner.cache.test(Key::TduvaBadges)?;
 
-            if let cache::State::Fresh(..) = entry.state {
+            if let cache::State::Fresh(..) = entry {
                 for b in &d.chatty {
                     if b.usernames.contains(name) {
                         out.push((DEFAULT_BADGE_SIZE, DEFAULT_BADGE_SIZE, b).into());
@@ -537,7 +537,7 @@ impl Emotes {
             .cache
             .wrap(
                 Key::TduvaBadges,
-                Duration::hours(72),
+                chrono::Duration::hours(72),
                 self.inner.tduva.res_badges(),
             )
             .await?;
@@ -586,7 +586,7 @@ impl Emotes {
                 Key::TwitchChatBadges {
                     target: &channel.name,
                 },
-                Duration::hours(72),
+                chrono::Duration::hours(72),
                 self.inner.twitch.chat_badges(&channel.id),
             )
             .await?;
@@ -670,7 +670,7 @@ impl Emotes {
                     target: &channel.name,
                     name,
                 },
-                Duration::hours(72),
+                chrono::Duration::hours(72),
                 self.inner.twitch.gql_display_badges(&channel.name, name),
             )
             .await?;
@@ -743,15 +743,14 @@ impl Emotes {
         channel: &Channel,
         name: &str,
     ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
-        return self
-            .inner
+        self.inner
             .cache
             .wrap(
                 Key::RoomBadges {
                     target: &channel.name,
                     name,
                 },
-                Duration::hours(1),
+                chrono::Duration::hours(1),
                 async {
                     let mut out = SmallVec::new();
 
@@ -805,7 +804,7 @@ impl Emotes {
                     Ok(out)
                 },
             )
-            .await;
+            .await
     }
 
     pub async fn render(

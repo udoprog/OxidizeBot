@@ -1,9 +1,7 @@
-pub mod cache;
-
 use failure::Error;
 use std::{path::Path, sync::Arc};
 
-pub use self::cache::Cache;
+pub use futures_cache::Cache;
 
 pub struct Storage {
     cache: Arc<rocksdb::DB>,
@@ -18,7 +16,7 @@ impl Storage {
 
     /// Access the cache abstraction of your storage.
     pub fn cache(&self) -> Result<Cache, Error> {
-        Cache::load(self.cache.clone())
+        Ok(Cache::load(self.cache.clone())?)
     }
 }
 

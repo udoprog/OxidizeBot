@@ -61,10 +61,12 @@ mime = "0.3.13"
 mime_guess = "2.0.0-alpha.6"
 uom = "0.23.1"
 ccl = "4.8.1"
-rocksdb = "0.12.2"
 crossbeam = "0.7.1"
 hex = "0.3.2"
 graphql_client = "0.8.0"
+futures-option = "0.1.1"
+futures-cache = "0.5.0"
+rocksdb = "0.12.3"
 
 [dependencies.futures01]
 package = "futures"
@@ -72,10 +74,8 @@ version = "0.1.25"
 
 [dependencies.futures]
 package = "futures-preview"
-version = "0.3.0-alpha.16"
+version = "0.3.0-alpha.17"
 features = ["nightly", "async-await", "compat"]
-git = "https://github.com/udoprog/futures-rs"
-branch = "master"
 
 [dependencies.failure]
 version = "0.1.5"

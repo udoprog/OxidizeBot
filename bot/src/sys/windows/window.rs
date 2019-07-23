@@ -1,13 +1,7 @@
 #![allow(unused)]
 
 use super::convert::{FromWide as _, ToWide as _};
-use crate::sys::Notification;
-use futures::{
-    channel::{mpsc, oneshot},
-    future::FusedFuture,
-    prelude::*,
-    OptionExt as _,
-};
+use crate::{prelude::*, sys::Notification};
 use std::{
     cell::RefCell,
     ffi::OsStr,
@@ -557,7 +551,7 @@ pub struct TickFuture<'a> {
     window: &'a mut Window,
 }
 
-impl<'a> FusedFuture for TickFuture<'a> {
+impl<'a> future::FusedFuture for TickFuture<'a> {
     fn is_terminated(&self) -> bool {
         false
     }

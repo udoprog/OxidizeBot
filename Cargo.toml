@@ -10,3 +10,6 @@ opt-level = 'z'
 lto = true
 codegen-units = 1
 panic = 'abort'
+
+[patch.crates-io]
+rocksdb = {git = "https://github.com/rust-rocksdb/rust-rocksdb.git"}

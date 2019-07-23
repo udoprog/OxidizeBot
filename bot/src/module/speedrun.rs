@@ -9,7 +9,7 @@ use crate::{
     auth, command, module,
     prelude::*,
     storage::Cache,
-    utils::{self, Duration},
+    utils,
 };
 use failure::{format_err, Error};
 use hashbrown::HashMap;
@@ -586,13 +586,16 @@ struct CachedSpeedrun {
 impl CachedSpeedrun {
     /// Get cached user information by ID.
     pub async fn user_by_id(&self, user: &str) -> Result<Option<User>, Error> {
-        self.cache
+        let result = self
+            .cache
             .wrap(
                 Key::UserById { user },
-                Duration::hours(24 * 7),
+                chrono::Duration::hours(24 * 7),
                 self.speedrun.user_by_id(user),
             )
-            .await
+            .await?;
+
+        Ok(result)
     }
 
     /// Get personal bests by user.
@@ -601,16 +604,19 @@ impl CachedSpeedrun {
         user_id: &str,
         embeds: &Embeds,
     ) -> Result<Option<Vec<Run>>, Error> {
-        self.cache
+        let result = self
+            .cache
             .wrap(
                 Key::UserPersonalBests {
                     user_id,
                     embeds: &embeds,
                 },
-                Duration::hours(2),
+                chrono::Duration::hours(2),
                 self.speedrun.user_personal_bests(user_id, &embeds),
             )
-            .await
+            .await?;
+
+        Ok(result)
     }
 
     /// Get the variables of a category.
@@ -618,13 +624,16 @@ impl CachedSpeedrun {
         &self,
         category_id: &str,
     ) -> Result<Option<Vec<Variable>>, Error> {
-        self.cache
+        let result = self
+            .cache
             .wrap(
                 Key::CategoryVariables { category_id },
-                Duration::hours(2),
+                chrono::Duration::hours(2),
                 self.speedrun.category_variables(category_id),
             )
-            .await
+            .await?;
+
+        Ok(result)
     }
 
     /// Get cached user information by ID.
@@ -634,24 +643,30 @@ impl CachedSpeedrun {
         category_id: &str,
         top: u32,
     ) -> Result<Option<Page<GameRecord>>, Error> {
-        self.cache
+        let result = self
+            .cache
             .wrap(
                 Key::CategoryRecordsById { category_id, top },
-                Duration::hours(24),
+                chrono::Duration::hours(24),
                 self.speedrun.category_records_by_id(category_id, top),
             )
-            .await
+            .await?;
+
+        Ok(result)
     }
 
     /// Get cached game record by ID.
     pub async fn game_by_id(&self, game_id: &str) -> Result<Option<Game>, Error> {
-        self.cache
+        let result = self
+            .cache
             .wrap(
                 Key::GameById { game_id },
-                Duration::hours(24 * 7),
+                chrono::Duration::hours(24 * 7),
                 self.speedrun.game_by_id(game_id),
             )
-            .await
+            .await?;
+
+        Ok(result)
     }
 
     /// Get cached game categories by ID.
@@ -660,24 +675,30 @@ impl CachedSpeedrun {
         game_id: &str,
         embeds: &Embeds,
     ) -> Result<Option<Vec<Category>>, Error> {
-        self.cache
+        let result = self
+            .cache
             .wrap(
                 Key::GameCategoriesById { game_id, embeds },
-                Duration::hours(24),
+                chrono::Duration::hours(24),
                 self.speedrun.game_categories_by_id(game_id, embeds),
             )
-            .await
+            .await?;
+
+        Ok(result)
     }
 
     /// Get cached game levels by ID.
     pub async fn game_levels(&self, game_id: &str) -> Result<Option<Vec<Level>>, Error> {
-        self.cache
+        let result = self
+            .cache
             .wrap(
                 Key::GameLevels { game_id },
-                Duration::hours(72),
+                chrono::Duration::hours(72),
                 self.speedrun.game_levels(game_id),
             )
-            .await
+            .await?;
+
+        Ok(result)
     }
 
     /// Get the specified leaderboard.
@@ -689,7 +710,8 @@ impl CachedSpeedrun {
         variables: &Variables,
         embeds: &Embeds,
     ) -> Result<Option<GameRecord>, Error> {
-        self.cache
+        let result = self
+            .cache
             .wrap(
                 Key::Leaderboard {
                     game_id,
@@ -698,11 +720,13 @@ impl CachedSpeedrun {
                     variables,
                     embeds,
                 },
-                Duration::hours(6),
+                chrono::Duration::hours(6),
                 self.speedrun
                     .leaderboard(game_id, category_id, top, variables, embeds),
             )
-            .await
+            .await?;
+
+        Ok(result)
     }
 }
 
@@ -732,7 +756,7 @@ impl super::Module for Module {
             .ok_or_else(|| format_err!("missing speedrun api"))?;
 
         let speedrun = CachedSpeedrun {
-            cache: cache.namespaced("speedrun"),
+            cache: cache.namespaced(&"speedrun")?,
             speedrun,
         };
 

@@ -1,15 +1,9 @@
 //! Twitch API helpers.
 
-use crate::{oauth2, prelude::*};
-use bytes::Bytes;
+use crate::{api::RequestBuilder, oauth2};
 use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
-use reqwest::{
-    header,
-    r#async::{Chunk, Client, Decoder},
-    Method, StatusCode, Url,
-};
-use std::mem;
+use reqwest::{r#async::Client, Method, Url};
 
 const V3_URL: &'static str = "https://www.googleapis.com/youtube/v3";
 const GET_VIDEO_INFO_URL: &'static str = "https://www.youtube.com/get_video_info";
@@ -43,14 +37,7 @@ impl YouTube {
             url_path.extend(path);
         }
 
-        RequestBuilder {
-            token: self.token.clone(),
-            client: self.client.clone(),
-            url,
-            method,
-            headers: Vec::new(),
-            body: None,
-        }
+        RequestBuilder::new(self.client.clone(), method, url).token(self.token.clone())
     }
 
     /// Update the channel information.
@@ -62,10 +49,14 @@ impl YouTube {
         let req = self
             .v3(Method::GET, &["videos"])
             .query_param("part", part)
-            .query_param("id", video_id)
-            .json::<Videos>();
+            .query_param("id", video_id);
 
-        Ok(req.await?.and_then(|v| v.items.into_iter().next()))
+        Ok(req
+            .execute()
+            .await?
+            .not_found()
+            .json::<Videos>()?
+            .and_then(|v| v.items.into_iter().next()))
     }
 
     /// Search YouTube.
@@ -73,10 +64,9 @@ impl YouTube {
         let req = self
             .v3(Method::GET, &["search"])
             .query_param("part", "snippet")
-            .query_param("q", q)
-            .json::<SearchResults>();
+            .query_param("q", q);
 
-        match req.await? {
+        match req.execute().await?.not_found().json::<SearchResults>()? {
             Some(result) => Ok(result),
             None => failure::bail!("got empty response"),
         }
@@ -91,16 +81,8 @@ impl YouTube {
         url.query_pairs_mut()
             .append_pair("video_id", video_id.as_str());
 
-        let request = RequestBuilder {
-            token: self.token.clone(),
-            client: self.client.clone(),
-            url,
-            method: Method::GET,
-            headers: Vec::new(),
-            body: None,
-        };
-
-        let body = request.raw().await?;
+        let req = RequestBuilder::new(self.client.clone(), Method::GET, url);
+        let body = req.execute().await?.not_found().body()?;
 
         let body = match body {
             Some(body) => body,
@@ -110,84 +92,6 @@ impl YouTube {
         let result: RawVideoInfo = serde_urlencoded::from_bytes(&body)?;
         let result = result.into_decoded()?;
         Ok(Some(result))
-    }
-}
-
-struct RequestBuilder {
-    token: oauth2::SyncToken,
-    client: Client,
-    url: Url,
-    method: Method,
-    headers: Vec<(header::HeaderName, String)>,
-    body: Option<Bytes>,
-}
-
-impl RequestBuilder {
-    /// Execute the request, providing the raw body as a response.
-    pub async fn raw(self) -> Result<Option<Chunk>, failure::Error> {
-        let access_token = self.token.read()?.access_token().to_string();
-        let mut req = self.client.request(self.method, self.url);
-
-        if let Some(body) = self.body {
-            req = req.body(body);
-        }
-
-        for (key, value) in self.headers {
-            req = req.header(key, value);
-        }
-
-        req = req.header(header::ACCEPT, "application/json");
-        let req = req.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
-        let mut res = req.send().compat().await?;
-
-        let status = res.status();
-
-        if status == StatusCode::UNAUTHORIZED {
-            self.token.force_refresh()?;
-        }
-
-        if status == StatusCode::NOT_FOUND {
-            return Ok(None);
-        }
-
-        let body = mem::replace(res.body_mut(), Decoder::empty());
-        let body = body.compat().try_concat().await?;
-
-        if !status.is_success() {
-            failure::bail!(
-                "bad response: {}: {}",
-                status,
-                String::from_utf8_lossy(&body)
-            );
-        }
-
-        if log::log_enabled!(log::Level::Trace) {
-            let response = String::from_utf8_lossy(body.as_ref());
-            log::trace!("response: {}", response);
-        }
-
-        Ok(Some(body))
-    }
-
-    /// Execute the request expecting a JSON response.
-    pub async fn json<T>(self) -> Result<Option<T>, failure::Error>
-    where
-        T: serde::de::DeserializeOwned,
-    {
-        let body = self.raw().await?;
-
-        let body = match body {
-            Some(body) => body,
-            None => return Ok(None),
-        };
-
-        serde_json::from_slice(body.as_ref()).map_err(Into::into)
-    }
-
-    /// Add a query parameter.
-    pub fn query_param(mut self, key: &str, value: &str) -> Self {
-        self.url.query_pairs_mut().append_pair(key, value);
-        self
     }
 }
 

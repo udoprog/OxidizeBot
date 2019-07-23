@@ -9,6 +9,32 @@ use reqwest::{
 use std::mem;
 use url::Url;
 
+/// Trait to deal with optional bodies.
+///
+/// Fix and replace once we get HRTB's or HRT's :cry:
+pub trait Body {
+    type Value;
+
+    /// Get a present body as an option.
+    fn some(self) -> Option<Self::Value>;
+}
+
+impl Body for Chunk {
+    type Value = Chunk;
+
+    fn some(self) -> Option<Self::Value> {
+        Some(self)
+    }
+}
+
+impl Body for Option<Chunk> {
+    type Value = Chunk;
+
+    fn some(self) -> Option<Self::Value> {
+        self
+    }
+}
+
 #[derive(Clone)]
 pub struct RequestBuilder {
     token: Option<oauth2::SyncToken>,
@@ -111,7 +137,7 @@ impl RequestBuilder {
     }
 
     /// Execute the request.
-    pub async fn execute(&self) -> Result<Response<'_>, Error> {
+    pub async fn execute(&self) -> Result<Response<'_, Chunk>, Error> {
         // NB: scope to only lock the token over the request setup.
         let req = {
             log::trace!("Request: {}: {}", self.method, self.url);
@@ -181,14 +207,14 @@ impl RequestBuilder {
     }
 }
 
-pub struct Response<'a> {
+pub struct Response<'a, B> {
     method: &'a Method,
     url: &'a Url,
     status: StatusCode,
-    body: Chunk,
+    body: B,
 }
 
-impl Response<'_> {
+impl Response<'_, Chunk> {
     /// Expect a successful response.
     pub fn ok(self) -> Result<(), Error> {
         if self.status.is_success() {
@@ -237,19 +263,90 @@ impl Response<'_> {
             }
         }
     }
+}
 
-    /// Send request and expect an optional JSON response.
-    pub fn json_option<T>(
-        self,
-        condition: impl FnOnce(&StatusCode) -> bool,
-    ) -> Result<Option<T>, Error>
+impl Response<'_, Option<Chunk>> {
+    /// Expect a JSON response of the given type.
+    pub fn json<T>(self) -> Result<Option<T>, Error>
     where
         T: serde::de::DeserializeOwned,
     {
-        if condition(&self.status) {
-            return Ok(None);
+        let body = match self.body {
+            Some(body) => body,
+            None => return Ok(None),
+        };
+
+        if !self.status.is_success() {
+            let body = String::from_utf8_lossy(body.as_ref());
+            failure::bail!(
+                "Bad response: {}: {}: {}: {}",
+                self.method,
+                self.url,
+                self.status,
+                body
+            );
         }
 
-        Ok(Some(self.json()?))
+        match serde_json::from_slice(body.as_ref()) {
+            Ok(body) => Ok(Some(body)),
+            Err(e) => {
+                let body = String::from_utf8_lossy(body.as_ref());
+                failure::bail!(
+                    "Bad response: {}: {}: {}: {}: {}",
+                    self.method,
+                    self.url,
+                    self.status,
+                    e,
+                    body
+                );
+            }
+        }
+    }
+
+    /// Access the underlying raw body.
+    pub fn body(self) -> Result<Option<Chunk>, Error> {
+        let body = match self.body {
+            Some(body) => body,
+            None => return Ok(None),
+        };
+
+        if !self.status.is_success() {
+            let body = String::from_utf8_lossy(body.as_ref());
+            failure::bail!(
+                "Bad response: {}: {}: {}: {}",
+                self.method,
+                self.url,
+                self.status,
+                body
+            );
+        }
+
+        Ok(Some(body))
+    }
+}
+
+impl<'a, B> Response<'a, B>
+where
+    B: Body,
+{
+    /// Handle as empty if we encounter the given status code.
+    pub fn empty_on_status(self, status: StatusCode) -> Response<'a, Option<B::Value>> {
+        let body = if self.status == status {
+            None
+        } else {
+            self.body.some()
+        };
+
+        Response {
+            method: self.method,
+            url: self.url,
+            status: self.status,
+            body,
+        }
+    }
+
+    /// Test if the underlying status is not found.
+    pub fn not_found(self) -> Response<'a, Option<B::Value>> {
+        self.empty_on_status(StatusCode::NOT_FOUND)
     }
 }

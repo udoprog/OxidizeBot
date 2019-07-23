@@ -41,7 +41,11 @@ impl Speedrun {
     /// Fetch the user by id.
     pub async fn user_by_id(&self, user: &str) -> Result<Option<User>, Error> {
         let req = self.v1(Method::GET, &["users", user]);
-        let data: Option<Data<User>> = req.execute().await?.json_option(no_content)?;
+        let data: Option<Data<User>> = req
+            .execute()
+            .await?
+            .empty_on_status(StatusCode::NO_CONTENT)
+            .json()?;
         Ok(data.map(|d| d.data))
     }
 
@@ -57,14 +61,22 @@ impl Speedrun {
             request = request.query_param("embed", q.as_str());
         }
 
-        let data: Option<Data<Vec<Run>>> = request.execute().await?.json_option(no_content)?;
+        let data: Option<Data<Vec<Run>>> = request
+            .execute()
+            .await?
+            .empty_on_status(StatusCode::NO_CONTENT)
+            .json()?;
         Ok(data.map(|d| d.data))
     }
 
     /// Get a game by id.
     pub async fn game_by_id(&self, game: &str) -> Result<Option<Game>, Error> {
         let req = self.v1(Method::GET, &["games", game]);
-        let data: Option<Data<Game>> = req.execute().await?.json_option(no_content)?;
+        let data: Option<Data<Game>> = req
+            .execute()
+            .await?
+            .empty_on_status(StatusCode::NO_CONTENT)
+            .json()?;
         Ok(data.map(|d| d.data))
     }
 
@@ -80,21 +92,33 @@ impl Speedrun {
             request = request.query_param("embed", q.as_str());
         }
 
-        let data: Option<Data<Vec<Category>>> = request.execute().await?.json_option(no_content)?;
+        let data: Option<Data<Vec<Category>>> = request
+            .execute()
+            .await?
+            .empty_on_status(StatusCode::NO_CONTENT)
+            .json()?;
         Ok(data.map(|d| d.data))
     }
 
     /// Get game levels.
     pub async fn game_levels(&self, game_id: &str) -> Result<Option<Vec<Level>>, Error> {
         let request = self.v1(Method::GET, &["games", game_id, "levels"]);
-        let data: Option<Data<Vec<Level>>> = request.execute().await?.json_option(no_content)?;
+        let data: Option<Data<Vec<Level>>> = request
+            .execute()
+            .await?
+            .empty_on_status(StatusCode::NO_CONTENT)
+            .json()?;
         Ok(data.map(|d| d.data))
     }
 
     /// Get all variables associated with a category.
     pub async fn category_variables(&self, category: &str) -> Result<Option<Vec<Variable>>, Error> {
         let req = self.v1(Method::GET, &["categories", category, "variables"]);
-        let data: Option<Data<Vec<Variable>>> = req.execute().await?.json_option(no_content)?;
+        let data: Option<Data<Vec<Variable>>> = req
+            .execute()
+            .await?
+            .empty_on_status(StatusCode::NO_CONTENT)
+            .json()?;
         Ok(data.map(|d| d.data))
     }
 
@@ -108,7 +132,11 @@ impl Speedrun {
             .v1(Method::GET, &["categories", category_id, "records"])
             .query_param("top", top.to_string().as_str());
 
-        Ok(req.execute().await?.json_option(no_content)?)
+        Ok(req
+            .execute()
+            .await?
+            .empty_on_status(StatusCode::NO_CONTENT)
+            .json()?)
     }
 
     /// Get all records associated with a category.
@@ -135,16 +163,12 @@ impl Speedrun {
             request = request.query_param(&format!("var-{}", key), &value);
         }
 
-        let data: Option<Data<GameRecord>> = request.execute().await?.json_option(no_content)?;
+        let data: Option<Data<GameRecord>> = request
+            .execute()
+            .await?
+            .empty_on_status(StatusCode::NO_CONTENT)
+            .json()?;
         Ok(data.map(|d| d.data))
-    }
-}
-
-/// Handle not found as a missing body.
-fn no_content(status: &StatusCode) -> bool {
-    match *status {
-        StatusCode::NO_CONTENT => true,
-        _ => false,
     }
 }
 

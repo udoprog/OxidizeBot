@@ -3,7 +3,7 @@
 use crate::api::RequestBuilder;
 use failure::Error;
 use hashbrown::HashSet;
-use reqwest::{header, r#async::Client, Method, StatusCode, Url};
+use reqwest::{header, r#async::Client, Method, Url};
 
 const V2_URL: &'static str = "https://api.betterttv.net/2";
 
@@ -39,7 +39,7 @@ impl BetterTTV {
     /// Get the set associated with the room.
     pub async fn channels(&self, channel: &str) -> Result<Option<Channel>, Error> {
         let req = self.v2(Method::GET, &["channels", channel]);
-        let data = req.execute().await?.json_option(not_found)?;
+        let data = req.execute().await?.not_found().json()?;
         Ok(data)
     }
 
@@ -47,14 +47,6 @@ impl BetterTTV {
         let req = self.v2(Method::GET, &["emotes"]);
         let data = req.execute().await?.json()?;
         Ok(data)
-    }
-}
-
-/// Handle as not found.
-fn not_found(status: &StatusCode) -> bool {
-    match *status {
-        StatusCode::NOT_FOUND => true,
-        _ => false,
     }
 }
 

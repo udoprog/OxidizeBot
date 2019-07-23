@@ -2,7 +2,7 @@
 
 use crate::{api::RequestBuilder, injector::Injector, prelude::*, settings::Settings};
 use failure::{format_err, Error};
-use reqwest::{header, r#async::Client, Method, StatusCode, Url};
+use reqwest::{header, r#async::Client, Method, Url};
 use std::{fmt, sync::Arc};
 
 const V2_URL: &'static str = "http://api.openweathermap.org/data/2.5";
@@ -68,15 +68,7 @@ impl OpenWeatherMap {
 
     pub async fn current(&self, q: String) -> Result<Option<Current>, Error> {
         let req = self.v2(Method::GET, &["weather"]).query_param("q", &q);
-        Ok(req.execute().await?.json_option(not_found)?)
-    }
-}
-
-/// Handle not found as a missing body.
-fn not_found(status: &StatusCode) -> bool {
-    match *status {
-        StatusCode::NOT_FOUND => true,
-        _ => false,
+        Ok(req.execute().await?.not_found().json()?)
     }
 }
 

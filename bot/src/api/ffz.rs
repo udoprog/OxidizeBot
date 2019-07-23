@@ -3,7 +3,7 @@
 use crate::api::RequestBuilder;
 use failure::Error;
 use hashbrown::HashMap;
-use reqwest::{header, r#async::Client, Method, StatusCode, Url};
+use reqwest::{header, r#async::Client, Method, Url};
 
 const V1_URL: &'static str = "https://api.frankerfacez.com/v1";
 
@@ -39,14 +39,14 @@ impl FrankerFaceZ {
     /// Get information on a single user.
     pub async fn user(&self, user: &str) -> Result<Option<UserInfo>, Error> {
         let req = self.v1(Method::GET, &["user", user]);
-        let data = req.execute().await?.json_option(not_found)?;
+        let data = req.execute().await?.not_found().json()?;
         Ok(data)
     }
 
     /// Get the set associated with the room.
     pub async fn room(&self, room: &str) -> Result<Option<Room>, Error> {
         let req = self.v1(Method::GET, &["room", room]);
-        let data = req.execute().await?.json_option(not_found)?;
+        let data = req.execute().await?.not_found().json()?;
         Ok(data)
     }
 
@@ -55,14 +55,6 @@ impl FrankerFaceZ {
         let req = self.v1(Method::GET, &["set", "global"]);
         let data = req.execute().await?.json()?;
         Ok(data)
-    }
-}
-
-/// Handle as not found.
-fn not_found(status: &StatusCode) -> bool {
-    match *status {
-        StatusCode::NOT_FOUND => true,
-        _ => false,
     }
 }
 

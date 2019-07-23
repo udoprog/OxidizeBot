@@ -35,8 +35,8 @@ pub fn run(
                     let future = github.releases(String::from(USER), String::from(REPO));
 
                     let mut releases = match cache.as_ref() {
-                        Some(cache) => cache.wrap(String::from("updater/version"), Duration::hours(1), future).await?,
                         None => future.await?,
+                        Some(cache) => cache.wrap(String::from("updater/version"), chrono::Duration::hours(1), future).await?,
                     };
 
                     releases.sort_by(|a, b| b.published_at.cmp(&a.published_at));

@@ -3,7 +3,7 @@ use warp::{body, filters, path, Filter as _};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct DeleteRequest {
-    ns: Option<String>,
+    ns: Option<serde_json::Value>,
     key: serde_json::Value,
 }
 
@@ -40,8 +40,7 @@ impl Cache {
 
     /// Delete a cache entry.
     fn delete(&self, request: DeleteRequest) -> Result<impl warp::Reply, failure::Error> {
-        self.0
-            .delete_with_ns(request.ns.as_ref().map(|ns| ns.as_str()), request.key)?;
+        self.0.delete_with_ns(request.ns.as_ref(), request.key)?;
         Ok(warp::reply::json(&EMPTY))
     }
 }

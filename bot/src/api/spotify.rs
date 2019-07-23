@@ -97,8 +97,11 @@ impl Spotify {
     /// Information on the current playback.
     pub async fn me_player(&self) -> Result<Option<FullPlayingContext>, Error> {
         let req = self.request(Method::GET, &["me", "player"]);
-
-        req.execute().await?.json_option(not_found)
+        req.execute()
+            .await?
+            .not_found()
+            .empty_on_status(StatusCode::NO_CONTENT)
+            .json()
     }
 
     /// Start playing a track.
@@ -198,15 +201,6 @@ fn device_control<C>(status: &StatusCode, _: &C) -> Result<Option<bool>, Error> 
         StatusCode::NO_CONTENT => Ok(Some(true)),
         StatusCode::NOT_FOUND => Ok(Some(false)),
         _ => Ok(None),
-    }
-}
-
-/// Handle not found as a missing body.
-fn not_found(status: &StatusCode) -> bool {
-    match *status {
-        StatusCode::NOT_FOUND => true,
-        StatusCode::NO_CONTENT => true,
-        _ => false,
     }
 }
 
