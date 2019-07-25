@@ -1,13 +1,23 @@
 <p align="center">
+  <img src="https://raw.githubusercontent.com/udoprog/OxidizeBot/master/bot/res/icon48.png" title="Oxidize Bot">
+
   <h1>
-    <img src="https://raw.githubusercontent.com/udoprog/OxidizeBot/master/bot/res/icon48.png" title="Oxidize Bot">
     OxidizeBot
   </h1>
+</p>
 
-  [![Build Status](https://travis-ci.org/udoprog/OxidizeBot.svg?branch=master)](https://travis-ci.org/udoprog/OxidizeBot)
-  [![Build status](https://ci.appveyor.com/api/projects/status/cxagsq3idti252a4/branch/master?svg=true)](https://ci.appveyor.com/project/udoprog/OxidizeBot/branch/master)
+<p align="center">
+  A high performance Twitch Bot powered by Rust
+</p>
 
-  A high performance Twitch Bot written in Rust.
+<p align="center">
+  <a href="https://travis-ci.org/udoprog/OxidizeBot">
+    <img alt="Build Status" src="https://travis-ci.org/udoprog/OxidizeBot.svg?branch=master">
+  </a>
+
+  <a href="https://ci.appveyor.com/project/udoprog/OxidizeBot/branch/master">
+    <img alt="Windows Build Status" src="https://ci.appveyor.com/api/projects/status/cxagsq3idti252a4/branch/master?svg=true">
+  </a>
 </p>
 
 ## Features
