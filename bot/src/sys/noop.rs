@@ -8,11 +8,11 @@ pub struct System;
 
 impl System {
     pub async fn wait_for_shutdown(&self) -> Result<(), oneshot::Canceled> {
-        future::empty().await
+        future::pending().await
     }
 
     pub async fn wait_for_restart(&self) -> Result<(), oneshot::Canceled> {
-        future::empty().await
+        future::pending().await
     }
 
     pub fn clear(&self) {}
