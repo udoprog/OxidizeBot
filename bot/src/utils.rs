@@ -1,7 +1,7 @@
 use crate::{api, prelude::*};
 use parking_lot::Mutex;
+use percent_encoding::PercentDecode;
 use std::{borrow, fmt, mem, sync::Arc, time};
-use url::percent_encoding::PercentDecode;
 
 mod duration;
 

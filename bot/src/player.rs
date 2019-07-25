@@ -398,12 +398,20 @@ impl Song {
             }
         };
 
-        let track_id = match SpotifyId::from_base62(&track.id) {
+        let track_id = match &track.id {
+            Some(track_id) => track_id,
+            None => {
+                log::warn!("Current playback doesn't have a track id");
+                return None;
+            }
+        };
+
+        let track_id = match SpotifyId::from_base62(&track_id) {
             Ok(spotify_id) => TrackId::Spotify(spotify_id),
             Err(e) => {
                 log::warn!(
                     "Failed to parse track id from current playback: {}: {}",
-                    track.id,
+                    track_id,
                     e
                 );
                 return None;
@@ -730,8 +738,8 @@ impl Player {
 
         let page = self.inner.spotify.search_track(q).await?;
 
-        match page.items.into_iter().next() {
-            Some(track) => match SpotifyId::from_base62(&track.id) {
+        match page.items.into_iter().next().and_then(|t| t.id) {
+            Some(track_id) => match SpotifyId::from_base62(&track_id) {
                 Ok(track_id) => Ok(Some(TrackId::Spotify(track_id))),
                 Err(_) => bail!("search result returned malformed id"),
             },
@@ -1550,9 +1558,16 @@ impl PlaybackFuture {
         for playlist_track in spotify.page_as_stream(playlist.tracks).try_concat().await? {
             let track = playlist_track.track;
 
+            let track_id = match &track.id {
+                Some(track_id) => track_id,
+                None => {
+                    continue;
+                }
+            };
+
             let track_id = TrackId::Spotify(
-                SpotifyId::from_base62(&track.id)
-                    .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
+                SpotifyId::from_base62(&track_id)
+                    .map_err(|_| format_err!("bad spotify id: {}", track_id))?,
             );
 
             let duration = Duration::from_millis(track.duration_ms.into());
@@ -1575,9 +1590,16 @@ impl PlaybackFuture {
         for added_song in spotify.my_tracks_stream().try_concat().await? {
             let track = added_song.track;
 
+            let track_id = match &track.id {
+                Some(track_id) => track_id,
+                None => {
+                    continue;
+                }
+            };
+
             let track_id = TrackId::Spotify(
-                SpotifyId::from_base62(&track.id)
-                    .map_err(|_| format_err!("bad spotify id: {}", track.id))?,
+                SpotifyId::from_base62(&track_id)
+                    .map_err(|_| format_err!("bad spotify id: {}", track_id))?,
             );
 
             let duration = Duration::from_millis(track.duration_ms.into());

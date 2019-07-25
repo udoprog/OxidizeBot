@@ -99,26 +99,61 @@ impl Template {
 
     /// Test if the template has the given variable.
     pub fn vars(&self) -> HashSet<String> {
-        use handlebars::template::{Parameter, TemplateElement};
+        use handlebars::template::{HelperTemplate, Parameter, TemplateElement};
+        use std::collections::VecDeque;
 
         let mut out = HashSet::new();
 
         for e in &self.template.elements {
-            collect_vars(&mut out, e);
+            collect_element(&mut out, e);
         }
 
         return out;
 
-        fn collect_vars(out: &mut HashSet<String>, e: &TemplateElement) {
-            match e {
-                TemplateElement::Expression(ref p) => match *p {
-                    Parameter::Name(ref name) => {
-                        out.insert(name.to_string());
+        /// Helper to collect all expressions without recursing.
+        fn collect_element<'e>(out: &mut HashSet<String>, e: &'e TemplateElement) {
+            let mut queue = VecDeque::new();
+
+            queue.push_back(e);
+
+            while let Some(e) = queue.pop_front() {
+                match e {
+                    TemplateElement::Expression(helper) => {
+                        collect_helper(out, &mut queue, &*helper);
                     }
-                    Parameter::Literal(_) => (),
-                    Parameter::Subexpression(ref e) => collect_vars(out, &e.element),
-                },
-                _ => (),
+                    TemplateElement::HTMLExpression(param) => {
+                        collect_parameter(out, &mut queue, &*param);
+                    }
+                    _ => (),
+                }
+            }
+        }
+
+        fn collect_parameter<'e>(
+            out: &mut HashSet<String>,
+            queue: &mut VecDeque<&'e TemplateElement>,
+            p: &'e Parameter,
+        ) {
+            match p {
+                Parameter::Name(ref name) => {
+                    out.insert(name.to_string());
+                }
+                Parameter::Literal(_) => (),
+                Parameter::Subexpression(ref e) => {
+                    queue.push_back(&*e.element);
+                }
+            }
+        }
+
+        fn collect_helper<'e>(
+            out: &mut HashSet<String>,
+            queue: &mut VecDeque<&'e TemplateElement>,
+            e: &'e HelperTemplate,
+        ) {
+            collect_parameter(out, queue, &e.name);
+
+            for p in &e.params {
+                collect_parameter(out, queue, p);
             }
         }
     }
@@ -197,5 +232,25 @@ impl StringOutput {
 
     pub fn into_string(self) -> Result<String, string::FromUtf8Error> {
         String::from_utf8(self.buf)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Template;
+    use failure::Error;
+    use hashbrown::HashSet;
+
+    #[test]
+    pub fn test_template_vars() -> Result<(), Error> {
+        assert_eq!(
+            vec!["foo", "bar", "baz"]
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect::<HashSet<String>>(),
+            Template::compile("{{foo}} {{bar}} is the {{baz}}")?.vars()
+        );
+
+        Ok(())
     }
 }
