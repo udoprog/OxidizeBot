@@ -206,9 +206,7 @@ Available commands:
 
 You enable the `!clip` command by setting `clip/enabled` to `true`.
 
-The `!clip` command enables the `!clip` command.
-
-This command has a cooldown determined by the `[irc] clip_cooldown` configuration key (see above).
+The `!clip` command can create clips through Twitch.
 
 ## `!8ball`
 
@@ -220,12 +218,7 @@ Enables the Magic `!8ball` command. Cause it's MAGIC.
 
 Enables a loyalty currency system and a couple of commands.
 
-A currency is enabled by adding the following to your configuration:
-
-```toml
-[currency]
-name = "thingies"
-```
+You enable a stream currency through the `currency/enabled` and `currency/name` setting.
 
 Enabled commands depend on the `name` of your currency, so we are gonna assume the currency is currently named `thingies`:
 
