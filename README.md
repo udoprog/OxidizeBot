@@ -1,9 +1,5 @@
 <p align="center">
   <img src="https://raw.githubusercontent.com/udoprog/OxidizeBot/master/bot/res/icon48.png" title="Oxidize Bot">
-
-  <h1>
-    OxidizeBot
-  </h1>
 </p>
 
 <p align="center">
@@ -20,7 +16,7 @@
   </a>
 </p>
 
-## Features
+# Features
 
 **Commands** &mdash; Aliases, custom commands, promotions, plus a bunch more [built-in commands](#built-in-commands).
 
@@ -52,11 +48,11 @@ Starts automatically with Windows if you want it to.
 [Rust]: https://rust-lang.org
 [hundred settings]: /bot/src/settings.yaml
 
-## Installing and Running
+# Installing and Running
 
 You can download an installer or an archive from [releases](https://github.com/udoprog/OxidizeBot/releases) or [build the project yourself](#building).
 
-## Building
+# Building
 
 You'll need Rust and a working compiler: https://rustup.rs/
 
@@ -74,30 +70,13 @@ After this, you build the project using cargo:
 cargo +nightly build --release
 ```
 
-## Settings
+# Settings
 
 You can find all settings by navigating to `Advanced -> Settings` in the UI.
 
 Each setting has a slash-separated name, like `song/enabled` which indicates which component the setting belongs to.
 
-## YouTube Player
-
-Oxidize has support for playing YouTube videos.
-
-This is enabled through the `song/youtube/support` setting and requires you to run the YouTube Player in the web UI.
-
-This can be embedded in OBS with the following Custom CSS:
-
-```css
-body { background-color: rgba(0, 0, 0, 0); }
-.overlay-hidden { display: none };
-```
-
-This will cause the player to disappear while it is not playing anything.
-
-## Built-in Commands
-
-## Commands
+# Commands
 
 Every command is enabled through a Setting named `<command>/enabled`.
 
@@ -108,7 +87,7 @@ Each command has their own scope that can be tweaked.
 
 Some commands also has more granular permissions, like `game` and `game/edit` which distinguishes between read and write operations.
 
-#### `!admin` command
+## `!admin` command
 
 * `!admin version` - Responds with the current version of Oxidize Bot package.
 * `!admin refresh-mods` - Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running.
@@ -120,7 +99,7 @@ Some commands also has more granular permissions, like `game` and `game/edit` wh
 * `!admin enable-group <group>` - Enable all commands, aliases, and promotions part of the specified group.
 * `!admin disable-group <group>` - Disable all commands, aliases, and promotions part of the specified group.
 
-#### Misc Commands
+## Misc Commands
 
 Available commands:
 
@@ -130,7 +109,7 @@ Available commands:
 * `!game` - Get the current game. Enabled with `game/enabled`.
 * `!game <game>` - Update the game to be `<game>`.
 
-#### `!command` command
+## `!command`
 
 Allows editing custom commands.
 
@@ -153,7 +132,7 @@ Template variables that can be used in `<template...>`:
 * `{{name}}` - The user who said the word.
 * `{{target}}` - The channel where the word was sent.
 
-#### `!alias` command
+## `!alias`
 
 Allows setting custom aliases.
 Aliases are prefixes that when invoked they will be expanded when processed by the bot.
@@ -176,30 +155,7 @@ Template variables that can be used in `<what>`:
 * `{{name}}` - The user who invoked the alias.
 * `{{target}}` - The channel where the alias was invoked.
 
-###### Deprecated configuration `[[aliases]]`
-
-Aliases used to be specified in the configuration.
-If these are still present, the bot will migrate those aliases into the database and post a warning at startup.
-
-The configuration used to look like this:
-
-```toml
-[[aliases]]
-match = "!sr"
-replace = "!song request {{rest}}"
-
-[[aliases]]
-match = "!sl"
-replace = "!song list {{rest}}"
-
-[[aliases]]
-match = "!volume"
-replace = "!song volume {{rest}}"
-```
-
-Now it's all handled using the `!alias` command.
-
-#### `!afterstream` command
+## `!afterstream`
 
 You enable the `!afterstream` command by setting `afterstream/enabled` to `true`.
 
@@ -214,7 +170,7 @@ Available commands:
 Afterstreams that are posted are made available in the UI at: http://localhost:12345/after-streams
 
 
-#### `!song` command
+## `!song`
 
 You enable the `!song` command by setting `song/enabled` to `true`.
 
@@ -246,7 +202,7 @@ Available commands:
 * `!song when` - Find out when your song will play.
 * `!song when <user>` - Find out when the song for a specific user will play.
 
-#### `!clip` command
+## `!clip`
 
 You enable the `!clip` command by setting `clip/enabled` to `true`.
 
@@ -254,13 +210,13 @@ The `!clip` command enables the `!clip` command.
 
 This command has a cooldown determined by the `[irc] clip_cooldown` configuration key (see above).
 
-#### `!8ball` command
+## `!8ball`
 
 You enable the `!8ball` command by setting `8ball/enabled` to `true`.
 
 Enables the Magic `!8ball` command. Cause it's MAGIC.
 
-#### `currency`
+## `currency`
 
 Enables a loyalty currency system and a couple of commands.
 
@@ -279,7 +235,7 @@ Enabled commands depend on the `name` of your currency, so we are gonna assume t
 - `!thingies windfall <amount>` - Give away `<amount>` currency to all current viewers.
 - `!thingies show <user>` - Show the amount of currency for the given user.
 
-#### `!swearjar` command
+## `!swearjar`
 
 You enable the `!swearjar` command by setting `swearjar/enabled` to `true`.
 
@@ -289,7 +245,7 @@ Available commands:
 
 * `!swearjar` - Anyone can invoke the swearjar to reward all viewers with some currency from the streamer when they swear.
 
-#### `!countdown` command
+## `!countdown`
 
 You enable the `!countdown` command by setting `countdown/enabled` to `true`.
 
@@ -306,7 +262,7 @@ Available commands:
   - Example: `!countdown set 1m Getting food, back in {{remaining}}`
 * `!countdown clear` - Clear the current countdown.
 
-#### `!water` command
+## `!water`
 
 You enable the `!water` command by setting `water/enabled` to `true`.
 
@@ -315,7 +271,7 @@ Available commands:
 * `!water` - A user can remind the streamer to drink water and will be rewarded one unit of stream currency for every minute since last reminder.
 * `!water undo` - Undos the last water reminder and refunds the reward.
 
-#### `!promo` command
+## `!promo` command
 
 You enable the `!promo` command by setting `promo/enabled` to `true`.
 
@@ -335,7 +291,7 @@ Available commands:
 * `!promo rename <from> <to>` - Delete the promotion with the given id.
 
 
-#### `!theme` command
+## `!theme`
 
 Available commands:
 
@@ -350,7 +306,7 @@ Available commands:
 * `!theme delete <id>` - Delete the theme with the given id.
 * `!theme rename <from> <to>` - Delete the theme with the given id.
 
-#### `!gtav` command
+## `!gtav`
 
 You enable the `!gtav` command by setting `gtav/enabled` to `true`.
 
@@ -362,7 +318,7 @@ Go to https://bit.ly/gtavchaos for a full list.
 
 All of these have different effects and costs (which requires the `!currency` command).
 
-#### `!speedrun` command
+## `!speedrun`
 
 You enable the `!speedrun` command by setting `speedrun/enabled` to `true`.
 
@@ -387,7 +343,7 @@ You enable the `!speedrun` command by setting `speedrun/enabled` to `true`.
     * `--misc` - Include misc categories.
     * `--misc-only` - Only list misc categories.
 
-#### `!time` command
+## `!time`
 
 You enable the `!time` command by setting `time/enabled` to `true`.
 
@@ -403,7 +359,7 @@ Available settings are:
   * `{{day}}`, `{{month}}`, `{{year}}` - Day, month, and year.
   * `{{rfc2822}}` - An RFC-2822 formatted date time, like: `Thu, 01 Sep 2016 10:11:12 -0500`.
 
-#### `!poll` command
+## `!poll`
 
 You enable the `!poll` command by setting `poll/enabled` to `true`.
 
@@ -418,7 +374,7 @@ This enables the following commands:
   * Example: `!poll run "Should I eat breakfast" yes no ???="don't care"` - chat can now vote by typing `yes`, `no`, or `???`.
 * `!poll close [question]` - Closes a poll. If `[question]` is not specified, closes the last poll opened.
 
-#### `!weather` command
+## `!weather`
 
 You enable the `!weather` command by setting `weather/enabled` to `true`.
 
