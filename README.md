@@ -18,7 +18,7 @@
 
 # Features
 
-**Commands** &mdash; Aliases, custom commands, promotions, plus a bunch more [built-in commands](#built-in-commands).
+**Commands** &mdash; Aliases, custom commands, promotions, and [a bunch more](#commands).
 
 If there's something you're missing, feel free to [open an issue].
 
