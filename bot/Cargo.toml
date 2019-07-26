@@ -1,6 +1,6 @@
 [package]
 name = "oxidize"
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.2"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2018"
 license = "MIT/Apache-2.0"
