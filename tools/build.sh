@@ -42,5 +42,5 @@ mkdir -p target/upload
 cp $zip target/upload/
 
 (cd bot && cargo deb)
-cp target/debian/oxidize_${version}_amd64.deb target/upload/
+cp target/debian/oxidize_*_amd64.deb target/upload/
 exit 0

@@ -5,9 +5,9 @@ language: rust
 rust:
 - nightly
 before_install:
-  - sudo apt-get update
-  - sudo apt-get install -y libmysqlclient-dev
-  - cargo install cargo-deb
+- sudo apt-get update
+- sudo apt-get install -y libmysqlclient-dev
+- cargo install cargo-deb
 script:
 - tools/build.sh
 deploy:
@@ -20,4 +20,4 @@ deploy:
     repo: udoprog/OxidizeBot
     tags: true
   api_key:
-    secure: "cD/XoriyzKueusImd3c8V5v2LPnwi6gR/jlFpLz3lYOigZtJW5SK5T0+wvB/Shn8a8SxZUMP0BzroTKYiUizmwndjVOOGLRQbaxZiprHidY2QgpmDSqiX6FU5s8Yf3SH3JcwoiyGvv5hvzo9ovm6lGFntPqMEqN6wA4JAUTMebdICdEdsCXszcJz8DbTeQSoPZf04ouqOOuBJNL8tCe93O/i1ywe7ASXTGZMdFZrMfkrug8a5oaibZEM36mb/0hhkDzfxT39zrwyHwJXiDD13Lz2VNizQeR+itzMnAWQSyfVUVQeo5ww7kSHVF0Zvv0ky3dPjN9NVVMHlteYBHY3pVjs72Yw6CpKVMHDjl+dMS7S6/3fKcdPJnsZ6ssWyDdqVSJ0yBUEs/6KLNBEIQVG3APs2MCzcpR7PN4PJUflBLayG9HwofJFj+Lk1MzEW5Rxuds8PIKlOW5cqhkLsO2WzrC6q8LaaKZlqauxxnpvFUk2XC/y/CmROXvt8lLAQM3UX+wCfBtw0rV+/NCsgz7wYIAsKSkAF6DK0M0xctlX1pWfgOLTDQpgSUztYImAKgm/M7sCqY0nwcXO9YTS5Q1NXTnoTbYrfjj5CbK0yMJKX5+mywRYBC065ExcX/ERjLGApY8VRgSdxEOfCh+IOFfjHxLuhkW9sSmIAnyv0R9KXj8="
+    secure: U6n2Cb0HtxaWRoWtOJA3vrYQ/0LgJvbwXXrwIwPOFIgi0yG7iHOLPBlGQd8JWmeO1msxZOyYqMD8OKPegYzc6EKB5aFvOdeQ8txIJPe0dPGpiNf5UokoOxzcr/kGfe91NQCu8e7AZ+kI0HFF+yxFsmNRiPF2TGzmaTrlg7BmWipkD1eC1vDuX+ljVa5c0bUxZp+qjrYy5R9I1icj+kiwblMM6dIsXPnbDNhLBZcGUdZpLlSk7B4o1f6S0Jr4OXoNilr/RmUXmlBpFKsZc92ls/XWG5YM8zWg5UI1NNPJLZbSo5/SXaPN16OAI2avuyqHh1dHnulwl0+9MJEJXUSDiVoLaoBJg7h4i7B8EWvVMrOPIQt5Yiv/rS+53NOvkYvl+cHy2RsA1/gmCavm0keLzijZ1q+I6AxfToe3CbL2a5NcPHJWjB24/VJ+OX2oOxNeXhQhOkKZs0jVKY90cZGQ0TaAU9GlFCWhg1OQRNefiTk3FkWCuOgFwvV5TdvORmAtKl/Z2cn0SgO6UkcJPO2uJxc2vU6NeczSwB+sR0JS8CJNuAT4e9X7Z9ZKHnmXXEjR5dONLY4GZdgUt9JDGrBNN3pGdvBYF8NO1dZnyyoXtrbhYEWG6C4cyr1TBCXhf8o8adXcgoC64y8yqQa3vFNxfd6Ix3S/3sCM6pRg7tcu+h8=
