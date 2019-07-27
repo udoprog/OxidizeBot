@@ -1,5 +1,6 @@
 os:
 - linux
+dist: bionic
 language: rust
 rust:
 - nightly
