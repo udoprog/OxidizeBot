@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+
+### Added
+- Support for complex object fields in settings configuration.
+
 [Unreleased]: https://github.com/udoprog/OxidizeBot/compare/0.4.4...master
 
 ## [0.4.4]
