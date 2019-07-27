@@ -523,4 +523,8 @@ body.chat-body {
     font-size: 120%;
     font-weight: bold;
   }
+
+  &-expires {
+    white-space: nowrap;
+  }
 }

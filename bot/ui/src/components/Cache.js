@@ -27,6 +27,14 @@ export default class Cache extends React.Component {
     };
   }
 
+  componentDidMount() {
+    this.interval = setInterval(() => this.setState({ time: Date.now() }), 1000);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.interval);
+  }
+
   componentWillMount() {
     if (this.state.loading) {
       return;
@@ -137,19 +145,21 @@ export default class Cache extends React.Component {
     });
   }
 
-  modal() {
+  modal(now) {
     let header = null;
     let body = null;
 
     if (this.state.show !== null) {
-      let {key, value} = this.state.show;
+      let {key, value, expires_at} = this.state.show;
       let [ns, k] = key;
 
       if (ns !== null) {
         ns = <span><b>{ns}</b> &nbsp;</span>;
       }
 
-      header = <span>{ns} <code>{JSON.stringify(k)}</code></span>
+      header = (
+        <span>{ns} <code>{JSON.stringify(k)}</code> {this.renderExpiresAt(now, expires_at)}</span>
+      );
       body = <code><pre>{JSON.stringify(value, null, 2)}</pre></code>;
     }
 
@@ -202,7 +212,7 @@ export default class Cache extends React.Component {
   renderExpiresAt(now, at) {
     let when = moment(at);
     let diff = moment(when - now);
-    return diff.format('D[d], hh:mm:ss');
+    return diff.format("D.hh:mm:ss");
   }
 
   /**
@@ -217,8 +227,8 @@ export default class Cache extends React.Component {
         <td>
           <code>{JSON.stringify(key)}</code>
         </td>
-        <td>
-          <b>Expires:</b> {this.renderExpiresAt(now, data.expires_at)}
+        <td className="cache-expires">
+          {this.renderExpiresAt(now, data.expires_at)}
         </td>
         <td width="1%">
           <ButtonGroup>
@@ -265,18 +275,25 @@ export default class Cache extends React.Component {
       </Form>
     );
 
-    let modal = this.modal();
+    let now = moment();
+
+    let modal = this.modal(now);
 
     let content = null;
 
     if (this.state.data !== null) {
-      let now = moment();
-
       let data = this.filtered(this.state.data);
       let {def, groups, order} = this.groupByNamespace(data);
 
       content = (
         <Table>
+          <thead>
+            <tr>
+              <th>key</th>
+              <th>expires</th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody>
             {def.map(({key, data}, i) => this.renderKey(now, i, key, data))}
           </tbody>
