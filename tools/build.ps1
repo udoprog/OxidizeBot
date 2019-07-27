@@ -63,6 +63,5 @@ $zip="oxidize-$version-windows-x86_64.zip"
 
 Get-ChildItem -Path $root/target/wix -Include *.msi -Recurse | Copy-Item -Destination $root
 
-7z a $zip $root/log4rs.yaml
+7z a $zip $root/README.md
 7z a $zip $root/target/release/oxidize.exe
-7z a $zip $root/build/dll/*.dll

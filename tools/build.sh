@@ -28,8 +28,8 @@ mkdir target/build
 
 case $TRAVIS_OS_NAME in
 "linux")
+    cp README.md target/build
     cp target/release/oxidize target/build
-    cp log4rs.yaml target/build
     (cd target/build; zip -r $zip *)
     ;;
 *)
