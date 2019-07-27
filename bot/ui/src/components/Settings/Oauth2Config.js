@@ -76,7 +76,7 @@ class EditOauth2Config {
     };
   }
 
-  render(isValid, value, onChange) {
+  render(value, onChange, _isValid) {
     let changeclient_id = e => {
       value = Object.assign({}, value);
       value.client_id = e.target.value;

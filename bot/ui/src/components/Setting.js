@@ -58,7 +58,9 @@ export default class Setting extends React.Component {
     let isSecretShown = this.state.secretShown;
 
     // onChange handler used for things which support immediate editing.
-    let renderOnChange = null;
+    let renderOnChange = value => {
+      this.edit(setting.key, setting.control, value);
+    };
 
     let buttons = [];
     let isSecret = setting.key.startsWith(SECRET_PREFIX) || setting.secret;
@@ -153,12 +155,6 @@ export default class Setting extends React.Component {
           </Button>
         );
       }
-
-      renderOnChange = null;
-    } else {
-      renderOnChange = value => {
-        this.edit(setting.key, setting.control, value);
-      };
     }
 
     let value = null;
@@ -206,9 +202,9 @@ export default class Setting extends React.Component {
         return false;
       };
 
-      let control = this.state.edit.render(isValid, this.state.editValue, editValue => {
+      let control = this.state.edit.render(this.state.editValue, editValue => {
         this.setState({editValue});
-      });
+      }, isValid);
 
       value = (
         <Form onSubmit={e => save(e)}>

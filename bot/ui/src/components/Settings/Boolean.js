@@ -12,6 +12,10 @@ export class Boolean extends Base {
     return false;
   }
 
+  validate(value) {
+    return true;
+  }
+
   construct(value) {
     return value;
   }
@@ -34,6 +38,18 @@ export class Boolean extends Base {
         </Button>
       );
     }
+  }
+
+  editControl() {
+    return this;
+  }
+
+  edit(value) {
+    return value;
+  }
+
+  save(value) {
+    return value;
   }
 
   hasEditControl() {

@@ -47,7 +47,7 @@ class EditPercentage {
     return parseInt(value) || 0;
   }
 
-  render(isValid, value, onChange) {
+  render(value, onChange, isValid) {
     return (
       <InputGroup size="sm">
         <Form.Control type="number" isInvalid={!isValid} value={value} onChange={

@@ -41,7 +41,7 @@ class EditString {
     return value;
   }
 
-  render(_isValid, value, onChange) {
+  render(value, onChange, _isValid) {
     return <Form.Control size="sm" as="textarea" value={value} onChange={e => onChange(e.target.value)} />
   }
 }

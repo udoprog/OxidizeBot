@@ -116,7 +116,7 @@ class EditDuration {
     return Object.assign(value, {});
   }
 
-  render(_isValid, value, onChange) {
+  render(value, onChange, _isValid) {
     let days = this.digitControl(
       value.days, "d", v => onChange(Object.assign(value, {days: v})), _ => true
     );

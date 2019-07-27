@@ -27,7 +27,23 @@ types:
       **Experimental** support for command-specific configuration overrides.
       An example override looks like this: `{"name": "Wanted", "enabled": true, "cost": 10000, "cooldown": "5m"}`.
       [Available names](https://github.com/udoprog/OxidizeBot/blob/master/bot/src/module/gtav.rs#L208).
-    type: {id: set, value: {id: raw}}
+    type:
+      id: set
+      value:
+        id: object
+        fields:
+        - title: Name
+          field: name
+          type: {id: string}
+        - title: Enabled
+          field: enabled
+          type: {id: bool, optional: true}
+        - title: Cooldown
+          field: cooldown
+          type: {id: duration, optional: true}
+        - title: Cost
+          field: cost
+          type: {id: number, optional: true}
   gtav/enabled:
     title: ChaosMod
     feature: true

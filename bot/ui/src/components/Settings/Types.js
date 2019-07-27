@@ -9,6 +9,7 @@ import {Set} from "./Set";
 import {Select} from "./Select";
 import {Typeahead} from "./Typeahead";
 import {Oauth2Config} from "./Oauth2Config";
+import {Object} from "./Object";
 import * as format from "./Format";
 import * as moment from "moment-timezone";
 
@@ -46,6 +47,13 @@ export function decode(type) {
     case "select":
       value = decode(type.value);
       return new Select(type.optional, value, type.options);
+    case "object":
+      let fields = type.fields.map(f => {
+        let control = decode(f.type);
+        return {control, ...f};
+      });
+
+      return new Object(type.optional, fields);
     case "time-zone":
       value = new String(false, new format.None(), "");;
       return new Typeahead(type.optional, value, timezoneOptions, "timezone");

@@ -48,7 +48,7 @@ class EditString {
     return value;
   }
 
-  render(isValid, value, onChange) {
+  render(value, onChange, isValid) {
     return <Form.Control
       size="sm"
       type="value"

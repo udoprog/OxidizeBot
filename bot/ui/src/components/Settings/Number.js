@@ -41,7 +41,7 @@ class EditNumber {
     return parseInt(value);
   }
 
-  render(isValid, value, onChange) {
+  render(value, onChange, isValid) {
     return <Form.Control size="sm" type="number" isInvalid={!isValid} value={value} onChange={
       e => {
         onChange(e.target.value);
