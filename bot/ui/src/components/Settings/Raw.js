@@ -51,7 +51,7 @@ class EditRaw {
     return YAML.parse(value);
   }
 
-  render(isValid, value, onChange) {
+  render(value, onChange, isValid) {
     return <Form.Control as="textarea" rows={5} size="sm" type="value" isInvalid={!isValid} value={value} onChange={
       e => {
         onChange(e.target.value);

@@ -20,7 +20,9 @@ export class Percentage extends Base {
   }
 
   render(value) {
-    return `${value}%`;
+    return (
+      <Form.Control size="sm" value={`${value}%`} disabled={true} />
+    );
   }
 
   editControl() {
@@ -47,18 +49,16 @@ class EditPercentage {
     return parseInt(value) || 0;
   }
 
-  render(isValid, value, onChange) {
-    return (
-      <InputGroup size="sm">
-        <Form.Control type="number" isInvalid={!isValid} value={value} onChange={
-          e => {
-            onChange(e.target.value);
-          }
-        } />
-        <InputGroup.Append>
-          <InputGroup.Text>%</InputGroup.Text>
-        </InputGroup.Append>
-      </InputGroup>
-    );
+  render(value, onChange, isValid) {
+    return [
+      <Form.Control key="percentage" type="number" isInvalid={!isValid} value={value} onChange={
+        e => {
+          onChange(e.target.value);
+        }
+      } />,
+      <InputGroup.Append key="percentage-append">
+        <InputGroup.Text>%</InputGroup.Text>
+      </InputGroup.Append>
+    ];
   }
 }

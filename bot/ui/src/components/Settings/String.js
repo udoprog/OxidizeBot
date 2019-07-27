@@ -22,7 +22,9 @@ export class String extends Base {
   }
 
   render(value) {
-    return <code>{value}</code>;
+    return (
+      <Form.Control size="sm" value={value} disabled={true} />
+    );
   }
 
   editControl() {
@@ -48,7 +50,7 @@ class EditString {
     return value;
   }
 
-  render(isValid, value, onChange) {
+  render(value, onChange, isValid) {
     return <Form.Control
       size="sm"
       type="value"

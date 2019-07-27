@@ -4,6 +4,63 @@ migrations:
   - from: song/youtube/support
     to: song/youtube/enabled
 
+# ChaosMod effect names that can be configured.
+gtav_options: &gtav-options
+  - {title: "Spawn Vehicle", value: "SpawnVehicle"}
+  - {title: "Spawn Random Vehicle", value: "SpawnRandomVehicle"}
+  - {title: "Kill Engine", value: "KillEngine"}
+  - {title: "Blow Tires", value: "BlowTires"}
+  - {title: "Repair", value: "Repair"}
+  - {title: "Give Weapon", value: "GiveWeapon"}
+  - {title: "Take Weapon", value: "TakeWeapon"}
+  - {title: "Take All Weapons", value: "TakeAllWeapons"}
+  - {title: "Stumble", value: "Stumble"}
+  - {title: "Fall", value: "Fall"}
+  - {title: "Clear Wanted Level", value: "ClearWanted"}
+  - {title: "Give Wanted Level", value: "Wanted"}
+  - {title: "Give Health", value: "GiveHealth"}
+  - {title: "Give Armor", value: "GiveArmor"}
+  - {title: "Take Health", value: "TakeHealth"}
+  - {title: "License", value: "License"}
+  - {title: "Randomize Color", value: "RandomizeColor"}
+  - {title: "Randomize Weather", value: "RandomizeWeather"}
+  - {title: "Randomize Character", value: "RandomizeCharacter"}
+  - {title: "Brake", value: "Brake"}
+  - {title: "Take Ammo", value: "TakeAmmo"}
+  - {title: "Give Ammo", value: "GiveAmmo"}
+  - {title: "Boost", value: "Boost"}
+  - {title: "Super Boost", value: "SuperBoost"}
+  - {title: "Super Speed", value: "SuperSpeed"}
+  - {title: "Super Swim", value: "SuperSwim"}
+  - {title: "Super Jump", value: "SuperJump"}
+  - {title: "Invincibility", value: "Invincibility"}
+  - {title: "Spawn Enemy", value: "SpawnEnemy"}
+  - {title: "Exploding Bullets", value: "ExplodingBullets"}
+  - {title: "Fire Ammo", value: "FireAmmo"}
+  - {title: "Exploding Punches", value: "ExplodingPunches"}
+  - {title: "Drunk", value: "Drunk"}
+  - {title: "Very Drunk", value: "VeryDrunk"}
+  - {title: "Set On Fire", value: "SetOnFire"}
+  - {title: "Set Peds On Fire", value: "SetPedsOnFire"}
+  - {title: "Make Peds Aggressive", value: "MakePedsAggressive"}
+  - {title: "Matrix Slam", value: "MatrixSlam"}
+  - {title: "Close Parachute", value: "CloseParachute"}
+  - {title: "Disable Control", value: "DisableControl"}
+  - {title: "Mod Vehicle", value: "ModVehicle"}
+  - {title: "Levitate", value: "Levitate"}
+  - {title: "Levitate Entities", value: "LevitateEntities"}
+  - {title: "Eject", value: "Eject"}
+  - {title: "Slow Down Time", value: "SlowDownTime"}
+  - {title: "Make Fireproof", value: "MakeFireProof"}
+  - {title: "Fuel Leakage", value: "FuelLeakage"}
+  - {title: "Change Current Vehicle", value: "ChangeCurrentVehicle"}
+  - {title: "Randomize Doors", value: "RandomizeDoors"}
+  - {title: "Skyfall", value: "Skyfall"}
+  - {title: "Taze", value: "Taze"}
+  - {title: "Taze Others", value: "TazeOthers"}
+  - {title: "Reduce Gravity", value: "ReduceGravity"}
+  - {title: "Raw", value: "Raw"}
+
 types:
   system/run-on-startup:
     doc: >
@@ -27,7 +84,23 @@ types:
       **Experimental** support for command-specific configuration overrides.
       An example override looks like this: `{"name": "Wanted", "enabled": true, "cost": 10000, "cooldown": "5m"}`.
       [Available names](https://github.com/udoprog/OxidizeBot/blob/master/bot/src/module/gtav.rs#L208).
-    type: {id: set, value: {id: raw}}
+    type:
+      id: set
+      value:
+        id: object
+        fields:
+        - title: Enabled
+          field: enabled
+          type: {id: bool, optional: true}
+        - title: Name
+          field: name
+          type: {id: select, variant: "typeahead", value: {id: string}, options: *gtav-options}
+        - title: Cooldown
+          field: cooldown
+          type: {id: duration, optional: true}
+        - title: Cost
+          field: cost
+          type: {id: number, optional: true}
   gtav/enabled:
     title: ChaosMod
     feature: true

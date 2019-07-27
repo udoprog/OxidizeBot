@@ -9,6 +9,7 @@ import {Set} from "./Set";
 import {Select} from "./Select";
 import {Typeahead} from "./Typeahead";
 import {Oauth2Config} from "./Oauth2Config";
+import {Object} from "./Object";
 import * as format from "./Format";
 import * as moment from "moment-timezone";
 
@@ -18,7 +19,7 @@ import * as moment from "moment-timezone";
  * @param {object} type the type to decode
  * @param {any} value the value to decode
  */
-export function decode(type) {
+export function decode(type, what = "thing") {
   if (type === null) {
     throw new Error(`bad type: ${type}`);
   }
@@ -45,7 +46,20 @@ export function decode(type) {
       return new Set(type.optional, value);
     case "select":
       value = decode(type.value);
-      return new Select(type.optional, value, type.options);
+
+      switch (type.variant) {
+        case "typeahead":
+          return new Typeahead(type.optional, value, type.options, what);
+        default:
+          return new Select(type.optional, value, type.options);
+      }
+    case "object":
+      let fields = type.fields.map(f => {
+        let control = decode(f.type, what = f.title);
+        return {control, ...f};
+      });
+
+      return new Object(type.optional, fields);
     case "time-zone":
       value = new String(false, new format.None(), "");;
       return new Typeahead(type.optional, value, timezoneOptions, "timezone");

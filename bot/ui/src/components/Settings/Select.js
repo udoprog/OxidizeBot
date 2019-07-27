@@ -13,6 +13,10 @@ export class Select extends Base {
     return this.value.default();
   }
 
+  validate(value) {
+    return true;
+  }
+
   construct(value) {
     return this.value.construct(value);
   }
@@ -35,6 +39,18 @@ export class Select extends Base {
         })}
       </Form.Control>
     );
+  }
+
+  editControl() {
+    return this;
+  }
+
+  edit(value) {
+    return value;
+  }
+
+  save(value) {
+    return value;
   }
 
   hasEditControl() {

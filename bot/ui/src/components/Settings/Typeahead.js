@@ -15,6 +15,10 @@ export class Typeahead extends Base {
     return this.value.default();
   }
 
+  validate(value) {
+    return true;
+  }
+
   construct(value) {
     return this.value.construct(value);
   }
@@ -44,6 +48,7 @@ export class Typeahead extends Base {
 
     return (
       <th.Typeahead
+        bsSize="sm"
         id="select"
         labelKey="title"
         value={value}
@@ -53,6 +58,18 @@ export class Typeahead extends Base {
         onChange={onChange}
       />
     );
+  }
+
+  editControl() {
+    return this;
+  }
+
+  edit(value) {
+    return value;
+  }
+
+  save(value) {
+    return value;
   }
 
   hasEditControl() {

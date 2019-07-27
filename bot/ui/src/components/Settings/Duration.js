@@ -61,7 +61,11 @@ export class Duration extends Base {
   }
 
   render(value) {
-    return <code>{this.convertToString(value)}</code>;
+    let text = this.convertToString(value);
+
+    return (
+      <Form.Control size="sm" value={text} disabled={true} />
+    );
   }
 
   editControl() {
@@ -116,7 +120,7 @@ class EditDuration {
     return Object.assign(value, {});
   }
 
-  render(_isValid, value, onChange) {
+  render(value, onChange, _isValid) {
     let days = this.digitControl(
       value.days, "d", v => onChange(Object.assign(value, {days: v})), _ => true
     );
@@ -130,42 +134,27 @@ class EditDuration {
       value.seconds, "s", v => onChange(Object.assign(value, {seconds: v})), v => v >= 0 && v < 60
     );
 
-    return (
-      <Form.Row>
-        <Col>
-          {days}
-        </Col>
-
-        <Col>
-          {hours}
-        </Col>
-
-        <Col>
-          {minutes}
-        </Col>
-
-        <Col>
-          {seconds}
-        </Col>
-      </Form.Row>
-    );
+    return [
+      days,
+      hours,
+      minutes,
+      seconds
+    ];
   }
 
   digitControl(value, suffix, onChange, validate) {
     var isValid = validate(value);
 
-    return (
-      <InputGroup size="sm">
-        <Form.Control type="number" value={value} isInvalid={!isValid} onChange={
-          e => {
-            onChange(parseInt(e.target.value) || 0);
-          }
-        } />
+    return [
+      <Form.Control key={suffix} type="number" value={value} isInvalid={!isValid} onChange={
+        e => {
+          onChange(parseInt(e.target.value) || 0);
+        }
+      } />,
 
-        <InputGroup.Append>
-          <InputGroup.Text>{suffix}</InputGroup.Text>
-        </InputGroup.Append>
-      </InputGroup>
-    );
+      <InputGroup.Append key={`${suffix}-append`}>
+        <InputGroup.Text>{suffix}</InputGroup.Text>
+      </InputGroup.Append>
+    ];
   }
 }

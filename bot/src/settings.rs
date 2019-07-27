@@ -833,6 +833,28 @@ pub struct Type {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Field {
+    pub title: String,
+    pub field: String,
+    #[serde(rename = "type")]
+    pub ty: Box<Type>,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub enum SelectVariant {
+    #[serde(rename = "typeahead")]
+    Typeahead,
+    #[serde(rename = "default")]
+    Default,
+}
+
+impl Default for SelectVariant {
+    fn default() -> Self {
+        SelectVariant::Default
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "id")]
 pub enum Kind {
     #[serde(rename = "raw")]
@@ -863,9 +885,13 @@ pub enum Kind {
     Select {
         value: Box<Type>,
         options: Vec<serde_json::Value>,
+        #[serde(default)]
+        variant: SelectVariant,
     },
     #[serde(rename = "time-zone")]
     TimeZone,
+    #[serde(rename = "object")]
+    Object { fields: Vec<Field> },
 }
 
 impl Type {
@@ -922,6 +948,7 @@ impl Type {
             Select {
                 ref value,
                 ref options,
+                ..
             } => {
                 let v = value.parse_as_json(s)?;
 
@@ -942,6 +969,28 @@ impl Type {
                 let tz =
                     str::parse::<Tz>(s).map_err(|s| format_err!("Invalid time zone: {}", s))?;
                 Value::String(format!("{:?}", tz))
+            }
+            Object { ref fields, .. } => {
+                let json = serde_json::from_str(s)?;
+
+                let object = match json {
+                    Value::Object(object) => object,
+                    _ => bail!("Expected a JSON object"),
+                };
+
+                for field in fields {
+                    let f = match object.get(&field.field) {
+                        Some(f) => f,
+                        None if field.ty.optional => continue,
+                        None => bail!("Missing required field: {}", field.field),
+                    };
+
+                    if !field.ty.is_compatible_with_json(f) {
+                        bail!("Bad field: {}", field.field);
+                    }
+                }
+
+                Value::Object(object)
             }
         };
 
@@ -969,6 +1018,13 @@ impl Type {
             (Set { ref value }, Value::Array(ref values)) => {
                 values.iter().all(|v| value.is_compatible_with_json(v))
             }
+            (Object { ref fields, .. }, Value::Object(ref object)) => {
+                // NB: check that all fields match expected schema.
+                fields.iter().all(|f| match object.get(&f.field) {
+                    Some(field) => f.ty.is_compatible_with_json(field),
+                    None => f.ty.optional,
+                })
+            }
             _ => false,
         }
     }
@@ -990,6 +1046,7 @@ impl fmt::Display for Type {
             Set { ref value } => write!(fmt, "Array<{}>", value)?,
             Select { ref value, .. } => write!(fmt, "Select<{}>", value)?,
             TimeZone => write!(fmt, "TimeZone")?,
+            Object { .. } => write!(fmt, "Object")?,
         };
 
         if self.optional {

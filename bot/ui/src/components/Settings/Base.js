@@ -10,4 +10,8 @@ export class Base {
   hasEditControl() {
     return true;
   }
+
+  isSingular() {
+    return true;
+  }
 }

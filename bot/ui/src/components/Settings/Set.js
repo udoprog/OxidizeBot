@@ -21,10 +21,18 @@ export class Set extends Base {
     return values.map(value => this.control.serialize(value));
   }
 
-  render(values) {
+  render(values, parentOnChange) {
     return (
       <div>
-        {values.map((value, key) => <div key={key}>{this.control.render(value)}</div>)}
+        {values.map((value, key) => {
+          let onChange = update => {
+            let newValues = values.slice();
+            newValues[key] = update;
+            parentOnChange(newValues);
+          };
+
+          return <div key={key} className="mb-3">{this.control.render(value, onChange)}</div>;
+        })}
       </div>
     );
   }
@@ -35,6 +43,10 @@ export class Set extends Base {
 
   edit(values) {
     return values.map(value => this.control.edit(value));
+  }
+
+  isSingular() {
+    return false;
   }
 }
 
@@ -53,7 +65,7 @@ class EditSet {
     return values.map(value => this.editControl.save(value));
   }
 
-  render(_isValid, values, onChange) {
+  render(values, onChange, _isValid) {
     let add = () => {
       let newValues = values.slice();
       let value = this.control.edit(this.control.default());
@@ -72,20 +84,30 @@ class EditSet {
         {values.map((editValue, key) => {
           let isValid = this.editControl.validate(editValue);
 
-          let control = this.editControl.render(isValid, editValue, v => {
+          let control = this.editControl.render(editValue, v => {
             let newValues = values.slice();
             newValues[key] = v;
             onChange(newValues);
-          });
+          }, isValid);
 
-          return (
-            <InputGroup key={key} className="mb-1">
-              {control}
-              <InputGroup.Append>
-                <Button size="sm" variant="danger" onClick={remove(key)}><FontAwesomeIcon icon="minus" /></Button>
-              </InputGroup.Append>
-            </InputGroup>
-          );
+          if (this.control.isSingular()) {
+            return (
+              <InputGroup key={key} className="mb-1">
+                {control}
+                <InputGroup.Append>
+                  <Button size="sm" variant="danger" onClick={remove(key)}><FontAwesomeIcon icon="minus" /></Button>
+                </InputGroup.Append>
+              </InputGroup>
+            );
+          } else {
+            return [
+              <InputGroup key={key} className="mb-1">
+                {control}
+              </InputGroup>,
+
+              <Button className="mb-2" key={`${key}-delete`} size="sm" variant="danger" onClick={remove(key)}><FontAwesomeIcon icon="minus" /></Button>
+            ];
+          }
         })}
 
         <div>
