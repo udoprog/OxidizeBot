@@ -4,9 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-
 ## [Unreleased]
-[Unreleased]: https://github.com/udoprog/setmod/compare/0.4.5...master
+[Unreleased]: https://github.com/udoprog/setmod/compare/0.4.6...master
+
+## [0.4.6]
+
+### Changed
+- Fix updating the title using `!title` command.
+
+[0.4.6]: https://github.com/udoprog/setmod/compare/0.4.5...0.4.6
 
 ## [0.4.5]
 
