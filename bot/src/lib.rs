@@ -11,6 +11,8 @@ extern crate mysql_async;
 #[macro_use]
 extern crate smallvec;
 
+pub use async_injector as injector;
+
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 #[macro_use]
@@ -24,7 +26,6 @@ pub mod currency;
 pub mod db;
 pub mod emotes;
 mod idle;
-pub mod injector;
 pub mod irc;
 pub mod message_log;
 pub mod module;

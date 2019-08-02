@@ -176,7 +176,7 @@ impl super::Module for Module {
                 temperature_unit: vars
                     .var("weather/temperature-unit", TemperatureUnit::DegreesCelsius)?,
                 location: vars.optional("weather/location")?,
-                api: injector.var(futures),
+                api: injector.var()?,
             },
         );
 

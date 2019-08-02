@@ -14,7 +14,7 @@ pub struct CurrencyBuilder {
     pub enabled: bool,
     pub command_enabled: bool,
     pub name: Option<Arc<String>>,
-    pub db: Database,
+    pub db: Option<Database>,
     pub twitch: api::Twitch,
     pub mysql_url: Option<String>,
     pub mysql_schema: mysql::Schema,
@@ -22,13 +22,13 @@ pub struct CurrencyBuilder {
 
 impl CurrencyBuilder {
     /// Construct a new currency builder.
-    pub fn new(db: Database, twitch: api::Twitch, mysql_schema: mysql::Schema) -> Self {
+    pub fn new(twitch: api::Twitch, mysql_schema: mysql::Schema) -> Self {
         Self {
             ty: Default::default(),
             enabled: Default::default(),
             command_enabled: Default::default(),
             name: Default::default(),
-            db,
+            db: None,
             twitch,
             mysql_url: None,
             mysql_schema,
@@ -45,7 +45,8 @@ impl CurrencyBuilder {
 
         let backend = match self.ty {
             BackendType::BuiltIn => {
-                let backend = self::builtin::Backend::new(self.db.clone());
+                let db = self.db.as_ref()?;
+                let backend = self::builtin::Backend::new(db.clone());
                 Backend::BuiltIn(backend)
             }
             BackendType::Mysql => {

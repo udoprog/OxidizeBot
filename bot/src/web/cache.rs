@@ -1,4 +1,7 @@
 use crate::web::EMPTY;
+use failure::bail;
+use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
+use std::sync::Arc;
 use warp::{body, filters, path, Filter as _};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -9,10 +12,12 @@ struct DeleteRequest {
 
 /// Cache endpoints.
 #[derive(Clone)]
-pub struct Cache(crate::storage::Cache);
+pub struct Cache(Arc<RwLock<Option<crate::storage::Cache>>>);
 
 impl Cache {
-    pub fn route(cache: crate::storage::Cache) -> filters::BoxedFilter<(impl warp::Reply,)> {
+    pub fn route(
+        cache: Arc<RwLock<Option<crate::storage::Cache>>>,
+    ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Cache(cache);
 
         let list = warp::get2()
@@ -32,15 +37,24 @@ impl Cache {
         return warp::path("cache").and(list.or(delete)).boxed();
     }
 
+    /// Access underlying cache abstraction.
+    fn cache(&self) -> Result<MappedRwLockReadGuard<'_, crate::storage::Cache>, failure::Error> {
+        match RwLockReadGuard::try_map(self.0.read(), |c| c.as_ref()) {
+            Ok(out) => Ok(out),
+            Err(_) => bail!("cache not configured"),
+        }
+    }
+
     /// List all cache entries.
     fn list(&self) -> Result<impl warp::Reply, failure::Error> {
-        let entries = self.0.list_json()?;
+        let entries = self.cache()?.list_json()?;
         Ok(warp::reply::json(&entries))
     }
 
     /// Delete a cache entry.
     fn delete(&self, request: DeleteRequest) -> Result<impl warp::Reply, failure::Error> {
-        self.0.delete_with_ns(request.ns.as_ref(), request.key)?;
+        self.cache()?
+            .delete_with_ns(request.ns.as_ref(), request.key)?;
         Ok(warp::reply::json(&EMPTY))
     }
 }

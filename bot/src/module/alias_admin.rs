@@ -1,17 +1,24 @@
 use crate::{auth, command, db, module, prelude::*};
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Handler for the !alias command.
-pub struct Handler<'a> {
-    pub aliases: &'a db::Aliases,
+pub struct Handler {
+    pub aliases: Arc<RwLock<Option<db::Aliases>>>,
 }
 
-impl command::Handler for Handler<'_> {
+impl command::Handler for Handler {
     fn handle<'slf: 'a, 'ctx: 'a, 'a>(
         &'slf mut self,
         mut ctx: command::Context<'ctx>,
     ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
         Box::pin(async move {
-            let next = command_base!(ctx, self.aliases, "alias", AliasEdit);
+            let aliases = match self.aliases.read().clone() {
+                Some(aliases) => aliases,
+                None => return Ok(()),
+            };
+
+            let next = command_base!(ctx, aliases, "alias", AliasEdit);
 
             match next.as_ref().map(String::as_str) {
                 Some("edit") => {
@@ -19,7 +26,7 @@ impl command::Handler for Handler<'_> {
 
                     let name = ctx_try!(ctx.next_str("<name>"));
                     let template = ctx_try!(ctx.rest_parse("<name> <template>"));
-                    self.aliases.edit(ctx.user.target(), &name, template)?;
+                    aliases.edit(ctx.user.target(), &name, template)?;
 
                     ctx.respond("Edited alias");
                 }
@@ -43,10 +50,15 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            handlers, aliases, ..
+            injector, handlers, ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        handlers.insert("alias", Handler { aliases });
+        handlers.insert(
+            "alias",
+            Handler {
+                aliases: injector.var()?,
+            },
+        );
         Ok(())
     }
 }

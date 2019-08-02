@@ -560,10 +560,7 @@ pub struct Handler {
 impl Handler {
     /// Play the specified theme song.
     fn play_theme_song(&mut self, ctx: &command::Context<'_>, id: &str) {
-        let player = self.player.read();
-
-        if let Some(player) = player.as_ref() {
-            let player = player.clone();
+        if let Some(player) = self.player.read().clone() {
             let target = ctx.user.target().to_string();
             let id = id.to_string();
 
@@ -572,6 +569,9 @@ impl Handler {
                     Ok(()) => (),
                     Err(player::PlayThemeError::NoSuchTheme) => {
                         log::error!("you need to configure the theme `{}`", id);
+                    }
+                    Err(player::PlayThemeError::NotConfigured) => {
+                        log::error!("themes system is not configured");
                     }
                     Err(player::PlayThemeError::Error(e)) => {
                         log::error!("error when playing theme: {}", e);
@@ -1056,7 +1056,7 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
-        let currency = injector.var(futures);
+        let currency = injector.var()?;
         let settings = settings.scoped("gtav");
 
         let default_reward_cooldown = Cooldown::from_duration(Duration::seconds(60));
@@ -1088,7 +1088,7 @@ impl super::Module for Module {
         let per_command_configs = Arc::new(RwLock::new(HashMap::new()));
         *per_command_configs.write() = commands_config.into_map();
 
-        let player = injector.var(futures);
+        let player = injector.var()?;
 
         let (tx, mut rx) = mpsc::unbounded();
 

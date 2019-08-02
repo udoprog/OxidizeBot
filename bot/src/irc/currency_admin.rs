@@ -11,12 +11,11 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Handler for the !admin command.
-pub struct Handler<'a> {
+pub struct Handler {
     pub currency: Arc<RwLock<Option<Currency>>>,
-    pub db: &'a db::Database,
 }
 
-impl Handler<'_> {
+impl Handler {
     /// Get the name of the command for the current currency.
     pub fn command_name(&self) -> Option<Arc<String>> {
         let currency = self.currency.read();
@@ -28,7 +27,7 @@ impl Handler<'_> {
     }
 }
 
-impl command::Handler for Handler<'_> {
+impl command::Handler for Handler {
     fn handle<'slf: 'a, 'ctx: 'a, 'a>(
         &'slf mut self,
         mut ctx: command::Context<'ctx>,
@@ -254,15 +253,13 @@ impl command::Handler for Handler<'_> {
     }
 }
 
-pub fn setup<'a>(
+pub fn setup(
     injector: &Injector,
-    db: &'a db::Database,
-) -> Result<(impl Future<Output = Result<(), Error>> + 'a, Handler<'a>), Error> {
+) -> Result<(impl Future<Output = Result<(), Error>>, Handler), Error> {
     let (currency_stream, currency) = injector.stream::<Currency>();
     let currency = Arc::new(RwLock::new(currency));
 
     let handler = Handler {
-        db,
         currency: currency.clone(),
     };
 

@@ -67,6 +67,7 @@ graphql_client = "0.8.0"
 futures-option = "0.1.1"
 futures-cache = "0.6.0"
 failure = "0.1.5"
+async-injector = { version = "0.1.0", path = "../../async-injector" }
 
 [dependencies.futures01]
 package = "futures"

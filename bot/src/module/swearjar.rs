@@ -122,7 +122,7 @@ impl super::Module for Module {
 
         let cooldown = Arc::new(RwLock::new(Cooldown::from_duration(cooldown)));
 
-        let currency = injector.var(futures);
+        let currency = injector.var()?;
 
         handlers.insert(
             "swearjar",

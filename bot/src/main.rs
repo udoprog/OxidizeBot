@@ -1,5 +1,5 @@
 #![feature(async_await)]
-#![recursion_limit = "128"]
+#![recursion_limit = "256"]
 #![windows_subsystem = "windows"]
 
 use backoff::backoff::Backoff as _;
@@ -273,6 +273,7 @@ async fn try_main(
             .with_context(|_| format_err!("failed to create root: {}", root.display()))?;
     }
 
+    let injector = injector::Injector::new();
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
 
     let mut modules = Vec::<Box<dyn module::Module>>::new();
@@ -299,6 +300,7 @@ async fn try_main(
 
     let db = db::Database::open(&database_path, Arc::clone(&thread_pool))
         .with_context(|_| format_err!("failed to open database at: {}", database_path.display()))?;
+    injector.update(db.clone());
 
     let scopes_schema = auth::Schema::load_static()?;
     let auth = db.auth(scopes_schema)?;
@@ -310,14 +312,15 @@ async fn try_main(
         .run_migrations()
         .context("failed to run settings migrations")?;
 
-    let injector = injector::Injector::new();
+    injector.update(settings.clone());
 
     let bad_words = db::Words::load(db.clone())?;
-    let after_streams = db::AfterStreams::load(db.clone())?;
-    let commands = db::Commands::load(db.clone())?;
-    let aliases = db::Aliases::load(db.clone())?;
-    let promotions = db::Promotions::load(db.clone())?;
-    let themes = db::Themes::load(db.clone())?;
+
+    injector.update(db::AfterStreams::load(db.clone())?);
+    injector.update(db::Commands::load(db.clone())?);
+    injector.update(db::Aliases::load(db.clone())?);
+    injector.update(db::Promotions::load(db.clone())?);
+    injector.update(db::Themes::load(db.clone())?);
 
     let message_bus = Arc::new(bus::Bus::new());
     let global_bus = Arc::new(bus::Bus::new());
@@ -326,16 +329,14 @@ async fn try_main(
 
     let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
 
+    futures.push(injector.clone().drive().map_err(Into::into).boxed());
     futures.push(system_loop(settings.scoped("system"), system.clone()).boxed());
 
     let storage = storage::Storage::open(&root.join("storage"))?;
-    let cache = storage.cache()?;
-    injector.update(cache.clone());
+    injector.update(storage.cache()?);
 
     let (latest, future) = updater::run(&injector);
     futures.push(future.boxed());
-
-    let currency = injector.var(&mut futures);
 
     let message_log = message_log::MessageLog::builder()
         .bus(message_bus.clone())
@@ -343,21 +344,14 @@ async fn try_main(
         .build();
 
     let (web, future) = web::setup(
+        &injector,
         message_log.clone(),
         message_bus.clone(),
         global_bus.clone(),
         youtube_bus.clone(),
-        after_streams.clone(),
         db.clone(),
-        settings.clone(),
-        cache.clone(),
         auth.clone(),
-        aliases.clone(),
-        commands.clone(),
-        promotions.clone(),
-        themes.clone(),
         global_channel.clone(),
-        currency,
         latest.clone(),
     )?;
 
@@ -461,19 +455,26 @@ async fn try_main(
 
     let spotify = Arc::new(api::Spotify::new(spotify_token.clone())?);
     let streamer_twitch = api::Twitch::new(streamer_token.clone())?;
+    injector.update_key(&injector::Key::tagged("twitch")?, streamer_twitch.clone());
+
     let bot_twitch = api::Twitch::new(bot_token.clone())?;
+
     let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
+    injector.update(youtube.clone());
+
     let nightbot = Arc::new(api::NightBot::new(nightbot_token.clone())?);
+
+    injector.update(nightbot.clone());
     injector.update(api::Speedrun::new()?);
 
     let (player, future) = player::run(
+        &injector,
         db.clone(),
         spotify.clone(),
         youtube.clone(),
         global_bus.clone(),
         youtube_bus.clone(),
         settings.clone(),
-        themes.clone(),
     )?;
 
     futures.push(future.boxed());
@@ -518,22 +519,13 @@ async fn try_main(
 
     let (stream_state_tx, stream_state_rx) = mpsc::channel(64);
 
-    let notify_after_streams =
-        notify_after_streams(stream_state_rx, after_streams.clone(), system.clone());
+    let notify_after_streams = notify_after_streams(&injector, stream_state_rx, system.clone());
     futures.push(notify_after_streams.boxed());
 
     let irc = irc::Irc {
-        db,
-        youtube,
-        nightbot,
         streamer_twitch,
         bot_twitch,
-        commands,
-        aliases,
-        promotions,
-        themes,
         bad_words,
-        after_streams,
         global_bus,
         modules,
         shutdown,
@@ -579,30 +571,44 @@ async fn try_main(
 ///
 /// If this is clicked, open the after-streams page.
 async fn notify_after_streams(
+    injector: &injector::Injector,
     mut rx: mpsc::Receiver<stream_info::StreamState>,
-    after_streams: db::AfterStreams,
     system: sys::System,
 ) -> Result<(), Error> {
+    let (mut after_streams_stream, mut after_streams) = injector.stream::<db::AfterStreams>();
+
     loop {
-        match rx.select_next_some().await {
-            stream_info::StreamState::Started => {
-                log::info!("Stream started");
+        futures::select! {
+            update = after_streams_stream.select_next_some() => {
+                after_streams = update;
             }
-            stream_info::StreamState::Stopped => {
-                let list = after_streams.list()?;
+            update = rx.select_next_some() => {
+                match update {
+                    stream_info::StreamState::Started => {
+                        log::info!("Stream started");
+                    }
+                    stream_info::StreamState::Stopped => {
+                        let after_streams = match after_streams.as_ref() {
+                            Some(after_streams) => after_streams,
+                            None => continue,
+                        };
 
-                if list.len() > 0 {
-                    let reminder = sys::Notification::new(format!(
-                        "You have {} afterstream messages.\nClick to open...",
-                        list.len()
-                    ));
+                        let list = after_streams.list()?;
 
-                    let reminder = reminder.on_click(|| {
-                        webbrowser::open(&format!("{}/after-streams", web::URL))?;
-                        Ok(())
-                    });
+                        if list.len() > 0 {
+                            let reminder = sys::Notification::new(format!(
+                                "You have {} afterstream messages.\nClick to open...",
+                                list.len()
+                            ));
 
-                    system.notification(reminder);
+                            let reminder = reminder.on_click(|| {
+                                webbrowser::open(&format!("{}/after-streams", web::URL))?;
+                                Ok(())
+                            });
+
+                            system.notification(reminder);
+                        }
+                    }
                 }
             }
         }

@@ -1,10 +1,11 @@
 use self::assets::Asset;
 use crate::{
-    api, auth, bus, currency::Currency, db, message_log, player, prelude::*, template,
+    api, auth, bus, currency::Currency, db, injector, message_log, player, prelude::*, template,
     track_id::TrackId, utils,
 };
+use failure::bail;
 use hashbrown::HashMap;
-use parking_lot::RwLock;
+use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use std::{borrow::Cow, fmt, net::SocketAddr, sync::Arc};
 use warp::{body, filters, http::Uri, path, Filter as _};
 
@@ -123,10 +124,12 @@ pub struct DisabledBody {
 
 /// Aliases endpoint.
 #[derive(Clone)]
-struct Aliases(db::Aliases);
+struct Aliases(Arc<RwLock<Option<db::Aliases>>>);
 
 impl Aliases {
-    fn route(aliases: db::Aliases) -> filters::BoxedFilter<(impl warp::Reply,)> {
+    fn route(
+        aliases: Arc<RwLock<Option<db::Aliases>>>,
+    ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Aliases(aliases);
 
         let list = warp::get2()
@@ -176,9 +179,17 @@ impl Aliases {
         }
     }
 
+    /// Access underlying aliases abstraction.
+    fn aliases(&self) -> Result<MappedRwLockReadGuard<'_, db::Aliases>, failure::Error> {
+        match RwLockReadGuard::try_map(self.0.read(), |c| c.as_ref()) {
+            Ok(out) => Ok(out),
+            Err(_) => bail!("aliases not configured"),
+        }
+    }
+
     /// Get the list of all aliases.
     fn list(&self, channel: &str) -> Result<impl warp::Reply, failure::Error> {
-        let aliases = self.0.list_all(channel)?;
+        let aliases = self.aliases()?.list_all(channel)?;
         Ok(warp::reply::json(&aliases))
     }
 
@@ -189,7 +200,7 @@ impl Aliases {
         name: &str,
         template: template::Template,
     ) -> Result<impl warp::Reply, failure::Error> {
-        self.0.edit(channel, name, template)?;
+        self.aliases()?.edit(channel, name, template)?;
         Ok(warp::reply::json(&EMPTY))
     }
 
@@ -201,9 +212,9 @@ impl Aliases {
         disabled: bool,
     ) -> Result<impl warp::Reply, failure::Error> {
         if disabled {
-            self.0.disable(channel, name)?;
+            self.aliases()?.disable(channel, name)?;
         } else {
-            self.0.enable(channel, name)?;
+            self.aliases()?.enable(channel, name)?;
         }
 
         Ok(warp::reply::json(&EMPTY))
@@ -211,17 +222,19 @@ impl Aliases {
 
     /// Delete the given alias by key.
     fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, failure::Error> {
-        self.0.delete(channel, name)?;
+        self.aliases()?.delete(channel, name)?;
         Ok(warp::reply::json(&EMPTY))
     }
 }
 
 /// Commands endpoint.
 #[derive(Clone)]
-struct Commands(db::Commands);
+struct Commands(Arc<RwLock<Option<db::Commands>>>);
 
 impl Commands {
-    fn route(commands: db::Commands) -> filters::BoxedFilter<(impl warp::Reply,)> {
+    fn route(
+        commands: Arc<RwLock<Option<db::Commands>>>,
+    ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Commands(commands);
 
         let list = warp::get2()
@@ -271,9 +284,17 @@ impl Commands {
         }
     }
 
+    /// Access underlying commands abstraction.
+    fn commands(&self) -> Result<MappedRwLockReadGuard<'_, db::Commands>, failure::Error> {
+        match RwLockReadGuard::try_map(self.0.read(), |c| c.as_ref()) {
+            Ok(out) => Ok(out),
+            Err(_) => bail!("commands not configured"),
+        }
+    }
+
     /// Get the list of all commands.
     fn list(&self, channel: &str) -> Result<impl warp::Reply, failure::Error> {
-        let commands = self.0.list_all(channel)?;
+        let commands = self.commands()?.list_all(channel)?;
         Ok(warp::reply::json(&commands))
     }
 
@@ -284,7 +305,7 @@ impl Commands {
         name: &str,
         template: template::Template,
     ) -> Result<impl warp::Reply, failure::Error> {
-        self.0.edit(channel, name, template)?;
+        self.commands()?.edit(channel, name, template)?;
         Ok(warp::reply::json(&EMPTY))
     }
 
@@ -296,9 +317,9 @@ impl Commands {
         disabled: bool,
     ) -> Result<impl warp::Reply, failure::Error> {
         if disabled {
-            self.0.disable(channel, name)?;
+            self.commands()?.disable(channel, name)?;
         } else {
-            self.0.enable(channel, name)?;
+            self.commands()?.enable(channel, name)?;
         }
 
         Ok(warp::reply::json(&EMPTY))
@@ -306,17 +327,19 @@ impl Commands {
 
     /// Delete the given command by key.
     fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, failure::Error> {
-        self.0.delete(channel, name)?;
+        self.commands()?.delete(channel, name)?;
         Ok(warp::reply::json(&EMPTY))
     }
 }
 
 /// Promotions endpoint.
 #[derive(Clone)]
-struct Promotions(db::Promotions);
+struct Promotions(Arc<RwLock<Option<db::Promotions>>>);
 
 impl Promotions {
-    fn route(promotions: db::Promotions) -> filters::BoxedFilter<(impl warp::Reply,)> {
+    fn route(
+        promotions: Arc<RwLock<Option<db::Promotions>>>,
+    ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Promotions(promotions);
 
         let list = warp::get2()
@@ -372,9 +395,17 @@ impl Promotions {
         }
     }
 
+    /// Access underlying promotions abstraction.
+    fn promotions(&self) -> Result<MappedRwLockReadGuard<'_, db::Promotions>, failure::Error> {
+        match RwLockReadGuard::try_map(self.0.read(), |c| c.as_ref()) {
+            Ok(out) => Ok(out),
+            Err(_) => bail!("promotions not configured"),
+        }
+    }
+
     /// Get the list of all promotions.
     fn list(&self, channel: &str) -> Result<impl warp::Reply, failure::Error> {
-        let promotions = self.0.list_all(channel)?;
+        let promotions = self.promotions()?.list_all(channel)?;
         Ok(warp::reply::json(&promotions))
     }
 
@@ -386,7 +417,8 @@ impl Promotions {
         frequency: utils::Duration,
         template: template::Template,
     ) -> Result<impl warp::Reply, failure::Error> {
-        self.0.edit(channel, name, frequency, template)?;
+        self.promotions()?
+            .edit(channel, name, frequency, template)?;
         Ok(warp::reply::json(&EMPTY))
     }
 
@@ -398,9 +430,9 @@ impl Promotions {
         disabled: bool,
     ) -> Result<impl warp::Reply, failure::Error> {
         if disabled {
-            self.0.disable(channel, name)?;
+            self.promotions()?.disable(channel, name)?;
         } else {
-            self.0.enable(channel, name)?;
+            self.promotions()?.enable(channel, name)?;
         }
 
         Ok(warp::reply::json(&EMPTY))
@@ -408,17 +440,17 @@ impl Promotions {
 
     /// Delete the given promotion by key.
     fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, failure::Error> {
-        self.0.delete(channel, name)?;
+        self.promotions()?.delete(channel, name)?;
         Ok(warp::reply::json(&EMPTY))
     }
 }
 
 /// Themes endpoint.
 #[derive(Clone)]
-struct Themes(db::Themes);
+struct Themes(Arc<RwLock<Option<db::Themes>>>);
 
 impl Themes {
-    fn route(themes: db::Themes) -> filters::BoxedFilter<(impl warp::Reply,)> {
+    fn route(themes: Arc<RwLock<Option<db::Themes>>>) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Themes(themes);
 
         let list = warp::get2()
@@ -468,9 +500,17 @@ impl Themes {
         }
     }
 
+    /// Access underlying themes abstraction.
+    fn themes(&self) -> Result<MappedRwLockReadGuard<'_, db::Themes>, failure::Error> {
+        match RwLockReadGuard::try_map(self.0.read(), |c| c.as_ref()) {
+            Ok(out) => Ok(out),
+            Err(_) => bail!("themes not configured"),
+        }
+    }
+
     /// Get the list of all promotions.
     fn list(&self, channel: &str) -> Result<impl warp::Reply, failure::Error> {
-        let promotions = self.0.list_all(channel)?;
+        let promotions = self.themes()?.list_all(channel)?;
         Ok(warp::reply::json(&promotions))
     }
 
@@ -481,7 +521,7 @@ impl Themes {
         name: &str,
         track_id: TrackId,
     ) -> Result<impl warp::Reply, failure::Error> {
-        self.0.edit(channel, name, track_id)?;
+        self.themes()?.edit(channel, name, track_id)?;
         Ok(warp::reply::json(&EMPTY))
     }
 
@@ -493,9 +533,9 @@ impl Themes {
         disabled: bool,
     ) -> Result<impl warp::Reply, failure::Error> {
         if disabled {
-            self.0.disable(channel, name)?;
+            self.themes()?.disable(channel, name)?;
         } else {
-            self.0.enable(channel, name)?;
+            self.themes()?.enable(channel, name)?;
         }
 
         Ok(warp::reply::json(&EMPTY))
@@ -503,7 +543,7 @@ impl Themes {
 
     /// Delete the given promotion by key.
     fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, failure::Error> {
-        self.0.delete(channel, name)?;
+        self.themes()?.delete(channel, name)?;
         Ok(warp::reply::json(&EMPTY))
     }
 }
@@ -684,7 +724,7 @@ impl Chat {
 #[derive(Clone)]
 struct Api {
     player: Arc<RwLock<Option<player::Player>>>,
-    after_streams: db::AfterStreams,
+    after_streams: Arc<RwLock<Option<db::AfterStreams>>>,
     db: db::Database,
     currency: Arc<RwLock<Option<Currency>>>,
     latest: Arc<RwLock<Option<api::github::Release>>>,
@@ -767,16 +807,24 @@ impl Api {
         }
     }
 
-    /// Get the list of available after streams.
-    fn delete_after_stream(&self, id: i32) -> Result<impl warp::Reply, failure::Error> {
-        self.after_streams.delete(id)?;
-        Ok(warp::reply::json(&EMPTY))
+    /// Access underlying after streams abstraction.
+    fn after_streams(&self) -> Result<MappedRwLockReadGuard<'_, db::AfterStreams>, failure::Error> {
+        match RwLockReadGuard::try_map(self.after_streams.read(), |c| c.as_ref()) {
+            Ok(out) => Ok(out),
+            Err(_) => bail!("after streams not configured"),
+        }
     }
 
     /// Get the list of available after streams.
-    fn after_streams(&self) -> Result<impl warp::Reply, failure::Error> {
-        let after_streams = self.after_streams.list()?;
+    fn get_after_streams(&self) -> Result<impl warp::Reply, failure::Error> {
+        let after_streams = self.after_streams()?.list()?;
         Ok(warp::reply::json(&after_streams))
+    }
+
+    /// Get the list of available after streams.
+    fn delete_after_stream(&self, id: i32) -> Result<impl warp::Reply, failure::Error> {
+        self.after_streams()?.delete(id)?;
+        Ok(warp::reply::json(&EMPTY))
     }
 
     /// Import balances.
@@ -854,21 +902,14 @@ impl Api {
 
 /// Set up the web endpoint.
 pub fn setup(
+    injector: &injector::Injector,
     message_log: message_log::MessageLog,
     message_bus: Arc<bus::Bus<message_log::Event>>,
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
-    after_streams: db::AfterStreams,
     db: db::Database,
-    settings: crate::settings::Settings,
-    cache: crate::storage::Cache,
     auth: auth::Auth,
-    aliases: db::Aliases,
-    commands: db::Commands,
-    promotions: db::Promotions,
-    themes: db::Themes,
     channel: Arc<RwLock<Option<String>>>,
-    currency: Arc<RwLock<Option<Currency>>>,
     latest: Arc<RwLock<Option<api::github::Release>>>,
 ) -> Result<
     (
@@ -893,9 +934,9 @@ pub fn setup(
 
     let api = Api {
         player: player.clone(),
-        after_streams,
+        after_streams: injector.var()?,
         db,
-        currency,
+        currency: injector.var()?,
         latest,
     };
 
@@ -944,7 +985,7 @@ pub fn setup(
         let route = route
             .or(warp::get2().and(warp::path("after-streams")).and_then({
                 let api = api.clone();
-                move || api.after_streams().map_err(warp::reject::custom)
+                move || api.get_after_streams().map_err(warp::reject::custom)
             }))
             .boxed();
 
@@ -980,12 +1021,12 @@ pub fn setup(
         let route = route.or(warp::path("auth")
             .and(Auth::route(auth, token_callbacks.clone()))
             .boxed());
-        let route = route.or(Aliases::route(aliases));
-        let route = route.or(Commands::route(commands));
-        let route = route.or(Promotions::route(promotions));
-        let route = route.or(Themes::route(themes));
-        let route = route.or(Settings::route(settings));
-        let route = route.or(Cache::route(cache));
+        let route = route.or(Aliases::route(injector.var()?));
+        let route = route.or(Commands::route(injector.var()?));
+        let route = route.or(Promotions::route(injector.var()?));
+        let route = route.or(Themes::route(injector.var()?));
+        let route = route.or(Settings::route(injector.var()?));
+        let route = route.or(Cache::route(injector.var()?));
 
         let route = route.or(warp::path("chat").and(Chat::route(message_log)).boxed());
 

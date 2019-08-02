@@ -30,7 +30,7 @@ struct Inner {
     thread_pool: ThreadPool,
     limiter: Mutex<ratelimit::Limiter>,
     nightbot_limiter: Mutex<ratelimit::Limiter>,
-    nightbot: Arc<api::NightBot>,
+    nightbot: Arc<RwLock<Option<Arc<api::NightBot>>>>,
 }
 
 #[derive(Clone)]
@@ -45,7 +45,7 @@ impl Sender {
         ty: Arc<RwLock<Type>>,
         target: String,
         client: IrcClient,
-        nightbot: Arc<api::NightBot>,
+        nightbot: Arc<RwLock<Option<Arc<api::NightBot>>>>,
     ) -> Sender {
         // limiter to use for IRC chat messages.
         let limiter = ratelimit::Builder::new().frequency(10).capacity(95).build();
@@ -148,6 +148,14 @@ impl Sender {
         use futures::executor;
         use std::thread;
 
+        let nightbot = match inner.nightbot.read().as_ref() {
+            Some(nightbot) => nightbot.clone(),
+            None => {
+                log::warn!("Nightbot API is not configured");
+                return;
+            }
+        };
+
         let m = m.to_string();
 
         let future = future01::lazy(move || {
@@ -156,7 +164,7 @@ impl Sender {
             limiter.wait();
 
             loop {
-                let result = executor::block_on(inner.nightbot.channel_send(m.clone()));
+                let result = executor::block_on(nightbot.channel_send(m.clone()));
 
                 match result {
                     Ok(()) => (),

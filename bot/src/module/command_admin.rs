@@ -2,12 +2,12 @@ use crate::{auth, command, db, module, prelude::*};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-pub struct Handler<'a> {
+pub struct Handler {
     pub enabled: Arc<RwLock<bool>>,
-    pub commands: &'a db::Commands,
+    pub commands: Arc<RwLock<Option<db::Commands>>>,
 }
 
-impl command::Handler for Handler<'_> {
+impl command::Handler for Handler {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::Command)
     }
@@ -21,7 +21,12 @@ impl command::Handler for Handler<'_> {
                 return Ok(());
             }
 
-            let next = command_base!(ctx, self.commands, "command", CommandEdit);
+            let commands = match self.commands.read().clone() {
+                Some(commands) => commands,
+                None => return Ok(()),
+            };
+
+            let next = command_base!(ctx, commands, "command", CommandEdit);
 
             match next.as_ref().map(String::as_str) {
                 Some("edit") => {
@@ -29,7 +34,7 @@ impl command::Handler for Handler<'_> {
 
                     let name = ctx_try!(ctx.next_str("<name>"));
                     let template = ctx_try!(ctx.rest_parse("<name> <template>"));
-                    self.commands.edit(ctx.user.target(), &name, template)?;
+                    commands.edit(ctx.user.target(), &name, template)?;
 
                     ctx.respond("Edited command.");
                 }
@@ -53,15 +58,16 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
+            injector,
             handlers,
             futures,
-            commands,
             settings,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
         let mut vars = settings.vars();
         let enabled = vars.var("command/enabled", true)?;
+        let commands = injector.var()?;
         handlers.insert("command", Handler { enabled, commands });
         futures.push(vars.run().boxed());
         Ok(())

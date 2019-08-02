@@ -188,14 +188,12 @@ impl super::Module for Module {
         let reward_multiplier = vars.var("water/reward%", 100)?;
         futures.push(vars.run().boxed());
 
-        let currency = injector.var(futures);
-
         handlers.insert(
             "water",
             Handler {
                 enabled,
                 cooldown: cooldown.clone(),
-                currency: currency.clone(),
+                currency: injector.var()?,
                 waters: Vec::new(),
                 stream_info: stream_info.clone(),
                 reward_multiplier,

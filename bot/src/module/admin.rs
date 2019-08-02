@@ -1,13 +1,15 @@
 use crate::{auth, command, db, module, prelude::*, settings};
 use failure::Error;
+use parking_lot::RwLock;
+use std::sync::Arc;
 
 /// Handler for the !admin command.
 pub struct Handler<'a> {
     settings: &'a settings::Settings,
-    aliases: &'a db::Aliases,
-    commands: &'a db::Commands,
-    promotions: &'a db::Promotions,
-    themes: &'a db::Themes,
+    aliases: Arc<RwLock<Option<db::Aliases>>>,
+    commands: Arc<RwLock<Option<db::Commands>>>,
+    promotions: Arc<RwLock<Option<db::Promotions>>>,
+    themes: Arc<RwLock<Option<db::Themes>>>,
 }
 
 impl Handler<'_> {
@@ -140,10 +142,21 @@ impl command::Handler for Handler<'_> {
                         }
                     };
 
-                    self.aliases.enable_group(ctx.user.target(), &group)?;
-                    self.commands.enable_group(ctx.user.target(), &group)?;
-                    self.promotions.enable_group(ctx.user.target(), &group)?;
-                    self.themes.enable_group(ctx.user.target(), &group)?;
+                    if let Some(aliases) = self.aliases.read().as_ref() {
+                        aliases.enable_group(ctx.user.target(), &group)?;
+                    }
+
+                    if let Some(commands) = self.commands.read().as_ref() {
+                        commands.enable_group(ctx.user.target(), &group)?;
+                    }
+
+                    if let Some(promotions) = self.promotions.read().as_ref() {
+                        promotions.enable_group(ctx.user.target(), &group)?;
+                    }
+
+                    if let Some(themes) = self.themes.read().as_ref() {
+                        themes.enable_group(ctx.user.target(), &group)?;
+                    }
 
                     ctx.respond(format!("Enabled group {}", group));
                 }
@@ -156,10 +169,21 @@ impl command::Handler for Handler<'_> {
                         }
                     };
 
-                    self.aliases.disable_group(ctx.user.target(), &group)?;
-                    self.commands.disable_group(ctx.user.target(), &group)?;
-                    self.promotions.disable_group(ctx.user.target(), &group)?;
-                    self.themes.disable_group(ctx.user.target(), &group)?;
+                    if let Some(aliases) = self.aliases.read().as_ref() {
+                        aliases.disable_group(ctx.user.target(), &group)?;
+                    }
+
+                    if let Some(commands) = self.commands.read().as_ref() {
+                        commands.disable_group(ctx.user.target(), &group)?;
+                    }
+
+                    if let Some(promotions) = self.promotions.read().as_ref() {
+                        promotions.disable_group(ctx.user.target(), &group)?;
+                    }
+
+                    if let Some(themes) = self.themes.read().as_ref() {
+                        themes.disable_group(ctx.user.target(), &group)?;
+                    }
 
                     ctx.respond(format!("Disabled group {}", group));
                 }
@@ -303,12 +327,9 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
+            injector,
             handlers,
             settings,
-            aliases,
-            commands,
-            promotions,
-            themes,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
@@ -316,10 +337,10 @@ impl super::Module for Module {
             "admin",
             Handler {
                 settings,
-                aliases,
-                commands,
-                promotions,
-                themes,
+                aliases: injector.var()?,
+                commands: injector.var()?,
+                promotions: injector.var()?,
+                themes: injector.var()?,
             },
         );
 

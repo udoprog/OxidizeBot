@@ -3,13 +3,13 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Handler for the `!afterstream` command.
-pub struct AfterStream<'a> {
+pub struct AfterStream {
     pub enabled: Arc<RwLock<bool>>,
     pub cooldown: Arc<RwLock<utils::Cooldown>>,
-    pub after_streams: &'a db::AfterStreams,
+    pub after_streams: Arc<RwLock<Option<db::AfterStreams>>>,
 }
 
-impl command::Handler for AfterStream<'_> {
+impl command::Handler for AfterStream {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::AfterStream)
     }
@@ -22,6 +22,11 @@ impl command::Handler for AfterStream<'_> {
             if !*self.enabled.read() {
                 return Ok(());
             }
+
+            let after_streams = match self.after_streams.read().clone() {
+                Some(after_streams) => after_streams,
+                None => return Ok(()),
+            };
 
             if !self.cooldown.write().is_open() {
                 ctx.respond("An afterstream was already created recently.");
@@ -36,8 +41,7 @@ impl command::Handler for AfterStream<'_> {
                 return Ok(());
             }
 
-            self.after_streams
-                .push(ctx.user.target(), ctx.user.name(), ctx.rest())?;
+            after_streams.push(ctx.user.target(), ctx.user.name(), ctx.rest())?;
             ctx.respond("Reminder added.");
             Ok(())
         })
@@ -55,10 +59,10 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
+            injector,
             handlers,
             settings,
             futures,
-            after_streams,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
@@ -73,7 +77,7 @@ impl super::Module for Module {
                     "cooldown",
                     utils::Cooldown::from_duration(utils::Duration::seconds(30)),
                 )?,
-                after_streams,
+                after_streams: injector.var()?,
             },
         );
 

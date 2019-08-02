@@ -3,12 +3,12 @@ use chrono::Utc;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-pub struct Handler<'a> {
+pub struct Handler {
     enabled: Arc<RwLock<bool>>,
-    pub promotions: &'a db::Promotions,
+    promotions: Arc<RwLock<Option<db::Promotions>>>,
 }
 
-impl command::Handler for Handler<'_> {
+impl command::Handler for Handler {
     fn handle<'slf: 'a, 'ctx: 'a, 'a>(
         &'slf mut self,
         mut ctx: command::Context<'ctx>,
@@ -18,7 +18,12 @@ impl command::Handler for Handler<'_> {
                 return Ok(());
             }
 
-            let next = command_base!(ctx, self.promotions, "promotion", PromoEdit);
+            let promotions = match self.promotions.read().clone() {
+                Some(promotions) => promotions,
+                None => return Ok(()),
+            };
+
+            let next = command_base!(ctx, promotions, "promotion", PromoEdit);
 
             match next.as_ref().map(String::as_str) {
                 Some("edit") => {
@@ -28,8 +33,7 @@ impl command::Handler for Handler<'_> {
                     let frequency = ctx_try!(ctx.next_parse("<name> <frequency> <template..>"));
                     let template = ctx_try!(ctx.rest_parse("<name> <frequency> <template..>"));
 
-                    self.promotions
-                        .edit(ctx.user.target(), &name, frequency, template)?;
+                    promotions.edit(ctx.user.target(), &name, frequency, template)?;
                     ctx.respond("Edited promo.");
                 }
                 None | Some(..) => {
@@ -52,8 +56,8 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
+            injector,
             handlers,
-            promotions,
             futures,
             sender,
             settings,
@@ -73,11 +77,11 @@ impl super::Module for Module {
             "promo",
             Handler {
                 enabled: enabled.clone(),
-                promotions,
+                promotions: injector.var()?,
             },
         );
 
-        let promotions = promotions.clone();
+        let (mut promotions_stream, mut promotions) = injector.stream::<db::Promotions>();
         let sender = sender.clone();
         let mut interval = timer::Interval::new_interval(frequency.as_std());
         let idle = idle.clone();
@@ -86,6 +90,9 @@ impl super::Module for Module {
             loop {
                 // TODO: check that this actually works.
                 futures::select! {
+                    update = promotions_stream.select_next_some() => {
+                        promotions = update;
+                    }
                     duration = setting.next() => {
                         if let Some(duration) = duration {
                             interval = timer::Interval::new_interval(duration.as_std());
@@ -95,6 +102,11 @@ impl super::Module for Module {
                         if !*enabled.read() {
                             continue;
                         }
+
+                        let promotions = match promotions.as_ref() {
+                            Some(promotions) => promotions,
+                            None => continue,
+                        };
 
                         if idle.is_idle() {
                             log::trace!("channel is too idle to send a promotion");

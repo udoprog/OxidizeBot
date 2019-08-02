@@ -343,8 +343,11 @@ impl command::Handler for Handler {
                             Err(PlayThemeError::NoSuchTheme) => {
                                 user.respond("No such theme :(");
                             }
+                            Err(PlayThemeError::NotConfigured) => {
+                                user.respond("Theme system is not configured :(");
+                            }
                             Err(PlayThemeError::Error(e)) => {
-                                user.respond("There was a problem adding your song :(");
+                                user.respond("There was a problem playing that theme :(");
                                 log_err!(e, "failed to add song");
                             }
                         }
@@ -671,7 +674,7 @@ impl module::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
-        let currency = injector.var(futures);
+        let currency = injector.var()?;
         let settings = settings.scoped("song");
 
         let mut vars = settings.vars();

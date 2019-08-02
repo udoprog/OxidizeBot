@@ -1,5 +1,5 @@
 use crate::{
-    api, bus, db,
+    api, bus, db, injector,
     prelude::*,
     settings,
     song_file::{SongFile, SongFileBuilder},
@@ -177,13 +177,13 @@ impl Command {
 
 /// Run the player.
 pub fn run(
+    injector: &injector::Injector,
     db: db::Database,
     spotify: Arc<api::Spotify>,
     youtube: Arc<api::YouTube>,
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     settings: settings::Settings,
-    themes: db::Themes,
 ) -> Result<(Player, impl Future<Output = Result<(), Error>>), Error> {
     let settings = settings.scoped("player");
 
@@ -243,7 +243,7 @@ pub fn run(
             commands_tx,
             bus: bus.clone(),
             song: song.clone(),
-            themes: themes.clone(),
+            themes: injector.var()?,
             closed: closed.clone(),
         }),
     };
@@ -567,7 +567,7 @@ pub struct PlayerInner {
     /// Song song that is loaded.
     song: Arc<RwLock<Option<Song>>>,
     /// Theme songs.
-    themes: db::Themes,
+    themes: Arc<RwLock<Option<db::Themes>>>,
     /// Player is closed for more requests.
     closed: Arc<RwLock<Option<Option<Arc<String>>>>>,
 }
@@ -749,7 +749,12 @@ impl Player {
 
     /// Play a theme track.
     pub async fn play_theme(&self, channel: &str, name: &str) -> Result<(), PlayThemeError> {
-        let theme = match self.inner.themes.get(channel, name) {
+        let themes = match self.inner.themes.read().clone() {
+            Some(themes) => themes,
+            None => return Err(PlayThemeError::NotConfigured),
+        };
+
+        let theme = match themes.get(channel, name) {
             Some(theme) => theme,
             None => return Err(PlayThemeError::NoSuchTheme),
         };
@@ -993,6 +998,8 @@ impl Player {
 pub enum PlayThemeError {
     /// No such theme song.
     NoSuchTheme,
+    /// Themes system is not configured.
+    NotConfigured,
     /// Other generic error happened.
     Error(Error),
 }

@@ -1,6 +1,5 @@
-use crate::{api, command, db, idle, injector, irc, settings, stream_info, utils};
+use crate::{api, command, idle, injector, irc, settings, stream_info, utils};
 use hashbrown::HashMap;
-use std::sync::Arc;
 
 #[macro_use]
 mod macros;
@@ -44,18 +43,11 @@ impl<'a> Handlers<'a> {
 
 /// Context for a hook.
 pub struct HookContext<'a: 'b, 'b> {
+    pub injector: &'b injector::Injector,
     pub handlers: &'b mut Handlers<'a>,
     pub futures: &'b mut utils::Futures<'a>,
     pub stream_info: &'b stream_info::StreamInfo,
     pub idle: &'b idle::Idle,
-    pub injector: &'b injector::Injector,
-    pub db: &'a db::Database,
-    pub commands: &'a db::Commands,
-    pub aliases: &'a db::Aliases,
-    pub promotions: &'a db::Promotions,
-    pub themes: &'a db::Themes,
-    pub after_streams: &'a db::AfterStreams,
-    pub youtube: &'a Arc<api::YouTube>,
     pub twitch: &'a api::Twitch,
     pub streamer_twitch: &'a api::Twitch,
     pub sender: &'a irc::Sender,

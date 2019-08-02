@@ -37,17 +37,9 @@ const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
 
 /// Helper struct to construct IRC integration.
 pub struct Irc {
-    pub db: db::Database,
-    pub youtube: Arc<api::YouTube>,
-    pub nightbot: Arc<api::NightBot>,
     pub streamer_twitch: api::Twitch,
     pub bot_twitch: api::Twitch,
-    pub commands: db::Commands,
-    pub aliases: db::Aliases,
-    pub promotions: db::Promotions,
-    pub themes: db::Themes,
     pub bad_words: db::Words,
-    pub after_streams: db::AfterStreams,
     pub global_bus: Arc<bus::Bus<bus::Global>>,
     pub modules: Vec<Box<dyn module::Module>>,
     pub shutdown: utils::Shutdown,
@@ -62,17 +54,9 @@ pub struct Irc {
 impl Irc {
     pub async fn run(self) -> Result<(), Error> {
         let Irc {
-            db,
-            youtube,
-            nightbot,
             streamer_twitch,
             bot_twitch,
-            commands,
-            aliases,
-            promotions,
-            themes,
             bad_words,
-            after_streams,
             global_bus,
             modules,
             shutdown,
@@ -156,6 +140,8 @@ impl Irc {
             let threshold = vars.var("idle-detection/threshold", 5)?;
             let idle = idle::Idle::new(threshold);
 
+            let nightbot = injector.var::<Arc<api::NightBot>>()?;
+
             let sender = Sender::new(
                 sender_ty,
                 chat_channel.clone(),
@@ -188,9 +174,9 @@ impl Irc {
                 stream_info
             };
 
-            let mut handlers = module::Handlers::default();
-
             futures.push(refresh_mods_future(sender.clone()).boxed());
+
+            let mut handlers = module::Handlers::default();
 
             for module in modules.iter() {
                 if log::log_enabled!(log::Level::Trace) {
@@ -202,13 +188,6 @@ impl Irc {
                     futures: &mut futures,
                     stream_info: &stream_info,
                     idle: &idle,
-                    db: &db,
-                    commands: &commands,
-                    aliases: &aliases,
-                    promotions: &promotions,
-                    themes: &themes,
-                    after_streams: &after_streams,
-                    youtube: &youtube,
                     twitch: &bot_twitch,
                     streamer_twitch: &streamer_twitch,
                     sender: &sender,
@@ -222,13 +201,12 @@ impl Irc {
                 })?;
             }
 
-            let (future, currency_handler) = currency_admin::setup(&injector, &db)?;
+            let (future, currency_handler) = currency_admin::setup(&injector)?;
 
             futures.push(future.boxed());
 
             let future = currency_loop(
                 &mut futures,
-                db.clone(),
                 streamer_twitch.clone(),
                 channel.clone(),
                 sender.clone(),
@@ -257,6 +235,9 @@ impl Irc {
                 settings.scoped("chat-log"),
             )?;
 
+            let (mut commands_stream, commands) = injector.stream();
+            let (mut aliases_stream, aliases) = injector.stream();
+
             let mut pong_timeout = None;
 
             let mut handler = Handler {
@@ -265,10 +246,10 @@ impl Irc {
                 moderators: Default::default(),
                 vips: Default::default(),
                 whitelisted_hosts,
-                commands: &commands,
+                commands,
                 bad_words: &bad_words,
                 global_bus: &global_bus,
-                aliases: &aliases,
+                aliases,
                 api_url,
                 thread_pool: Arc::new(ThreadPool::new()),
                 moderator_cooldown,
@@ -303,6 +284,12 @@ impl Irc {
 
                 loop {
                     futures::select! {
+                        update = commands_stream.select_next_some() => {
+                            handler.commands = update;
+                        }
+                        update = aliases_stream.select_next_some() => {
+                            handler.aliases = update;
+                        }
                         cache = chat_log_builder.cache_stream.select_next_some() => {
                             chat_log_builder.cache = cache;
                             handler.chat_log = chat_log_builder.build()?;
@@ -365,7 +352,6 @@ impl Irc {
 /// Set up a reward loop.
 fn currency_loop<'a>(
     futures: &mut utils::Futures,
-    db: db::Database,
     twitch: api::Twitch,
     channel: Arc<twitch::Channel>,
     sender: Sender,
@@ -397,7 +383,10 @@ fn currency_loop<'a>(
     let (mut mysql_schema_stream, mysql_schema) =
         settings.stream("currency/mysql/schema").or_default()?;
 
-    let mut builder = CurrencyBuilder::new(db.clone(), twitch.clone(), mysql_schema);
+    let (mut db_stream, db) = injector.stream::<db::Database>();
+
+    let mut builder = CurrencyBuilder::new(twitch.clone(), mysql_schema);
+    builder.db = db;
     builder.ty = ty;
     builder.enabled = enabled;
     builder.command_enabled = command_enabled;
@@ -434,6 +423,10 @@ fn currency_loop<'a>(
                 }
                 update = notify_rewards_stream.select_next_some() => {
                     notify_rewards = update;
+                }
+                update = db_stream.select_next_some() => {
+                    builder.db = update;
+                    currency = build(injector, &builder);
                 }
                 enabled = enabled_stream.select_next_some() => {
                     builder.enabled = enabled;
@@ -502,13 +495,13 @@ struct Handler<'a> {
     /// Whitelisted hosts for links.
     whitelisted_hosts: HashSet<String>,
     /// All registered commands.
-    commands: &'a db::Commands,
+    commands: Option<db::Commands>,
     /// Bad words.
     bad_words: &'a db::Words,
     /// For sending notifications.
     global_bus: &'a Arc<bus::Bus<bus::Global>>,
     /// Aliases.
-    aliases: &'a db::Aliases,
+    aliases: Option<db::Aliases>,
     /// Configured API URL.
     api_url: Option<String>,
     /// Thread pool used for driving futures.
@@ -534,7 +527,7 @@ struct Handler<'a> {
     /// Active scope cooldowns.
     scope_cooldowns: HashMap<Scope, Cooldown>,
     /// Handler for currencies.
-    currency_handler: currency_admin::Handler<'a>,
+    currency_handler: currency_admin::Handler,
     bad_words_enabled: Arc<RwLock<bool>>,
     url_whitelist_enabled: Arc<RwLock<bool>>,
     /// A hook that can be installed to peek at all incoming messages.
@@ -550,7 +543,7 @@ pub async fn process_command<'a, 'b: 'a>(
     command: &'a str,
     ctx: command::Context<'a>,
     global_bus: &'a Arc<bus::Bus<bus::Global>>,
-    currency_handler: &'a mut currency_admin::Handler<'b>,
+    currency_handler: &'a mut currency_admin::Handler,
     handlers: &'a mut module::Handlers<'b>,
 ) -> Result<(), Error> {
     match command {
@@ -745,29 +738,35 @@ impl<'a> Handler<'a> {
                 }
 
                 let mut it = utils::Words::new(message);
+                // NB: declared here to be in scope.
+                let a;
 
-                // NB: needs to store locally to maintain a reference to it.
-                let a = self.aliases.lookup(user.target(), it.clone());
+                if let Some(aliases) = self.aliases.as_ref() {
+                    // NB: needs to store locally to maintain a reference to it.
+                    a = aliases.lookup(user.target(), it.clone());
 
-                if let Some(a) = &a {
-                    it = utils::Words::new(a.as_str());
+                    if let Some(a) = &a {
+                        it = utils::Words::new(a.as_str());
+                    }
                 }
 
                 if let Some(command) = it.next() {
-                    if let Some(command) = self.commands.get(user.target(), &command) {
-                        if command.has_var("count") {
-                            self.commands.increment(&*command)?;
+                    if let Some(commands) = self.commands.as_ref() {
+                        if let Some(command) = commands.get(user.target(), &command) {
+                            if command.has_var("count") {
+                                commands.increment(&*command)?;
+                            }
+
+                            let vars = CommandVars {
+                                name: user.display_name(),
+                                target: user.target(),
+                                count: command.count(),
+                                rest: it.rest(),
+                            };
+
+                            let response = command.render(&vars)?;
+                            self.sender.privmsg(response);
                         }
-
-                        let vars = CommandVars {
-                            name: user.display_name(),
-                            target: user.target(),
-                            count: command.count(),
-                            rest: it.rest(),
-                        };
-
-                        let response = command.render(&vars)?;
-                        self.sender.privmsg(response);
                     }
 
                     if command.starts_with('!') {
