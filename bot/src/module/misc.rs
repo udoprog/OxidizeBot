@@ -113,9 +113,7 @@ impl command::Handler for Title<'_> {
                 let future = async move {
                     let mut request = api::twitch::UpdateChannelRequest::default();
                     request.channel.status = Some(title);
-                    twitch
-                        .update_channel(&user.streamer().name, request)
-                        .await?;
+                    twitch.update_channel(&user.streamer().id, request).await?;
                     stream_info
                         .refresh_channel(&twitch, user.streamer())
                         .await?;
