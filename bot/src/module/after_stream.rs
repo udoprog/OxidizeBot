@@ -9,42 +9,38 @@ pub struct AfterStream {
     pub after_streams: Arc<RwLock<Option<db::AfterStreams>>>,
 }
 
+#[async_trait]
 impl command::Handler for AfterStream {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::AfterStream)
     }
 
-    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
-        &'slf mut self,
-        ctx: command::Context<'ctx>,
-    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
-        Box::pin(async move {
-            if !*self.enabled.read() {
-                return Ok(());
-            }
+    async fn handle<'ctx>(&mut self, ctx: command::Context<'ctx>) -> Result<(), failure::Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
 
-            let after_streams = match self.after_streams.read().clone() {
-                Some(after_streams) => after_streams,
-                None => return Ok(()),
-            };
+        let after_streams = match self.after_streams.read().clone() {
+            Some(after_streams) => after_streams,
+            None => return Ok(()),
+        };
 
-            if !self.cooldown.write().is_open() {
-                ctx.respond("An afterstream was already created recently.");
-                return Ok(());
-            }
+        if !self.cooldown.write().is_open() {
+            ctx.respond("An afterstream was already created recently.");
+            return Ok(());
+        }
 
-            if ctx.rest().trim().is_empty() {
-                ctx.respond(
-                    "You add a reminder by calling !afterstream <reminder>, \
-                     like \"!afterstream remember that you are awesome <3\"",
-                );
-                return Ok(());
-            }
+        if ctx.rest().trim().is_empty() {
+            ctx.respond(
+                "You add a reminder by calling !afterstream <reminder>, \
+                 like \"!afterstream remember that you are awesome <3\"",
+            );
+            return Ok(());
+        }
 
-            after_streams.push(ctx.user.target(), ctx.user.name(), ctx.rest())?;
-            ctx.respond("Reminder added.");
-            Ok(())
-        })
+        after_streams.push(ctx.user.target(), ctx.user.name(), ctx.rest())?;
+        ctx.respond("Reminder added.");
+        Ok(())
     }
 }
 

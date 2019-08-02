@@ -47,105 +47,101 @@ pub struct Weather {
     api: Arc<RwLock<Option<OpenWeatherMap>>>,
 }
 
+#[async_trait]
 impl command::Handler for Weather {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::Weather)
     }
 
-    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
-        &'slf mut self,
-        mut ctx: command::Context<'ctx>,
-    ) -> future::BoxFuture<'a, Result<(), Error>> {
-        Box::pin(async move {
-            if !*self.enabled.read() {
-                return Ok(());
-            }
-
-            match ctx.next().as_ref().map(String::as_str) {
-                Some("current") => {
-                    let api = match self.api.read().clone() {
-                        Some(api) => api,
-                        None => {
-                            ctx.respond("API not configured");
-                            return Ok(());
-                        }
-                    };
-
-                    let loc = match ctx.rest() {
-                        "" => None,
-                        rest => Some(rest.to_string()),
-                    };
-
-                    let loc = match loc.or_else(|| self.location.read().clone()) {
-                        Some(loc) => loc,
-                        None => {
-                            ctx.respond("Must specify <location>");
-                            return Ok(());
-                        }
-                    };
-
-                    let user = ctx.user.clone();
-                    let user2 = user.clone();
-                    let temperature_unit = *self.temperature_unit.read();
-
-                    let future = async move {
-                        let current = api.current(loc.clone()).await?;
-
-                        let current = match current {
-                            Some(current) => current,
-                            None => {
-                                user.respond(format!("Could not find location `{}`", loc));
-                                return Ok(());
-                            }
-                        };
-
-                        let mut parts = Vec::with_capacity(4);
-
-                        let t = ThermodynamicTemperature::new::<kelvin>(current.main.temp);
-
-                        parts.push(temperature_unit.with(t));
-
-                        for w in current.weather {
-                            parts.push(w.to_string());
-                        }
-
-                        if let Some(rain) = current.rain {
-                            parts.extend(match (rain._1h, rain._3h) {
-                                (Some(m), _) => Some(format!("raining {:.0}mm/h", m)),
-                                (_, Some(m)) => Some(format!("raining {:.0}mm/3h", m)),
-                                _ => None,
-                            });
-                        }
-
-                        if let Some(snow) = current.snow {
-                            parts.extend(match (snow._1h, snow._3h) {
-                                (Some(m), _) => Some(format!("snowing {:.0}mm/h", m)),
-                                (_, Some(m)) => Some(format!("snowing {:.0}mm/3h", m)),
-                                _ => None,
-                            });
-                        }
-
-                        user.respond(format!("{} -> {}.", current.name, parts.join(", ")));
-                        Ok::<(), Error>(())
-                    };
-
-                    ctx.spawn(async move {
-                        match future.await {
-                            Ok(()) => (),
-                            Err(e) => {
-                                user2.respond("Failed to get current weather");
-                                log_err!(e, "Failed to get current weather");
-                            }
-                        }
-                    });
-                }
-                _ => {
-                    ctx.respond("Expected: current.");
-                }
-            }
-
+    async fn handle<'ctx>(&mut self, mut ctx: command::Context<'ctx>) -> Result<(), Error> {
+        if !*self.enabled.read() {
             return Ok(());
-        })
+        }
+
+        match ctx.next().as_ref().map(String::as_str) {
+            Some("current") => {
+                let api = match self.api.read().clone() {
+                    Some(api) => api,
+                    None => {
+                        ctx.respond("API not configured");
+                        return Ok(());
+                    }
+                };
+
+                let loc = match ctx.rest() {
+                    "" => None,
+                    rest => Some(rest.to_string()),
+                };
+
+                let loc = match loc.or_else(|| self.location.read().clone()) {
+                    Some(loc) => loc,
+                    None => {
+                        ctx.respond("Must specify <location>");
+                        return Ok(());
+                    }
+                };
+
+                let user = ctx.user.clone();
+                let user2 = user.clone();
+                let temperature_unit = *self.temperature_unit.read();
+
+                let future = async move {
+                    let current = api.current(loc.clone()).await?;
+
+                    let current = match current {
+                        Some(current) => current,
+                        None => {
+                            user.respond(format!("Could not find location `{}`", loc));
+                            return Ok(());
+                        }
+                    };
+
+                    let mut parts = Vec::with_capacity(4);
+
+                    let t = ThermodynamicTemperature::new::<kelvin>(current.main.temp);
+
+                    parts.push(temperature_unit.with(t));
+
+                    for w in current.weather {
+                        parts.push(w.to_string());
+                    }
+
+                    if let Some(rain) = current.rain {
+                        parts.extend(match (rain._1h, rain._3h) {
+                            (Some(m), _) => Some(format!("raining {:.0}mm/h", m)),
+                            (_, Some(m)) => Some(format!("raining {:.0}mm/3h", m)),
+                            _ => None,
+                        });
+                    }
+
+                    if let Some(snow) = current.snow {
+                        parts.extend(match (snow._1h, snow._3h) {
+                            (Some(m), _) => Some(format!("snowing {:.0}mm/h", m)),
+                            (_, Some(m)) => Some(format!("snowing {:.0}mm/3h", m)),
+                            _ => None,
+                        });
+                    }
+
+                    user.respond(format!("{} -> {}.", current.name, parts.join(", ")));
+                    Ok::<(), Error>(())
+                };
+
+                ctx.spawn(async move {
+                    match future.await {
+                        Ok(()) => (),
+                        Err(e) => {
+                            user2.respond("Failed to get current weather");
+                            log_err!(e, "Failed to get current weather");
+                        }
+                    }
+                });
+            }
+            _ => {
+                ctx.respond("Expected: current.");
+            }
+        }
+
+        Ok(())
     }
 }
 

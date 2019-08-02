@@ -510,34 +510,30 @@ impl Speedrun {
     }
 }
 
+#[async_trait]
 impl command::Handler for Speedrun {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::Speedrun)
     }
 
-    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
-        &'slf mut self,
-        mut ctx: command::Context<'ctx>,
-    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
-        Box::pin(async move {
-            if !*self.enabled.read() {
-                return Ok(());
-            }
+    async fn handle<'ctx>(&mut self, mut ctx: command::Context<'ctx>) -> Result<(), Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
 
-            match ctx.next().as_ref().map(String::as_str) {
-                Some("personal-bests") => {
-                    self.query_personal_bests(ctx)?;
-                }
-                Some("record") | Some("game") => {
-                    self.query_game(ctx)?;
-                }
-                _ => {
-                    ctx.respond("Expected argument: record, personal-bests.");
-                }
+        match ctx.next().as_ref().map(String::as_str) {
+            Some("personal-bests") => {
+                self.query_personal_bests(ctx)?;
             }
+            Some("record") | Some("game") => {
+                self.query_game(ctx)?;
+            }
+            _ => {
+                ctx.respond("Expected argument: record, personal-bests.");
+            }
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 }
 

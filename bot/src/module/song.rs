@@ -307,117 +307,117 @@ impl Handler {
     }
 }
 
+#[async_trait]
 impl command::Handler for Handler {
     fn scope(&self) -> Option<Scope> {
         Some(Scope::Song)
     }
 
-    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
-        &'slf mut self,
+    async fn handle<'ctx>(
+        &mut self,
         mut ctx: command::Context<'ctx>,
-    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
-        Box::pin(async move {
-            if !*self.enabled.read() {
+    ) -> Result<(), failure::Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
+        let player = match self.player.read().as_ref() {
+            Some(player) => player.clone(),
+            None => {
+                ctx.respond("No player configured");
                 return Ok(());
             }
+        };
 
-            let player = match self.player.read().as_ref() {
-                Some(player) => player.clone(),
-                None => {
-                    ctx.respond("No player configured");
+        match ctx.next().as_ref().map(String::as_str) {
+            Some("theme") => {
+                ctx.check_scope(Scope::SongTheme)?;
+                let name = ctx_try!(ctx.next_str("<name>")).to_string();
+
+                let player = player.clone();
+                let user = ctx.user.clone();
+
+                ctx.spawn(async move {
+                    match player.play_theme(user.target(), name.as_str()).await {
+                        Ok(()) => (),
+                        Err(PlayThemeError::NoSuchTheme) => {
+                            user.respond("No such theme :(");
+                        }
+                        Err(PlayThemeError::NotConfigured) => {
+                            user.respond("Theme system is not configured :(");
+                        }
+                        Err(PlayThemeError::Error(e)) => {
+                            user.respond("There was a problem playing that theme :(");
+                            log_err!(e, "failed to add song");
+                        }
+                    }
+                });
+            }
+            Some("promote") => {
+                ctx.check_scope(Scope::SongEditQueue)?;
+
+                let index = match ctx.next().and_then(|n| parse_queue_position(&ctx.user, &n)) {
+                    Some(index) => index,
+                    None => return Ok(()),
+                };
+
+                if let Some(item) = player.promote_song(ctx.user.name(), index) {
+                    ctx.respond(format!("Promoted song to head of queue: {}", item.what()));
+                } else {
+                    ctx.respond("No such song to promote");
+                }
+            }
+            Some("close") => {
+                ctx.check_scope(Scope::SongEditQueue)?;
+
+                player.close(match ctx.rest() {
+                    "" => None,
+                    other => Some(other.to_string()),
+                });
+                ctx.respond("Closed player from further requests.");
+            }
+            Some("open") => {
+                ctx.check_scope(Scope::SongEditQueue)?;
+
+                player.open();
+                ctx.respond("Opened player for requests.");
+            }
+            Some("list") => {
+                if let Some(api_url) = ctx.api_url {
+                    ctx.respond(format!(
+                        "You can find the queue at {}/player/{}",
+                        api_url,
+                        ctx.user.streamer().name
+                    ));
                     return Ok(());
                 }
-            };
 
-            match ctx.next().as_ref().map(String::as_str) {
-                Some("theme") => {
-                    ctx.check_scope(Scope::SongTheme)?;
-                    let name = ctx_try!(ctx.next_str("<name>")).to_string();
+                let mut limit = 3usize;
 
-                    let player = player.clone();
-                    let user = ctx.user.clone();
+                if let Some(n) = ctx.next() {
+                    ctx.check_scope(Scope::SongListLimit)?;
 
-                    ctx.spawn(async move {
-                        match player.play_theme(user.target(), name.as_str()).await {
-                            Ok(()) => (),
-                            Err(PlayThemeError::NoSuchTheme) => {
-                                user.respond("No such theme :(");
-                            }
-                            Err(PlayThemeError::NotConfigured) => {
-                                user.respond("Theme system is not configured :(");
-                            }
-                            Err(PlayThemeError::Error(e)) => {
-                                user.respond("There was a problem playing that theme :(");
-                                log_err!(e, "failed to add song");
-                            }
-                        }
-                    });
-                }
-                Some("promote") => {
-                    ctx.check_scope(Scope::SongEditQueue)?;
-
-                    let index = match ctx.next().and_then(|n| parse_queue_position(&ctx.user, &n)) {
-                        Some(index) => index,
-                        None => return Ok(()),
-                    };
-
-                    if let Some(item) = player.promote_song(ctx.user.name(), index) {
-                        ctx.respond(format!("Promoted song to head of queue: {}", item.what()));
-                    } else {
-                        ctx.respond("No such song to promote");
+                    if let Ok(n) = str::parse(&n) {
+                        limit = n;
                     }
                 }
-                Some("close") => {
-                    ctx.check_scope(Scope::SongEditQueue)?;
 
-                    player.close(match ctx.rest() {
-                        "" => None,
-                        other => Some(other.to_string()),
-                    });
-                    ctx.respond("Closed player from further requests.");
-                }
-                Some("open") => {
-                    ctx.check_scope(Scope::SongEditQueue)?;
+                let items = player.list();
 
-                    player.open();
-                    ctx.respond("Opened player for requests.");
-                }
-                Some("list") => {
-                    if let Some(api_url) = ctx.api_url {
+                let has_more = match items.len() > limit {
+                    true => Some(items.len() - limit),
+                    false => None,
+                };
+
+                display_songs(&ctx.user, has_more, items.iter().take(limit).cloned());
+            }
+            Some("current") => match player.current() {
+                Some(current) => {
+                    let elapsed = utils::digital_duration(&current.elapsed());
+                    let duration = utils::digital_duration(&current.duration());
+
+                    if let Some(name) = current.item.user.as_ref() {
                         ctx.respond(format!(
-                            "You can find the queue at {}/player/{}",
-                            api_url,
-                            ctx.user.streamer().name
-                        ));
-                        return Ok(());
-                    }
-
-                    let mut limit = 3usize;
-
-                    if let Some(n) = ctx.next() {
-                        ctx.check_scope(Scope::SongListLimit)?;
-
-                        if let Ok(n) = str::parse(&n) {
-                            limit = n;
-                        }
-                    }
-
-                    let items = player.list();
-
-                    let has_more = match items.len() > limit {
-                        true => Some(items.len() - limit),
-                        false => None,
-                    };
-
-                    display_songs(&ctx.user, has_more, items.iter().take(limit).cloned());
-                }
-                Some("current") => match player.current() {
-                    Some(current) => {
-                        let elapsed = utils::digital_duration(&current.elapsed());
-                        let duration = utils::digital_duration(&current.duration());
-
-                        if let Some(name) = current.item.user.as_ref() {
-                            ctx.respond(format!(
                             "Current song: {}, requested by {} - {elapsed} / {duration} - {url}",
                             current.item.what(),
                             name,
@@ -425,233 +425,227 @@ impl command::Handler for Handler {
                             duration = duration,
                             url = current.item.track_id.url(),
                         ));
+                    } else {
+                        ctx.respond(format!(
+                            "Current song: {} - {elapsed} / {duration} - {url}",
+                            current.item.what(),
+                            elapsed = elapsed,
+                            duration = duration,
+                            url = current.item.track_id.url(),
+                        ));
+                    }
+                }
+                None => {
+                    ctx.respond("No song :(");
+                }
+            },
+            Some("purge") => {
+                ctx.check_scope(Scope::SongEditQueue)?;
+
+                player.purge()?;
+                ctx.respond("Song queue purged.");
+            }
+            // print when your next song will play.
+            Some("when") => {
+                let user = ctx.next();
+
+                let (your, user) = match &user {
+                    Some(user) => (false, user.as_str()),
+                    None => (true, ctx.user.name()),
+                };
+
+                let user = user.to_lowercase();
+
+                match player.find(|item| item.user.as_ref().map(|u| *u == user).unwrap_or_default())
+                {
+                    Some((when, ref item)) if when.as_secs() == 0 => {
+                        if your {
+                            ctx.respond("Your song is currently playing cmonBruh");
                         } else {
                             ctx.respond(format!(
-                                "Current song: {} - {elapsed} / {duration} - {url}",
-                                current.item.what(),
-                                elapsed = elapsed,
-                                duration = duration,
-                                url = current.item.track_id.url(),
+                                "{}'s song {} is currently playing",
+                                user,
+                                item.what()
+                            ));
+                        }
+                    }
+                    Some((when, item)) => {
+                        let when = utils::compact_duration(&when);
+
+                        if your {
+                            ctx.respond(format!("Your song {} will play in {}", item.what(), when));
+                        } else {
+                            ctx.respond(format!(
+                                "{}'s song {} will play in {}",
+                                user,
+                                item.what(),
+                                when
                             ));
                         }
                     }
                     None => {
-                        ctx.respond("No song :(");
-                    }
-                },
-                Some("purge") => {
-                    ctx.check_scope(Scope::SongEditQueue)?;
-
-                    player.purge()?;
-                    ctx.respond("Song queue purged.");
-                }
-                // print when your next song will play.
-                Some("when") => {
-                    let user = ctx.next();
-
-                    let (your, user) = match &user {
-                        Some(user) => (false, user.as_str()),
-                        None => (true, ctx.user.name()),
-                    };
-
-                    let user = user.to_lowercase();
-
-                    match player
-                        .find(|item| item.user.as_ref().map(|u| *u == user).unwrap_or_default())
-                    {
-                        Some((when, ref item)) if when.as_secs() == 0 => {
-                            if your {
-                                ctx.respond("Your song is currently playing cmonBruh");
-                            } else {
-                                ctx.respond(format!(
-                                    "{}'s song {} is currently playing",
-                                    user,
-                                    item.what()
-                                ));
-                            }
-                        }
-                        Some((when, item)) => {
-                            let when = utils::compact_duration(&when);
-
-                            if your {
-                                ctx.respond(format!(
-                                    "Your song {} will play in {}",
-                                    item.what(),
-                                    when
-                                ));
-                            } else {
-                                ctx.respond(format!(
-                                    "{}'s song {} will play in {}",
-                                    user,
-                                    item.what(),
-                                    when
-                                ));
-                            }
-                        }
-                        None => {
-                            if your {
-                                ctx.respond("You don't have any songs in queue :(");
-                            } else {
-                                ctx.respond(format!("{} doesn't have any songs in queue :(", user));
-                            }
+                        if your {
+                            ctx.respond("You don't have any songs in queue :(");
+                        } else {
+                            ctx.respond(format!("{} doesn't have any songs in queue :(", user));
                         }
                     }
-                }
-                Some("delete") => {
-                    let removed = match ctx.next().as_ref().map(String::as_str) {
-                        Some("last") => match ctx.next() {
-                            Some(last_user) => {
-                                let last_user = last_user.to_lowercase();
-                                ctx.check_scope(Scope::SongEditQueue)?;
-                                player.remove_last_by_user(&last_user)?
-                            }
-                            None => {
-                                ctx.check_scope(Scope::SongEditQueue)?;
-                                player.remove_last()?
-                            }
-                        },
-                        Some("mine") => player.remove_last_by_user(ctx.user.name())?,
-                        Some(n) => {
-                            ctx.check_scope(Scope::SongEditQueue)?;
-
-                            let n = match parse_queue_position(&ctx.user, n) {
-                                Some(n) => n,
-                                None => return Ok(()),
-                            };
-
-                            player.remove_at(n)?
-                        }
-                        None => {
-                            ctx.respond(format!("Expected: last, last <user>, or mine"));
-                            return Ok(());
-                        }
-                    };
-
-                    match removed {
-                        None => ctx.respond("No song removed, sorry :("),
-                        Some(item) => ctx.respond(format!("Removed: {}!", item.what())),
-                    }
-                }
-                Some("volume") => {
-                    match ctx.next().as_ref().map(String::as_str) {
-                        // setting volume
-                        Some(other) => {
-                            ctx.check_scope(Scope::SongVolume)?;
-
-                            let (diff, argument) = match other.chars().next() {
-                                Some('+') => (Some(true), &other[1..]),
-                                Some('-') => (Some(false), &other[1..]),
-                                _ => (None, other),
-                            };
-
-                            let argument = match str::parse::<u32>(argument) {
-                                Ok(argument) => argument,
-                                Err(_) => {
-                                    ctx.respond("expected whole number argument");
-                                    return Ok(());
-                                }
-                            };
-
-                            let volume = match diff {
-                                Some(true) => player::ModifyVolume::Increase(argument),
-                                Some(false) => player::ModifyVolume::Decrease(argument),
-                                None => player::ModifyVolume::Set(argument),
-                            };
-
-                            match player.volume(volume)? {
-                                Some(volume) => {
-                                    ctx.respond(format!("Updated volume to {}.", volume));
-                                }
-                                None => {
-                                    ctx.respond("Cannot update volume");
-                                }
-                            }
-                        }
-                        // reading volume
-                        None => match player.current_volume() {
-                            Some(volume) => {
-                                ctx.respond(format!("Current volume: {}.", volume));
-                            }
-                            None => {
-                                ctx.respond("No active player");
-                            }
-                        },
-                    }
-                }
-                Some("skip") => {
-                    ctx.check_scope(Scope::SongPlaybackControl)?;
-                    player.skip()?;
-                }
-                Some("request") => {
-                    self.handle_request(ctx, player)?;
-                }
-                Some("toggle") => {
-                    ctx.check_scope(Scope::SongPlaybackControl)?;
-                    player.toggle()?;
-                }
-                Some("play") => {
-                    ctx.check_scope(Scope::SongPlaybackControl)?;
-                    player.play()?;
-                }
-                Some("pause") => {
-                    ctx.check_scope(Scope::SongPlaybackControl)?;
-                    player.pause()?;
-                }
-                Some("length") => {
-                    let (count, duration) = player.length();
-
-                    match count {
-                        0 => ctx.respond("No songs in queue :("),
-                        1 => {
-                            let length = utils::long_duration(&duration);
-                            ctx.respond(format!("One song in queue with {} of play time.", length));
-                        }
-                        count => {
-                            let length = utils::long_duration(&duration);
-                            ctx.respond(format!(
-                                "{} songs in queue with {} of play time.",
-                                count, length
-                            ));
-                        }
-                    }
-                }
-                _ => {
-                    let mut alts = Vec::new();
-
-                    if ctx.user.has_scope(Scope::SongTheme) {
-                        alts.push("theme");
-                    }
-
-                    if ctx.user.has_scope(Scope::SongEditQueue) {
-                        alts.push("promote");
-                        alts.push("close");
-                        alts.push("open");
-                        alts.push("purge");
-                    }
-
-                    if ctx.user.has_scope(Scope::SongVolume) {
-                        alts.push("volume");
-                    }
-
-                    if ctx.user.has_scope(Scope::SongPlaybackControl) {
-                        alts.push("skip");
-                        alts.push("toggle");
-                        alts.push("play");
-                        alts.push("pause");
-                    }
-
-                    alts.push("list");
-                    alts.push("current");
-                    alts.push("when");
-                    alts.push("delete");
-                    alts.push("request");
-                    alts.push("length");
-                    ctx.respond(format!("Expected argument: {}.", alts.join(", ")));
                 }
             }
+            Some("delete") => {
+                let removed = match ctx.next().as_ref().map(String::as_str) {
+                    Some("last") => match ctx.next() {
+                        Some(last_user) => {
+                            let last_user = last_user.to_lowercase();
+                            ctx.check_scope(Scope::SongEditQueue)?;
+                            player.remove_last_by_user(&last_user)?
+                        }
+                        None => {
+                            ctx.check_scope(Scope::SongEditQueue)?;
+                            player.remove_last()?
+                        }
+                    },
+                    Some("mine") => player.remove_last_by_user(ctx.user.name())?,
+                    Some(n) => {
+                        ctx.check_scope(Scope::SongEditQueue)?;
 
-            Ok(())
-        })
+                        let n = match parse_queue_position(&ctx.user, n) {
+                            Some(n) => n,
+                            None => return Ok(()),
+                        };
+
+                        player.remove_at(n)?
+                    }
+                    None => {
+                        ctx.respond(format!("Expected: last, last <user>, or mine"));
+                        return Ok(());
+                    }
+                };
+
+                match removed {
+                    None => ctx.respond("No song removed, sorry :("),
+                    Some(item) => ctx.respond(format!("Removed: {}!", item.what())),
+                }
+            }
+            Some("volume") => {
+                match ctx.next().as_ref().map(String::as_str) {
+                    // setting volume
+                    Some(other) => {
+                        ctx.check_scope(Scope::SongVolume)?;
+
+                        let (diff, argument) = match other.chars().next() {
+                            Some('+') => (Some(true), &other[1..]),
+                            Some('-') => (Some(false), &other[1..]),
+                            _ => (None, other),
+                        };
+
+                        let argument = match str::parse::<u32>(argument) {
+                            Ok(argument) => argument,
+                            Err(_) => {
+                                ctx.respond("expected whole number argument");
+                                return Ok(());
+                            }
+                        };
+
+                        let volume = match diff {
+                            Some(true) => player::ModifyVolume::Increase(argument),
+                            Some(false) => player::ModifyVolume::Decrease(argument),
+                            None => player::ModifyVolume::Set(argument),
+                        };
+
+                        match player.volume(volume)? {
+                            Some(volume) => {
+                                ctx.respond(format!("Updated volume to {}.", volume));
+                            }
+                            None => {
+                                ctx.respond("Cannot update volume");
+                            }
+                        }
+                    }
+                    // reading volume
+                    None => match player.current_volume() {
+                        Some(volume) => {
+                            ctx.respond(format!("Current volume: {}.", volume));
+                        }
+                        None => {
+                            ctx.respond("No active player");
+                        }
+                    },
+                }
+            }
+            Some("skip") => {
+                ctx.check_scope(Scope::SongPlaybackControl)?;
+                player.skip()?;
+            }
+            Some("request") => {
+                self.handle_request(ctx, player)?;
+            }
+            Some("toggle") => {
+                ctx.check_scope(Scope::SongPlaybackControl)?;
+                player.toggle()?;
+            }
+            Some("play") => {
+                ctx.check_scope(Scope::SongPlaybackControl)?;
+                player.play()?;
+            }
+            Some("pause") => {
+                ctx.check_scope(Scope::SongPlaybackControl)?;
+                player.pause()?;
+            }
+            Some("length") => {
+                let (count, duration) = player.length();
+
+                match count {
+                    0 => ctx.respond("No songs in queue :("),
+                    1 => {
+                        let length = utils::long_duration(&duration);
+                        ctx.respond(format!("One song in queue with {} of play time.", length));
+                    }
+                    count => {
+                        let length = utils::long_duration(&duration);
+                        ctx.respond(format!(
+                            "{} songs in queue with {} of play time.",
+                            count, length
+                        ));
+                    }
+                }
+            }
+            _ => {
+                let mut alts = Vec::new();
+
+                if ctx.user.has_scope(Scope::SongTheme) {
+                    alts.push("theme");
+                }
+
+                if ctx.user.has_scope(Scope::SongEditQueue) {
+                    alts.push("promote");
+                    alts.push("close");
+                    alts.push("open");
+                    alts.push("purge");
+                }
+
+                if ctx.user.has_scope(Scope::SongVolume) {
+                    alts.push("volume");
+                }
+
+                if ctx.user.has_scope(Scope::SongPlaybackControl) {
+                    alts.push("skip");
+                    alts.push("toggle");
+                    alts.push("play");
+                    alts.push("pause");
+                }
+
+                alts.push("list");
+                alts.push("current");
+                alts.push("when");
+                alts.push("delete");
+                alts.push("request");
+                alts.push("length");
+                ctx.respond(format!("Expected argument: {}.", alts.join(", ")));
+            }
+        }
+
+        Ok(())
     }
 }
 

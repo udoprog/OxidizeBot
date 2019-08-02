@@ -871,154 +871,152 @@ impl Handler {
     }
 }
 
+#[async_trait]
 impl command::Handler for Handler {
-    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
-        &'slf mut self,
+    async fn handle<'ctx>(
+        &mut self,
         mut ctx: command::Context<'ctx>,
-    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
-        Box::pin(async move {
-            if !*self.enabled.read() {
+    ) -> Result<(), failure::Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
+        let currency = self.currency.read().as_ref().cloned();
+        let currency = match currency {
+            Some(currency) => currency.clone(),
+            None => {
+                ctx.respond("No currency configured for stream, sorry :(");
+                return Ok(());
+            }
+        };
+
+        let (result, category_cooldown) = match ctx.next().as_ref().map(String::as_str) {
+            Some("other") => {
+                let command = self.handle_other(&mut ctx)?;
+                (command, None)
+            }
+            Some("punish") => {
+                let command = self.handle_punish(&mut ctx)?;
+                let cooldown = self.punish_cooldown.clone();
+                (command, Some(cooldown))
+            }
+            Some("reward") => {
+                let command = self.handle_reward(&mut ctx)?;
+                let cooldown = self.reward_cooldown.clone();
+                (command, Some(cooldown))
+            }
+            _ => {
+                ctx.respond(format!(
+                    "You have the following actions available: \
+                    reward - To reward the streamer, \
+                    punish - To punish the streamer,
+                    other - To do other kinds of modifications.",
+                ));
+
+                return Ok(());
+            }
+        };
+
+        let (command, percentage) = match result {
+            Some((command, percentage)) => (command, percentage),
+            None => return Ok(()),
+        };
+
+        let mut cost = command.cost();
+
+        {
+            let per_command_configs = self.per_command_configs.read();
+
+            if let Some(setting) = per_command_configs.get(command.command_name()) {
+                if !setting.enabled {
+                    return Ok(());
+                }
+
+                if let Some(c) = setting.cost {
+                    cost = c;
+                }
+            }
+        }
+
+        let bypass_cooldown = ctx.user.has_scope(Scope::GtavBypassCooldown);
+
+        if !bypass_cooldown {
+            if let Some((what, remaining)) = self.check_cooldown(&ctx, &command, category_cooldown)
+            {
+                ctx.respond(format!(
+                    "{} cooldown in effect, please wait at least {}!",
+                    what,
+                    compact_duration(&remaining),
+                ));
+
+                return Ok(());
+            }
+        }
+
+        let id = self.id_counter;
+        self.id_counter += 1;
+
+        let cost = cost * percentage / 100;
+        let user = ctx.user.clone();
+        let sender = ctx.sender.clone();
+        let prefix = self.prefix.read().clone();
+        let success_feedback = self.success_feedback.clone();
+        let tx = self.tx.clone();
+
+        let future = async move {
+            let balance = currency
+                .balance_of(user.target(), user.name())
+                .await?
+                .unwrap_or_default();
+
+            let balance = if balance < 0 { 0u32 } else { balance as u32 };
+
+            if balance < cost {
+                user.respond(format!(
+                    "{prefix}\
+                     You need at least {limit} {currency} to reward the streamer, \
+                     you currently have {balance} {currency}. \
+                     Keep watching to earn more!",
+                    prefix = prefix,
+                    limit = cost,
+                    currency = currency.name,
+                    balance = balance,
+                ));
+
                 return Ok(());
             }
 
-            let currency = self.currency.read().as_ref().cloned();
-            let currency = match currency {
-                Some(currency) => currency.clone(),
-                None => {
-                    ctx.respond("No currency configured for stream, sorry :(");
-                    return Ok(());
-                }
-            };
+            currency
+                .balance_add(user.target(), user.name(), -(cost as i64))
+                .await?;
 
-            let (result, category_cooldown) = match ctx.next().as_ref().map(String::as_str) {
-                Some("other") => {
-                    let command = self.handle_other(&mut ctx)?;
-                    (command, None)
-                }
-                Some("punish") => {
-                    let command = self.handle_punish(&mut ctx)?;
-                    let cooldown = self.punish_cooldown.clone();
-                    (command, Some(cooldown))
-                }
-                Some("reward") => {
-                    let command = self.handle_reward(&mut ctx)?;
-                    let cooldown = self.reward_cooldown.clone();
-                    (command, Some(cooldown))
-                }
-                _ => {
-                    ctx.respond(format!(
-                        "You have the following actions available: \
-                        reward - To reward the streamer, \
-                        punish - To punish the streamer,
-                        other - To do other kinds of modifications.",
-                    ));
-
-                    return Ok(());
-                }
-            };
-
-            let (command, percentage) = match result {
-                Some((command, percentage)) => (command, percentage),
-                None => return Ok(()),
-            };
-
-            let mut cost = command.cost();
-
-            {
-                let per_command_configs = self.per_command_configs.read();
-
-                if let Some(setting) = per_command_configs.get(command.command_name()) {
-                    if !setting.enabled {
-                        return Ok(());
-                    }
-
-                    if let Some(c) = setting.cost {
-                        cost = c;
-                    }
-                }
+            if *success_feedback.read() {
+                sender.privmsg(format!(
+                    "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
+                    prefix = prefix,
+                    user = user.display_name(),
+                    what = command.what(),
+                    command = command,
+                    cost = cost,
+                    currency = currency.name,
+                ));
             }
 
-            let bypass_cooldown = ctx.user.has_scope(Scope::GtavBypassCooldown);
-
-            if !bypass_cooldown {
-                if let Some((what, remaining)) =
-                    self.check_cooldown(&ctx, &command, category_cooldown)
-                {
-                    ctx.respond(format!(
-                        "{} cooldown in effect, please wait at least {}!",
-                        what,
-                        compact_duration(&remaining),
-                    ));
-
-                    return Ok(());
-                }
+            if let Err(_) = tx.unbounded_send((user, id, command)) {
+                bail!("failed to send event");
             }
-
-            let id = self.id_counter;
-            self.id_counter += 1;
-
-            let cost = cost * percentage / 100;
-            let user = ctx.user.clone();
-            let sender = ctx.sender.clone();
-            let prefix = self.prefix.read().clone();
-            let success_feedback = self.success_feedback.clone();
-            let tx = self.tx.clone();
-
-            let future = async move {
-                let balance = currency
-                    .balance_of(user.target(), user.name())
-                    .await?
-                    .unwrap_or_default();
-
-                let balance = if balance < 0 { 0u32 } else { balance as u32 };
-
-                if balance < cost {
-                    user.respond(format!(
-                        "{prefix}\
-                         You need at least {limit} {currency} to reward the streamer, \
-                         you currently have {balance} {currency}. \
-                         Keep watching to earn more!",
-                        prefix = prefix,
-                        limit = cost,
-                        currency = currency.name,
-                        balance = balance,
-                    ));
-
-                    return Ok(());
-                }
-
-                currency
-                    .balance_add(user.target(), user.name(), -(cost as i64))
-                    .await?;
-
-                if *success_feedback.read() {
-                    sender.privmsg(format!(
-                        "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
-                        prefix = prefix,
-                        user = user.display_name(),
-                        what = command.what(),
-                        command = command,
-                        cost = cost,
-                        currency = currency.name,
-                    ));
-                }
-
-                if let Err(_) = tx.unbounded_send((user, id, command)) {
-                    bail!("failed to send event");
-                }
-
-                Ok(())
-            };
-
-            ctx.spawn(future.map(|result| match result {
-                Ok(()) => (),
-                Err(e) => {
-                    log_err!(e, "failed to modify balance of user");
-                }
-            }));
 
             Ok(())
-        })
+        };
+
+        ctx.spawn(future.map(|result| match result {
+            Ok(()) => (),
+            Err(e) => {
+                log_err!(e, "failed to modify balance of user");
+            }
+        }));
+
+        Ok(())
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::{auth, command, currency::Currency, module, prelude::*, stream_info, utils};
 use chrono::{DateTime, Utc};
+use failure::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -48,115 +49,111 @@ impl Handler {
     }
 }
 
+#[async_trait]
 impl command::Handler for Handler {
-    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
-        &'slf mut self,
-        mut ctx: command::Context<'ctx>,
-    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
-        Box::pin(async move {
-            if !*self.enabled.read() {
+    async fn handle<'ctx>(&mut self, mut ctx: command::Context<'ctx>) -> Result<(), Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
+        let currency = self.currency.read().as_ref().cloned();
+        let currency = match currency {
+            Some(currency) => currency,
+            None => {
+                ctx.respond("No currency configured for stream, sorry :(");
                 return Ok(());
             }
+        };
 
-            let currency = self.currency.read().as_ref().cloned();
-            let currency = match currency {
-                Some(currency) => currency,
-                None => {
-                    ctx.respond("No currency configured for stream, sorry :(");
-                    return Ok(());
-                }
-            };
+        if !self.cooldown.write().is_open() {
+            ctx.respond("A !water command was recently issued, please wait a bit longer!");
+            return Ok(());
+        }
 
-            if !self.cooldown.write().is_open() {
-                ctx.respond("A !water command was recently issued, please wait a bit longer!");
-                return Ok(());
+        let a = ctx.next();
+
+        match a.as_ref().map(String::as_str) {
+            Some("undo") => {
+                ctx.check_scope(auth::Scope::WaterUndo)?;
+
+                let (_, reward) = match self.check_waters(&mut ctx) {
+                    Some(water) => water,
+                    None => return Ok(()),
+                };
+
+                self.waters.pop();
+
+                let reward = match reward {
+                    Some(reward) => reward,
+                    None => {
+                        ctx.respond("No one has been rewarded for !water yet cmonBruh");
+                        return Ok(());
+                    }
+                };
+
+                ctx.privmsg(format!(
+                    "{user} issued a bad !water that is now being undone FeelsBadMan",
+                    user = reward.user
+                ));
+
+                let user = ctx.user.clone();
+
+                ctx.spawn(async move {
+                    let op = currency.balance_add(user.target(), &reward.user, -reward.amount);
+
+                    match op.await {
+                        Ok(()) => (),
+                        Err(e) => {
+                            log::error!("failed to undo water from database: {}", e);
+                        }
+                    }
+                });
             }
+            None => {
+                let (last, _) = match self.check_waters(&mut ctx) {
+                    Some(water) => water,
+                    None => return Ok(()),
+                };
 
-            let a = ctx.next();
+                let now = Utc::now();
+                let diff = now.clone() - last;
+                let amount = i64::max(0i64, diff.num_minutes());
+                let amount = (amount * *self.reward_multiplier.read() as i64) / 100i64;
 
-            match a.as_ref().map(String::as_str) {
-                Some("undo") => {
-                    ctx.check_scope(auth::Scope::WaterUndo)?;
+                self.waters.push((
+                    now,
+                    Some(Reward {
+                        user: ctx.user.name().to_string(),
+                        amount,
+                    }),
+                ));
 
-                    let (_, reward) = match self.check_waters(&mut ctx) {
-                        Some(water) => water,
-                        None => return Ok(()),
-                    };
+                ctx.respond(format!(
+                    "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.", streamer = ctx.user.streamer().display_name,
+                    user = ctx.user.display_name(),
+                    amount = amount,
+                    currency = currency.name
+                ));
 
-                    self.waters.pop();
+                let user = ctx.user.clone();
 
-                    let reward = match reward {
-                        Some(reward) => reward,
-                        None => {
-                            ctx.respond("No one has been rewarded for !water yet cmonBruh");
-                            return Ok(());
+                ctx.spawn(async move {
+                    let op = currency.balance_add(user.target(), user.name(), amount);
+
+                    match op.await {
+                        Ok(()) => (),
+                        Err(e) => {
+                            log::error!("failed to undo water from database: {}", e);
                         }
-                    };
-
-                    ctx.privmsg(format!(
-                        "{user} issued a bad !water that is now being undone FeelsBadMan",
-                        user = reward.user
-                    ));
-
-                    let user = ctx.user.clone();
-
-                    ctx.spawn(async move {
-                        let op = currency.balance_add(user.target(), &reward.user, -reward.amount);
-
-                        match op.await {
-                            Ok(()) => (),
-                            Err(e) => {
-                                log::error!("failed to undo water from database: {}", e);
-                            }
-                        }
-                    });
-                }
-                None => {
-                    let (last, _) = match self.check_waters(&mut ctx) {
-                        Some(water) => water,
-                        None => return Ok(()),
-                    };
-
-                    let now = Utc::now();
-                    let diff = now.clone() - last;
-                    let amount = i64::max(0i64, diff.num_minutes());
-                    let amount = (amount * *self.reward_multiplier.read() as i64) / 100i64;
-
-                    self.waters.push((
-                        now,
-                        Some(Reward {
-                            user: ctx.user.name().to_string(),
-                            amount,
-                        }),
-                    ));
-
-                    ctx.respond(format!(
-                        "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.", streamer = ctx.user.streamer().display_name,
-                        user = ctx.user.display_name(),
-                        amount = amount,
-                        currency = currency.name
-                    ));
-
-                    let user = ctx.user.clone();
-
-                    ctx.spawn(async move {
-                        let op = currency.balance_add(user.target(), user.name(), amount);
-
-                        match op.await {
-                            Ok(()) => (),
-                            Err(e) => {
-                                log::error!("failed to undo water from database: {}", e);
-                            }
-                        }
-                    });
-                }
-                Some(_) => {
-                    ctx.respond("Expected: !water, or !water undo.");
-                }
+                    }
+                });
             }
+            Some(_) => {
+                ctx.respond("Expected: !water, or !water undo.");
+            }
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 }
 
@@ -178,7 +175,7 @@ impl super::Module for Module {
             injector,
             ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), Error> {
         let mut vars = settings.vars();
         let enabled = vars.var("water/enabled", false)?;
         let cooldown = vars.var(

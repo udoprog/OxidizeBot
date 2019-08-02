@@ -7,6 +7,7 @@ use crate::{
     prelude::*,
     utils::{Cooldown, Duration},
 };
+use failure::Error;
 use hashbrown::HashSet;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -19,76 +20,72 @@ pub struct Handler<'a> {
     twitch: &'a api::Twitch,
 }
 
-impl command::Handler for Handler<'_> {
+#[async_trait]
+impl<'a> command::Handler for Handler<'a> {
     fn scope(&self) -> Option<Scope> {
         Some(Scope::SwearJar)
     }
 
-    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
-        &'slf mut self,
-        ctx: command::Context<'ctx>,
-    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
-        Box::pin(async move {
-            if !*self.enabled.read() {
+    async fn handle<'ctx>(&mut self, ctx: command::Context<'ctx>) -> Result<(), Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
+        let currency = self.currency.read();
+        let currency = match currency.as_ref() {
+            Some(currency) => currency.clone(),
+            None => {
+                ctx.respond("No currency configured for stream, sorry :(");
                 return Ok(());
             }
+        };
 
-            let currency = self.currency.read();
-            let currency = match currency.as_ref() {
-                Some(currency) => currency.clone(),
-                None => {
-                    ctx.respond("No currency configured for stream, sorry :(");
-                    return Ok(());
-                }
-            };
+        if !self.cooldown.write().is_open() {
+            ctx.respond("A !swearjar command was recently issued, please wait a bit longer!");
+            return Ok(());
+        }
 
-            if !self.cooldown.write().is_open() {
-                ctx.respond("A !swearjar command was recently issued, please wait a bit longer!");
-                return Ok(());
+        let twitch = self.twitch.clone();
+        let user = ctx.user.clone();
+        let reward = *self.reward.read();
+
+        let future = async move {
+            let chatters = twitch.chatters(user.target()).await?;
+
+            let mut u = HashSet::new();
+            u.extend(chatters.viewers);
+            u.extend(chatters.moderators);
+
+            if u.is_empty() {
+                failure::bail!("no chatters to reward");
             }
 
-            let twitch = self.twitch.clone();
-            let user = ctx.user.clone();
-            let reward = *self.reward.read();
+            let total_reward = reward * u.len() as i64;
 
-            let future = async move {
-                let chatters = twitch.chatters(user.target()).await?;
+            currency
+                .balance_add(user.target(), &user.streamer().name, -total_reward)
+                .await?;
 
-                let mut u = HashSet::new();
-                u.extend(chatters.viewers);
-                u.extend(chatters.moderators);
+            currency
+                .balances_increment(user.target(), u, reward)
+                .await?;
 
-                if u.is_empty() {
-                    failure::bail!("no chatters to reward");
-                }
-
-                let total_reward = reward * u.len() as i64;
-
-                currency
-                    .balance_add(user.target(), &user.streamer().name, -total_reward)
-                    .await?;
-
-                currency
-                    .balances_increment(user.target(), u, reward)
-                    .await?;
-
-                user.sender().privmsg(format!(
-                    "/me has taken {} {currency} from {streamer} and given it to the viewers for listening to their bad mouth!",
-                    total_reward, currency = currency.name, streamer = user.streamer().display_name,
-                ));
-
-                Ok(())
-            };
-
-            ctx.spawn(future.map(|result| match result {
-                Ok(()) => (),
-                Err(e) => {
-                    log_err!(e, "Failed to reward users for !swearjar");
-                }
-            }));
+            user.sender().privmsg(format!(
+                "/me has taken {} {currency} from {streamer} and given it to the viewers for listening to their bad mouth!",
+                total_reward, currency = currency.name, streamer = user.streamer().display_name,
+            ));
 
             Ok(())
-        })
+        };
+
+        ctx.spawn(future.map(|result| match result {
+            Ok(()) => (),
+            Err(e) => {
+                log_err!(e, "Failed to reward users for !swearjar");
+            }
+        }));
+
+        Ok(())
     }
 }
 
@@ -110,7 +107,7 @@ impl super::Module for Module {
             settings,
             ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), Error> {
         let mut vars = settings.vars();
         let enabled = vars.var("swearjar/enabled", false)?;
         let reward = vars.var("swearjar/reward", 10)?;

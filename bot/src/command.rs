@@ -6,6 +6,7 @@ use hashbrown::HashMap;
 use std::{fmt, time::Instant};
 use tokio_threadpool::ThreadPool;
 
+#[async_trait]
 /// The handler trait for a given command.
 pub trait Handler {
     /// Scope required to run command.
@@ -14,10 +15,7 @@ pub trait Handler {
     }
 
     /// Handle the command.
-    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
-        &'slf mut self,
-        ctx: Context<'ctx>,
-    ) -> future::BoxFuture<'a, Result<(), Error>>;
+    async fn handle<'ctx>(&mut self, ctx: Context<'ctx>) -> Result<(), Error>;
 }
 
 /// A trait for peeking into chat messages.

@@ -8,41 +8,40 @@ pub struct Handler {
     promotions: Arc<RwLock<Option<db::Promotions>>>,
 }
 
+#[async_trait]
 impl command::Handler for Handler {
-    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
-        &'slf mut self,
+    async fn handle<'ctx>(
+        &mut self,
         mut ctx: command::Context<'ctx>,
-    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
-        Box::pin(async move {
-            if !*self.enabled.read() {
-                return Ok(());
+    ) -> Result<(), failure::Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
+        let promotions = match self.promotions.read().clone() {
+            Some(promotions) => promotions,
+            None => return Ok(()),
+        };
+
+        let next = command_base!(ctx, promotions, "promotion", PromoEdit);
+
+        match next.as_ref().map(String::as_str) {
+            Some("edit") => {
+                ctx.check_scope(auth::Scope::PromoEdit)?;
+
+                let name = ctx_try!(ctx.next_str("<name> <frequency> <template..>"));
+                let frequency = ctx_try!(ctx.next_parse("<name> <frequency> <template..>"));
+                let template = ctx_try!(ctx.rest_parse("<name> <frequency> <template..>"));
+
+                promotions.edit(ctx.user.target(), &name, frequency, template)?;
+                ctx.respond("Edited promo.");
             }
-
-            let promotions = match self.promotions.read().clone() {
-                Some(promotions) => promotions,
-                None => return Ok(()),
-            };
-
-            let next = command_base!(ctx, promotions, "promotion", PromoEdit);
-
-            match next.as_ref().map(String::as_str) {
-                Some("edit") => {
-                    ctx.check_scope(auth::Scope::PromoEdit)?;
-
-                    let name = ctx_try!(ctx.next_str("<name> <frequency> <template..>"));
-                    let frequency = ctx_try!(ctx.next_parse("<name> <frequency> <template..>"));
-                    let template = ctx_try!(ctx.rest_parse("<name> <frequency> <template..>"));
-
-                    promotions.edit(ctx.user.target(), &name, frequency, template)?;
-                    ctx.respond("Edited promo.");
-                }
-                None | Some(..) => {
-                    ctx.respond("Expected: show, list, edit, delete, enable, disable, or group.");
-                }
+            None | Some(..) => {
+                ctx.respond("Expected: show, list, edit, delete, enable, disable, or group.");
             }
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 }
 

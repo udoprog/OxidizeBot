@@ -68,6 +68,7 @@ futures-option = "0.1.1"
 futures-cache = "0.6.0"
 failure = "0.1.5"
 async-injector = { version = "0.2.0" }
+async-trait = "0.1.7"
 
 [dependencies.futures01]
 package = "futures"

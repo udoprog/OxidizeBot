@@ -7,44 +7,43 @@ pub struct Handler {
     pub commands: Arc<RwLock<Option<db::Commands>>>,
 }
 
+#[async_trait]
 impl command::Handler for Handler {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::Command)
     }
 
-    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
-        &'slf mut self,
+    async fn handle<'ctx>(
+        &mut self,
         mut ctx: command::Context<'ctx>,
-    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
-        Box::pin(async move {
-            if !*self.enabled.read() {
-                return Ok(());
+    ) -> Result<(), failure::Error> {
+        if !*self.enabled.read() {
+            return Ok(());
+        }
+
+        let commands = match self.commands.read().clone() {
+            Some(commands) => commands,
+            None => return Ok(()),
+        };
+
+        let next = command_base!(ctx, commands, "command", CommandEdit);
+
+        match next.as_ref().map(String::as_str) {
+            Some("edit") => {
+                ctx.check_scope(auth::Scope::CommandEdit)?;
+
+                let name = ctx_try!(ctx.next_str("<name>"));
+                let template = ctx_try!(ctx.rest_parse("<name> <template>"));
+                commands.edit(ctx.user.target(), &name, template)?;
+
+                ctx.respond("Edited command.");
             }
-
-            let commands = match self.commands.read().clone() {
-                Some(commands) => commands,
-                None => return Ok(()),
-            };
-
-            let next = command_base!(ctx, commands, "command", CommandEdit);
-
-            match next.as_ref().map(String::as_str) {
-                Some("edit") => {
-                    ctx.check_scope(auth::Scope::CommandEdit)?;
-
-                    let name = ctx_try!(ctx.next_str("<name>"));
-                    let template = ctx_try!(ctx.rest_parse("<name> <template>"));
-                    commands.edit(ctx.user.target(), &name, template)?;
-
-                    ctx.respond("Edited command.");
-                }
-                None | Some(..) => {
-                    ctx.respond("Expected: show, list, edit, delete, enable, disable, or group.");
-                }
+            None | Some(..) => {
+                ctx.respond("Expected: show, list, edit, delete, enable, disable, or group.");
             }
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 }
 

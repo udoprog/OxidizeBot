@@ -4,6 +4,7 @@ use chrono::{
     Datelike as _, Timelike as _, Utc,
 };
 use chrono_tz::{Etc, Tz};
+use failure::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -14,51 +15,47 @@ pub struct Time {
     template: Arc<RwLock<Template>>,
 }
 
+#[async_trait]
 impl command::Handler for Time {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::Time)
     }
 
-    fn handle<'slf: 'a, 'ctx: 'a, 'a>(
-        &'slf mut self,
-        ctx: command::Context<'ctx>,
-    ) -> future::BoxFuture<'a, Result<(), failure::Error>> {
-        return Box::pin(async move {
-            if !*self.enabled.read() {
-                return Ok(());
-            }
-
-            let tz = self.timezone.read().clone();
-            let now = Utc::now();
-
-            let offset = tz.offset_from_utc_datetime(&now.naive_utc());
-            let offset = offset.fix().local_minus_utc();
-            let offset = format_time_zone(offset);
-
-            let now = now.with_timezone(&tz);
-
-            let time = now.time();
-            let time = format!(
-                "{:02}:{:02}:{:02}",
-                time.hour(),
-                time.minute(),
-                time.second()
-            );
-
-            let rfc2822 = now.to_rfc2822();
-
-            let response = self.template.read().render_to_string(Vars {
-                day: now.day(),
-                month: now.month(),
-                year: now.year(),
-                offset: &offset,
-                time: &time,
-                rfc2822: &rfc2822,
-            })?;
-
-            ctx.respond(response);
+    async fn handle<'ctx>(&mut self, ctx: command::Context<'ctx>) -> Result<(), Error> {
+        if !*self.enabled.read() {
             return Ok(());
-        });
+        }
+
+        let tz = self.timezone.read().clone();
+        let now = Utc::now();
+
+        let offset = tz.offset_from_utc_datetime(&now.naive_utc());
+        let offset = offset.fix().local_minus_utc();
+        let offset = format_time_zone(offset);
+
+        let now = now.with_timezone(&tz);
+
+        let time = now.time();
+        let time = format!(
+            "{:02}:{:02}:{:02}",
+            time.hour(),
+            time.minute(),
+            time.second()
+        );
+
+        let rfc2822 = now.to_rfc2822();
+
+        let response = self.template.read().render_to_string(Vars {
+            day: now.day(),
+            month: now.month(),
+            year: now.year(),
+            offset: &offset,
+            time: &time,
+            rfc2822: &rfc2822,
+        })?;
+
+        ctx.respond(response);
+        return Ok(());
 
         #[derive(serde::Serialize)]
         struct Vars<'a> {
@@ -107,7 +104,7 @@ impl super::Module for Module {
             futures,
             ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), Error> {
         let mut vars = settings.vars();
 
         let default_template = Template::compile("The streamer's time is {{time}}{{offset}}")?;
