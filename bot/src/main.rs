@@ -1,6 +1,6 @@
 #![feature(async_await)]
 #![recursion_limit = "256"]
-#![windows_subsystem = "windows"]
+#![cfg_attr(feature = "windows", windows_subsystem = "windows")]
 
 use backoff::backoff::Backoff as _;
 use failure::{bail, format_err, Error, ResultExt};
@@ -25,18 +25,16 @@ fn opts() -> clap::App<'static, 'static> {
         .about("Oxidize Twitch Bot.")
         .arg(
             clap::Arg::with_name("root")
-                .short("r")
                 .long("root")
                 .value_name("root")
-                .help("Directory to run from.")
+                .help("Configuration directory to use.")
                 .takes_value(true),
         )
         .arg(
             clap::Arg::with_name("config")
-                .short("c")
                 .long("config")
                 .value_name("file")
-                .help("Configuration files to use.")
+                .help("Configuration file to use.")
                 .takes_value(true),
         )
         .arg(
@@ -73,12 +71,14 @@ fn default_log_config(
 ) -> Result<log4rs::config::Config, Error> {
     use log::LevelFilter;
     use log4rs::{
-        append::{console::ConsoleAppender, file::FileAppender},
+        append::file::FileAppender,
         config::{Appender, Config, Logger, Root},
     };
 
-    let file = FileAppender::builder().build(log_file)?;
-    let stdout = ConsoleAppender::builder().build();
+    const FILE: &'static str = "file";
+    #[cfg(not(feature = "windows"))]
+    const STDOUT: &'static str = "stdout";
+    const PACKAGE: &'static str = env!("CARGO_PKG_NAME");
 
     let mut level = LevelFilter::Info;
 
@@ -86,27 +86,43 @@ fn default_log_config(
         level = LevelFilter::Trace;
     }
 
-    let mut config = Config::builder()
-        .appender(Appender::builder().build("stdout", Box::new(stdout)))
-        .appender(Appender::builder().build("file", Box::new(file)));
+    let mut config = Config::builder();
+    let mut logger = Logger::builder();
+    let root = Root::builder().build(LevelFilter::Off);
 
-    config = config.logger(
-        Logger::builder()
-            .appender("file")
-            .additive(false)
-            .build("oxidize", level),
-    );
+    logger = logger.additive(false).appender(FILE);
 
-    for m in modules {
-        config = config.logger(
-            Logger::builder()
-                .appender("file")
-                .additive(false)
-                .build(m, level),
-        )
+    #[cfg(not(feature = "windows"))]
+    {
+        use log4rs::append::console::ConsoleAppender;
+
+        config = config.appender(
+            Appender::builder().build(STDOUT, Box::new(ConsoleAppender::builder().build())),
+        );
+
+        logger = logger.appender(STDOUT);
     }
 
-    Ok(config.build(Root::builder().appender("stdout").build(LevelFilter::Warn))?)
+    config = config
+        .appender(
+            Appender::builder().build(FILE, Box::new(FileAppender::builder().build(log_file)?)),
+        )
+        .logger(logger.build(PACKAGE, level));
+
+    for m in modules {
+        let mut logger = Logger::builder();
+
+        logger = logger.appender(FILE);
+
+        #[cfg(not(feature = "windows"))]
+        {
+            logger = logger.appender(STDOUT);
+        }
+
+        config = config.logger(logger.additive(false).build(m, level));
+    }
+
+    Ok(config.build(root)?)
 }
 
 /// Configure logging.

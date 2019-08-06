@@ -17,24 +17,10 @@ use self::{cache::Cache, settings::Settings};
 pub const URL: &'static str = "http://localhost:12345";
 pub const REDIRECT_URI: &'static str = "/redirect";
 
-#[cfg(feature = "assets")]
 mod assets {
     #[derive(rust_embed::RustEmbed)]
-    #[folder = "bot/ui/dist"]
+    #[folder = "$CARGO_MANIFEST_DIR/ui/dist"]
     pub struct Asset;
-}
-
-#[cfg(not(feature = "assets"))]
-mod assets {
-    use std::borrow::Cow;
-
-    pub struct Asset;
-
-    impl Asset {
-        pub fn get(_: &str) -> Option<Cow<'static, [u8]>> {
-            None
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -1097,7 +1083,7 @@ pub fn setup(
     ) -> Result<impl warp::Reply, warp::Rejection> {
         let (mime, asset) = match Asset::get(path) {
             Some(asset) => {
-                let mime = mime_guess::guess_mime_type(path);
+                let mime = mime_guess::from_path(path).first_or_octet_stream();
                 (mime, asset)
             }
             None => {
