@@ -85,7 +85,7 @@ impl StreamInfo {
         streamer: &'a twitch::User,
         stream_state_tx: &'a mut mpsc::Sender<StreamState>,
     ) -> Result<(), Error> {
-        let stream = match twitch.stream_by_login(&streamer.id).await {
+        let stream = match twitch.stream_by_id(&streamer.id).await {
             Ok(stream) => stream,
             Err(e) => {
                 log_err!(e, "failed to refresh stream");

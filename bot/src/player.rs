@@ -168,7 +168,11 @@ impl Command {
         use self::Command::*;
 
         match *self {
-            Skip(source) | Toggle(source) | Pause(source) | Play(source) | Modified(source)
+            Skip(source)
+            | Toggle(source)
+            | Pause(source)
+            | Play(source)
+            | Modified(source)
             | Inject(source, ..) => source,
             Sync { .. } => Source::Automatic,
         }

@@ -187,10 +187,10 @@ impl Twitch {
     }
 
     /// Get stream information.
-    pub async fn stream_by_login(&self, login: &str) -> Result<Option<Stream>, Error> {
+    pub async fn stream_by_id(&self, id: &str) -> Result<Option<Stream>, Error> {
         let req = self
             .new_api(Method::GET, &["streams"])
-            .query_param("user_login", login);
+            .query_param("user_id", id);
 
         let res = req.execute().await?.json::<Page<Stream>>()?;
 

@@ -26,7 +26,6 @@ branches:
   only:
     - master
     - /\d+\.\d+\.\d+/
-    - /point-\d+\.\d+/
 
 deploy:
   - release: $(appveyor_repo_tag_name)

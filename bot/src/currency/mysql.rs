@@ -92,7 +92,7 @@ impl Queries {
             .compat()
             .await?;
 
-        Ok((tx, results.into_iter().map(|(c,)| c).next()))
+        Ok((tx, results.into_iter().map(|(c, ..)| c).next()))
     }
 
     /// Helper to insert or update a single balance.
