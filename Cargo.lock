@@ -2513,7 +2513,7 @@ dependencies = [
 
 [[package]]
 name = "setmod"
-version = "0.4.6"
+version = "0.4.8"
 dependencies = [
  "Inflector 0.11.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "backoff 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
