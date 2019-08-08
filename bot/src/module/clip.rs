@@ -32,16 +32,7 @@ impl<'a> command::Handler for Clip<'a> {
             return Ok(());
         }
 
-        let stream_info = self.stream_info.data.read();
-
-        let user_id = match stream_info.user.as_ref() {
-            Some(user) => user.id.to_string(),
-            None => {
-                log::error!("No information available on the current stream");
-                ctx.respond("Cannot clip right now, stream is not live.");
-                return Ok(());
-            }
-        };
+        let stream_user = self.stream_info.user.clone();
 
         let title = match ctx.rest().trim() {
             "" => None,
@@ -52,7 +43,7 @@ impl<'a> command::Handler for Clip<'a> {
         let user = ctx.user.clone();
 
         ctx.spawn(async move {
-            match twitch.create_clip(user_id.as_str()).await {
+            match twitch.create_clip(&stream_user.id).await {
                 Ok(Some(clip)) => {
                     user.respond(format!(
                         "Created clip at {}/{}",

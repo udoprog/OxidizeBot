@@ -11,7 +11,6 @@ use std::{sync::Arc, time};
 #[derive(Debug, Default)]
 pub struct Data {
     pub stream: Option<twitch::Stream>,
-    pub user: Option<twitch::User>,
     pub title: Option<String>,
     pub game: Option<String>,
     pub subs: Vec<twitch::Subscription>,
@@ -26,6 +25,7 @@ pub enum StreamState {
 
 #[derive(Debug, Clone)]
 pub struct StreamInfo {
+    pub user: Arc<twitch::User>,
     pub data: Arc<RwLock<Data>>,
 }
 
@@ -126,6 +126,7 @@ pub fn setup(
     let (mut stream_state_tx, stream_state_rx) = mpsc::channel(64);
 
     let stream_info = StreamInfo {
+        user: streamer.clone(),
         data: Default::default(),
     };
 
