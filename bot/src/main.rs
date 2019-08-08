@@ -403,7 +403,7 @@ async fn try_main(
         ])
         .build(String::from("Spotify"))?;
 
-        flow.into_token()?
+        flow.into_token(injector::Key::tagged(oauth2::TokenId::Spotify)?, &injector)?
     };
 
     futures.push(future.boxed());
@@ -415,7 +415,7 @@ async fn try_main(
             )])
             .build(String::from("YouTube"))?;
 
-        flow.into_token()?
+        flow.into_token(injector::Key::tagged(oauth2::TokenId::YouTube)?, &injector)?
     };
 
     futures.push(future.boxed());
@@ -425,7 +425,7 @@ async fn try_main(
             .with_scopes(vec![String::from("channel_send")])
             .build(String::from("NightBot"))?;
 
-        flow.into_token()?
+        flow.into_token(injector::Key::tagged(oauth2::TokenId::NightBot)?, &injector)?
     };
 
     futures.push(future.boxed());
@@ -440,12 +440,15 @@ async fn try_main(
             ])
             .build(String::from("Twitch Streamer"))?;
 
-        flow.into_token()?
+        flow.into_token(
+            injector::Key::tagged(oauth2::TokenId::TwitchStreamer)?,
+            &injector,
+        )?
     };
 
     futures.push(future.boxed());
 
-    let (bot_token, future) = {
+    let (_, future) = {
         let flow = oauth2::twitch(web.clone(), token_settings.scoped("twitch-bot"))?
             .with_scopes(vec![
                 // Read user information on bot.
@@ -461,7 +464,10 @@ async fn try_main(
             ])
             .build(String::from("Twitch Bot"))?;
 
-        flow.into_token()?
+        flow.into_token(
+            injector::Key::tagged(oauth2::TokenId::TwitchBot)?,
+            &injector,
+        )?
     };
 
     futures.push(future.boxed());
@@ -470,11 +476,6 @@ async fn try_main(
     let (shutdown, shutdown_rx) = utils::Shutdown::new();
 
     let spotify = Arc::new(api::Spotify::new(spotify_token.clone())?);
-    let streamer_twitch = api::Twitch::new(streamer_token.clone())?;
-    injector.update_key(&injector::Key::tagged("twitch")?, streamer_twitch.clone());
-
-    let bot_twitch = api::Twitch::new(bot_token.clone())?;
-
     let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
     injector.update(youtube.clone());
 
@@ -539,8 +540,6 @@ async fn try_main(
     futures.push(notify_after_streams.boxed());
 
     let irc = irc::Irc {
-        streamer_twitch,
-        bot_twitch,
         bad_words,
         global_bus,
         modules,

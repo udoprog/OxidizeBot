@@ -3,6 +3,8 @@ migrations:
     to: currency/mysql/url
   - from: song/youtube/support
     to: song/youtube/enabled
+  - from: irc/startup-message
+    to: irc/join-message
 
 # ChaosMod effect names that can be configured.
 gtav_options: &gtav-options
@@ -147,8 +149,11 @@ types:
   irc/moderator-cooldown:
     doc: How long we must wait between each moderator action.
     type: {id: duration, optional: true}
-  irc/startup-message:
-    doc: Message to send when the bot starts up.
+  irc/join-message:
+    doc: Message to send when the bot joins your channel.
+    type: {id: string, optional: true}
+  irc/leave-message:
+    doc: Message to send when the bot leaves your channel.
     type: {id: string, optional: true}
   irc/idle-detection/threshold:
     doc: How many messages must be received before the channel is no longer considered idle.

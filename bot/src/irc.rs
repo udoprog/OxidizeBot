@@ -4,7 +4,7 @@ use crate::{
     bus, command,
     currency::{Currency, CurrencyBuilder},
     db, idle,
-    injector::Injector,
+    injector::{Injector, Key},
     message_log::MessageLog,
     module, oauth2,
     prelude::*,
@@ -37,8 +37,6 @@ const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
 
 /// Helper struct to construct IRC integration.
 pub struct Irc {
-    pub streamer_twitch: api::Twitch,
-    pub bot_twitch: api::Twitch,
     pub bad_words: db::Words,
     pub global_bus: Arc<bus::Bus<bus::Global>>,
     pub modules: Vec<Box<dyn module::Module>>,
@@ -54,8 +52,6 @@ pub struct Irc {
 impl Irc {
     pub async fn run(self) -> Result<(), Error> {
         let Irc {
-            streamer_twitch,
-            bot_twitch,
             bad_words,
             global_bus,
             modules,
@@ -68,44 +64,42 @@ impl Irc {
             message_log,
         } = self;
 
-        loop {
-            log::trace!("Waiting for token to become ready");
+        let (mut streamer_twitch_stream, mut streamer_twitch_opt) =
+            injector.stream_key(&Key::<oauth2::SyncToken>::tagged(
+                oauth2::TokenId::TwitchStreamer,
+            )?);
 
-            future::try_join(
-                streamer_twitch.token.wait_until_ready(),
-                bot_twitch.token.wait_until_ready(),
-            )
-            .await?;
+        let (mut bot_twitch_stream, mut bot_twitch_opt) =
+            injector.stream_key(&Key::<oauth2::SyncToken>::tagged(
+                oauth2::TokenId::TwitchBot,
+            )?);
 
-            let (bot, streamer) = {
-                let (bot, streamer) = future::try_join(
-                    bot_twitch.validate_token(),
-                    streamer_twitch.validate_token(),
-                )
-                .await?;
+        'outer: loop {
+            let (streamer_twitch, bot_twitch) =
+                match (streamer_twitch_opt.as_ref(), bot_twitch_opt.as_ref()) {
+                    (Some(streamer_twitch), Some(bot_twitch)) => (streamer_twitch, bot_twitch),
+                    (_, _) => {
+                        futures::select! {
+                            update = streamer_twitch_stream.select_next_some() => {
+                                streamer_twitch_opt = update;
+                            },
+                            update = bot_twitch_stream.select_next_some() => {
+                                bot_twitch_opt = update;
+                            },
+                        }
 
-                let mut any = false;
+                        continue;
+                    }
+                };
 
-                if streamer.is_none() {
-                    any = true;
-                    log::warn!("Failed to validate streamer token");
-                    streamer_twitch.token.force_refresh()?;
-                }
+            let bot_twitch = api::Twitch::new(bot_twitch.clone())?;
+            let streamer_twitch = api::Twitch::new(streamer_twitch.clone())?;
 
-                if bot.is_none() {
-                    any = true;
-                    log::warn!("Failed to validate bot token");
-                    bot_twitch.token.force_refresh()?;
-                }
+            let (bot, streamer) =
+                future::try_join(bot_twitch.user(), streamer_twitch.user()).await?;
 
-                if any {
-                    continue;
-                }
-
-                let (bot, streamer) =
-                    future::try_join(bot_twitch.user(), streamer_twitch.user()).await?;
-                (Arc::new(bot), Arc::new(streamer))
-            };
+            let bot = Arc::new(bot);
+            let streamer = Arc::new(streamer);
 
             let channel = Arc::new(streamer_twitch.channel().await?);
 
@@ -226,7 +220,8 @@ impl Irc {
 
             let (mut api_url_stream, api_url) = settings.stream("remote/api-url").optional()?;
 
-            let startup_message = settings.get::<String>("irc/startup-message")?;
+            let join_message = settings.get::<String>("irc/join-message")?;
+            let leave_message = settings.get::<String>("irc/leave-message")?;
 
             let mut chat_log_builder = chat_log::Builder::new(
                 bot_twitch.clone(),
@@ -273,75 +268,92 @@ impl Irc {
             let mut client_stream = client.stream().compat().fuse();
             let mut ping_interval = timer::Interval::new_interval(time::Duration::from_secs(10));
 
-            let future = async move {
-                handler.sender.cap_req(TWITCH_TAGS_CAP);
-                handler.sender.cap_req(TWITCH_COMMANDS_CAP);
+            let mut futures = future::try_join_all(futures).fuse();
 
-                if let Some(startup_message) = startup_message.as_ref() {
-                    // greeting when bot joins
-                    handler.sender.privmsg(startup_message);
-                }
+            handler.sender.cap_req(TWITCH_TAGS_CAP);
+            handler.sender.cap_req(TWITCH_COMMANDS_CAP);
 
-                loop {
-                    futures::select! {
-                        update = commands_stream.select_next_some() => {
-                            handler.commands = update;
-                        }
-                        update = aliases_stream.select_next_some() => {
-                            handler.aliases = update;
-                        }
-                        cache = chat_log_builder.cache_stream.select_next_some() => {
-                            chat_log_builder.cache = cache;
-                            handler.chat_log = chat_log_builder.build()?;
-                        }
-                        update = chat_log_builder.enabled_stream.select_next_some() => {
-                            chat_log_builder.enabled = update;
-                            chat_log_builder.message_log.enabled(update);
-                            handler.chat_log = chat_log_builder.build()?;
-                        }
-                        update = chat_log_builder.emotes_enabled_stream.select_next_some() => {
-                            chat_log_builder.emotes_enabled = update;
-                            handler.chat_log = chat_log_builder.build()?;
-                        }
-                        update = api_url_stream.select_next_some() => {
-                            handler.api_url = update;
-                        }
-                        update = moderator_cooldown_stream.select_next_some() => {
-                            handler.moderator_cooldown = update;
-                        }
-                        _ = ping_interval.select_next_some() => {
-                            handler.send_ping()?;
-                        }
-                        timeout = handler.pong_timeout.current() => {
-                            bail!("server not responding");
-                        }
-                        update = whitelisted_hosts_stream.next() => {
-                            if let Some(update) = update {
-                                handler.whitelisted_hosts = update;
-                            }
-                        },
-                        message = client_stream.next() => {
-                            if let Some(m) = message.transpose()? {
-                                if let Err(e) = handler.handle(m).await {
-                                    log::error!("Failed to handle message: {}", e);
-                                }
-                            }
+            if let Some(join_message) = join_message.as_ref() {
+                // greeting when bot joins
+                handler.sender.privmsg_immediate(join_message);
+            }
 
-                            if handler.handler_shutdown {
-                                bail!("handler forcibly shut down");
+            let mut leave = false;
+
+            while !leave {
+                futures::select! {
+                    future = futures => {
+                        match future {
+                            Ok(..) => break 'outer,
+                            Err(e) => {
+                                log::warn!("IRC component errored, restarting in 5 seconds: {}", e);
+                                timer::Delay::new(time::Instant::now() + time::Duration::from_secs(5)).await?;
+                                continue 'outer;
                             }
                         }
                     }
-                }
-            };
+                    update = streamer_twitch_stream.select_next_some() => {
+                        streamer_twitch_opt = update;
+                        leave = true;
+                    },
+                    update = bot_twitch_stream.select_next_some() => {
+                        bot_twitch_opt = update;
+                        leave = true;
+                    },
+                    update = commands_stream.select_next_some() => {
+                        handler.commands = update;
+                    }
+                    update = aliases_stream.select_next_some() => {
+                        handler.aliases = update;
+                    }
+                    cache = chat_log_builder.cache_stream.select_next_some() => {
+                        chat_log_builder.cache = cache;
+                        handler.chat_log = chat_log_builder.build()?;
+                    }
+                    update = chat_log_builder.enabled_stream.select_next_some() => {
+                        chat_log_builder.enabled = update;
+                        chat_log_builder.message_log.enabled(update);
+                        handler.chat_log = chat_log_builder.build()?;
+                    }
+                    update = chat_log_builder.emotes_enabled_stream.select_next_some() => {
+                        chat_log_builder.emotes_enabled = update;
+                        handler.chat_log = chat_log_builder.build()?;
+                    }
+                    update = api_url_stream.select_next_some() => {
+                        handler.api_url = update;
+                    }
+                    update = moderator_cooldown_stream.select_next_some() => {
+                        handler.moderator_cooldown = update;
+                    }
+                    _ = ping_interval.select_next_some() => {
+                        handler.send_ping()?;
+                    }
+                    timeout = handler.pong_timeout.current() => {
+                        bail!("server not responding");
+                    }
+                    update = whitelisted_hosts_stream.next() => {
+                        if let Some(update) = update {
+                            handler.whitelisted_hosts = update;
+                        }
+                    },
+                    message = client_stream.next() => {
+                        if let Some(m) = message.transpose()? {
+                            if let Err(e) = handler.handle(m).await {
+                                log::error!("Failed to handle message: {}", e);
+                            }
+                        }
 
-            match future::try_join(future, future::try_join_all(futures)).await {
-                Ok(((), _)) => break,
-                Err(e) => {
-                    log::warn!("IRC component errored, restarting in 5 seconds: {}", e);
-                    timer::Delay::new(time::Instant::now() + time::Duration::from_secs(5)).await?;
-                    continue;
+                        if handler.handler_shutdown {
+                            bail!("handler forcibly shut down");
+                        }
+                    }
                 }
+            }
+
+            // NB: probably not being sent right now. Figure out a better way to do graceful shutdown.
+            if let Some(leave_message) = leave_message.as_ref() {
+                // greeting when bot leaves
+                handler.sender.privmsg_immediate(leave_message);
             }
         }
 

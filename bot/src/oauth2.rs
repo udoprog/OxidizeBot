@@ -1,4 +1,9 @@
-use crate::{prelude::*, settings::Settings, timer, web};
+use crate::{
+    injector::{Injector, Key},
+    prelude::*,
+    settings::Settings,
+    timer, web,
+};
 use chrono::{DateTime, Utc};
 use failure::{bail, format_err, Error};
 use oauth2::{
@@ -14,6 +19,16 @@ use std::{
     time::{Duration, Instant},
 };
 use url::Url;
+
+/// Token identifier used for dependency injection.
+#[derive(Debug, Clone, serde::Serialize)]
+pub enum TokenId {
+    TwitchStreamer,
+    TwitchBot,
+    YouTube,
+    NightBot,
+    Spotify,
+}
 
 /// Note:
 /// These values obviously aren't secret. But due to the nature of this project, it's not possible to keep them that way.
@@ -385,7 +400,7 @@ pub struct SyncToken {
 
 impl SyncToken {
     /// Set the token and notify all waiters.
-    pub fn set(&self, update: Option<Token>) {
+    pub fn set(&self, update: Option<Token>, key: &Key<SyncToken>, injector: &Injector) {
         let mut lock = self.inner.write();
 
         let SyncTokenInner {
@@ -402,6 +417,10 @@ impl SyncToken {
                     log::warn!("tried to send ready notification but failed");
                 }
             }
+
+            injector.update_key(key, self.clone());
+        } else {
+            injector.clear_key(key);
         }
     }
 
@@ -778,7 +797,11 @@ impl fmt::Debug for Flow {
 
 impl Flow {
     /// Convert the flow into a token.
-    pub fn into_token(self) -> Result<(SyncToken, impl Future<Output = Result<(), Error>>), Error> {
+    pub fn into_token<'a>(
+        self,
+        key: Key<SyncToken>,
+        injector: &'a Injector,
+    ) -> Result<(SyncToken, impl Future<Output = Result<(), Error>> + 'a), Error> {
         // token expires within 30 minutes.
         let expires = Duration::from_secs(30 * 60);
 
@@ -836,10 +859,14 @@ impl Flow {
         let future = async move {
             log::trace!("{}: Running loop", what);
 
+            let update = move |token| {
+                sync_token.set(token, &key, injector);
+            };
+
             if let Some(token) = builder.log_build().await {
                 log::trace!("{}: Storing new token", what);
                 settings.set_silent("token", &token)?;
-                sync_token.set(token);
+                update(token);
             }
 
             loop {
@@ -854,7 +881,7 @@ impl Flow {
 
                                 if let Some(token) = builder.log_build().await {
                                     log::trace!("{}: Updating in-memory token", what);
-                                    sync_token.set(token);
+                                    update(token);
                                 }
                             }
                             None => {
@@ -864,7 +891,7 @@ impl Flow {
                                 if let Some(token) = builder.log_build().await {
                                     log::trace!("{}: Storing new token", what);
                                     settings.set_silent("token", &token)?;
-                                    sync_token.set(token);
+                                    update(token);
                                 }
                             }
                         }
@@ -877,7 +904,7 @@ impl Flow {
                         if let Some(token) = builder.log_build().await {
                             log::trace!("{}: Storing new token", what);
                             settings.set_silent("token", &token)?;
-                            sync_token.set(token);
+                            update(token);
                         }
                     }
                     current = force_refresh_rx.select_next_some() => {
@@ -888,7 +915,7 @@ impl Flow {
                         if let Some(token) = builder.log_build().await {
                             log::trace!("{}: Storing new token", what);
                             settings.set_silent("token", &token)?;
-                            sync_token.set(token);
+                            update(token);
                         }
                     }
                     _ = interval.select_next_some() => {
@@ -897,7 +924,7 @@ impl Flow {
                         if let Some(token) = builder.log_build().await {
                             log::trace!("{}: Storing new token", what);
                             settings.set_silent("token", &token)?;
-                            sync_token.set(token);
+                            update(token);
                         }
                     }
                 }
