@@ -65,7 +65,7 @@ crossbeam = "0.7.2"
 hex = "0.3.2"
 graphql_client = "0.8.0"
 futures-option = "0.1.1"
-futures-cache = "0.6.0"
+futures-cache = "0.7.1"
 failure = "0.1.5"
 async-injector = { version = "0.2.0" }
 async-trait = "0.1.7"

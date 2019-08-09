@@ -54,7 +54,7 @@ impl Cache {
     /// Delete a cache entry.
     fn delete(&self, request: DeleteRequest) -> Result<impl warp::Reply, failure::Error> {
         self.cache()?
-            .delete_with_ns(request.ns.as_ref(), request.key)?;
+            .delete_with_ns(request.ns.as_ref(), &request.key)?;
         Ok(warp::reply::json(&EMPTY))
     }
 }
