@@ -408,6 +408,9 @@ impl SyncToken {
             ref mut ready_queue,
         } = *lock;
 
+        let token_was_some = token.is_some();
+        let update_is_some = update.is_some();
+
         *token = update;
 
         // send ready notifications if we updated the token.
@@ -417,10 +420,12 @@ impl SyncToken {
                     log::warn!("tried to send ready notification but failed");
                 }
             }
+        }
 
-            injector.update_key(key, self.clone());
-        } else {
-            injector.clear_key(key);
+        match (token_was_some, update_is_some) {
+            (true, false) => injector.clear_key(key),
+            (false, true) => injector.update_key(key, self.clone()),
+            _ => (),
         }
     }
 
