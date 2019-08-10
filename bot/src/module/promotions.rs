@@ -64,12 +64,11 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        let mut vars = settings.vars();
-        let enabled = vars.var("promotions/enabled", false)?;
-        futures.push(vars.run().boxed());
+        let settings = settings.scoped("promotions");
+        let enabled = settings.var("enabled", false)?;
 
         let (mut setting, frequency) = settings
-            .stream("promotions/frequency")
+            .stream("frequency")
             .or_with_else(|| utils::Duration::seconds(5 * 60))?;
 
         handlers.insert(

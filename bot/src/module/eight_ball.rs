@@ -72,22 +72,16 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            handlers,
-            settings,
-            futures,
-            ..
+            handlers, settings, ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        let mut vars = settings.vars();
-
         handlers.insert(
             "8ball",
             EightBall {
-                enabled: vars.var("8ball/enabled", true)?,
+                enabled: settings.var("8ball/enabled", true)?,
             },
         );
 
-        futures.push(vars.run().boxed());
         Ok(())
     }
 }

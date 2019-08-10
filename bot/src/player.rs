@@ -221,17 +221,11 @@ pub fn run(
     let (commands_tx, commands) = mpsc::unbounded();
 
     let (detached_stream, detached) = settings.stream("detached").or_default()?;
-    let mut vars = settings.vars();
 
-    let duplicate_duration = vars.var("duplicate-duration", utils::Duration::default())?;
-
-    let song_switch_feedback = vars.var("song-switch-feedback", true)?;
-
-    let max_songs_per_user = vars.var("max-songs-per-user", 2)?;
-
-    let max_queue_length = vars.var("max-queue-length", 30)?;
-
-    futures.push(vars.run().boxed());
+    let duplicate_duration = settings.var("duplicate-duration", utils::Duration::default())?;
+    let song_switch_feedback = settings.var("song-switch-feedback", true)?;
+    let max_songs_per_user = settings.var("max-songs-per-user", 2)?;
+    let max_queue_length = settings.var("max-queue-length", 30)?;
 
     let parent_player = Player {
         inner: Arc::new(PlayerInner {

@@ -222,16 +222,13 @@ impl super::Module for Module {
             stream_info,
             streamer_twitch,
             settings,
-            futures,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
-        let mut vars = settings.vars();
-
         handlers.insert(
             "title",
             Title {
-                enabled: vars.var("title/enabled", true)?,
+                enabled: settings.var("title/enabled", true)?,
                 stream_info: stream_info.clone(),
                 twitch: &streamer_twitch,
             },
@@ -240,7 +237,7 @@ impl super::Module for Module {
         handlers.insert(
             "game",
             Game {
-                enabled: vars.var("game/enabled", true)?,
+                enabled: settings.var("game/enabled", true)?,
                 stream_info: stream_info.clone(),
                 twitch: &streamer_twitch,
             },
@@ -249,12 +246,11 @@ impl super::Module for Module {
         handlers.insert(
             "uptime",
             Uptime {
-                enabled: vars.var("uptime/enabled", true)?,
+                enabled: settings.var("uptime/enabled", true)?,
                 stream_info: stream_info.clone(),
             },
         );
 
-        futures.push(vars.run().boxed());
         Ok(())
     }
 }

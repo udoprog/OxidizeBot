@@ -158,25 +158,20 @@ impl super::Module for Module {
         module::HookContext {
             handlers,
             settings,
-            futures,
             injector,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
-        let mut vars = settings.vars();
-
         handlers.insert(
             "weather",
             Weather {
-                enabled: vars.var("weather/enabled", false)?,
-                temperature_unit: vars
+                enabled: settings.var("weather/enabled", false)?,
+                temperature_unit: settings
                     .var("weather/temperature-unit", TemperatureUnit::DegreesCelsius)?,
-                location: vars.optional("weather/location")?,
+                location: settings.optional("weather/location")?,
                 api: injector.var()?,
             },
         );
-
-        futures.push(vars.run().boxed());
 
         Ok(())
     }

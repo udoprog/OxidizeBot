@@ -293,6 +293,7 @@ async fn try_main(
     let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
 
     let mut modules = Vec::<Box<dyn module::Module>>::new();
+    let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
 
     let database_path = {
         let new = root.join("oxidize.sql");
@@ -324,6 +325,8 @@ async fn try_main(
     let settings_schema = settings::Schema::load_static()?;
     let settings = db.settings(settings_schema)?;
 
+    futures.push(settings.clone().drive().map_err(Into::into).boxed());
+
     settings
         .run_migrations()
         .context("failed to run settings migrations")?;
@@ -342,8 +345,6 @@ async fn try_main(
     let global_bus = Arc::new(bus::Bus::new());
     let youtube_bus = Arc::new(bus::Bus::new());
     let global_channel = Arc::new(RwLock::new(None));
-
-    let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
 
     futures.push(injector.clone().drive().map_err(Into::into).boxed());
     futures.push(system_loop(settings.scoped("system"), system.clone()).boxed());

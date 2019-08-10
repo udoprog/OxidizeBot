@@ -58,18 +58,16 @@ impl super::Module for Module {
             injector,
             handlers,
             settings,
-            futures,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
         let settings = settings.scoped("afterstream");
-        let mut vars = settings.vars();
 
         handlers.insert(
             "afterstream",
             AfterStream {
-                enabled: vars.var("enabled", true)?,
-                cooldown: vars.var(
+                enabled: settings.var("enabled", true)?,
+                cooldown: settings.var(
                     "cooldown",
                     utils::Cooldown::from_duration(utils::Duration::seconds(30)),
                 )?,
@@ -77,7 +75,6 @@ impl super::Module for Module {
             },
         );
 
-        futures.push(vars.run().boxed());
         Ok(())
     }
 }

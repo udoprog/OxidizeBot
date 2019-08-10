@@ -671,21 +671,12 @@ impl module::Module for Module {
         let currency = injector.var()?;
         let settings = settings.scoped("song");
 
-        let mut vars = settings.vars();
-        let enabled = vars.var("enabled", false)?;
-        let chat_feedback = vars.var("chat-feedback", true)?;
-        let request_reward = vars.var("request-reward", 0)?;
-        futures.push(vars.run().boxed());
+        let enabled = settings.var("enabled", false)?;
+        let chat_feedback = settings.var("chat-feedback", true)?;
+        let request_reward = settings.var("request-reward", 0)?;
 
-        let vars = settings.scoped("spotify");
-        let mut vars = vars.vars();
-        let spotify = Constraint::build(&mut vars, true, 0)?;
-        futures.push(vars.run().boxed());
-
-        let vars = settings.scoped("youtube");
-        let mut vars = vars.vars();
-        let youtube = Constraint::build(&mut vars, false, 60)?;
-        futures.push(vars.run().boxed());
+        let spotify = Constraint::build(&mut settings.scoped("spotify"), true, 0)?;
+        let youtube = Constraint::build(&mut settings.scoped("youtube"), false, 60)?;
 
         let (mut player_stream, player) = injector.stream();
 
@@ -745,7 +736,11 @@ struct Constraint {
 }
 
 impl Constraint {
-    fn build(vars: &mut settings::Vars, enabled: bool, min_currency: i64) -> Result<Self, Error> {
+    fn build(
+        vars: &mut settings::Settings,
+        enabled: bool,
+        min_currency: i64,
+    ) -> Result<Self, Error> {
         let enabled = vars.var("enabled", enabled)?;
         let max_duration = vars.optional("max-duration")?;
         let min_currency = vars.var("min-currency", min_currency)?;

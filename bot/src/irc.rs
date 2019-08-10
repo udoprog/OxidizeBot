@@ -127,11 +127,11 @@ impl Irc {
             let PackedIrcClient(client, send_future) = client.compat().await?;
             client.identify()?;
 
-            let mut vars = settings.scoped("irc").vars();
-            let url_whitelist_enabled = vars.var("url-whitelist/enabled", true)?;
-            let bad_words_enabled = vars.var("bad-words/enabled", false)?;
-            let sender_ty = vars.var("sender-type", sender::Type::Chat)?;
-            let threshold = vars.var("idle-detection/threshold", 5)?;
+            let irc_settings = settings.scoped("irc");
+            let url_whitelist_enabled = irc_settings.var("url-whitelist/enabled", true)?;
+            let bad_words_enabled = irc_settings.var("bad-words/enabled", false)?;
+            let sender_ty = irc_settings.var("sender-type", sender::Type::Chat)?;
+            let threshold = irc_settings.var("idle-detection/threshold", 5)?;
             let idle = idle::Idle::new(threshold);
 
             let nightbot = injector.var::<Arc<api::NightBot>>()?;
@@ -144,7 +144,6 @@ impl Irc {
             );
 
             let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
-            futures.push(vars.run().boxed());
 
             let stream_info = {
                 let (stream_info, mut stream_state_rx, future) =
@@ -200,7 +199,6 @@ impl Irc {
             futures.push(future.boxed());
 
             let future = currency_loop(
-                &mut futures,
                 streamer_twitch.clone(),
                 channel.clone(),
                 sender.clone(),
@@ -363,7 +361,6 @@ impl Irc {
 
 /// Set up a reward loop.
 fn currency_loop<'a>(
-    futures: &mut utils::Futures,
     twitch: api::Twitch,
     channel: Arc<twitch::Channel>,
     sender: Sender,
@@ -378,8 +375,7 @@ fn currency_loop<'a>(
         .stream("irc/viewer-reward/interval")
         .or_with(default_interval)?;
 
-    let mut variables = settings.vars();
-    let reward_percentage = variables.var("irc/viewer-reward%", 100)?;
+    let reward_percentage = settings.var("irc/viewer-reward%", 100)?;
     let (mut viewer_reward_stream, viewer_reward) = settings
         .stream("irc/viewer-reward/enabled")
         .or_with(false)?;
@@ -417,7 +413,6 @@ fn currency_loop<'a>(
     };
 
     let mut currency = build(injector, &builder);
-    futures.push(variables.run().boxed());
 
     return Ok(async move {
         let new_timer = |interval: &Duration, viewer_reward: bool| match viewer_reward {

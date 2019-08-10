@@ -108,10 +108,8 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
-        let mut vars = settings.vars();
-        let enabled = vars.var("swearjar/enabled", false)?;
-        let reward = vars.var("swearjar/reward", 10)?;
-        futures.push(vars.run().boxed());
+        let enabled = settings.var("swearjar/enabled", false)?;
+        let reward = settings.var("swearjar/reward", 10)?;
 
         let (mut cooldown_stream, cooldown) = settings
             .stream("swearjar/cooldown")

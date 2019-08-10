@@ -739,13 +739,10 @@ impl super::Module for Module {
         module::HookContext {
             handlers,
             settings,
-            futures,
             injector,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
-        let mut vars = settings.vars();
-
         let cache: Cache = injector.get().ok_or_else(|| format_err!("missing cache"))?;
         let speedrun = injector
             .get()
@@ -760,12 +757,11 @@ impl super::Module for Module {
             "speedrun",
             Speedrun {
                 speedrun,
-                enabled: vars.var("speedrun/enabled", false)?,
-                top: vars.var("speedrun/top", 20)?,
+                enabled: settings.var("speedrun/enabled", false)?,
+                top: settings.var("speedrun/top", 20)?,
             },
         );
 
-        futures.push(vars.run().boxed());
         Ok(())
     }
 }

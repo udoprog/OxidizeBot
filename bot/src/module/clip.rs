@@ -83,27 +83,24 @@ impl super::Module for Module {
         module::HookContext {
             handlers,
             settings,
-            futures,
             stream_info,
             twitch,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
         let settings = settings.scoped("clip");
-        let mut vars = settings.vars();
 
         handlers.insert(
             "clip",
             Clip {
-                enabled: vars.var("enabled", true)?,
+                enabled: settings.var("enabled", true)?,
                 stream_info: stream_info.clone(),
-                clip_cooldown: vars
+                clip_cooldown: settings
                     .var("cooldown", Cooldown::from_duration(Duration::seconds(30)))?,
                 twitch,
             },
         );
 
-        futures.push(vars.run().boxed());
         Ok(())
     }
 }

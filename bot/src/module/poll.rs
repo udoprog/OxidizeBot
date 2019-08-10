@@ -177,23 +177,17 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            handlers,
-            settings,
-            futures,
-            ..
+            handlers, settings, ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        let mut vars = settings.vars();
-
         handlers.insert(
             "poll",
             Poll {
                 polls: Default::default(),
-                enabled: vars.var("poll/enabled", false)?,
+                enabled: settings.var("poll/enabled", false)?,
             },
         );
 
-        futures.push(vars.run().boxed());
         Ok(())
     }
 }

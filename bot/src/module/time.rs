@@ -99,26 +99,20 @@ impl super::Module for Module {
     fn hook(
         &self,
         module::HookContext {
-            handlers,
-            settings,
-            futures,
-            ..
+            handlers, settings, ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
-        let mut vars = settings.vars();
-
         let default_template = Template::compile("The streamer's time is {{time}}{{offset}}")?;
 
         handlers.insert(
             "time",
             Time {
-                enabled: vars.var("time/enabled", true)?,
-                timezone: vars.var("time/timezone", Etc::UTC)?,
-                template: vars.var("time/template", default_template)?,
+                enabled: settings.var("time/enabled", true)?,
+                timezone: settings.var("time/timezone", Etc::UTC)?,
+                template: settings.var("time/template", default_template)?,
             },
         );
 
-        futures.push(vars.run().boxed());
         Ok(())
     }
 }

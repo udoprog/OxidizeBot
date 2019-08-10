@@ -1065,19 +1065,17 @@ impl super::Module for Module {
         let (mut enabled_stream, enabled) = settings.stream("enabled").or_default()?;
         let enabled = Arc::new(RwLock::new(enabled));
 
-        let mut vars = settings.vars();
-        let cooldown = vars.var("cooldown", Cooldown::from_duration(Duration::seconds(1)))?;
-        let reward_cooldown = vars.var("reward-cooldown", default_reward_cooldown)?;
-        let punish_cooldown = vars.var("punish-cooldown", default_punish_cooldown)?;
-        let per_user_cooldown = vars.var("per-user-cooldown", default_per_user_cooldown)?;
+        let cooldown = settings.var("cooldown", Cooldown::from_duration(Duration::seconds(1)))?;
+        let reward_cooldown = settings.var("reward-cooldown", default_reward_cooldown)?;
+        let punish_cooldown = settings.var("punish-cooldown", default_punish_cooldown)?;
+        let per_user_cooldown = settings.var("per-user-cooldown", default_per_user_cooldown)?;
         let per_command_cooldown =
-            vars.var("per-command-cooldown", default_per_command_cooldown)?;
-        let prefix = vars.var("chat-prefix", String::from("ChaosMod: "))?;
-        let other_percentage = vars.var("other%", 100)?;
-        let punish_percentage = vars.var("punish%", 100)?;
-        let reward_percentage = vars.var("reward%", 100)?;
-        let success_feedback = vars.var("success-feedback", false)?;
-        futures.push(vars.run().boxed());
+            settings.var("per-command-cooldown", default_per_command_cooldown)?;
+        let prefix = settings.var("chat-prefix", String::from("ChaosMod: "))?;
+        let other_percentage = settings.var("other%", 100)?;
+        let punish_percentage = settings.var("punish%", 100)?;
+        let reward_percentage = settings.var("reward%", 100)?;
+        let success_feedback = settings.var("success-feedback", false)?;
 
         let (mut commands_config_stream, commands_config) = settings
             .stream::<CommandsConfig>("command-configs")

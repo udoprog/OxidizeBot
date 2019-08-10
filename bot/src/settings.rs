@@ -3,16 +3,120 @@
 use crate::{auth::Scope, db, oauth2, prelude::*, utils};
 use chrono_tz::Tz;
 use diesel::prelude::*;
-use failure::{bail, format_err, Error, ResultExt};
 use futures::ready;
 use hashbrown::HashMap;
-use parking_lot::RwLock;
-use std::{borrow::Cow, fmt, marker, pin::Pin, sync::Arc};
+use parking_lot::{Mutex, RwLock};
+use std::{borrow::Cow, error, fmt, marker, pin::Pin, sync::Arc};
 
 const SEPARATOR: char = '/';
 
 type EventSender = mpsc::UnboundedSender<Event<serde_json::Value>>;
 type Subscriptions = Arc<RwLock<HashMap<String, Vec<EventSender>>>>;
+
+#[derive(Debug)]
+pub enum Error {
+    /// Failed to perform work due to injector shutting down.
+    Shutdown,
+    /// Unexpected end of driver stream.
+    EndOfDriverStream,
+    /// Driver already configured.
+    DriverAlreadyConfigured,
+    /// No target for schema key.
+    NoTargetForSchema(String),
+    /// Invalid time zones.
+    InvalidTimeZone(String),
+    /// Missing a required field.
+    MissingRequiredField(String),
+    /// Expected JSON object.
+    Expected(&'static str),
+    /// Expected a specific type.
+    ExpectedType(Type),
+    /// Incompatible field encountered.
+    IncompatibleField(String),
+    /// Expected one of the specified types.
+    ExpectedOneOf(Vec<String>),
+    /// Migration compatibility issues.
+    MigrationErrorIncompatible {
+        from: String,
+        to: String,
+        ty: Type,
+        json: String,
+    },
+    /// JSON error.
+    Json(serde_json::Error),
+    /// Diesel error.
+    Diesel(diesel::result::Error),
+    /// Convert from a failure::Error.
+    Error(failure::Error),
+    /// Failed to load schema.
+    FailedToLoadSchema(serde_yaml::Error),
+    /// Bad boolean value.
+    BadBoolean(std::str::ParseBoolError),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use self::Error::*;
+
+        match *self {
+            Shutdown => "injector is shutting down".fmt(fmt),
+            EndOfDriverStream => "end of driver stream".fmt(fmt),
+            DriverAlreadyConfigured => "driver already configured".fmt(fmt),
+            NoTargetForSchema(ref key) => write!(fmt, "no target for schema key: {}", key),
+            InvalidTimeZone(ref tz) => write!(fmt, "Invalid time zone: {}", tz,),
+            MissingRequiredField(ref field) => write!(fmt, "Missing required field: {}", field),
+            Expected(ref what) => write!(fmt, "Expected {}", what),
+            ExpectedType(ref ty) => write!(fmt, "Expected type: {}", ty),
+            IncompatibleField(ref field) => write!(fmt, "Incompatible field: {}", field),
+            ExpectedOneOf(ref alts) => write!(fmt, "Expected one of: {}", alts.join(", ")),
+            MigrationErrorIncompatible {
+                ref from,
+                ref to,
+                ref ty,
+                ref json,
+            } => write!(
+                fmt,
+                "value for {} (json: {}) is not compatible with {} ({})",
+                from, json, to, ty
+            ),
+            Json(ref e) => write!(fmt, "JSON Error: {}", e),
+            Diesel(ref e) => write!(fmt, "Diesel Error: {}", e),
+            Error(ref e) => write!(fmt, "Error: {}", e),
+            FailedToLoadSchema(ref e) => write!(fmt, "Failed to load settings.yaml: {}", e),
+            BadBoolean(ref e) => write!(fmt, "Bad boolean value: {}", e),
+        }
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Self {
+        Error::Json(e)
+    }
+}
+
+impl From<diesel::result::Error> for Error {
+    fn from(e: diesel::result::Error) -> Self {
+        Error::Diesel(e)
+    }
+}
+
+impl From<failure::Error> for Error {
+    fn from(e: failure::Error) -> Self {
+        Error::Error(e)
+    }
+}
+
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        use self::Error::*;
+
+        match *self {
+            Json(ref e) => Some(e),
+            Diesel(ref e) => Some(e),
+            _ => None,
+        }
+    }
+}
 
 /// Update events for a given key.
 #[derive(Debug, Clone)]
@@ -121,7 +225,7 @@ pub struct Migration {
 impl Schema {
     /// Load schema from the given set of bytes.
     pub fn load_static() -> Result<Schema, Error> {
-        Ok(serde_yaml::from_slice(SCHEMA).context("failed to load settings.yaml")?)
+        serde_yaml::from_slice(SCHEMA).map_err(Error::FailedToLoadSchema)
     }
 
     /// Lookup the given type by key.
@@ -142,6 +246,19 @@ struct Prefix {
     keys: Vec<String>,
 }
 
+/// The future that drives a synchronized variable.
+struct Driver {
+    future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
+}
+
+impl Future for Driver {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.future.as_mut().poll(cx)
+    }
+}
+
 pub struct Inner {
     db: db::Database,
     /// Maps setting prefixes to subscriptions.
@@ -150,6 +267,10 @@ pub struct Inner {
     pub schema: Arc<Schema>,
     /// Information about all prefixes.
     prefixes: Arc<HashMap<String, Prefix>>,
+    /// Channel where new drivers are sent.
+    drivers: mpsc::UnboundedSender<Driver>,
+    /// Receiver for drivers. Used by the run function.
+    drivers_rx: Mutex<Option<mpsc::UnboundedReceiver<Driver>>>,
 }
 
 /// A container for settings from which we can subscribe for updates.
@@ -163,6 +284,8 @@ impl Settings {
     pub fn new(db: db::Database, schema: Schema) -> Self {
         let prefixes = schema.as_prefixes();
 
+        let (drivers, drivers_rx) = mpsc::unbounded();
+
         Self {
             scope: String::from(""),
             inner: Arc::new(Inner {
@@ -170,6 +293,8 @@ impl Settings {
                 subscriptions: Default::default(),
                 schema: Arc::new(schema),
                 prefixes: Arc::new(prefixes),
+                drivers,
+                drivers_rx: Mutex::new(Some(drivers_rx)),
             }),
         }
     }
@@ -184,20 +309,19 @@ impl Settings {
 
             let to = match self.setting::<serde_json::Value>(&m.to)? {
                 Some(to) => to,
-                None => bail!("No target schema for key: {}", m.to),
+                None => return Err(Error::NoTargetForSchema(m.to.to_string())),
             };
 
             if to.value.is_none() {
                 log::info!("Migrating setting: {} -> {}", m.from, m.to);
 
                 if !to.schema.ty.is_compatible_with_json(&from) {
-                    bail!(
-                        "value for {} (json: {}) is not compatible with {} ({})",
-                        m.from,
-                        serde_json::to_string(&from)?,
-                        m.to,
-                        to.schema.ty
-                    );
+                    return Err(Error::MigrationErrorIncompatible {
+                        from: m.from.clone(),
+                        to: m.to.clone(),
+                        ty: to.schema.ty.clone(),
+                        json: serde_json::to_string(&from)?,
+                    });
                 }
 
                 self.set_json(&m.to, from)?;
@@ -444,11 +568,99 @@ impl Settings {
         }
     }
 
-    /// Get a helper to build synchronized variables.
-    pub fn vars(&self) -> Vars {
-        Vars {
-            settings: self.clone(),
-            futures: Vec::new(),
+    /// Get a synchronized variable for the given configuration key.
+    pub fn var<T>(&self, key: &str, default: T) -> Result<Arc<RwLock<T>>, Error>
+    where
+        T: 'static
+            + fmt::Debug
+            + Send
+            + Sync
+            + Clone
+            + serde::Serialize
+            + serde::de::DeserializeOwned,
+    {
+        let (mut stream, value) = self.stream(key).or_with(default)?;
+        let value = Arc::new(RwLock::new(value));
+        let future_value = value.clone();
+
+        let future = async move {
+            while let Some(update) = stream.next().await {
+                *future_value.write() = update;
+            }
+        };
+
+        let result = self.inner.drivers.unbounded_send(Driver {
+            future: future.boxed(),
+        });
+
+        if let Err(e) = result {
+            if !e.is_disconnected() {
+                return Err(Error::Shutdown);
+            }
+        }
+
+        Ok(value)
+    }
+
+    /// Get an optional synchronized variable for the given configuration key.
+    pub fn optional<T>(&self, key: &str) -> Result<Arc<RwLock<Option<T>>>, Error>
+    where
+        T: 'static
+            + fmt::Debug
+            + Send
+            + Sync
+            + Clone
+            + serde::Serialize
+            + serde::de::DeserializeOwned,
+    {
+        let (mut stream, value) = self.stream(key).optional()?;
+        let value = Arc::new(RwLock::new(value));
+        let future_value = value.clone();
+
+        let future = async move {
+            while let Some(update) = stream.next().await {
+                *future_value.write() = update;
+            }
+        };
+
+        let result = self.inner.drivers.unbounded_send(Driver {
+            future: future.boxed(),
+        });
+
+        if let Err(e) = result {
+            if !e.is_disconnected() {
+                return Err(Error::Shutdown);
+            }
+        }
+
+        Ok(value)
+    }
+
+    /// Run the injector as a future, making sure all asynchronous processes
+    /// associated with it are driven to completion.
+    ///
+    /// This has to be called for the injector to perform important tasks.
+    pub async fn drive(self) -> Result<(), Error> {
+        let mut rx = self
+            .inner
+            .drivers_rx
+            .lock()
+            .take()
+            .ok_or(Error::DriverAlreadyConfigured)?;
+
+        let mut drivers = stream::FuturesUnordered::new();
+
+        loop {
+            while drivers.is_empty() {
+                drivers.push(rx.next().await.ok_or(Error::EndOfDriverStream)?);
+            }
+
+            while !drivers.is_empty() {
+                futures::select! {
+                    driver = rx.next() => drivers.push(driver.ok_or(Error::EndOfDriverStream)?),
+                    () = drivers.select_next_some() => (),
+                }
+            }
         }
     }
 
@@ -657,85 +869,13 @@ where
     }
 }
 
-#[must_use = "Must consume to drive variable updates"]
-pub struct Vars {
-    settings: Settings,
-    futures: Vec<future::BoxFuture<'static, Result<(), Error>>>,
-}
-
-impl Vars {
-    /// Get a synchronized variable for the given configuration key.
-    pub fn var<T>(&mut self, key: &str, default: T) -> Result<Arc<RwLock<T>>, Error>
-    where
-        T: 'static
-            + fmt::Debug
-            + Send
-            + Sync
-            + Clone
-            + serde::Serialize
-            + serde::de::DeserializeOwned
-            + Unpin,
-    {
-        let (mut stream, value) = self.settings.stream(key).or_with(default)?;
-        let value = Arc::new(RwLock::new(value));
-        let future_value = value.clone();
-
-        let future = async move {
-            while let Some(update) = stream.next().await {
-                *future_value.write() = update;
-            }
-
-            Ok(())
-        };
-
-        self.futures.push(future.boxed());
-        Ok(value)
-    }
-
-    /// Get an optional synchronized variable for the given configuration key.
-    pub fn optional<T>(&mut self, key: &str) -> Result<Arc<RwLock<Option<T>>>, Error>
-    where
-        T: 'static
-            + fmt::Debug
-            + Send
-            + Sync
-            + Clone
-            + serde::Serialize
-            + serde::de::DeserializeOwned
-            + Unpin,
-    {
-        let (mut stream, value) = self.settings.stream(key).optional()?;
-        let value = Arc::new(RwLock::new(value));
-        let future_value = value.clone();
-
-        let future = async move {
-            while let Some(update) = stream.next().await {
-                *future_value.write() = update;
-            }
-
-            Ok(())
-        };
-
-        self.futures.push(future.boxed());
-        Ok(value)
-    }
-
-    /// Drive the local variable set.
-    pub fn run(self) -> impl Future<Output = Result<(), Error>> {
-        let Vars { futures, .. } = self;
-
-        async move {
-            let _ = future::try_join_all(futures).await?;
-            Ok(())
-        }
-    }
-}
-
 /// Get updates for a specific setting.
 pub struct Stream<T> {
     default: T,
     option_stream: OptionStream<T>,
 }
+
+impl<T> Unpin for Stream<T> {}
 
 impl<T> stream::FusedStream for Stream<T> {
     fn is_terminated(&self) -> bool {
@@ -745,7 +885,7 @@ impl<T> stream::FusedStream for Stream<T> {
 
 impl<T> futures::Stream for Stream<T>
 where
-    T: fmt::Debug + Unpin + Clone + serde::de::DeserializeOwned,
+    T: fmt::Debug + Clone + serde::de::DeserializeOwned,
 {
     type Item = T;
 
@@ -769,6 +909,8 @@ pub struct OptionStream<T> {
     marker: marker::PhantomData<T>,
 }
 
+impl<T> Unpin for OptionStream<T> {}
+
 impl<T> stream::FusedStream for OptionStream<T> {
     fn is_terminated(&self) -> bool {
         false
@@ -777,7 +919,7 @@ impl<T> stream::FusedStream for OptionStream<T> {
 
 impl<T> futures::Stream for OptionStream<T>
 where
-    T: fmt::Debug + Unpin + serde::de::DeserializeOwned,
+    T: fmt::Debug + serde::de::DeserializeOwned,
 {
     type Item = Option<T>;
 
@@ -921,7 +1063,7 @@ impl Type {
                 let d = str::parse::<utils::Duration>(s)?;
                 Value::String(d.to_string())
             }
-            Bool => Value::Bool(str::parse::<bool>(s)?),
+            Bool => Value::Bool(str::parse::<bool>(s).map_err(Error::BadBoolean)?),
             Number => {
                 let n = str::parse::<serde_json::Number>(s)?;
                 Value::Number(n)
@@ -937,12 +1079,12 @@ impl Type {
                 match json {
                     Value::Array(values) => {
                         if !values.iter().all(|v| value.is_compatible_with_json(v)) {
-                            bail!("expected {}", self);
+                            return Err(Error::ExpectedType(self.clone()));
                         }
 
                         Value::Array(values)
                     }
-                    _ => bail!("expected array"),
+                    _ => return Err(Error::Expected("array")),
                 }
             }
             Select {
@@ -959,15 +1101,13 @@ impl Type {
                         out.push(serde_json::to_string(o)?);
                     }
 
-                    let alts = out.join(", ");
-                    bail!("Expected one of: {}.", alts);
+                    return Err(Error::ExpectedOneOf(out));
                 }
 
                 v
             }
             TimeZone => {
-                let tz =
-                    str::parse::<Tz>(s).map_err(|s| format_err!("Invalid time zone: {}", s))?;
+                let tz = str::parse::<Tz>(s).map_err(Error::InvalidTimeZone)?;
                 Value::String(format!("{:?}", tz))
             }
             Object { ref fields, .. } => {
@@ -975,18 +1115,18 @@ impl Type {
 
                 let object = match json {
                     Value::Object(object) => object,
-                    _ => bail!("Expected a JSON object"),
+                    _ => return Err(Error::Expected("object")),
                 };
 
                 for field in fields {
                     let f = match object.get(&field.field) {
                         Some(f) => f,
                         None if field.ty.optional => continue,
-                        None => bail!("Missing required field: {}", field.field),
+                        None => return Err(Error::MissingRequiredField(field.field.clone())),
                     };
 
                     if !field.ty.is_compatible_with_json(f) {
-                        bail!("Bad field: {}", field.field);
+                        return Err(Error::IncompatibleField(field.field.clone()));
                     }
                 }
 

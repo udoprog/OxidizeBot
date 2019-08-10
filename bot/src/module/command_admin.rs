@@ -59,16 +59,13 @@ impl super::Module for Module {
         module::HookContext {
             injector,
             handlers,
-            futures,
             settings,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), failure::Error> {
-        let mut vars = settings.vars();
-        let enabled = vars.var("command/enabled", true)?;
+        let enabled = settings.var("command/enabled", true)?;
         let commands = injector.var()?;
         handlers.insert("command", Handler { enabled, commands });
-        futures.push(vars.run().boxed());
         Ok(())
     }
 }

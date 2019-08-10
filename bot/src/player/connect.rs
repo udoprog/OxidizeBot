@@ -148,7 +148,7 @@ impl ConnectPlayer {
         *volume = update;
         self.settings
             .set("volume", update)
-            .map_err(CommandError::Other)?;
+            .map_err(|e| CommandError::Other(e.into()))?;
         Ok(update)
     }
 

@@ -171,19 +171,16 @@ impl super::Module for Module {
             handlers,
             stream_info,
             settings,
-            futures,
             injector,
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
-        let mut vars = settings.vars();
-        let enabled = vars.var("water/enabled", false)?;
-        let cooldown = vars.var(
+        let enabled = settings.var("water/enabled", false)?;
+        let cooldown = settings.var(
             "water/cooldown",
             utils::Cooldown::from_duration(utils::Duration::seconds(60)),
         )?;
-        let reward_multiplier = vars.var("water/reward%", 100)?;
-        futures.push(vars.run().boxed());
+        let reward_multiplier = settings.var("water/reward%", 100)?;
 
         handlers.insert(
             "water",
