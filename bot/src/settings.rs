@@ -877,7 +877,10 @@ pub struct Stream<T> {
 
 impl<T> Unpin for Stream<T> {}
 
-impl<T> stream::FusedStream for Stream<T> {
+impl<T> stream::FusedStream for Stream<T>
+where
+    T: fmt::Debug + Clone + serde::de::DeserializeOwned,
+{
     fn is_terminated(&self) -> bool {
         self.option_stream.is_terminated()
     }
@@ -911,7 +914,10 @@ pub struct OptionStream<T> {
 
 impl<T> Unpin for OptionStream<T> {}
 
-impl<T> stream::FusedStream for OptionStream<T> {
+impl<T> stream::FusedStream for OptionStream<T>
+where
+    T: fmt::Debug + serde::de::DeserializeOwned,
+{
     fn is_terminated(&self) -> bool {
         false
     }

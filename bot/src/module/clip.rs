@@ -22,7 +22,7 @@ impl<'a> command::Handler for Clip<'a> {
         Some(auth::Scope::Clip)
     }
 
-    async fn handle<'ctx>(&mut self, ctx: command::Context<'ctx>) -> Result<(), Error> {
+    async fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

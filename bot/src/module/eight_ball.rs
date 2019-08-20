@@ -36,7 +36,7 @@ impl command::Handler for EightBall {
         Some(auth::Scope::EightBall)
     }
 
-    async fn handle<'ctx>(&mut self, ctx: command::Context<'ctx>) -> Result<(), failure::Error> {
+    async fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), failure::Error> {
         use rand::Rng as _;
 
         if !*self.enabled.read() {

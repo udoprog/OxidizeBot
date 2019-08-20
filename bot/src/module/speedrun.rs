@@ -516,7 +516,7 @@ impl command::Handler for Speedrun {
         Some(auth::Scope::Speedrun)
     }
 
-    async fn handle<'ctx>(&mut self, mut ctx: command::Context<'ctx>) -> Result<(), Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

@@ -20,7 +20,6 @@ warp = "0.1.17"
 irc = {version = "0.13", git = "https://github.com/aatxe/irc", branch = "0.14"}
 log = "0.4.8"
 oauth2 = {version = "2.0.0-alpha.5", git = "https://github.com/udoprog/oauth2-rs", branch = "async"}
-ratelimit = "0.4.4"
 rayon = "1.1.0"
 relative-path = { version = "0.4.0", features = ["serde"] }
 reqwest = "0.9.19"
@@ -64,11 +63,12 @@ ccl = "4.13.2"
 crossbeam = "0.7.2"
 hex = "0.3.2"
 graphql_client = "0.8.0"
-futures-option = "0.1.1"
+futures-option = "0.1.2"
 futures-cache = "0.7.1"
 failure = "0.1.5"
-async-injector = { version = "0.2.0" }
+async-injector = { version = "0.2.2" }
 async-trait = "0.1.7"
+leaky-bucket = "0.2.0"
 
 [dependencies.futures01]
 package = "futures"
@@ -76,7 +76,7 @@ version = "0.1.25"
 
 [dependencies.futures]
 package = "futures-preview"
-version = "0.3.0-alpha.17"
+version = "0.3.0-alpha.18"
 features = ["nightly", "async-await", "compat"]
 
 [build-dependencies]

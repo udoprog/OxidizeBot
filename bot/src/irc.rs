@@ -20,6 +20,7 @@ use irc::{
         message::{Message, Tag},
     },
 };
+use leaky_bucket::LeakyBuckets;
 use parking_lot::RwLock;
 use std::{fmt, sync::Arc, time};
 use tokio_threadpool::ThreadPool;
@@ -136,14 +137,24 @@ impl Irc {
 
             let nightbot = injector.var::<Arc<api::NightBot>>()?;
 
+            let buckets = LeakyBuckets::new();
+
             let sender = Sender::new(
                 sender_ty,
                 chat_channel.clone(),
                 client.clone(),
                 nightbot.clone(),
-            );
+                &buckets,
+            )?;
 
             let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
+
+            let future = async move {
+                buckets.coordinate().await?;
+                Ok(())
+            };
+
+            futures.push(future.boxed());
 
             let stream_info = {
                 let (stream_info, mut stream_state_rx, future) =

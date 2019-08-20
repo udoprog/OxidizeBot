@@ -15,7 +15,7 @@ pub trait Handler {
     }
 
     /// Handle the command.
-    async fn handle<'ctx>(&mut self, ctx: Context<'ctx>) -> Result<(), Error>;
+    async fn handle(&mut self, ctx: Context<'_>) -> Result<(), Error>;
 }
 
 /// A trait for peeking into chat messages.

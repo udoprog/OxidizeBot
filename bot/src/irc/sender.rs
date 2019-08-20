@@ -1,4 +1,5 @@
-use crate::{api, prelude::*};
+use crate::{api, prelude::*, timer::Delay};
+use failure::Error;
 use irc::{
     client::{Client, IrcClient},
     proto::{
@@ -6,7 +7,8 @@ use irc::{
         message::Message,
     },
 };
-use parking_lot::{Mutex, RwLock};
+use leaky_bucket::{LeakyBucket, LeakyBuckets};
+use parking_lot::RwLock;
 use std::{fmt, sync::Arc, time};
 use tokio_threadpool::ThreadPool;
 
@@ -28,8 +30,8 @@ struct Inner {
     target: String,
     client: IrcClient,
     thread_pool: ThreadPool,
-    limiter: Mutex<ratelimit::Limiter>,
-    nightbot_limiter: Mutex<ratelimit::Limiter>,
+    limiter: LeakyBucket,
+    nightbot_limiter: LeakyBucket,
     nightbot: Arc<RwLock<Option<Arc<api::NightBot>>>>,
 }
 
@@ -46,19 +48,23 @@ impl Sender {
         target: String,
         client: IrcClient,
         nightbot: Arc<RwLock<Option<Arc<api::NightBot>>>>,
-    ) -> Sender {
+        buckets: &LeakyBuckets,
+    ) -> Result<Sender, Error> {
         // limiter to use for IRC chat messages.
-        let limiter = ratelimit::Builder::new().frequency(10).capacity(95).build();
-        let limiter = Mutex::new(limiter);
+        let limiter = buckets
+            .rate_limiter()
+            .refill_amount(10)
+            .refill_interval(time::Duration::from_secs(1))
+            .max(95)
+            .build()?;
 
-        let nightbot_limiter = ratelimit::Builder::new()
-            .quantum(1)
-            .capacity(1)
-            .interval(time::Duration::from_secs(5))
-            .build();
-        let nightbot_limiter = Mutex::new(nightbot_limiter);
+        let nightbot_limiter = buckets
+            .rate_limiter()
+            .max(1)
+            .refill_interval(time::Duration::from_secs(5))
+            .build()?;
 
-        Sender {
+        Ok(Sender {
             ty,
             inner: Arc::new(Inner {
                 target,
@@ -68,7 +74,7 @@ impl Sender {
                 nightbot_limiter,
                 nightbot,
             }),
-        }
+        })
     }
 
     /// Get the channel this sender is associated with.
@@ -93,18 +99,25 @@ impl Sender {
 
     /// Only send to chat, with rate limiting.
     pub fn send(&self, m: impl Into<Message>) {
-        let inner = self.inner.clone();
         let m = m.into();
 
-        self.inner.thread_pool.spawn(future01::lazy(move || {
-            inner.limiter.lock().wait();
+        let inner = self.inner.clone();
+
+        let future = async move {
+            if let Err(e) = inner.limiter.acquire(1).await {
+                log_err!(e, "error in limiter");
+                return Ok(());
+            }
 
             if let Err(e) = inner.client.send(m) {
                 log_err!(e, "failed to send message");
             }
 
             Ok(())
-        }));
+        };
+
+        let future = future.boxed().compat();
+        self.inner.thread_pool.spawn(future);
     }
 
     /// Send an immediate message, without taking rate limiting into account.
@@ -118,8 +131,7 @@ impl Sender {
     pub fn privmsg(&self, f: impl fmt::Display) {
         match *self.ty.read() {
             Type::NightBot => {
-                let inner = self.inner.clone();
-                self.send_nightbot(inner, f.to_string());
+                self.send_nightbot(&*self.inner, f.to_string());
                 return;
             }
             Type::Chat => {
@@ -144,10 +156,7 @@ impl Sender {
     }
 
     /// Send message via nightbot.
-    fn send_nightbot(&self, inner: Arc<Inner>, m: String) {
-        use futures::executor;
-        use std::thread;
-
+    fn send_nightbot(&self, inner: &Inner, m: String) {
         let nightbot = match inner.nightbot.read().as_ref() {
             Some(nightbot) => nightbot.clone(),
             None => {
@@ -157,21 +166,31 @@ impl Sender {
         };
 
         let m = m.to_string();
+        let limiter = inner.nightbot_limiter.clone();
 
-        let future = future01::lazy(move || {
-            let mut limiter = inner.nightbot_limiter.lock();
+        let future = async move {
             // wait for the initial permit, keep the lock in case message is rejected.
-            limiter.wait();
+            if let Err(e) = limiter.acquire(1).await {
+                log_err!(e, "error in limiter");
+                return Ok(());
+            }
 
             loop {
-                let result = executor::block_on(nightbot.channel_send(m.clone()));
+                let result = nightbot.channel_send(m.clone()).await;
 
                 match result {
                     Ok(()) => (),
                     Err(api::nightbot::RequestError::TooManyRequests) => {
                         // since we still hold the lock, no one else can send.
                         // sleep for 100 ms an retry the send.
-                        thread::sleep(time::Duration::from_millis(1000));
+                        let delay =
+                            Delay::new(time::Instant::now() + time::Duration::from_millis(1000));
+
+                        if let Err(e) = delay.await {
+                            log_err!(e, "error during delay");
+                            break;
+                        }
+
                         continue;
                     }
                     Err(api::nightbot::RequestError::Other(e)) => {
@@ -179,10 +198,13 @@ impl Sender {
                     }
                 }
 
-                return Ok(());
+                break;
             }
-        });
 
+            Ok(())
+        };
+
+        let future = future.boxed().compat();
         self.inner.thread_pool.spawn(future);
     }
 }

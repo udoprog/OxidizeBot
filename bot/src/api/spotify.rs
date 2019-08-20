@@ -223,17 +223,13 @@ where
     }
 }
 
-impl<T> TryStream for PageStream<T>
+impl<T> Stream for PageStream<T>
 where
     T: 'static + Send + serde::de::DeserializeOwned,
 {
-    type Ok = Vec<T>;
-    type Error = Error;
+    type Item = Result<Vec<T>, Error>;
 
-    fn try_poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-    ) -> Poll<Option<Result<Self::Ok, Self::Error>>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let future = match self.next.as_mut() {
             Some(future) => future,
             None => return Poll::Ready(None),

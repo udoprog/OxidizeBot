@@ -18,7 +18,7 @@ impl command::Handler for Uptime {
         Some(auth::Scope::Uptime)
     }
 
-    async fn handle<'ctx>(&mut self, ctx: command::Context<'ctx>) -> Result<(), Error> {
+    async fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -85,7 +85,7 @@ impl<'a> command::Handler for Title<'a> {
         Some(auth::Scope::Title)
     }
 
-    async fn handle<'ctx>(&mut self, mut ctx: command::Context<'ctx>) -> Result<(), Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -160,7 +160,7 @@ impl<'a> command::Handler for Game<'a> {
         Some(auth::Scope::Game)
     }
 
-    async fn handle<'ctx>(&mut self, mut ctx: command::Context<'ctx>) -> Result<(), Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

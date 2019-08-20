@@ -13,10 +13,7 @@ impl command::Handler for Handler {
         Some(auth::Scope::Command)
     }
 
-    async fn handle<'ctx>(
-        &mut self,
-        mut ctx: command::Context<'ctx>,
-    ) -> Result<(), failure::Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

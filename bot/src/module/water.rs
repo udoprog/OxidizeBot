@@ -51,7 +51,7 @@ impl Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle<'ctx>(&mut self, mut ctx: command::Context<'ctx>) -> Result<(), Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

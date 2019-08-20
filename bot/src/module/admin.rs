@@ -63,10 +63,7 @@ impl<'a> command::Handler for Handler<'a> {
         Some(auth::Scope::Admin)
     }
 
-    async fn handle<'ctx>(
-        &mut self,
-        mut ctx: command::Context<'ctx>,
-    ) -> Result<(), failure::Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
         match ctx.next().as_ref().map(String::as_str) {
             Some("refresh-mods") => {
                 ctx.privmsg("/mods");

@@ -21,7 +21,7 @@ impl command::Handler for Time {
         Some(auth::Scope::Time)
     }
 
-    async fn handle<'ctx>(&mut self, ctx: command::Context<'ctx>) -> Result<(), Error> {
+    async fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

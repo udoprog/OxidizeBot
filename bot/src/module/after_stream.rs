@@ -15,7 +15,7 @@ impl command::Handler for AfterStream {
         Some(auth::Scope::AfterStream)
     }
 
-    async fn handle<'ctx>(&mut self, ctx: command::Context<'ctx>) -> Result<(), failure::Error> {
+    async fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), failure::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
