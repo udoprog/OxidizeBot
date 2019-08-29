@@ -30,8 +30,7 @@ impl Handler {
 #[async_trait]
 impl command::Handler for Handler {
     async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
-        let currency = self.currency.read();
-        let currency = match currency.as_ref() {
+        let currency = match self.currency.read().as_ref() {
             Some(currency) => currency.clone(),
             None => {
                 ctx.respond("No currency configured");
@@ -41,58 +40,64 @@ impl command::Handler for Handler {
 
         match ctx.next().as_ref().map(String::as_str) {
             None => {
-                let user = ctx.user.clone();
-
-                ctx.spawn(async move {
-                    let result = currency.balance_of(user.target(), user.name()).await;
-
-                    match result {
-                        Ok(balance) => {
-                            let balance = balance.unwrap_or_default();
-
-                            user.respond(format!(
-                                "You have {balance} {name}.",
-                                balance = balance,
-                                name = currency.name
-                            ));
-                        }
-                        Err(e) => {
-                            user.respond("Count not get balance, sorry :(");
-                            log_err!(e, "failed to get balance");
-                        }
+                let user = match ctx.user.real() {
+                    Some(user) => user,
+                    None => {
+                        ctx.respond("Only real users can check their balance");
+                        return Ok(());
                     }
-                });
+                };
+
+                let result = currency.balance_of(user.channel(), user.name()).await;
+
+                match result {
+                    Ok(balance) => {
+                        let balance = balance.unwrap_or_default();
+
+                        user.respond(format!(
+                            "You have {balance} {name}.",
+                            balance = balance,
+                            name = currency.name
+                        ));
+                    }
+                    Err(e) => {
+                        user.respond("Could not get balance, sorry :(");
+                        log_err!(e, "failed to get balance");
+                    }
+                }
             }
             Some("show") => {
                 ctx.check_scope(Scope::CurrencyShow)?;
                 let to_show = ctx_try!(ctx.next_str("<user>"));
 
-                let user = ctx.user.clone();
+                match currency.balance_of(ctx.channel(), to_show.as_str()).await {
+                    Ok(balance) => {
+                        let balance = balance.unwrap_or_default();
 
-                ctx.spawn(async move {
-                    let result = currency.balance_of(user.target(), to_show.as_str()).await;
-
-                    match result {
-                        Ok(balance) => {
-                            let balance = balance.unwrap_or_default();
-
-                            user.respond(format!(
-                                "{user} has {balance} {name}.",
-                                user = to_show,
-                                balance = balance,
-                                name = currency.name
-                            ));
-                        }
-                        Err(e) => {
-                            user.respond("Count not get balance, sorry :(");
-                            log_err!(e, "failed to get balance");
-                        }
+                        ctx.respond(format!(
+                            "{user} has {balance} {name}.",
+                            user = to_show,
+                            balance = balance,
+                            name = currency.name
+                        ));
                     }
-                });
+                    Err(e) => {
+                        ctx.respond("Count not get balance, sorry :(");
+                        log_err!(e, "failed to get balance");
+                    }
+                }
             }
             Some("give") => {
                 let taker = db::user_id(&ctx_try!(ctx.next_str("<user> <amount>")));
                 let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>"));
+
+                let user = match ctx.user.real() {
+                    Some(user) => user,
+                    None => {
+                        ctx.respond("Only real users can give currency");
+                        return Ok(());
+                    }
+                };
 
                 if ctx.user.is(&taker) {
                     ctx.respond("Giving to... yourself? But WHY?");
@@ -107,39 +112,40 @@ impl command::Handler for Handler {
                     return Ok(());
                 }
 
-                let user = ctx.user.clone();
-                let is_streamer = ctx.user.is_streamer();
+                let result = currency
+                    .balance_transfer(
+                        user.channel(),
+                        user.name(),
+                        &taker,
+                        amount,
+                        user.is_streamer(),
+                    )
+                    .await;
 
-                ctx.spawn(async move {
-                    let result = currency
-                        .balance_transfer(user.target(), user.name(), &taker, amount, is_streamer)
-                        .await;
-
-                    match result {
-                        Ok(()) => {
-                            user.respond(format!(
-                                "Gave {user} {amount} {currency}!",
-                                user = taker,
-                                amount = amount,
-                                currency = currency.name
-                            ));
-                        }
-                        Err(BalanceTransferError::NoBalance) => {
-                            user.respond(format!(
-                                "Not enough {currency} to transfer {amount}",
-                                currency = currency.name,
-                                amount = amount,
-                            ));
-                        }
-                        Err(BalanceTransferError::Other(e)) => {
-                            user.respond(format!(
-                                "Failed to give {currency}, sorry :(",
-                                currency = currency.name
-                            ));
-                            log_err!(e, "failed to modify currency");
-                        }
+                match result {
+                    Ok(()) => {
+                        user.respond(format!(
+                            "Gave {user} {amount} {currency}!",
+                            user = taker,
+                            amount = amount,
+                            currency = currency.name
+                        ));
                     }
-                });
+                    Err(BalanceTransferError::NoBalance) => {
+                        user.respond(format!(
+                            "Not enough {currency} to transfer {amount}",
+                            currency = currency.name,
+                            amount = amount,
+                        ));
+                    }
+                    Err(BalanceTransferError::Other(e)) => {
+                        user.respond(format!(
+                            "Failed to give {currency}, sorry :(",
+                            currency = currency.name
+                        ));
+                        log_err!(e, "failed to modify currency");
+                    }
+                }
             }
             Some("boost") => {
                 ctx.check_scope(Scope::CurrencyBoost)?;
@@ -157,7 +163,7 @@ impl command::Handler for Handler {
 
                 ctx.spawn(async move {
                     let result = currency
-                        .balance_add(user.target(), &boosted_user, amount)
+                        .balance_add(user.channel(), &boosted_user, amount)
                         .await;
 
                     match result {
@@ -193,7 +199,7 @@ impl command::Handler for Handler {
                 let sender = ctx.sender.clone();
 
                 ctx.spawn(async move {
-                    let result = currency.add_channel_all(user.target(), amount).await;
+                    let result = currency.add_channel_all(user.channel(), amount).await;
 
                     match result {
                         Ok(_) => {

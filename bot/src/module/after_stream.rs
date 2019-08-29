@@ -20,6 +20,14 @@ impl command::Handler for AfterStream {
             return Ok(());
         }
 
+        let user = match ctx.user.real() {
+            Some(user) => user,
+            None => {
+                ctx.respond("Only real users can add after stream messages");
+                return Ok(());
+            }
+        };
+
         let after_streams = match self.after_streams.read().clone() {
             Some(after_streams) => after_streams,
             None => return Ok(()),
@@ -38,7 +46,7 @@ impl command::Handler for AfterStream {
             return Ok(());
         }
 
-        after_streams.push(ctx.user.target(), ctx.user.name(), ctx.rest())?;
+        after_streams.push(ctx.channel(), user.name(), ctx.rest())?;
         ctx.respond("Reminder added.");
         Ok(())
     }

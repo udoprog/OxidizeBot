@@ -96,23 +96,25 @@ impl command::Handler for Handler {
                     user = reward.user
                 ));
 
-                let user = ctx.user.clone();
-
-                ctx.spawn(async move {
-                    let op = currency.balance_add(user.target(), &reward.user, -reward.amount);
-
-                    match op.await {
-                        Ok(()) => (),
-                        Err(e) => {
-                            log::error!("failed to undo water from database: {}", e);
-                        }
-                    }
-                });
+                if let Err(e) = currency
+                    .balance_add(ctx.channel(), &reward.user, -reward.amount)
+                    .await
+                {
+                    log::error!("failed to undo water from database: {}", e);
+                }
             }
             None => {
                 let (last, _) = match self.check_waters(&mut ctx) {
                     Some(water) => water,
                     None => return Ok(()),
+                };
+
+                let user = match ctx.user.real() {
+                    Some(user) => user,
+                    None => {
+                        ctx.privmsg("Can only get balance for real users.");
+                        return Ok(());
+                    }
                 };
 
                 let now = Utc::now();
@@ -123,30 +125,24 @@ impl command::Handler for Handler {
                 self.waters.push((
                     now,
                     Some(Reward {
-                        user: ctx.user.name().to_string(),
+                        user: user.name().to_string(),
                         amount,
                     }),
                 ));
 
                 ctx.respond(format!(
                     "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.", streamer = ctx.user.streamer().display_name,
-                    user = ctx.user.display_name(),
+                    user = user.display_name(),
                     amount = amount,
                     currency = currency.name
                 ));
 
-                let user = ctx.user.clone();
-
-                ctx.spawn(async move {
-                    let op = currency.balance_add(user.target(), user.name(), amount);
-
-                    match op.await {
-                        Ok(()) => (),
-                        Err(e) => {
-                            log::error!("failed to undo water from database: {}", e);
-                        }
-                    }
-                });
+                if let Err(e) = currency
+                    .balance_add(ctx.channel(), user.name(), amount)
+                    .await
+                {
+                    log::error!("failed to appply water balance: {}", e);
+                }
             }
             Some(_) => {
                 ctx.respond("Expected: !water, or !water undo.");

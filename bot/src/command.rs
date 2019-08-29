@@ -38,6 +38,11 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
+    /// Get the channel.
+    pub fn channel(&self) -> &str {
+        self.sender.channel()
+    }
+
     /// Spawn the given result and log on errors.
     pub fn spawn_result<F>(&self, id: &'static str, future: F)
     where
@@ -62,13 +67,15 @@ impl<'a> Context<'a> {
     /// Verify that the current user has the associated scope.
     pub fn check_scope(&mut self, scope: Scope) -> Result<(), Error> {
         if !self.user.has_scope(scope) {
-            self.privmsg(format!(
-                "Do you think this is a democracy {name}? LUL",
-                name = self.user.display_name()
-            ));
+            if let Some(name) = self.user.display_name() {
+                self.privmsg(format!(
+                    "Do you think this is a democracy {name}? LUL",
+                    name = name,
+                ));
+            }
 
             failure::bail!(
-                "Scope `{}` not associated with user `{}`",
+                "Scope `{}` not associated with user {:?}",
                 scope,
                 self.user.name()
             );

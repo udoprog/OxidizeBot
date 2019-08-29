@@ -23,7 +23,7 @@ impl command::Handler for Handler {
                 let name = ctx_try!(ctx.next_str("<name> <track-id>"));
                 let track_id = ctx_try!(ctx.next_parse("<name> <track-id>"));
 
-                themes.edit(ctx.user.target(), &name, track_id)?;
+                themes.edit(ctx.channel(), &name, track_id)?;
                 ctx.respond("Edited theme.");
             }
             Some("edit-duration") => {
@@ -33,7 +33,7 @@ impl command::Handler for Handler {
                 let start = ctx_try!(ctx.next_parse("<name> <start> <end>"));
                 let end = ctx_try!(ctx.next_parse_optional());
 
-                themes.edit_duration(ctx.user.target(), &name, start, end)?;
+                themes.edit_duration(ctx.channel(), &name, start, end)?;
                 ctx.respond("Edited theme.");
             }
             None | Some(..) => {

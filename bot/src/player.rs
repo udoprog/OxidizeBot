@@ -631,7 +631,7 @@ impl Player {
     }
 
     /// Promote the given song to the head of the queue.
-    pub fn promote_song(&self, user: &str, n: usize) -> Option<Arc<Item>> {
+    pub fn promote_song(&self, user: Option<&str>, n: usize) -> Option<Arc<Item>> {
         let promoted = self.inner.queue.promote_song(user, n);
 
         if promoted.is_some() {
@@ -1053,7 +1053,7 @@ pub trait Backend: Clone + Send + Sync {
     fn song_purge(&self) -> Result<usize, Error>;
 
     /// Purge the songs database, but only log on issues.
-    fn promote_song_log(&self, user: &str, track_id: &TrackId) -> Option<bool> {
+    fn promote_song_log(&self, user: Option<&str>, track_id: &TrackId) -> Option<bool> {
         match self.promote_song(user, track_id) {
             Err(e) => {
                 log::warn!("failed to promote song `{}` in database: {}", track_id, e);
@@ -1064,7 +1064,7 @@ pub trait Backend: Clone + Send + Sync {
     }
 
     /// Promote the track with the given ID.
-    fn promote_song(&self, user: &str, track_id: &TrackId) -> Result<bool, Error>;
+    fn promote_song(&self, user: Option<&str>, track_id: &TrackId) -> Result<bool, Error>;
 
     /// Test if the song has been played within a given duration.
     fn last_song_within(
@@ -1212,7 +1212,7 @@ impl Queue {
     }
 
     /// Promote the given song.
-    pub fn promote_song(&self, user: &str, n: usize) -> Option<Arc<Item>> {
+    pub fn promote_song(&self, user: Option<&str>, n: usize) -> Option<Arc<Item>> {
         let mut q = self.queue.write();
 
         // OK, but song doesn't exist or index is out of bound.

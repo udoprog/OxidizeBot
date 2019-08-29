@@ -140,19 +140,19 @@ impl<'a> command::Handler for Handler<'a> {
                 };
 
                 if let Some(aliases) = self.aliases.read().as_ref() {
-                    aliases.enable_group(ctx.user.target(), &group)?;
+                    aliases.enable_group(ctx.channel(), &group)?;
                 }
 
                 if let Some(commands) = self.commands.read().as_ref() {
-                    commands.enable_group(ctx.user.target(), &group)?;
+                    commands.enable_group(ctx.channel(), &group)?;
                 }
 
                 if let Some(promotions) = self.promotions.read().as_ref() {
-                    promotions.enable_group(ctx.user.target(), &group)?;
+                    promotions.enable_group(ctx.channel(), &group)?;
                 }
 
                 if let Some(themes) = self.themes.read().as_ref() {
-                    themes.enable_group(ctx.user.target(), &group)?;
+                    themes.enable_group(ctx.channel(), &group)?;
                 }
 
                 ctx.respond(format!("Enabled group {}", group));
@@ -167,19 +167,19 @@ impl<'a> command::Handler for Handler<'a> {
                 };
 
                 if let Some(aliases) = self.aliases.read().as_ref() {
-                    aliases.disable_group(ctx.user.target(), &group)?;
+                    aliases.disable_group(ctx.channel(), &group)?;
                 }
 
                 if let Some(commands) = self.commands.read().as_ref() {
-                    commands.disable_group(ctx.user.target(), &group)?;
+                    commands.disable_group(ctx.channel(), &group)?;
                 }
 
                 if let Some(promotions) = self.promotions.read().as_ref() {
-                    promotions.disable_group(ctx.user.target(), &group)?;
+                    promotions.disable_group(ctx.channel(), &group)?;
                 }
 
                 if let Some(themes) = self.themes.read().as_ref() {
-                    themes.disable_group(ctx.user.target(), &group)?;
+                    themes.disable_group(ctx.channel(), &group)?;
                 }
 
                 ctx.respond(format!("Disabled group {}", group));

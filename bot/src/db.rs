@@ -177,7 +177,7 @@ impl player::Backend for Database {
     }
 
     /// Promote the song with the given ID.
-    fn promote_song(&self, user: &str, track_id: &TrackId) -> Result<bool, Error> {
+    fn promote_song(&self, user: Option<&str>, track_id: &TrackId) -> Result<bool, Error> {
         use self::schema::songs::dsl;
         let c = self.pool.lock();
 

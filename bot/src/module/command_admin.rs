@@ -31,7 +31,7 @@ impl command::Handler for Handler {
 
                 let name = ctx_try!(ctx.next_str("<name>"));
                 let template = ctx_try!(ctx.rest_parse("<name> <template>"));
-                commands.edit(ctx.user.target(), &name, template)?;
+                commands.edit(ctx.channel(), &name, template)?;
 
                 ctx.respond("Edited command.");
             }

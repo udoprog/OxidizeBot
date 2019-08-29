@@ -11,7 +11,7 @@ macro_rules! command_enable {
             }
         };
 
-        if !$db.enable($ctx.user.target(), &name)? {
+        if !$db.enable($ctx.channel(), &name)? {
             $ctx.respond(format!("No {} named `{}`.", $what, name));
             return Ok(());
         }
@@ -33,7 +33,7 @@ macro_rules! command_disable {
             }
         };
 
-        if !$db.disable($ctx.user.target(), &name)? {
+        if !$db.disable($ctx.channel(), &name)? {
             $ctx.respond(format!("No {} named `{}`.", $what, name));
             return Ok(());
         }
@@ -55,7 +55,7 @@ macro_rules! command_clear_group {
             }
         };
 
-        if !$db.edit_group($ctx.user.target(), &name, None)? {
+        if !$db.edit_group($ctx.channel(), &name, None)? {
             $ctx.respond(format!("No {} named `{}`.", $what, name));
             return Ok(());
         }
@@ -80,7 +80,7 @@ macro_rules! command_group {
         let group = match $ctx.next() {
             Some(name) => name.to_string(),
             None => {
-                let thing = match $db.get($ctx.user.target(), &name) {
+                let thing = match $db.get($ctx.channel(), &name) {
                     Some(thing) => thing,
                     None => {
                         $ctx.respond(format!("No {} named `{}`", $what, name));
@@ -107,7 +107,7 @@ macro_rules! command_group {
             }
         };
 
-        if !$db.edit_group($ctx.user.target(), &name, Some(group.clone()))? {
+        if !$db.edit_group($ctx.channel(), &name, Some(group.clone()))? {
             $ctx.respond(format!("no such {}", $what));
             return Ok(());
         }
@@ -119,7 +119,7 @@ macro_rules! command_group {
 macro_rules! command_list {
     ($ctx:expr, $db:expr, $what:expr) => {{
         let mut names = $db
-            .list($ctx.user.target())
+            .list($ctx.channel())
             .into_iter()
             .map(|c| c.key.name.to_string())
             .collect::<Vec<_>>();
@@ -145,7 +145,7 @@ macro_rules! command_delete {
             }
         };
 
-        if $db.delete($ctx.user.target(), &name)? {
+        if $db.delete($ctx.channel(), &name)? {
             $ctx.respond(format!("Deleted {} `{}`", $what, name));
         } else {
             $ctx.respond(format!("No such {}", $what));
@@ -165,7 +165,7 @@ macro_rules! command_rename {
             }
         };
 
-        match $db.rename($ctx.user.target(), &from, &to) {
+        match $db.rename($ctx.channel(), &from, &to) {
             Ok(()) => $ctx.respond(format!("Renamed {} {} -> {}.", $what, from, to)),
             Err(crate::db::RenameError::Conflict) => {
                 $ctx.respond(format!("Already an {} named `{}`.", $what, to))
@@ -187,7 +187,7 @@ macro_rules! command_show {
             }
         };
 
-        let thing = $db.get_any($ctx.user.target(), &name)?;
+        let thing = $db.get_any($ctx.channel(), &name)?;
 
         match thing {
             Some(thing) => {

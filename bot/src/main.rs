@@ -1,4 +1,3 @@
-#![feature(async_await)]
 #![recursion_limit = "256"]
 #![cfg_attr(feature = "windows", windows_subsystem = "windows")]
 
@@ -345,6 +344,7 @@ async fn try_main(
     let global_bus = Arc::new(bus::Bus::new());
     let youtube_bus = Arc::new(bus::Bus::new());
     let global_channel = Arc::new(RwLock::new(None));
+    let command_bus = Arc::new(bus::Bus::new());
 
     futures.push(injector.clone().drive().map_err(Into::into).boxed());
     futures.push(system_loop(settings.scoped("system"), system.clone()).boxed());
@@ -366,6 +366,7 @@ async fn try_main(
         message_bus.clone(),
         global_bus.clone(),
         youtube_bus.clone(),
+        command_bus.clone(),
         db.clone(),
         auth.clone(),
         global_channel.clone(),
@@ -543,6 +544,7 @@ async fn try_main(
     let irc = irc::Irc {
         bad_words,
         global_bus,
+        command_bus,
         modules,
         shutdown,
         settings,

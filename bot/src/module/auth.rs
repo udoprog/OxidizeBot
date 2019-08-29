@@ -15,6 +15,14 @@ impl<'a> command::Handler for Handler<'a> {
                 let filter = ctx.next();
                 let filter = filter.as_ref().map(String::as_str);
 
+                let user = match ctx.user.real() {
+                    Some(user) => user,
+                    None => {
+                        ctx.respond("Can only get scopes for real users");
+                        return Ok(());
+                    }
+                };
+
                 // apply the current filter to a collection of scopes.
                 let filter = |list: Vec<auth::Scope>| {
                     list.into_iter()
@@ -23,19 +31,19 @@ impl<'a> command::Handler for Handler<'a> {
                         .collect::<Vec<_>>()
                 };
 
-                let by_user = filter(self.auth.scopes_for_user(ctx.user.name()));
+                let by_user = filter(self.auth.scopes_for_user(user.name()));
 
                 let mut result = Vec::new();
 
                 if !by_user.is_empty() {
                     result.push(format!(
                         "Your ({}): {}",
-                        ctx.user.display_name(),
+                        user.display_name(),
                         by_user.join(", ")
                     ));
                 }
 
-                for role in ctx.user.roles() {
+                for role in user.roles() {
                     let by_role = filter(self.auth.scopes_for_role(role));
 
                     if !by_role.is_empty() {

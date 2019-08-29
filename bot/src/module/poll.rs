@@ -145,6 +145,11 @@ impl command::MessageHook for ActivePoll {
     fn peek(&mut self, user: &irc::User, m: &str) -> Result<(), Error> {
         let mut inner = self.inner.write();
 
+        let user = match user.real() {
+            Some(user) => user,
+            None => return Ok(()),
+        };
+
         if inner.voted.contains(user.name()) {
             return Ok(());
         }

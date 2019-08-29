@@ -50,7 +50,7 @@ impl Handler {
                     track_id::ParseTrackIdError::MissingUriPrefix => (),
                     // show other errors.
                     e => {
-                        log::warn!("bad song request by {}: {}", ctx.user.name(), e);
+                        log::warn!("bad song request: {}", e);
                         let e = format!("{} :(", e);
                         self.request_help(ctx, Some(e.as_str()));
                         return Ok(());
@@ -63,6 +63,14 @@ impl Handler {
         };
 
         let future = async move {
+            let user = match user.real() {
+                Some(user) => user,
+                None => {
+                    user.respond("Only real users can request songs");
+                    return Ok(());
+                }
+            };
+
             let track_id = match track_id {
                 Some(track_id) => Some(track_id),
                 None => player.search_track(q.as_str()).await?,
@@ -131,7 +139,7 @@ impl Handler {
                         };
 
                         let balance = currency
-                            .balance_of(user.target(), user.name())
+                            .balance_of(user.channel(), user.name())
                             .await?
                             .unwrap_or_default();
 
@@ -249,7 +257,7 @@ impl Handler {
             };
 
             match currency
-                .balance_add(user.target(), user.name(), request_reward as i64)
+                .balance_add(user.channel(), user.name(), request_reward as i64)
                 .await
             {
                 Ok(()) => {
@@ -335,7 +343,7 @@ impl command::Handler for Handler {
                 let user = ctx.user.clone();
 
                 ctx.spawn(async move {
-                    match player.play_theme(user.target(), name.as_str()).await {
+                    match player.play_theme(user.channel(), name.as_str()).await {
                         Ok(()) => (),
                         Err(PlayThemeError::NoSuchTheme) => {
                             user.respond("No such theme :(");
@@ -448,7 +456,17 @@ impl command::Handler for Handler {
 
                 let (your, user) = match &user {
                     Some(user) => (false, user.as_str()),
-                    None => (true, ctx.user.name()),
+                    None => {
+                        let user = match ctx.user.real() {
+                            Some(user) => user,
+                            None => {
+                                ctx.respond("Not a real user");
+                                return Ok(());
+                            }
+                        };
+
+                        (true, user.name())
+                    }
                 };
 
                 let user = user.to_lowercase();
@@ -502,7 +520,17 @@ impl command::Handler for Handler {
                             player.remove_last()?
                         }
                     },
-                    Some("mine") => player.remove_last_by_user(ctx.user.name())?,
+                    Some("mine") => {
+                        let user = match ctx.user.real() {
+                            Some(user) => user,
+                            None => {
+                                ctx.respond("Only real users can delete their own songs");
+                                return Ok(());
+                            }
+                        };
+
+                        player.remove_last_by_user(user.name())?
+                    }
                     Some(n) => {
                         ctx.check_scope(Scope::SongEditQueue)?;
 

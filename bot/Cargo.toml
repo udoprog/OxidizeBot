@@ -15,7 +15,6 @@ diesel = { version = "1.4.2", features = ["sqlite", "chrono"] }
 diesel_migrations = "1.4.0"
 eudex = "0.1.1"
 hashbrown = { version = "0.5.0", features = ["serde"] }
-hyper = "0.12.33"
 warp = "0.1.17"
 irc = {version = "0.13", git = "https://github.com/aatxe/irc", branch = "0.14"}
 log = "0.4.8"
@@ -68,7 +67,7 @@ futures-cache = "0.7.1"
 failure = "0.1.5"
 async-injector = { version = "0.2.2" }
 async-trait = "0.1.7"
-leaky-bucket = "0.2.0"
+leaky-bucket = "0.3.0"
 
 [dependencies.futures01]
 package = "futures"

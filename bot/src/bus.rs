@@ -1,7 +1,6 @@
 use crate::{player, track_id::TrackId};
 use hashbrown::HashMap;
 use parking_lot::Mutex;
-use std::sync::Arc;
 
 pub trait Message: 'static + Clone + Send + Sync + serde::Serialize {
     /// The ID of a bussed message.
@@ -63,7 +62,7 @@ where
     }
 
     /// Create a receiver of the bus.
-    pub fn add_rx(self: Arc<Self>) -> Reader<T> {
+    pub fn add_rx(&self) -> Reader<T> {
         self.bus.lock().bus.add_rx()
     }
 }
@@ -194,5 +193,21 @@ impl Global {
             elapsed: song.elapsed().as_secs(),
             duration: song.duration().as_secs(),
         })
+    }
+}
+
+/// Events for running commands externally.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "type")]
+pub enum Command {
+    /// Run a raw command.
+    #[serde(rename = "raw")]
+    Raw { command: String },
+}
+
+impl Message for Command {
+    /// Whether a message should be cached or not and under what key.
+    fn id(&self) -> Option<&'static str> {
+        None
     }
 }

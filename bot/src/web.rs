@@ -10,9 +10,10 @@ use std::{borrow::Cow, fmt, net::SocketAddr, sync::Arc};
 use warp::{body, filters, http::Uri, path, Filter as _};
 
 mod cache;
+mod chat;
 mod settings;
 
-use self::{cache::Cache, settings::Settings};
+use self::{cache::Cache, chat::Chat, settings::Settings};
 
 pub const URL: &'static str = "http://localhost:12345";
 pub const REDIRECT_URI: &'static str = "/redirect";
@@ -678,34 +679,6 @@ impl Auth {
     }
 }
 
-/// Chat endpoints.
-#[derive(Clone)]
-struct Chat {
-    message_log: message_log::MessageLog,
-}
-
-impl Chat {
-    fn route(message_log: message_log::MessageLog) -> filters::BoxedFilter<(impl warp::Reply,)> {
-        let api = Chat { message_log };
-
-        let route = warp::get2()
-            .and(warp::path!("messages").and(path::end()))
-            .and_then({
-                let api = api.clone();
-                move || api.messages().map_err(warp::reject::custom)
-            })
-            .boxed();
-
-        return route;
-    }
-
-    /// Get all stored messages.
-    fn messages(&self) -> Result<impl warp::Reply, failure::Error> {
-        let messages = self.message_log.messages();
-        Ok(warp::reply::json(&*messages))
-    }
-}
-
 /// API to manage device.
 #[derive(Clone)]
 struct Api {
@@ -893,6 +866,7 @@ pub fn setup(
     message_bus: Arc<bus::Bus<message_log::Event>>,
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
+    command_bus: Arc<bus::Bus<bus::Command>>,
     db: db::Database,
     auth: auth::Auth,
     channel: Arc<RwLock<Option<String>>>,
@@ -1013,8 +987,7 @@ pub fn setup(
         let route = route.or(Themes::route(injector.var()?));
         let route = route.or(Settings::route(injector.var()?));
         let route = route.or(Cache::route(injector.var()?));
-
-        let route = route.or(warp::path("chat").and(Chat::route(message_log)).boxed());
+        let route = route.or(Chat::route(command_bus, message_log));
 
         let route = route
             .or(

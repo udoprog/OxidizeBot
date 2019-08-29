@@ -50,7 +50,7 @@ impl<'a> command::Handler for Handler<'a> {
         let reward = *self.reward.read();
 
         let future = async move {
-            let chatters = twitch.chatters(user.target()).await?;
+            let chatters = twitch.chatters(user.channel()).await?;
 
             let mut u = HashSet::new();
             u.extend(chatters.viewers);
@@ -63,11 +63,11 @@ impl<'a> command::Handler for Handler<'a> {
             let total_reward = reward * u.len() as i64;
 
             currency
-                .balance_add(user.target(), &user.streamer().name, -total_reward)
+                .balance_add(user.channel(), &user.streamer().name, -total_reward)
                 .await?;
 
             currency
-                .balances_increment(user.target(), u, reward)
+                .balances_increment(user.channel(), u, reward)
                 .await?;
 
             user.sender().privmsg(format!(

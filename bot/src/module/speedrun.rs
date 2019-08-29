@@ -96,7 +96,15 @@ impl Speedrun {
             }
         }
 
-        let query_user = query_user.unwrap_or_else(|| ctx.user.name().to_lowercase());
+        let query_user = query_user.or_else(|| ctx.user.name().map(|n| n.to_lowercase()));
+
+        let query_user = match query_user {
+            Some(query_user) => query_user,
+            None => {
+                ctx.respond("No user in query");
+                return Ok(());
+            }
+        };
 
         let speedrun = self.speedrun.clone();
         let user = ctx.user.clone();

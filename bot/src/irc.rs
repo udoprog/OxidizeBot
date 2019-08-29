@@ -40,6 +40,7 @@ const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
 pub struct Irc {
     pub bad_words: db::Words,
     pub global_bus: Arc<bus::Bus<bus::Global>>,
+    pub command_bus: Arc<bus::Bus<bus::Command>>,
     pub modules: Vec<Box<dyn module::Module>>,
     pub shutdown: utils::Shutdown,
     pub settings: settings::Settings,
@@ -55,6 +56,7 @@ impl Irc {
         let Irc {
             bad_words,
             global_bus,
+            command_bus,
             modules,
             shutdown,
             settings,
@@ -287,10 +289,23 @@ impl Irc {
                 handler.sender.privmsg_immediate(join_message);
             }
 
+            let mut commands = command_bus.add_rx().compat().fuse();
+
             let mut leave = false;
 
             while !leave {
                 futures::select! {
+                    command = commands.select_next_some() => {
+                        match command? {
+                            bus::Command::Raw { command } => {
+                                log::trace!("Raw command: {}", command);
+
+                                if let Err(e) = handler.raw(&command).await {
+                                    log::error!("Failed to handle message: {}", e);
+                                }
+                            }
+                        }
+                    }
                     future = futures => {
                         match future {
                             Ok(..) => break 'outer,
@@ -593,10 +608,12 @@ pub async fn process_command<'a, 'b: 'a>(
                         if ctx.user.is_moderator() {
                             ctx.respond("You are not allowed to run that command");
                         } else {
-                            ctx.privmsg(format!(
-                                "Do you think this is a democracy {name}? LUL",
-                                name = ctx.user.display_name()
-                            ));
+                            if let Some(display_name) = ctx.user.display_name() {
+                                ctx.privmsg(format!(
+                                    "Do you think this is a democracy {name}? LUL",
+                                    name = display_name
+                                ));
+                            }
                         }
 
                         return Ok(());
@@ -628,7 +645,7 @@ impl<'a> Handler<'a> {
     /// Test if the message should be deleted.
     fn should_be_deleted(&self, user: &User, message: &str) -> bool {
         // Moderators can say whatever they want.
-        if self.moderators.read().contains(user.name()) {
+        if user.is_moderator() {
             return false;
         }
 
@@ -637,7 +654,7 @@ impl<'a> Handler<'a> {
                 if let Some(why) = word.why.as_ref() {
                     let why = why.render_to_string(&BadWordsVars {
                         name: user.display_name(),
-                        target: user.target(),
+                        target: user.channel(),
                     });
 
                     match why {
@@ -701,6 +718,105 @@ impl<'a> Handler<'a> {
         Ok(())
     }
 
+    /// Process the given command.
+    pub async fn process_message(&mut self, user: &User, message: &str) -> Result<(), Error> {
+        for (key, hook) in &mut self.message_hooks {
+            hook.peek(&user, message)
+                .with_context(|_| format_err!("hook `{}` failed", key))?;
+        }
+
+        // only non-moderators and non-streamer bumps the idle counter.
+        if !user.is_streamer() {
+            self.idle.seen();
+        }
+
+        let mut it = utils::Words::new(message);
+        // NB: declared here to be in scope.
+        let a;
+
+        if let Some(aliases) = self.aliases.as_ref() {
+            // NB: needs to store locally to maintain a reference to it.
+            a = aliases.lookup(user.channel(), it.clone());
+
+            if let Some(a) = &a {
+                it = utils::Words::new(a.as_str());
+            }
+        }
+
+        if let Some(command) = it.next() {
+            if let Some(commands) = self.commands.as_ref() {
+                if let Some(command) = commands.get(user.channel(), &command) {
+                    if command.has_var("count") {
+                        commands.increment(&*command)?;
+                    }
+
+                    let vars = CommandVars {
+                        name: user.display_name(),
+                        target: user.channel(),
+                        count: command.count(),
+                        rest: it.rest(),
+                    };
+
+                    let response = command.render(&vars)?;
+                    self.sender.privmsg(response);
+                }
+            }
+
+            if command.starts_with('!') {
+                let command = &command[1..];
+
+                let ctx = command::Context {
+                    api_url: self.api_url.as_ref().map(|s| s.as_str()),
+                    sender: &self.sender,
+                    thread_pool: &self.thread_pool,
+                    user: user.clone(),
+                    it,
+                    shutdown: self.shutdown,
+                    scope_cooldowns: &mut self.scope_cooldowns,
+                    message_hooks: &mut self.message_hooks,
+                };
+
+                let result = process_command(
+                    command,
+                    ctx,
+                    &self.global_bus,
+                    &mut self.currency_handler,
+                    &mut self.handlers,
+                );
+
+                if let Err(e) = result.await {
+                    log_err!(e, "failed to process command");
+                }
+            }
+        }
+
+        if self.should_be_deleted(&user, message) {
+            self.delete_message(&user)?;
+        }
+
+        Ok(())
+    }
+
+    /// Run the given raw command.
+    pub async fn raw(&mut self, message: &str) -> Result<(), Error> {
+        let tags = Tags::default();
+
+        let user = User {
+            inner: Arc::new(UserInner {
+                tags,
+                sender: self.sender.clone(),
+                principal: Principal::Injected,
+                streamer: self.streamer.clone(),
+                moderators: self.moderators.clone(),
+                vips: self.vips.clone(),
+                stream_info: self.stream_info.clone(),
+                auth: self.auth.clone(),
+            }),
+        };
+
+        self.process_message(&user, message).await
+    }
+
     /// Handle the given command.
     pub async fn handle(&mut self, mut m: Message) -> Result<(), Error> {
         match m.command {
@@ -709,11 +825,6 @@ impl<'a> Handler<'a> {
 
                 let name = m
                     .source_nickname()
-                    .ok_or_else(|| format_err!("expected user info"))?
-                    .to_string();
-
-                let target = m
-                    .response_target()
                     .ok_or_else(|| format_err!("expected user info"))?
                     .to_string();
 
@@ -735,8 +846,7 @@ impl<'a> Handler<'a> {
                     inner: Arc::new(UserInner {
                         tags,
                         sender: self.sender.clone(),
-                        name,
-                        target,
+                        principal: Principal::User { name },
                         streamer: self.streamer.clone(),
                         moderators: self.moderators.clone(),
                         vips: self.vips.clone(),
@@ -745,79 +855,7 @@ impl<'a> Handler<'a> {
                     }),
                 };
 
-                for (key, hook) in &mut self.message_hooks {
-                    hook.peek(&user, message)
-                        .with_context(|_| format_err!("hook `{}` failed", key))?;
-                }
-
-                // only non-moderators and non-streamer bumps the idle counter.
-                if !user.is_streamer() {
-                    self.idle.seen();
-                }
-
-                let mut it = utils::Words::new(message);
-                // NB: declared here to be in scope.
-                let a;
-
-                if let Some(aliases) = self.aliases.as_ref() {
-                    // NB: needs to store locally to maintain a reference to it.
-                    a = aliases.lookup(user.target(), it.clone());
-
-                    if let Some(a) = &a {
-                        it = utils::Words::new(a.as_str());
-                    }
-                }
-
-                if let Some(command) = it.next() {
-                    if let Some(commands) = self.commands.as_ref() {
-                        if let Some(command) = commands.get(user.target(), &command) {
-                            if command.has_var("count") {
-                                commands.increment(&*command)?;
-                            }
-
-                            let vars = CommandVars {
-                                name: user.display_name(),
-                                target: user.target(),
-                                count: command.count(),
-                                rest: it.rest(),
-                            };
-
-                            let response = command.render(&vars)?;
-                            self.sender.privmsg(response);
-                        }
-                    }
-
-                    if command.starts_with('!') {
-                        let command = &command[1..];
-
-                        let ctx = command::Context {
-                            api_url: self.api_url.as_ref().map(|s| s.as_str()),
-                            sender: &self.sender,
-                            thread_pool: &self.thread_pool,
-                            user: user.clone(),
-                            it,
-                            shutdown: self.shutdown,
-                            scope_cooldowns: &mut self.scope_cooldowns,
-                            message_hooks: &mut self.message_hooks,
-                        };
-
-                        let result = process_command(
-                            command,
-                            ctx,
-                            &self.global_bus,
-                            &mut self.currency_handler,
-                            &mut self.handlers,
-                        );
-
-                        if let Err(e) = result.await {
-                            log_err!(e, "failed to process command");
-                        }
-                    }
-                }
-
-                if self.should_be_deleted(&user, message) {
-                    self.delete_message(&user)?;
-                }
+                self.process_message(&user, message).await?;
             }
             Command::CAP(_, CapSubCommand::ACK, _, ref what) => {
                 match what.as_ref().map(|w| w.as_str()) {
@@ -915,90 +953,69 @@ impl<'a> Handler<'a> {
     }
 }
 
-/// Inner struct for User to make it cheaper to clone.
-struct UserInner {
-    tags: Tags,
-    sender: Sender,
-    name: String,
-    target: String,
-    streamer: Arc<twitch::User>,
-    moderators: Arc<RwLock<HashSet<String>>>,
-    vips: Arc<RwLock<HashSet<String>>>,
-    stream_info: stream_info::StreamInfo,
-    auth: Auth,
+/// Struct representing a real user.
+///
+/// For example, an injected command does not have a real user associated with it.
+pub struct RealUser<'a> {
+    tags: &'a Tags,
+    sender: &'a Sender,
+    name: &'a str,
+    streamer: &'a twitch::User,
+    moderators: &'a RwLock<HashSet<String>>,
+    vips: &'a RwLock<HashSet<String>>,
+    stream_info: &'a stream_info::StreamInfo,
+    auth: &'a Auth,
 }
 
-#[derive(Clone)]
-pub struct User {
-    inner: Arc<UserInner>,
-}
+impl<'a> RealUser<'a> {
+    /// Get the channel the user is associated with.
+    pub fn channel(&self) -> &str {
+        self.sender.channel()
+    }
 
-impl User {
     /// Get the name of the user.
-    pub fn name(&self) -> &str {
-        self.inner.name.as_str()
+    pub fn name(&self) -> &'a str {
+        &self.name
     }
 
     /// Get the display name of the user.
-    pub fn display_name(&self) -> &str {
-        self.inner
-            .tags
+    pub fn display_name(&self) -> &'a str {
+        self.tags
             .display_name
             .as_ref()
             .map(|d| d.as_str())
-            .unwrap_or_else(|| self.inner.name.as_str())
-    }
-
-    /// Get tags associated with the message.
-    pub fn tags(&self) -> &Tags {
-        &self.inner.tags
-    }
-
-    /// Access the sender associated with the user.
-    pub fn sender(&self) -> &Sender {
-        &self.inner.sender
-    }
-
-    /// Get the target of the user.
-    pub fn target(&self) -> &str {
-        self.inner.target.as_str()
-    }
-
-    /// Get the name of the streamer.
-    pub fn streamer(&self) -> &twitch::User {
-        &*self.inner.streamer
-    }
-
-    /// Test if the current user is the given user.
-    pub fn is(&self, name: &str) -> bool {
-        self.inner.name == name.to_lowercase()
+            .unwrap_or_else(|| self.name)
     }
 
     /// Respond to the user with a message.
     pub fn respond(&self, m: impl fmt::Display) {
-        self.inner
-            .sender
+        self.sender
             .privmsg(format!("{} -> {}", self.display_name(), m));
     }
 
-    /// Pretty render the results.
-    pub fn respond_lines<F>(&self, results: impl IntoIterator<Item = F>, empty: &str)
-    where
-        F: fmt::Display,
-    {
-        let mut output = partition_response(results, 360, " | ");
+    /// Test if the current user is the given user.
+    pub fn is(&self, name: &str) -> bool {
+        self.name == name.to_lowercase()
+    }
 
-        if let Some(line) = output.next() {
-            let count = output.count();
+    /// Test if streamer.
+    fn is_streamer(&self) -> bool {
+        self.name == self.streamer.name
+    }
 
-            if count > 0 {
-                self.respond(format!("{} ... {} line(s) not shown", line, count,));
-            } else {
-                self.respond(line);
-            }
-        } else {
-            self.respond(empty);
-        }
+    /// Test if moderator.
+    fn is_moderator(&self) -> bool {
+        self.moderators.read().contains(self.name)
+    }
+
+    /// Test if user is a subscriber.
+    fn is_subscriber(&self) -> bool {
+        self.is_streamer() || self.stream_info.is_subscriber(self.name)
+    }
+
+    /// Test if vip.
+    fn is_vip(&self) -> bool {
+        self.vips.read().contains(self.name)
     }
 
     /// Get a list of all roles the current requester belongs to.
@@ -1027,36 +1044,154 @@ impl User {
 
     /// Test if the current user has the given scope.
     pub fn has_scope(&self, scope: Scope) -> bool {
+        self.auth.test_any(scope, self.name, self.roles())
+    }
+}
+
+/// Information about the user.
+pub enum Principal {
+    User { name: String },
+    Injected,
+}
+
+/// Inner struct for User to make it cheaper to clone.
+struct UserInner {
+    tags: Tags,
+    sender: Sender,
+    principal: Principal,
+    streamer: Arc<twitch::User>,
+    moderators: Arc<RwLock<HashSet<String>>>,
+    vips: Arc<RwLock<HashSet<String>>>,
+    stream_info: stream_info::StreamInfo,
+    auth: Auth,
+}
+
+#[derive(Clone)]
+pub struct User {
+    inner: Arc<UserInner>,
+}
+
+impl User {
+    /// Access the user as a real user.
+    pub fn real(&self) -> Option<RealUser<'_>> {
+        match self.inner.principal {
+            Principal::User { ref name } => Some(RealUser {
+                tags: &self.inner.tags,
+                sender: &self.inner.sender,
+                name,
+                streamer: &*self.inner.streamer,
+                moderators: &*self.inner.moderators,
+                vips: &*self.inner.vips,
+                stream_info: &self.inner.stream_info,
+                auth: &self.inner.auth,
+            }),
+            Principal::Injected => None,
+        }
+    }
+
+    /// Get the channel the user is associated with.
+    pub fn channel(&self) -> &str {
+        self.inner.sender.channel()
+    }
+
+    /// Get the name of the user.
+    pub fn name(&self) -> Option<&str> {
+        match self.inner.principal {
+            Principal::User { ref name, .. } => Some(name),
+            Principal::Injected => None,
+        }
+    }
+
+    /// Get the display name of the user.
+    pub fn display_name(&self) -> Option<&str> {
         self.inner
-            .auth
-            .test_any(scope, self.inner.name.as_str(), self.roles())
+            .tags
+            .display_name
+            .as_ref()
+            .map(|d| d.as_str())
+            .or_else(|| self.name())
+    }
+
+    /// Get tags associated with the message.
+    pub fn tags(&self) -> &Tags {
+        &self.inner.tags
+    }
+
+    /// Access the sender associated with the user.
+    pub fn sender(&self) -> &Sender {
+        &self.inner.sender
+    }
+
+    /// Get the name of the streamer.
+    pub fn streamer(&self) -> &twitch::User {
+        &*self.inner.streamer
+    }
+
+    /// Test if the current user is the given user.
+    pub fn is(&self, name: &str) -> bool {
+        self.real().map(|u| u.is(name)).unwrap_or(false)
     }
 
     /// Test if streamer.
     fn is_streamer(&self) -> bool {
-        self.inner.name == self.inner.streamer.name
+        self.real().map(|u| u.is_streamer()).unwrap_or(true)
     }
 
     /// Test if moderator.
-    pub fn is_moderator(&self) -> bool {
-        self.inner
-            .moderators
-            .read()
-            .contains(self.inner.name.as_str())
+    fn is_moderator(&self) -> bool {
+        self.real().map(|u| u.is_moderator()).unwrap_or(true)
     }
 
-    /// Test if subscriber.
-    fn is_subscriber(&self) -> bool {
-        self.is_streamer()
-            || self
-                .inner
-                .stream_info
-                .is_subscriber(self.inner.name.as_str())
+    /// Respond to the user with a message.
+    pub fn respond(&self, m: impl fmt::Display) {
+        match self.display_name() {
+            Some(name) => {
+                self.inner.sender.privmsg(format!("{} -> {}", name, m));
+            }
+            None => {
+                self.inner.sender.privmsg(m);
+            }
+        }
     }
 
-    /// Test if vip.
-    fn is_vip(&self) -> bool {
-        self.inner.vips.read().contains(self.inner.name.as_str())
+    /// Pretty render the results.
+    pub fn respond_lines<F>(&self, results: impl IntoIterator<Item = F>, empty: &str)
+    where
+        F: fmt::Display,
+    {
+        let mut output = partition_response(results, 360, " | ");
+
+        if let Some(line) = output.next() {
+            let count = output.count();
+
+            if count > 0 {
+                self.respond(format!("{} ... {} line(s) not shown", line, count,));
+            } else {
+                self.respond(line);
+            }
+        } else {
+            self.respond(empty);
+        }
+    }
+
+    /// Get a list of all roles the current requester belongs to.
+    pub fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
+        match self.real().map(|u| u.roles()) {
+            Some(roles) => roles,
+            None => {
+                let mut roles = smallvec::SmallVec::<[Role; 4]>::default();
+                roles.push(Role::Streamer);
+                roles.push(Role::Moderator);
+                roles.push(Role::Subscriber);
+                roles.push(Role::Vip);
+                roles
+            }
+        }
+    }
+
+    /// Test if the current user has the given scope.
+    pub fn has_scope(&self, scope: Scope) -> bool {
+        self.real().map(|u| u.has_scope(scope)).unwrap_or(true)
     }
 }
 
@@ -1148,7 +1283,7 @@ where
 }
 
 /// Struct of tags.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Tags {
     /// Contents of the id tag if present.
     pub id: Option<String>,
@@ -1243,13 +1378,13 @@ pub enum SenderThreadItem {
 
 #[derive(serde::Serialize)]
 pub struct BadWordsVars<'a> {
-    name: &'a str,
+    name: Option<&'a str>,
     target: &'a str,
 }
 
 #[derive(serde::Serialize)]
 pub struct CommandVars<'a> {
-    name: &'a str,
+    name: Option<&'a str>,
     target: &'a str,
     count: i32,
     rest: &'a str,

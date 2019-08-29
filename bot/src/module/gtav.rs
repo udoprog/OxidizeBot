@@ -561,7 +561,7 @@ impl Handler {
     /// Play the specified theme song.
     fn play_theme_song(&mut self, ctx: &command::Context<'_>, id: &str) {
         if let Some(player) = self.player.read().clone() {
-            let target = ctx.user.target().to_string();
+            let target = ctx.channel().to_string();
             let id = id.to_string();
 
             ctx.spawn(async move {
@@ -590,17 +590,21 @@ impl Handler {
     ) -> Option<(&'static str, time::Duration)> {
         let per_user_cooldown = self.per_user_cooldown.read();
 
-        let user_cooldown = match self.per_user_cooldowns.entry(ctx.user.name().to_string()) {
-            hash_map::Entry::Vacant(e) => e.insert(per_user_cooldown.clone()),
-            hash_map::Entry::Occupied(e) => {
-                let cooldown = e.into_mut();
+        // NB: only real users are subject to cooldown.
+        let mut user_cooldown = match ctx.user.real() {
+            Some(user) => match self.per_user_cooldowns.entry(user.name().to_string()) {
+                hash_map::Entry::Vacant(e) => Some(e.insert(per_user_cooldown.clone())),
+                hash_map::Entry::Occupied(e) => {
+                    let cooldown = e.into_mut();
 
-                if cooldown.cooldown != per_user_cooldown.cooldown {
-                    cooldown.cooldown = per_user_cooldown.cooldown.clone();
+                    if cooldown.cooldown != per_user_cooldown.cooldown {
+                        cooldown.cooldown = per_user_cooldown.cooldown.clone();
+                    }
+
+                    Some(cooldown)
                 }
-
-                cooldown
-            }
+            },
+            None => None,
         };
 
         let per_command_cooldown = self.per_command_cooldown.read();
@@ -630,7 +634,9 @@ impl Handler {
 
         let mut remaining = smallvec::SmallVec::<[_; 4]>::new();
 
-        remaining.extend(user_cooldown.check(now.clone()).map(|d| ("User", d)));
+        if let Some(user_cooldown) = user_cooldown.as_mut() {
+            remaining.extend(user_cooldown.check(now.clone()).map(|d| ("User", d)));
+        }
 
         if let Some(command_specific) = command_specific.as_ref() {
             let mut cooldown = command_specific.write();
@@ -653,7 +659,11 @@ impl Handler {
             Some((name, remaining)) => Some((name, remaining)),
             None => {
                 cooldown.poke(now);
-                user_cooldown.poke(now);
+
+                if let Some(user_cooldown) = user_cooldown.as_mut() {
+                    user_cooldown.poke(now);
+                }
+
                 command_cooldown.poke(now);
 
                 if let Some(category_cooldown) = category_cooldown.as_ref() {
@@ -961,37 +971,44 @@ impl command::Handler for Handler {
         let tx = self.tx.clone();
 
         let future = async move {
-            let balance = currency
-                .balance_of(user.target(), user.name())
-                .await?
-                .unwrap_or_default();
+            if let Some(real) = user.real() {
+                let balance = currency
+                    .balance_of(user.channel(), real.name())
+                    .await?
+                    .unwrap_or_default();
 
-            let balance = if balance < 0 { 0u32 } else { balance as u32 };
+                let balance = if balance < 0 { 0u32 } else { balance as u32 };
 
-            if balance < cost {
-                user.respond(format!(
-                    "{prefix}\
-                     You need at least {limit} {currency} to reward the streamer, \
-                     you currently have {balance} {currency}. \
-                     Keep watching to earn more!",
-                    prefix = prefix,
-                    limit = cost,
-                    currency = currency.name,
-                    balance = balance,
-                ));
+                if balance < cost {
+                    user.respond(format!(
+                        "{prefix}\
+                         You need at least {limit} {currency} to reward the streamer, \
+                         you currently have {balance} {currency}. \
+                         Keep watching to earn more!",
+                        prefix = prefix,
+                        limit = cost,
+                        currency = currency.name,
+                        balance = balance,
+                    ));
 
-                return Ok(());
+                    return Ok(());
+                }
+
+                currency
+                    .balance_add(user.channel(), real.name(), -(cost as i64))
+                    .await?;
             }
 
-            currency
-                .balance_add(user.target(), user.name(), -(cost as i64))
-                .await?;
-
             if *success_feedback.read() {
+                let who = match user.display_name() {
+                    Some(name) => name,
+                    None => "Someone",
+                };
+
                 sender.privmsg(format!(
                     "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
                     prefix = prefix,
-                    user = user.display_name(),
+                    user = who,
                     what = command.what(),
                     command = command,
                     cost = cost,
@@ -1133,7 +1150,8 @@ impl super::Module for Module {
                     }
                     command = receiver.next() => {
                         if let Some((user, id, command)) = command {
-                            let message = format!("{} {} {}", user.name(), id, command.command());
+                            let who = user.name().unwrap_or("unknown");
+                            let message = format!("{} {} {}", who, id, command.command());
                             log::info!("sent: {}", message);
 
                             match socket.poll_send(message.as_bytes()) {
