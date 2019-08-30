@@ -51,12 +51,7 @@ impl command::Handler for Handler {
                     },
                 };
 
-                if let Some(pattern) = pattern {
-                    commands.edit_pattern(ctx.channel(), &name, pattern)?;
-                } else {
-                    commands.clear_pattern(ctx.channel(), &name)?;
-                }
-
+                commands.edit_pattern(ctx.channel(), &name, pattern)?;
                 ctx.respond("Edited pattern for command.");
             }
             None | Some(..) => {

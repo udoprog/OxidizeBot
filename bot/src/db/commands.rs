@@ -19,7 +19,7 @@ impl Database {
     private_database_group_fns!(commands, Command, Key);
 
     /// Edit the text for the given key.
-    fn edit(&self, key: &Key, text: &str) -> Result<Option<db::models::Command>, Error> {
+    fn edit(&self, key: &Key, text: &str) -> Result<db::models::Command, Error> {
         use db::schema::commands::dsl;
         let c = self.0.pool.lock();
 
@@ -45,18 +45,13 @@ impl Database {
                 diesel::insert_into(dsl::commands)
                     .values(&command)
                     .execute(&*c)?;
-                return Ok(Some(command));
+                return Ok(command);
             }
             Some(command) => {
                 let mut set = db::models::UpdateCommand::default();
                 set.text = Some(text);
                 diesel::update(filter).set(&set).execute(&*c)?;
-
-                if command.disabled {
-                    return Ok(None);
-                }
-
-                return Ok(Some(command));
+                return Ok(command);
             }
         }
     }
@@ -95,9 +90,78 @@ impl Database {
     }
 }
 
+struct Inner {
+    /// All commands.
+    all: HashMap<Key, Arc<Command>>,
+    /// Commands indexed by name.
+    by_name: HashSet<Key>,
+    /// Regular expression commands indexed by channel.
+    by_channel_regex: HashMap<String, HashSet<Key>>,
+}
+
+impl Inner {
+    /// Test if we contain the given key.
+    pub fn contains_key(&self, key: &Key) -> bool {
+        self.all.contains_key(key)
+    }
+
+    /// Insert the given command.
+    pub fn insert(&mut self, key: Key, command: Arc<Command>) {
+        match &command.pattern {
+            Pattern::Name => {
+                self.by_name.insert(key.clone());
+            }
+            Pattern::Regex { .. } => {
+                self.by_channel_regex
+                    .entry(key.channel.clone())
+                    .or_default()
+                    .insert(key.clone());
+            }
+        }
+
+        self.all.insert(key, command);
+    }
+
+    /// Remove the given command.
+    pub fn remove(&mut self, key: &Key) -> Option<Arc<Command>> {
+        if let Some(command) = self.all.remove(key) {
+            match &command.pattern {
+                Pattern::Name => {
+                    self.by_name.remove(key);
+                }
+                Pattern::Regex { .. } => {
+                    self.by_channel_regex
+                        .entry(key.channel.clone())
+                        .or_default()
+                        .remove(&key);
+                }
+            }
+
+            return Some(command);
+        }
+
+        None
+    }
+
+    /// Get an iterator over all the values.
+    pub fn iter(&self) -> hash_map::Iter<'_, Key, Arc<Command>> {
+        self.all.iter()
+    }
+
+    /// Get an iterator over all the values.
+    pub fn values(&self) -> hash_map::Values<'_, Key, Arc<Command>> {
+        self.all.values()
+    }
+
+    /// Get the underlying key.
+    pub fn get(&self, key: &Key) -> Option<&Arc<Command>> {
+        self.all.get(key)
+    }
+}
+
 #[derive(Clone)]
 pub struct Commands {
-    inner: Arc<RwLock<HashMap<Key, Arc<Command>>>>,
+    inner: Arc<RwLock<Inner>>,
     db: Database,
 }
 
@@ -108,15 +172,34 @@ impl Commands {
     pub fn load(db: db::Database) -> Result<Commands, Error> {
         let db = Database(db);
 
-        let mut inner = HashMap::new();
+        let mut all = HashMap::new();
+        let mut by_name = HashSet::new();
+        let mut by_channel_regex = HashMap::<String, HashSet<Key>>::new();
 
         for command in db.list()? {
-            let command = Command::from_db(&command)?;
-            inner.insert(command.key.clone(), Arc::new(command));
+            let command = Arc::new(Command::from_db(&command)?);
+
+            match &command.pattern {
+                Pattern::Name => {
+                    by_name.insert(command.key.clone());
+                }
+                Pattern::Regex { .. } => {
+                    by_channel_regex
+                        .entry(command.key.channel.clone())
+                        .or_default()
+                        .insert(command.key.clone());
+                }
+            }
+
+            all.insert(command.key.clone(), command.clone());
         }
 
         Ok(Commands {
-            inner: Arc::new(RwLock::new(inner)),
+            inner: Arc::new(RwLock::new(Inner {
+                all,
+                by_name,
+                by_channel_regex,
+            })),
             db,
         })
     }
@@ -130,25 +213,24 @@ impl Commands {
     ) -> Result<(), Error> {
         let key = Key::new(channel, name);
 
-        let mut inner = self.inner.write();
+        let command = self.db.edit(&key, template.source())?;
 
-        if let Some(command) = self.db.edit(&key, template.source())? {
+        if command.disabled {
+            self.inner.write().remove(&key);
+        } else {
             let vars = template.vars();
 
-            inner.insert(
-                key.clone(),
-                Arc::new(Command {
-                    key,
-                    pattern: Pattern::from_db(command.pattern.as_ref())?,
-                    count: Arc::new(AtomicUsize::new(command.count as usize)),
-                    template,
-                    vars,
-                    group: command.group,
-                    disabled: command.disabled,
-                }),
-            );
-        } else {
-            inner.remove(&key);
+            let command = Arc::new(Command {
+                key: key.clone(),
+                pattern: Pattern::from_db(command.pattern.as_ref())?,
+                count: Arc::new(AtomicUsize::new(command.count as usize)),
+                template,
+                vars,
+                group: command.group,
+                disabled: command.disabled,
+            });
+
+            self.inner.write().insert(key.clone(), command.clone());
         }
 
         Ok(())
@@ -159,33 +241,48 @@ impl Commands {
         &self,
         channel: &str,
         name: &str,
-        pattern: regex::Regex,
+        pattern: Option<regex::Regex>,
     ) -> Result<(), failure::Error> {
         let key = Key::new(channel, name);
-        self.db.edit_pattern(&key, Some(&pattern))?;
+        self.db.edit_pattern(&key, pattern.as_ref())?;
 
-        let mut inner = self.inner.write();
+        let Inner {
+            all,
+            by_channel_regex,
+            by_name,
+        } = &mut *self.inner.write();
 
-        if let hash_map::Entry::Occupied(mut e) = inner.entry(key) {
-            let mut update = (**e.get()).clone();
-            update.pattern = Pattern::Regex { pattern };
-            e.insert(Arc::new(update));
-        }
+        if let Some(existing) = all.get_mut(&key) {
+            let pattern = if let Some(pattern) = pattern {
+                if let Pattern::Name = existing.pattern {
+                    by_name.remove(&key);
 
-        Ok(())
-    }
+                    by_channel_regex
+                        .entry(key.channel.clone())
+                        .or_default()
+                        .insert(key);
+                }
 
-    /// Clear the pattern of the given command.
-    pub fn clear_pattern(&self, channel: &str, name: &str) -> Result<(), failure::Error> {
-        let key = Key::new(channel, name);
-        self.db.edit_pattern(&key, None)?;
+                Pattern::Regex { pattern }
+            } else {
+                if let Pattern::Regex { .. } = existing.pattern {
+                    by_channel_regex
+                        .entry(key.channel.clone())
+                        .or_default()
+                        .remove(&key);
 
-        let mut inner = self.inner.write();
+                    by_name.insert(key);
+                } else {
+                    // NB: nothing to do.
+                    return Ok(());
+                }
 
-        if let hash_map::Entry::Occupied(mut e) = inner.entry(key) {
-            let mut update = (**e.get()).clone();
-            update.pattern = Pattern::Name;
-            e.insert(Arc::new(update));
+                Pattern::Name
+            };
+
+            let mut new = (**existing).clone();
+            new.pattern = pattern;
+            *existing = Arc::new(new);
         }
 
         Ok(())
@@ -200,22 +297,25 @@ impl Commands {
 
     /// Resolve the given command.
     pub fn resolve(&self, channel: &str, first: Option<&str>, full: &str) -> Option<Arc<Command>> {
-        for command in self.inner.read().values() {
-            if command.key.channel != channel {
-                continue;
-            }
+        let inner = self.inner.read();
 
-            match &command.pattern {
-                Pattern::Name => {
-                    if let Some(first) = first {
-                        if first == command.key.name {
+        if let Some(first) = first {
+            let key = Key::new(channel, first);
+
+            if inner.by_name.contains(&key) {
+                if let Some(command) = inner.get(&key) {
+                    return Some(command.clone());
+                }
+            }
+        }
+
+        if let Some(keys) = inner.by_channel_regex.get(channel) {
+            for key in keys {
+                if let Some(command) = inner.get(key) {
+                    if let Pattern::Regex { pattern } = &command.pattern {
+                        if pattern.is_match(full) {
                             return Some(command.clone());
                         }
-                    }
-                }
-                Pattern::Regex { pattern } => {
-                    if pattern.is_match(full) {
-                        return Some(command.clone());
                     }
                 }
             }
