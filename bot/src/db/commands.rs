@@ -296,7 +296,12 @@ impl Commands {
     }
 
     /// Resolve the given command.
-    pub fn resolve(&self, channel: &str, first: Option<&str>, full: &str) -> Option<Arc<Command>> {
+    pub fn resolve<'a>(
+        &self,
+        channel: &str,
+        first: Option<&str>,
+        full: &'a str,
+    ) -> Option<(Arc<Command>, Captures<'a>)> {
         let inner = self.inner.read();
 
         if let Some(first) = first {
@@ -304,7 +309,7 @@ impl Commands {
 
             if inner.by_name.contains(&key) {
                 if let Some(command) = inner.get(&key) {
-                    return Some(command.clone());
+                    return Some((command.clone(), Default::default()));
                 }
             }
         }
@@ -313,8 +318,11 @@ impl Commands {
             for key in keys {
                 if let Some(command) = inner.get(key) {
                     if let Pattern::Regex { pattern } = &command.pattern {
-                        if pattern.is_match(full) {
-                            return Some(command.clone());
+                        if let Some(captures) = pattern.captures(full) {
+                            let captures = Captures {
+                                captures: Some(captures),
+                            };
+                            return Some((command.clone(), captures));
                         }
                     }
                 }
@@ -322,6 +330,30 @@ impl Commands {
         }
 
         None
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Captures<'a> {
+    captures: Option<regex::Captures<'a>>,
+}
+
+impl serde::Serialize for Captures<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeMap as _;
+
+        let mut m = serializer.serialize_map(self.captures.as_ref().map(|c| c.len()))?;
+
+        if let Some(captures) = &self.captures {
+            for (i, g) in captures.iter().enumerate() {
+                m.serialize_entry(&i, &g.map(|m| m.as_str()))?;
+            }
+        }
+
+        m.end()
     }
 }
 

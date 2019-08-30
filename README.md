@@ -122,6 +122,7 @@ Available commands:
 * `!command edit <name> <template...>` - Set the command `<name>` to respond with `<template...>`.
 * `!command pattern <name> <pattern>` - Sets the pattern that the command `<name>` matches. This is a regular expression.
   * Example: `!command pattern why (?i)why.*\?` would match any case-insensitive input containing the word `why` followed by a question mark somewhere later `?`.
+  * Example: `!command pattern why ^I like (.+)$` allow you do use `{{1}}` in your template. Like `!command edit why You really like {{1}}?`.
 * `!command pattern <name>` - Clears the pattern that the command `<name>` matches. This makes it go back to the default behavior of matching the name of the command.
 * `!command clear-group <name>` - Clear the group for command `<name>`.
 * `!command group <name>` - Get the group the given command belongs to.
@@ -134,6 +135,18 @@ Template variables that can be used in `<template...>`:
 * `{{count}}` - The number of times the command has been invoked.
 * `{{name}}` - The user who said the word.
 * `{{target}}` - The channel where the word was sent.
+* [_regex capture groups_](#regular-expressions) - Like `{{0}}`, `{{1}}`... Se below.
+
+#### Regular Expressions
+
+When dealing with a command that has a regex pattern, you can make use of _capture groups_.
+For each group that you define, you can reference them in the template using their index.
+
+So for example: `I like (.+) and (.+)`, you could reference the first group as `{{1}}`, and the second group as `{{2}}`.
+The group `{{0}}` is a special group that matches the entire input.
+Like: `So you like {{1}} and {{2}}? That's weird...`.
+
+If you want the match to ignore cases, you can make use of the `(?i)` statement. Like `(?i)i will match any case`. This would match both `I WILL MATCH ANY CASE` and `I WiLl MaTcH AnY CaSe`.
 
 ### `!alias`
 

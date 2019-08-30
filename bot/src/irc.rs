@@ -746,7 +746,7 @@ impl<'a> Handler<'a> {
         let first = it.next();
 
         if let Some(commands) = self.commands.as_ref() {
-            if let Some(command) = commands.resolve(
+            if let Some((command, captures)) = commands.resolve(
                 user.channel(),
                 first.as_ref().map(String::as_str),
                 it.string(),
@@ -760,6 +760,7 @@ impl<'a> Handler<'a> {
                     target: user.channel(),
                     count: command.count(),
                     rest: it.rest(),
+                    captures,
                 };
 
                 let response = command.render(&vars)?;
@@ -1394,6 +1395,8 @@ pub struct CommandVars<'a> {
     target: &'a str,
     count: i32,
     rest: &'a str,
+    #[serde(flatten)]
+    captures: db::commands::Captures<'a>,
 }
 
 // Future to refresh moderators every 5 minutes.

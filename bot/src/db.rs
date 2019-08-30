@@ -2,7 +2,7 @@
 mod macros;
 mod after_streams;
 mod aliases;
-mod commands;
+pub(crate) mod commands;
 pub(crate) mod models;
 mod promotions;
 pub(crate) mod schema;
