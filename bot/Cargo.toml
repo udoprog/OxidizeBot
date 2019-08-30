@@ -68,6 +68,7 @@ failure = "0.1.5"
 async-injector = { version = "0.2.2" }
 async-trait = "0.1.7"
 leaky-bucket = "0.3.0"
+regex = "1.2.1"
 
 [dependencies.futures01]
 package = "futures"

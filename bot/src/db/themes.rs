@@ -92,7 +92,7 @@ impl Themes {
         let db = Database(db);
 
         for theme in db.list()? {
-            let theme = Theme::from_db(theme)?;
+            let theme = Theme::from_db(&theme)?;
             inner.insert(theme.key.clone(), Arc::new(theme));
         }
 
@@ -183,18 +183,18 @@ impl Theme {
     pub const NAME: &'static str = "theme";
 
     /// Convert a database theme into an in-memory theme.
-    pub fn from_db(theme: db::models::Theme) -> Result<Theme, failure::Error> {
-        let key = Key::new(theme.channel.as_str(), theme.name.as_str());
+    pub fn from_db(theme: &db::models::Theme) -> Result<Theme, failure::Error> {
+        let key = Key::new(&theme.channel, &theme.name);
 
         let start = utils::Offset::milliseconds(theme.start as u32);
         let end = theme.end.map(|s| utils::Offset::milliseconds(s as u32));
 
         Ok(Theme {
             key,
-            track_id: theme.track_id,
+            track_id: theme.track_id.clone(),
             start,
             end,
-            group: theme.group,
+            group: theme.group.clone(),
             disabled: theme.disabled,
         })
     }

@@ -28,6 +28,8 @@ pub struct Command {
     pub channel: String,
     /// The name of the command.
     pub name: String,
+    /// The regular expression pattern to match for the given command.
+    pub pattern: Option<String>,
     /// The number of times the counter has been invoked.
     pub count: i32,
     /// The text of the command.

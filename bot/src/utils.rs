@@ -132,6 +132,11 @@ impl<'a> Words<'a> {
         }
     }
 
+    /// Access the underlying string.
+    pub fn string(&self) -> &'a str {
+        self.string
+    }
+
     /// Take the next character.
     pub fn take(&mut self) -> Option<(usize, char)> {
         std::mem::replace(&mut self.b0, self.it.next())

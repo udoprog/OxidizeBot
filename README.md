@@ -120,6 +120,9 @@ A custom command is a prefix the bot responds to with a templated message.
 Available commands:
 
 * `!command edit <name> <template...>` - Set the command `<name>` to respond with `<template...>`.
+* `!command pattern <name> <pattern>` - Sets the pattern that the command `<name>` matches. This is a regular expression.
+  * Example: `!command pattern why (?i)why.*\?` would match any case-insensitive input containing the word `why` followed by a question mark somewhere later `?`.
+* `!command pattern <name>` - Clears the pattern that the command `<name>` matches. This makes it go back to the default behavior of matching the name of the command.
 * `!command clear-group <name>` - Clear the group for command `<name>`.
 * `!command group <name>` - Get the group the given command belongs to.
 * `!command group <name> <group>` - Set the command `<name>` to be in the group `<group>`.

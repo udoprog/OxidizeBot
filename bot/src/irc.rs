@@ -743,25 +743,31 @@ impl<'a> Handler<'a> {
             }
         }
 
-        if let Some(command) = it.next() {
-            if let Some(commands) = self.commands.as_ref() {
-                if let Some(command) = commands.get(user.channel(), &command) {
-                    if command.has_var("count") {
-                        commands.increment(&*command)?;
-                    }
+        let first = it.next();
 
-                    let vars = CommandVars {
-                        name: user.display_name(),
-                        target: user.channel(),
-                        count: command.count(),
-                        rest: it.rest(),
-                    };
-
-                    let response = command.render(&vars)?;
-                    self.sender.privmsg(response);
+        if let Some(commands) = self.commands.as_ref() {
+            if let Some(command) = commands.resolve(
+                user.channel(),
+                first.as_ref().map(String::as_str),
+                it.string(),
+            ) {
+                if command.has_var("count") {
+                    commands.increment(&*command)?;
                 }
-            }
 
+                let vars = CommandVars {
+                    name: user.display_name(),
+                    target: user.channel(),
+                    count: command.count(),
+                    rest: it.rest(),
+                };
+
+                let response = command.render(&vars)?;
+                self.sender.privmsg(response);
+            }
+        }
+
+        if let Some(command) = first {
             if command.starts_with('!') {
                 let command = &command[1..];
 

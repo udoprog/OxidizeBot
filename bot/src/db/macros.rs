@@ -27,7 +27,7 @@ macro_rules! database_group_fns {
             let key = <$key>::new(channel, name);
 
             let thing = match self.db.fetch(&key)? {
-                Some(thing) => <$thing>::from_db(thing)?,
+                Some(thing) => <$thing>::from_db(&thing)?,
                 None => return Ok(false),
             };
 
@@ -56,7 +56,7 @@ macro_rules! database_group_fns {
             let mut inner = self.inner.write();
 
             for thing in self.db.list_group(channel, group)? {
-                let thing = <$thing>::from_db(thing)?;
+                let thing = <$thing>::from_db(&thing)?;
                 inner.insert(thing.key.clone(), Arc::new(thing));
             }
 
@@ -89,7 +89,7 @@ macro_rules! database_group_fns {
             let mut out = Vec::new();
 
             for p in self.db.list_all(channel)? {
-                out.push(<$thing>::from_db(p)?);
+                out.push(<$thing>::from_db(&p)?);
             }
 
             Ok(out)
@@ -127,7 +127,7 @@ macro_rules! database_group_fns {
                 Some(thing) => thing,
                 None => return Ok(None),
             };
-            Ok(Some(<$thing>::from_db(thing)?))
+            Ok(Some(<$thing>::from_db(&thing)?))
         }
 
         /// Get a list of all things.

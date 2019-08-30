@@ -35,6 +35,30 @@ impl command::Handler for Handler {
 
                 ctx.respond("Edited command.");
             }
+            Some("pattern") => {
+                ctx.check_scope(auth::Scope::CommandEdit)?;
+
+                let name = ctx_try!(ctx.next_str("<name> [pattern]"));
+
+                let pattern = match ctx.rest() {
+                    pattern if pattern.trim().is_empty() => None,
+                    pattern => match regex::Regex::new(pattern) {
+                        Ok(pattern) => Some(pattern),
+                        Err(e) => {
+                            ctx.user.respond(format!("Bad pattern provided: {}", e));
+                            return Ok(());
+                        }
+                    },
+                };
+
+                if let Some(pattern) = pattern {
+                    commands.edit_pattern(ctx.channel(), &name, pattern)?;
+                } else {
+                    commands.clear_pattern(ctx.channel(), &name)?;
+                }
+
+                ctx.respond("Edited pattern for command.");
+            }
             None | Some(..) => {
                 ctx.respond("Expected: show, list, edit, delete, enable, disable, or group.");
             }

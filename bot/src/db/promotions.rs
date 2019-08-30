@@ -105,7 +105,7 @@ impl Promotions {
         let mut inner = HashMap::new();
 
         for promotion in db.list()? {
-            let promotion = Promotion::from_db(promotion)?;
+            let promotion = Promotion::from_db(&promotion)?;
             inner.insert(promotion.key.clone(), Arc::new(promotion));
         }
 
@@ -199,12 +199,12 @@ pub struct Promotion {
 impl Promotion {
     pub const NAME: &'static str = "promotion";
 
-    pub fn from_db(promotion: db::models::Promotion) -> Result<Promotion, failure::Error> {
+    pub fn from_db(promotion: &db::models::Promotion) -> Result<Promotion, failure::Error> {
         let template = template::Template::compile(&promotion.text).with_context(|_| {
             format_err!("failed to compile promotion `{:?}` from db", promotion)
         })?;
 
-        let key = Key::new(promotion.channel.as_str(), promotion.name.as_str());
+        let key = Key::new(&promotion.channel, &promotion.name);
         let frequency = utils::Duration::seconds(promotion.frequency as u64);
         let promoted_at = promotion
             .promoted_at
@@ -215,7 +215,7 @@ impl Promotion {
             frequency,
             promoted_at,
             template,
-            group: promotion.group,
+            group: promotion.group.clone(),
             disabled: promotion.disabled,
         })
     }

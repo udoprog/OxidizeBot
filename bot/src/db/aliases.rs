@@ -66,7 +66,7 @@ impl Aliases {
         let db = Database(db);
 
         for alias in db.list()? {
-            let alias = Alias::from_db(alias)?;
+            let alias = Alias::from_db(&alias)?;
             inner.insert(alias.key.clone(), Arc::new(alias));
         }
 
@@ -151,14 +151,14 @@ impl Alias {
     pub const NAME: &'static str = "alias";
 
     /// Convert a database alias into an in-memory alias.
-    pub fn from_db(alias: db::models::Alias) -> Result<Alias, failure::Error> {
-        let key = Key::new(alias.channel.as_str(), alias.name.as_str());
-        let template = template::Template::compile(alias.text.as_str())?;
+    pub fn from_db(alias: &db::models::Alias) -> Result<Alias, failure::Error> {
+        let key = Key::new(&alias.channel, &alias.name);
+        let template = template::Template::compile(&alias.text)?;
 
         Ok(Alias {
             key,
             template,
-            group: alias.group,
+            group: alias.group.clone(),
             disabled: alias.disabled,
         })
     }
