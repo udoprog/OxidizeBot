@@ -56,6 +56,8 @@ pub struct Alias {
     pub channel: String,
     /// The name of the alias.
     pub name: String,
+    /// The regular expression pattern to match for the given alias.
+    pub pattern: Option<String>,
     /// The text of the alias.
     pub text: String,
     /// The group the promotion is part of, if any.

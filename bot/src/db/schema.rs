@@ -58,6 +58,7 @@ table! {
     aliases (channel, name) {
         channel -> Text,
         name -> Text,
+        pattern -> Nullable<Text>,
         text -> Text,
         group -> Nullable<Text>,
         disabled -> Bool,

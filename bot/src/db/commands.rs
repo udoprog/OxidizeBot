@@ -1,7 +1,7 @@
 use crate::{db, template};
 use diesel::prelude::*;
 use failure::{format_err, Error, ResultExt as _};
-use hashbrown::{hash_map, HashMap, HashSet};
+use hashbrown::HashSet;
 use parking_lot::RwLock;
 use std::{
     fmt,
@@ -16,10 +16,10 @@ use std::{
 struct Database(db::Database);
 
 impl Database {
-    private_database_group_fns!(commands, Command, Key);
+    private_database_group_fns!(commands, Command, db::Key);
 
     /// Edit the text for the given key.
-    fn edit(&self, key: &Key, text: &str) -> Result<db::models::Command, Error> {
+    fn edit(&self, key: &db::Key, text: &str) -> Result<db::models::Command, Error> {
         use db::schema::commands::dsl;
         let c = self.0.pool.lock();
 
@@ -59,7 +59,7 @@ impl Database {
     /// Edit the pattern of a command.
     fn edit_pattern(
         &self,
-        key: &Key,
+        key: &db::Key,
         pattern: Option<&regex::Regex>,
     ) -> Result<(), failure::Error> {
         use db::schema::commands::dsl;
@@ -77,7 +77,7 @@ impl Database {
     }
 
     /// Increment the given key.
-    fn increment(&self, key: &Key) -> Result<bool, Error> {
+    fn increment(&self, key: &db::Key) -> Result<bool, Error> {
         use db::schema::commands::dsl;
 
         let c = self.0.pool.lock();
@@ -90,116 +90,28 @@ impl Database {
     }
 }
 
-struct Inner {
-    /// All commands.
-    all: HashMap<Key, Arc<Command>>,
-    /// Commands indexed by name.
-    by_name: HashSet<Key>,
-    /// Regular expression commands indexed by channel.
-    by_channel_regex: HashMap<String, HashSet<Key>>,
-}
-
-impl Inner {
-    /// Test if we contain the given key.
-    pub fn contains_key(&self, key: &Key) -> bool {
-        self.all.contains_key(key)
-    }
-
-    /// Insert the given command.
-    pub fn insert(&mut self, key: Key, command: Arc<Command>) {
-        match &command.pattern {
-            Pattern::Name => {
-                self.by_name.insert(key.clone());
-            }
-            Pattern::Regex { .. } => {
-                self.by_channel_regex
-                    .entry(key.channel.clone())
-                    .or_default()
-                    .insert(key.clone());
-            }
-        }
-
-        self.all.insert(key, command);
-    }
-
-    /// Remove the given command.
-    pub fn remove(&mut self, key: &Key) -> Option<Arc<Command>> {
-        if let Some(command) = self.all.remove(key) {
-            match &command.pattern {
-                Pattern::Name => {
-                    self.by_name.remove(key);
-                }
-                Pattern::Regex { .. } => {
-                    self.by_channel_regex
-                        .entry(key.channel.clone())
-                        .or_default()
-                        .remove(&key);
-                }
-            }
-
-            return Some(command);
-        }
-
-        None
-    }
-
-    /// Get an iterator over all the values.
-    pub fn iter(&self) -> hash_map::Iter<'_, Key, Arc<Command>> {
-        self.all.iter()
-    }
-
-    /// Get an iterator over all the values.
-    pub fn values(&self) -> hash_map::Values<'_, Key, Arc<Command>> {
-        self.all.values()
-    }
-
-    /// Get the underlying key.
-    pub fn get(&self, key: &Key) -> Option<&Arc<Command>> {
-        self.all.get(key)
-    }
-}
-
 #[derive(Clone)]
 pub struct Commands {
-    inner: Arc<RwLock<Inner>>,
+    inner: Arc<RwLock<db::Matcher<Command>>>,
     db: Database,
 }
 
 impl Commands {
-    database_group_fns!(Command, Key);
+    database_group_fns!(Command, db::Key);
 
     /// Construct a new commands store with a db.
     pub fn load(db: db::Database) -> Result<Commands, Error> {
         let db = Database(db);
 
-        let mut all = HashMap::new();
-        let mut by_name = HashSet::new();
-        let mut by_channel_regex = HashMap::<String, HashSet<Key>>::new();
+        let mut matcher = db::Matcher::new();
 
         for command in db.list()? {
-            let command = Arc::new(Command::from_db(&command)?);
-
-            match &command.pattern {
-                Pattern::Name => {
-                    by_name.insert(command.key.clone());
-                }
-                Pattern::Regex { .. } => {
-                    by_channel_regex
-                        .entry(command.key.channel.clone())
-                        .or_default()
-                        .insert(command.key.clone());
-                }
-            }
-
-            all.insert(command.key.clone(), command.clone());
+            let command = Command::from_db(&command)?;
+            matcher.insert(command.key.clone(), Arc::new(command));
         }
 
         Ok(Commands {
-            inner: Arc::new(RwLock::new(Inner {
-                all,
-                by_name,
-                by_channel_regex,
-            })),
+            inner: Arc::new(RwLock::new(matcher)),
             db,
         })
     }
@@ -211,7 +123,7 @@ impl Commands {
         name: &str,
         template: template::Template,
     ) -> Result<(), Error> {
-        let key = Key::new(channel, name);
+        let key = db::Key::new(channel, name);
 
         let command = self.db.edit(&key, template.source())?;
 
@@ -222,7 +134,7 @@ impl Commands {
 
             let command = Arc::new(Command {
                 key: key.clone(),
-                pattern: Pattern::from_db(command.pattern.as_ref())?,
+                pattern: db::Pattern::from_db(command.pattern.as_ref())?,
                 count: Arc::new(AtomicUsize::new(command.count as usize)),
                 template,
                 vars,
@@ -243,47 +155,14 @@ impl Commands {
         name: &str,
         pattern: Option<regex::Regex>,
     ) -> Result<(), failure::Error> {
-        let key = Key::new(channel, name);
+        let key = db::Key::new(channel, name);
         self.db.edit_pattern(&key, pattern.as_ref())?;
 
-        let Inner {
-            all,
-            by_channel_regex,
-            by_name,
-        } = &mut *self.inner.write();
-
-        if let Some(existing) = all.get_mut(&key) {
-            let pattern = if let Some(pattern) = pattern {
-                if let Pattern::Name = existing.pattern {
-                    by_name.remove(&key);
-
-                    by_channel_regex
-                        .entry(key.channel.clone())
-                        .or_default()
-                        .insert(key);
-                }
-
-                Pattern::Regex { pattern }
-            } else {
-                if let Pattern::Regex { .. } = existing.pattern {
-                    by_channel_regex
-                        .entry(key.channel.clone())
-                        .or_default()
-                        .remove(&key);
-
-                    by_name.insert(key);
-                } else {
-                    // NB: nothing to do.
-                    return Ok(());
-                }
-
-                Pattern::Name
-            };
-
-            let mut new = (**existing).clone();
-            new.pattern = pattern;
-            *existing = Arc::new(new);
-        }
+        self.inner
+            .write()
+            .modify_with_pattern(key, pattern, |value, pattern| {
+                value.pattern = pattern;
+            });
 
         Ok(())
     }
@@ -301,125 +180,20 @@ impl Commands {
         channel: &str,
         first: Option<&str>,
         full: &'a str,
-    ) -> Option<(Arc<Command>, Captures<'a>)> {
-        let inner = self.inner.read();
-
-        if let Some(first) = first {
-            let key = Key::new(channel, first);
-
-            if inner.by_name.contains(&key) {
-                if let Some(command) = inner.get(&key) {
-                    return Some((command.clone(), Default::default()));
-                }
-            }
-        }
-
-        if let Some(keys) = inner.by_channel_regex.get(channel) {
-            for key in keys {
-                if let Some(command) = inner.get(key) {
-                    if let Pattern::Regex { pattern } = &command.pattern {
-                        if let Some(captures) = pattern.captures(full) {
-                            let captures = Captures {
-                                captures: Some(captures),
-                            };
-                            return Some((command.clone(), captures));
-                        }
-                    }
-                }
-            }
-        }
-
-        None
+    ) -> Option<(Arc<Command>, db::Captures<'a>)> {
+        self.inner
+            .read()
+            .resolve(channel, first, full)
+            .map(|(command, captures)| (command.clone(), captures))
     }
-}
-
-#[derive(Debug, Default)]
-pub struct Captures<'a> {
-    captures: Option<regex::Captures<'a>>,
-}
-
-impl serde::Serialize for Captures<'_> {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::SerializeMap as _;
-
-        let mut m = serializer.serialize_map(self.captures.as_ref().map(|c| c.len()))?;
-
-        if let Some(captures) = &self.captures {
-            for (i, g) in captures.iter().enumerate() {
-                m.serialize_entry(&i, &g.map(|m| m.as_str()))?;
-            }
-        }
-
-        m.end()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
-pub struct Key {
-    pub channel: String,
-    pub name: String,
-}
-
-impl Key {
-    pub fn new(channel: &str, name: &str) -> Self {
-        Self {
-            channel: channel.to_string(),
-            name: name.to_lowercase(),
-        }
-    }
-}
-
-/// How to match the given command.
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(tag = "type")]
-pub enum Pattern {
-    #[serde(rename = "name")]
-    Name,
-    #[serde(rename = "regex")]
-    Regex {
-        #[serde(serialize_with = "serialize_regex")]
-        pattern: regex::Regex,
-    },
-}
-
-impl Pattern {
-    /// Convert a database pattern into a matchable pattern here.
-    pub fn from_db(pattern: Option<impl AsRef<str>>) -> Result<Self, Error> {
-        Ok(match pattern {
-            Some(pattern) => Pattern::Regex {
-                pattern: regex::Regex::new(pattern.as_ref())?,
-            },
-            None => Pattern::Name,
-        })
-    }
-}
-
-impl fmt::Display for Pattern {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Pattern::Name => "*name*".fmt(fmt),
-            Pattern::Regex { pattern } => pattern.fmt(fmt),
-        }
-    }
-}
-
-/// Serialize a regular expression.
-fn serialize_regex<S>(regex: &regex::Regex, s: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    s.collect_str(regex)
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Command {
     /// Key for the command.
-    pub key: Key,
+    pub key: db::Key,
     /// Pattern to use for matching command.
-    pub pattern: Pattern,
+    pub pattern: db::Pattern,
     /// Count associated with the command.
     #[serde(serialize_with = "serialize_count")]
     count: Arc<AtomicUsize>,
@@ -449,11 +223,11 @@ impl Command {
         let template = template::Template::compile(&command.text)
             .with_context(|_| format_err!("failed to compile command `{:?}` from db", command))?;
 
-        let key = Key::new(&command.channel, &command.name);
+        let key = db::Key::new(&command.channel, &command.name);
         let count = Arc::new(AtomicUsize::new(command.count as usize));
         let vars = template.vars();
 
-        let pattern = Pattern::from_db(command.pattern.as_ref())?;
+        let pattern = db::Pattern::from_db(command.pattern.as_ref())?;
 
         Ok(Command {
             key,
@@ -482,6 +256,16 @@ impl Command {
     /// Test if the rendered command has the given var.
     pub fn has_var(&self, var: &str) -> bool {
         self.vars.contains(var)
+    }
+}
+
+impl db::Matchable for Command {
+    fn key(&self) -> &db::Key {
+        &self.key
+    }
+
+    fn pattern(&self) -> &db::Pattern {
+        &self.pattern
     }
 }
 

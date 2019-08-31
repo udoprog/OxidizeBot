@@ -1399,7 +1399,7 @@ pub struct CommandVars<'a> {
     count: i32,
     rest: &'a str,
     #[serde(flatten)]
-    captures: db::commands::Captures<'a>,
+    captures: db::Captures<'a>,
 }
 
 // Future to refresh moderators every 5 minutes.

@@ -3,6 +3,7 @@ mod macros;
 mod after_streams;
 mod aliases;
 pub(crate) mod commands;
+mod matcher;
 pub(crate) mod models;
 mod promotions;
 pub(crate) mod schema;
@@ -16,10 +17,13 @@ pub use self::{
     after_streams::{AfterStream, AfterStreams},
     aliases::{Alias, Aliases},
     commands::{Command, Commands},
+    matcher::Captures,
     promotions::{Promotion, Promotions},
     themes::{Theme, Themes},
     words::{Word, Words},
 };
+
+pub(crate) use self::matcher::{Key, Matchable, Matcher, Pattern};
 
 use chrono::Utc;
 use diesel::prelude::*;

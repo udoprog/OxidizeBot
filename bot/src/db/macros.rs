@@ -274,7 +274,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// Delete a single thing.
-        fn delete(&self, key: &Key) -> Result<bool, failure::Error> {
+        fn delete(&self, key: &$key) -> Result<bool, failure::Error> {
             use db::schema::$module::dsl;
 
             let c = self.0.pool.lock();
@@ -286,7 +286,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// Rename one thing to another.
-        fn rename(&self, from: &Key, to: &Key) -> Result<bool, failure::Error> {
+        fn rename(&self, from: &$key, to: &$key) -> Result<bool, failure::Error> {
             use db::schema::$module::dsl;
 
             let c = self.0.pool.lock();
