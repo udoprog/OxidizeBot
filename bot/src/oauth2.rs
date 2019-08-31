@@ -25,8 +25,8 @@ use url::Url;
 /// * We assume that a user would pay attention when downloading and running an application.
 ///   - If they don't, they have bigger problems on their hands.
 static YOUTUBE_CLIENT_ID: &'static str =
-    "104600448660-l5qspsirgqsnq7uv4tu3fpfmtbs2c234.apps.googleusercontent.com";
-static YOUTUBE_CLIENT_SECRET: &'static str = "xQMzQtFvXadhJh1cqoe6G0zH";
+    "652738525380-q3568vdosqg0g5h7p7ea5nrodm5doih3.apps.googleusercontent.com";
+static YOUTUBE_CLIENT_SECRET: &'static str = "NrBvCdjodPnMl4_dVytRKaCA";
 
 static NIGHTBOT_CLIENT_ID: &'static str = "08068f96a94dbb3286f61e26afa9bd6d";
 static NIGHTBOT_CLIENT_SECRET: &'static str = "d9afb0ee6092af477f671c3195109e54";

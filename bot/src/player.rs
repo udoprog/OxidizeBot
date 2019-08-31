@@ -2011,11 +2011,7 @@ async fn convert_item(
             (Track::Spotify { track }, duration)
         }
         TrackId::YouTube(ref id) => {
-            let video_info = youtube.get_video_info(id.clone());
-            let video = youtube.videos_by_id(id, "contentDetails,snippet");
-            let (video_info, video) = future::try_join(video_info, video).await?;
-
-            log::trace!("info = {:?}", video_info);
+            let video = youtube.videos_by_id(id, "contentDetails,snippet").await?;
 
             let video = match video {
                 Some(video) => video,
