@@ -130,11 +130,12 @@ impl Irc {
             let PackedIrcClient(client, send_future) = client.compat().await?;
             client.identify()?;
 
-            let irc_settings = settings.scoped("irc");
-            let url_whitelist_enabled = irc_settings.var("url-whitelist/enabled", true)?;
-            let bad_words_enabled = irc_settings.var("bad-words/enabled", false)?;
-            let sender_ty = irc_settings.var("sender-type", sender::Type::Chat)?;
-            let threshold = irc_settings.var("idle-detection/threshold", 5)?;
+            let chat_settings = settings.scoped("chat");
+
+            let url_whitelist_enabled = chat_settings.var("url-whitelist/enabled", true)?;
+            let bad_words_enabled = chat_settings.var("bad-words/enabled", false)?;
+            let sender_ty = chat_settings.var("sender-type", sender::Type::Chat)?;
+            let threshold = chat_settings.var("idle-detection/threshold", 5)?;
             let idle = idle::Idle::new(threshold);
 
             let nightbot = injector.var::<Arc<api::NightBot>>()?;
@@ -217,6 +218,7 @@ impl Irc {
                 sender.clone(),
                 idle.clone(),
                 &injector,
+                &chat_settings,
                 &settings,
             )?;
 
@@ -224,15 +226,15 @@ impl Irc {
             futures.push(send_future.compat().map_err(Error::from).boxed());
 
             let (mut whitelisted_hosts_stream, whitelisted_hosts) =
-                settings.stream("irc/whitelisted-hosts").or_default()?;
+                chat_settings.stream("whitelisted-hosts").or_default()?;
 
             let (mut moderator_cooldown_stream, moderator_cooldown) =
-                settings.stream("irc/moderator-cooldown").optional()?;
+                chat_settings.stream("moderator-cooldown").optional()?;
 
             let (mut api_url_stream, api_url) = settings.stream("remote/api-url").optional()?;
 
-            let join_message = settings.get::<String>("irc/join-message")?;
-            let leave_message = settings.get::<String>("irc/leave-message")?;
+            let join_message = chat_settings.get::<String>("join-message")?;
+            let leave_message = chat_settings.get::<String>("leave-message")?;
 
             let mut chat_log_builder = chat_log::Builder::new(
                 bot_twitch.clone(),
@@ -392,18 +394,19 @@ fn currency_loop<'a>(
     sender: Sender,
     idle: idle::Idle,
     injector: &'a Injector,
+    chat_settings: &settings::Settings,
     settings: &settings::Settings,
 ) -> Result<impl Future<Output = Result<(), Error>> + 'a, Error> {
     let reward = 10;
     let default_interval = Duration::seconds(60 * 10);
 
-    let (mut interval_stream, mut interval) = settings
-        .stream("irc/viewer-reward/interval")
+    let (mut interval_stream, mut interval) = chat_settings
+        .stream("viewer-reward/interval")
         .or_with(default_interval)?;
 
-    let reward_percentage = settings.var("irc/viewer-reward%", 100)?;
-    let (mut viewer_reward_stream, viewer_reward) = settings
-        .stream("irc/viewer-reward/enabled")
+    let reward_percentage = chat_settings.var("viewer-reward%", 100)?;
+    let (mut viewer_reward_stream, viewer_reward) = chat_settings
+        .stream("viewer-reward/enabled")
         .or_with(false)?;
     let (mut notify_rewards_stream, mut notify_rewards) =
         settings.stream("currency/notify-rewards").or_with(true)?;

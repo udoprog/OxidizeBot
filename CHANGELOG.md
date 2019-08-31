@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Renamed all `irc/` settings to `chat/` settings.
+
 ### Added
 - Support for complex object fields in settings configuration.
 - Support for matching a command pattern `!command pattern <name> [pattern]`.

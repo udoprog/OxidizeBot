@@ -36,7 +36,7 @@ pub enum Error {
     /// Expected one of the specified types.
     ExpectedOneOf(Vec<String>),
     /// Migration compatibility issues.
-    MigrationErrorIncompatible {
+    MigrationIncompatible {
         from: String,
         to: String,
         ty: Type,
@@ -69,7 +69,7 @@ impl fmt::Display for Error {
             ExpectedType(ref ty) => write!(fmt, "Expected type: {}", ty),
             IncompatibleField(ref field) => write!(fmt, "Incompatible field: {}", field),
             ExpectedOneOf(ref alts) => write!(fmt, "Expected one of: {}", alts.join(", ")),
-            MigrationErrorIncompatible {
+            MigrationIncompatible {
                 ref from,
                 ref to,
                 ref ty,
@@ -216,6 +216,9 @@ impl Schema {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Migration {
+    /// Treat the migration as a prefix migration.
+    #[serde(default)]
+    pub prefix: bool,
     /// Key to migrate from.
     pub from: String,
     /// Key to migrate to.
@@ -302,40 +305,85 @@ impl Settings {
     /// Run all settings migrations.
     pub fn run_migrations(&self) -> Result<(), Error> {
         for m in &self.inner.schema.migrations {
-            let from = match self.inner_get::<serde_json::Value>(&m.from)? {
-                Some(from) => from,
-                None => continue,
-            };
-
-            let to = match self.setting::<serde_json::Value>(&m.to)? {
-                Some(to) => to,
-                None => return Err(Error::NoTargetForSchema(m.to.to_string())),
-            };
-
-            if to.value.is_none() {
-                log::info!("Migrating setting: {} -> {}", m.from, m.to);
-
-                if !to.schema.ty.is_compatible_with_json(&from) {
-                    return Err(Error::MigrationErrorIncompatible {
-                        from: m.from.clone(),
-                        to: m.to.clone(),
-                        ty: to.schema.ty.clone(),
-                        json: serde_json::to_string(&from)?,
-                    });
-                }
-
-                self.set_json(&m.to, from)?;
+            if m.prefix {
+                self.migrate_prefix(&m.from, &m.to)?;
             } else {
-                log::warn!(
-                    "Ignoring value for {} since {} is already present",
-                    m.from,
-                    m.to
-                );
+                self.migrate_exact(&m.from, &m.to)?;
             }
-
-            self.clear(&m.from)?;
         }
 
+        Ok(())
+    }
+
+    /// Migrate one prefix to another.
+    fn migrate_prefix(&self, from_key: &str, to_key: &str) -> Result<(), Error> {
+        use self::db::schema::settings::dsl;
+
+        let keys = {
+            let c = self.inner.db.pool.lock();
+
+            dsl::settings
+                .select(dsl::key)
+                .order(dsl::key)
+                .load::<String>(&*c)?
+                .into_iter()
+                .collect::<Vec<_>>()
+        };
+
+        for current_key in keys {
+            if !current_key.starts_with(from_key) {
+                continue;
+            }
+
+            let to_key = format!("{}{}", to_key, &current_key[from_key.len()..]);
+
+            match self.migrate_exact(&current_key, &to_key) {
+                Ok(()) => (),
+                Err(Error::NoTargetForSchema(..)) => {
+                    log::warn!("Clearing setting without schema: {}", current_key);
+                    self.inner_clear(&current_key)?;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Migrate the exact key.
+    fn migrate_exact(&self, from_key: &str, to_key: &str) -> Result<(), Error> {
+        let from = match self.inner_get::<serde_json::Value>(&from_key)? {
+            Some(from) => from,
+            None => return Ok(()),
+        };
+
+        log::info!("Migrating setting: {} -> {}", from_key, to_key);
+
+        let to = match self.setting::<serde_json::Value>(&to_key)? {
+            Some(to) => to,
+            None => return Err(Error::NoTargetForSchema(to_key.to_string())),
+        };
+
+        if to.value.is_none() {
+            if !to.schema.ty.is_compatible_with_json(&from) {
+                return Err(Error::MigrationIncompatible {
+                    from: from_key.to_string(),
+                    to: to_key.to_string(),
+                    ty: to.schema.ty.clone(),
+                    json: serde_json::to_string(&from)?,
+                });
+            }
+
+            self.set_json(&to_key, from)?;
+        } else {
+            log::warn!(
+                "Ignoring value for {} since {} is already present",
+                from_key,
+                to_key
+            );
+        }
+
+        self.inner_clear(&from_key)?;
         Ok(())
     }
 
@@ -524,12 +572,15 @@ impl Settings {
 
     /// Clear the given setting. Returning `true` if it was removed.
     pub fn clear(&self, key: &str) -> Result<bool, Error> {
+        let key = self.key(key);
+        self.inner_clear(&key)
+    }
+
+    /// Perform an inner clear of the given key.
+    fn inner_clear(&self, key: &str) -> Result<bool, Error> {
         use self::db::schema::settings::dsl;
 
-        let key = self.key(key);
-
         self.try_send(&key, Event::Clear);
-
         let c = self.inner.db.pool.lock();
         let count = diesel::delete(dsl::settings.filter(dsl::key.eq(key))).execute(&*c)?;
         Ok(count == 1)
@@ -1003,6 +1054,12 @@ impl Default for SelectVariant {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SelectOption {
+    title: String,
+    value: serde_json::Value,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "id")]
 pub enum Kind {
     #[serde(rename = "raw")]
@@ -1032,7 +1089,7 @@ pub enum Kind {
     #[serde(rename = "select")]
     Select {
         value: Box<Type>,
-        options: Vec<serde_json::Value>,
+        options: Vec<SelectOption>,
         #[serde(default)]
         variant: SelectVariant,
     },
@@ -1100,11 +1157,11 @@ impl Type {
             } => {
                 let v = value.parse_as_json(s)?;
 
-                if !options.iter().any(|o| *o == v) {
+                if !options.iter().any(|o| o.value == v) {
                     let mut out = Vec::new();
 
                     for o in options {
-                        out.push(serde_json::to_string(o)?);
+                        out.push(serde_json::to_string(&o.value)?);
                     }
 
                     return Err(Error::ExpectedOneOf(out));
@@ -1155,7 +1212,7 @@ impl Type {
         match (&self.kind, other) {
             (Raw, _) => true,
             (Oauth2Config, _) => serde_json::from_value::<oauth2::Config>(other.clone()).is_ok(),
-            (Duration, Value::Number(..)) => true,
+            (Duration, Value::String(ref s)) => str::parse::<utils::Duration>(s).is_ok(),
             (Bool, Value::Bool(..)) => true,
             (Number, Value::Number(..)) => true,
             (Percentage, Value::Number(..)) => true,
@@ -1163,6 +1220,20 @@ impl Type {
             (Text, Value::String(..)) => true,
             (Set { ref value }, Value::Array(ref values)) => {
                 values.iter().all(|v| value.is_compatible_with_json(v))
+            }
+            (
+                Select {
+                    ref value,
+                    ref options,
+                    ..
+                },
+                json,
+            ) => {
+                if !value.is_compatible_with_json(json) {
+                    return false;
+                }
+
+                return options.iter().any(|opt| opt.value == *json);
             }
             (Object { ref fields, .. }, Value::Object(ref object)) => {
                 // NB: check that all fields match expected schema.
@@ -1190,7 +1261,15 @@ impl fmt::Display for Type {
             String { .. } => write!(fmt, "string")?,
             Text => write!(fmt, "text")?,
             Set { ref value } => write!(fmt, "Array<{}>", value)?,
-            Select { ref value, .. } => write!(fmt, "Select<{}>", value)?,
+            Select {
+                ref value,
+                ref options,
+                ..
+            } => {
+                let options = options.iter().map(|o| &o.value).collect::<Vec<_>>();
+                let options = serde_json::to_string(&options).map_err(|_| fmt::Error)?;
+                write!(fmt, "Select<{}, one_of={}>", value, options)?;
+            }
             TimeZone => write!(fmt, "TimeZone")?,
             Object { .. } => write!(fmt, "Object")?,
         };

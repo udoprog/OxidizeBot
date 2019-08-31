@@ -5,6 +5,9 @@ migrations:
     to: song/youtube/enabled
   - from: irc/startup-message
     to: irc/join-message
+  - prefix: true
+    from: irc/
+    to: chat/
 
 # ChaosMod effect names that can be configured.
 gtav_options: &gtav-options
@@ -138,7 +141,7 @@ types:
   gtav/success-feedback:
     doc: If we should have chat feedback on successful commands.
     type: {id: bool}
-  irc/sender-type:
+  chat/sender-type:
     doc: How to send messages to chat.
     type:
       id: select
@@ -146,43 +149,43 @@ types:
       options:
         - {title: "Chat", value: "chat"}
         - {title: "NightBot (requires Authentication)", value: "nightbot"}
-  irc/moderator-cooldown:
+  chat/moderator-cooldown:
     doc: How long we must wait between each moderator action.
     type: {id: duration, optional: true}
-  irc/join-message:
+  chat/join-message:
     doc: Message to send when the bot joins your channel.
     type: {id: string, optional: true}
-  irc/leave-message:
+  chat/leave-message:
     doc: Message to send when the bot leaves your channel.
     type: {id: string, optional: true}
-  irc/idle-detection/threshold:
+  chat/idle-detection/threshold:
     doc: How many messages must be received before the channel is no longer considered idle.
     type: {id: number}
-  irc/viewer-reward%:
+  chat/viewer-reward%:
     doc: Scaling for viewer rewards.
     type: {id: percentage}
-  irc/viewer-reward/enabled:
+  chat/viewer-reward/enabled:
     title: Viewer Rewards
     feature: true
     doc: If viewer rewards are enabled. If enabled, this will award viewers 1 unit of stream currency for every minute of watch time.
     type: {id: bool}
-  irc/viewer-reward/interval:
+  chat/viewer-reward/interval:
     doc: The interval at which we give out user rewards.
     type: {id: duration}
-  irc/whitelisted-hosts:
+  chat/whitelisted-hosts:
     doc: Hosts that are whitelisted for linking to in chat.
     type: {id: set, value: {id: string}}
-  irc/url-whitelist/enabled:
+  chat/url-whitelist/enabled:
     title: URL whitelisting
     feature: true
     doc: If URL whitelisting is enabled in chat.
     type: {id: bool}
-  irc/bad-words/enabled:
+  chat/bad-words/enabled:
     title: Bad-words filtering
     feature: true
     doc: If bad words filtering is enabled in chat (Experimental).
     type: {id: bool}
-  irc/bad-words/path:
+  chat/bad-words/path:
     doc: Filesystem location of the bad words dictionary to use.
     type: {id: string, optional: true}
   migration/aliases-migrated:
