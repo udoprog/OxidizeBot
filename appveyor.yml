@@ -1,6 +1,8 @@
 image: Visual Studio 2017
 
 environment:
+  SIGNTOOL_PASSWORD:
+    secure: 99B1UlTjBA9q8gz1AwtMy5CKpyA5UcFZwIT7dXbxGUXBo4uwGRU0uPYBnI+/AGkN
   matrix:
     - channel: nightly
       target: x86_64-pc-windows-msvc
