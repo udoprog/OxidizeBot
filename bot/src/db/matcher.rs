@@ -1,3 +1,4 @@
+use crate::utils;
 use failure::Error;
 use hashbrown::{hash_map, HashMap, HashSet};
 use std::{fmt, sync::Arc};
@@ -146,27 +147,28 @@ where
     pub fn resolve<'a>(
         &self,
         channel: &str,
-        first: Option<&str>,
-        full: &'a str,
+        first: Option<&'a str>,
+        it: &utils::Words<'a>,
     ) -> Option<(&Arc<T>, Captures<'a>)> {
         if let Some(first) = first {
             let key = Key::new(channel, first);
 
             if self.by_name.contains(&key) {
                 if let Some(command) = self.get(&key) {
-                    return Some((command, Default::default()));
+                    let captures = Captures::Prefix { rest: it.rest() };
+                    return Some((command, captures));
                 }
             }
         }
 
         if let Some(keys) = self.by_channel_regex.get(channel) {
+            let full = it.string();
+
             for key in keys {
                 if let Some(command) = self.get(key) {
                     if let Pattern::Regex { pattern } = command.pattern() {
                         if let Some(captures) = pattern.captures(full) {
-                            let captures = Captures {
-                                captures: Some(captures),
-                            };
+                            let captures = Captures::Regex { captures };
                             return Some((command, captures));
                         }
                     }
@@ -235,9 +237,20 @@ where
     s.collect_str(regex)
 }
 
-#[derive(Debug, Default)]
-pub struct Captures<'a> {
-    captures: Option<regex::Captures<'a>>,
+#[derive(Debug)]
+pub enum Captures<'a> {
+    Prefix { rest: &'a str },
+    Regex { captures: regex::Captures<'a> },
+}
+
+impl<'a> Captures<'a> {
+    /// Get the number of captures.
+    fn len(&self) -> usize {
+        match self {
+            Self::Prefix { .. } => 1,
+            Self::Regex { captures, .. } => captures.len(),
+        }
+    }
 }
 
 impl serde::Serialize for Captures<'_> {
@@ -247,11 +260,16 @@ impl serde::Serialize for Captures<'_> {
     {
         use serde::ser::SerializeMap as _;
 
-        let mut m = serializer.serialize_map(self.captures.as_ref().map(|c| c.len()))?;
+        let mut m = serializer.serialize_map(Some(self.len()))?;
 
-        if let Some(captures) = &self.captures {
-            for (i, g) in captures.iter().enumerate() {
-                m.serialize_entry(&i, &g.map(|m| m.as_str()))?;
+        match self {
+            Self::Prefix { rest } => {
+                m.serialize_entry("rest", rest)?;
+            }
+            Self::Regex { captures, .. } => {
+                for (i, g) in captures.iter().enumerate() {
+                    m.serialize_entry(&i, &g.map(|m| m.as_str()))?;
+                }
             }
         }
 

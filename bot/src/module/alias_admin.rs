@@ -28,6 +28,25 @@ impl command::Handler for Handler {
 
                 ctx.respond("Edited alias");
             }
+            Some("pattern") => {
+                ctx.check_scope(auth::Scope::AliasEdit)?;
+
+                let name = ctx_try!(ctx.next_str("<name> [pattern]"));
+
+                let pattern = match ctx.rest() {
+                    pattern if pattern.trim().is_empty() => None,
+                    pattern => match regex::Regex::new(pattern) {
+                        Ok(pattern) => Some(pattern),
+                        Err(e) => {
+                            ctx.user.respond(format!("Bad pattern provided: {}", e));
+                            return Ok(());
+                        }
+                    },
+                };
+
+                aliases.edit_pattern(ctx.channel(), &name, pattern)?;
+                ctx.respond("Edited pattern for alias.");
+            }
             None | Some(..) => {
                 ctx.respond("Expected: show, list, edit, delete, enable, disable, or group.");
             }

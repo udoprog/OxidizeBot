@@ -1,6 +1,5 @@
 use crate::{db, template, utils};
 use diesel::prelude::*;
-use hashbrown::HashMap;
 use parking_lot::RwLock;
 use std::{fmt, sync::Arc};
 
@@ -9,9 +8,9 @@ use std::{fmt, sync::Arc};
 struct Database(db::Database);
 
 impl Database {
-    private_database_group_fns!(aliases, Alias, Key);
+    private_database_group_fns!(aliases, Alias, db::Key);
 
-    fn edit(&self, key: &Key, text: &str) -> Result<Option<db::models::Alias>, failure::Error> {
+    fn edit(&self, key: &db::Key, text: &str) -> Result<db::models::Alias, failure::Error> {
         use db::schema::aliases::dsl;
         let c = self.0.pool.lock();
 
@@ -24,6 +23,7 @@ impl Database {
             None => {
                 let alias = db::models::Alias {
                     channel: key.channel.to_string(),
+                    pattern: None,
                     name: key.name.to_string(),
                     text: text.to_string(),
                     group: None,
@@ -33,35 +33,50 @@ impl Database {
                 diesel::insert_into(dsl::aliases)
                     .values(&alias)
                     .execute(&*c)?;
-                Ok(Some(alias))
+                Ok(alias)
             }
             Some(alias) => {
                 let mut set = db::models::UpdateAlias::default();
                 set.text = Some(text);
                 diesel::update(filter).set(&set).execute(&*c)?;
-
-                if alias.disabled {
-                    return Ok(None);
-                }
-
-                Ok(Some(alias))
+                Ok(alias)
             }
         }
+    }
+
+    /// Edit the pattern of an alias.
+    fn edit_pattern(
+        &self,
+        key: &db::Key,
+        pattern: Option<&regex::Regex>,
+    ) -> Result<(), failure::Error> {
+        use db::schema::aliases::dsl;
+        let c = self.0.pool.lock();
+
+        let pattern = pattern.map(|p| p.as_str());
+
+        diesel::update(
+            dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+        )
+        .set(dsl::pattern.eq(pattern))
+        .execute(&*c)?;
+
+        Ok(())
     }
 }
 
 #[derive(Clone)]
 pub struct Aliases {
-    inner: Arc<RwLock<HashMap<Key, Arc<Alias>>>>,
+    inner: Arc<RwLock<db::Matcher<Alias>>>,
     db: Database,
 }
 
 impl Aliases {
-    database_group_fns!(Alias, Key);
+    database_group_fns!(Alias, db::Key);
 
     /// Construct a new commands store with a db.
     pub fn load(db: db::Database) -> Result<Aliases, failure::Error> {
-        let mut inner = HashMap::new();
+        let mut inner = db::Matcher::new();
 
         let db = Database(db);
 
@@ -76,19 +91,19 @@ impl Aliases {
         })
     }
 
-    /// Lookup an alias based on a command prefix.
-    pub fn lookup<'a>(&self, channel: &str, it: utils::Words<'a>) -> Option<String> {
-        let it = it.into_iter();
-
-        let inner = self.inner.read();
-
-        for (key, alias) in inner.iter() {
-            if key.channel != channel {
-                continue;
-            }
-
-            if let Some(out) = alias.matches(it.clone()) {
-                return Some(out);
+    /// Resolve the given command.
+    pub fn resolve<'a>(
+        &self,
+        channel: &str,
+        first: Option<&str>,
+        it: &utils::Words<'a>,
+    ) -> Option<String> {
+        if let Some((alias, captures)) = self.inner.read().resolve(channel, first, it) {
+            match alias.template.render_to_string(&captures) {
+                Ok(s) => return Some(s),
+                Err(e) => {
+                    log::error!("failed to render alias: {}", e);
+                }
             }
         }
 
@@ -102,49 +117,66 @@ impl Aliases {
         name: &str,
         template: template::Template,
     ) -> Result<(), failure::Error> {
-        let key = Key::new(channel, name);
+        let key = db::Key::new(channel, name);
 
-        let mut inner = self.inner.write();
+        let alias = self.db.edit(&key, template.source())?;
 
-        if let Some(alias) = self.db.edit(&key, template.source())? {
-            inner.insert(
-                key.clone(),
-                Arc::new(Alias {
-                    key,
-                    template,
-                    group: alias.group,
-                    disabled: alias.disabled,
-                }),
-            );
+        if alias.disabled {
+            self.inner.write().remove(&key);
         } else {
-            inner.remove(&key);
+            let pattern = db::Pattern::from_db(alias.pattern.as_ref())?;
+
+            let alias = Alias {
+                key: key.clone(),
+                pattern,
+                template,
+                group: alias.group,
+                disabled: alias.disabled,
+            };
+
+            self.inner.write().insert(key, Arc::new(alias));
         }
+
+        Ok(())
+    }
+
+    /// Edit the pattern for the given command.
+    pub fn edit_pattern(
+        &self,
+        channel: &str,
+        name: &str,
+        pattern: Option<regex::Regex>,
+    ) -> Result<(), failure::Error> {
+        let key = db::Key::new(channel, name);
+        self.db.edit_pattern(&key, pattern.as_ref())?;
+
+        self.inner
+            .write()
+            .modify_with_pattern(key, pattern, |alias, pattern| {
+                alias.pattern = pattern;
+            });
 
         Ok(())
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
-pub struct Key {
-    pub channel: String,
-    pub name: String,
-}
-
-impl Key {
-    pub fn new(channel: &str, name: &str) -> Self {
-        Self {
-            channel: channel.to_string(),
-            name: name.to_lowercase(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Alias {
-    pub key: Key,
+    pub key: db::Key,
+    pub pattern: db::Pattern,
     pub template: template::Template,
     pub group: Option<String>,
     pub disabled: bool,
+}
+
+impl db::Matchable for Alias {
+    fn key(&self) -> &db::Key {
+        &self.key
+    }
+
+    fn pattern(&self) -> &db::Pattern {
+        &self.pattern
+    }
 }
 
 impl Alias {
@@ -152,39 +184,17 @@ impl Alias {
 
     /// Convert a database alias into an in-memory alias.
     pub fn from_db(alias: &db::models::Alias) -> Result<Alias, failure::Error> {
-        let key = Key::new(&alias.channel, &alias.name);
+        let key = db::Key::new(&alias.channel, &alias.name);
+        let pattern = db::Pattern::from_db(alias.pattern.as_ref())?;
         let template = template::Template::compile(&alias.text)?;
 
         Ok(Alias {
             key,
+            pattern,
             template,
             group: alias.group.clone(),
             disabled: alias.disabled,
         })
-    }
-
-    /// Test if the given input matches and return the corresonding replacement if it does.
-    pub fn matches<'a>(&self, mut it: utils::Words<'a>) -> Option<String> {
-        match it.next() {
-            Some(ref value) if value.to_lowercase() == self.key.name => {
-                let data = Data { rest: it.rest() };
-
-                match self.template.render_to_string(&data) {
-                    Ok(s) => return Some(s),
-                    Err(e) => {
-                        log::error!("failed to render alias: {}", e);
-                    }
-                }
-            }
-            _ => {}
-        }
-
-        return None;
-
-        #[derive(serde::Serialize)]
-        struct Data<'a> {
-            rest: &'a str,
-        }
     }
 }
 

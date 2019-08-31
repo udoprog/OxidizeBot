@@ -737,23 +737,21 @@ impl<'a> Handler<'a> {
         // NB: declared here to be in scope.
         let a;
 
+        let first = it.next();
+
         if let Some(aliases) = self.aliases.as_ref() {
             // NB: needs to store locally to maintain a reference to it.
-            a = aliases.lookup(user.channel(), it.clone());
+            a = aliases.resolve(user.channel(), first.as_ref().map(String::as_str), &it);
 
             if let Some(a) = &a {
                 it = utils::Words::new(a.as_str());
             }
         }
 
-        let first = it.next();
-
         if let Some(commands) = self.commands.as_ref() {
-            if let Some((command, captures)) = commands.resolve(
-                user.channel(),
-                first.as_ref().map(String::as_str),
-                it.string(),
-            ) {
+            if let Some((command, captures)) =
+                commands.resolve(user.channel(), first.as_ref().map(String::as_str), &it)
+            {
                 if command.has_var("count") {
                     commands.increment(&*command)?;
                 }
@@ -762,7 +760,6 @@ impl<'a> Handler<'a> {
                     name: user.display_name(),
                     target: user.channel(),
                     count: command.count(),
-                    rest: it.rest(),
                     captures,
                 };
 
@@ -1397,7 +1394,6 @@ pub struct CommandVars<'a> {
     name: Option<&'a str>,
     target: &'a str,
     count: i32,
-    rest: &'a str,
     #[serde(flatten)]
     captures: db::Captures<'a>,
 }

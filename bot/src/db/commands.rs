@@ -1,4 +1,4 @@
-use crate::{db, template};
+use crate::{db, template, utils};
 use diesel::prelude::*;
 use failure::{format_err, Error, ResultExt as _};
 use hashbrown::HashSet;
@@ -178,12 +178,12 @@ impl Commands {
     pub fn resolve<'a>(
         &self,
         channel: &str,
-        first: Option<&str>,
-        full: &'a str,
+        first: Option<&'a str>,
+        it: &utils::Words<'a>,
     ) -> Option<(Arc<Command>, db::Captures<'a>)> {
         self.inner
             .read()
-            .resolve(channel, first, full)
+            .resolve(channel, first, it)
             .map(|(command, captures)| (command.clone(), captures))
     }
 }
