@@ -40,8 +40,8 @@ pub enum TokenId {
 /// * We assume that a user would pay attention when downloading and running an application.
 ///   - If they don't, they have bigger problems on their hands.
 static YOUTUBE_CLIENT_ID: &'static str =
-    "520353465977-ctptr5kbqm86t8tb0e03g6gdl528hik5.apps.googleusercontent.com";
-static YOUTUBE_CLIENT_SECRET: &'static str = "nMMXuPh8KrEuKDBD4-8EdfY3";
+    "652738525380-q3568vdosqg0g5h7p7ea5nrodm5doih3.apps.googleusercontent.com";
+static YOUTUBE_CLIENT_SECRET: &'static str = "NrBvCdjodPnMl4_dVytRKaCA";
 
 static NIGHTBOT_CLIENT_ID: &'static str = "cb1295f19d5bf423b82705808cc7df67";
 static NIGHTBOT_CLIENT_SECRET: &'static str = "92f0ba5e9e4efdaab8cec43fb265d91e";

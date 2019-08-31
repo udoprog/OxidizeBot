@@ -215,7 +215,7 @@ pub struct Video {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct RawVideoInfo {
-    pub author: String,
+    pub author: Option<String>,
     pub video_id: String,
     pub status: String,
     pub title: String,
