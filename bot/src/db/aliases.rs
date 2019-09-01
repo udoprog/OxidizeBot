@@ -92,15 +92,19 @@ impl Aliases {
     }
 
     /// Resolve the given command.
-    pub fn resolve<'a>(
-        &self,
-        channel: &str,
-        first: Option<&str>,
-        it: &utils::Words<'a>,
-    ) -> Option<String> {
-        if let Some((alias, captures)) = self.inner.read().resolve(channel, first, it) {
+    pub fn resolve(&self, channel: &str, message: &str) -> Option<(db::Key, String)> {
+        let mut it = utils::Words::new(message);
+        let first = it.next();
+
+        if let Some((alias, captures)) =
+            self.inner
+                .read()
+                .resolve(channel, first.as_ref().map(String::as_str), &it)
+        {
+            let key = alias.key.clone();
+
             match alias.template.render_to_string(&captures) {
-                Ok(s) => return Some(s),
+                Ok(s) => return Some((key, s)),
                 Err(e) => {
                     log::error!("failed to render alias: {}", e);
                 }
@@ -146,17 +150,13 @@ impl Aliases {
         channel: &str,
         name: &str,
         pattern: Option<regex::Regex>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<bool, failure::Error> {
         let key = db::Key::new(channel, name);
         self.db.edit_pattern(&key, pattern.as_ref())?;
 
-        self.inner
-            .write()
-            .modify_with_pattern(key, pattern, |alias, pattern| {
-                alias.pattern = pattern;
-            });
-
-        Ok(())
+        Ok(self.inner.write().modify(key, |alias| {
+            alias.pattern = pattern.map(db::Pattern::regex).unwrap_or_default();
+        }))
     }
 }
 
@@ -202,8 +202,9 @@ impl fmt::Display for Alias {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             fmt,
-            "template = \"{template}\", group = {group}, disabled = {disabled}",
+            "template = \"{template}\", pattern = {pattern}, group = {group}, disabled = {disabled}",
             template = self.template,
+            pattern = self.pattern,
             group = self.group.as_ref().map(|g| g.as_str()).unwrap_or("*none*"),
             disabled = self.disabled,
         )

@@ -119,6 +119,18 @@ pub struct Words<'a> {
     buffer: String,
 }
 
+impl Words<'static> {
+    /// Construct an empty iterator over words.
+    pub fn empty() -> Self {
+        Self {
+            string: "",
+            it: "".char_indices(),
+            b0: None,
+            buffer: String::new(),
+        }
+    }
+}
+
 impl<'a> Words<'a> {
     /// Split the commandline.
     pub fn new(string: &str) -> Words<'_> {

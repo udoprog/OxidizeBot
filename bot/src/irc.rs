@@ -722,7 +722,7 @@ impl<'a> Handler<'a> {
     }
 
     /// Process the given command.
-    pub async fn process_message(&mut self, user: &User, message: &str) -> Result<(), Error> {
+    pub async fn process_message(&mut self, user: &User, mut message: &str) -> Result<(), Error> {
         for (key, hook) in &mut self.message_hooks {
             hook.peek(&user, message)
                 .with_context(|_| format_err!("hook `{}` failed", key))?;
@@ -733,20 +733,36 @@ impl<'a> Handler<'a> {
             self.idle.seen();
         }
 
-        let mut it = utils::Words::new(message);
         // NB: declared here to be in scope.
-        let a;
+        let mut resolved;
 
-        let first = it.next();
+        let mut seen = HashSet::new();
+        let mut path = Vec::new();
 
         if let Some(aliases) = self.aliases.as_ref() {
-            // NB: needs to store locally to maintain a reference to it.
-            a = aliases.resolve(user.channel(), first.as_ref().map(String::as_str), &it);
+            loop {
+                let (key, next) = match aliases.resolve(user.channel(), message) {
+                    Some((key, next)) => (key, next),
+                    None => break,
+                };
 
-            if let Some(a) = &a {
-                it = utils::Words::new(a.as_str());
+                path.push(key.to_string());
+
+                if !seen.insert(key.clone()) {
+                    user.respond(format!(
+                        "Recursion found in alias expansion: {} :(",
+                        path.join(" -> ")
+                    ));
+                    return Ok(());
+                }
+
+                resolved = next;
+                message = &resolved;
             }
         }
+
+        let mut it = utils::Words::new(message);
+        let first = it.next();
 
         if let Some(commands) = self.commands.as_ref() {
             if let Some((command, captures)) =

@@ -51,7 +51,11 @@ impl command::Handler for Handler {
                     },
                 };
 
-                commands.edit_pattern(ctx.channel(), &name, pattern)?;
+                if !commands.edit_pattern(ctx.channel(), &name, pattern)? {
+                    ctx.respond(format!("No such command: `{}`", name));
+                    return Ok(());
+                }
+
                 ctx.respond("Edited pattern for command.");
             }
             None | Some(..) => {

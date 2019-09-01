@@ -44,7 +44,11 @@ impl command::Handler for Handler {
                     },
                 };
 
-                aliases.edit_pattern(ctx.channel(), &name, pattern)?;
+                if !aliases.edit_pattern(ctx.channel(), &name, pattern)? {
+                    ctx.respond(format!("No such alias: `{}`", name));
+                    return Ok(());
+                }
+
                 ctx.respond("Edited pattern for alias.");
             }
             None | Some(..) => {

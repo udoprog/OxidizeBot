@@ -95,10 +95,11 @@ where
     }
 
     /// Modify the given element with the given pattern.
-    pub(crate) fn modify_with_pattern<F>(&mut self, key: Key, pattern: Option<regex::Regex>, m: F)
+    /// Returns `true` if there was a value to modify. `false` otherwise.
+    pub(crate) fn modify<F>(&mut self, key: Key, m: F) -> bool
     where
         T: Clone,
-        F: FnOnce(&mut T, Pattern),
+        F: FnOnce(&mut T),
     {
         let Self {
             all,
@@ -108,39 +109,38 @@ where
 
         let existing = match all.get_mut(&key) {
             Some(existing) => existing,
-            None => return,
-        };
-
-        let pattern = if let Some(pattern) = pattern {
-            if let Pattern::Name = existing.pattern() {
-                by_name.remove(&key);
-
-                by_channel_regex
-                    .entry(key.channel.clone())
-                    .or_default()
-                    .insert(key);
-            }
-
-            Pattern::Regex { pattern }
-        } else {
-            if let Pattern::Regex { .. } = existing.pattern() {
-                by_channel_regex
-                    .entry(key.channel.clone())
-                    .or_default()
-                    .remove(&key);
-
-                by_name.insert(key);
-            } else {
-                // NB: nothing to do.
-                return;
-            }
-
-            Pattern::Name
+            None => return false,
         };
 
         let mut new = (**existing).clone();
-        m(&mut new, pattern);
+        m(&mut new);
+
+        // re-index in case pattern has changed.
+        match new.pattern() {
+            Pattern::Regex { .. } => {
+                if let Pattern::Name = existing.pattern() {
+                    by_name.remove(&key);
+
+                    by_channel_regex
+                        .entry(key.channel.clone())
+                        .or_default()
+                        .insert(key);
+                }
+            }
+            Pattern::Name => {
+                if let Pattern::Regex { .. } = existing.pattern() {
+                    by_channel_regex
+                        .entry(key.channel.clone())
+                        .or_default()
+                        .remove(&key);
+
+                    by_name.insert(key);
+                }
+            }
+        }
+
         *existing = Arc::new(new);
+        true
     }
 
     /// Resolve the given command.
@@ -195,6 +195,12 @@ impl Key {
     }
 }
 
+impl fmt::Display for Key {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "{}/{}", self.channel, self.name)
+    }
+}
+
 /// How to match the given value.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
@@ -209,6 +215,11 @@ pub enum Pattern {
 }
 
 impl Pattern {
+    /// Construct a new pattern from a regular expression.
+    pub fn regex(pattern: regex::Regex) -> Self {
+        Self::Regex { pattern }
+    }
+
     /// Convert a database pattern into a matchable pattern here.
     pub fn from_db(pattern: Option<impl AsRef<str>>) -> Result<Self, Error> {
         Ok(match pattern {
@@ -217,6 +228,12 @@ impl Pattern {
             },
             None => Pattern::Name,
         })
+    }
+}
+
+impl Default for Pattern {
+    fn default() -> Self {
+        Self::Name
     }
 }
 

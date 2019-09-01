@@ -154,17 +154,13 @@ impl Commands {
         channel: &str,
         name: &str,
         pattern: Option<regex::Regex>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<bool, failure::Error> {
         let key = db::Key::new(channel, name);
         self.db.edit_pattern(&key, pattern.as_ref())?;
 
-        self.inner
-            .write()
-            .modify_with_pattern(key, pattern, |value, pattern| {
-                value.pattern = pattern;
-            });
-
-        Ok(())
+        Ok(self.inner.write().modify(key, |command| {
+            command.pattern = pattern.map(db::Pattern::regex).unwrap_or_default();
+        }))
     }
 
     /// Increment the specified command.

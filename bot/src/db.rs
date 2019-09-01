@@ -23,7 +23,8 @@ pub use self::{
     words::{Word, Words},
 };
 
-pub(crate) use self::matcher::{Key, Matchable, Matcher, Pattern};
+pub use self::matcher::Key;
+pub(crate) use self::matcher::{Matchable, Matcher, Pattern};
 
 use chrono::Utc;
 use diesel::prelude::*;
