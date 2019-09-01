@@ -85,7 +85,7 @@ if (Test-Path env:CERTIFICATE_PASSWORD) {
     }
 }
 
-$files | Copy-Item -Destination $root
+$installers | Copy-Item -Destination $root
 
 $zip="oxidize-$version-windows-x86_64.zip"
 7z a $zip $root/README.md
