@@ -1896,7 +1896,7 @@ dependencies = [
 
 [[package]]
 name = "oxidize"
-version = "1.0.0-beta.9"
+version = "1.0.0-beta.10"
 dependencies = [
  "Inflector 0.11.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "async-injector 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
