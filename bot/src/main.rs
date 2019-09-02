@@ -121,6 +121,18 @@ fn default_log_config(
         config = config.logger(logger.additive(false).build(m, level));
     }
 
+    // panic logger
+    let mut logger = Logger::builder();
+
+    logger = logger.appender(FILE);
+
+    #[cfg(not(feature = "windows"))]
+    {
+        logger = logger.appender(STDOUT);
+    }
+
+    config = config.logger(logger.additive(false).build("panic", level));
+
     Ok(config.build(root)?)
 }
 
@@ -171,6 +183,8 @@ fn main() -> Result<(), Error> {
 
     setup_logs(&root, log_config, &default_log_file, trace, log_modules)
         .context("failed to setup logs")?;
+
+    oxidize::panic_logger();
 
     if !root.is_dir() {
         log::info!("Creating config directory: {}", root.display());

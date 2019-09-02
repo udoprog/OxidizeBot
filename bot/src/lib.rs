@@ -29,6 +29,7 @@ pub mod message_log;
 pub mod module;
 pub mod oauth2;
 pub mod obs;
+mod panic_logger;
 pub mod player;
 pub mod prelude;
 pub mod settings;
@@ -45,4 +46,5 @@ mod uri;
 pub mod utils;
 pub mod web;
 
+pub use self::panic_logger::panic_logger;
 use self::uri::Uri;
