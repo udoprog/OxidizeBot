@@ -1,6 +1,6 @@
 .\tools\env.ps1
 
-function Msi-Version($maj, $min, $patch, $pre) {
+function MsiVersion($maj, $min, $patch, $pre) {
     <#
     Calculate an MSI-safe version number.
     Unfortunately this enforces some unfortunate constraints on the available
@@ -27,13 +27,13 @@ function Msi-Version($maj, $min, $patch, $pre) {
     "$maj.$min.$last"
 }
 
-Function Run-Cargo([string[]]$Arguments) {
+Function RunCargo([string[]]$Arguments) {
     Write-Host "cargo $Arguments"
     cargo $Arguments
     $LastExitCode -eq 0
 }
 
-Function Run-SignTool([string[]]$Arguments) {
+Function RunSignTool([string[]]$Arguments) {
     Write-Host "signtool $Arguments"
     signtool $Arguments
     $LastExitCode -eq 0
@@ -41,17 +41,17 @@ Function Run-SignTool([string[]]$Arguments) {
 
 Function Sign($Root, $File, $What) {
     Write-Host "Signing $file"
-    return Run-SignTool "sign","/f","$Root/bot/res/cert.pfx","/d","$what","/du","https://github.com/udoprog/OxidizeBot","/p",$env:CERTIFICATE_PASSWORD,$file
+    return RunSignTool "sign","/f","$Root/bot/res/cert.pfx","/d","$what","/du","https://github.com/udoprog/OxidizeBot","/p",$env:CERTIFICATE_PASSWORD,$file
 }
 
 if (!($env:APPVEYOR_REPO_TAG_NAME -match '^(\d+)\.(\d+)\.(\d+)(-.+\.(\d+))?$')) {
     Write-Output "Testing..."
 
-    if (!(Run-Cargo "build","--all")) {
+    if (!(RunCargo "build","--all")) {
         throw "Build failed"
     }
 
-    if (!(Run-Cargo "test","--all")) {
+    if (!(RunCargo "test","--all")) {
         throw "Tests failed"
     }
 
@@ -61,7 +61,7 @@ if (!($env:APPVEYOR_REPO_TAG_NAME -match '^(\d+)\.(\d+)\.(\d+)(-.+\.(\d+))?$')) 
 $root="$PSScriptRoot/.."
 $version=$env:APPVEYOR_REPO_TAG_NAME
 
-if (!(Run-Cargo "build","--release","--bin","oxidize")) {
+if (!(RunCargo "build","--release","--bin","oxidize")) {
     throw "Failed to build binary"
 }
 
@@ -70,9 +70,9 @@ if (Test-Path env:CERTIFICATE_PASSWORD) {
 }
 
 if (!(Test-Path $root/target/wix)) {
-    $msi_version=Msi-Version $Matches[1] $Matches[2] $Matches[3] $Matches[5]
+    $msi_version = MsiVersion $Matches[1] $Matches[2] $Matches[3] $Matches[5]
 
-    if (!(Run-Cargo "wix","-n","oxidize","--install-version",$msi_version,"--nocapture")) {
+    if (!(RunCargo "wix","-n","oxidize","--install-version",$msi_version,"--nocapture")) {
         throw "Failed to build wix package"
     }
 }
