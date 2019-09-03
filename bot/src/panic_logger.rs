@@ -1,9 +1,12 @@
+use backtrace::Backtrace;
 use std::{panic, thread};
 
 /// Install a panic handler which logs panics on errors.
 /// Adapted from: https://github.com/sfackler/rust-log-panics/blob/master/src/lib.rs
 pub fn panic_logger() {
     panic::set_hook(Box::new(|info| {
+        let bt = Backtrace::new();
+
         let thread = thread::current();
         let thread = thread.name().unwrap_or("unnamed");
 
@@ -18,19 +21,21 @@ pub fn panic_logger() {
         match info.location() {
             Some(location) => {
                 log::error!(
-                    target: "panic", "thread '{}' panicked at '{}': {}:{}",
+                    target: "panic", "thread '{}' panicked at '{}': {}:{}\n{:?}",
                     thread,
                     msg,
                     location.file(),
                     location.line(),
+                    bt,
                 );
             }
             None => {
                 log::error!(
                     target: "panic",
-                    "thread '{}' panicked at '{}'",
+                    "thread '{}' panicked at '{}'\n{:?}",
                     thread,
                     msg,
+                    bt,
                 );
             }
         }
