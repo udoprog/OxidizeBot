@@ -4,7 +4,7 @@ migrations:
   - from: song/youtube/support
     to: song/youtube/enabled
   - from: irc/startup-message
-    to: irc/join-message
+    to: chat/join-message
   - prefix: true
     from: irc/
     to: chat/
