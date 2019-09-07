@@ -359,6 +359,10 @@ impl Emotes {
 
         let mut out = EmoteByCode::default();
 
+        // scratch buffer for all the characters in the message.
+        // is only filled if needed lazily.
+        let mut message_chars = None::<Vec<char>>;
+
         // 300354391:8-16/28087:0-6
         for emote in emotes.split('/') {
             let mut p = emote.split(':');
@@ -373,12 +377,14 @@ impl Emotes {
                 None => continue,
             };
 
-            let word = match span {
-                Some((s, e)) => &message[s..=e],
+            let message = message_chars.get_or_insert_with(|| message.chars().collect());
+
+            let word: String = match span {
+                Some((s, e)) => message[s..=e].iter().collect(),
                 None => continue,
             };
 
-            out.insert(word.to_string(), Self::twitch_emote(id));
+            out.insert(word, Self::twitch_emote(id));
         }
 
         return Ok(out);

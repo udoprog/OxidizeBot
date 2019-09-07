@@ -823,6 +823,16 @@ mod tests {
     }
 
     #[test]
+    pub fn test_trimmed_words_unicode() {
+        let it = TrimmedWords::new("👌👌 foo");
+
+        assert_eq!(
+            vec![String::from("👌👌"), String::from("foo")],
+            it.collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
     pub fn test_split_escape() {
         let out = Words::new("   foo bar   baz   ").collect::<Vec<_>>();
         assert_eq!(out, vec!["foo", "bar", "baz"]);
@@ -843,6 +853,16 @@ mod tests {
         let mut it = Words::new("   foo\\\"baz  biz \"is good\"");
         assert_eq!(it.next().as_ref().map(String::as_str), Some("foo\"baz"));
         assert_eq!(it.rest(), "biz \"is good\"");
+    }
+
+    #[test]
+    pub fn test_unicode() {
+        let it = Words::new("👌👌 foo");
+
+        assert_eq!(
+            vec![String::from("👌👌"), String::from("foo")],
+            it.collect::<Vec<_>>(),
+        );
     }
 
     #[test]
