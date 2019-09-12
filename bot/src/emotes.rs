@@ -332,7 +332,7 @@ impl Emotes {
                     target: &channel.name,
                 },
                 chrono::Duration::hours(6),
-                async {
+                async move {
                     let mut emotes = EmoteByCode::default();
                     let (a, b) = future::try_join(
                         self.room_emotes_from_ffz(channel),
@@ -406,7 +406,7 @@ impl Emotes {
     async fn global_emotes(&self) -> Result<Arc<EmoteByCode>, Error> {
         self.inner
             .cache
-            .wrap(Key::GlobalEmotes, chrono::Duration::hours(72), async {
+            .wrap(Key::GlobalEmotes, chrono::Duration::hours(72), async move {
                 let (twitch, bttv) = future::try_join(
                     self.emote_sets_from_twitch("0"),
                     self.emote_sets_from_bttv(),
@@ -757,7 +757,7 @@ impl Emotes {
                     name,
                 },
                 chrono::Duration::hours(1),
-                async {
+                async move {
                     let mut out = SmallVec::new();
 
                     let twitch = self.gql_twitch_chat_badges(channel, name);

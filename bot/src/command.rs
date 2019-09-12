@@ -19,7 +19,7 @@ pub trait Handler {
 }
 
 /// A trait for peeking into chat messages.
-pub trait MessageHook: std::any::Any + Send {
+pub trait MessageHook: std::any::Any + Send + Sync {
     /// Peek the given message.
     fn peek(&mut self, user: &irc::User, m: &str) -> Result<(), Error>;
 }
