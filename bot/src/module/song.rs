@@ -238,6 +238,13 @@ impl Handler {
 
                     return Ok(());
                 }
+                Err(AddTrackError::MissingAuth) => {
+                    user.respond(
+                        "Cannot add the given song because the service has not been authenticated by the streamer!",
+                    );
+
+                    return Ok(());
+                }
                 Err(AddTrackError::Error(e)) => {
                     return Err(e);
                 }
@@ -354,6 +361,11 @@ impl command::Handler for Handler {
                         Err(PlayThemeError::Error(e)) => {
                             user.respond("There was a problem playing that theme :(");
                             log_err!(e, "failed to add song");
+                        }
+                        Err(PlayThemeError::MissingAuth) => {
+                            user.respond(
+                                "Cannot play the given theme because the service has not been authenticated by the streamer!",
+                            );
                         }
                     }
                 });

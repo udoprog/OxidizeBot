@@ -573,6 +573,9 @@ impl Handler {
                     Err(player::PlayThemeError::NotConfigured) => {
                         log::error!("themes system is not configured");
                     }
+                    Err(player::PlayThemeError::MissingAuth) => {
+                        log::error!("missing authentication to play the theme `{}`", id);
+                    }
                     Err(player::PlayThemeError::Error(e)) => {
                         log::error!("error when playing theme: {}", e);
                     }

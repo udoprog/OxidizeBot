@@ -437,6 +437,11 @@ impl SyncToken {
         Ok(())
     }
 
+    /// Check if token is ready.
+    pub fn is_ready(&self) -> bool {
+        self.inner.read().token.is_some()
+    }
+
     /// Wait until an underlying token is available.
     pub async fn wait_until_ready(&self) -> Result<(), CancelledToken> {
         let rx = {

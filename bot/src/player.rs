@@ -253,26 +253,24 @@ pub fn run(
     let future = async move {
         log::trace!("Waiting for token to become ready");
 
-        // NB: since we do some work when we initialize the player, wait until
-        // Spotify and YouTube are at least initialy authenticated.
-        future::try_join(
-            spotify.token.wait_until_ready(),
-            youtube.token.wait_until_ready(),
-        )
-        .await?;
+        {
+            // Add tracks from database.
+            for song in db.list()? {
+                let item = convert_item(
+                    &*spotify,
+                    &*youtube,
+                    song.user.as_ref().map(|user| user.as_str()),
+                    &song.track_id,
+                    None,
+                )
+                .await?;
 
-        // Add tracks from database.
-        for song in db.list()? {
-            let item = convert_item(
-                &*spotify,
-                &*youtube,
-                song.user.as_ref().map(|user| user.as_str()),
-                song.track_id,
-                None,
-            )
-            .await?;
-
-            queue.push_back_queue(Arc::new(item));
+                if let Some(item) = item {
+                    queue.push_back_queue(Arc::new(item));
+                } else {
+                    log::warn!("failed to convert db item: {:?}", song);
+                }
+            }
         }
 
         let mixer = Mixer {
@@ -763,11 +761,16 @@ impl Player {
             &*self.inner.spotify,
             &*self.inner.youtube,
             None,
-            theme.track_id.clone(),
+            &theme.track_id,
             duration,
         )
         .await
         .map_err(|e| PlayThemeError::Error(e.into()))?;
+
+        let item = match item {
+            Some(item) => item,
+            None => return Err(PlayThemeError::MissingAuth),
+        };
 
         let item = Arc::new(item);
         let duration = theme.start.as_duration();
@@ -848,15 +851,20 @@ impl Player {
             return Err(AddTrackError::TooManyUserTracks(max_songs_per_user));
         }
 
-        let mut item = convert_item(
+        let item = convert_item(
             &*self.inner.spotify,
             &*self.inner.youtube,
             Some(user),
-            track_id,
+            &track_id,
             None,
         )
         .await
         .map_err(|e| AddTrackError::Error(e.into()))?;
+
+        let mut item = match item {
+            Some(item) => item,
+            None => return Err(AddTrackError::MissingAuth),
+        };
 
         if let Some(max_duration) = max_duration {
             let max_duration = max_duration.as_std();
@@ -998,6 +1006,8 @@ pub enum PlayThemeError {
     NoSuchTheme,
     /// Themes system is not configured.
     NotConfigured,
+    /// Authentication missing to play the given theme.
+    MissingAuth,
     /// Other generic error happened.
     Error(Error),
 }
@@ -1014,6 +1024,8 @@ pub enum AddTrackError {
     PlayerClosed(Option<Arc<String>>),
     /// Duplicate song that was added at the specified time by the specified user.
     Duplicate(DateTime<Utc>, Option<String>, Duration),
+    /// Authentication missing for adding the given track.
+    MissingAuth,
     /// Other generic error happened.
     Error(Error),
 }
@@ -2018,22 +2030,33 @@ impl PlaybackFuture {
 }
 
 /// Converts a track into an Item.
+///
+/// Returns `None` if the service required to convert the item is not
+/// authenticated.
 async fn convert_item(
     spotify: &api::Spotify,
     youtube: &api::YouTube,
     user: Option<&str>,
-    track_id: TrackId,
+    track_id: &TrackId,
     duration_override: Option<Duration>,
-) -> Result<Item, Error> {
+) -> Result<Option<Item>, Error> {
     let (track, duration) = match track_id {
-        TrackId::Spotify(ref id) => {
+        TrackId::Spotify(id) => {
+            if !spotify.token.is_ready() {
+                return Ok(None);
+            }
+
             let track_id_string = id.to_base62();
             let track = spotify.track(track_id_string).await?;
             let duration = Duration::from_millis(track.duration_ms.into());
 
             (Track::Spotify { track }, duration)
         }
-        TrackId::YouTube(ref id) => {
+        TrackId::YouTube(id) => {
+            if !youtube.token.is_ready() {
+                return Ok(None);
+            }
+
             let video = youtube.videos_by_id(id, "contentDetails,snippet").await?;
 
             let video = match video {
@@ -2056,10 +2079,10 @@ async fn convert_item(
         None => duration,
     };
 
-    return Ok(Item {
-        track_id,
+    return Ok(Some(Item {
+        track_id: track_id.clone(),
         track,
         user: user.map(|user| user.to_string()),
         duration,
-    });
+    }));
 }

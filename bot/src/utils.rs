@@ -878,4 +878,49 @@ mod tests {
             ],
         );
     }
+
+    #[test]
+    pub fn test_words_split_iterator() {
+        let mut it = Words::new(buf);
+
+        while let Some((idx, word)) = it.next() {
+            if let Some(emote) = emote(word) {
+                if !emotes.contains_key(word) {
+                    emotes.insert(word.to_string(), emote.clone());
+                }
+
+                let text = &buf[..idx];
+
+                if !text.is_empty() {
+                    items.push(Item::Text {
+                        text: text.to_string(),
+                    });
+                }
+
+                items.push(Item::Emote {
+                    emote: word.to_string(),
+                });
+
+                buf = &buf[(idx + word.len())..];
+                continue 'outer;
+            }
+
+            if let Ok(url) = Url::parse(word) {
+                let text = &buf[..idx];
+
+                if !text.is_empty() {
+                    items.push(Item::Text {
+                        text: text.to_string(),
+                    });
+                }
+
+                items.push(Item::Url {
+                    url: url.to_string(),
+                });
+
+                buf = &buf[(idx + word.len())..];
+                continue 'outer;
+            }
+        }
+    }
 }
