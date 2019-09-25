@@ -41,7 +41,7 @@
           </Component>
 
           <Component Id="RegistryAutostart" Guid="{35977dfa-73b2-4418-a713-c3fa83c6076a}" Win64='$(var.Win64)'>
-            <RegistryValue Root="HKCU" Action="write" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="OxidizeBot" Value='"[APPLICATIONFOLDER]oxidize.exe" --silent' Type="string" />
+            <RegistryValue Root="HKCU" Action="write" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="OxidizeBot" Value='"[APPLICATIONFOLDER]oxidize.exe" --watchdog --silent' Type="string" />
             <Condition>START_VIA_REGISTRY</Condition>
           </Component>
         </Directory>

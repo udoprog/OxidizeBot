@@ -155,13 +155,14 @@ impl command::Handler for Handler {
 
 pub struct Module;
 
+#[async_trait]
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
         "water"
     }
 
     /// Set up command handlers for this module.
-    fn hook(
+    async fn hook(
         &self,
         module::HookContext {
             handlers,

@@ -1,14 +1,13 @@
-use crate::{bus, player, prelude::*, settings::Settings, utils::Futures};
+use crate::{bus, player, prelude::*, settings::Settings};
 use failure::Error;
 use parking_lot::RwLock;
 use std::{sync::Arc, time::Duration};
 
 /// Setup a player.
 pub fn setup(
-    futures: &mut Futures,
     bus: Arc<bus::Bus<bus::YouTube>>,
     settings: Settings,
-) -> Result<YouTubePlayer, failure::Error> {
+) -> Result<(YouTubePlayer, impl Future<Output = Result<(), Error>>), failure::Error> {
     let (mut volume_scale_stream, mut volume_scale) =
         settings.stream("volume-scale").or_with(100)?;
     let (mut volume_stream, volume) = settings.stream("volume").or_with(50)?;
@@ -42,8 +41,7 @@ pub fn setup(
         }
     };
 
-    futures.push(future.boxed());
-    Ok(returned_player)
+    Ok((returned_player, future))
 }
 
 #[derive(Clone)]

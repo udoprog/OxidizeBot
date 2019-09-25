@@ -5,7 +5,8 @@ use std::{borrow, fmt, mem, sync::Arc, time};
 
 mod duration;
 
-pub type Futures<'a> = Vec<future::BoxFuture<'a, Result<(), failure::Error>>>;
+pub type Futures<'a> =
+    futures::stream::FuturesUnordered<future::BoxFuture<'a, Result<(), failure::Error>>>;
 
 pub trait Driver<'a> {
     /// Drive the given future.
@@ -80,7 +81,7 @@ impl<'a> Iterator for QueryPairs<'a> {
     type Item = (PercentDecode<'a>, Option<PercentDecode<'a>>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        use url::percent_encoding::percent_decode;
+        use percent_encoding::percent_decode;
 
         while !self.query.is_empty() {
             let s = match self.query.find('&') {

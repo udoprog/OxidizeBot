@@ -1,7 +1,6 @@
 use crate::{
     api::{self, twitch},
     prelude::*,
-    timer,
 };
 use failure::{format_err, Error};
 use hashbrown::HashSet;
@@ -131,8 +130,10 @@ pub fn setup(
     };
 
     let now = time::Instant::now();
-    let mut stream_interval = timer::Interval::new(now.clone(), time::Duration::from_secs(30));
-    let mut subs_interval = timer::Interval::new(now.clone(), time::Duration::from_secs(60 * 10));
+    let mut stream_interval =
+        tokio::timer::Interval::new(now.clone(), time::Duration::from_secs(30));
+    let mut subs_interval =
+        tokio::timer::Interval::new(now.clone(), time::Duration::from_secs(60 * 10));
 
     let future_info = stream_info.clone();
 
@@ -141,13 +142,10 @@ pub fn setup(
 
         loop {
             futures::select! {
-                update = subs_interval.select_next_some() => {
-                    update?;
+                _ = subs_interval.select_next_some() => {
                     future_info.refresh_subs(&twitch, &*streamer).await;
                 }
-                update = stream_interval.select_next_some() => {
-                    update?;
-
+                _ = stream_interval.select_next_some() => {
                     let stream = future_info
                         .refresh_stream(&twitch, &*streamer, &mut stream_state_tx);
 

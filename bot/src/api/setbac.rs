@@ -10,7 +10,6 @@ use crate::{
     settings::Settings,
     utils,
 };
-use futures::compat::Compat01As03;
 use reqwest::{header, r#async::Client, Method, Url};
 use std::sync::Arc;
 
@@ -43,7 +42,7 @@ impl RemoteBuilder {
             return;
         }
 
-        remote.rx = Some(self.global_bus.clone().add_rx().compat());
+        remote.rx = Some(self.global_bus.add_rx());
 
         remote.client = match self.player.as_ref() {
             Some(player) => Some(player.clone()),
@@ -59,7 +58,7 @@ impl RemoteBuilder {
 
 #[derive(Default)]
 struct Remote {
-    rx: Option<Compat01As03<bus::Reader<bus::Global>>>,
+    rx: Option<bus::Reader<bus::Global>>,
     client: Option<player::Player>,
     setbac: Option<SetBac>,
 }
@@ -119,9 +118,7 @@ pub fn run(
                     remote_builder.enabled = update;
                     remote_builder.init(&mut remote);
                 }
-                result = remote.rx.select_next_some() => {
-                    let event = result?;
-
+                event = remote.rx.select_next_some() => {
                     /// Only update on switches to current song.
                     match event {
                         bus::Global::SongModified => (),

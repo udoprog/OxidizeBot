@@ -62,12 +62,13 @@ impl command::Handler for Handler {
 
 pub struct Module;
 
+#[async_trait]
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
         "alias"
     }
 
-    fn hook(
+    async fn hook(
         &self,
         module::HookContext {
             injector, handlers, ..

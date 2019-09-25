@@ -10,7 +10,6 @@
 use crate::{
     currency::BalanceTransferError,
     db::{models::Balance, user_id},
-    prelude::*,
 };
 
 use failure::Error;
@@ -55,11 +54,10 @@ impl Queries {
 
         log::trace!("select_balances: {}", query);
 
-        let rows = tx.prep_exec(query, ()).compat().await?;
+        let rows = tx.prep_exec(query, ()).await?;
 
         let (tx, result) = rows
             .map_and_drop(|row| mysql::from_row::<(String, i32)>(row))
-            .compat()
             .await?;
 
         Ok((tx, result))
@@ -85,11 +83,10 @@ impl Queries {
         };
 
         log::trace!("select_balance: {} {:?}", query, params);
-        let result = tx.prep_exec(query, params).compat().await?;
+        let result = tx.prep_exec(query, params).await?;
 
         let (tx, results) = result
             .map_and_drop(|row| mysql::from_row::<(i32,)>(row))
-            .compat()
             .await?;
 
         Ok((tx, results.into_iter().map(|(c, ..)| c).next()))
@@ -129,7 +126,7 @@ impl Queries {
         });
 
         log::trace!("upsert_balances: {}", query);
-        Ok(tx.batch_exec(query, params).compat().await?)
+        Ok(tx.batch_exec(query, params).await?)
     }
 
     /// Insert the given balance.
@@ -151,7 +148,7 @@ impl Queries {
         };
 
         log::trace!("insert_balance: {} {:?}", query, params);
-        Ok(tx.drop_exec(query, params).compat().await?)
+        Ok(tx.drop_exec(query, params).await?)
     }
 
     /// Update the given balance.
@@ -172,7 +169,7 @@ impl Queries {
         };
 
         log::trace!("update_balance: {} {:?}", query, params);
-        Ok(tx.drop_exec(query, params).compat().await?)
+        Ok(tx.drop_exec(query, params).await?)
     }
 }
 
@@ -210,7 +207,7 @@ impl Backend {
         let giver = user_id(giver);
 
         let opts = mysql::TransactionOptions::new();
-        let tx = self.pool.start_transaction(opts).compat().await?;
+        let tx = self.pool.start_transaction(opts).await?;
 
         let (tx, balance) = self.queries.select_balance(tx, &giver).await?;
 
@@ -223,7 +220,7 @@ impl Backend {
         let tx = self.queries.modify_balance(tx, &taker, amount).await?;
         let tx = self.queries.modify_balance(tx, &giver, -amount).await?;
 
-        tx.commit().compat().await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -233,7 +230,7 @@ impl Backend {
         let mut output = Vec::new();
 
         let opts = mysql::TransactionOptions::new();
-        let tx = self.pool.start_transaction(opts).compat().await?;
+        let tx = self.pool.start_transaction(opts).await?;
 
         let (_, balances) = self.queries.select_balances(tx).await?;
 
@@ -251,7 +248,7 @@ impl Backend {
     /// Import balances for all users.
     pub async fn import_balances(&self, balances: Vec<Balance>) -> Result<(), Error> {
         let opts = mysql::TransactionOptions::new();
-        let mut tx = self.pool.start_transaction(opts).compat().await?;
+        let mut tx = self.pool.start_transaction(opts).await?;
 
         for balance in balances {
             let amount: i32 = balance.amount.try_into()?;
@@ -265,7 +262,7 @@ impl Backend {
             }
         }
 
-        tx.commit().compat().await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -273,7 +270,7 @@ impl Backend {
     pub async fn balance_of(&self, _channel: &str, user: &str) -> Result<Option<i64>, Error> {
         let user = user_id(&user);
         let opts = mysql::TransactionOptions::new();
-        let tx = self.pool.start_transaction(opts).compat().await?;
+        let tx = self.pool.start_transaction(opts).await?;
 
         let (_, balance) = self.queries.select_balance(tx, &user).await?;
 
@@ -291,11 +288,11 @@ impl Backend {
         let amount = amount.try_into()?;
 
         let opts = mysql::TransactionOptions::new();
-        let tx = self.pool.start_transaction(opts).compat().await?;
+        let tx = self.pool.start_transaction(opts).await?;
 
         let tx = self.queries.modify_balance(tx, &user, amount).await?;
 
-        tx.commit().compat().await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -312,12 +309,12 @@ impl Backend {
     {
         let amount = amount.try_into()?;
         let opts = mysql::TransactionOptions::new();
-        let tx = self.pool.start_transaction(opts).compat().await?;
+        let tx = self.pool.start_transaction(opts).await?;
 
         let users = users.into_iter().map(|u| user_id(&u));
         let tx = self.queries.upsert_balances(tx, users, amount).await?;
 
-        tx.commit().compat().await?;
+        tx.commit().await?;
         Ok(())
     }
 }

@@ -5,8 +5,6 @@ extern crate diesel;
 #[macro_use]
 extern crate diesel_migrations;
 #[macro_use]
-extern crate mysql_async;
-#[macro_use]
 extern crate smallvec;
 
 pub use async_injector as injector;
@@ -28,7 +26,6 @@ pub mod irc;
 pub mod message_log;
 pub mod module;
 pub mod oauth2;
-pub mod obs;
 mod panic_logger;
 pub mod player;
 pub mod prelude;
@@ -39,7 +36,7 @@ pub mod storage;
 pub mod stream_info;
 pub mod sys;
 pub mod template;
-pub mod timer;
+pub mod tracing_utils;
 mod track_id;
 pub mod updater;
 mod uri;

@@ -5,7 +5,6 @@ use crate::{
     song_file::{SongFile, SongFileBuilder},
     spotify_id::SpotifyId,
     template::Template,
-    timer,
     track_id::TrackId,
     utils::{self, PtDuration},
     Uri,
@@ -19,8 +18,9 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio_bus::{Bus, BusReader};
-use tokio_threadpool::ThreadPool;
+use tokio_executor::threadpool::ThreadPool;
+use tracing::trace_span;
+use tracing_futures::Instrument as _;
 
 mod connect;
 mod youtube;
@@ -193,17 +193,24 @@ pub fn run(
 
     let mut futures = utils::Futures::default();
 
-    let (connect_stream, connect_player, device) =
-        connect::setup(&mut futures, spotify.clone(), settings.scoped("spotify"))?;
-    let youtube_player = youtube::setup(
-        &mut futures,
-        youtube_bus.clone(),
-        settings.scoped("youtube"),
-    )?;
+    let (connect_stream, connect_player, device, future) =
+        connect::setup(spotify.clone(), settings.scoped("spotify"))?;
 
-    let bus = EventBus {
-        bus: Arc::new(RwLock::new(Bus::new(1024))),
-    };
+    futures.push(
+        future
+            .instrument(trace_span!(target: "futures", "spotify"))
+            .boxed(),
+    );
+
+    let (youtube_player, future) = youtube::setup(youtube_bus.clone(), settings.scoped("youtube"))?;
+
+    futures.push(
+        future
+            .instrument(trace_span!(target: "futures", "youtube"))
+            .boxed(),
+    );
+
+    let bus = bus::Bus::new();
     let queue = Queue::new(db.clone());
 
     let song = Arc::new(RwLock::new(None));
@@ -215,7 +222,9 @@ pub fn run(
 
     let song_update_interval = match song_update_interval.is_empty() {
         true => None,
-        false => Some(timer::Interval::new_interval(song_update_interval.as_std())),
+        false => Some(tokio::timer::Interval::new_interval(
+            song_update_interval.as_std(),
+        )),
     };
 
     let (commands_tx, commands) = mpsc::unbounded();
@@ -280,7 +289,7 @@ pub fn run(
             fallback_queue: Default::default(),
         };
 
-        let future = PlaybackFuture {
+        let playback = PlaybackFuture {
             spotify: spotify.clone(),
             connect_stream,
             connect_player: connect_player.clone(),
@@ -321,13 +330,12 @@ pub fn run(
             }
         }
 
-        let futures = future::try_join_all(futures);
-        future::try_join(future.run(settings), futures)
-            .await
-            .map(|_| ())
+        let _ =
+            futures::future::try_join(playback.run(settings), futures.select_next_some()).await?;
+        Ok(())
     };
 
-    Ok((parent_player, future))
+    Ok((parent_player, future.boxed()))
 }
 
 /// Events emitted by the player.
@@ -561,7 +569,7 @@ pub struct PlayerInner {
     spotify: Arc<api::Spotify>,
     youtube: Arc<api::YouTube>,
     commands_tx: mpsc::UnboundedSender<Command>,
-    bus: EventBus,
+    bus: bus::Bus<Event>,
     /// Song song that is loaded.
     song: Arc<RwLock<Option<Song>>>,
     /// Theme songs.
@@ -579,7 +587,7 @@ pub struct Player {
 
 impl Player {
     /// Get a receiver for player events.
-    pub fn add_rx(&self) -> BusReader<Event> {
+    pub fn add_rx(&self) -> bus::Reader<Event> {
         self.inner.bus.add_rx()
     }
 
@@ -678,7 +686,7 @@ impl Player {
         match track_id {
             TrackId::Spotify(..) => match self.inner.connect_player.volume(modify) {
                 Err(self::connect::CommandError::NoDevice) => {
-                    self.inner.bus.broadcast(Event::NotConfigured);
+                    self.inner.bus.send_sync(Event::NotConfigured);
                     return Ok(None);
                 }
                 Err(e) => return Err(e.into()),
@@ -1127,15 +1135,17 @@ impl Queue {
         let db = self.db.clone();
         let queue = self.queue.clone();
 
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
+        let future = async move {
             if let Some(item) = queue.write().pop_front() {
                 db.remove_song_log(&item.track_id);
             }
 
             Ok(None)
-        }));
+        };
 
-        future.compat()
+        let (future, handle) = future.remote_handle();
+        self.thread_pool.spawn(future);
+        handle
     }
 
     /// Push item to back of queue.
@@ -1143,7 +1153,7 @@ impl Queue {
         let db = self.db.clone();
         let queue = self.queue.clone();
 
-        let future = self.thread_pool.spawn_handle(future01::lazy(move || {
+        let future = async move {
             db.push_back(&db::models::AddSong {
                 track_id: item.track_id.clone(),
                 added_at: Utc::now().naive_utc(),
@@ -1152,9 +1162,11 @@ impl Queue {
 
             queue.write().push_back(item);
             Ok(())
-        }));
+        };
 
-        future.compat().await
+        let (task, future) = future.remote_handle();
+        self.thread_pool.spawn(task);
+        future.await
     }
 
     /// Purge the song queue.
@@ -1317,27 +1329,6 @@ impl Mixer {
     }
 }
 
-#[derive(Clone)]
-pub struct EventBus {
-    bus: Arc<RwLock<Bus<Event>>>,
-}
-
-impl EventBus {
-    /// Broadcast an event from the player.
-    fn broadcast(&self, event: Event) {
-        let mut b = self.bus.write();
-
-        if let Err(e) = b.try_broadcast(event) {
-            log::error!("failed to broadcast player event: {:?}", e);
-        }
-    }
-
-    /// Create a receiver for the bus.
-    fn add_rx(&self) -> BusReader<Event> {
-        self.bus.write().add_rx()
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayerKind {
     Spotify,
@@ -1360,7 +1351,7 @@ pub struct PlaybackFuture {
     connect_player: self::connect::ConnectPlayer,
     youtube_player: self::youtube::YouTubePlayer,
     commands: mpsc::UnboundedReceiver<Command>,
-    bus: EventBus,
+    bus: bus::Bus<Event>,
     mixer: Mixer,
     /// We are currently playing.
     state: State,
@@ -1377,13 +1368,13 @@ pub struct PlaybackFuture {
     /// Song config.
     song_switch_feedback: Arc<RwLock<bool>>,
     /// Optional stream indicating that we want to send a song update on the global bus.
-    song_update_interval: Option<timer::Interval>,
+    song_update_interval: Option<tokio::timer::Interval>,
     /// Stream for when song update interval is updated.
     song_update_interval_stream: settings::Stream<utils::Duration>,
     /// Notifier to use when sending song updates.
     global_bus: Arc<bus::Bus<bus::Global>>,
     /// Timeout for end of song.
-    timeout: Option<timer::Delay>,
+    timeout: Option<tokio::timer::Delay>,
 }
 
 impl PlaybackFuture {
@@ -1459,14 +1450,12 @@ impl PlaybackFuture {
                     song_file.update_interval = update;
                     song_file.init(&mut self.song_file);
                 }
-                update = song_file_update.select_next_some() => {
-                    let _ =  update?;
+                _ = song_file_update.select_next_some() => {
                     let song = self.song.read();
                     self.update_song_file(song.as_ref());
                 }
                 /* player */
-                timeout = self.timeout.current() => {
-                    timeout?;
+                _ = self.timeout.current() => {
                     self.end_of_track().await?;
                 }
                 update = self.detached_stream.select_next_some() => {
@@ -1479,11 +1468,10 @@ impl PlaybackFuture {
                 value = self.song_update_interval_stream.select_next_some() => {
                     self.song_update_interval = match value.is_empty() {
                         true => None,
-                        false => Some(timer::Interval::new_interval(value.as_std())),
+                        false => Some(tokio::timer::Interval::new_interval(value.as_std())),
                     };
                 }
-                update = self.song_update_interval.select_next_some() => {
-                    let _ = update?;
+                _ = self.song_update_interval.select_next_some() => {
                     let song = self.song.read();
 
                     if let State::Playing = self.state {
@@ -1682,7 +1670,7 @@ impl PlaybackFuture {
                 let result = self.connect_player.stop().await;
 
                 if let Err(self::connect::CommandError::NoDevice) = result {
-                    self.bus.broadcast(Event::NotConfigured);
+                    self.bus.send_sync(Event::NotConfigured);
                 }
             }
             (YouTube, _) | (None, Spotify) => self.youtube_player.stop(),
@@ -1701,7 +1689,7 @@ impl PlaybackFuture {
                 let result = self.connect_player.pause().await;
 
                 if let Err(self::connect::CommandError::NoDevice) = result {
-                    self.bus.broadcast(Event::NotConfigured);
+                    self.bus.send_sync(Event::NotConfigured);
                 }
             }
             PlayerKind::YouTube => {
@@ -1719,7 +1707,7 @@ impl PlaybackFuture {
                 let result = self.connect_player.play(song.elapsed(), id).await;
 
                 if let Err(self::connect::CommandError::NoDevice) = result {
-                    self.bus.broadcast(Event::NotConfigured);
+                    self.bus.send_sync(Event::NotConfigured);
                 }
             }
             TrackId::YouTube(id) => self
@@ -1745,7 +1733,7 @@ impl PlaybackFuture {
     async fn play_song(&mut self, source: Source, mut song: Song) -> Result<(), Error> {
         song.play();
 
-        self.timeout = Some(timer::Delay::new(song.deadline()));
+        self.timeout = Some(tokio::timer::delay(song.deadline()));
 
         self.send_play_command(song.clone()).await;
         self.switch_current_player(song.player()).await;
@@ -1755,7 +1743,7 @@ impl PlaybackFuture {
         if let Source::Manual = source {
             let feedback = *self.song_switch_feedback.read();
             self.bus
-                .broadcast(Event::Playing(feedback, song.item.clone()));
+                .send_sync(Event::Playing(feedback, song.item.clone()));
         }
 
         self.state = State::Playing;
@@ -1764,7 +1752,7 @@ impl PlaybackFuture {
 
     /// Resume playing a specific song.
     async fn resume_song(&mut self, source: Source, song: Song) -> Result<(), Error> {
-        self.timeout = Some(timer::Delay::new(song.deadline()));
+        self.timeout = Some(tokio::timer::delay(song.deadline()));
 
         self.send_play_command(song.clone()).await;
         self.switch_current_player(song.player()).await;
@@ -1773,7 +1761,7 @@ impl PlaybackFuture {
         if let Source::Manual = source {
             let feedback = *self.song_switch_feedback.read();
             self.bus
-                .broadcast(Event::Playing(feedback, song.item.clone()));
+                .send_sync(Event::Playing(feedback, song.item.clone()));
         }
 
         self.state = State::Playing;
@@ -1808,7 +1796,7 @@ impl PlaybackFuture {
             );
 
             if let Source::Manual = command.source() {
-                self.bus.broadcast(Event::Detached);
+                self.bus.send_sync(Event::Detached);
             }
 
             return Ok(());
@@ -1843,7 +1831,7 @@ impl PlaybackFuture {
                     }
                     (None, _) => {
                         if let Source::Manual = source {
-                            self.bus.broadcast(Event::Empty);
+                            self.bus.send_sync(Event::Empty);
                         }
 
                         self.switch_to_song(None).await?;
@@ -1867,7 +1855,7 @@ impl PlaybackFuture {
                 }
 
                 if let Source::Manual = source {
-                    self.bus.broadcast(Event::Pausing);
+                    self.bus.send_sync(Event::Pausing);
                 }
 
                 self.notify_song_change(song.as_ref())?;
@@ -1896,7 +1884,7 @@ impl PlaybackFuture {
                     self.play_song(source, song).await?;
                 } else {
                     if let Source::Manual = source {
-                        self.bus.broadcast(Event::Empty);
+                        self.bus.send_sync(Event::Empty);
                     }
 
                     self.write_song(None)?;
@@ -1911,7 +1899,7 @@ impl PlaybackFuture {
                 self.state = song.state();
 
                 if let State::Playing = self.state {
-                    self.timeout = Some(timer::Delay::new(song.deadline()));
+                    self.timeout = Some(tokio::timer::delay(song.deadline()));
                 } else {
                     self.timeout = None;
                 }
@@ -1928,7 +1916,7 @@ impl PlaybackFuture {
                 }
 
                 self.global_bus.send(bus::Global::SongModified);
-                self.bus.broadcast(Event::Modified);
+                self.bus.send_sync(Event::Modified);
             }
             (Inject(source, item, offset), State::Playing) => {
                 {
@@ -1959,7 +1947,7 @@ impl PlaybackFuture {
         if let Some(song) = self.mixer.next_song().await? {
             self.play_song(Source::Manual, song).await?;
         } else {
-            self.bus.broadcast(Event::Empty);
+            self.bus.send_sync(Event::Empty);
             self.notify_song_change(None)?;
         }
 
@@ -2012,7 +2000,7 @@ impl PlaybackFuture {
                         let result = self.connect_player.play(elapsed, id).await;
 
                         if let Err(self::connect::CommandError::NoDevice) = result {
-                            self.bus.broadcast(Event::NotConfigured);
+                            self.bus.send_sync(Event::NotConfigured);
                         }
 
                         self.switch_current_player(PlayerKind::Spotify).await;

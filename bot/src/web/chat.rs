@@ -25,7 +25,10 @@ impl Chat {
             .and(warp::path("command").and(warp::query::<CommandQuery>()))
             .and_then({
                 let api = api.clone();
-                move |query: CommandQuery| api.command(query).map_err(warp::reject::custom)
+                move |query: CommandQuery| {
+                    let api = api.clone();
+                    async move { api.command(query).map_err(warp::reject::custom) }
+                }
             })
             .boxed();
 
@@ -33,7 +36,10 @@ impl Chat {
             .and(warp::path("messages").and(path::end()))
             .and_then({
                 let api = api.clone();
-                move || api.messages().map_err(warp::reject::custom)
+                move || {
+                    let api = api.clone();
+                    async move { api.messages().map_err(warp::reject::custom) }
+                }
             })
             .boxed();
 

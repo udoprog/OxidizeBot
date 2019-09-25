@@ -105,7 +105,7 @@ impl System {
             .to_str()
             .ok_or_else(|| format_err!("bad executable string"))?;
 
-        Ok(format!("\"{}\" --silent", exe))
+        Ok(format!("\"{}\" --watchdog --silent", exe))
     }
 
     /// If the program is installed to run at startup.

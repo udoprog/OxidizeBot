@@ -3,6 +3,8 @@
 set -e
 
 if [[ $TRAVIS_PULL_REQUEST != "false" || -z $TRAVIS_TAG  ]]; then
+    cargo build --no-default-features
+    cargo build --all-features
     cargo test --manifest-path=bot/Cargo.toml --no-default-features
     exit 0
 fi

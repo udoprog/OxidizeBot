@@ -55,12 +55,11 @@ pub struct HookContext<'a: 'b, 'b> {
     pub auth: &'a crate::auth::Auth,
 }
 
-pub trait Module: Send + 'static {
+#[async_trait::async_trait]
+pub trait Module: 'static + Send + Sync {
     /// Type of the module as a string to help with diagnostics.
     fn ty(&self) -> &'static str;
 
     /// Set up command handlers for this module.
-    fn hook(&self, _: HookContext<'_, '_>) -> Result<(), failure::Error> {
-        Ok(())
-    }
+    async fn hook(&self, _: HookContext<'_, '_>) -> Result<(), failure::Error>;
 }

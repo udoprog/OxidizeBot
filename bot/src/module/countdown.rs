@@ -1,4 +1,4 @@
-use crate::{auth, command, module, prelude::*, template, timer, utils};
+use crate::{auth, command, module, prelude::*, template, utils};
 use parking_lot::RwLock;
 use std::{fs, path::PathBuf, sync::Arc, time};
 
@@ -61,13 +61,14 @@ impl command::Handler for Handler {
 
 pub struct Module;
 
+#[async_trait]
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
         "countdown"
     }
 
     /// Set up command handlers for this module.
-    fn hook(
+    async fn hook(
         &self,
         module::HookContext {
             handlers,
@@ -113,7 +114,7 @@ impl super::Module for Module {
                         *enabled.write() = update;
                     }
                     out = timer.next() => {
-                        match out.transpose()? {
+                        match out {
                             Some(()) => if let Some(timer) = timer.as_ref() {
                                 writer.write_log(timer);
                             },
@@ -128,7 +129,7 @@ impl super::Module for Module {
                                 let mut t = Timer {
                                     duration,
                                     elapsed: Default::default(),
-                                    interval: timer::Interval::new_interval(time::Duration::from_secs(1)),
+                                    interval: tokio::timer::Interval::new_interval(time::Duration::from_secs(1)),
                                 };
 
                                 writer.template = Some(template);
@@ -229,21 +230,21 @@ impl FileWriter {
 struct Timer {
     duration: utils::Duration,
     elapsed: utils::Duration,
-    interval: timer::Interval,
+    interval: tokio::timer::Interval,
 }
 
 impl Stream for Timer {
-    type Item = Result<(), failure::Error>;
+    type Item = ();
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        if let Poll::Ready(Some(_)) = Pin::new(&mut self.interval).poll_next(cx)? {
+        if let Poll::Ready(Some(_)) = Pin::new(&mut self.interval).poll_next(cx) {
             self.as_mut().elapsed += utils::Duration::seconds(1);
 
             if self.as_ref().elapsed >= self.as_ref().duration {
                 return Poll::Ready(None);
             }
 
-            return Poll::Ready(Some(Ok(())));
+            return Poll::Ready(Some(()));
         }
 
         Poll::Pending

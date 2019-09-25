@@ -1,7 +1,7 @@
-use crate::{api, prelude::*, timer::Delay};
+use crate::api;
 use failure::Error;
 use irc::{
-    client::{Client, IrcClient},
+    client,
     proto::{
         command::{CapSubCommand, Command},
         message::Message,
@@ -10,7 +10,7 @@ use irc::{
 use leaky_bucket::{LeakyBucket, LeakyBuckets};
 use parking_lot::RwLock;
 use std::{fmt, sync::Arc, time};
-use tokio_threadpool::ThreadPool;
+use tokio_executor::threadpool::ThreadPool;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub enum Type {
@@ -28,7 +28,7 @@ impl Default for Type {
 
 struct Inner {
     target: String,
-    client: IrcClient,
+    sender: client::Sender,
     thread_pool: ThreadPool,
     limiter: LeakyBucket,
     nightbot_limiter: LeakyBucket,
@@ -46,7 +46,7 @@ impl Sender {
     pub fn new(
         ty: Arc<RwLock<Type>>,
         target: String,
-        client: IrcClient,
+        sender: client::Sender,
         nightbot: Arc<RwLock<Option<Arc<api::NightBot>>>>,
         buckets: &LeakyBuckets,
     ) -> Result<Sender, Error> {
@@ -68,7 +68,7 @@ impl Sender {
             ty,
             inner: Arc::new(Inner {
                 target,
-                client,
+                sender,
                 thread_pool: ThreadPool::new(),
                 limiter,
                 nightbot_limiter,
@@ -103,26 +103,21 @@ impl Sender {
 
         let inner = self.inner.clone();
 
-        let future = async move {
+        self.inner.thread_pool.spawn(async move {
             if let Err(e) = inner.limiter.acquire(1).await {
                 log_err!(e, "error in limiter");
-                return Ok(());
+                return;
             }
 
-            if let Err(e) = inner.client.send(m) {
+            if let Err(e) = inner.sender.send(m) {
                 log_err!(e, "failed to send message");
             }
-
-            Ok(())
-        };
-
-        let future = future.boxed().compat();
-        self.inner.thread_pool.spawn(future);
+        });
     }
 
     /// Send an immediate message, without taking rate limiting into account.
     pub fn send_immediate(&self, m: impl Into<Message>) {
-        if let Err(e) = self.inner.client.send(m) {
+        if let Err(e) = self.inner.sender.send(m) {
             log_err!(e, "failed to send message");
         }
     }
@@ -172,7 +167,7 @@ impl Sender {
             // wait for the initial permit, keep the lock in case message is rejected.
             if let Err(e) = limiter.acquire(1).await {
                 log_err!(e, "error in limiter");
-                return Ok(());
+                return;
             }
 
             loop {
@@ -183,13 +178,10 @@ impl Sender {
                     Err(api::nightbot::RequestError::TooManyRequests) => {
                         // since we still hold the lock, no one else can send.
                         // sleep for 100 ms an retry the send.
-                        let delay =
-                            Delay::new(time::Instant::now() + time::Duration::from_millis(1000));
-
-                        if let Err(e) = delay.await {
-                            log_err!(e, "error during delay");
-                            break;
-                        }
+                        tokio::timer::delay(
+                            time::Instant::now() + time::Duration::from_millis(1000),
+                        )
+                        .await;
 
                         continue;
                     }
@@ -200,11 +192,8 @@ impl Sender {
 
                 break;
             }
-
-            Ok(())
         };
 
-        let future = future.boxed().compat();
         self.inner.thread_pool.spawn(future);
     }
 }

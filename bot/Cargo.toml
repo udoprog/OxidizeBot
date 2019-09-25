@@ -7,73 +7,80 @@ license = "MIT/Apache-2.0"
 description = "High octane Twitch bot powered by Rust"
 
 [dependencies]
-chrono = { version = "0.4.7", features = ["serde"] }
+chrono = { version = "0.4.9", features = ["serde"] }
 chrono-tz = { version = "0.5.1", features = ["serde"] }
 clap = "2.33.0"
-mysql_async = {git = "https://github.com/blackbeam/mysql_async.git"}
+mysql_async = "0.21.0-alpha.1"
 diesel = { version = "1.4.2", features = ["sqlite", "chrono"] }
 diesel_migrations = "1.4.0"
 eudex = "0.1.1"
-hashbrown = { version = "0.5.0", features = ["serde"] }
-warp = "0.1.17"
-irc = {version = "0.13", git = "https://github.com/aatxe/irc", branch = "0.14"}
+hashbrown = { version = "0.6.0", features = ["serde"] }
+warp = { version = "0.1.20", git = "https://github.com/jxs/warp.git" }
 log = "0.4.8"
 oauth2 = {version = "2.0.0-alpha.5", git = "https://github.com/udoprog/oauth2-rs", branch = "async"}
-rayon = "1.1.0"
 relative-path = { version = "0.4.0", features = ["serde"] }
-reqwest = "0.9.19"
-serde = { version = "1.0.97", features = ["rc"] }
+reqwest = { version = "0.10.0-alpha.0", git = "https://github.com/seanmonstar/reqwest.git" }
+serde = { version = "1.0.101", features = ["rc"] }
+serde_yaml = "0.8.9"
 serde_json = "1.0.40"
 serde_cbor = "0.10.1"
-serde_yaml = "0.8.9"
-serde_urlencoded = "0.5.5"
-toml = "0.5.1"
-tokio = "0.1.22"
-tokio-threadpool = "0.1.15"
-url = { version = "1.7.2", features = ["serde"] }
+serde_urlencoded = "0.6.1"
+tokio = "0.2.0-alpha.5"
+tokio-executor = "0.2.0-alpha.5"
+url = { version = "2.1", features = ["serde"] }
 Inflector = "0.11.4"
 rspotify = "0.6.0"
-tokio-bus = "0.1.1"
 base64 = "0.10.1"
-rand = "0.7.0"
+rand = "0.7.2"
 fixed-map = "0.6.1"
 log4rs = "0.8.3"
-handlebars = "2.0.1"
+handlebars = "2.0.2"
 htmlescape = "0.3.1"
-lazy_static = "1.3.0"
+lazy_static = "1.4.0"
 # set the bundled feature to use the bundled libsqlite3
 libsqlite3-sys = { version = "0.12.0", features = ["bundled", "unlock_notify"] }
-webbrowser = "0.5.1"
+webbrowser = "0.5.2"
 parking_lot = "0.9.0"
 err-derive = "0.1.5"
-percent-encoding = "1.0.1"
+percent-encoding = "2.1.0"
 bytes = "0.4.12"
 websocket = "0.23.0"
 uuid = { version = "0.7.4", features = ["serde", "v4"] }
 pin-utils = "0.1.0-alpha.4"
 smallvec = { version = "0.6.10", features = ["serde"] }
-dirs = "2.0.1"
+dirs = "2.0.2"
 backoff = "0.1.5"
 rust-embed = { version = "5.1.0", features = ["interpolate-folder-path"] }
-mime = "0.3.13"
-mime_guess = "2.0.0-alpha.6"
-uom = "0.24.0"
-ccl = "4.13.2"
+mime = "0.3.14"
+mime_guess = "2.0.1"
+uom = "0.25.0"
+ccl = "5.1.5"
 crossbeam = "0.7.2"
-hex = "0.3.2"
+hex = "0.4.0"
 graphql_client = "0.8.0"
 futures-option = "0.1.2"
 futures-cache = "0.7.1"
 failure = "0.1.5"
-async-injector = { version = "0.2.2" }
-async-trait = "0.1.7"
-leaky-bucket = "0.3.0"
-regex = "1.2.1"
-backtrace = "0.3.35"
+async-injector = "0.2.2"
+async-trait = "0.1.13"
+leaky-bucket = { version = "0.3.1",  features = ["tokio02"] }
+regex = "1.3.1"
+backtrace = "0.3.38"
 
-[dependencies.futures01]
-package = "futures"
-version = "0.1.25"
+[dependencies.tracing]
+version = "0.1"
+
+[dependencies.tracing-core]
+version = "0.1"
+
+[dependencies.tracing-futures]
+git = "https://github.com/tokio-rs/tracing.git"
+features = ["tokio-alpha"]
+
+[dependencies.irc]
+version = "0.13.6"
+git = "https://github.com/udoprog/irc.git"
+branch = "next"
 
 [dependencies.futures]
 package = "futures-preview"
@@ -85,7 +92,7 @@ winres = "0.1.11"
 failure = "0.1.5"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winapi = { version = "0.3.7", features = ["shellapi", "impl-default"] }
+winapi = { version = "0.3.8", features = ["shellapi", "impl-default"] }
 
 [features]
 default = ["windows"]

@@ -1,34 +1,28 @@
-use crate::{oauth2, prelude::*};
+use crate::oauth2;
 use bytes::Bytes;
 use failure::Error;
-use reqwest::{
-    header,
-    r#async::{Chunk, Client, Decoder},
-    Method, StatusCode,
-};
-use std::mem;
-use url::Url;
+use reqwest::{header, r#async::Client, Method, StatusCode, Url};
 
 /// Trait to deal with optional bodies.
 ///
 /// Fix and replace once we get HRTB's or HRT's :cry:
-pub trait Body {
+pub trait BodyHelper {
     type Value;
 
     /// Get a present body as an option.
     fn some(self) -> Option<Self::Value>;
 }
 
-impl Body for Chunk {
-    type Value = Chunk;
+impl BodyHelper for Bytes {
+    type Value = Bytes;
 
     fn some(self) -> Option<Self::Value> {
         Some(self)
     }
 }
 
-impl Body for Option<Chunk> {
-    type Value = Chunk;
+impl BodyHelper for Option<Bytes> {
+    type Value = Bytes;
 
     fn some(self) -> Option<Self::Value> {
         self
@@ -114,7 +108,7 @@ impl RequestBuilder {
     /// Send request and only return status.
     pub async fn json_map<T>(
         self,
-        m: impl FnOnce(&StatusCode, &Chunk) -> Result<Option<T>, Error>,
+        m: impl FnOnce(&StatusCode, &Bytes) -> Result<Option<T>, Error>,
     ) -> Result<T, Error>
     where
         T: serde::de::DeserializeOwned,
@@ -137,7 +131,7 @@ impl RequestBuilder {
     }
 
     /// Execute the request.
-    pub async fn execute(&self) -> Result<Response<'_, Chunk>, Error> {
+    pub async fn execute(&self) -> Result<Response<'_, Bytes>, Error> {
         // NB: scope to only lock the token over the request setup.
         let req = {
             log::trace!("Request: {}: {}", self.method, self.url);
@@ -174,15 +168,12 @@ impl RequestBuilder {
             req
         };
 
-        let mut res = req.send().compat().await?;
-
-        let body = mem::replace(res.body_mut(), Decoder::empty());
-        let body = body.compat().try_concat().await?;
-
+        let res = req.send().await?;
         let status = res.status();
+        let body = res.bytes().await?;
 
         if log::log_enabled!(log::Level::Trace) {
-            let response = String::from_utf8_lossy(body.as_ref());
+            let response = String::from_utf8_lossy(&body);
             log::trace!(
                 "Response: {}: {}: {}: {}",
                 self.method,
@@ -214,7 +205,7 @@ pub struct Response<'a, B> {
     body: B,
 }
 
-impl Response<'_, Chunk> {
+impl Response<'_, Bytes> {
     /// Expect a successful response.
     pub fn ok(self) -> Result<(), Error> {
         if self.status.is_success() {
@@ -265,7 +256,7 @@ impl Response<'_, Chunk> {
     }
 }
 
-impl Response<'_, Option<Chunk>> {
+impl Response<'_, Option<Bytes>> {
     /// Expect a JSON response of the given type.
     pub fn json<T>(self) -> Result<Option<T>, Error>
     where
@@ -304,7 +295,7 @@ impl Response<'_, Option<Chunk>> {
     }
 
     /// Access the underlying raw body.
-    pub fn body(self) -> Result<Option<Chunk>, Error> {
+    pub fn body(self) -> Result<Option<Bytes>, Error> {
         let body = match self.body {
             Some(body) => body,
             None => return Ok(None),
@@ -327,7 +318,7 @@ impl Response<'_, Option<Chunk>> {
 
 impl<'a, B> Response<'a, B>
 where
-    B: Body,
+    B: BodyHelper,
 {
     /// Handle as empty if we encounter the given status code.
     pub fn empty_on_status(self, status: StatusCode) -> Response<'a, Option<B::Value>> {

@@ -5,14 +5,7 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use failure::{Error, ResultExt};
 use hashbrown::HashMap;
-use reqwest::{
-    header,
-    r#async::{Client, Decoder},
-    Method, StatusCode, Url,
-};
-use std::mem;
-
-pub use self::pubsub::PubSub;
+use reqwest::{header, r#async::Client, Method, StatusCode, Url};
 
 pub const CLIPS_URL: &'static str = "http://clips.twitch.tv";
 const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";
@@ -24,7 +17,6 @@ const GQL_URL: &'static str = "https://gql.twitch.tv/gql";
 const GQL_CLIENT_ID: &'static str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
 mod gql;
-pub mod pubsub;
 
 /// API integration.
 #[derive(Clone, Debug)]
@@ -212,9 +204,8 @@ impl Twitch {
     pub async fn chatters(&self, channel: &str) -> Result<Chatters, Error> {
         let url = format!("{}/group/user/{}/chatters", TMI_TWITCH_URL, channel);
 
-        let mut res = self.client.get(&url).send().compat().await?;
-        let body = mem::replace(res.body_mut(), Decoder::empty());
-        let body = body.compat().try_concat().await?;
+        let res = self.client.get(&url).send().await?;
+        let body = res.bytes().await?;
 
         return serde_json::from_slice::<Response>(body.as_ref())
             .map(|l| l.chatters)

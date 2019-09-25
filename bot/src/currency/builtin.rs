@@ -37,7 +37,7 @@ impl Backend {
         let giver = user_id(&giver);
         let pool = self.db.pool.clone();
 
-        let future = self.db.thread_pool.spawn_handle(future01::lazy(move || {
+        let future = async move {
             let c = pool.lock();
             let c = &*c;
 
@@ -59,9 +59,11 @@ impl Backend {
                 modify_balance(c, &channel, &giver, -amount)?;
                 Ok(())
             })
-        }));
+        };
 
-        future.compat().await
+        let (future, remote) = future.remote_handle();
+        self.db.thread_pool.spawn(future);
+        remote.await
     }
 
     /// Get balances for all users.
@@ -70,13 +72,15 @@ impl Backend {
 
         let pool = self.db.pool.clone();
 
-        let future = self.db.thread_pool.spawn_handle(future01::lazy(move || {
+        let future = async move {
             let c = pool.lock();
             let balances = dsl::balances.load::<models::Balance>(&*c)?;
             Ok(balances)
-        }));
+        };
 
-        future.compat().await
+        let (future, handle) = future.remote_handle();
+        self.db.thread_pool.spawn(future);
+        handle.await
     }
 
     /// Import balances for all users.
@@ -85,7 +89,7 @@ impl Backend {
 
         let pool = self.db.pool.clone();
 
-        let future = self.db.thread_pool.spawn_handle(future01::lazy(move || {
+        let future = async move {
             let c = pool.lock();
 
             for balance in balances {
@@ -115,9 +119,11 @@ impl Backend {
             }
 
             Ok(())
-        }));
+        };
 
-        future.compat().await
+        let (future, handle) = future.remote_handle();
+        self.db.thread_pool.spawn(future);
+        handle.await
     }
 
     /// Find user balance.
@@ -128,7 +134,7 @@ impl Backend {
         let user = user_id(&user);
         let pool = self.db.pool.clone();
 
-        let future = self.db.thread_pool.spawn_handle(future01::lazy(move || {
+        let future = async move {
             let c = pool.lock();
 
             let balance = dsl::balances
@@ -138,9 +144,11 @@ impl Backend {
                 .optional()?;
 
             Ok(balance)
-        }));
+        };
 
-        future.compat().await
+        let (future, handle) = future.remote_handle();
+        self.db.thread_pool.spawn(future);
+        handle.await
     }
 
     /// Add (or subtract) from the balance for a single user.
@@ -149,12 +157,14 @@ impl Backend {
         let user = user_id(user);
         let pool = self.db.pool.clone();
 
-        let future = self.db.thread_pool.spawn_handle(future01::lazy(move || {
+        let future = async move {
             let c = pool.lock();
             modify_balance(&*c, &channel, &user, amount)
-        }));
+        };
 
-        future.compat().await
+        let (future, handle) = future.remote_handle();
+        self.db.thread_pool.spawn(future);
+        handle.await
     }
 
     /// Add balance to users.
@@ -170,7 +180,7 @@ impl Backend {
         let channel = format!("#{}", channel);
         let pool = self.db.pool.clone();
 
-        let future = self.db.thread_pool.spawn_handle(future01::lazy(move || {
+        let future = async move {
             let c = pool.lock();
 
             for user in users {
@@ -204,9 +214,11 @@ impl Backend {
             }
 
             Ok(())
-        }));
+        };
 
-        future.compat().await
+        let (future, handle) = future.remote_handle();
+        self.db.thread_pool.spawn(future);
+        handle.await
     }
 }
 

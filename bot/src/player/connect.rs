@@ -1,4 +1,4 @@
-use crate::{api, player, prelude::*, settings::Settings, track_id::SpotifyId, utils::Futures};
+use crate::{api, player, prelude::*, settings::Settings, track_id::SpotifyId};
 use failure::{bail, Error};
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -10,10 +10,17 @@ use std::{
 
 /// Setup a player.
 pub fn setup(
-    futures: &mut Futures,
     spotify: Arc<api::Spotify>,
     settings: Settings,
-) -> Result<(ConnectStream, ConnectPlayer, ConnectDevice), Error> {
+) -> Result<
+    (
+        ConnectStream,
+        ConnectPlayer,
+        ConnectDevice,
+        impl Future<Output = Result<(), Error>>,
+    ),
+    Error,
+> {
     let (mut volume_stream, volume) = settings.stream("volume").or_with(50)?;
     let (mut volume_scale_stream, volume_scale) = settings.stream("volume-scale").or_with(100)?;
     let (mut device_stream, device) = settings.stream::<String>("device").optional()?;
@@ -71,8 +78,7 @@ pub fn setup(
         }
     };
 
-    futures.push(future.boxed());
-    Ok((stream, returned_player, interface))
+    Ok((stream, returned_player, interface, future))
 }
 
 #[derive(Debug, err_derive::Error)]

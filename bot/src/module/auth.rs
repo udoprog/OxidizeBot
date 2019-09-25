@@ -113,12 +113,13 @@ impl Module {
     }
 }
 
+#[async_trait]
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
         "auth"
     }
 
-    fn hook(
+    async fn hook(
         &self,
         module::HookContext { handlers, auth, .. }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {

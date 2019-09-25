@@ -31,7 +31,7 @@ use diesel::prelude::*;
 use failure::{format_err, Error, ResultExt as _};
 use parking_lot::Mutex;
 use std::sync::Arc;
-use tokio_threadpool::ThreadPool;
+use tokio_executor::threadpool::ThreadPool;
 
 embed_migrations!("./migrations");
 

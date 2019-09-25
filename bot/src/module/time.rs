@@ -90,13 +90,14 @@ impl command::Handler for Time {
 
 pub struct Module;
 
+#[async_trait]
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
         "time"
     }
 
     /// Set up command handlers for this module.
-    fn hook(
+    async fn hook(
         &self,
         module::HookContext {
             handlers, settings, ..

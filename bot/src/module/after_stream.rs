@@ -54,13 +54,14 @@ impl command::Handler for AfterStream {
 
 pub struct Module;
 
+#[async_trait]
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
         "afterstream"
     }
 
     /// Set up command handlers for this module.
-    fn hook(
+    async fn hook(
         &self,
         module::HookContext {
             injector,

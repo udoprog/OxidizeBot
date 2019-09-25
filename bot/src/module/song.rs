@@ -688,13 +688,14 @@ impl command::Handler for Handler {
 
 pub struct Module;
 
+#[async_trait]
 impl module::Module for Module {
     fn ty(&self) -> &'static str {
         "song"
     }
 
     /// Set up command handlers for this module.
-    fn hook(
+    async fn hook(
         &self,
         module::HookContext {
             handlers,
@@ -844,12 +845,13 @@ async fn feedback(
     chat_feedback: Arc<RwLock<bool>>,
 ) -> Result<(), Error> {
     let mut configured_cooldown = Cooldown::from_duration(Duration::seconds(10));
-    let mut rx = player.add_rx().compat();
+    let mut rx = player.add_rx();
 
-    while let Some(e) = rx.next().await {
+    loop {
+        let e = rx.select_next_some().await;
         log::trace!("Player event: {:?}", e);
 
-        match e? {
+        match e {
             Event::Detached => {
                 sender.privmsg("Player is detached!");
             }
@@ -886,6 +888,4 @@ async fn feedback(
             _ => (),
         }
     }
-
-    Ok(())
 }

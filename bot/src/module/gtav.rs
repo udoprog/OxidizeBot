@@ -1055,13 +1055,14 @@ fn license(input: &str, ctx: &command::Context<'_>) -> Option<String> {
 
 pub struct Module;
 
+#[async_trait]
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
         "gtav"
     }
 
     /// Set up command handlers for this module.
-    fn hook(
+    async fn hook(
         &self,
         module::HookContext {
             handlers,
@@ -1129,8 +1130,10 @@ impl super::Module for Module {
             },
         );
 
-        let mut socket = UdpSocket::bind(&str::parse::<SocketAddr>("127.0.0.1:0")?)?;
-        socket.connect(&str::parse::<SocketAddr>("127.0.0.1:7291")?)?;
+        let mut socket = UdpSocket::bind(&str::parse::<SocketAddr>("127.0.0.1:0")?).await?;
+        socket
+            .connect(&str::parse::<SocketAddr>("127.0.0.1:7291")?)
+            .await?;
 
         let future = async move {
             let mut receiver = match *enabled.read() {
@@ -1157,7 +1160,7 @@ impl super::Module for Module {
                             let message = format!("{} {} {}", who, id, command.command());
                             log::info!("sent: {}", message);
 
-                            match socket.poll_send(message.as_bytes()) {
+                            match socket.send(message.as_bytes()).await {
                                 Ok(_) => (),
                                 Err(e) => {
                                     log::error!("failed to send message: {}", e);

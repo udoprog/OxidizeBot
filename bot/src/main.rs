@@ -4,18 +4,83 @@
 use backoff::backoff::Backoff as _;
 use failure::{bail, format_err, Error, ResultExt};
 use oxidize::{
-    api, auth, bus, config, db, injector, irc, message_log, module, oauth2, obs, player,
-    prelude::*, settings, storage, stream_info, sys, timer, updater, utils, web,
+    api, auth, bus, config, db, injector, irc, message_log, module, oauth2, player, prelude::*,
+    settings, storage, stream_info, sys, tracing_utils, updater, utils, web,
 };
 use parking_lot::RwLock;
 use std::{
+    env,
+    ffi::OsStr,
+    io,
     path::{Path, PathBuf},
+    process,
     sync::Arc,
     time,
 };
+use tracing::trace_span;
+use tracing_futures::Instrument as _;
 
 const OLD_CONFIG_DIR: &'static str = "SetMod";
 const CONFIG_DIR: &'static str = "OxidizeBot";
+const FILE: &str = "file";
+#[cfg(not(feature = "windows"))]
+const STDOUT: &str = "stdout";
+const PACKAGE: &str = env!("CARGO_PKG_NAME");
+
+#[cfg(feature = "windows")]
+mod internal {
+    use super::FILE;
+    use log4rs::config::{Config, ConfigBuilder, Logger, LoggerBuilder, Root, RootBuilder};
+
+    pub(crate) fn logger_builder() -> LoggerBuilder {
+        Logger::builder().appender(FILE).additive(false)
+    }
+
+    pub(crate) fn root_builder() -> RootBuilder {
+        Root::builder()
+    }
+
+    pub(crate) fn config_builder() -> ConfigBuilder {
+        Config::builder()
+    }
+}
+
+#[cfg(not(feature = "windows"))]
+mod internal {
+    use super::{FILE, STDOUT};
+    use log4rs::config::{
+        Appender, Config, ConfigBuilder, Logger, LoggerBuilder, Root, RootBuilder,
+    };
+
+    pub(crate) fn logger_builder() -> LoggerBuilder {
+        Logger::builder()
+            .appender(STDOUT)
+            .appender(FILE)
+            .additive(false)
+    }
+
+    pub(crate) fn root_builder() -> RootBuilder {
+        Root::builder().appender(STDOUT)
+    }
+
+    pub(crate) fn config_builder() -> ConfigBuilder {
+        use log4rs::{append::console::ConsoleAppender, encode::pattern::PatternEncoder};
+
+        let pattern =
+            PatternEncoder::new("{d(%Y-%m-%dT%H:%M:%S%.3f%Z)} {highlight({l:5.5})} {t} - {m}{n}");
+
+        Config::builder().appender(
+            Appender::builder().build(
+                STDOUT,
+                Box::new(
+                    ConsoleAppender::builder()
+                        .encoder(Box::new(pattern))
+                        .build(),
+                ),
+            ),
+        )
+    }
+}
 
 fn opts() -> clap::App<'static, 'static> {
     clap::App::new("Oxidize Bot")
@@ -39,14 +104,14 @@ fn opts() -> clap::App<'static, 'static> {
         .arg(
             clap::Arg::with_name("trace")
                 .long("trace")
-                .help("If we should enable tracing in logs."),
+                .help("If we should enable tracing in all logs."),
         )
         .arg(
             clap::Arg::with_name("log-mod")
                 .long("log-mod")
                 .takes_value(true)
                 .multiple(true)
-                .help("Additionally enable logging for the specified modules."),
+                .help("Additionally enable logging for the specified modules. Example: --log-mod irc=trace"),
         )
         .arg(
             clap::Arg::with_name("log-config")
@@ -62,78 +127,81 @@ fn opts() -> clap::App<'static, 'static> {
         )
 }
 
+/// Setup tracing.
+fn tracing_config() -> Result<(), Error> {
+    tracing::subscriber::set_global_default(tracing_utils::Subscriber::new())?;
+    Ok(())
+}
+
 /// Setup a default logging configuration if none is specified.
 fn default_log_config(
-    log_file: &Path,
+    log_path: &Path,
     trace: bool,
-    modules: Vec<&str>,
+    modules: &Vec<&str>,
 ) -> Result<log4rs::config::Config, Error> {
+    use self::internal::{config_builder, logger_builder, root_builder};
     use log::LevelFilter;
-    use log4rs::{
-        append::file::FileAppender,
-        config::{Appender, Config, Logger, Root},
-    };
+    use log4rs::{append::file::FileAppender, config::Appender, encode::pattern::PatternEncoder};
 
-    const FILE: &'static str = "file";
-    #[cfg(not(feature = "windows"))]
-    const STDOUT: &'static str = "stdout";
-    const PACKAGE: &'static str = env!("CARGO_PKG_NAME");
+    let pattern = PatternEncoder::new("{d(%Y-%m-%dT%H:%M:%S%.3f%Z)} {l:5.5} {t} - {m}{n}");
 
-    let mut level = LevelFilter::Info;
+    let mut config = config_builder().appender(
+        Appender::builder().build(
+            FILE,
+            Box::new(
+                FileAppender::builder()
+                    .encoder(Box::new(pattern))
+                    .build(log_path)?,
+            ),
+        ),
+    );
 
+    // special case: trace everything
     if trace {
-        level = LevelFilter::Trace;
+        return Ok(config.build(root_builder().build(LevelFilter::Info))?);
     }
 
-    let mut config = Config::builder();
-    let mut logger = Logger::builder();
-    let root = Root::builder().build(LevelFilter::Off);
+    let mut panic_configured = false;
+    let mut package_configured = false;
 
-    logger = logger.additive(false).appender(FILE);
+    for module in modules.iter().copied() {
+        let (level, module) = match module.find('=').map(|i| module.split_at(i)) {
+            Some((module, level)) => {
+                let level = match &level[1..] {
+                    "error" => LevelFilter::Error,
+                    "warn" => LevelFilter::Warn,
+                    "info" => LevelFilter::Info,
+                    "debug" => LevelFilter::Debug,
+                    "trace" => LevelFilter::Trace,
+                    other => bail!("invalid log level: {}", other),
+                };
 
-    #[cfg(not(feature = "windows"))]
-    {
-        use log4rs::append::console::ConsoleAppender;
+                (level, module)
+            }
+            _ => (LevelFilter::Info, module),
+        };
 
-        config = config.appender(
-            Appender::builder().build(STDOUT, Box::new(ConsoleAppender::builder().build())),
-        );
-
-        logger = logger.appender(STDOUT);
-    }
-
-    config = config
-        .appender(
-            Appender::builder().build(FILE, Box::new(FileAppender::builder().build(log_file)?)),
-        )
-        .logger(logger.build(PACKAGE, level));
-
-    for m in modules {
-        let mut logger = Logger::builder();
-
-        logger = logger.appender(FILE);
-
-        #[cfg(not(feature = "windows"))]
-        {
-            logger = logger.appender(STDOUT);
+        if module == "panic" {
+            panic_configured = true;
         }
 
-        config = config.logger(logger.additive(false).build(m, level));
+        if module == PACKAGE {
+            package_configured = true;
+        }
+
+        config = config.logger(logger_builder().build(module, level));
     }
 
-    // panic logger
-    let mut logger = Logger::builder();
-
-    logger = logger.appender(FILE);
-
-    #[cfg(not(feature = "windows"))]
-    {
-        logger = logger.appender(STDOUT);
+    if !package_configured {
+        config = config.logger(logger_builder().build(PACKAGE, LevelFilter::Info));
     }
 
-    config = config.logger(logger.additive(false).build("panic", level));
+    // make sure panic logger is configured.
+    if !panic_configured {
+        config = config.logger(logger_builder().build("panic", LevelFilter::Info));
+    }
 
-    Ok(config.build(root)?)
+    Ok(config.build(root_builder().build(LevelFilter::Off))?)
 }
 
 /// Configure logging.
@@ -147,16 +215,56 @@ fn setup_logs(
     let file = log_config.unwrap_or_else(|| root.join("log4rs.yaml"));
 
     if !file.is_file() {
-        let config = default_log_config(default_log_file, trace, modules)?;
+        let config = default_log_config(default_log_file, trace, &modules)?;
         log4rs::init_config(config)?;
     } else {
         log4rs::init_file(file, Default::default())?;
     }
 
+    tracing_config()?;
     Ok(())
 }
 
+/// Test if this is a watchdog process and return all arguments except for the
+/// watchdog arguments.
+fn is_watchdog() -> bool {
+    if let Some(first) = env::args_os().skip(1).next() {
+        return first == OsStr::new("--watchdog");
+    }
+
+    false
+}
+
+/// Run the underlying process being watchdogged.
+fn run_watchdog() -> io::Result<()> {
+    let exe = env::current_exe()?;
+    let args = env::args_os().skip(2).collect::<Vec<_>>();
+
+    println!("Running watchdog (pid: {})", process::id());
+
+    loop {
+        let mut child = process::Command::new(&exe).args(&args).spawn()?;
+        println!("Started child process (pid: {})", child.id());
+        let status = child.wait()?;
+
+        // gracefully shut down.
+        if status.success() {
+            return Ok(());
+        }
+
+        println!("Child process exited unexpectedly: {}", status);
+    }
+}
+
 fn main() -> Result<(), Error> {
+    if is_watchdog() {
+        if let Err(e) = run_watchdog() {
+            eprintln!("Watched process failed: {}", e);
+        }
+
+        return Ok(());
+    }
+
     let opts = opts();
     let m = opts.get_matches();
 
@@ -210,18 +318,21 @@ fn main() -> Result<(), Error> {
             break;
         }
 
-        let mut runtime = tokio::runtime::Runtime::new()?;
-
         if errored {
             system.clear();
             errored = false;
         }
 
-        let result = runtime.block_on(
-            try_main(system.clone(), old_root.clone(), root.clone())
-                .boxed()
-                .compat(),
-        );
+        let future = {
+            let system = system.clone();
+            let old_root = old_root.clone();
+            let root = root.clone();
+
+            try_main(system, old_root, root).instrument(trace_span!(target: "futures", "main",))
+        };
+
+        let runtime = tokio::runtime::Runtime::new()?;
+        let result = runtime.block_on(future);
 
         match result {
             Err(e) => {
@@ -269,14 +380,9 @@ fn main() -> Result<(), Error> {
                 .await;
             };
 
-            let delay = timer::Delay::new(time::Instant::now() + *current_backoff);
+            let delay = tokio::timer::delay(time::Instant::now() + *current_backoff);
 
-            let _ = runtime.block_on(
-                future::select(system_interrupt.boxed(), delay)
-                    .unit_error()
-                    .boxed()
-                    .compat(),
-            );
+            let _ = runtime.block_on(future::select(system_interrupt.boxed(), delay));
         }
 
         if !errored {
@@ -290,6 +396,7 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
+/// Actual main function, running the application loop.
 async fn try_main(
     system: sys::System,
     old_root: Option<PathBuf>,
@@ -303,10 +410,10 @@ async fn try_main(
     }
 
     let injector = injector::Injector::new();
-    let thread_pool = Arc::new(tokio_threadpool::ThreadPool::new());
+    let thread_pool = Arc::new(tokio_executor::threadpool::ThreadPool::new());
 
     let mut modules = Vec::<Box<dyn module::Module>>::new();
-    let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
+    let mut futures = futures::stream::FuturesUnordered::new();
 
     let database_path = {
         let new = root.join("oxidize.sql");
@@ -338,7 +445,14 @@ async fn try_main(
     let settings_schema = settings::Schema::load_static()?;
     let settings = db.settings(settings_schema)?;
 
-    futures.push(settings.clone().drive().map_err(Into::into).boxed());
+    futures.push(
+        settings
+            .clone()
+            .drive()
+            .map_err(Into::into)
+            .boxed()
+            .instrument(trace_span!(target: "futures", "settings-driver",)),
+    );
 
     settings
         .run_migrations()
@@ -360,14 +474,29 @@ async fn try_main(
     let global_channel = Arc::new(RwLock::new(None));
     let command_bus = Arc::new(bus::Bus::new());
 
-    futures.push(injector.clone().drive().map_err(Into::into).boxed());
-    futures.push(system_loop(settings.scoped("system"), system.clone()).boxed());
+    futures.push(
+        injector
+            .clone()
+            .drive()
+            .map_err(Into::into)
+            .boxed()
+            .instrument(trace_span!(target: "futures", "injector-driver",)),
+    );
+    futures.push(
+        system_loop(settings.scoped("system"), system.clone())
+            .boxed()
+            .instrument(trace_span!(target: "futures", "system-loop",)),
+    );
 
     let storage = storage::Storage::open(&root.join("storage"))?;
     injector.update(storage.cache()?);
 
     let (latest, future) = updater::run(&injector);
-    futures.push(future.boxed());
+    futures.push(
+        future
+            .boxed()
+            .instrument(trace_span!(target: "futures", "remote-updates",)),
+    );
 
     let message_log = message_log::MessageLog::builder()
         .bus(message_bus.clone())
@@ -385,9 +514,15 @@ async fn try_main(
         auth.clone(),
         global_channel.clone(),
         latest.clone(),
-    )?;
+    )
+    .await?;
 
-    futures.push(future.boxed());
+    futures.push(
+        future
+            .map(|_| Err::<(), _>(format_err!("web server exited unexpectedly")))
+            .boxed()
+            .instrument(trace_span!(target: "futures", "web")),
+    );
 
     if settings.get::<bool>("first-run")?.unwrap_or(true) {
         log::info!("Opening {} for the first time", web::URL);
@@ -422,7 +557,11 @@ async fn try_main(
         flow.into_token(injector::Key::tagged(oauth2::TokenId::Spotify)?, &injector)?
     };
 
-    futures.push(future.boxed());
+    futures.push(
+        future
+            .boxed()
+            .instrument(trace_span!(target: "futures", "spotify-token",)),
+    );
 
     let (youtube_token, future) = {
         let flow = oauth2::youtube(web.clone(), token_settings.scoped("youtube"))?
@@ -434,7 +573,11 @@ async fn try_main(
         flow.into_token(injector::Key::tagged(oauth2::TokenId::YouTube)?, &injector)?
     };
 
-    futures.push(future.boxed());
+    futures.push(
+        future
+            .boxed()
+            .instrument(trace_span!(target: "futures", "youtube-token",)),
+    );
 
     let (nightbot_token, future) = {
         let flow = oauth2::nightbot(web.clone(), token_settings.scoped("nightbot"))?
@@ -444,7 +587,11 @@ async fn try_main(
         flow.into_token(injector::Key::tagged(oauth2::TokenId::NightBot)?, &injector)?
     };
 
-    futures.push(future.boxed());
+    futures.push(
+        future
+            .boxed()
+            .instrument(trace_span!(target: "futures", "nightbot-token",)),
+    );
 
     let (streamer_token, future) = {
         let flow = oauth2::twitch(web.clone(), token_settings.scoped("twitch-streamer"))?
@@ -462,7 +609,11 @@ async fn try_main(
         )?
     };
 
-    futures.push(future.boxed());
+    futures.push(
+        future
+            .boxed()
+            .instrument(trace_span!(target: "futures", "streamer-token",)),
+    );
 
     let (_, future) = {
         let flow = oauth2::twitch(web.clone(), token_settings.scoped("twitch-bot"))?
@@ -486,8 +637,16 @@ async fn try_main(
         )?
     };
 
-    futures.push(future.boxed());
-    futures.push(api::open_weather_map::setup(settings.clone(), injector.clone())?.boxed());
+    futures.push(
+        future
+            .boxed()
+            .instrument(trace_span!(target: "futures", "bot-token",)),
+    );
+    futures.push(
+        api::open_weather_map::setup(settings.clone(), injector.clone())?
+            .boxed()
+            .instrument(trace_span!(target: "futures", "open-weather-map",)),
+    );
 
     let (shutdown, shutdown_rx) = utils::Shutdown::new();
 
@@ -510,7 +669,11 @@ async fn try_main(
         settings.clone(),
     )?;
 
-    futures.push(future.boxed());
+    futures.push(
+        future
+            .boxed()
+            .instrument(trace_span!(target: "futures", "player",)),
+    );
 
     web.set_player(player.clone());
 
@@ -524,7 +687,8 @@ async fn try_main(
             streamer_token.clone(),
             global_bus.clone(),
         )?
-        .boxed(),
+        .boxed()
+        .instrument(trace_span!(target: "futures", "setbac.tv",)),
     );
 
     modules.push(Box::new(module::time::Module));
@@ -547,13 +711,14 @@ async fn try_main(
     modules.push(Box::new(module::poll::Module));
     modules.push(Box::new(module::weather::Module));
 
-    let future = obs::setup(&settings, &injector)?;
-    futures.push(future.boxed());
-
     let (stream_state_tx, stream_state_rx) = mpsc::channel(64);
 
     let notify_after_streams = notify_after_streams(&injector, stream_state_rx, system.clone());
-    futures.push(notify_after_streams.boxed());
+    futures.push(
+        notify_after_streams
+            .boxed()
+            .instrument(trace_span!(target: "futures", "notify-after-streams",)),
+    );
 
     let irc = irc::Irc {
         bad_words,
@@ -569,9 +734,13 @@ async fn try_main(
         message_log,
     };
 
-    futures.push(irc.run().boxed());
+    futures.push(
+        irc.run()
+            .boxed()
+            .instrument(trace_span!(target: "futures", "irc",)),
+    );
 
-    let stuff = async move { future::try_join_all(futures).await.map_err(Some) };
+    let stuff = async move { futures.select_next_some().await.map_err(Some) };
 
     let system_shutdown = system.wait_for_shutdown();
     let system_restart = system.wait_for_restart();
@@ -586,7 +755,11 @@ async fn try_main(
         Err::<(), _>(None::<Error>)
     };
 
-    let result = future::try_join(stuff, shutdown_rx).await;
+    let result = future::try_join(
+        stuff.instrument(trace_span!(target: "futures", "core")),
+        shutdown_rx.instrument(trace_span!(target: "futures", "shutdown")),
+    )
+    .await;
 
     match result {
         Ok(_) => Ok(()),

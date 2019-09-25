@@ -23,14 +23,20 @@ impl Cache {
         let list = warp::get2()
             .and(path::end().and_then({
                 let api = api.clone();
-                move || api.list().map_err(warp::reject::custom)
+                move || {
+                    let api = api.clone();
+                    async move { api.list().map_err(warp::reject::custom) }
+                }
             }))
             .boxed();
 
         let delete = warp::delete2()
             .and(path::end().and(body::json()).and_then({
                 let api = api.clone();
-                move |body: DeleteRequest| api.delete(body).map_err(warp::reject::custom)
+                move |body: DeleteRequest| {
+                    let api = api.clone();
+                    async move { api.delete(body).map_err(warp::reject::custom) }
+                }
             }))
             .boxed();
 

@@ -2,7 +2,7 @@ use crate::{
     injector::{Injector, Key},
     prelude::*,
     settings::Settings,
-    timer, web,
+    web,
 };
 use chrono::{DateTime, Utc};
 use failure::{bail, format_err, Error};
@@ -137,7 +137,6 @@ impl Type {
             .param("client_id", config.client_id.as_str())
             .param("client_secret", config.client_secret.secret().as_str())
             .execute::<T>()
-            .compat()
             .await;
 
         let token_response = match token_response {
@@ -172,7 +171,6 @@ impl Type {
             .param("client_id", config.client_id.as_str())
             .param("client_secret", config.client_secret.secret().as_str())
             .execute::<T>()
-            .compat()
             .await;
 
         let token_response = match token_response {
@@ -855,7 +853,8 @@ impl Flow {
         builder.initial_token = token;
 
         // check interval.
-        let mut interval = timer::Interval::new(Instant::now(), Duration::from_secs(10 * 60));
+        let mut interval =
+            tokio::timer::Interval::new(Instant::now(), Duration::from_secs(10 * 60));
 
         let sync_token = SyncToken {
             what: what.clone(),

@@ -8,13 +8,13 @@ use crate::{
     message_log::MessageLog,
     module, oauth2,
     prelude::*,
-    settings, stream_info, timer,
+    settings, stream_info,
     utils::{self, Cooldown, Duration},
 };
 use failure::{bail, format_err, Error, ResultExt as _};
 use hashbrown::{HashMap, HashSet};
 use irc::{
-    client::{self, ext::ClientExt, Client, IrcClient, PackedIrcClient},
+    client::{self, Client},
     proto::{
         command::{CapSubCommand, Command},
         message::{Message, Tag},
@@ -23,7 +23,9 @@ use irc::{
 use leaky_bucket::LeakyBuckets;
 use parking_lot::RwLock;
 use std::{fmt, sync::Arc, time};
-use tokio_threadpool::ThreadPool;
+use tokio_executor::threadpool::ThreadPool;
+use tracing::trace_span;
+use tracing_futures::Instrument as _;
 
 // re-exports
 pub use self::sender::Sender;
@@ -117,17 +119,15 @@ impl Irc {
 
             let irc_client_config = client::data::config::Config {
                 nickname: Some(bot.name.to_string()),
-                channels: Some(vec![chat_channel.clone()]),
+                channels: vec![chat_channel.clone()],
                 password: Some(format!("oauth:{}", access_token)),
                 server: Some(String::from(SERVER)),
                 port: Some(6697),
-                use_ssl: Some(true),
+                use_ssl: true,
                 ..client::data::config::Config::default()
             };
 
-            let client = IrcClient::new_future(irc_client_config)?;
-
-            let PackedIrcClient(client, send_future) = client.compat().await?;
+            let mut client = Client::from_config(irc_client_config).await?;
             client.identify()?;
 
             let chat_settings = settings.scoped("chat");
@@ -145,19 +145,23 @@ impl Irc {
             let sender = Sender::new(
                 sender_ty,
                 chat_channel.clone(),
-                client.clone(),
+                client.sender(),
                 nightbot.clone(),
                 &buckets,
             )?;
 
-            let mut futures = Vec::<future::BoxFuture<'_, Result<(), Error>>>::new();
+            let mut futures = futures::stream::FuturesUnordered::new();
 
             let future = async move {
                 buckets.coordinate().await?;
                 Ok(())
             };
 
-            futures.push(future.boxed());
+            futures.push(
+                future
+                    .instrument(trace_span!(target: "futures", "buckets-coordinator",))
+                    .boxed(),
+            );
 
             let stream_info = {
                 let (stream_info, mut stream_state_rx, future) =
@@ -175,13 +179,25 @@ impl Irc {
                     }
                 };
 
-                futures.push(forward.boxed());
-                futures.push(future.boxed());
+                futures.push(
+                    forward
+                        .instrument(trace_span!(target: "futures", "stream-info-forward",))
+                        .boxed(),
+                );
+                futures.push(
+                    future
+                        .instrument(trace_span!(target: "futures", "stream-info-refresh",))
+                        .boxed(),
+                );
 
                 stream_info
             };
 
-            futures.push(refresh_mods_future(sender.clone()).boxed());
+            futures.push(
+                refresh_mods_future(sender.clone())
+                    .instrument(trace_span!(target: "futures", "refresh-mods",))
+                    .boxed(),
+            );
 
             let mut handlers = module::Handlers::default();
 
@@ -190,18 +206,20 @@ impl Irc {
                     log::trace!("initializing module: {}", module.ty());
                 }
 
-                let result = module.hook(module::HookContext {
-                    handlers: &mut handlers,
-                    futures: &mut futures,
-                    stream_info: &stream_info,
-                    idle: &idle,
-                    twitch: &bot_twitch,
-                    streamer_twitch: &streamer_twitch,
-                    sender: &sender,
-                    settings: &settings,
-                    injector: &injector,
-                    auth: &auth,
-                });
+                let result = module
+                    .hook(module::HookContext {
+                        handlers: &mut handlers,
+                        futures: &mut futures,
+                        stream_info: &stream_info,
+                        idle: &idle,
+                        twitch: &bot_twitch,
+                        streamer_twitch: &streamer_twitch,
+                        sender: &sender,
+                        settings: &settings,
+                        injector: &injector,
+                        auth: &auth,
+                    })
+                    .await;
 
                 result.with_context(|_| {
                     format_err!("failed to initialize module: {}", module.ty())
@@ -210,7 +228,11 @@ impl Irc {
 
             let (future, currency_handler) = currency_admin::setup(&injector)?;
 
-            futures.push(future.boxed());
+            futures.push(
+                future
+                    .instrument(trace_span!(target: "futures", "currency-adminm",))
+                    .boxed(),
+            );
 
             let future = currency_loop(
                 streamer_twitch.clone(),
@@ -222,8 +244,11 @@ impl Irc {
                 &settings,
             )?;
 
-            futures.push(future.boxed());
-            futures.push(send_future.compat().map_err(Error::from).boxed());
+            futures.push(
+                future
+                    .instrument(trace_span!(target: "futures", "currency-loop",))
+                    .boxed(),
+            );
 
             let (mut whitelisted_hosts_stream, whitelisted_hosts) =
                 chat_settings.stream("whitelisted-hosts").or_default()?;
@@ -278,10 +303,9 @@ impl Irc {
                 channel,
             };
 
-            let mut client_stream = client.stream().compat().fuse();
-            let mut ping_interval = timer::Interval::new_interval(time::Duration::from_secs(10));
-
-            let mut futures = future::try_join_all(futures).fuse();
+            let mut client_stream = client.stream()?;
+            let mut ping_interval =
+                tokio::timer::Interval::new_interval(time::Duration::from_secs(10));
 
             handler.sender.cap_req(TWITCH_TAGS_CAP);
             handler.sender.cap_req(TWITCH_COMMANDS_CAP);
@@ -291,14 +315,14 @@ impl Irc {
                 handler.sender.privmsg_immediate(join_message);
             }
 
-            let mut commands = command_bus.add_rx().compat().fuse();
+            let mut commands = command_bus.add_rx();
 
             let mut leave = false;
 
             while !leave {
                 futures::select! {
                     command = commands.select_next_some() => {
-                        match command? {
+                        match command {
                             bus::Command::Raw { command } => {
                                 log::trace!("Raw command: {}", command);
 
@@ -308,12 +332,15 @@ impl Irc {
                             }
                         }
                     }
-                    future = futures => {
+                    future = futures.select_next_some() => {
                         match future {
-                            Ok(..) => break 'outer,
+                            Ok(..) => {
+                                log::warn!("IRC component exited, exiting...");
+                                break 'outer;
+                            }
                             Err(e) => {
                                 log::warn!("IRC component errored, restarting in 5 seconds: {}", e);
-                                timer::Delay::new(time::Instant::now() + time::Duration::from_secs(5)).await?;
+                                tokio::timer::delay(time::Instant::now() + time::Duration::from_secs(5)).await;
                                 continue 'outer;
                             }
                         }
@@ -445,7 +472,9 @@ fn currency_loop<'a>(
 
     return Ok(async move {
         let new_timer = |interval: &Duration, viewer_reward: bool| match viewer_reward {
-            true if !interval.is_empty() => Some(timer::Interval::new_interval(interval.as_std())),
+            true if !interval.is_empty() => {
+                Some(tokio::timer::Interval::new_interval(interval.as_std()))
+            }
             _ => None,
         };
 
@@ -491,13 +520,11 @@ fn currency_loop<'a>(
                 viewer_reward = viewer_reward_stream.select_next_some() => {
                     timer = new_timer(&interval, viewer_reward);
                 }
-                i = timer.select_next_some() => {
+                _ = timer.select_next_some() => {
                     let currency = match currency.as_ref() {
                         Some(currency) => currency,
                         None => continue,
                     };
-
-                    let _ = i?;
 
                     log::trace!("running reward loop");
 
@@ -551,7 +578,7 @@ struct Handler<'a> {
     /// Build idle detection.
     idle: &'a idle::Idle,
     /// Pong timeout currently running.
-    pong_timeout: &'a mut Option<timer::Delay>,
+    pong_timeout: &'a mut Option<tokio::timer::Delay>,
     /// OAuth 2.0 Token used to authenticate with IRC.
     token: &'a oauth2::SyncToken,
     /// Force a shutdown.
@@ -714,7 +741,7 @@ impl<'a> Handler<'a> {
         self.sender
             .send_immediate(Command::PING(String::from(SERVER), None));
 
-        *self.pong_timeout = Some(timer::Delay::new(
+        *self.pong_timeout = Some(tokio::timer::delay(
             time::Instant::now() + time::Duration::from_secs(5),
         ));
 
@@ -857,12 +884,9 @@ impl<'a> Handler<'a> {
                     let name = name.clone();
                     let message = message.clone();
 
-                    let future = async move {
+                    self.thread_pool.spawn(async move {
                         chat_log.observe(&tags, &*channel, &name, &message).await;
-                    };
-
-                    self.thread_pool
-                        .spawn(Compat::new(Box::pin(future.unit_error())));
+                    });
                 }
 
                 let user = User {
@@ -1416,10 +1440,9 @@ pub struct CommandVars<'a> {
 
 // Future to refresh moderators every 5 minutes.
 async fn refresh_mods_future(sender: Sender) -> Result<(), Error> {
-    let mut interval = timer::Interval::new_interval(time::Duration::from_secs(60 * 5));
+    let mut interval = tokio::timer::Interval::new_interval(time::Duration::from_secs(60 * 5));
 
-    while let Some(i) = interval.next().await {
-        let _ = i?;
+    while let Some(_) = interval.next().await {
         log::trace!("refreshing mods and vips");
         sender.mods();
         sender.vips();

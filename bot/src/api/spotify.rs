@@ -3,7 +3,7 @@
 use crate::{api::RequestBuilder, oauth2, prelude::*};
 use bytes::Bytes;
 use failure::Error;
-use reqwest::{header, r#async::Client, Method, StatusCode, Url};
+use reqwest::{header, r#async::Client, Method, StatusCode};
 use rspotify::spotify::model::search;
 pub use rspotify::spotify::{
     model::{
@@ -20,6 +20,7 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
+use url::Url;
 
 const API_URL: &'static str = "https://api.spotify.com/v1";
 

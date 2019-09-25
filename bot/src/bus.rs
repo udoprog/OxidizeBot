@@ -1,6 +1,8 @@
 use crate::{player, track_id::TrackId};
+use futures::channel::mpsc;
 use hashbrown::HashMap;
 use parking_lot::Mutex;
+use std::sync::Arc;
 
 pub trait Message: 'static + Clone + Send + Sync + serde::Serialize {
     /// The ID of a bussed message.
@@ -9,61 +11,94 @@ pub trait Message: 'static + Clone + Send + Sync + serde::Serialize {
     }
 }
 
-pub type Reader<T> = tokio_bus::BusReader<T>;
+pub type Reader<T> = mpsc::Receiver<T>;
 
-struct Inner<T>
-where
-    T: Message,
-{
-    bus: tokio_bus::Bus<T>,
+struct Inner<T> {
+    subs: Vec<mpsc::Sender<T>>,
     /// Latest instances of all messages.
     latest: HashMap<&'static str, T>,
 }
 
 /// Bus system.
-pub struct Bus<T>
-where
-    T: Message,
-{
-    bus: Mutex<Inner<T>>,
+#[derive(Clone)]
+pub struct Bus<T> {
+    inner: Arc<Mutex<Inner<T>>>,
 }
 
-impl<T> Bus<T>
-where
-    T: Message,
-{
+impl<T> Bus<T> {
     /// Create a new notifier.
     pub fn new() -> Self {
         Bus {
-            bus: Mutex::new(Inner {
-                bus: tokio_bus::Bus::new(1024),
+            inner: Arc::new(Mutex::new(Inner {
+                subs: Vec::new(),
                 latest: HashMap::new(),
-            }),
+            })),
         }
     }
 
     /// Send a message to the bus.
-    pub fn send(&self, m: T) {
-        let mut inner = self.bus.lock();
+    pub fn send(&self, m: T)
+    where
+        T: Message,
+    {
+        let mut inner = self.inner.lock();
 
         if let Some(key) = m.id() {
             inner.latest.insert(key, m.clone());
         }
 
-        if let Err(_) = inner.bus.try_broadcast(m) {
-            log::error!("failed to send notification: bus is full");
+        self.send_inner(&mut inner, m);
+    }
+
+    /// Send a synced and cloneable message.
+    pub fn send_sync(&self, m: T)
+    where
+        T: 'static + Clone + Send + Sync,
+    {
+        let mut inner = self.inner.lock();
+        self.send_inner(&mut inner, m);
+    }
+
+    /// Send a synced and cloneable message.
+    fn send_inner(&self, inner: &mut Inner<T>, m: T)
+    where
+        T: 'static + Clone + Send + Sync,
+    {
+        let mut remove = smallvec::SmallVec::<[usize; 16]>::new();
+
+        for (i, s) in inner.subs.iter_mut().enumerate() {
+            match s.try_send(m.clone()) {
+                Err(e) if e.is_disconnected() => {
+                    remove.push(i);
+                }
+                Err(e) if e.is_full() => (),
+                Err(e) => {
+                    log::error!("error sending: {}", e);
+                }
+                Ok(()) => (),
+            }
+        }
+
+        for i in remove {
+            inner.subs.swap_remove(i);
         }
     }
 
     /// Get the latest messages received.
-    pub fn latest(&self) -> Vec<T> {
-        let inner = self.bus.lock();
+    pub fn latest(&self) -> Vec<T>
+    where
+        T: Clone,
+    {
+        let inner = self.inner.lock();
         inner.latest.values().cloned().collect()
     }
 
     /// Create a receiver of the bus.
     pub fn add_rx(&self) -> Reader<T> {
-        self.bus.lock().bus.add_rx()
+        let mut inner = self.inner.lock();
+        let (tx, rx) = mpsc::channel(1024);
+        inner.subs.push(tx);
+        rx
     }
 }
 

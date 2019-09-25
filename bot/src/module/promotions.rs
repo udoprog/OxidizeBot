@@ -1,4 +1,4 @@
-use crate::{auth, command, db, irc, module, prelude::*, timer, utils};
+use crate::{auth, command, db, irc, module, prelude::*, utils};
 use chrono::Utc;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -44,12 +44,13 @@ impl command::Handler for Handler {
 
 pub struct Module;
 
+#[async_trait]
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
         "promotions"
     }
 
-    fn hook(
+    async fn hook(
         &self,
         module::HookContext {
             injector,
@@ -78,7 +79,7 @@ impl super::Module for Module {
 
         let (mut promotions_stream, mut promotions) = injector.stream::<db::Promotions>();
         let sender = sender.clone();
-        let mut interval = timer::Interval::new_interval(frequency.as_std());
+        let mut interval = tokio::timer::Interval::new_interval(frequency.as_std());
         let idle = idle.clone();
 
         let future = async move {
@@ -90,7 +91,7 @@ impl super::Module for Module {
                     }
                     duration = setting.next() => {
                         if let Some(duration) = duration {
-                            interval = timer::Interval::new_interval(duration.as_std());
+                            interval = tokio::timer::Interval::new_interval(duration.as_std());
                         }
                     }
                     _ = interval.select_next_some() => {
@@ -109,13 +110,11 @@ impl super::Module for Module {
                             let promotions = promotions.clone();
                             let sender = sender.clone();
 
-                            tokio::spawn(future01::lazy(move || {
+                            tokio::spawn(async move {
                                 if let Err(e) = promote(promotions, sender) {
                                     log::error!("failed to send promotion: {}", e);
                                 }
-
-                                Ok(())
-                            }));
+                            });
                         }
                     }
                 }

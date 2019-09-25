@@ -315,12 +315,13 @@ fn key(ctx: &mut command::Context<'_>) -> Option<String> {
 
 pub struct Module;
 
+#[async_trait]
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
         "admin"
     }
 
-    fn hook(
+    async fn hook(
         &self,
         module::HookContext {
             injector,
