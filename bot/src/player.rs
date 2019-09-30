@@ -301,20 +301,22 @@ pub fn run(
             timeout: None,
         };
 
-        if let Some(p) = spotify.me_player().await? {
-            log::trace!("Detected playback: {:?}", p);
+        if spotify.token.is_ready() {
+            if let Some(p) = spotify.me_player().await? {
+                log::trace!("Detected playback: {:?}", p);
 
-            match Song::from_playback(&p) {
-                Some(song) => {
-                    log::trace!("Syncing playback");
-                    let volume_percent = p.device.volume_percent;
-                    device.sync_device(Some(p.device))?;
-                    connect_player.set_scaled_volume(volume_percent)?;
-                    player.play_sync(song)?;
-                }
-                None => {
-                    log::trace!("Pausing playback since item is missing");
-                    player.pause_with_source(Source::Automatic)?;
+                match Song::from_playback(&p) {
+                    Some(song) => {
+                        log::trace!("Syncing playback");
+                        let volume_percent = p.device.volume_percent;
+                        device.sync_device(Some(p.device))?;
+                        connect_player.set_scaled_volume(volume_percent)?;
+                        player.play_sync(song)?;
+                    }
+                    None => {
+                        log::trace!("Pausing playback since item is missing");
+                        player.pause_with_source(Source::Automatic)?;
+                    }
                 }
             }
         }
