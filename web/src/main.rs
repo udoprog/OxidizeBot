@@ -1,4 +1,3 @@
-use futures::Future as _;
 use oxidize_web::web;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -15,7 +14,8 @@ fn opts() -> clap::App<'static, 'static> {
         )
 }
 
-fn main() -> Result<(), failure::Error> {
+#[tokio::main]
+async fn main() -> Result<(), failure::Error> {
     pretty_env_logger::init();
 
     let opts = opts();
@@ -23,10 +23,6 @@ fn main() -> Result<(), failure::Error> {
 
     let no_auth = m.is_present("no-auth");
 
-    tokio::run(web::setup(no_auth)?.map_err(|e| {
-        log::error!("web server failed: {}", e);
-        ()
-    }));
-
+    web::setup(no_auth)?.await?;
     Ok(())
 }

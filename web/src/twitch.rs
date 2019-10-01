@@ -1,12 +1,7 @@
 //! Twitch API helpers.
 
-use futures::{Future, Stream as _};
-use reqwest::{
-    header,
-    r#async::{Body, Client, Decoder},
-    Method, Url,
-};
-use std::mem;
+use bytes::Bytes;
+use reqwest::{header, r#async::Client, Method, Url};
 
 const ID_TWITCH_URL: &'static str = "https://id.twitch.tv";
 
@@ -41,13 +36,12 @@ impl IdTwitchClient {
     }
 
     // Validate the specified token through twitch validation API.
-    pub fn validate_token(
-        &self,
-        token: &str,
-    ) -> impl Future<Item = ValidateToken, Error = failure::Error> {
-        self.request(Method::GET, &["oauth2", "validate"])
-            .header(header::AUTHORIZATION, &format!("OAuth {}", token))
-            .execute()
+    pub async fn validate_token(&self, token: &str) -> Result<ValidateToken, failure::Error> {
+        let request = self
+            .request(Method::GET, &["oauth2", "validate"])
+            .header(header::AUTHORIZATION, &format!("OAuth {}", token));
+
+        request.execute().await
     }
 }
 
@@ -65,12 +59,12 @@ struct RequestBuilder {
     url: Url,
     method: Method,
     headers: Vec<(header::HeaderName, String)>,
-    body: Option<Body>,
+    body: Option<Bytes>,
 }
 
 impl RequestBuilder {
     /// Execute the request.
-    pub fn execute<T>(self) -> impl Future<Item = T, Error = failure::Error>
+    pub async fn execute<T>(self) -> Result<T, failure::Error>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -84,24 +78,20 @@ impl RequestBuilder {
             r = r.header(key, value);
         }
 
-        r.send().map_err(Into::into).and_then(|mut res| {
-            let body = mem::replace(res.body_mut(), Decoder::empty());
+        let res = r.send().await?;
+        let status = res.status();
+        let body = res.bytes().await?;
 
-            body.concat2().map_err(Into::into).and_then(move |body| {
-                let status = res.status();
+        if !status.is_success() {
+            failure::bail!(
+                "bad response: {}: {}",
+                status,
+                String::from_utf8_lossy(body.as_ref())
+            );
+        }
 
-                if !status.is_success() {
-                    failure::bail!(
-                        "bad response: {}: {}",
-                        status,
-                        String::from_utf8_lossy(body.as_ref())
-                    );
-                }
-
-                log::trace!("response: {}", String::from_utf8_lossy(body.as_ref()));
-                serde_json::from_slice(body.as_ref()).map_err(Into::into)
-            })
-        })
+        log::trace!("response: {}", String::from_utf8_lossy(body.as_ref()));
+        serde_json::from_slice(body.as_ref()).map_err(Into::into)
     }
 
     /// Push a header.

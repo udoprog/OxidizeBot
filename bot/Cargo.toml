@@ -54,7 +54,6 @@ rust-embed = { version = "5.1.0", features = ["interpolate-folder-path"] }
 mime = "0.3.14"
 mime_guess = "2.0.1"
 uom = "0.25.0"
-ccl = "5.1.5"
 crossbeam = "0.7.2"
 hex = "0.4.0"
 graphql_client = "0.8.0"
@@ -85,7 +84,6 @@ branch = "next"
 [dependencies.futures]
 package = "futures-preview"
 version = "0.3.0-alpha.18"
-features = ["nightly", "async-await", "compat"]
 
 [build-dependencies]
 winres = "0.1.11"

@@ -1,35 +1,51 @@
 use crate::twitch;
 use failure::format_err;
-use futures::{future, Future, Stream};
+use futures::prelude::*;
 use hashbrown::HashMap;
-use hyper::{body::Body, error, header, server, service, Method, Request, Response, StatusCode};
+use hyper::{body::Body, error, header, server, Method, Request, Response, StatusCode};
 use std::{
-    mem,
     net::SocketAddr,
     sync::{Arc, RwLock},
+    task::{Context, Poll},
 };
+use tower_service::Service;
 
 static SPOTIFY_TRACK_URL: &'static str = "https://open.spotify.com/track";
 static GITHUB_URL: &'static str = "https://github.com/udoprog/OxidizeBot";
 
+pub struct MakeSvc(Server);
+
+impl<T> Service<T> for MakeSvc {
+    type Response = Server;
+    type Error = std::io::Error;
+    type Future = future::Ready<Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Ok(()).into()
+    }
+
+    fn call(&mut self, _: T) -> Self::Future {
+        future::ok(self.0.clone())
+    }
+}
+
 pub fn setup(
     no_auth: bool,
-) -> Result<impl Future<Item = (), Error = error::Error>, failure::Error> {
+) -> Result<impl Future<Output = Result<(), error::Error>>, failure::Error> {
     let mut reg = handlebars::Handlebars::new();
     reg.register_partial("layout", include_str!("web/layout.html.hbs"))?;
     reg.register_template_string("index", include_str!("web/index.html.hbs"))?;
     reg.register_template_string("privacy", include_str!("web/privacy.html.hbs"))?;
     reg.register_template_string("player", include_str!("web/player.html.hbs"))?;
 
-    let server = Server::new(Arc::new(reg), no_auth)?;
+    let server = Server {
+        handler: Arc::new(Handler::new(Arc::new(reg), no_auth)?),
+    };
 
     let addr: SocketAddr = str::parse(&format!("0.0.0.0:8080"))?;
 
     // TODO: add graceful shutdown.
-    let server_future = server::Server::bind(&addr).serve({
-        let server = server.clone();
-        move || future::ok::<Server, error::Error>(server.clone())
-    });
+    let server_future = server::Server::bind(&addr).serve(MakeSvc(server));
 
     Ok(server_future)
 }
@@ -52,16 +68,14 @@ where
     }
 }
 
-/// Interface to the server.
-#[derive(Clone)]
-pub struct Server {
+pub struct Handler {
     players: Arc<RwLock<HashMap<String, Player>>>,
     id_twitch_client: twitch::IdTwitchClient,
     reg: Arc<handlebars::Handlebars>,
     no_auth: bool,
 }
 
-impl Server {
+impl Handler {
     /// Construct a new server.
     pub fn new(reg: Arc<handlebars::Handlebars>, no_auth: bool) -> Result<Self, failure::Error> {
         Ok(Self {
@@ -71,15 +85,8 @@ impl Server {
             no_auth,
         })
     }
-}
 
-impl service::Service for Server {
-    type ReqBody = Body;
-    type ResBody = Body;
-    type Error = failure::Error;
-    type Future = Box<dyn Future<Item = Response<Self::ResBody>, Error = Self::Error> + Send>;
-
-    fn call(&mut self, req: Request<Self::ReqBody>) -> Self::Future {
+    async fn handle_call(&self, req: Request<Body>) -> Response<Body> {
         let uri = req.uri();
 
         log::info!("{} {}", req.method(), uri.path());
@@ -89,20 +96,17 @@ impl service::Service for Server {
 
         let route = (req.method(), (it.next(), it.next()));
 
-        let future: Box<dyn Future<Item = Response<Self::ResBody>, Error = Error> + Send> =
-            match route {
-                (&Method::GET, (Some(""), None)) => Box::new(self.handle_index()),
-                (&Method::GET, (Some("privacy"), None)) => Box::new(self.handle_privacy()),
-                (&Method::GET, (Some("player"), Some(login))) => {
-                    Box::new(self.handle_player_show(login))
-                }
-                (&Method::GET, (Some("api"), Some("players"))) => Box::new(self.player_list()),
-                (&Method::POST, (Some("api"), Some("player"))) => Box::new(self.player_update(req)),
-                _ => Box::new(future::err(Error::NotFound)),
-            };
+        let result = match route {
+            (&Method::GET, (Some(""), None)) => self.handle_index().await,
+            (&Method::GET, (Some("privacy"), None)) => self.handle_privacy().await,
+            (&Method::GET, (Some("player"), Some(login))) => self.handle_player_show(login).await,
+            (&Method::GET, (Some("api"), Some("players"))) => self.player_list().await,
+            (&Method::POST, (Some("api"), Some("player"))) => self.player_update(req).await,
+            _ => future::err(Error::NotFound).await,
+        };
 
-        let future = future.then(|result| match result {
-            Ok(response) => Ok(response),
+        match result {
+            Ok(response) => return response,
             Err(e) => {
                 let result = match e {
                     Error::BadRequest(e) => {
@@ -112,43 +116,65 @@ impl service::Service for Server {
                     Error::NotFound => {
                         let mut r = Response::new(Body::from("No such page :("));
                         *r.status_mut() = StatusCode::NOT_FOUND;
-                        return Ok(r);
+                        return r;
                     }
                     Error::Error(e) => {
                         log::error!("error: {}", e);
                         let mut r = Response::new(Body::from("server error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                        return Ok(r);
+                        return r;
                     }
                 };
 
                 match result {
-                    Ok(result) => Ok(result),
+                    Ok(result) => result,
                     Err(Error::Error(e)) => {
                         log::error!("error: {}", e);
                         let mut r = Response::new(Body::from("server error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                        return Ok(r);
+                        return r;
                     }
                     Err(_) => {
                         log::error!("unknown error :(");
                         let mut r = Response::new(Body::from("server error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                        return Ok(r);
+                        return r;
                     }
                 }
             }
-        });
-
-        Box::new(future)
+        }
     }
 }
 
-impl Server {
+/// Interface to the server.
+#[derive(Clone)]
+pub struct Server {
+    handler: Arc<Handler>,
+}
+
+impl Service<Request<Body>> for Server {
+    type Response = Response<Body>;
+    type Error = failure::Error;
+    type Future = future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, _: &mut Context) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: Request<Body>) -> Self::Future {
+        let handler = self.handler.clone();
+
+        let future = async move { Ok(handler.handle_call(req).await) };
+
+        future.boxed()
+    }
+}
+
+impl Handler {
     const MAX_BYTES: usize = 10_000;
 
     /// Handles the index page.
-    pub fn handle_index(&mut self) -> impl Future<Item = Response<Body>, Error = Error> {
+    pub async fn handle_index(&self) -> Result<Response<Body>, Error> {
         let players = self.players.read().expect("poisoned");
 
         let players = {
@@ -168,12 +194,8 @@ impl Server {
             players: players,
         };
 
-        let body = match self.reg.render("index", &data) {
-            Ok(body) => body,
-            Err(e) => return future::err(e.into()),
-        };
-
-        return future::result(html(body));
+        let body = self.reg.render("index", &data)?;
+        return html(body);
 
         #[derive(serde::Serialize)]
         struct Data<'a> {
@@ -188,50 +210,35 @@ impl Server {
     }
 
     /// Handles the index page.
-    pub fn handle_privacy(&mut self) -> impl Future<Item = Response<Body>, Error = Error> {
+    pub async fn handle_privacy(&self) -> Result<Response<Body>, Error> {
         let data = Data {};
-
-        let body = match self.reg.render("privacy", &data) {
-            Ok(body) => body,
-            Err(e) => return future::err(e.into()),
-        };
-
-        return future::result(html(body));
+        let body = self.reg.render("privacy", &data)?;
+        return html(body);
 
         #[derive(serde::Serialize)]
         struct Data {}
     }
 
     /// Handle listing players.
-    fn player_list(&mut self) -> impl Future<Item = Response<Body>, Error = Error> {
+    async fn player_list(&self) -> Result<Response<Body>, Error> {
         let players = self.players.read().expect("poisoned");
         let keys = players.keys().map(|s| s.as_str()).collect::<Vec<&str>>();
-        future::result(json_ok(&keys))
+        json_ok(&keys)
     }
 
     /// Handle a playlist update.
-    fn handle_player_show(
-        &mut self,
-        login: &str,
-    ) -> impl Future<Item = Response<Body>, Error = Error> {
+    async fn handle_player_show(&self, login: &str) -> Result<Response<Body>, Error> {
         let players = self.players.read().expect("poisoned");
 
-        let player = match players.get(login) {
-            Some(items) => items,
-            None => return future::err(Error::NotFound),
-        };
+        let player = players.get(login).ok_or(Error::NotFound)?;
 
         let data = Data {
             login: login,
             player: &player,
         };
 
-        let body = match self.reg.render("player", &data) {
-            Ok(body) => body,
-            Err(e) => return future::err(Error::Error(e.into())),
-        };
-
-        return future::result(html(body));
+        let body = self.reg.render("player", &data)?;
+        return html(body);
 
         #[derive(serde::Serialize)]
         struct Data<'a> {
@@ -263,31 +270,32 @@ impl Server {
     }
 
     /// Handle a playlist update.
-    fn player_update(
-        &mut self,
-        mut req: Request<Body>,
-    ) -> Box<dyn Future<Item = Response<Body>, Error = Error> + Send> {
-        let body = mem::replace(req.body_mut(), Body::default());
+    async fn player_update(&self, req: Request<Body>) -> Result<Response<Body>, Error> {
+        let token = match self.extract_token(&req) {
+            Some(token) => token,
+            None => {
+                return Err(Error::BadRequest(format_err!(
+                    "Missing token from Authorization header"
+                )));
+            }
+        };
 
-        let future = receive_json::<PlayerUpdate>(body, Self::MAX_BYTES)
-            .join(self.auth(&req))
-            .and_then({
-                let players = self.players.clone();
+        let req = receive_json::<PlayerUpdate>(req, Self::MAX_BYTES).boxed();
 
-                move |(update, auth)| {
-                    let mut players = players.write().expect("poisoned");
-                    let player = players.entry(auth.login).or_insert_with(Default::default);
-                    player.current = update.current.map(Item::into_player_item);
-                    player.items = update
-                        .items
-                        .into_iter()
-                        .map(Item::into_player_item)
-                        .collect();
-                    json_ok(&ResponseBody {})
-                }
-            });
+        let (update, auth) = future::try_join(req, self.auth(&token)).await?;
 
-        return Box::new(future);
+        {
+            let mut players = self.players.write().expect("poisoned");
+            let player = players.entry(auth.login).or_insert_with(Default::default);
+            player.current = update.current.map(Item::into_player_item);
+            player.items = update
+                .items
+                .into_iter()
+                .map(Item::into_player_item)
+                .collect();
+        }
+
+        return json_ok(&ResponseBody {});
 
         #[derive(Debug, serde::Deserialize)]
         struct PlayerUpdate {
@@ -301,33 +309,21 @@ impl Server {
     }
 
     /// Test for authentication, if enabled.
-    fn auth(
-        &self,
-        req: &Request<Body>,
-    ) -> Box<dyn Future<Item = twitch::ValidateToken, Error = Error> + Send> {
-        let token = match self.extract_token(&req) {
-            Some(token) => token,
-            None => {
-                return Box::new(future::err(Error::BadRequest(format_err!(
-                    "Missing token from Authorization header"
-                ))))
-            }
-        };
-
+    async fn auth(&self, token: &str) -> Result<twitch::ValidateToken, Error> {
         if self.no_auth {
-            return Box::new(future::ok(twitch::ValidateToken {
+            return Ok(twitch::ValidateToken {
                 client_id: String::from("client_id"),
-                login: token,
+                login: token.to_string(),
                 scopes: vec![],
                 user_id: String::from("user_id"),
-            }));
+            });
         }
 
-        Box::new(
-            self.id_twitch_client
-                .validate_token(&token)
-                .map_err(Error::Error),
-        )
+        Ok(self
+            .id_twitch_client
+            .validate_token(token)
+            .await
+            .map_err(Error::Error)?)
     }
 }
 
@@ -407,28 +403,26 @@ pub fn bad_request() -> Result<Response<Body>, Error> {
 }
 
 /// Concats the body and makes sure the request is not too large.
-fn receive_json<T>(body: Body, max_bytes: usize) -> impl Future<Item = T, Error = Error>
+async fn receive_json<T>(req: Request<Body>, max_bytes: usize) -> Result<T, Error>
 where
     T: serde::de::DeserializeOwned,
 {
+    let mut body = req.into_body();
+
+    let mut bytes = Vec::new();
     let mut received = 0;
 
-    let future = body.map_err(Error::from).and_then(move |chunk| {
+    while let Some(chunk) = body.next().await.transpose()? {
         received += chunk.len();
 
         if received > max_bytes {
             return Err(Error::BadRequest(format_err!("request too large")));
         }
 
-        Ok(chunk)
-    });
+        bytes.extend(chunk);
+    }
 
-    future.concat2().and_then({
-        move |body| match serde_json::from_slice::<T>(body.as_ref()) {
-            Ok(body) => Ok(body),
-            Err(e) => Err(Error::BadRequest(e.into())),
-        }
-    })
+    serde_json::from_slice::<T>(&bytes).map_err(|e| Error::BadRequest(e.into()))
 }
 
 /// Construct a HTML response.

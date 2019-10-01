@@ -87,7 +87,7 @@ dependencies = [
  "futures-preview",
  "hashbrown 0.5.0",
  "log 0.4.8",
- "parking_lot 0.9.0",
+ "parking_lot",
  "serde",
  "serde-hashkey",
  "smallvec",
@@ -309,38 +309,6 @@ name = "cc"
 version = "1.0.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fc9a35e1f4290eb9e5fc54ba6cf40671ed2a2514c3eeb2b2a908dda2ea5a1be"
-
-[[package]]
-name = "ccl"
-version = "5.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ba6e40719247d95949a46e208d8c3edd66a33b86e4fa9bdb5f09394fba3b83b"
-dependencies = [
- "ccl-crossbeam-epoch",
- "futures-preview",
- "hashbrown 0.6.0",
- "num_cpus",
- "owning_ref",
- "parking_lot 0.9.0",
- "rand 0.7.2",
- "seahash",
- "slab",
- "stable_deref_trait",
-]
-
-[[package]]
-name = "ccl-crossbeam-epoch"
-version = "0.7.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e4bd50e6b82db444413d5cd8d2b52b21276cdfa7eff3892490e50a10b57e51a"
-dependencies = [
- "arrayvec",
- "cfg-if",
- "crossbeam-utils",
- "lazy_static",
- "memoffset",
- "scopeguard 1.0.0",
-]
 
 [[package]]
 name = "cfg-if"
@@ -956,7 +924,7 @@ dependencies = [
  "hashbrown 0.5.0",
  "hex 0.3.2",
  "log 0.4.8",
- "parking_lot 0.9.0",
+ "parking_lot",
  "pin-utils",
  "serde",
  "serde-hashkey",
@@ -1562,7 +1530,7 @@ dependencies = [
  "irc-proto",
  "log 0.4.8",
  "native-tls",
- "parking_lot 0.9.0",
+ "parking_lot",
  "pin-utils",
  "serde",
  "serde_derive",
@@ -1640,7 +1608,7 @@ checksum = "5d8ea46ce29b6cf14a268600c5d0dbe1bb6aace79777a1191fa3ab1e4adf9543"
 dependencies = [
  "futures-preview",
  "log 0.4.8",
- "parking_lot 0.9.0",
+ "parking_lot",
  "tokio-timer 0.3.0-alpha.5",
 ]
 
@@ -1693,21 +1661,10 @@ checksum = "ae91b68aebc4ddb91978b11a1b02ddd8602a05ec19002801c5666000e05e0f83"
 
 [[package]]
 name = "lock_api"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62ebf1391f6acad60e5c8b43706dde4582df75c06698ab44511d15016bc2442c"
-dependencies = [
- "owning_ref",
- "scopeguard 0.3.3",
-]
-
-[[package]]
-name = "lock_api"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8912e782533a93a167888781b836336a6ca5da6175c05944c86cf28c31104dc"
 dependencies = [
- "owning_ref",
  "scopeguard 1.0.0",
 ]
 
@@ -2138,10 +2095,9 @@ dependencies = [
 [[package]]
 name = "oauth2"
 version = "2.0.0-alpha.5"
-source = "git+https://github.com/udoprog/oauth2-rs?branch=async#1512e4d1243372795636aa30be1c9905533e9b8f"
+source = "git+https://github.com/udoprog/oauth2-rs?branch=async#674520d57f067246845488bf0d391b33f68882ca"
 dependencies = [
  "base64 0.10.1",
- "failure",
  "rand 0.6.5",
  "reqwest 0.10.0-alpha.0",
  "serde",
@@ -2199,15 +2155,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "owning_ref"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49a4b8ea2179e6a2e27411d3bca09ca6dd630821cf6894c6c7c8467a8ee7ef13"
-dependencies = [
- "stable_deref_trait",
-]
-
-[[package]]
 name = "oxidize"
 version = "1.0.0-beta.16"
 dependencies = [
@@ -2218,7 +2165,6 @@ dependencies = [
  "backtrace",
  "base64 0.10.1",
  "bytes",
- "ccl",
  "chrono",
  "chrono-tz",
  "clap",
@@ -2248,7 +2194,7 @@ dependencies = [
  "mime_guess 2.0.1",
  "mysql_async",
  "oauth2",
- "parking_lot 0.9.0",
+ "parking_lot",
  "percent-encoding 2.1.0",
  "pin-utils",
  "rand 0.7.2",
@@ -2282,19 +2228,21 @@ dependencies = [
 name = "oxidize-web"
 version = "0.0.0"
 dependencies = [
+ "bytes",
  "chrono",
  "clap",
  "failure",
- "futures",
+ "futures-preview",
  "handlebars 1.1.0",
  "hashbrown 0.3.1",
- "hyper 0.12.35",
+ "hyper 0.13.0-alpha.2",
  "log 0.4.8",
  "pretty_env_logger",
- "reqwest 0.9.20",
+ "reqwest 0.10.0-alpha.0",
  "serde",
  "serde_json",
- "tokio 0.1.22",
+ "tokio 0.2.0-alpha.5",
+ "tower-service",
 ]
 
 [[package]]
@@ -2321,36 +2269,13 @@ dependencies = [
 
 [[package]]
 name = "parking_lot"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab41b4aed082705d1056416ae4468b6ea99d52599ecf3169b00088d43113e337"
-dependencies = [
- "lock_api 0.1.5",
- "parking_lot_core 0.4.0",
-]
-
-[[package]]
-name = "parking_lot"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f842b1982eb6c2fe34036a4fbfb06dd185a3f5c8edfaacdf7d1ea10b07de6252"
 dependencies = [
- "lock_api 0.3.1",
- "parking_lot_core 0.6.2",
+ "lock_api",
+ "parking_lot_core",
  "rustc_version",
-]
-
-[[package]]
-name = "parking_lot_core"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94c8c7923936b28d546dfd14d4472eaf34c99b14e1c973a32b3e6d4eb04298c9"
-dependencies = [
- "libc",
- "rand 0.6.5",
- "rustc_version",
- "smallvec",
- "winapi 0.3.8",
 ]
 
 [[package]]
@@ -3069,12 +2994,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b42e15e59b18a828bbf5c58ea01debb36b9b096346de35d941dcb89009f24a0d"
 
 [[package]]
-name = "seahash"
-version = "3.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18d6061ff4917fac173fa07b839c8c3f805c0bf3801c52499cc85cdbad8c28df"
-
-[[package]]
 name = "security-framework"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3309,12 +3228,6 @@ name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
-
-[[package]]
-name = "stable_deref_trait"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dba1a27d3efae4351c8051072d619e3ade2820635c3958d826bfea39d59b54c8"
 
 [[package]]
 name = "static_assertions"
@@ -3669,7 +3582,7 @@ dependencies = [
  "mio",
  "mio-uds",
  "num_cpus",
- "parking_lot 0.9.0",
+ "parking_lot",
  "slab",
  "tokio-codec 0.2.0-alpha.5",
  "tokio-executor 0.2.0-alpha.5",
@@ -3680,9 +3593,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-reactor"
-version = "0.1.9"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6af16bfac7e112bea8b0442542161bfc41cbfa4466b580bdda7d18cb88b911ce"
+checksum = "c56391be9805bc80163151c0b9e5164ee64f4b0200962c346fea12773158f22d"
 dependencies = [
  "crossbeam-utils",
  "futures",
@@ -3690,7 +3603,7 @@ dependencies = [
  "log 0.4.8",
  "mio",
  "num_cpus",
- "parking_lot 0.7.1",
+ "parking_lot",
  "slab",
  "tokio-executor 0.1.8",
  "tokio-io 0.1.12",
@@ -3735,17 +3648,17 @@ dependencies = [
 
 [[package]]
 name = "tokio-threadpool"
-version = "0.1.15"
+version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90ca01319dea1e376a001e8dc192d42ebde6dd532532a5bad988ac37db365b19"
+checksum = "2bd2c6a3885302581f4401c82af70d792bb9df1700e7437b0aeb4ada94d5388c"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-queue",
  "crossbeam-utils",
  "futures",
+ "lazy_static",
  "log 0.4.8",
  "num_cpus",
- "rand 0.6.5",
  "slab",
  "tokio-executor 0.1.8",
 ]
