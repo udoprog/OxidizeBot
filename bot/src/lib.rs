@@ -17,7 +17,6 @@ pub mod api;
 pub mod auth;
 pub mod bus;
 mod command;
-pub mod config;
 pub mod currency;
 pub mod db;
 pub mod emotes;

@@ -1,5 +1,16 @@
+@import "custom";
+@import "~bootstrap/scss/bootstrap";
+
 * {
   box-sizing: border-box;
+}
+
+.loading {
+  text-align: center;
+}
+
+.highlight {
+  color: $purple;
 }
 
 #index {
@@ -12,6 +23,17 @@ html, body {
   height: 100%;
 }
 
-body {
-  background-color: rgba(0, 0, 0, 0);
+#content {
+  background-color: rgb(255, 255, 255);
+}
+
+#navbar {
+  background-color: rgb(64, 64, 64);
+  color: white;
+}
+
+#footer {
+  border-top: 1px solid $gray-400;
+  text-align: center;
+  font-size: 80%;
 }

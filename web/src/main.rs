@@ -1,4 +1,5 @@
 use oxidize_web::web;
+use std::{fs, path::Path};
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -12,6 +13,12 @@ fn opts() -> clap::App<'static, 'static> {
                 .long("no-auth")
                 .help("Do not require authentication."),
         )
+        .arg(
+            clap::Arg::with_name("config")
+                .takes_value(true)
+                .long("config")
+                .help("Configuration file to use."),
+        )
 }
 
 #[tokio::main]
@@ -23,6 +30,19 @@ async fn main() -> Result<(), failure::Error> {
 
     let no_auth = m.is_present("no-auth");
 
-    web::setup(no_auth)?.await?;
+    let config_path = match m.value_of("config") {
+        Some(config_path) => Path::new(config_path),
+        None => Path::new("config.toml"),
+    };
+
+    let root = match config_path.parent() {
+        Some(root) => root.to_owned(),
+        None => std::env::current_dir().expect("process to have a current directory"),
+    };
+
+    log::info!("Loading config: {}", config_path.display());
+    let config = toml::from_str(&fs::read_to_string(config_path)?)?;
+
+    web::setup(no_auth, &root, config)?.await?;
     Ok(())
 }

@@ -1,5 +1,6 @@
 const HtmlWebPackPlugin = require("html-webpack-plugin");
 const FaviconsWebpackPlugin = require('favicons-webpack-plugin')
+const path = require('path');
 
 const htmlPlugin = new HtmlWebPackPlugin({
   template: "./src/index.html",
@@ -12,6 +13,11 @@ module.exports = function(_, argv) {
   let production = argv.mode === "production";
 
   return {
+    output: {
+      path: path.join(__dirname, 'dist'),
+      filename: '[name].[chunkhash].js',
+      chunkFilename: '[name].[chunkhash].js'
+    },
     optimization: {
       minimize: production
     },
@@ -51,7 +57,7 @@ module.exports = function(_, argv) {
       historyApiFallback: true,
       proxy: {
         '/api': {
-          target: 'http://localhost:8080',
+          target: 'http://localhost:8000',
           secure: false,
         },
       },

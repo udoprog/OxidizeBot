@@ -1,17 +1,40 @@
-use crate::twitch;
+use crate::{db, oauth2, session, twitch};
+use chrono::{DateTime, Utc};
 use failure::format_err;
 use futures::prelude::*;
-use hashbrown::HashMap;
 use hyper::{body::Body, error, header, server, Method, Request, Response, StatusCode};
+use parking_lot::Mutex;
+use relative_path::RelativePathBuf;
+use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 use std::{
+    borrow::Cow,
+    collections::HashMap,
     net::SocketAddr,
+    path::Path,
     sync::{Arc, RwLock},
     task::{Context, Poll},
+    time,
 };
 use tower_service::Service;
+use url::Url;
 
 static SPOTIFY_TRACK_URL: &'static str = "https://open.spotify.com/track";
-static GITHUB_URL: &'static str = "https://github.com/udoprog/OxidizeBot";
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct Config {
+    database: RelativePathBuf,
+    base_url: Url,
+    #[serde(default)]
+    session: session::Config,
+    oauth2: oauth2::Config,
+}
+
+mod assets {
+    #[derive(rust_embed::RustEmbed)]
+    #[folder = "$CARGO_MANIFEST_DIR/ui/dist"]
+    pub struct Asset;
+}
 
 pub struct MakeSvc(Server);
 
@@ -31,59 +54,203 @@ impl<T> Service<T> for MakeSvc {
 
 pub fn setup(
     no_auth: bool,
+    root: &Path,
+    config: Config,
 ) -> Result<impl Future<Output = Result<(), error::Error>>, failure::Error> {
-    let mut reg = handlebars::Handlebars::new();
-    reg.register_partial("layout", include_str!("web/layout.html.hbs"))?;
-    reg.register_template_string("index", include_str!("web/index.html.hbs"))?;
-    reg.register_template_string("privacy", include_str!("web/privacy.html.hbs"))?;
-    reg.register_template_string("player", include_str!("web/player.html.hbs"))?;
+    let fallback = assets::Asset::get("index.html")
+        .ok_or_else(|| format_err!("missing index.html in assets"))?;
+
+    let db = sled::Db::open(config.database.to_path(root))?;
+    let tree = Arc::new(db.open_tree("storage")?);
+
+    let pending_tokens = Arc::new(Mutex::new(HashMap::new()));
 
     let server = Server {
-        handler: Arc::new(Handler::new(Arc::new(reg), no_auth)?),
+        handler: Arc::new(Handler::new(
+            no_auth,
+            fallback,
+            tree,
+            config,
+            pending_tokens.clone(),
+        )?),
     };
 
-    let addr: SocketAddr = str::parse(&format!("0.0.0.0:8080"))?;
+    let addr: SocketAddr = str::parse(&format!("0.0.0.0:8000"))?;
 
     // TODO: add graceful shutdown.
     let server_future = server::Server::bind(&addr).serve(MakeSvc(server));
 
-    Ok(server_future)
+    let future = async move {
+        let mut interval = tokio::timer::Interval::new_interval(time::Duration::from_secs(30));
+        let expires = chrono::Duration::minutes(5);
+
+        let mut server_future = server_future.fuse();
+
+        loop {
+            futures::select! {
+                result = server_future => {
+                    return result;
+                }
+                _ = interval.select_next_some() => {
+                    log::info!("Checking for expires pending tokens");
+
+                    let now = Utc::now();
+                    let mut tokens = pending_tokens.lock();
+                    let mut to_remove = smallvec::SmallVec::<[String; 16]>::new();
+
+                    for (key, pending) in &*tokens {
+                        if pending.created_at + expires > now {
+                            to_remove.push(key.to_string());
+                        }
+                    }
+
+                    if !to_remove.is_empty() {
+                        log::info!("Removing {} expired tokens", to_remove.len());
+                    }
+
+                    for remove in to_remove {
+                        tokens.remove(&remove);
+                    }
+                }
+            }
+        }
+    };
+
+    Ok(future)
 }
 
 pub enum Error {
     /// Client performed a bad request.
-    BadRequest(failure::Error),
+    BadRequest(String),
     /// The resource could not be found.
     NotFound,
+    /// User unauthorized to perform the given request.
+    Unauthorized,
     /// Generic error.
     Error(failure::Error),
 }
 
-impl<E> From<E> for Error
-where
-    E: 'static + std::error::Error + Send + Sync,
-{
-    fn from(value: E) -> Error {
-        Error::Error(value.into())
+impl Error {
+    /// Construct a new bad request error.
+    pub fn bad_request(s: impl AsRef<str>) -> Self {
+        Self::BadRequest(s.as_ref().to_string())
     }
 }
 
+impl From<failure::Error> for Error {
+    fn from(value: failure::Error) -> Error {
+        Error::Error(value)
+    }
+}
+
+#[derive(Debug)]
+pub struct RegisterOrLogin {
+    return_to: Option<Url>,
+}
+
+#[derive(Debug)]
+pub struct Connect {
+    user: String,
+    id: String,
+    return_to: Option<Url>,
+}
+
+#[derive(Debug)]
+pub enum Action {
+    /// Register or login an existing user.
+    RegisterOrLogin(RegisterOrLogin),
+    /// Create a connection.
+    Connect(Connect),
+}
+
+#[derive(Debug)]
+pub struct PendingToken {
+    /// When the pending request was created.
+    pub created_at: DateTime<Utc>,
+    /// The flow for the pending token.
+    pub flow: Arc<oauth2::Flow>,
+    /// The exchange token used.
+    pub exchange_token: oauth2::ExchangeToken,
+    /// The action to take when the pending token resolved.
+    pub action: Action,
+}
+
 pub struct Handler {
+    db: db::Database,
+    config: Config,
+    session: session::Session,
+    fallback: Cow<'static, [u8]>,
     players: Arc<RwLock<HashMap<String, Player>>>,
     id_twitch_client: twitch::IdTwitchClient,
-    reg: Arc<handlebars::Handlebars>,
     no_auth: bool,
+    login_flow: Arc<oauth2::Flow>,
+    flows: HashMap<String, Arc<oauth2::Flow>>,
+    pending_tokens: Arc<Mutex<HashMap<String, PendingToken>>>,
+    random: ring::rand::SystemRandom,
+    week: chrono::Duration,
 }
 
 impl Handler {
     /// Construct a new server.
-    pub fn new(reg: Arc<handlebars::Handlebars>, no_auth: bool) -> Result<Self, failure::Error> {
+    pub fn new(
+        no_auth: bool,
+        fallback: Cow<'static, [u8]>,
+        tree: Arc<sled::Tree>,
+        config: Config,
+        pending_tokens: Arc<Mutex<HashMap<String, PendingToken>>>,
+    ) -> Result<Self, failure::Error> {
+        let db = db::Database::load(tree)?;
+        let (login_flow, flows) = oauth2::setup_flows(&config.base_url, &config.oauth2)?;
+        let session = session::Session::new(db.clone(), &config.session)?;
+
         Ok(Self {
+            db,
+            config,
+            session,
+            fallback,
             players: Arc::new(RwLock::new(Default::default())),
             id_twitch_client: twitch::IdTwitchClient::new()?,
-            reg,
             no_auth,
+            login_flow,
+            flows,
+            pending_tokens,
+            random: ring::rand::SystemRandom::new(),
+            week: chrono::Duration::days(7),
         })
+    }
+
+    /// Try to access static asset.
+    fn static_asset(&self, path: &str) -> Response<Body> {
+        let path = path.trim_start_matches('/');
+
+        let now = Utc::now();
+
+        let mut r = Response::new(Body::empty());
+
+        let (mime, asset) = match assets::Asset::get(path) {
+            Some(asset) => {
+                let mime = mime_guess::from_path(path).first_or_octet_stream();
+
+                if let Ok(cache_control) = "public, max-age=604800".parse() {
+                    r.headers_mut().insert(header::CACHE_CONTROL, cache_control);
+                }
+
+                if let Ok(expires) = (now + self.week).to_rfc2822().parse() {
+                    r.headers_mut().insert(header::EXPIRES, expires);
+                }
+
+                (mime, asset)
+            }
+            None => (mime::TEXT_HTML_UTF_8, self.fallback.clone()),
+        };
+
+        *r.body_mut() = Body::from(asset);
+
+        if let Ok(mime) = mime.as_ref().parse() {
+            r.headers_mut().insert(header::CONTENT_TYPE, mime);
+        }
+
+        r
     }
 
     async fn handle_call(&self, req: Request<Body>) -> Response<Body> {
@@ -94,35 +261,51 @@ impl Handler {
         let mut it = uri.path().split("/");
         it.next();
 
-        let route = (req.method(), (it.next(), it.next()));
+        let path = it.collect::<SmallVec<[_; 8]>>();
 
-        let result = match route {
-            (&Method::GET, (Some(""), None)) => self.handle_index().await,
-            (&Method::GET, (Some("privacy"), None)) => self.handle_privacy().await,
-            (&Method::GET, (Some("player"), Some(login))) => self.handle_player_show(login).await,
-            (&Method::GET, (Some("api"), Some("players"))) => self.player_list().await,
-            (&Method::POST, (Some("api"), Some("player"))) => self.player_update(req).await,
-            _ => future::err(Error::NotFound).await,
+        let result = match (req.method(), &*path) {
+            (&Method::GET, &["api", "auth", "redirect"]) => self.handle_auth_redirect(&req).await,
+            (&Method::POST, &["api", "auth", "login"]) => self.handle_login(&req).await,
+            (&Method::POST, &["api", "auth", "logout"]) => self.handle_logout(&req).await,
+            (&Method::GET, &["api", "auth", "current"]) => self.handle_current(&req).await,
+            (&Method::GET, &["api", "connection-types"]) => self.connection_types_list(&req).await,
+            (&Method::GET, &["api", "connections"]) => self.connections_list(&req).await,
+            (&Method::GET, &["api", "connections", id]) => self.connections_get(&req, id).await,
+            (&Method::POST, &["api", "connections", id, "refresh"]) => {
+                self.connection_refresh(&req, id).await
+            }
+            (&Method::DELETE, &["api", "connections", id]) => {
+                self.connections_delete(&req, id).await
+            }
+            (&Method::POST, &["api", "connections", id]) => self.connections_create(&req, id).await,
+            (&Method::POST, &["api", "key"]) => self.create_key(&req).await,
+            (&Method::DELETE, &["api", "key"]) => self.delete_key(&req).await,
+            (&Method::GET, &["api", "key"]) => self.get_key(&req).await,
+            (&Method::GET, &["api", "players"]) => self.player_list().await,
+            (&Method::GET, &["api", "player", id]) => self.player_get(id).await,
+            (&Method::POST, &["api", "player"]) => {
+                drop(path);
+                self.player_update(req).await
+            }
+            (&Method::GET, _) => return self.static_asset(uri.path()),
+            _ => Err(Error::NotFound),
         };
 
         match result {
-            Ok(response) => return response,
+            Ok(mut response) => {
+                response
+                    .headers_mut()
+                    .insert(header::CACHE_CONTROL, "no-cache".parse().unwrap());
+                return response;
+            }
             Err(e) => {
                 let result = match e {
-                    Error::BadRequest(e) => {
-                        log::error!("BAD REQUEST: {}", e);
-                        bad_request()
-                    }
-                    Error::NotFound => {
-                        let mut r = Response::new(Body::from("No such page :("));
-                        *r.status_mut() = StatusCode::NOT_FOUND;
-                        return r;
-                    }
+                    Error::BadRequest(message) => http_error(StatusCode::BAD_REQUEST, &message),
+                    Error::NotFound => http_error(StatusCode::NOT_FOUND, "Not Found"),
+                    Error::Unauthorized => http_error(StatusCode::UNAUTHORIZED, "Unauthorized"),
                     Error::Error(e) => {
-                        log::error!("error: {}", e);
-                        let mut r = Response::new(Body::from("server error"));
-                        *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                        return r;
+                        log::error!("Internal Server Error: {}", e);
+                        http_error(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
                     }
                 };
 
@@ -130,13 +313,13 @@ impl Handler {
                     Ok(result) => result,
                     Err(Error::Error(e)) => {
                         log::error!("error: {}", e);
-                        let mut r = Response::new(Body::from("server error"));
+                        let mut r = Response::new(Body::from("Internal Server Error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         return r;
                     }
                     Err(_) => {
                         log::error!("unknown error :(");
-                        let mut r = Response::new(Body::from("server error"));
+                        let mut r = Response::new(Body::from("Internal Server Error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         return r;
                     }
@@ -173,50 +356,216 @@ impl Service<Request<Body>> for Server {
 impl Handler {
     const MAX_BYTES: usize = 10_000;
 
-    /// Handles the index page.
-    pub async fn handle_index(&self) -> Result<Response<Body>, Error> {
-        let players = self.players.read().expect("poisoned");
+    /// Get the token with the given ID.
+    async fn connection_refresh(
+        &self,
+        req: &Request<Body>,
+        id: &str,
+    ) -> Result<Response<Body>, Error> {
+        let session = self.verify(req)?;
 
-        let players = {
-            let mut out = Vec::new();
+        let c = self.db.get_connection(&session.user, id)?;
 
-            for name in players.keys() {
-                out.push(Player {
-                    name: name.as_str(),
-                })
-            }
-
-            out
+        let c = match c {
+            Some(c) => c,
+            None => return json_ok(&Export { token: None }),
         };
 
-        let data = Data {
-            github_url: GITHUB_URL,
-            players: players,
+        let flow = match self.flows.get(&c.token.flow_id) {
+            Some(flow) => flow,
+            None => return json_ok(&Export { token: None }),
         };
 
-        let body = self.reg.render("index", &data)?;
-        return html(body);
+        let token = flow.refresh_token(&c.token.refresh_token).await?;
 
-        #[derive(serde::Serialize)]
-        struct Data<'a> {
-            github_url: &'static str,
-            players: Vec<Player<'a>>,
-        }
+        self.db.add_connection(
+            &session.user,
+            &db::Connection {
+                id: id.to_string(),
+                token: token.clone(),
+            },
+        )?;
 
-        #[derive(serde::Serialize)]
-        struct Player<'a> {
-            name: &'a str,
+        return json_ok(&Export {
+            token: Some(token.as_exported()),
+        });
+
+        #[derive(Serialize)]
+        struct Export<'a> {
+            token: Option<oauth2::ExportedToken<'a>>,
         }
     }
 
-    /// Handles the index page.
-    pub async fn handle_privacy(&self) -> Result<Response<Body>, Error> {
-        let data = Data {};
-        let body = self.reg.render("privacy", &data)?;
-        return html(body);
+    /// Get the token with the given ID.
+    async fn connections_get(
+        &self,
+        req: &Request<Body>,
+        id: &str,
+    ) -> Result<Response<Body>, Error> {
+        let session = self.verify(req)?;
 
-        #[derive(serde::Serialize)]
-        struct Data {}
+        let c = self.db.get_connection(&session.user, id)?;
+
+        let token = match c.as_ref() {
+            Some(c) => Some(c.token.as_exported()),
+            None => None,
+        };
+
+        return json_ok(&Export { token });
+
+        #[derive(Serialize)]
+        struct Export<'a> {
+            token: Option<oauth2::ExportedToken<'a>>,
+        }
+    }
+
+    /// Get a list of connection types.
+    async fn connection_types_list(&self, _: &Request<Body>) -> Result<Response<Body>, Error> {
+        let mut out = Vec::new();
+
+        for client_config in &self.config.oauth2.flows {
+            out.push(Connection {
+                ty: client_config.ty,
+                id: &client_config.id,
+                title: &client_config.title,
+                description: &client_config.description,
+            });
+        }
+
+        return json_ok(&out);
+
+        #[derive(Serialize)]
+        pub struct Connection<'a> {
+            #[serde(rename = "type")]
+            ty: oauth2::FlowType,
+            id: &'a str,
+            title: &'a str,
+            description: &'a str,
+        }
+    }
+
+    /// List connections for the current user.
+    async fn connections_list(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+        let session = self.verify(req)?;
+
+        let connections = self.db.connections_by_user(&session.user)?;
+
+        let connections = connections
+            .iter()
+            .map(|c| Connection {
+                id: &c.id,
+                token: c.token.as_exported(),
+            })
+            .collect::<Vec<_>>();
+
+        return json_ok(&connections);
+
+        #[derive(Serialize)]
+        pub struct Connection<'a> {
+            id: &'a str,
+            token: oauth2::ExportedToken<'a>,
+        }
+    }
+
+    /// Delete the specified connection.
+    async fn connections_delete(
+        &self,
+        req: &Request<Body>,
+        id: &str,
+    ) -> Result<Response<Body>, Error> {
+        let session = self.verify(req)?;
+
+        self.db.delete_connection(&session.user, id)?;
+        json_empty()
+    }
+
+    /// List connections for the current user.
+    async fn connections_create(
+        &self,
+        req: &Request<Body>,
+        id: &str,
+    ) -> Result<Response<Body>, Error> {
+        let session = self.verify(req)?;
+
+        let flow = match self.flows.get(id).cloned() {
+            Some(flow) => flow,
+            None => {
+                return Err(Error::bad_request(format!(
+                    "unsupported connection: {}",
+                    id
+                )))
+            }
+        };
+
+        let exchange_token = flow.exchange_token();
+
+        let r = json_ok(&Login {
+            auth_url: &exchange_token.auth_url,
+        })?;
+
+        self.pending_tokens.lock().insert(
+            exchange_token.csrf_token.secret().to_string(),
+            PendingToken {
+                created_at: Utc::now(),
+                flow,
+                exchange_token,
+                action: Action::Connect(Connect {
+                    user: session.user.to_string(),
+                    id: String::from(id),
+                    return_to: referer(req)?,
+                }),
+            },
+        );
+
+        return Ok(r);
+
+        #[derive(Serialize)]
+        pub struct Login<'a> {
+            auth_url: &'a Url,
+        }
+    }
+
+    /// Generate a new key.
+    async fn create_key(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+        let session = self.verify(req)?;
+
+        use ring::rand::SecureRandom as _;
+
+        let mut buf = [0u8; 32];
+        self.random
+            .fill(&mut buf)
+            .map_err(|_| format_err!("failed to generate random key"))?;
+        let key = base64::encode(&buf);
+        self.db.insert_key(&session.user, &key)?;
+
+        return json_ok(&KeyInfo { key });
+
+        #[derive(Serialize)]
+        struct KeyInfo {
+            key: String,
+        }
+    }
+
+    /// Delete the current key.
+    async fn delete_key(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+        let session = self.verify(req)?;
+
+        self.db.delete_key(&session.user)?;
+        return json_empty();
+    }
+
+    /// Get the current key.
+    async fn get_key(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+        let session = self.verify(req)?;
+
+        let key = self.db.get_key(&session.user)?;
+
+        return json_ok(&KeyInfo { key });
+
+        #[derive(Serialize)]
+        struct KeyInfo {
+            key: Option<String>,
+        }
     }
 
     /// Handle listing players.
@@ -226,67 +575,166 @@ impl Handler {
         json_ok(&keys)
     }
 
-    /// Handle a playlist update.
-    async fn handle_player_show(&self, login: &str) -> Result<Response<Body>, Error> {
+    /// Get information for a single player.
+    async fn player_get(&self, id: &str) -> Result<Response<Body>, Error> {
         let players = self.players.read().expect("poisoned");
-
-        let player = players.get(login).ok_or(Error::NotFound)?;
-
-        let data = Data {
-            login: login,
-            player: &player,
-        };
-
-        let body = self.reg.render("player", &data)?;
-        return html(body);
-
-        #[derive(serde::Serialize)]
-        struct Data<'a> {
-            login: &'a str,
-            player: &'a Player,
-        }
+        let player = players.get(id);
+        json_ok(&player)
     }
 
-    fn extract_token<B>(&self, req: &Request<B>) -> Option<String> {
-        let header = match req.headers().get(header::AUTHORIZATION) {
-            Some(auth) => auth,
-            None => return None,
+    /// Verify the specified request.
+    fn verify<B>(&self, req: &Request<B>) -> Result<session::SessionData, Error> {
+        let session = self
+            .session
+            .verify(req)?
+            .ok_or_else(|| Error::Unauthorized)?;
+        Ok(session)
+    }
+
+    /// Handle auth redirect coming back.
+    async fn handle_auth_redirect(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+        let uri = req.uri();
+        let mut r = json_empty()?;
+        *r.status_mut() = StatusCode::TEMPORARY_REDIRECT;
+
+        let query = match uri.query() {
+            Some(query) => query,
+            None => return Err(Error::bad_request("missing query parameters")),
         };
 
-        let string = match header.to_str() {
-            Ok(string) => string,
-            Err(e) => {
-                log::error!("Bad Authorization header: {}", e);
-                return None;
+        let query = serde_urlencoded::from_str::<oauth2::TokenQuery>(query)
+            .map_err(|_| Error::bad_request("bad query parameters"))?;
+
+        let removed = self.pending_tokens.lock().remove(&query.state);
+
+        let PendingToken {
+            flow,
+            exchange_token,
+            action,
+            ..
+        } = match removed {
+            Some(removed) => removed,
+            None => {
+                return Err(Error::bad_request(
+                    "no such session waiting to be authenticated",
+                ))
             }
         };
 
-        let mut it = string.splitn(2, " ");
+        let token = flow.handle_received_token(exchange_token, query).await?;
 
-        match (it.next(), it.next()) {
-            (Some("OAuth"), Some(token)) => Some(token.to_string()),
-            _ => None,
+        let return_to = match action {
+            Action::RegisterOrLogin(action) => {
+                let result = self.auth_twitch_token(token.access_token.secret()).await?;
+
+                self.db.add_connection(
+                    &result.login,
+                    &db::Connection {
+                        id: "login".to_string(),
+                        token,
+                    },
+                )?;
+
+                self.session.set_cookie(
+                    r.headers_mut(),
+                    "session",
+                    session::SessionData { user: result.login },
+                )?;
+
+                action.return_to
+            }
+            Action::Connect(action) => {
+                let session = self.verify(req)?;
+
+                // NB: wrong user received the redirect.
+                if action.user != session.user {
+                    return Err(Error::Unauthorized);
+                }
+
+                self.db.add_connection(
+                    &session.user,
+                    &db::Connection {
+                        id: action.id,
+                        token,
+                    },
+                )?;
+
+                action.return_to
+            }
+        };
+
+        let return_to = match return_to {
+            Some(url) => url.to_string(),
+            None => self.config.base_url.to_string(),
+        };
+
+        r.headers_mut().insert(
+            header::LOCATION,
+            return_to.parse().map_err(failure::Error::from)?,
+        );
+
+        Ok(r)
+    }
+
+    /// Handle login or registration.
+    async fn handle_login(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+        let exchange_token = self.login_flow.exchange_token();
+
+        let r = json_ok(&Login {
+            auth_url: &exchange_token.auth_url,
+        })?;
+
+        self.pending_tokens.lock().insert(
+            exchange_token.csrf_token.secret().to_string(),
+            PendingToken {
+                created_at: Utc::now(),
+                flow: self.login_flow.clone(),
+                exchange_token,
+                action: Action::RegisterOrLogin(RegisterOrLogin {
+                    return_to: referer(req)?,
+                }),
+            },
+        );
+
+        return Ok(r);
+        #[derive(Serialize)]
+        struct Login<'a> {
+            auth_url: &'a Url,
         }
+    }
+
+    /// Handle clearing cookies for logging out.
+    async fn handle_logout(&self, _: &Request<Body>) -> Result<Response<Body>, Error> {
+        let mut r = json_empty()?;
+        self.session.delete_cookie(r.headers_mut(), "session")?;
+        Ok(r)
+    }
+
+    /// Show the current session.
+    async fn handle_current(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+        json_ok(&self.session.verify(req)?)
     }
 
     /// Handle a playlist update.
     async fn player_update(&self, req: Request<Body>) -> Result<Response<Body>, Error> {
-        let token = match self.extract_token(&req) {
-            Some(token) => token,
+        let session = self.session.verify(&req)?;
+        let twitch_token = extract_twitch_token(&req);
+        let update = receive_json::<PlayerUpdate>(req, Self::MAX_BYTES);
+
+        // NB: need to support special case for backwards compatibility.
+        let (user, update) = match session {
+            Some(session) => (session.user, update.await?),
             None => {
-                return Err(Error::BadRequest(format_err!(
-                    "Missing token from Authorization header"
-                )));
+                let token = twitch_token.ok_or_else(|| Error::Unauthorized)?;
+                let (auth, update) =
+                    future::try_join(self.auth_twitch_token(&token), update).await?;
+                (auth.login, update)
             }
         };
 
-        let req = receive_json::<PlayerUpdate>(req, Self::MAX_BYTES).boxed();
-
-        let (update, auth) = future::try_join(req, self.auth(&token)).await?;
-
         {
             let mut players = self.players.write().expect("poisoned");
-            let player = players.entry(auth.login).or_insert_with(Default::default);
+            let player = players.entry(user).or_insert_with(Default::default);
             player.current = update.current.map(Item::into_player_item);
             player.items = update
                 .items
@@ -295,9 +743,9 @@ impl Handler {
                 .collect();
         }
 
-        return json_ok(&ResponseBody {});
+        return json_empty();
 
-        #[derive(Debug, serde::Deserialize)]
+        #[derive(Debug, Deserialize)]
         struct PlayerUpdate {
             /// Current song.
             #[serde(default)]
@@ -306,10 +754,29 @@ impl Handler {
             #[serde(default)]
             items: Vec<Item>,
         }
+
+        fn extract_twitch_token<B>(req: &Request<B>) -> Option<String> {
+            let header = match req.headers().get(header::AUTHORIZATION) {
+                Some(auth) => auth,
+                None => return None,
+            };
+
+            let string = match header.to_str() {
+                Ok(string) => string,
+                _ => return None,
+            };
+
+            let mut it = string.splitn(2, " ");
+
+            match (it.next(), it.next()) {
+                (Some("OAuth"), Some(token)) => Some(token.to_string()),
+                _ => None,
+            }
+        }
     }
 
     /// Test for authentication, if enabled.
-    async fn auth(&self, token: &str) -> Result<twitch::ValidateToken, Error> {
+    async fn auth_twitch_token(&self, token: &str) -> Result<twitch::ValidateToken, Error> {
         if self.no_auth {
             return Ok(twitch::ValidateToken {
                 client_id: String::from("client_id"),
@@ -327,13 +794,33 @@ impl Handler {
     }
 }
 
-#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+/// Extract referer.
+fn referer<B>(req: &Request<B>) -> Result<Option<Url>, Error> {
+    let referer = match req.headers().get(header::REFERER) {
+        Some(referer) => referer,
+        None => return Ok(None),
+    };
+
+    let referer = match std::str::from_utf8(referer.as_ref()) {
+        Ok(referer) => referer,
+        Err(_) => return Ok(None),
+    };
+
+    let referer = match referer.parse() {
+        Ok(referer) => referer,
+        Err(_) => return Ok(None),
+    };
+
+    Ok(Some(referer))
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
 struct Player {
     current: Option<PlayerItem>,
     items: Vec<PlayerItem>,
 }
 
-#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct PlayerItem {
     /// Name of the song.
     name: String,
@@ -349,7 +836,7 @@ pub struct PlayerItem {
     duration: String,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Item {
     /// Name of the song.
     name: String,
@@ -383,23 +870,30 @@ impl Item {
     }
 }
 
-#[derive(Debug, Default, serde::Serialize)]
-struct ResponseBody {}
-
 /// Construct a JSON OK response.
-pub fn bad_request() -> Result<Response<Body>, Error> {
-    let body = serde_json::to_string(&ResponseBody::default())?;
+pub fn http_error(status: StatusCode, message: &str) -> Result<Response<Body>, Error> {
+    let body = serde_json::to_string(&Error {
+        status: status.as_u16(),
+        message,
+    })
+    .map_err(failure::Error::from)?;
 
     let mut r = Response::new(Body::from(body));
 
-    *r.status_mut() = StatusCode::BAD_REQUEST;
+    *r.status_mut() = status;
 
     r.headers_mut().insert(
         header::CONTENT_TYPE,
         "application/json".parse().expect("valid header value"),
     );
 
-    Ok(r)
+    return Ok(r);
+
+    #[derive(Debug, Default, Serialize)]
+    struct Error<'a> {
+        status: u16,
+        message: &'a str,
+    }
 }
 
 /// Concats the body and makes sure the request is not too large.
@@ -412,39 +906,61 @@ where
     let mut bytes = Vec::new();
     let mut received = 0;
 
-    while let Some(chunk) = body.next().await.transpose()? {
+    while let Some(chunk) = body
+        .next()
+        .await
+        .transpose()
+        .map_err(failure::Error::from)?
+    {
         received += chunk.len();
 
         if received > max_bytes {
-            return Err(Error::BadRequest(format_err!("request too large")));
+            return Err(Error::bad_request("request too large"));
         }
 
         bytes.extend(chunk);
     }
 
-    serde_json::from_slice::<T>(&bytes).map_err(|e| Error::BadRequest(e.into()))
+    match serde_json::from_slice::<T>(&bytes) {
+        Ok(body) => Ok(body),
+        Err(e) => Err(Error::bad_request(format!("malformed body: {}", e))),
+    }
 }
 
 /// Construct a HTML response.
 pub fn html(body: String) -> Result<Response<Body>, Error> {
     let mut r = Response::new(Body::from(body));
 
-    r.headers_mut()
-        .insert(header::CONTENT_TYPE, "text/html; charset=utf-8".parse()?);
+    r.headers_mut().insert(
+        header::CONTENT_TYPE,
+        "text/html; charset=utf-8"
+            .parse()
+            .map_err(failure::Error::from)?,
+    );
 
     Ok(r)
 }
 
 /// Construct a JSON OK response.
-pub fn json_ok(body: &impl serde::Serialize) -> Result<Response<Body>, Error> {
-    let body = serde_json::to_string(body)?;
+pub fn json_ok(body: &impl Serialize) -> Result<Response<Body>, Error> {
+    let body = serde_json::to_string(body).map_err(failure::Error::from)?;
 
     let mut r = Response::new(Body::from(body));
 
-    r.headers_mut()
-        .insert(header::CONTENT_TYPE, "application/json".parse()?);
+    r.headers_mut().insert(
+        header::CONTENT_TYPE,
+        "application/json".parse().map_err(failure::Error::from)?,
+    );
 
     Ok(r)
+}
+
+/// Construct an empty json response.
+fn json_empty() -> Result<Response<Body>, Error> {
+    return json_ok(&Empty {});
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct Empty {}
 }
 
 #[derive(Debug)]

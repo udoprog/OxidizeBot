@@ -1,6 +1,6 @@
 //! Utilities for dealing with dynamic configuration and settings.
 
-use crate::{auth::Scope, db, oauth2, prelude::*, utils};
+use crate::{auth::Scope, db, prelude::*, utils};
 use chrono_tz::Tz;
 use diesel::prelude::*;
 use futures::ready;
@@ -1064,8 +1064,6 @@ pub struct SelectOption {
 pub enum Kind {
     #[serde(rename = "raw")]
     Raw,
-    #[serde(rename = "oauth2-config")]
-    Oauth2Config,
     #[serde(rename = "duration")]
     Duration,
     #[serde(rename = "bool")]
@@ -1121,7 +1119,6 @@ impl Type {
 
         let value = match self.kind {
             Raw => serde_json::from_str(s)?,
-            Oauth2Config => serde_json::from_str(s)?,
             Duration => {
                 let d = str::parse::<utils::Duration>(s)?;
                 Value::String(d.to_string())
@@ -1211,7 +1208,6 @@ impl Type {
 
         match (&self.kind, other) {
             (Raw, _) => true,
-            (Oauth2Config, _) => serde_json::from_value::<oauth2::Config>(other.clone()).is_ok(),
             (Duration, Value::String(ref s)) => str::parse::<utils::Duration>(s).is_ok(),
             (Bool, Value::Bool(..)) => true,
             (Number, Value::Number(..)) => true,
@@ -1253,7 +1249,6 @@ impl fmt::Display for Type {
 
         match &self.kind {
             Raw => write!(fmt, "any")?,
-            Oauth2Config => write!(fmt, "secrets")?,
             Duration => write!(fmt, "duration")?,
             Bool => write!(fmt, "bool")?,
             Number => write!(fmt, "number")?,

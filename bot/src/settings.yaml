@@ -74,6 +74,10 @@ types:
   remote/api-url:
     doc: Endpoint to use for sending API updates to. One is provided for free at `https://setbac.tv`.
     type: {id: string, optional: true}
+  remote/secret-key:
+    doc: Secret key to use to authenticate against remote API.
+    type: {id: string, optional: true}
+    secret: true
   remote/enabled:
     title: Remote Updates
     feature: true
@@ -274,10 +278,6 @@ types:
   swearjar/cooldown:
     doc: Minimum cooldown between each `!swearjar` invocation.
     type: {id: duration}
-  secrets/oauth2/spotify/config:
-    doc: OAuth 2.0 configuration for Spotify authentication.
-    type: {id: "oauth2-config", optional: true}
-    secret: true
   secrets/oauth2/spotify/token:
     doc: Stored token for Spotify authentication.
     type: {id: raw, optional: true}

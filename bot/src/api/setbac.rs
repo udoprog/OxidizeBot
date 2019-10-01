@@ -10,10 +10,72 @@ use crate::{
     settings::Settings,
     utils,
 };
+use chrono::{DateTime, Utc};
+use failure::Error;
 use reqwest::{header, r#async::Client, Method, Url};
-use std::sync::Arc;
+use serde::{Deserialize, Serialize};
+use std::{sync::Arc, time::Duration};
 
-static DEFAULT_API_URL: &'static str = "https://setbac.tv";
+const DEFAULT_API_URL: &str = "https://setbac.tv";
+
+/// A token that comes out of a token workflow.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Token {
+    /// The client identifier that generated the token.
+    pub client_id: String,
+    /// Flow that generated the token.
+    pub flow_id: String,
+    /// Access token.
+    pub access_token: ::oauth2::AccessToken,
+    /// When the token was refreshed.
+    pub refreshed_at: DateTime<Utc>,
+    /// Expires in seconds.
+    pub expires_in: Option<u64>,
+    /// Scopes associated with token.
+    pub scopes: Vec<::oauth2::Scope>,
+}
+
+impl Token {
+    /// The client id that generated the token.
+    pub fn client_id(&self) -> &str {
+        self.client_id.as_str()
+    }
+
+    /// Get the current access token.
+    pub fn access_token(&self) -> &str {
+        self.access_token.secret().as_str()
+    }
+
+    /// Return `true` if the token expires within 30 minutes.
+    pub fn expires_within(&self, within: Duration) -> Result<bool, Error> {
+        let out = match self.expires_in.clone() {
+            Some(expires_in) => {
+                let expires_in = chrono::Duration::seconds(expires_in as i64);
+                let diff = (self.refreshed_at + expires_in) - Utc::now();
+                diff < chrono::Duration::from_std(within)?
+            }
+            None => true,
+        };
+
+        Ok(out)
+    }
+
+    /// Test that token has all the specified scopes.
+    pub fn has_scopes(&self, scopes: &[String]) -> bool {
+        use hashbrown::HashSet;
+
+        let mut scopes = scopes
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<HashSet<String>>();
+
+        for s in &self.scopes {
+            scopes.remove(s.as_ref());
+        }
+
+        scopes.is_empty()
+    }
+}
 
 fn parse_url(url: &str) -> Option<Url> {
     match str::parse(url) {
@@ -27,31 +89,40 @@ fn parse_url(url: &str) -> Option<Url> {
 
 struct RemoteBuilder {
     token: oauth2::SyncToken,
+    injector: Injector,
     global_bus: Arc<bus::Bus<bus::Global>>,
     player: Option<Player>,
     enabled: bool,
     api_url: Option<Url>,
+    secret_key: Option<String>,
 }
 
 impl RemoteBuilder {
     fn init(&self, remote: &mut Remote) {
-        if !self.enabled {
+        if self.enabled {
+            remote.rx = Some(self.global_bus.add_rx());
+
+            remote.player = match self.player.as_ref() {
+                Some(player) => Some(player.clone()),
+                None => None,
+            };
+        } else {
             remote.rx = None;
-            remote.client = None;
-            remote.setbac = None;
-            return;
+            remote.player = None;
         }
 
-        remote.rx = Some(self.global_bus.add_rx());
-
-        remote.client = match self.player.as_ref() {
-            Some(player) => Some(player.clone()),
-            None => None,
-        };
-
         remote.setbac = match self.api_url.as_ref() {
-            Some(api_url) => Some(SetBac::new(self.token.clone(), api_url.clone())),
-            None => None,
+            Some(api_url) => {
+                let setbac =
+                    Setbac::new(self.token.clone(), self.secret_key.clone(), api_url.clone());
+
+                self.injector.update(setbac.clone());
+                Some(setbac)
+            }
+            None => {
+                self.injector.clear::<Setbac>();
+                None
+            }
         };
     }
 }
@@ -59,8 +130,8 @@ impl RemoteBuilder {
 #[derive(Default)]
 struct Remote {
     rx: Option<bus::Reader<bus::Global>>,
-    client: Option<player::Player>,
-    setbac: Option<SetBac>,
+    player: Option<player::Player>,
+    setbac: Option<Setbac>,
 }
 
 /// Run update loop shipping information to the remote server.
@@ -69,7 +140,7 @@ pub fn run(
     injector: &Injector,
     token: oauth2::SyncToken,
     global_bus: Arc<bus::Bus<bus::Global>>,
-) -> Result<impl Future<Output = Result<(), failure::Error>>, failure::Error> {
+) -> Result<impl Future<Output = Result<(), Error>>, Error> {
     let settings = settings.scoped("remote");
 
     let (mut api_url_stream, api_url) = settings
@@ -77,16 +148,20 @@ pub fn run(
         .or(Some(String::from(DEFAULT_API_URL)))
         .optional()?;
 
+    let (mut secret_key_stream, secret_key) = settings.stream("secret-key").optional()?;
+
     let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(false)?;
 
     let (mut player_stream, player) = injector.stream::<Player>();
 
     let mut remote_builder = RemoteBuilder {
         token,
+        injector: injector.clone(),
         global_bus,
         player: None,
         enabled: false,
         api_url: None,
+        secret_key,
     };
 
     remote_builder.enabled = enabled;
@@ -102,6 +177,10 @@ pub fn run(
     Ok(async move {
         loop {
             futures::select! {
+                update = secret_key_stream.select_next_some() => {
+                    remote_builder.secret_key = update;
+                    remote_builder.init(&mut remote);
+                }
                 update = player_stream.select_next_some() => {
                     remote_builder.player = update;
                     remote_builder.init(&mut remote);
@@ -130,8 +209,8 @@ pub fn run(
                         None => continue,
                     };
 
-                    let client = match remote.client.as_ref() {
-                        Some(client) => client,
+                    let player = match remote.player.as_ref() {
+                        Some(player) => player,
                         None => continue,
                     };
 
@@ -139,9 +218,9 @@ pub fn run(
 
                     let mut update = PlayerUpdate::default();
 
-                    update.current = client.current().map(|c| c.item.into());
+                    update.current = player.current().map(|c| c.item.into());
 
-                    for i in client.list() {
+                    for i in player.list() {
                         update.items.push(i.into());
                     }
 
@@ -154,36 +233,50 @@ pub fn run(
     })
 }
 
-/// API integration.
-#[derive(Clone, Debug)]
-pub struct SetBac {
+pub struct Inner {
     client: Client,
     api_url: Url,
     token: oauth2::SyncToken,
+    secret_key: Option<String>,
 }
 
-impl SetBac {
+/// API integration.
+#[derive(Clone)]
+pub struct Setbac {
+    inner: Arc<Inner>,
+}
+
+impl Setbac {
     /// Create a new API integration.
-    pub fn new(token: oauth2::SyncToken, api_url: Url) -> Self {
-        SetBac {
-            client: Client::new(),
-            api_url,
-            token,
+    pub fn new(token: oauth2::SyncToken, secret_key: Option<String>, api_url: Url) -> Self {
+        Setbac {
+            inner: Arc::new(Inner {
+                client: Client::new(),
+                api_url,
+                token,
+                secret_key,
+            }),
         }
     }
 
     /// Get request against API.
     fn request(&self, method: Method, path: &[&str]) -> RequestBuilder {
-        let mut url = self.api_url.clone();
+        let mut url = self.inner.api_url.clone();
         url.path_segments_mut().expect("bad base").extend(path);
 
-        RequestBuilder::new(self.client.clone(), method, url)
-            .token(self.token.clone())
-            .use_oauth2_header()
+        let mut builder = RequestBuilder::new(self.inner.client.clone(), method, url);
+
+        if let Some(secret_key) = self.inner.secret_key.as_ref() {
+            builder = builder.header(header::AUTHORIZATION, &format!("key:{}", secret_key));
+        } else {
+            builder = builder.token(self.inner.token.clone()).use_oauth2_header();
+        }
+
+        builder
     }
 
     /// Update the channel information.
-    pub async fn player_update(&self, request: PlayerUpdate) -> Result<(), failure::Error> {
+    pub async fn player_update(&self, request: PlayerUpdate) -> Result<(), Error> {
         let body = serde_json::to_vec(&request)?;
 
         let req = self
@@ -194,9 +287,35 @@ impl SetBac {
         let _ = req.execute().await?.ok()?;
         Ok(())
     }
+
+    /// Get the token corresponding to the given flow.
+    pub async fn get_token(&self, flow_id: &str) -> Result<Option<Token>, Error> {
+        let req = self
+            .request(Method::GET, &["api", "connections", flow_id])
+            .header(header::CONTENT_TYPE, "application/json");
+
+        let token = req.execute().await?.json::<TokenResponse>()?;
+        Ok(token.token)
+    }
+
+    /// Refresh the token corresponding to the given flow.
+    pub async fn refresh_token(&self, flow_id: &str) -> Result<Option<Token>, Error> {
+        let req = self
+            .request(Method::POST, &["api", "connections", flow_id, "refresh"])
+            .header(header::CONTENT_TYPE, "application/json");
+
+        let token = req.execute().await?.json::<TokenResponse>()?;
+        Ok(token.token)
+    }
 }
 
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct TokenResponse {
+    #[serde(default)]
+    token: Option<Token>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PlayerUpdate {
     /// Current song.
     #[serde(default)]
@@ -206,7 +325,7 @@ pub struct PlayerUpdate {
     items: Vec<Item>,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Item {
     /// Name of the song.
     name: String,

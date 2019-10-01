@@ -4,8 +4,8 @@
 use backoff::backoff::Backoff as _;
 use failure::{bail, format_err, Error, ResultExt};
 use oxidize::{
-    api, auth, bus, config, db, injector, irc, message_log, module, oauth2, player, prelude::*,
-    settings, storage, stream_info, sys, tracing_utils, updater, utils, web,
+    api, auth, bus, db, injector, irc, message_log, module, oauth2, player, prelude::*, settings,
+    storage, stream_info, sys, tracing_utils, updater, utils, web,
 };
 use parking_lot::RwLock;
 use std::{
@@ -539,22 +539,10 @@ async fn try_main(
     let token_settings = settings.scoped("secrets/oauth2");
 
     let (spotify_token, future) = {
-        let flow = config::new_oauth2_flow::<config::Spotify>(
-            web.clone(),
-            "spotify",
-            "spotify",
-            &token_settings,
-        )?
-        .with_scopes(vec![
-            String::from("playlist-read-collaborative"),
-            String::from("playlist-read-private"),
-            String::from("user-library-read"),
-            String::from("user-modify-playback-state"),
-            String::from("user-read-playback-state"),
-        ])
-        .build(String::from("Spotify"))?;
+        let settings = token_settings.scoped("spotify");
+        let key = injector::Key::tagged(oauth2::TokenId::Spotify)?;
 
-        flow.into_token(injector::Key::tagged(oauth2::TokenId::Spotify)?, &injector)?
+        oauth2::new_token("spotify", "Spotify", settings, injector.clone(), key)?
     };
 
     futures.push(
@@ -564,13 +552,10 @@ async fn try_main(
     );
 
     let (youtube_token, future) = {
-        let flow = oauth2::youtube(web.clone(), token_settings.scoped("youtube"))?
-            .with_scopes(vec![String::from(
-                "https://www.googleapis.com/auth/youtube.readonly",
-            )])
-            .build(String::from("YouTube"))?;
+        let settings = token_settings.scoped("youtube");
+        let key = injector::Key::tagged(oauth2::TokenId::YouTube)?;
 
-        flow.into_token(injector::Key::tagged(oauth2::TokenId::YouTube)?, &injector)?
+        oauth2::new_token("youtube", "YouTube", settings, injector.clone(), key)?
     };
 
     futures.push(
@@ -580,11 +565,10 @@ async fn try_main(
     );
 
     let (nightbot_token, future) = {
-        let flow = oauth2::nightbot(web.clone(), token_settings.scoped("nightbot"))?
-            .with_scopes(vec![String::from("channel_send")])
-            .build(String::from("NightBot"))?;
+        let settings = token_settings.scoped("nightbot");
+        let key = injector::Key::tagged(oauth2::TokenId::NightBot)?;
 
-        flow.into_token(injector::Key::tagged(oauth2::TokenId::NightBot)?, &injector)?
+        oauth2::new_token("nightbot", "NightBot", settings, injector.clone(), key)?
     };
 
     futures.push(
@@ -594,18 +578,15 @@ async fn try_main(
     );
 
     let (streamer_token, future) = {
-        let flow = oauth2::twitch(web.clone(), token_settings.scoped("twitch-streamer"))?
-            .with_scopes(vec![
-                String::from("user_read"),
-                String::from("channel_editor"),
-                String::from("channel_read"),
-                String::from("channel:read:subscriptions"),
-            ])
-            .build(String::from("Twitch Streamer"))?;
+        let settings = token_settings.scoped("twitch-streamer");
+        let key = injector::Key::tagged(oauth2::TokenId::TwitchStreamer)?;
 
-        flow.into_token(
-            injector::Key::tagged(oauth2::TokenId::TwitchStreamer)?,
-            &injector,
+        oauth2::new_token(
+            "twitch-streamer",
+            "Twitch Streamer",
+            settings,
+            injector.clone(),
+            key,
         )?
     };
 
@@ -616,25 +597,10 @@ async fn try_main(
     );
 
     let (_, future) = {
-        let flow = oauth2::twitch(web.clone(), token_settings.scoped("twitch-bot"))?
-            .with_scopes(vec![
-                // Read user information on bot.
-                String::from("user_read"),
-                // Perform moderator actions in channel.
-                String::from("channel:moderate"),
-                // Edit chat.
-                String::from("chat:edit"),
-                // Read chat.
-                String::from("chat:read"),
-                // Edit clips.
-                String::from("clips:edit"),
-            ])
-            .build(String::from("Twitch Bot"))?;
+        let settings = token_settings.scoped("twitch-bot");
+        let key = injector::Key::tagged(oauth2::TokenId::TwitchBot)?;
 
-        flow.into_token(
-            injector::Key::tagged(oauth2::TokenId::TwitchBot)?,
-            &injector,
-        )?
+        oauth2::new_token("twitch-bot", "Twitch Bot", settings, injector.clone(), key)?
     };
 
     futures.push(
