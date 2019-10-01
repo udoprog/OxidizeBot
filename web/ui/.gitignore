@@ -1,0 +1,3 @@
+/node_modules/
+# todo: remove this once distributed
+/dist/

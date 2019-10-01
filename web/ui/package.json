@@ -17,16 +17,10 @@
     "@fortawesome/free-solid-svg-icons": "^5.9.0",
     "@fortawesome/react-fontawesome": "^0.1.4",
     "bootstrap": "^4.3.1",
-    "moment-timezone": "^0.5.26",
-    "npm": "^6.10.2",
     "react": "^16.8.6",
     "react-bootstrap": "^1.0.0-beta.10",
     "react-bootstrap-typeahead": "^3.4.6",
-    "react-dom": "^16.8.6",
-    "react-markdown": "^4.1.0",
-    "react-websocket": "^2.0.1",
-    "semver": "^6.3.0",
-    "yaml": "^1.6.0"
+    "react-dom": "^16.8.6"
   },
   "devDependencies": {
     "@babel/core": "^7.5.5",
