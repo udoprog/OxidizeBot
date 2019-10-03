@@ -5,7 +5,7 @@ import React from "react";
 import ReactDOM from "react-dom";
 import {BrowserRouter as Router, Route, Link, withRouter} from "react-router-dom";
 import {Container, Row, Col, Navbar, Nav, NavDropdown, Alert} from "react-bootstrap";
-import Authentication from "./components/Authentication.js";
+import Connections from "./components/Connections.js";
 import Devices from "./components/Devices.js";
 import AfterStreams from "./components/AfterStreams.js";
 import Overlay from "./components/Overlay.js";
@@ -24,11 +24,12 @@ import Authorization from "./components/Authorization";
 import ConfigurationPrompt from "./components/ConfigurationPrompt";
 import * as semver from "semver";
 import logo from "./logo.png";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 
 /**
  * Required spotify configuration.
  */
-const SPOTIFY_CONFIG = "secrets/oauth2/spotify/config";
+const SECRET_KEY_CONFIG = "remote/secret-key";
 const RouteLayout = withRouter(props => <Layout {...props} />)
 
 class AfterStreamsPage extends React.Component {
@@ -172,12 +173,31 @@ class AuthorizedPage extends React.Component {
   }
 }
 
+function HeaderAction(props) {
+  let link = {};
+  let icon = {};
+
+  if (!!props.icon) {
+    icon.icon = props.icon;
+  }
+
+  if (!!props.to) {
+    link.to = props.to;
+  }
+
+  return <Link className="header-action" {...link}><FontAwesomeIcon {...icon} />&nbsp;{props.children}</Link>;
+}
+
 class IndexPage extends React.Component {
   constructor(props) {
     super(props);
     this.api = new Api(utils.apiUrl());
+
+    let q = new URLSearchParams(props.location.search);
+
     this.state = {
       version: null,
+      receivedKey: q.get("received-key") === "true",
     };
   }
 
@@ -219,7 +239,7 @@ class IndexPage extends React.Component {
     }
 
     return (
-      <Alert variant="warning" style={{textAlign: "center"}}>
+      <Alert variant="warning" className="center">
         <div className="mb-2" style={{fontSize: "150%"}}>
           OxidizeBot <b>{latest.version}</b> is available (current: <b>{version}</b>).
         </div>
@@ -233,6 +253,14 @@ class IndexPage extends React.Component {
   }
 
   render() {
+    let receivedKey = null;
+
+    if (this.state.receivedKey) {
+      receivedKey = <Alert variant="info" className="center">
+        <FontAwesomeIcon icon="key" /> Received new <b>Secret Key</b> from setbac.tv
+      </Alert>;
+    }
+
     let versionInfo = this.versionInfo();
 
     return (
@@ -245,25 +273,29 @@ class IndexPage extends React.Component {
 
         <Row>
           <Col lg="6">
-            <Authentication api={this.api} />
+            <h4>
+              Connections
+              <HeaderAction to="/modules/remote" icon="wrench">Configure</HeaderAction>
+            </h4>
+
+            {receivedKey}
+
+            <Connections api={this.api} />
           </Col>
 
           <Col lg="6">
+            <h4>Devices</h4>
+
             <Devices api={this.api} />
           </Col>
         </Row>
 
-        <ConfigurationPrompt api={this.api} hideWhenConfigured={true} filter={{key: [SPOTIFY_CONFIG]}}>
-          <h4><b>Action Required</b>: OAuth 2.0 Configuration for Spotify</h4>
+        <ConfigurationPrompt api={this.api} hideWhenConfigured={true} filter={{key: [SECRET_KEY_CONFIG]}}>
+          <h4><b>Action Required</b>: Configure your connection to <a href="https://setbac.tv">setbac.tv</a></h4>
 
-          <p>
-            You will have <a href="https://developer.spotify.com/dashboard/">register an application with Spotify</a>
-          </p>
+          Go to <a href="https://setbac.tv/connections">your connections</a> and login using Twitch.
 
-          <p>
-            You must configure the following redirect URL:<br />
-            <code>http://localhost:12345/redirect</code>
-          </p>
+          Generate a new key and configure it below.
         </ConfigurationPrompt>
       </RouteLayout>
     );

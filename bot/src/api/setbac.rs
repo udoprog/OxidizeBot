@@ -35,6 +35,34 @@ pub struct Token {
     pub scopes: Vec<::oauth2::Scope>,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ConnectionMeta {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub hash: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Connection {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub hash: String,
+    pub token: Token,
+}
+
+impl Connection {
+    pub fn as_meta(&self) -> ConnectionMeta {
+        ConnectionMeta {
+            id: self.id.clone(),
+            title: self.title.clone(),
+            description: self.description.clone(),
+            hash: self.hash.clone(),
+        }
+    }
+}
+
 impl Token {
     /// The client id that generated the token.
     pub fn client_id(&self) -> &str {
@@ -289,30 +317,49 @@ impl Setbac {
     }
 
     /// Get the token corresponding to the given flow.
-    pub async fn get_token(&self, flow_id: &str) -> Result<Option<Token>, Error> {
+    pub async fn get_connection(&self, id: &str) -> Result<Option<Connection>, Error> {
         let req = self
-            .request(Method::GET, &["api", "connections", flow_id])
+            .request(Method::GET, &["api", "connections", id])
             .header(header::CONTENT_TYPE, "application/json");
 
-        let token = req.execute().await?.json::<TokenResponse>()?;
-        Ok(token.token)
+        let token = req.execute().await?.json::<Data<Connection>>()?;
+        Ok(token.data)
+    }
+
+    /// Get the token corresponding to the given flow.
+    pub async fn get_connection_meta(
+        &self,
+        flow_id: &str,
+    ) -> Result<Option<ConnectionMeta>, Error> {
+        let req = self
+            .request(Method::GET, &["api", "connections", flow_id])
+            .query_param("format", "meta")
+            .header(header::CONTENT_TYPE, "application/json");
+
+        let token = req.execute().await?.json::<Data<ConnectionMeta>>()?;
+        Ok(token.data)
     }
 
     /// Refresh the token corresponding to the given flow.
-    pub async fn refresh_token(&self, flow_id: &str) -> Result<Option<Token>, Error> {
+    pub async fn refresh_connection(&self, id: &str) -> Result<Option<Connection>, Error> {
         let req = self
-            .request(Method::POST, &["api", "connections", flow_id, "refresh"])
+            .request(Method::POST, &["api", "connections", id, "refresh"])
             .header(header::CONTENT_TYPE, "application/json");
 
-        let token = req.execute().await?.json::<TokenResponse>()?;
-        Ok(token.token)
+        let token = req.execute().await?.json::<Data<Connection>>()?;
+        Ok(token.data)
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct TokenResponse {
-    #[serde(default)]
-    token: Option<Token>,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Data<T> {
+    data: Option<T>,
+}
+
+impl<T> Default for Data<T> {
+    fn default() -> Self {
+        Self { data: None }
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

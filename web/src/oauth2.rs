@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use url::Url;
 
+/// The configuration for a single flow.
 #[derive(Debug, Clone, Deserialize)]
-pub struct ClientConfig {
+pub struct FlowConfig {
     pub id: String,
     #[serde(rename = "type")]
     pub ty: FlowType,
@@ -25,7 +26,7 @@ pub struct ClientConfig {
     extra_params: HashMap<String, String>,
 }
 
-impl ClientConfig {
+impl FlowConfig {
     /// Convert configuration into Flow.
     pub fn as_flow(&self, base_url: &Url, config: &Config) -> Result<Flow, Error> {
         let mut client = Client::new(self.client_id.clone(), self.auth_url.clone())?;
@@ -49,6 +50,7 @@ impl ClientConfig {
             client,
             self.client_id.clone(),
             self.client_secret.clone(),
+            self.clone(),
         );
 
         for (key, value) in &self.extra_params {
@@ -62,8 +64,8 @@ impl ClientConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub redirect_path: String,
-    pub login: ClientConfig,
-    pub flows: Vec<ClientConfig>,
+    pub login: FlowConfig,
+    pub flows: Vec<FlowConfig>,
 }
 
 /// A token that comes out of a token workflow.
@@ -96,6 +98,13 @@ impl SavedToken {
             expires_in: self.expires_in.clone(),
             scopes: &self.scopes,
         }
+    }
+
+    /// Generate a unique hash corresponding to this token.
+    pub fn hash(&self) -> Result<String, Error> {
+        let bytes = serde_cbor::to_vec(&[&self.client_id, self.access_token.secret()])?;
+        let digest = ring::digest::digest(&ring::digest::SHA256, &bytes);
+        Ok(base64::encode(digest.as_ref()))
     }
 }
 
@@ -159,12 +168,13 @@ pub enum FlowType {
 
 #[derive(Debug)]
 pub struct Flow {
-    ty: FlowType,
+    pub ty: FlowType,
     id: String,
     client: Client,
     client_id: String,
     client_secret: ClientSecret,
     extra_params: Vec<(String, String)>,
+    pub config: FlowConfig,
 }
 
 impl Flow {
@@ -175,6 +185,7 @@ impl Flow {
         client: Client,
         client_id: String,
         client_secret: ClientSecret,
+        config: FlowConfig,
     ) -> Self {
         Flow {
             ty,
@@ -183,6 +194,7 @@ impl Flow {
             client_id,
             client_secret,
             extra_params: Vec::new(),
+            config,
         }
     }
 

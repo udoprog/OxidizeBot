@@ -20,6 +20,15 @@ body {
   background-color: rgba(0, 0, 0, 0);
 }
 
+.header-action {
+  font-size: 50%;
+  margin-left: 0.5rem;
+}
+
+.center {
+  text-align: center;
+}
+
 #overlay {
   display: grid;
   grid-template-columns: auto;

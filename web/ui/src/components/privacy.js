@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { RouteLayout } from "./layout.js";
+import { RouteLayout } from "./Layout.js";
 
 export default class Privacy extends React.Component {
   constructor(props) {

@@ -2,6 +2,32 @@ import React from "react";
 import {Nav, Row, Col} from "react-bootstrap";
 import {Route, Link} from "react-router-dom";
 import ConfigurationPrompt from "./ConfigurationPrompt";
+import Connections from "./Connections";
+
+function Remote(props) {
+  return (
+    <div>
+      <h3>Remote connection to <b>setbac.tv</b></h3>
+
+      <p>
+        Handles connections to remote services.
+      </p>
+
+      <h4>Connections</h4>
+
+      <Connections api={props.api} />
+
+      <h4>Configuration</h4>
+
+      <ConfigurationPrompt
+        group={true}
+        filterable={true}
+        filter={{prefix: ["remote"]}}
+        {...props}
+        />
+    </div>
+  );
+}
 
 function Player(props) {
   return (
@@ -108,6 +134,9 @@ export default class Modules extends React.Component {
       <Row>
         <Col sm="2">
           <Nav className="flex-column" variant="pills">
+            <Nav.Link as={Link} active={path === "/modules/remote"} to="/modules/remote">
+              <b>setbac.tv</b>
+            </Nav.Link>
             <Nav.Link as={Link} active={path === "/modules/player"} to="/modules/player">
               Music Player
             </Nav.Link>
@@ -124,6 +153,7 @@ export default class Modules extends React.Component {
         </Col>
         <Col>
           <Route path="/modules" exact render={props => <Index api={this.props.api} {...props} />} />
+          <Route path="/modules/remote" render={props => <Remote api={this.props.api} {...props} />} />
           <Route path="/modules/player" render={props => <Player api={this.props.api} {...props} />} />
           <Route path="/modules/currency" render={props => <Currency api={this.props.api} {...props} />} />
           <Route path="/modules/chat-log" render={props => <ChatLog api={this.props.api} {...props} />} />

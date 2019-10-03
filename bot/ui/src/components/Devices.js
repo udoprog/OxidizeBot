@@ -156,16 +156,12 @@ export default class Authentication extends React.Component {
     }
 
     return (
-      <div>
-        <h2>
-          Devices
-          {refresh}
-        </h2>
+      <>
         {error}
         {selectOne}
         {content}
         {loading}
-      </div>
+      </>
     );
   }
 }

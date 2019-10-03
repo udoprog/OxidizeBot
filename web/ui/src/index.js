@@ -4,11 +4,11 @@ import React from "react";
 import ReactDOM from "react-dom";
 import { BrowserRouter as Router, Route } from "react-router-dom";
 import { updateGlobals } from "./globals.js";
-import Index from "./components/index.js";
-import Players from "./components/players.js";
-import Player from "./components/player.js";
-import Connections from "./components/connections.js";
-import Privacy from "./components/privacy.js";
+import Index from "./components/Index.js";
+import Players from "./components/Players.js";
+import Player from "./components/Player.js";
+import Connections from "./components/Connections.js";
+import Privacy from "./components/Privacy.js";
 
 function AppRouter() {
   return (

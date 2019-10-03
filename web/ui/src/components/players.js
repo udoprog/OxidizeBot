@@ -2,9 +2,8 @@ import React from "react";
 import { Table, Alert, Spinner } from "react-bootstrap";
 import { Link } from "react-router-dom";
 import { api } from "../globals.js";
-import { RouteLayout } from "./layout.js";
-import Loading from "./loading.js";
-import If from "./if.js";
+import { RouteLayout } from "./Layout";
+import Loading from "./Loading";
 
 export default class Players extends React.Component {
   constructor(props) {
@@ -21,13 +20,9 @@ export default class Players extends React.Component {
   }
 
   render() {
-    let loading = null;
-    let empty = null;
     let table = null;
 
-    if (this.state.loading) {
-      loading = <Loading />;
-    } else {
+    if (!this.state.loading) {
       if (this.state.players.length === 0) {
         table = (
           <Alert variant="primary">
@@ -53,6 +48,7 @@ export default class Players extends React.Component {
 
     return (
       <RouteLayout>
+        <h2 className="page-title">Players</h2>
         <Loading isLoading={this.state.loading} />
         {table}
       </RouteLayout>

@@ -71,6 +71,9 @@ types:
     doc: >
       If SetMod should run on startup.
     type: {id: bool}
+  remote/check-interval:
+    doc: The interval at which to check for remote updates to connections.
+    type: {id: duration}
   remote/api-url:
     doc: Endpoint to use for sending API updates to. One is provided for free at `https://setbac.tv`.
     type: {id: string, optional: true}
@@ -278,24 +281,24 @@ types:
   swearjar/cooldown:
     doc: Minimum cooldown between each `!swearjar` invocation.
     type: {id: duration}
-  secrets/oauth2/spotify/token:
-    doc: Stored token for Spotify authentication.
+  secrets/oauth2/spotify/connection:
+    doc: Stored connection for Spotify authentication.
     type: {id: raw, optional: true}
     secret: true
-  secrets/oauth2/twitch-bot/token:
-    doc: Stored token for Twitch Bot authentication.
+  secrets/oauth2/twitch-bot/connection:
+    doc: Stored connection for Twitch Bot authentication.
     type: {id: raw, optional: true}
     secret: true
-  secrets/oauth2/twitch-streamer/token:
-    doc: Stored token for Twitch Streamer authentication.
+  secrets/oauth2/twitch-streamer/connection:
+    doc: Stored connection for Twitch Streamer authentication.
     type: {id: raw, optional: true}
     secret: true
-  secrets/oauth2/youtube/token:
-    doc: Stored token for YouTube authentication.
+  secrets/oauth2/youtube/connection:
+    doc: Stored connection for YouTube authentication.
     type: {id: raw, optional: true}
     secret: true
-  secrets/oauth2/nightbot/token:
-    doc: Stored token for NightBot authentication.
+  secrets/oauth2/nightbot/connection:
+    doc: Stored connection for NightBot authentication.
     type: {id: raw, optional: true}
     secret: true
   song/enabled:

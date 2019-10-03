@@ -1,11 +1,11 @@
 import React from "react";
-import { RouteLayout } from "./layout.js";
+import { RouteLayout } from "./Layout.js";
 import { Alert, Table, Button, Form, FormControl, InputGroup, ButtonGroup } from "react-bootstrap";
 import { api, currentConnections } from "../globals.js";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import copy from 'copy-to-clipboard';
-import Loading from "./loading.js";
-import If from "./if.js";
+import Loading from "./Loading.js";
+import If from "./If.js";
 
 class CountDown {
   constructor(count, call, end) {
@@ -191,6 +191,16 @@ export default class Connections extends React.Component {
     }
   }
 
+  send() {
+    let query = "";
+
+    if (this.state.key) {
+      query = `?key=${encodeURIComponent(this.state.key)}`;
+    }
+
+    location.href = `http://localhost:12345/api/auth/key${query}`;
+  }
+
   hideKey() {
     if (this.showKey !== null) {
       this.showKey.stop();
@@ -236,6 +246,7 @@ export default class Connections extends React.Component {
     let placeholder = null;
     let clear = null;
     let generate = null;
+    let send;
 
     if (this.state.showKeyCount !== null && this.state.key != null) {
       value = this.state.key;
@@ -261,6 +272,10 @@ export default class Connections extends React.Component {
       generate = (
         <Button variant="primary" onClick={() => this.generateKey()} title="Create a new key, invalidating the existing key.">Regenerate</Button>
       );
+
+      send = (
+        <Button variant="info" title="Send key to bot" onClick={() => this.send()}><FontAwesomeIcon icon="share" /></Button>
+      );
     }
 
     let key = (
@@ -271,6 +286,7 @@ export default class Connections extends React.Component {
             {showKey}
             {clear}
             {generate}
+            {send}
           </InputGroup.Append>
         </InputGroup>
       </Form>
@@ -282,14 +298,17 @@ export default class Connections extends React.Component {
         {error}
 
         <If isNot={this.state.loading}>
-          <h2>Secret Key</h2>
+          <h2 className="page-title">My Connections</h2>
+
+          <h4>Secret Key</h4>
 
           <p>
             This key should be configured in your bot to allow it to communicate with this service.
           </p>
           {key}
 
-          <h2>Connections</h2>
+          <h4>Connections</h4>
+
           <p>
             Each connection adds capabilities to OxidizeBot.
             You'll have to enable and authenticate them here.

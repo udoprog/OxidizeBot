@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { withRouter } from "react-router-dom";
 import { Container, Navbar, Nav } from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import CurrentUser from "./currentuser.js";
+import CurrentUser from "./CurrentUser.js";
 import logo from "../assets/logo.png";
 
 function links(props) {

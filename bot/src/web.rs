@@ -1,13 +1,13 @@
 use self::assets::Asset;
 use crate::{
-    api, auth, bus, currency::Currency, db, injector, message_log, player, prelude::*, template,
-    track_id::TrackId, utils,
+    api, api::setbac::ConnectionMeta, auth, bus, currency::Currency, db, injector, message_log,
+    player, prelude::*, template, track_id::TrackId, utils,
 };
 use failure::bail;
 use hashbrown::HashMap;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use std::{borrow::Cow, fmt, net::SocketAddr, sync::Arc};
-use warp::{body, filters, http::Uri, path, Filter as _};
+use warp::{body, filters, path, Filter as _};
 
 mod cache;
 mod chat;
@@ -16,7 +16,6 @@ mod settings;
 use self::{cache::Cache, chat::Chat, settings::Settings};
 
 pub const URL: &'static str = "http://localhost:12345";
-pub const REDIRECT_URI: &'static str = "/redirect";
 
 mod assets {
     #[derive(rust_embed::RustEmbed)]
@@ -49,13 +48,6 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// A token that is expected to be received.
-struct ExpectedToken {
-    url: url::Url,
-    title: String,
-    channel: oneshot::Sender<ReceivedToken>,
-}
-
 #[derive(Default, serde::Serialize)]
 struct Empty {}
 
@@ -67,36 +59,6 @@ struct AudioDevice {
     name: String,
     id: String,
     r#type: String,
-}
-
-#[derive(serde::Deserialize)]
-struct RedirectQuery {
-    state: String,
-    code: String,
-}
-
-/// Oauth 2.0 redirect handler
-#[derive(Clone)]
-struct Oauth2Redirect {
-    token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
-}
-
-impl Oauth2Redirect {
-    /// Handles Oauth 2.0 authentication redirect.
-    fn handle(&self, query: RedirectQuery) -> Result<impl warp::Reply, Error> {
-        let mut inner = self.token_callbacks.write();
-
-        if let Some(callback) = inner.remove(&query.state) {
-            let _ = callback.channel.send(ReceivedToken {
-                state: query.state,
-                code: query.code,
-            });
-
-            return Ok(warp::redirect(Uri::from_static(URL)));
-        }
-
-        Err(Error::BadRequest)
-    }
 }
 
 #[derive(serde::Serialize)]
@@ -593,27 +555,36 @@ impl Themes {
 /// Auth API endpoints.
 #[derive(Clone)]
 struct Auth {
-    token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
+    active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
     auth: auth::Auth,
+    settings: Arc<RwLock<Option<crate::settings::Settings>>>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct AuthKeyQuery {
+    #[serde(default)]
+    key: Option<Fragment>,
 }
 
 impl Auth {
     fn route(
         auth: auth::Auth,
-        token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
+        active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
+        settings: Arc<RwLock<Option<crate::settings::Settings>>>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Auth {
             auth,
-            token_callbacks,
+            active_connections,
+            settings,
         };
 
         let route = warp::get2()
-            .and(warp::path!("pending").and(path::end()))
+            .and(warp::path!("connections").and(path::end()))
             .and_then({
                 let api = api.clone();
                 move || {
                     let api = api.clone();
-                    async move { api.pending().map_err(warp::reject::custom) }
+                    async move { api.connections().map_err(warp::reject::custom) }
                 }
             })
             .boxed();
@@ -685,6 +656,22 @@ impl Auth {
                 }))
             .boxed();
 
+        let route = route
+            .or(warp::get2()
+                .and(
+                    warp::path!("key")
+                        .and(warp::query::<AuthKeyQuery>())
+                        .and(path::end()),
+                )
+                .and_then({
+                    let api = api.clone();
+                    move |query: AuthKeyQuery| {
+                        let api = api.clone();
+                        async move { api.set_key(query).map_err(warp::reject::custom) }
+                    }
+                }))
+            .boxed();
+
         return route;
 
         #[derive(serde::Deserialize)]
@@ -695,24 +682,16 @@ impl Auth {
     }
 
     /// Get a list of things that need authentication.
-    fn pending(&self) -> Result<impl warp::Reply, Error> {
-        let mut auth = Vec::new();
+    fn connections(&self) -> Result<impl warp::Reply, Error> {
+        let active_connections = self.active_connections.read();
+        let mut out = Vec::new();
 
-        for expected in self.token_callbacks.read().values() {
-            auth.push(AuthPending {
-                url: expected.url.to_string(),
-                title: expected.title.to_string(),
-            });
+        for c in active_connections.values() {
+            out.push(c.clone());
         }
 
-        auth.sort_by(|a, b| a.title.cmp(&b.title));
-        return Ok(warp::reply::json(&auth));
-
-        #[derive(serde::Serialize)]
-        struct AuthPending {
-            title: String,
-            url: String,
-        }
+        out.sort_by(|a, b| a.title.cmp(&b.title));
+        Ok(warp::reply::json(&out))
     }
 
     /// Get the list of all scopes.
@@ -749,6 +728,22 @@ impl Auth {
     ) -> Result<impl warp::Reply, failure::Error> {
         self.auth.insert(scope, role)?;
         Ok(warp::reply::json(&EMPTY))
+    }
+
+    fn set_key(&self, key: AuthKeyQuery) -> Result<impl warp::Reply, failure::Error> {
+        let settings = self.settings.read();
+
+        if let (Some(settings), Some(key)) = (settings.as_ref(), key.key) {
+            settings.set("remote/secret-key", key.as_str())?;
+        }
+
+        let mut parts = URL.parse::<warp::http::Uri>()?.into_parts();
+        parts.path_and_query = Some(warp::http::uri::PathAndQuery::from_static(
+            "?received-key=true",
+        ));
+        let uri = warp::http::Uri::from_parts(parts)?;
+
+        Ok(warp::redirect::redirect(uri))
     }
 }
 
@@ -948,19 +943,7 @@ pub async fn setup(
     let addr: SocketAddr = str::parse(&format!("0.0.0.0:12345"))?;
 
     let player = Arc::new(RwLock::new(None));
-    let token_callbacks = Arc::new(RwLock::new(HashMap::<String, ExpectedToken>::new()));
-
-    let oauth2_redirect = Oauth2Redirect {
-        token_callbacks: token_callbacks.clone(),
-    };
-
-    let oauth2_redirect = warp::get2()
-        .and(path!("redirect").and(warp::query::<RedirectQuery>()))
-        .and_then(move |query| {
-            let oauth2_redirect = oauth2_redirect.clone();
-            async move { oauth2_redirect.handle(query).map_err(warp::reject::custom) }
-        })
-        .boxed();
+    let active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>> = Default::default();
 
     let api = Api {
         player: player.clone(),
@@ -1063,7 +1046,11 @@ pub async fn setup(
             .boxed();
 
         let route = route.or(warp::path("auth")
-            .and(Auth::route(auth, token_callbacks.clone()))
+            .and(Auth::route(
+                auth,
+                active_connections.clone(),
+                injector.var()?,
+            ))
             .boxed());
         let route = route.or(Aliases::route(injector.var()?));
         let route = route.or(Commands::route(injector.var()?));
@@ -1110,8 +1097,7 @@ pub async fn setup(
         .and(warp::path!("ws" / "youtube"))
         .and(send_bus(youtube_bus).recover(recover));
 
-    let routes = oauth2_redirect.recover(recover);
-    let routes = routes.or(api.recover(recover));
+    let routes = api.recover(recover);
     let routes = routes.or(ws_messages.recover(recover));
     let routes = routes.or(ws_overlay.recover(recover));
     let routes = routes.or(ws_youtube.recover(recover));
@@ -1134,7 +1120,7 @@ pub async fn setup(
 
     let server = Server {
         player: player.clone(),
-        token_callbacks: token_callbacks.clone(),
+        active_connections: active_connections.clone(),
     };
 
     return Ok((server, server_future));
@@ -1184,6 +1170,22 @@ impl std::str::FromStr for Fragment {
     }
 }
 
+impl<'de> serde::Deserialize<'de> for Fragment {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        let string = String::deserialize(deserializer)?;
+
+        let string = percent_encoding::percent_decode(string.as_bytes())
+            .decode_utf8()
+            .map_err(serde::de::Error::custom)?
+            .to_string();
+
+        Ok(Fragment { string })
+    }
+}
+
 // This function receives a `Rejection` and tries to return a custom
 // value, othewise simply passes the rejection along.
 async fn recover(err: warp::Rejection) -> Result<impl warp::Reply, warp::Rejection> {
@@ -1220,7 +1222,7 @@ struct ErrorMessage {
 pub struct Server {
     player: Arc<RwLock<Option<player::Player>>>,
     /// Callbacks for when we have received a token.
-    token_callbacks: Arc<RwLock<HashMap<String, ExpectedToken>>>,
+    active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
 }
 
 impl Server {
@@ -1229,32 +1231,14 @@ impl Server {
         *self.player.write() = Some(player);
     }
 
-    /// Receive an Oauth 2.0 token.
-    ///
-    /// # Arguments
-    ///
-    /// * `url` the url to visit to authenticate.
-    /// * `title` the title of the authentication.
-    /// * `state` the CSRF state to match against.
-    pub fn receive_token(
-        &self,
-        url: url::Url,
-        title: String,
-        state: String,
-    ) -> oneshot::Receiver<ReceivedToken> {
-        let (tx, rx) = oneshot::channel::<ReceivedToken>();
-        let mut inner = self.token_callbacks.write();
+    pub fn update_connection(&self, id: &str, connection: ConnectionMeta) {
+        self.active_connections
+            .write()
+            .insert(id.to_string(), connection);
+    }
 
-        inner.insert(
-            state,
-            ExpectedToken {
-                url,
-                title,
-                channel: tx,
-            },
-        );
-
-        rx
+    pub fn clear_connection(&self, id: &str) {
+        let _ = self.active_connections.write().remove(id);
     }
 }
 

@@ -58,7 +58,7 @@ export default class ConfigurationPrompt extends React.Component {
 
     if (this.props.children) {
       help = (
-        <Row key="help">
+        <Row key="help" className="mb-3">
           <Col>
             {this.props.children}
           </Col>

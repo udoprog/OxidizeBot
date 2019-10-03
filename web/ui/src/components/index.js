@@ -1,9 +1,10 @@
 import React from "react";
 import { Card, CardDeck } from "react-bootstrap";
-import { RouteLayout } from "./layout.js";
+import { RouteLayout } from "./Layout.js";
 import dollarImg from "../assets/dollar.png";
 import toolboxImg from "../assets/toolbox.png";
 import cloudImg from "../assets/cloud.png";
+import twitchDarkLogo from "../assets/twitch-dark.png";
 
 export default class Index extends React.Component {
   constructor(props) {
@@ -13,11 +14,12 @@ export default class Index extends React.Component {
   render() {
     return (
       <RouteLayout>
+        <h2 className="page-title mb-3">OxidizeBot</h2>
+
         <Card bg="light" className="mb-4">
-          <Card.Header>Welcome to <b>setbac.tv</b>, the home of OxidizeBot!</Card.Header>
           <Card.Body>
             <Card.Text>
-              OxidizeBot is the <b>Free</b> and <b>Open Source</b> Twitch Bot written in Rust!
+              <b>OxidizeBot</b> is the high octane <a href="https://twitch.tv"><img src={twitchDarkLogo} height="16px" width="48px" alt="twitch" /></a> bot written in <a href="https://rust-lang.org">Rust</a>!
             </Card.Text>
           </Card.Body>
         </Card>
@@ -36,20 +38,23 @@ export default class Index extends React.Component {
           <Card>
             <Card.Img variant="top" src={toolboxImg} />
             <Card.Body>
-              <Card.Title>Packed with features</Card.Title>
+              <Card.Title><b>Packed</b> with features</Card.Title>
               <Card.Text>
-                Plays music, moderates your chat, has a rich authentication system.<br />
-                If you feel something is missing, <a href="https://github.com/udoprog/OxidizeBot">open an issue</a>.
+                Plays music, moderates your chat, plays games, you name it!
+                <hr />
+                If you feel something is missing, feel free to <a href="https://github.com/udoprog/OxidizeBot/issues">open an issue</a>.
               </Card.Text>
             </Card.Body>
           </Card>
           <Card>
             <Card.Img variant="top" src={cloudImg} />
             <Card.Body>
-              <Card.Title>Runs on your computer</Card.Title>
+              <Card.Title>Runs on your <b>Computer</b></Card.Title>
               <Card.Text>
-                The bot has the same latency as you do.
-                It can interact with your desktop and automate tedious task.
+                You own your data.
+                Uses your network connection for the best possible latency to your users.
+                Is light on resources.
+                Can perform rich interactions with your computer like <a href="https://github.com/udoprog/ChaosMod">Chaos%</a>.
               </Card.Text>
             </Card.Body>
           </Card>

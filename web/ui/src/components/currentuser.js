@@ -24,7 +24,7 @@ export default class CurrentUser extends React.Component {
     let button = (
       <Form inline key="second">
         <Button size="sm" onClick={this.login.bind(this)} title="Sign in through Twitch">
-          <b>Login with</b>&nbsp;<img src={twitchLogo} height="16px" width="48px" alt="twitch" />
+          <b>Sign in with</b>&nbsp;<img src={twitchLogo} height="16px" width="48px" alt="twitch" />
         </Button>
       </Form>
     );
@@ -36,7 +36,7 @@ export default class CurrentUser extends React.Component {
 
           <Dropdown.Menu>
             <Dropdown.Item as={Link} to="/connections">
-              Connections
+              My Connections
             </Dropdown.Item>
             <Dropdown.Divider />
             <Dropdown.Item onClick={this.logout.bind(this)}>

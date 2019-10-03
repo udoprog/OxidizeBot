@@ -32,10 +32,10 @@ export class Api {
   }
 
   /**
-   * Get things that requires authentication.
+   * List active connections.
    */
-  authPending() {
-    return this.fetch(["auth", "pending"]);
+  listConnections() {
+    return this.fetch(["auth", "connections"]);
   }
 
   /**
