@@ -260,8 +260,6 @@ pub fn run(
     // future to initialize the player future.
     // Yeah, I know....
     let future = async move {
-        log::trace!("Waiting for token to become ready");
-
         {
             // Add tracks from database.
             for song in db.list()? {

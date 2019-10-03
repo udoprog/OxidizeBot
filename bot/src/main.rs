@@ -107,11 +107,11 @@ fn opts() -> clap::App<'static, 'static> {
                 .help("If we should enable tracing in all logs."),
         )
         .arg(
-            clap::Arg::with_name("log-mod")
-                .long("log-mod")
+            clap::Arg::with_name("log")
+                .long("log")
                 .takes_value(true)
                 .multiple(true)
-                .help("Additionally enable logging for the specified modules. Example: --log-mod irc=trace"),
+                .help("Additionally enable logging for the specified modules. Example: --log irc=trace"),
         )
         .arg(
             clap::Arg::with_name("log-config")
@@ -158,7 +158,7 @@ fn default_log_config(
 
     // special case: trace everything
     if trace {
-        return Ok(config.build(root_builder().build(LevelFilter::Info))?);
+        return Ok(config.build(root_builder().build(LevelFilter::Trace))?);
     }
 
     let mut panic_configured = false;
@@ -281,7 +281,7 @@ fn main() -> Result<(), Error> {
 
     let trace = m.is_present("trace");
 
-    let log_modules = match m.values_of("log-mod") {
+    let log_modules = match m.values_of("log") {
         Some(modules) => modules.collect(),
         None => vec![],
     };
@@ -538,76 +538,91 @@ async fn try_main(
 
     let token_settings = settings.scoped("secrets/oauth2");
 
-    let (spotify_token, future) = {
+    let spotify_setup = {
         let settings = token_settings.scoped("spotify");
         let key = injector::Key::tagged(oauth2::TokenId::Spotify)?;
 
-        oauth2::new_token("spotify", "Spotify", settings, injector.clone(), key)?
+        oauth2::build("spotify", "Spotify", settings, injector.clone(), key)
     };
 
-    futures.push(
-        future
-            .boxed()
-            .instrument(trace_span!(target: "futures", "spotify-token",)),
-    );
-
-    let (youtube_token, future) = {
+    let youtube_setup = {
         let settings = token_settings.scoped("youtube");
         let key = injector::Key::tagged(oauth2::TokenId::YouTube)?;
 
-        oauth2::new_token("youtube", "YouTube", settings, injector.clone(), key)?
+        oauth2::build("youtube", "YouTube", settings, injector.clone(), key)
     };
 
-    futures.push(
-        future
-            .boxed()
-            .instrument(trace_span!(target: "futures", "youtube-token",)),
-    );
-
-    let (nightbot_token, future) = {
+    let nightbot_setup = {
         let settings = token_settings.scoped("nightbot");
         let key = injector::Key::tagged(oauth2::TokenId::NightBot)?;
 
-        oauth2::new_token("nightbot", "NightBot", settings, injector.clone(), key)?
+        oauth2::build("nightbot", "NightBot", settings, injector.clone(), key)
     };
 
-    futures.push(
-        future
-            .boxed()
-            .instrument(trace_span!(target: "futures", "nightbot-token",)),
-    );
-
-    let (streamer_token, future) = {
+    let streamer_setup = {
         let settings = token_settings.scoped("twitch-streamer");
         let key = injector::Key::tagged(oauth2::TokenId::TwitchStreamer)?;
 
-        oauth2::new_token(
+        oauth2::build(
             "twitch-streamer",
             "Twitch Streamer",
             settings,
             injector.clone(),
             key,
-        )?
+        )
     };
 
+    let bot_setup = {
+        let settings = token_settings.scoped("twitch-bot");
+        let key = injector::Key::tagged(oauth2::TokenId::TwitchBot)?;
+
+        oauth2::build("twitch-bot", "Twitch Bot", settings, injector.clone(), key)
+    };
+
+    let (
+        (spotify_token, spotify_future),
+        (youtube_token, youtube_future),
+        (nightbot_token, nightbot_future),
+        (streamer_token, streamer_future),
+        (_, bot_future),
+    ) = futures::try_join!(
+        spotify_setup,
+        youtube_setup,
+        nightbot_setup,
+        streamer_setup,
+        bot_setup
+    )?;
+
     futures.push(
-        future
+        spotify_future
+            .boxed()
+            .instrument(trace_span!(target: "futures", "spotify-token",)),
+    );
+
+    futures.push(
+        youtube_future
+            .boxed()
+            .instrument(trace_span!(target: "futures", "youtube-token",)),
+    );
+
+    futures.push(
+        nightbot_future
+            .boxed()
+            .instrument(trace_span!(target: "futures", "nightbot-token",)),
+    );
+
+    futures.push(
+        streamer_future
             .boxed()
             .instrument(trace_span!(target: "futures", "streamer-token",)),
     );
 
-    let (_, future) = {
-        let settings = token_settings.scoped("twitch-bot");
-        let key = injector::Key::tagged(oauth2::TokenId::TwitchBot)?;
-
-        oauth2::new_token("twitch-bot", "Twitch Bot", settings, injector.clone(), key)?
-    };
-
     futures.push(
-        future
+        bot_future
             .boxed()
             .instrument(trace_span!(target: "futures", "bot-token",)),
     );
+
     futures.push(
         api::open_weather_map::setup(settings.clone(), injector.clone())?
             .boxed()

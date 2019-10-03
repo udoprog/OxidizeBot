@@ -5,7 +5,7 @@ use futures::prelude::*;
 use hyper::{body::Body, error, header, server, Method, Request, Response, StatusCode};
 use parking_lot::Mutex;
 use relative_path::RelativePathBuf;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::{
     borrow::Cow,
@@ -140,6 +140,22 @@ impl Error {
 impl From<failure::Error> for Error {
     fn from(value: failure::Error) -> Error {
         Error::Error(value)
+    }
+}
+#[derive(Serialize)]
+struct Data<T> {
+    data: Option<T>,
+}
+
+impl Data<()> {
+    fn empty() -> Data<()> {
+        Data { data: None }
+    }
+}
+
+impl<T> From<T> for Data<T> {
+    fn from(data: T) -> Self {
+        Self { data: Some(data) }
     }
 }
 
@@ -353,8 +369,80 @@ impl Service<Request<Body>> for Server {
     }
 }
 
+#[derive(Serialize)]
+pub struct Connection<'a> {
+    #[serde(rename = "type")]
+    ty: oauth2::FlowType,
+    id: &'a str,
+    title: &'a str,
+    description: &'a str,
+    hash: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token: Option<oauth2::ExportedToken<'a>>,
+}
+
+/// Only contains metadata for a specific connection.
+#[derive(Serialize)]
+pub struct ConnectionMeta<'a> {
+    #[serde(rename = "type")]
+    ty: oauth2::FlowType,
+    id: &'a str,
+    title: &'a str,
+    description: &'a str,
+}
+
 impl Handler {
     const MAX_BYTES: usize = 10_000;
+
+    /// Get the token with the given ID.
+    async fn connections_get(
+        &self,
+        req: &Request<Body>,
+        id: &str,
+    ) -> Result<Response<Body>, Error> {
+        let session = self.verify(req)?;
+
+        let c = self.db.get_connection(&session.user, id)?;
+        let query = self.decode_query::<Query>(req)?;
+
+        match c {
+            Some(c) => {
+                let flow = match self.flows.get(&c.id) {
+                    Some(flow) => flow,
+                    None => return json_ok(Data::empty()),
+                };
+
+                match query.format.as_ref().map(String::as_str) {
+                    Some("meta") => {
+                        return json_ok(Data::from(Connection {
+                            ty: flow.ty,
+                            id: &c.id,
+                            title: &flow.config.title,
+                            description: &flow.config.description,
+                            hash: c.token.hash()?,
+                            token: None,
+                        }));
+                    }
+                    _ => {
+                        return json_ok(Data::from(Connection {
+                            ty: flow.ty,
+                            id: &c.id,
+                            title: &flow.config.title,
+                            description: &flow.config.description,
+                            hash: c.token.hash()?,
+                            token: Some(c.token.as_exported()),
+                        }));
+                    }
+                }
+            }
+            _ => return json_ok(Data::empty()),
+        }
+
+        #[derive(Deserialize)]
+        pub struct Query {
+            format: Option<String>,
+        }
+    }
 
     /// Get the token with the given ID.
     async fn connection_refresh(
@@ -368,12 +456,12 @@ impl Handler {
 
         let c = match c {
             Some(c) => c,
-            None => return json_ok(&Export { token: None }),
+            None => return json_ok(Data::empty()),
         };
 
         let flow = match self.flows.get(&c.token.flow_id) {
             Some(flow) => flow,
-            None => return json_ok(&Export { token: None }),
+            None => return json_ok(Data::empty()),
         };
 
         let token = flow.refresh_token(&c.token.refresh_token).await?;
@@ -386,37 +474,16 @@ impl Handler {
             },
         )?;
 
-        return json_ok(&Export {
+        let connection = Connection {
+            ty: flow.ty,
+            id: &c.id,
+            title: &flow.config.title,
+            description: &flow.config.description,
+            hash: token.hash()?,
             token: Some(token.as_exported()),
-        });
-
-        #[derive(Serialize)]
-        struct Export<'a> {
-            token: Option<oauth2::ExportedToken<'a>>,
-        }
-    }
-
-    /// Get the token with the given ID.
-    async fn connections_get(
-        &self,
-        req: &Request<Body>,
-        id: &str,
-    ) -> Result<Response<Body>, Error> {
-        let session = self.verify(req)?;
-
-        let c = self.db.get_connection(&session.user, id)?;
-
-        let token = match c.as_ref() {
-            Some(c) => Some(c.token.as_exported()),
-            None => None,
         };
 
-        return json_ok(&Export { token });
-
-        #[derive(Serialize)]
-        struct Export<'a> {
-            token: Option<oauth2::ExportedToken<'a>>,
-        }
+        json_ok(Data::from(connection))
     }
 
     /// Get a list of connection types.
@@ -424,7 +491,7 @@ impl Handler {
         let mut out = Vec::new();
 
         for client_config in &self.config.oauth2.flows {
-            out.push(Connection {
+            out.push(ConnectionMeta {
                 ty: client_config.ty,
                 id: &client_config.id,
                 title: &client_config.title,
@@ -433,37 +500,47 @@ impl Handler {
         }
 
         return json_ok(&out);
-
-        #[derive(Serialize)]
-        pub struct Connection<'a> {
-            #[serde(rename = "type")]
-            ty: oauth2::FlowType,
-            id: &'a str,
-            title: &'a str,
-            description: &'a str,
-        }
     }
 
     /// List connections for the current user.
     async fn connections_list(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
         let session = self.verify(req)?;
-
         let connections = self.db.connections_by_user(&session.user)?;
 
-        let connections = connections
-            .iter()
-            .map(|c| Connection {
+        let query = self.decode_query::<Query>(req)?;
+
+        let meta = match query.format.as_ref().map(String::as_str) {
+            Some("meta") => true,
+            _ => false,
+        };
+
+        let mut out = Vec::new();
+
+        for c in &connections {
+            let flow = match self.flows.get(&c.id) {
+                Some(flow) => flow,
+                None => continue,
+            };
+
+            out.push(Connection {
+                ty: flow.ty,
                 id: &c.id,
-                token: c.token.as_exported(),
-            })
-            .collect::<Vec<_>>();
+                title: &flow.config.title,
+                description: &flow.config.description,
+                hash: c.token.hash()?,
+                token: if meta {
+                    None
+                } else {
+                    Some(c.token.as_exported())
+                },
+            });
+        }
 
-        return json_ok(&connections);
+        return json_ok(&out);
 
-        #[derive(Serialize)]
-        pub struct Connection<'a> {
-            id: &'a str,
-            token: oauth2::ExportedToken<'a>,
+        #[derive(Deserialize)]
+        pub struct Query {
+            format: Option<String>,
         }
     }
 
@@ -792,6 +869,19 @@ impl Handler {
             .await
             .map_err(Error::Error)?)
     }
+
+    /// Decode query parameters using the specified model.
+    fn decode_query<'a, T>(&self, req: &'a Request<Body>) -> Result<T, Error>
+    where
+        T: Deserialize<'a>,
+    {
+        let query = req.uri().query().unwrap_or("");
+
+        let query =
+            serde_urlencoded::from_str::<T>(query).map_err(|_| Error::bad_request("bad query"))?;
+
+        Ok(query)
+    }
 }
 
 /// Extract referer.
@@ -899,7 +989,7 @@ pub fn http_error(status: StatusCode, message: &str) -> Result<Response<Body>, E
 /// Concats the body and makes sure the request is not too large.
 async fn receive_json<T>(req: Request<Body>, max_bytes: usize) -> Result<T, Error>
 where
-    T: serde::de::DeserializeOwned,
+    T: de::DeserializeOwned,
 {
     let mut body = req.into_body();
 
@@ -942,8 +1032,8 @@ pub fn html(body: String) -> Result<Response<Body>, Error> {
 }
 
 /// Construct a JSON OK response.
-pub fn json_ok(body: &impl Serialize) -> Result<Response<Body>, Error> {
-    let body = serde_json::to_string(body).map_err(failure::Error::from)?;
+pub fn json_ok(body: impl Serialize) -> Result<Response<Body>, Error> {
+    let body = serde_json::to_string(&body).map_err(failure::Error::from)?;
 
     let mut r = Response::new(Body::from(body));
 
