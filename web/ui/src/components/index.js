@@ -30,8 +30,8 @@ export default class Index extends React.Component {
             <Card.Body>
               <Card.Title><b>Free</b> and <b>Open Source</b></Card.Title>
               <Card.Text>
-                OxidizeBot doesn't cost you anything!
-                And it's source code is available <a href="https://github.com/udoprog/OxidizeBot">on GitHub</a>!
+                OxidizeBot doesn't cost you anything,
+                and its source code is available on <a href="https://github.com/udoprog/OxidizeBot">GitHub</a> for anyone to tinker with!
               </Card.Text>
             </Card.Body>
           </Card>
@@ -53,9 +53,9 @@ export default class Index extends React.Component {
               <Card.Title>Runs on your <b>Computer</b></Card.Title>
               <Card.Text>
                 You own your data.
-                Uses your network connection for the best possible latency to your users.
-                Is light on resources.
-                Can perform rich interactions with your computer like <a href="https://github.com/udoprog/ChaosMod">Chaos%</a>.
+                It uses your network connection for the best possible latency.
+                It's light on system resources (Low CPU and about 50MB of ram).
+                And running locally means it can perform rich interactions with your games like <a href="https://github.com/udoprog/ChaosMod">Chaos%</a>.
               </Card.Text>
             </Card.Body>
           </Card>
