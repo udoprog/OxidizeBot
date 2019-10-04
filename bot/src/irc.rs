@@ -4,7 +4,7 @@ use crate::{
     bus, command,
     currency::{Currency, CurrencyBuilder},
     db, idle,
-    injector::{Injector, Key},
+    injector::{self, Injector, Key},
     message_log::MessageLog,
     module, oauth2,
     prelude::*,
@@ -38,6 +38,91 @@ const SERVER: &'static str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &'static str = "twitch.tv/tags";
 const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
 
+struct TwitchSetup {
+    streamer_stream: injector::Stream<oauth2::SyncToken>,
+    streamer: Option<oauth2::SyncToken>,
+    bot_stream: injector::Stream<oauth2::SyncToken>,
+    bot: Option<oauth2::SyncToken>,
+}
+
+impl TwitchSetup {
+    pub async fn setup(
+        &mut self,
+    ) -> Result<
+        (
+            Arc<twitch::User>,
+            api::Twitch,
+            Arc<twitch::User>,
+            api::Twitch,
+        ),
+        Error,
+    > {
+        // loop to setup all necessary twitch authentication.
+        loop {
+            let (streamer_twitch, bot_twitch) = match (self.streamer.as_ref(), self.bot.as_ref()) {
+                (Some(streamer_twitch), Some(bot_twitch)) => (streamer_twitch, bot_twitch),
+                (_, _) => {
+                    futures::select! {
+                        update = self.streamer_stream.select_next_some() => {
+                            self.streamer = update;
+                        },
+                        update = self.bot_stream.select_next_some() => {
+                            self.bot = update;
+                        },
+                    }
+
+                    continue;
+                }
+            };
+
+            let bot_twitch = api::Twitch::new(bot_twitch.clone())?;
+            let streamer_twitch = api::Twitch::new(streamer_twitch.clone())?;
+
+            let streamer = async {
+                match streamer_twitch.user().await {
+                    Ok(user) => Ok::<_, Error>(Some(user)),
+                    Err(e) => {
+                        streamer_twitch.token.force_refresh()?;
+                        log::warn!("Failed to get streamer information: {}", e);
+                        Ok(None)
+                    }
+                }
+            };
+
+            let bot = async {
+                match bot_twitch.user().await {
+                    Ok(user) => Ok::<_, Error>(Some(user)),
+                    Err(e) => {
+                        bot_twitch.token.force_refresh()?;
+                        log::warn!("Failed to get bot information: {}", e);
+                        Ok(None)
+                    }
+                }
+            };
+
+            let (bot, streamer) = match future::try_join(bot, streamer).await? {
+                (Some(bot), Some(streamer)) => (bot, streamer),
+                (bot, streamer) => {
+                    if bot.is_none() {
+                        self.bot = None;
+                    }
+
+                    if streamer.is_none() {
+                        self.streamer = None;
+                    }
+
+                    continue;
+                }
+            };
+
+            let bot = Arc::new(bot);
+            let streamer = Arc::new(streamer);
+
+            return Ok((bot, bot_twitch, streamer, streamer_twitch));
+        }
+    }
+}
+
 /// Helper struct to construct IRC integration.
 pub struct Irc {
     pub bad_words: db::Words,
@@ -69,42 +154,23 @@ impl Irc {
             message_log,
         } = self;
 
-        let (mut streamer_twitch_stream, mut streamer_twitch_opt) =
-            injector.stream_key(&Key::<oauth2::SyncToken>::tagged(
-                oauth2::TokenId::TwitchStreamer,
-            )?);
+        let (streamer_stream, streamer) = injector.stream_key(&Key::<oauth2::SyncToken>::tagged(
+            oauth2::TokenId::TwitchStreamer,
+        )?);
 
-        let (mut bot_twitch_stream, mut bot_twitch_opt) =
-            injector.stream_key(&Key::<oauth2::SyncToken>::tagged(
-                oauth2::TokenId::TwitchBot,
-            )?);
+        let (bot_stream, bot) = injector.stream_key(&Key::<oauth2::SyncToken>::tagged(
+            oauth2::TokenId::TwitchBot,
+        )?);
+
+        let mut twitch_setup = TwitchSetup {
+            streamer_stream,
+            streamer,
+            bot_stream,
+            bot,
+        };
 
         'outer: loop {
-            let (streamer_twitch, bot_twitch) =
-                match (streamer_twitch_opt.as_ref(), bot_twitch_opt.as_ref()) {
-                    (Some(streamer_twitch), Some(bot_twitch)) => (streamer_twitch, bot_twitch),
-                    (_, _) => {
-                        futures::select! {
-                            update = streamer_twitch_stream.select_next_some() => {
-                                streamer_twitch_opt = update;
-                            },
-                            update = bot_twitch_stream.select_next_some() => {
-                                bot_twitch_opt = update;
-                            },
-                        }
-
-                        continue;
-                    }
-                };
-
-            let bot_twitch = api::Twitch::new(bot_twitch.clone())?;
-            let streamer_twitch = api::Twitch::new(streamer_twitch.clone())?;
-
-            let (bot, streamer) =
-                future::try_join(bot_twitch.user(), streamer_twitch.user()).await?;
-
-            let bot = Arc::new(bot);
-            let streamer = Arc::new(streamer);
+            let (bot, bot_twitch, streamer, streamer_twitch) = twitch_setup.setup().await?;
 
             let channel = Arc::new(streamer_twitch.channel().await?);
 
@@ -345,12 +411,12 @@ impl Irc {
                             }
                         }
                     }
-                    update = streamer_twitch_stream.select_next_some() => {
-                        streamer_twitch_opt = update;
+                    update = twitch_setup.streamer_stream.select_next_some() => {
+                        twitch_setup.streamer = update;
                         leave = true;
                     },
-                    update = bot_twitch_stream.select_next_some() => {
-                        bot_twitch_opt = update;
+                    update = twitch_setup.bot_stream.select_next_some() => {
+                        twitch_setup.bot = update;
                         leave = true;
                     },
                     update = commands_stream.select_next_some() => {

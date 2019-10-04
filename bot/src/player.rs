@@ -308,25 +308,7 @@ pub fn run(
             timeout: None,
         };
 
-        if spotify.token.is_ready() {
-            if let Some(p) = spotify.me_player().await? {
-                log::trace!("Detected playback: {:?}", p);
-
-                match Song::from_playback(&p) {
-                    Some(song) => {
-                        log::trace!("Syncing playback");
-                        let volume_percent = p.device.volume_percent;
-                        device.sync_device(Some(p.device))?;
-                        connect_player.set_scaled_volume(volume_percent)?;
-                        player.play_sync(song)?;
-                    }
-                    None => {
-                        log::trace!("Pausing playback since item is missing");
-                        player.pause_with_source(Source::Automatic)?;
-                    }
-                }
-            }
-        }
+        player.sync_spotify_playback().await?;
 
         let _ =
             futures::future::try_join(playback.run(settings), futures.select_next_some()).await?;
@@ -587,6 +569,43 @@ impl Player {
     /// Get a receiver for player events.
     pub fn add_rx(&self) -> bus::Reader<Event> {
         self.inner.bus.add_rx()
+    }
+
+    /// Try to sync Spotify playback.
+    pub async fn sync_spotify_playback(&self) -> Result<(), Error> {
+        if !self.inner.spotify.token.is_ready() {
+            return Ok(());
+        }
+
+        let p = match self.inner.spotify.me_player().await {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("Failed to sync playback: {}", e);
+                return Ok(());
+            }
+        };
+
+        if let Some(p) = p {
+            log::trace!("Detected playback: {:?}", p);
+
+            match Song::from_playback(&p) {
+                Some(song) => {
+                    log::trace!("Syncing playback");
+                    let volume_percent = p.device.volume_percent;
+                    self.inner.device.sync_device(Some(p.device))?;
+                    self.inner
+                        .connect_player
+                        .set_scaled_volume(volume_percent)?;
+                    self.play_sync(song)?;
+                }
+                None => {
+                    log::trace!("Pausing playback since item is missing");
+                    self.pause_with_source(Source::Automatic)?;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Synchronize playback with the given song.
@@ -2035,7 +2054,15 @@ async fn convert_item(
             }
 
             let track_id_string = id.to_base62();
-            let track = spotify.track(track_id_string).await?;
+
+            let track = match spotify.track(track_id_string).await {
+                Ok(track) => track,
+                Err(e) => {
+                    log::warn!("Failed to convert Spotify track: {}: {}", id, e);
+                    return Ok(None);
+                }
+            };
+
             let duration = Duration::from_millis(track.duration_ms.into());
 
             (Track::Spotify { track }, duration)
@@ -2045,7 +2072,13 @@ async fn convert_item(
                 return Ok(None);
             }
 
-            let video = youtube.videos_by_id(id, "contentDetails,snippet").await?;
+            let video = match youtube.videos_by_id(id, "contentDetails,snippet").await {
+                Ok(video) => video,
+                Err(e) => {
+                    log::warn!("Failed to convert YouTube video: {}: {}", id, e);
+                    return Ok(None);
+                }
+            };
 
             let video = match video {
                 Some(video) => video,
