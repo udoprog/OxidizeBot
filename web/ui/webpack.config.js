@@ -1,4 +1,5 @@
 const HtmlWebPackPlugin = require("html-webpack-plugin");
+const DynamicCdnWebpackPlugin = require('dynamic-cdn-webpack-plugin');
 const FaviconsWebpackPlugin = require('favicons-webpack-plugin')
 const path = require('path');
 
@@ -7,19 +8,16 @@ const htmlPlugin = new HtmlWebPackPlugin({
   filename: "./index.html"
 });
 
+const cdn = new DynamicCdnWebpackPlugin();
+
 const faviconPlugin = new FaviconsWebpackPlugin("../../bot/res/icon.png");
 
 module.exports = function(_, argv) {
-  let production = argv.mode === "production";
-
   return {
     output: {
       path: path.join(__dirname, 'dist'),
       filename: '[name].[chunkhash].js',
       chunkFilename: '[name].[chunkhash].js'
-    },
-    optimization: {
-      minimize: production
     },
     module: {
       rules: [
@@ -52,6 +50,7 @@ module.exports = function(_, argv) {
     plugins: [
       htmlPlugin,
       faviconPlugin,
+      cdn,
     ],
     devServer: {
       historyApiFallback: true,

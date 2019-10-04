@@ -69,7 +69,21 @@ class Connection extends React.Component {
     }
   }
 
+  icon() {
+    switch (this.props.type) {
+      case "twitch":
+        return <FontAwesomeIcon icon={['fab', 'twitch']} />;
+      case "youtube":
+        return <FontAwesomeIcon icon={['fab', 'youtube']} />;
+      case "spotify":
+        return <FontAwesomeIcon icon={['fab', 'spotify']} />;
+      default:
+        return <FontAwesomeIcon icon="globe" />;
+    }
+  }
+
   render() {
+    let icon = this.icon();
     let button = null;
 
     if (this.props.connected !== null) {
@@ -104,7 +118,10 @@ class Connection extends React.Component {
     return (
       <tr>
         <td>
-          <b>{this.props.title}</b><br />
+          <b>
+            {icon} {this.props.title}
+          </b>
+          <br />
           <span>{this.props.description}</span>
         </td>
         <td width="1%" align="right">{button}</td>
@@ -319,6 +336,7 @@ export default class Connections extends React.Component {
                 return <Connection
                   key={index}
                   connected={this.state.connections[c.id]}
+                  type={c.type}
                   id={c.id}
                   title={c.title}
                   description={c.description}

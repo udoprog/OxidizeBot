@@ -9,12 +9,7 @@ const htmlPlugin = new HtmlWebPackPlugin({
 const faviconPlugin = new FaviconsWebpackPlugin("../res/icon.png");
 
 module.exports = function(_, argv) {
-  let production = argv.mode === "production";
-
   return {
-    optimization: {
-      minimize: production
-    },
     module: {
       rules: [
         {
