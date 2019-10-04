@@ -42,3 +42,17 @@ html, body {
   text-align: center;
   margin-bottom: 20px;
 }
+
+.connected {
+  &-title {
+    font-weight: bold;
+  }
+
+  &-meta {
+    font-size: 80%;
+  }
+
+  &-description {
+    margin-top: 8px;
+  }
+}

@@ -13,7 +13,8 @@ pub struct Config {
 
 #[derive(Serialize, Deserialize)]
 pub struct SessionData {
-    pub user: String,
+    /// Twitch user id.
+    pub user_id: String,
 }
 
 pub struct Session {
@@ -76,7 +77,7 @@ impl Session {
     }
 
     /// Verify the given authorization header.
-    fn verify_authorization_header(&self, header: &str) -> Result<Option<SessionData>, Error> {
+    fn verify_authorization_header(&self, header: &str) -> Result<Option<db::User>, Error> {
         let mut it = header.split(':');
 
         match it.next() {
@@ -89,22 +90,12 @@ impl Session {
             None => return Ok(None),
         };
 
-        let user = match self.db.get_user_by_key(key)? {
-            Some(user) => user,
-            None => return Ok(None),
-        };
-
-        Ok(Some(SessionData { user }))
+        Ok(self.db.get_user_by_key(key)?)
     }
 
-    /// Verify the given request and return user information (if present).
-    pub fn verify<B>(&self, req: &Request<B>) -> Result<Option<SessionData>, Error> {
-        if let Some(authorization) = req.headers().get(header::AUTHORIZATION) {
-            if let Some(session) = self.verify_authorization_header(authorization.to_str()?)? {
-                return Ok(Some(session));
-            }
-        }
-
+    /// Verify cookie.
+    fn verify_cookie<B>(&self, req: &Request<B>) -> Result<Option<db::User>, Error> {
+        // Get it through cookie.
         let jar = match self.cookies_from_header(req)? {
             Some(jar) => jar,
             None => return Ok(None),
@@ -122,8 +113,19 @@ impl Session {
             None => return Ok(None),
         };
 
-        let session = serde_cbor::from_slice(&data)?;
-        Ok(Some(session))
+        let session = serde_cbor::from_slice::<SessionData>(&data)?;
+        Ok(self.db.get_user(&session.user_id)?)
+    }
+
+    /// Verify the given request and return user information (if present).
+    pub fn verify<B>(&self, req: &Request<B>) -> Result<Option<db::User>, Error> {
+        if let Some(authorization) = req.headers().get(header::AUTHORIZATION) {
+            if let Some(user) = self.verify_authorization_header(authorization.to_str()?)? {
+                return Ok(Some(user));
+            }
+        }
+
+        self.verify_cookie(req)
     }
 
     /// Build a new cookie.

@@ -32,7 +32,7 @@ export default class CurrentUser extends React.Component {
     if (currentUser) {
       button = (
         <Dropdown key="second">
-          <Dropdown.Toggle size="sm">Signed in: <b>{currentUser.user}</b></Dropdown.Toggle>
+          <Dropdown.Toggle size="sm">Signed in: <b>{currentUser.login}</b></Dropdown.Toggle>
 
           <Dropdown.Menu>
             <Dropdown.Item as={Link} to="/connections">

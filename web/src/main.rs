@@ -9,15 +9,16 @@ fn opts() -> clap::App<'static, 'static> {
         .author("John-John Tedro <udoprog@tedro.se>")
         .about("Web Components of Oxidize")
         .arg(
-            clap::Arg::with_name("no-auth")
-                .long("no-auth")
-                .help("Do not require authentication."),
-        )
-        .arg(
             clap::Arg::with_name("config")
                 .takes_value(true)
                 .long("config")
                 .help("Configuration file to use."),
+        )
+        .arg(
+            clap::Arg::with_name("port")
+                .takes_value(true)
+                .long("port")
+                .help("Port to bind to."),
         )
 }
 
@@ -27,8 +28,6 @@ async fn main() -> Result<(), failure::Error> {
 
     let opts = opts();
     let m = opts.get_matches();
-
-    let no_auth = m.is_present("no-auth");
 
     let config_path = match m.value_of("config") {
         Some(config_path) => Path::new(config_path),
@@ -40,9 +39,19 @@ async fn main() -> Result<(), failure::Error> {
         None => std::env::current_dir().expect("process to have a current directory"),
     };
 
+    let host = match m.value_of("host") {
+        Some(host) => host.to_string(),
+        None => "127.0.0.1".to_string(),
+    };
+
+    let port = match m.value_of("port") {
+        Some(port) => str::parse(port)?,
+        None => 8000,
+    };
+
     log::info!("Loading config: {}", config_path.display());
     let config = toml::from_str(&fs::read_to_string(config_path)?)?;
 
-    web::setup(no_auth, &root, config)?.await?;
+    web::setup(&root, host, port, config)?.await?;
     Ok(())
 }

@@ -53,8 +53,9 @@ impl<T> Service<T> for MakeSvc {
 }
 
 pub fn setup(
-    no_auth: bool,
     root: &Path,
+    host: String,
+    port: u32,
     config: Config,
 ) -> Result<impl Future<Output = Result<(), error::Error>>, failure::Error> {
     let fallback = assets::Asset::get("index.html")
@@ -67,7 +68,6 @@ pub fn setup(
 
     let server = Server {
         handler: Arc::new(Handler::new(
-            no_auth,
             fallback,
             tree,
             config,
@@ -75,7 +75,10 @@ pub fn setup(
         )?),
     };
 
-    let addr: SocketAddr = str::parse(&format!("0.0.0.0:8000"))?;
+    let bind = format!("{}:{}", host, port);
+    log::info!("Listening on: http://{}", bind);
+
+    let addr: SocketAddr = str::parse(&bind)?;
 
     // TODO: add graceful shutdown.
     let server_future = server::Server::bind(&addr).serve(MakeSvc(server));
@@ -92,14 +95,12 @@ pub fn setup(
                     return result;
                 }
                 _ = interval.select_next_some() => {
-                    log::info!("Checking for expires pending tokens");
-
                     let now = Utc::now();
                     let mut tokens = pending_tokens.lock();
                     let mut to_remove = smallvec::SmallVec::<[String; 16]>::new();
 
                     for (key, pending) in &*tokens {
-                        if pending.created_at + expires > now {
+                        if now > pending.created_at + expires {
                             to_remove.push(key.to_string());
                         }
                     }
@@ -137,6 +138,12 @@ impl Error {
     }
 }
 
+impl From<serde_cbor::error::Error> for Error {
+    fn from(value: serde_cbor::error::Error) -> Error {
+        Error::Error(value.into())
+    }
+}
+
 impl From<failure::Error> for Error {
     fn from(value: failure::Error) -> Error {
         Error::Error(value)
@@ -166,7 +173,7 @@ pub struct RegisterOrLogin {
 
 #[derive(Debug)]
 pub struct Connect {
-    user: String,
+    user_id: String,
     id: String,
     return_to: Option<Url>,
 }
@@ -198,7 +205,6 @@ pub struct Handler {
     fallback: Cow<'static, [u8]>,
     players: Arc<RwLock<HashMap<String, Player>>>,
     id_twitch_client: twitch::IdTwitchClient,
-    no_auth: bool,
     login_flow: Arc<oauth2::Flow>,
     flows: HashMap<String, Arc<oauth2::Flow>>,
     pending_tokens: Arc<Mutex<HashMap<String, PendingToken>>>,
@@ -209,7 +215,6 @@ pub struct Handler {
 impl Handler {
     /// Construct a new server.
     pub fn new(
-        no_auth: bool,
         fallback: Cow<'static, [u8]>,
         tree: Arc<sled::Tree>,
         config: Config,
@@ -226,7 +231,6 @@ impl Handler {
             fallback,
             players: Arc::new(RwLock::new(Default::default())),
             id_twitch_client: twitch::IdTwitchClient::new()?,
-            no_auth,
             login_flow,
             flows,
             pending_tokens,
@@ -376,6 +380,8 @@ pub struct Connection<'a> {
     id: &'a str,
     title: &'a str,
     description: &'a str,
+    #[serde(skip_serializing_if = "db::meta_is_null")]
+    meta: &'a serde_cbor::Value,
     hash: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     token: Option<oauth2::ExportedToken<'a>>,
@@ -400,9 +406,9 @@ impl Handler {
         req: &Request<Body>,
         id: &str,
     ) -> Result<Response<Body>, Error> {
-        let session = self.verify(req)?;
+        let user = self.verify(req)?;
 
-        let c = self.db.get_connection(&session.user, id)?;
+        let c = self.db.get_connection(&user.user_id, id)?;
         let query = self.decode_query::<Query>(req)?;
 
         match c {
@@ -419,6 +425,7 @@ impl Handler {
                             id: &c.id,
                             title: &flow.config.title,
                             description: &flow.config.description,
+                            meta: &c.meta,
                             hash: c.token.hash()?,
                             token: None,
                         }));
@@ -429,6 +436,7 @@ impl Handler {
                             id: &c.id,
                             title: &flow.config.title,
                             description: &flow.config.description,
+                            meta: &c.meta,
                             hash: c.token.hash()?,
                             token: Some(c.token.as_exported()),
                         }));
@@ -450,9 +458,9 @@ impl Handler {
         req: &Request<Body>,
         id: &str,
     ) -> Result<Response<Body>, Error> {
-        let session = self.verify(req)?;
+        let user = self.verify(req)?;
 
-        let c = self.db.get_connection(&session.user, id)?;
+        let c = self.db.get_connection(&user.user_id, id)?;
 
         let c = match c {
             Some(c) => c,
@@ -465,11 +473,13 @@ impl Handler {
         };
 
         let token = flow.refresh_token(&c.token.refresh_token).await?;
+        let meta = self.token_meta(&*flow, &token).await?;
 
         self.db.add_connection(
-            &session.user,
+            &user.user_id,
             &db::Connection {
                 id: id.to_string(),
+                meta: serde_cbor::value::to_value(&meta)?,
                 token: token.clone(),
             },
         )?;
@@ -479,6 +489,7 @@ impl Handler {
             id: &c.id,
             title: &flow.config.title,
             description: &flow.config.description,
+            meta: &c.meta,
             hash: token.hash()?,
             token: Some(token.as_exported()),
         };
@@ -504,8 +515,8 @@ impl Handler {
 
     /// List connections for the current user.
     async fn connections_list(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
-        let session = self.verify(req)?;
-        let connections = self.db.connections_by_user(&session.user)?;
+        let user = self.verify(req)?;
+        let connections = self.db.connections_by_user(&user.user_id)?;
 
         let query = self.decode_query::<Query>(req)?;
 
@@ -527,6 +538,7 @@ impl Handler {
                 id: &c.id,
                 title: &flow.config.title,
                 description: &flow.config.description,
+                meta: &c.meta,
                 hash: c.token.hash()?,
                 token: if meta {
                     None
@@ -550,9 +562,9 @@ impl Handler {
         req: &Request<Body>,
         id: &str,
     ) -> Result<Response<Body>, Error> {
-        let session = self.verify(req)?;
+        let user = self.verify(req)?;
 
-        self.db.delete_connection(&session.user, id)?;
+        self.db.delete_connection(&user.user_id, id)?;
         json_empty()
     }
 
@@ -562,7 +574,7 @@ impl Handler {
         req: &Request<Body>,
         id: &str,
     ) -> Result<Response<Body>, Error> {
-        let session = self.verify(req)?;
+        let user = self.verify(req)?;
 
         let flow = match self.flows.get(id).cloned() {
             Some(flow) => flow,
@@ -587,7 +599,7 @@ impl Handler {
                 flow,
                 exchange_token,
                 action: Action::Connect(Connect {
-                    user: session.user.to_string(),
+                    user_id: user.user_id.to_string(),
                     id: String::from(id),
                     return_to: referer(req)?,
                 }),
@@ -604,7 +616,7 @@ impl Handler {
 
     /// Generate a new key.
     async fn create_key(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
-        let session = self.verify(req)?;
+        let user = self.verify(req)?;
 
         use ring::rand::SecureRandom as _;
 
@@ -613,7 +625,7 @@ impl Handler {
             .fill(&mut buf)
             .map_err(|_| format_err!("failed to generate random key"))?;
         let key = base64::encode(&buf);
-        self.db.insert_key(&session.user, &key)?;
+        self.db.insert_key(&user.user_id, &key)?;
 
         return json_ok(&KeyInfo { key });
 
@@ -625,18 +637,15 @@ impl Handler {
 
     /// Delete the current key.
     async fn delete_key(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
-        let session = self.verify(req)?;
-
-        self.db.delete_key(&session.user)?;
+        let user = self.verify(req)?;
+        self.db.delete_key(&user.user_id)?;
         return json_empty();
     }
 
     /// Get the current key.
     async fn get_key(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
-        let session = self.verify(req)?;
-
-        let key = self.db.get_key(&session.user)?;
-
+        let user = self.verify(req)?;
+        let key = self.db.get_key(&user.user_id)?;
         return json_ok(&KeyInfo { key });
 
         #[derive(Serialize)]
@@ -660,12 +669,12 @@ impl Handler {
     }
 
     /// Verify the specified request.
-    fn verify<B>(&self, req: &Request<B>) -> Result<session::SessionData, Error> {
-        let session = self
+    fn verify<B>(&self, req: &Request<B>) -> Result<db::User, Error> {
+        let user = self
             .session
             .verify(req)?
             .ok_or_else(|| Error::Unauthorized)?;
-        Ok(session)
+        Ok(user)
     }
 
     /// Handle auth redirect coming back.
@@ -705,33 +714,47 @@ impl Handler {
                 let result = self.auth_twitch_token(token.access_token.secret()).await?;
 
                 self.db.add_connection(
-                    &result.login,
+                    &result.user_id,
                     &db::Connection {
                         id: "login".to_string(),
+                        meta: serde_cbor::Value::Null,
                         token,
+                    },
+                )?;
+
+                self.db.insert_user(
+                    &result.user_id,
+                    db::User {
+                        user_id: result.user_id.to_string(),
+                        login: result.login.to_string(),
                     },
                 )?;
 
                 self.session.set_cookie(
                     r.headers_mut(),
                     "session",
-                    session::SessionData { user: result.login },
+                    session::SessionData {
+                        user_id: result.user_id,
+                    },
                 )?;
 
                 action.return_to
             }
             Action::Connect(action) => {
-                let session = self.verify(req)?;
+                let user = self.verify(req)?;
 
                 // NB: wrong user received the redirect.
-                if action.user != session.user {
+                if action.user_id != user.user_id {
                     return Err(Error::Unauthorized);
                 }
 
+                let meta = self.token_meta(&*flow, &token).await?;
+
                 self.db.add_connection(
-                    &session.user,
+                    &user.user_id,
                     &db::Connection {
                         id: action.id,
+                        meta: serde_cbor::value::to_value(&meta)?,
                         token,
                     },
                 )?;
@@ -794,13 +817,13 @@ impl Handler {
 
     /// Handle a playlist update.
     async fn player_update(&self, req: Request<Body>) -> Result<Response<Body>, Error> {
-        let session = self.session.verify(&req)?;
+        let user = self.session.verify(&req)?;
         let twitch_token = extract_twitch_token(&req);
         let update = receive_json::<PlayerUpdate>(req, Self::MAX_BYTES);
 
         // NB: need to support special case for backwards compatibility.
-        let (user, update) = match session {
-            Some(session) => (session.user, update.await?),
+        let (login, update) = match user {
+            Some(user) => (user.login, update.await?),
             None => {
                 let token = twitch_token.ok_or_else(|| Error::Unauthorized)?;
                 let (auth, update) =
@@ -811,7 +834,7 @@ impl Handler {
 
         {
             let mut players = self.players.write().expect("poisoned");
-            let player = players.entry(user).or_insert_with(Default::default);
+            let player = players.entry(login).or_insert_with(Default::default);
             player.current = update.current.map(Item::into_player_item);
             player.items = update
                 .items
@@ -854,15 +877,6 @@ impl Handler {
 
     /// Test for authentication, if enabled.
     async fn auth_twitch_token(&self, token: &str) -> Result<twitch::ValidateToken, Error> {
-        if self.no_auth {
-            return Ok(twitch::ValidateToken {
-                client_id: String::from("client_id"),
-                login: token.to_string(),
-                scopes: vec![],
-                user_id: String::from("user_id"),
-            });
-        }
-
         Ok(self
             .id_twitch_client
             .validate_token(token)
@@ -882,6 +896,34 @@ impl Handler {
 
         Ok(query)
     }
+
+    /// Get token meta-information.
+    async fn token_meta(
+        &self,
+        flow: &oauth2::Flow,
+        token: &oauth2::SavedToken,
+    ) -> Result<TokenMeta, failure::Error> {
+        match flow.ty {
+            oauth2::FlowType::Twitch => {
+                let result = self
+                    .id_twitch_client
+                    .validate_token(token.access_token.secret())
+                    .await?;
+
+                Ok(TokenMeta {
+                    login: Some(result.login),
+                })
+            }
+            _ => Ok(TokenMeta::default()),
+        }
+    }
+}
+
+/// Token meta-information.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct TokenMeta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    login: Option<String>,
 }
 
 /// Extract referer.

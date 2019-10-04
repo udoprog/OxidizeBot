@@ -45,8 +45,12 @@ class Connection extends React.Component {
   }
 
   async connect() {
-    let result = await api.connectionsCreate(this.props.id);
-    location.href = result.auth_url;
+    try {
+      let result = await api.connectionsCreate(this.props.id);
+      location.href = result.auth_url;
+    } catch(e) {
+      this.props.onError(e);
+    }
   }
 
   async copy() {
@@ -115,14 +119,18 @@ class Connection extends React.Component {
       }
     }
 
+    let meta = null;
+
+    if (this.props.meta && this.props.meta.login) {
+      meta = <div className="connected-meta">Connected account: <b>{this.props.meta.login}</b></div>;
+    }
+
     return (
       <tr>
-        <td>
-          <b>
-            {icon} {this.props.title}
-          </b>
-          <br />
-          <span>{this.props.description}</span>
+        <td className="connected">
+          <div className="connected-title">{icon} {this.props.title}</div>
+          {meta}
+          <div className="connected-description">{this.props.description}</div>
         </td>
         <td width="1%" align="right">{button}</td>
       </tr>
@@ -169,18 +177,29 @@ export default class Connections extends React.Component {
     let connections = {};
 
     for (let c of currentConnections) {
-      connections[c.id] = false;
+      connections[c.id] = {
+        connected: false,
+      };
     }
 
     for (var u of update) {
-      connections[u.id] = true;
+      connections[u.id] = {
+        meta: u.meta,
+        connected: true,
+      };
     }
 
     this.setState({connections, key: key.key});
   }
 
   async onDisconnect() {
-    await this.refreshConnections();
+    this.setState({error: null});
+
+    try {
+      await this.refreshConnections();
+    } catch(e) {
+      this.onError(e);
+    }
   }
 
   async generateKey() {
@@ -206,6 +225,10 @@ export default class Connections extends React.Component {
       this.setState({error: e});
       return;
     }
+  }
+
+  onError(e) {
+    this.setState({error: e});
   }
 
   send() {
@@ -311,12 +334,12 @@ export default class Connections extends React.Component {
 
     return (
       <RouteLayout>
+        <h2 className="page-title">My Connections</h2>
+
         <Loading isLoading={this.state.loading} />
         {error}
 
         <If isNot={this.state.loading}>
-          <h2 className="page-title">My Connections</h2>
-
           <p>
             Connections allows OxidizeBot to access the services associated with the granted connection. This might be necessary for the bot to provide certain services, like song requests through YouTube.
           </p>
@@ -340,12 +363,9 @@ export default class Connections extends React.Component {
               {currentConnections.map((c, index) => {
                 return <Connection
                   key={index}
-                  connected={this.state.connections[c.id]}
-                  type={c.type}
-                  id={c.id}
-                  title={c.title}
-                  description={c.description}
-                  onDisconnect={() => this.onDisconnect(c.id)} />;
+                  onDisconnect={() => this.onDisconnect(c.id)}
+                  onError={e => this.onError(e)}
+                  {...c} {...this.state.connections[c.id]} />;
               })}
             </tbody>
           </Table>

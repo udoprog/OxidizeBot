@@ -3061,9 +3061,9 @@ dependencies = [
 
 [[package]]
 name = "serde-hashkey"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d04f0152f9821df770ab64194630df38305871d29cc0c2cc3b2957d10aecc89"
+checksum = "794e1e8ef5ccb5bc95cba0fb87ac3c29f68d85896d8713be6ce032831fa4530b"
 dependencies = [
  "serde",
 ]
