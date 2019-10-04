@@ -1,11 +1,12 @@
 import React from "react";
 import { RouteLayout } from "./Layout.js";
 import { Alert, Table, Button, Form, FormControl, InputGroup, ButtonGroup } from "react-bootstrap";
-import { api, currentConnections } from "../globals.js";
+import { api, currentConnections, currentUser } from "../globals.js";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import copy from 'copy-to-clipboard';
 import Loading from "./Loading.js";
 import If from "./If.js";
+import UserPrompt from "./UserPrompt";
 
 class CountDown {
   constructor(count, call, end) {
@@ -92,7 +93,7 @@ class Connection extends React.Component {
 
     if (this.props.connected !== null) {
       if (this.props.connected) {
-        button = <Button size="sm" variant="danger" onClick={() => this.disconnect()} title="Disconnect"><FontAwesomeIcon icon="trash" /></Button>;
+        button = <Button size="sm" variant="danger" onClick={() => this.disconnect()} title="Remove connection">Remove&nbsp;<FontAwesomeIcon icon="trash" /></Button>;
       } else {
         let copyButton = null;
 
@@ -104,7 +105,7 @@ class Connection extends React.Component {
           );
         } else {
           copyButton = (
-            <Button size="sm" variant="success" onClick={() => this.copy()} title="Copy to clipboard">
+            <Button disabled={currentUser === null} size="sm" variant="success" onClick={() => this.copy()} title="Copy to clipboard">
               <FontAwesomeIcon icon="copy" />
             </Button>
           );
@@ -112,7 +113,7 @@ class Connection extends React.Component {
 
         button = (
           <ButtonGroup>
-            <Button size="sm" variant="primary" onClick={() => this.connect()}>Connect</Button>
+            <Button disabled={currentUser === null} size="sm" variant="primary" onClick={() => this.connect()}>Connect</Button>
             {copyButton}
           </ButtonGroup>
         );
@@ -132,7 +133,7 @@ class Connection extends React.Component {
           {meta}
           <div className="connected-description">{this.props.description}</div>
         </td>
-        <td width="1%" align="right">{button}</td>
+        <td align="right">{button}</td>
       </tr>
     );
   }
@@ -162,10 +163,13 @@ export default class Connections extends React.Component {
   }
 
   async componentDidMount() {
-    try {
-      await this.refreshConnections();
-    } catch(e) {
-      this.setState({error: e});
+    // refresh list of connections if we are logged in.
+    if (currentUser !== null) {
+      try {
+        await this.refreshConnections();
+      } catch(e) {
+        this.setState({error: e});
+      }
     }
 
     this.setState({loading: false});
@@ -296,7 +300,7 @@ export default class Connections extends React.Component {
       placeholder = "no key available";
 
       generate = (
-        <Button variant="primary" onClick={() => this.generateKey()} title="Generate a new secret key.">
+        <Button disabled={currentUser === null} variant="primary" onClick={() => this.generateKey()} title="Generate a new secret key.">
           Generate
         </Button>
       );
@@ -332,9 +336,17 @@ export default class Connections extends React.Component {
       </Form>
     );
 
+    let userPrompt;
+
+    if (currentUser === null) {
+      userPrompt = <UserPrompt />;
+    }
+
     return (
       <RouteLayout>
         <h2 className="page-title">My Connections</h2>
+
+        {userPrompt}
 
         <Loading isLoading={this.state.loading} />
         {error}

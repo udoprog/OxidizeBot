@@ -3,6 +3,7 @@ import Api from "./api.js";
 export const api = new Api(apiUrl());
 export var currentUser = null;
 export var currentConnections = [];
+export var cameFromBot = null;
 
 async function authCurrent() {
   try {
@@ -24,6 +25,10 @@ export async function updateGlobals() {
   let [user, connections] = await Promise.all([authCurrent(), connectionTypes()]);
   currentUser = user;
   currentConnections = connections;
+
+  if (document.referrer.startsWith("http://localhost:12345")) {
+    cameFromBot = document.referrer;
+  }
 }
 
 /**
