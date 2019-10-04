@@ -245,7 +245,7 @@ impl<'a> TrimmedWords<'a> {
     /// Split the commandline.
     pub fn new(string: &str) -> TrimmedWords<'_> {
         TrimmedWords {
-            string: string.trim_start_matches(is_not_alphanum),
+            string: string.trim_start_matches(is_trim_separator),
         }
     }
 }
@@ -258,24 +258,18 @@ impl<'a> Iterator for TrimmedWords<'a> {
             return None;
         }
 
-        let (out, rest) = match self.string.find(is_not_alphanum) {
+        let (out, rest) = match self.string.find(is_trim_separator) {
             Some(n) => self.string.split_at(n),
             None => return Some(mem::replace(&mut self.string, "")),
         };
 
-        self.string = rest.trim_start_matches(is_not_alphanum);
+        self.string = rest.trim_start_matches(is_trim_separator);
         Some(out)
     }
 }
 
-/// Test if char is not alphanumeric.
-fn is_not_alphanum(c: char) -> bool {
-    match c {
-        'a'..='z' => false,
-        'A'..='Z' => false,
-        '0'..='9' => false,
-        _ => true,
-    }
+fn is_trim_separator(c: char) -> bool {
+    char::is_whitespace(c) || char::is_ascii_punctuation(&c)
 }
 
 struct DurationParts {
@@ -825,7 +819,7 @@ mod tests {
 
     #[test]
     pub fn test_trimmed_words_unicode() {
-        let it = TrimmedWords::new("👌👌 foo");
+        let it = TrimmedWords::new(" 👌👌 foo");
 
         assert_eq!(
             vec![String::from("👌👌"), String::from("foo")],
@@ -878,50 +872,5 @@ mod tests {
                 str::parse("http://example.com").unwrap()
             ],
         );
-    }
-
-    #[test]
-    pub fn test_words_split_iterator() {
-        let mut it = Words::new(buf);
-
-        while let Some((idx, word)) = it.next() {
-            if let Some(emote) = emote(word) {
-                if !emotes.contains_key(word) {
-                    emotes.insert(word.to_string(), emote.clone());
-                }
-
-                let text = &buf[..idx];
-
-                if !text.is_empty() {
-                    items.push(Item::Text {
-                        text: text.to_string(),
-                    });
-                }
-
-                items.push(Item::Emote {
-                    emote: word.to_string(),
-                });
-
-                buf = &buf[(idx + word.len())..];
-                continue 'outer;
-            }
-
-            if let Ok(url) = Url::parse(word) {
-                let text = &buf[..idx];
-
-                if !text.is_empty() {
-                    items.push(Item::Text {
-                        text: text.to_string(),
-                    });
-                }
-
-                items.push(Item::Url {
-                    url: url.to_string(),
-                });
-
-                buf = &buf[(idx + word.len())..];
-                continue 'outer;
-            }
-        }
     }
 }
