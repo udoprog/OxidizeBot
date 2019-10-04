@@ -9,23 +9,35 @@ export default class Player extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
+      error: null,
+      loading: true,
       player: null,
     };
   }
 
   async componentDidMount() {
-    let player = await api.player(this.props.match.params.id);
-    this.setState({player});
+    await this.refresh();
+  }
+
+  async refresh() {
+    try {
+      let player = await api.player(this.props.match.params.id);
+      this.setState({player, loading: false});
+    } catch(e) {
+      this.setState({error: e, loading: false});
+    }
   }
 
   render() {
     let content = null;
 
     if (!this.state.loading) {
-      if (this.state.player !== null) {
+      if (this.state.error !== null) {
+        content = <Alert variant="danger" className="center">{this.state.error}</Alert>;
+      } else if (this.state.player === null) {
+        content = <Alert variant="warning" className="center">User doesn't have an active player!</Alert>;
+      } else {
         content = <>
-          <h2 className="page-title">Player for {this.props.match.params.id}</h2>
-
           <Table>
             <thead>
               <tr>
@@ -69,13 +81,12 @@ export default class Player extends React.Component {
             </tbody>
           </Table>
         </>;
-      } else {
-        content = <Alert variant="danger">No player for {this.props.match.params.id}</Alert>;
       }
     }
 
     return (
       <RouteLayout>
+        <h2 className="page-title">Player for {this.props.match.params.id}</h2>
         <Loading isLoading={this.state.loading} />
         {content}
       </RouteLayout>

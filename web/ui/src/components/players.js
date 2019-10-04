@@ -30,12 +30,12 @@ export default class Players extends React.Component {
     if (!this.state.loading) {
       if (this.state.error !== null) {
         content = (
-          <Alert variant="danger">{this.state.error.toString()}</Alert>
+          <Alert variant="danger" className="center">{this.state.error.toString()}</Alert>
         );
       } else if (this.state.players.length === 0) {
         content = (
-          <Alert variant="primary">
-            There are currently no players!
+          <Alert variant="warning" className="center">
+            No active players!
           </Alert>
         );
       } else {
