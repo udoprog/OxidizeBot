@@ -31,7 +31,6 @@ use diesel::prelude::*;
 use failure::{format_err, Error, ResultExt as _};
 use parking_lot::Mutex;
 use std::sync::Arc;
-use tokio_executor::threadpool::ThreadPool;
 
 embed_migrations!("./migrations");
 
@@ -39,12 +38,11 @@ embed_migrations!("./migrations");
 #[derive(Clone)]
 pub struct Database {
     pub(crate) pool: Arc<Mutex<SqliteConnection>>,
-    pub(crate) thread_pool: Arc<ThreadPool>,
 }
 
 impl Database {
     /// Find posts by users.
-    pub fn open(path: &Path, thread_pool: Arc<ThreadPool>) -> Result<Database, Error> {
+    pub fn open(path: &Path) -> Result<Database, Error> {
         let url = path.display().to_string();
 
         log::info!("Using database: {}", url);
@@ -64,7 +62,6 @@ impl Database {
 
         Ok(Database {
             pool: Arc::new(Mutex::new(pool)),
-            thread_pool,
         })
     }
 

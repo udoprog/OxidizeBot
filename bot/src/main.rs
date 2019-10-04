@@ -410,7 +410,6 @@ async fn try_main(
     }
 
     let injector = injector::Injector::new();
-    let thread_pool = Arc::new(tokio_executor::threadpool::ThreadPool::new());
 
     let mut modules = Vec::<Box<dyn module::Module>>::new();
     let mut futures = futures::stream::FuturesUnordered::new();
@@ -435,7 +434,7 @@ async fn try_main(
         new
     };
 
-    let db = db::Database::open(&database_path, Arc::clone(&thread_pool))
+    let db = db::Database::open(&database_path)
         .with_context(|_| format_err!("failed to open database at: {}", database_path.display()))?;
     injector.update(db.clone());
 

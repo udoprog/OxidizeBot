@@ -23,7 +23,6 @@ use irc::{
 use leaky_bucket::LeakyBuckets;
 use parking_lot::RwLock;
 use std::{fmt, sync::Arc, time};
-use tokio_executor::threadpool::ThreadPool;
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
 
@@ -350,7 +349,6 @@ impl Irc {
                 global_bus: &global_bus,
                 aliases,
                 api_url,
-                thread_pool: Arc::new(ThreadPool::new()),
                 moderator_cooldown,
                 handlers,
                 shutdown: &shutdown,
@@ -633,8 +631,6 @@ struct Handler<'a> {
     aliases: Option<db::Aliases>,
     /// Configured API URL.
     api_url: Option<String>,
-    /// Thread pool used for driving futures.
-    thread_pool: Arc<ThreadPool>,
     /// Active moderator cooldown.
     moderator_cooldown: Option<Cooldown>,
     /// Handlers for specific commands like `!skip`.
@@ -884,7 +880,6 @@ impl<'a> Handler<'a> {
                 let ctx = command::Context {
                     api_url: self.api_url.as_ref().map(|s| s.as_str()),
                     sender: &self.sender,
-                    thread_pool: &self.thread_pool,
                     user: user.clone(),
                     it,
                     shutdown: self.shutdown,
@@ -950,7 +945,7 @@ impl<'a> Handler<'a> {
                     let name = name.clone();
                     let message = message.clone();
 
-                    self.thread_pool.spawn(async move {
+                    tokio::spawn(async move {
                         chat_log.observe(&tags, &*channel, &name, &message).await;
                     });
                 }

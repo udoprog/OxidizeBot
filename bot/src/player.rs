@@ -18,7 +18,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio_executor::threadpool::ThreadPool;
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
 
@@ -1118,7 +1117,6 @@ pub trait Backend: Clone + Send + Sync {
 struct Queue {
     db: db::Database,
     queue: Arc<RwLock<VecDeque<Arc<Item>>>>,
-    thread_pool: Arc<ThreadPool>,
 }
 
 impl Queue {
@@ -1127,7 +1125,6 @@ impl Queue {
         Self {
             db,
             queue: Arc::new(RwLock::new(Default::default())),
-            thread_pool: Arc::new(ThreadPool::new()),
         }
     }
 
@@ -1161,7 +1158,7 @@ impl Queue {
         };
 
         let (future, handle) = future.remote_handle();
-        self.thread_pool.spawn(future);
+        tokio::spawn(future);
         handle
     }
 
@@ -1182,7 +1179,7 @@ impl Queue {
         };
 
         let (task, future) = future.remote_handle();
-        self.thread_pool.spawn(task);
+        tokio::spawn(task);
         future.await
     }
 

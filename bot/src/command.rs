@@ -4,7 +4,6 @@ use crate::{auth::Scope, irc, prelude::*, utils};
 use failure::Error;
 use hashbrown::HashMap;
 use std::{fmt, time::Instant};
-use tokio_executor::threadpool::ThreadPool;
 
 #[async_trait]
 /// The handler trait for a given command.
@@ -29,7 +28,6 @@ pub struct Context<'a> {
     pub api_url: Option<&'a str>,
     /// Sender associated with the command.
     pub sender: &'a irc::Sender,
-    pub thread_pool: &'a ThreadPool,
     pub user: irc::User,
     pub it: utils::Words<'a>,
     pub shutdown: &'a utils::Shutdown,
@@ -60,7 +58,7 @@ impl<'a> Context<'a> {
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
-        self.thread_pool.spawn(future);
+        tokio::spawn(future);
     }
 
     /// Verify that the current user has the associated scope.

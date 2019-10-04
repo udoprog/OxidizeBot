@@ -10,7 +10,6 @@ use irc::{
 use leaky_bucket::{LeakyBucket, LeakyBuckets};
 use parking_lot::RwLock;
 use std::{fmt, sync::Arc, time};
-use tokio_executor::threadpool::ThreadPool;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub enum Type {
@@ -29,7 +28,6 @@ impl Default for Type {
 struct Inner {
     target: String,
     sender: client::Sender,
-    thread_pool: ThreadPool,
     limiter: LeakyBucket,
     nightbot_limiter: LeakyBucket,
     nightbot: Arc<RwLock<Option<Arc<api::NightBot>>>>,
@@ -69,7 +67,6 @@ impl Sender {
             inner: Arc::new(Inner {
                 target,
                 sender,
-                thread_pool: ThreadPool::new(),
                 limiter,
                 nightbot_limiter,
                 nightbot,
@@ -103,7 +100,7 @@ impl Sender {
 
         let inner = self.inner.clone();
 
-        self.inner.thread_pool.spawn(async move {
+        tokio::spawn(async move {
             if let Err(e) = inner.limiter.acquire(1).await {
                 log_err!(e, "error in limiter");
                 return;
@@ -194,6 +191,6 @@ impl Sender {
             }
         };
 
-        self.inner.thread_pool.spawn(future);
+        tokio::spawn(future);
     }
 }

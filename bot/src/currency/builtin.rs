@@ -62,7 +62,7 @@ impl Backend {
         };
 
         let (future, remote) = future.remote_handle();
-        self.db.thread_pool.spawn(future);
+        tokio::spawn(future);
         remote.await
     }
 
@@ -79,7 +79,7 @@ impl Backend {
         };
 
         let (future, handle) = future.remote_handle();
-        self.db.thread_pool.spawn(future);
+        tokio::spawn(future);
         handle.await
     }
 
@@ -122,7 +122,7 @@ impl Backend {
         };
 
         let (future, handle) = future.remote_handle();
-        self.db.thread_pool.spawn(future);
+        tokio::spawn(future);
         handle.await
     }
 
@@ -147,7 +147,7 @@ impl Backend {
         };
 
         let (future, handle) = future.remote_handle();
-        self.db.thread_pool.spawn(future);
+        tokio::spawn(future);
         handle.await
     }
 
@@ -163,7 +163,7 @@ impl Backend {
         };
 
         let (future, handle) = future.remote_handle();
-        self.db.thread_pool.spawn(future);
+        tokio::spawn(future);
         handle.await
     }
 
@@ -217,7 +217,7 @@ impl Backend {
         };
 
         let (future, handle) = future.remote_handle();
-        self.db.thread_pool.spawn(future);
+        tokio::spawn(future);
         handle.await
     }
 }

@@ -1,26 +1,26 @@
 //! Spotify API helpers.
 
+pub use self::model::{
+    artist::SimplifiedArtist,
+    context::FullPlayingContext,
+    device::Device,
+    page::Page,
+    playlist::{FullPlaylist, SimplifiedPlaylist},
+    search::SearchTracks,
+    senum::DeviceType,
+    track::{FullTrack, SavedTrack},
+};
 use crate::{api::RequestBuilder, oauth2, prelude::*};
 use bytes::Bytes;
 use failure::Error;
 use reqwest::{header, r#async::Client, Method, StatusCode};
-use rspotify::spotify::model::search;
-pub use rspotify::spotify::{
-    model::{
-        artist::SimplifiedArtist,
-        context::FullPlayingContext,
-        device::Device,
-        page::Page,
-        playlist::{FullPlaylist, SimplifiedPlaylist},
-        track::{FullTrack, SavedTrack},
-    },
-    senum::DeviceType,
-};
 use std::{
     pin::Pin,
     task::{Context, Poll},
 };
 use url::Url;
+
+mod model;
 
 const API_URL: &'static str = "https://api.spotify.com/v1";
 
@@ -171,7 +171,7 @@ impl Spotify {
 
         req.execute()
             .await?
-            .json::<search::SearchTracks>()
+            .json::<SearchTracks>()
             .map(|r| r.tracks)
     }
 
