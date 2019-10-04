@@ -1,11 +1,10 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { withRouter } from "react-router-dom";
-import { Container, Navbar, Nav, Button } from "react-bootstrap";
+import { Container, Navbar, Nav } from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import CurrentUser from "./CurrentUser.js";
 import logo from "../assets/logo.png";
-import { cameFromBot } from "../globals";
 
 function links(props) {
   let links = [];
