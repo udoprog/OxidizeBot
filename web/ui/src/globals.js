@@ -4,8 +4,24 @@ export const api = new Api(apiUrl());
 export var currentUser = null;
 export var currentConnections = [];
 
+async function authCurrent() {
+  try {
+    return await api.authCurrent();
+  } catch (e) {
+    return null;
+  }
+}
+
+async function connectionTypes() {
+  try {
+    return await api.connectionTypes();
+  } catch (e) {
+    return [];
+  }
+}
+
 export async function updateGlobals() {
-  let [user, connections] = await Promise.all([api.authCurrent(), api.connectionTypes()]);
+  let [user, connections] = await Promise.all([authCurrent(), connectionTypes()]);
   currentUser = user;
   currentConnections = connections;
 }

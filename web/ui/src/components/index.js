@@ -41,7 +41,8 @@ export default class Index extends React.Component {
               <Card.Title><b>Packed</b> with features</Card.Title>
               <Card.Text>
                 Plays music, moderates your chat, plays games, you name it!
-                <hr />
+              </Card.Text>
+              <Card.Text>
                 If you feel something is missing, feel free to <a href="https://github.com/udoprog/OxidizeBot/issues">open an issue</a>.
               </Card.Text>
             </Card.Body>

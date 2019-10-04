@@ -10,27 +10,36 @@ export default class Players extends React.Component {
     super(props);
     this.state = {
       loading: true,
-      players: []
+      players: [],
+      error: null,
     };
   }
 
   async componentDidMount() {
-    let players = await api.players();
-    this.setState({players, loading: false});
+    try {
+      let players = await api.players();
+      this.setState({players, loading: false});
+    } catch(e) {
+      this.setState({error: e, loading: false});
+    }
   }
 
   render() {
-    let table = null;
+    let content = null;
 
     if (!this.state.loading) {
-      if (this.state.players.length === 0) {
-        table = (
+      if (this.state.error !== null) {
+        content = (
+          <Alert variant="danger">{this.state.error.toString()}</Alert>
+        );
+      } else if (this.state.players.length === 0) {
+        content = (
           <Alert variant="primary">
             There are currently no players!
           </Alert>
         );
       } else {
-        table = (
+        content = (
           <Table striped bordered hover>
             <tbody>
               {this.state.players.map(p => {
@@ -50,7 +59,7 @@ export default class Players extends React.Component {
       <RouteLayout>
         <h2 className="page-title">Players</h2>
         <Loading isLoading={this.state.loading} />
-        {table}
+        {content}
       </RouteLayout>
     );
   }

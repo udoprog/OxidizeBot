@@ -12,7 +12,7 @@ export default class Privacy extends React.Component {
       <RouteLayout>
         <h1>Privacy Policy</h1>
 
-        <p>Effective date: October 10, 2019</p>
+        <p>Effective date: October 4, 2019</p>
 
         <p>
           setbac.tv ("us", "we", or "our") operates the OxidizeBot Desktop application and Service  (the "Service").
@@ -23,8 +23,11 @@ export default class Privacy extends React.Component {
         </p>
 
         <p>
-          <b>We don't collect any personal data about our users.</b>
-          This service will only ever store access tokens related to your connected services which can be revoked under <Link to="/connections">Your Connections</Link>.
+          <b>We don't collect any personal data about our users.</b> This service will only ever store OAuth 2.0 access tokens which are made available to the OxidizeBot desktop application at your request.
+        </p>
+
+        <p>
+          At any time, you can revoke this consent under <Link to="/connections">My Connections</Link>. After which <em>all data</em> associated with the connection will be deleted.
         </p>
 
         <h2>

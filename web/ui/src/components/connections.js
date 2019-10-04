@@ -317,11 +317,16 @@ export default class Connections extends React.Component {
         <If isNot={this.state.loading}>
           <h2 className="page-title">My Connections</h2>
 
+          <p>
+            Connections allows OxidizeBot to access the services associated with the granted connection. This might be necessary for the bot to provide certain services, like song requests through YouTube.
+          </p>
+
           <h4>Secret Key</h4>
 
           <p>
             This key should be configured in your bot to allow it to communicate with this service.
           </p>
+
           {key}
 
           <h4>Connections</h4>

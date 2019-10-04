@@ -27,6 +27,14 @@ function links(props) {
     );
   }
 
+  links.push(
+    <Nav.Item key="connections">
+      <Nav.Link as={Link} active={props.match.path === "/connections"} to="/connections">
+        <FontAwesomeIcon icon="globe" /> My Connections
+      </Nav.Link>
+    </Nav.Item>
+  );
+
   return links;
 }
 
