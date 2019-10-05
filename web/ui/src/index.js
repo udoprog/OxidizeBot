@@ -10,8 +10,8 @@ import Connections from "./components/Connections.js";
 import Privacy from "./components/Privacy.js";
 
 import { library } from '@fortawesome/fontawesome-svg-core';
-import { faGlobe, faCopy, faSignOutAlt, faEyeSlash, faEye, faShare, faHome, faMusic, faTrash, faCheck } from '@fortawesome/free-solid-svg-icons';
-library.add(faGlobe, faCopy, faSignOutAlt, faEyeSlash, faEye, faShare, faHome, faMusic, faTrash, faCheck);
+import { faGlobe, faCopy, faSignOutAlt, faEyeSlash, faEye, faShare, faHome, faMusic, faTrash, faCheck, faSync, faPlug } from '@fortawesome/free-solid-svg-icons';
+library.add(faGlobe, faCopy, faSignOutAlt, faEyeSlash, faEye, faShare, faHome, faMusic, faTrash, faCheck, faSync, faPlug);
 import { faTwitch, faYoutube, faSpotify } from '@fortawesome/free-brands-svg-icons';
 library.add(faTwitch, faYoutube, faSpotify);
 

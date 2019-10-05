@@ -38,6 +38,7 @@ class CountDown {
 class Connection extends React.Component {
   constructor(props) {
     super(props);
+
     this.state = {
       copied: false,
     };
@@ -124,6 +125,12 @@ class Connection extends React.Component {
   }
 
   validate() {
+    if (this.props.outdated) {
+      return <div className="connected-validate danger">
+        <b>Connection is outdated, in order to use it properly it needs to be refreshed!</b>
+      </div>;
+    }
+
     switch (this.props.type) {
       case "spotify":
         if (!this.props.meta || !this.props.meta.product) {
@@ -142,36 +149,64 @@ class Connection extends React.Component {
 
   render() {
     let icon = this.icon();
+    let buttons = [];
     let button = null;
 
     if (this.props.connected !== null) {
-      if (this.props.connected) {
-        button = <Button size="sm" variant="danger" onClick={() => this.disconnect()} title="Remove connection">Remove&nbsp;<FontAwesomeIcon icon="trash" /></Button>;
-      } else {
-        let copyButton = null;
+      let copy = false;
 
+      if (!this.props.connected) {
+        buttons.push(
+          <Button key="connect" disabled={currentUser === null} size="sm" variant="primary" onClick={() => this.connect()} title="Connect">
+            <FontAwesomeIcon icon="plug" />
+          </Button>
+        );
+
+        copy = true;
+      }
+
+      if (this.props.outdated) {
+        buttons.push(
+          <Button key="refresh" size="sm" variant="warning" onClick={() => this.connect()} title="Connection is outdated and need to be refreshed!">
+            <FontAwesomeIcon icon="sync" />
+          </Button>
+        );
+
+        copy = true;
+      }
+
+      if (copy) {
         if (this.state.copied) {
-          copyButton = (
-            <Button size="sm" variant="success" disabled={true}>
+          buttons.push(
+            <Button key="copy" size="sm" variant="success" disabled={true}>
               <FontAwesomeIcon icon="check" />
             </Button>
           );
         } else {
-          copyButton = (
-            <Button disabled={currentUser === null} size="sm" variant="success" onClick={() => this.copy()} title="Copy to clipboard">
+          buttons.push(
+            <Button key="copy" disabled={currentUser === null} size="sm" variant="success" onClick={() => this.copy()} title="Copy connection URL to clipboard">
               <FontAwesomeIcon icon="copy" />
             </Button>
           );
         }
+      }
 
-        button = (
-          <ButtonGroup>
-            <Button disabled={currentUser === null} size="sm" variant="primary" onClick={() => this.connect()}>Connect</Button>
-            {copyButton}
-          </ButtonGroup>
+      if (this.props.connected) {
+        buttons.push(
+          <Button key="remove" size="sm" variant="danger" onClick={() => this.disconnect()} title="Remove connection">
+            <FontAwesomeIcon icon="trash" />
+          </Button>
+        );
+      } else {
+        buttons.push(
+          <Button disabled={true} key="remove" size="sm" variant="light" title="Connection not present">
+            <FontAwesomeIcon icon="trash" />
+          </Button>
         );
       }
     }
+
+    buttons = <ButtonGroup>{buttons}</ButtonGroup>;
 
     let meta = this.meta();
     let validate = this.validate();
@@ -184,7 +219,7 @@ class Connection extends React.Component {
           {validate}
           <div className="connected-description">{this.props.description}</div>
         </td>
-        <td align="right">{button}</td>
+        <td align="right">{buttons}</td>
       </tr>
     );
   }
@@ -203,13 +238,18 @@ function baseConnections() {
 export default class Connections extends React.Component {
   constructor(props) {
     super(props);
+
+    let q = new URLSearchParams(props.location.search);
+
     this.state = {
       loading: true,
       error: null,
       connections: baseConnections(),
       key: null,
       showKeyCount: null,
+      justConnected: q.get("connected"),
     };
+
     this.showKey = null;
   }
 
@@ -239,6 +279,7 @@ export default class Connections extends React.Component {
 
     for (var u of update) {
       connections[u.id] = {
+        outdated: u.outdated,
         meta: u.meta,
         connected: true,
       };
@@ -318,7 +359,33 @@ export default class Connections extends React.Component {
     });
   }
 
+  renderJustConnected() {
+    if (!this.state.justConnected) {
+      return null;
+    }
+
+    let connected = currentConnections.find(c => c.id === this.state.justConnected);
+
+    if (connected === null) {
+      return null;
+    }
+
+    let otherAccount = null;
+
+    if (currentUser === null) {
+      otherAccount = <> (Another Account)</>;
+    }
+
+    return (
+      <Alert variant="info" className="center">
+        <b>Successfully connected {connected.title}</b>{otherAccount}
+      </Alert>
+    );
+  }
+
   render() {
+    let justConnected = this.renderJustConnected();
+
     let error = null;
 
     if (this.state.error !== null) {
@@ -387,9 +454,9 @@ export default class Connections extends React.Component {
       </Form>
     );
 
-    let userPrompt;
+    let userPrompt = null;
 
-    if (currentUser === null) {
+    if (justConnected === null && currentUser === null) {
       userPrompt = <UserPrompt />;
     }
 
@@ -397,6 +464,7 @@ export default class Connections extends React.Component {
       <RouteLayout>
         <h2 className="page-title">My Connections</h2>
 
+        {justConnected}
         {userPrompt}
 
         <Loading isLoading={this.state.loading} />

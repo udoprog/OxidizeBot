@@ -23,6 +23,8 @@ static SPOTIFY_TRACK_URL: &'static str = "https://open.spotify.com/track";
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Config {
+    #[serde(default)]
+    verify_connection: bool,
     database: RelativePathBuf,
     base_url: Url,
     #[serde(default)]
@@ -385,6 +387,7 @@ pub struct Connection<'a> {
     #[serde(skip_serializing_if = "db::meta_is_null")]
     meta: &'a serde_cbor::Value,
     hash: String,
+    outdated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     token: Option<oauth2::ExportedToken<'a>>,
 }
@@ -420,10 +423,7 @@ impl Handler {
                     None => return json_ok(Data::empty()),
                 };
 
-                // Flow configuration changed and token is no longer compatible.
-                if !flow.is_compatible_with(&c.token) {
-                    return json_ok(Data::empty());
-                }
+                let outdated = !flow.is_compatible_with(&c.token);
 
                 match query.format.as_ref().map(String::as_str) {
                     Some("meta") => {
@@ -434,6 +434,7 @@ impl Handler {
                             description: &flow.config.description,
                             meta: &c.meta,
                             hash: c.token.hash()?,
+                            outdated,
                             token: None,
                         }));
                     }
@@ -445,6 +446,7 @@ impl Handler {
                             description: &flow.config.description,
                             meta: &c.meta,
                             hash: c.token.hash()?,
+                            outdated,
                             token: Some(c.token.as_exported()),
                         }));
                     }
@@ -491,6 +493,8 @@ impl Handler {
             },
         )?;
 
+        let outdated = !flow.is_compatible_with(&token);
+
         let connection = Connection {
             ty: flow.config.ty,
             id: &c.id,
@@ -498,6 +502,7 @@ impl Handler {
             description: &flow.config.description,
             meta: &c.meta,
             hash: token.hash()?,
+            outdated,
             token: Some(token.as_exported()),
         };
 
@@ -540,10 +545,7 @@ impl Handler {
                 None => continue,
             };
 
-            // Flow configuration changed and token is no longer compatible.
-            if !flow.is_compatible_with(&c.token) {
-                continue;
-            }
+            let outdated = !flow.is_compatible_with(&c.token);
 
             out.push(Connection {
                 ty: flow.config.ty,
@@ -552,6 +554,7 @@ impl Handler {
                 description: &flow.config.description,
                 meta: &c.meta,
                 hash: c.token.hash()?,
+                outdated,
                 token: if meta {
                     None
                 } else {
@@ -721,7 +724,7 @@ impl Handler {
 
         let token = flow.handle_received_token(exchange_token, query).await?;
 
-        let return_to = match action {
+        let (return_to, connected) = match action {
             Action::RegisterOrLogin(action) => {
                 let result = self.auth_twitch_token(token.access_token.secret()).await?;
 
@@ -750,35 +753,43 @@ impl Handler {
                     },
                 )?;
 
-                action.return_to
+                (action.return_to, None)
             }
             Action::Connect(action) => {
-                let user = self.verify(req)?;
+                if self.config.verify_connection {
+                    let user = self.verify(req)?;
 
-                // NB: wrong user received the redirect.
-                if action.user_id != user.user_id {
-                    return Err(Error::Unauthorized);
+                    // NB: wrong user received the redirect.
+                    if action.user_id != user.user_id {
+                        return Err(Error::Unauthorized);
+                    }
                 }
 
                 let meta = self.token_meta(&*flow, &token).await?;
 
                 self.db.add_connection(
-                    &user.user_id,
+                    &action.user_id,
                     &db::Connection {
-                        id: action.id,
+                        id: action.id.clone(),
                         meta,
                         token,
                     },
                 )?;
 
-                action.return_to
+                (action.return_to, Some(action.id))
             }
         };
 
-        let return_to = match return_to {
-            Some(url) => url.to_string(),
-            None => self.config.base_url.to_string(),
+        let mut return_to = match return_to {
+            Some(url) => url.clone(),
+            None => self.config.base_url.clone(),
         };
+
+        if let Some(id) = connected {
+            return_to.set_query(Some(&format!("connected={}", id)));
+        }
+
+        let return_to = return_to.to_string();
 
         r.headers_mut().insert(
             header::LOCATION,
