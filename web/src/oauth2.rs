@@ -5,7 +5,11 @@ use ::oauth2::{
 use chrono::{DateTime, Utc};
 use failure::{bail, format_err, Error};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 use url::Url;
 
 /// The configuration for a single flow.
@@ -44,14 +48,7 @@ impl FlowConfig {
             client.add_scope(scope.clone());
         }
 
-        let mut flow = Flow::new(
-            self.ty,
-            self.id.to_string(),
-            client,
-            self.client_id.clone(),
-            self.client_secret.clone(),
-            self.clone(),
-        );
+        let mut flow = Flow::new(client, self.clone());
 
         for (key, value) in &self.extra_params {
             flow.extra_param(key.clone(), value.clone());
@@ -168,34 +165,44 @@ pub enum FlowType {
 
 #[derive(Debug)]
 pub struct Flow {
-    pub ty: FlowType,
-    id: String,
     client: Client,
-    client_id: String,
-    client_secret: ClientSecret,
     extra_params: Vec<(String, String)>,
     pub config: FlowConfig,
 }
 
 impl Flow {
     /// Construct a new web integration.
-    pub fn new(
-        ty: FlowType,
-        id: String,
-        client: Client,
-        client_id: String,
-        client_secret: ClientSecret,
-        config: FlowConfig,
-    ) -> Self {
+    pub fn new(client: Client, config: FlowConfig) -> Self {
         Flow {
-            ty,
-            id,
             client,
-            client_id,
-            client_secret,
             extra_params: Vec::new(),
             config,
         }
+    }
+
+    /// Check if saved token is compatible with the specified token.
+    pub fn is_compatible_with(&self, token: &SavedToken) -> bool {
+        let mut scopes = HashSet::new();
+        scopes.extend(self.config.scopes.iter().cloned());
+
+        for s in &token.scopes {
+            scopes.remove(&s);
+        }
+
+        if !scopes.is_empty() {
+            return false;
+        }
+
+        if self.config.client_id != token.client_id {
+            return false;
+        }
+
+        true
+    }
+
+    /// Access scopes configured for this flow.
+    pub fn scopes(&self) -> &[Scope] {
+        &self.config.scopes
     }
 
     /// Append an extra parameter to the given flow.
@@ -228,7 +235,7 @@ impl Flow {
             bail!("CSRF Token Mismatch");
         }
 
-        match self.ty {
+        match self.config.ty {
             FlowType::Twitch => {
                 self.exchange_received_code::<TwitchToken>(received_token.code)
                     .await
@@ -255,8 +262,8 @@ impl Flow {
         let token_response = self
             .client
             .exchange_code(code)
-            .param("client_id", self.client_id.as_str())
-            .param("client_secret", self.client_secret.secret())
+            .param("client_id", self.config.client_id.as_str())
+            .param("client_secret", self.config.client_secret.secret())
             .execute::<T>()
             .await;
 
@@ -281,8 +288,8 @@ impl Flow {
         let refreshed_at = Utc::now();
 
         let token = SavedToken {
-            flow_id: self.id.clone(),
-            client_id: self.client_id.clone(),
+            flow_id: self.config.id.clone(),
+            client_id: self.config.client_id.clone(),
             refresh_token,
             access_token: token_response.access_token().clone(),
             refreshed_at: refreshed_at.clone(),
@@ -298,7 +305,7 @@ impl Flow {
 
     /// Refresh the specified token.
     pub async fn refresh_token(&self, refresh_token: &RefreshToken) -> Result<SavedToken, Error> {
-        match self.ty {
+        match self.config.ty {
             FlowType::Twitch => self.refresh_token_inner::<TwitchToken>(refresh_token).await,
             FlowType::YouTube => {
                 self.refresh_token_inner::<StandardToken>(refresh_token)
@@ -326,8 +333,8 @@ impl Flow {
         let token_response = self
             .client
             .exchange_refresh_token(refresh_token)
-            .param("client_id", self.client_id.as_str())
-            .param("client_secret", self.client_secret.secret().as_str())
+            .param("client_id", self.config.client_id.as_str())
+            .param("client_secret", self.config.client_secret.secret().as_str())
             .execute::<T>()
             .await;
 
@@ -348,8 +355,8 @@ impl Flow {
         let refreshed_at = Utc::now();
 
         let token = SavedToken {
-            flow_id: self.id.clone(),
-            client_id: self.client_id.clone(),
+            flow_id: self.config.id.clone(),
+            client_id: self.config.client_id.clone(),
             refresh_token,
             access_token: token_response.access_token().clone(),
             refreshed_at,

@@ -87,6 +87,59 @@ class Connection extends React.Component {
     }
   }
 
+  meta() {
+    let account = null;
+
+    switch (this.props.type) {
+      case "twitch":
+        if (!this.props.meta || !this.props.meta.login) {
+          return null;
+        }
+
+        account = <a href={`https://twitch.tv/${this.props.meta.login}`}><b>{this.props.meta.login}</b></a>;
+        break;
+      case "spotify":
+        if (!this.props.meta || !this.props.meta.display_name) {
+          return null;
+        }
+
+        let product = null;
+
+        if (this.props.meta.product) {
+          product = <> ({this.props.meta.product})</>;
+        }
+
+        account = <><b>{this.props.meta.display_name}</b>{product}</>;
+
+        if (this.props.meta.external_urls && this.props.meta.external_urls.spotify) {
+          account = <a href={this.props.meta.external_urls.spotify}>{account}</a>;
+        }
+
+        break;
+      default:
+        return null;
+    }
+
+    return <div className="connected-meta">Connected account: {account}</div>;
+  }
+
+  validate() {
+    switch (this.props.type) {
+      case "spotify":
+        if (!this.props.meta || !this.props.meta.product) {
+          return null;
+        }
+
+        if (this.props.meta.product === "premium") {
+          return null;
+        }
+
+        return <div className="connected-validate danger"><b>You need a Premium Spotify Account</b></div>;
+      default:
+        return null;
+    }
+  }
+
   render() {
     let icon = this.icon();
     let button = null;
@@ -120,17 +173,15 @@ class Connection extends React.Component {
       }
     }
 
-    let meta = null;
-
-    if (this.props.meta && this.props.meta.login) {
-      meta = <div className="connected-meta">Connected account: <b>{this.props.meta.login}</b></div>;
-    }
+    let meta = this.meta();
+    let validate = this.validate();
 
     return (
       <tr>
         <td className="connected">
           <div className="connected-title">{icon} {this.props.title}</div>
           {meta}
+          {validate}
           <div className="connected-description">{this.props.description}</div>
         </td>
         <td align="right">{button}</td>

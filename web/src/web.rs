@@ -1,4 +1,4 @@
-use crate::{db, oauth2, session, twitch};
+use crate::{api, db, oauth2, session};
 use chrono::{DateTime, Utc};
 use failure::format_err;
 use futures::prelude::*;
@@ -204,7 +204,8 @@ pub struct Handler {
     session: session::Session,
     fallback: Cow<'static, [u8]>,
     players: Arc<RwLock<HashMap<String, Player>>>,
-    id_twitch_client: twitch::IdTwitchClient,
+    id_twitch_client: api::IdTwitchClient,
+    spotify: api::Spotify,
     login_flow: Arc<oauth2::Flow>,
     flows: HashMap<String, Arc<oauth2::Flow>>,
     pending_tokens: Arc<Mutex<HashMap<String, PendingToken>>>,
@@ -230,7 +231,8 @@ impl Handler {
             session,
             fallback,
             players: Arc::new(RwLock::new(Default::default())),
-            id_twitch_client: twitch::IdTwitchClient::new()?,
+            id_twitch_client: api::IdTwitchClient::new()?,
+            spotify: api::Spotify::new()?,
             login_flow,
             flows,
             pending_tokens,
@@ -418,10 +420,15 @@ impl Handler {
                     None => return json_ok(Data::empty()),
                 };
 
+                // Flow configuration changed and token is no longer compatible.
+                if !flow.is_compatible_with(&c.token) {
+                    return json_ok(Data::empty());
+                }
+
                 match query.format.as_ref().map(String::as_str) {
                     Some("meta") => {
                         return json_ok(Data::from(Connection {
-                            ty: flow.ty,
+                            ty: flow.config.ty,
                             id: &c.id,
                             title: &flow.config.title,
                             description: &flow.config.description,
@@ -432,7 +439,7 @@ impl Handler {
                     }
                     _ => {
                         return json_ok(Data::from(Connection {
-                            ty: flow.ty,
+                            ty: flow.config.ty,
                             id: &c.id,
                             title: &flow.config.title,
                             description: &flow.config.description,
@@ -479,13 +486,13 @@ impl Handler {
             &user.user_id,
             &db::Connection {
                 id: id.to_string(),
-                meta: serde_cbor::value::to_value(&meta)?,
+                meta,
                 token: token.clone(),
             },
         )?;
 
         let connection = Connection {
-            ty: flow.ty,
+            ty: flow.config.ty,
             id: &c.id,
             title: &flow.config.title,
             description: &flow.config.description,
@@ -533,8 +540,13 @@ impl Handler {
                 None => continue,
             };
 
+            // Flow configuration changed and token is no longer compatible.
+            if !flow.is_compatible_with(&c.token) {
+                continue;
+            }
+
             out.push(Connection {
-                ty: flow.ty,
+                ty: flow.config.ty,
                 id: &c.id,
                 title: &flow.config.title,
                 description: &flow.config.description,
@@ -754,7 +766,7 @@ impl Handler {
                     &user.user_id,
                     &db::Connection {
                         id: action.id,
-                        meta: serde_cbor::value::to_value(&meta)?,
+                        meta,
                         token,
                     },
                 )?;
@@ -876,7 +888,7 @@ impl Handler {
     }
 
     /// Test for authentication, if enabled.
-    async fn auth_twitch_token(&self, token: &str) -> Result<twitch::ValidateToken, Error> {
+    async fn auth_twitch_token(&self, token: &str) -> Result<api::twitch::ValidateToken, Error> {
         Ok(self
             .id_twitch_client
             .validate_token(token)
@@ -902,20 +914,25 @@ impl Handler {
         &self,
         flow: &oauth2::Flow,
         token: &oauth2::SavedToken,
-    ) -> Result<TokenMeta, failure::Error> {
-        match flow.ty {
+    ) -> Result<serde_cbor::Value, failure::Error> {
+        return match flow.config.ty {
             oauth2::FlowType::Twitch => {
                 let result = self
                     .id_twitch_client
                     .validate_token(token.access_token.secret())
                     .await?;
 
-                Ok(TokenMeta {
-                    login: Some(result.login),
-                })
+                Ok(serde_cbor::value::to_value(&result)?)
             }
-            _ => Ok(TokenMeta::default()),
-        }
+            oauth2::FlowType::Spotify => {
+                let result = self.spotify.v1_me(token.access_token.secret()).await?;
+                Ok(serde_cbor::value::to_value(&result)?)
+            }
+            _ => Ok(serde_cbor::value::to_value(&Empty {})?),
+        };
+
+        #[derive(Serialize)]
+        pub struct Empty {}
     }
 }
 
