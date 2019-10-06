@@ -3,7 +3,7 @@ use ::oauth2::State;
 use chrono::{DateTime, Utc};
 use failure::format_err;
 use futures::prelude::*;
-use hyper::{body::Body, error, header, server, Method, Request, Response, StatusCode};
+use hyper::{body::Body, error, header, server, service, Method, Request, Response, StatusCode};
 use parking_lot::Mutex;
 use relative_path::RelativePathBuf;
 use serde::{de, Deserialize, Serialize};
@@ -14,10 +14,8 @@ use std::{
     net::SocketAddr,
     path::Path,
     sync::{Arc, RwLock},
-    task::{Context, Poll},
     time,
 };
-use tower_service::Service;
 use url::Url;
 
 static SPOTIFY_TRACK_URL: &'static str = "https://open.spotify.com/track";
@@ -39,22 +37,6 @@ mod assets {
     pub struct Asset;
 }
 
-pub struct MakeSvc(Server);
-
-impl<T> Service<T> for MakeSvc {
-    type Response = Server;
-    type Error = std::io::Error;
-    type Future = future::Ready<Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Ok(()).into()
-    }
-
-    fn call(&mut self, _: T) -> Self::Future {
-        future::ok(self.0.clone())
-    }
-}
-
 pub fn setup(
     root: &Path,
     host: String,
@@ -69,14 +51,12 @@ pub fn setup(
 
     let pending_tokens = Arc::new(Mutex::new(HashMap::new()));
 
-    let server = Server {
-        handler: Arc::new(Handler::new(
-            fallback,
-            tree,
-            config,
-            pending_tokens.clone(),
-        )?),
-    };
+    let handler = Arc::new(Handler::new(
+        fallback,
+        tree,
+        config,
+        pending_tokens.clone(),
+    )?);
 
     let bind = format!("{}:{}", host, port);
     log::info!("Listening on: http://{}", bind);
@@ -84,7 +64,11 @@ pub fn setup(
     let addr: SocketAddr = str::parse(&bind)?;
 
     // TODO: add graceful shutdown.
-    let server_future = server::Server::bind(&addr).serve(MakeSvc(server));
+    let server_future = server::Server::bind(&addr).serve(service::make_service_fn(move |_| {
+        let handler = handler.clone();
+        let service = service::service_fn(move |req| handler.clone().call(req));
+        async move { Ok::<_, hyper::Error>(service) }
+    }));
 
     let future = async move {
         let mut interval = tokio::timer::Interval::new_interval(time::Duration::from_secs(30));
@@ -278,7 +262,7 @@ impl Handler {
         r
     }
 
-    async fn handle_call(&self, req: Request<Body>) -> Response<Body> {
+    async fn call(self: Arc<Self>, req: Request<Body>) -> Result<Response<Body>, failure::Error> {
         let uri = req.uri();
 
         log::info!("{} {}", req.method(), uri.path());
@@ -312,16 +296,16 @@ impl Handler {
                 drop(path);
                 self.player_update(req).await
             }
-            (&Method::GET, _) => return self.static_asset(uri.path()),
+            (&Method::GET, _) => return Ok(self.static_asset(uri.path())),
             _ => Err(Error::NotFound),
         };
 
-        match result {
+        let response = match result {
             Ok(mut response) => {
                 response
                     .headers_mut()
                     .insert(header::CACHE_CONTROL, "no-cache".parse().unwrap());
-                return response;
+                response
             }
             Err(e) => {
                 let result = match e {
@@ -340,41 +324,19 @@ impl Handler {
                         log::error!("error: {}", e);
                         let mut r = Response::new(Body::from("Internal Server Error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                        return r;
+                        r
                     }
                     Err(_) => {
                         log::error!("unknown error :(");
                         let mut r = Response::new(Body::from("Internal Server Error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                        return r;
+                        r
                     }
                 }
             }
-        }
-    }
-}
+        };
 
-/// Interface to the server.
-#[derive(Clone)]
-pub struct Server {
-    handler: Arc<Handler>,
-}
-
-impl Service<Request<Body>> for Server {
-    type Response = Response<Body>;
-    type Error = failure::Error;
-    type Future = future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self, _: &mut Context) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
-        let handler = self.handler.clone();
-
-        let future = async move { Ok(handler.handle_call(req).await) };
-
-        future.boxed()
+        Ok(response)
     }
 }
 

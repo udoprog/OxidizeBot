@@ -25,7 +25,7 @@ fi
 
 zip=$PWD/oxidize-$version-$TRAVIS_OS_NAME-$arch.zip
 
-cargo build --release --bin oxidize
+cargo build --release --bin oxidize --no-default-features
 mkdir target/build
 
 case $TRAVIS_OS_NAME in

@@ -229,8 +229,9 @@ impl ConnectionFactory {
         } else {
             self.sync_token.clear();
 
-            if !self.current_hash.is_none() {
+            if self.current_hash.is_some() {
                 self.injector.clear_key(&self.key);
+                self.current_hash = None;
             }
 
             self.server.clear_connection(&self.flow_id);

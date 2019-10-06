@@ -2028,7 +2028,6 @@ dependencies = [
  "time",
  "tokio",
  "toml 0.5.3",
- "tower-service",
  "url 2.1.0",
 ]
 

@@ -8,7 +8,6 @@ license = "MIT/Apache-2.0"
 [dependencies]
 bytes = "0.4.12"
 hyper = "=0.13.0-alpha.4"
-tower-service = "=0.3.0-alpha.2"
 tokio = "=0.2.0-alpha.6"
 failure = "0.1.5"
 serde = { version = "1.0.100", features = ["rc", "derive"] }

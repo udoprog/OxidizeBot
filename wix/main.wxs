@@ -27,7 +27,7 @@
       <Directory Id="ProgramMenuFolder">
         <Directory Id="ApplicationProgramsFolder" Name="OxidizeBot">
           <Component Id='ApplicationShortcut' Guid='{9458d268-a228-415c-ba3c-03059ebe889d}' Win64='$(var.Win64)'>
-            <Shortcut Id='ApplicationStartMenuShortcut' Name='OxidizeBot' Description='Oxidize Twitch Bot' Target='[!oxidize.exe]' WorkingDirectory='APPLICATIONFOLDER'/>
+            <Shortcut Id='ApplicationStartMenuShortcut' Name='OxidizeBot' Description='Oxidize Twitch Bot' Target='[!oxidize.exe]' WorkingDirectory='APPLICATIONFOLDER' Arguments="--watchdog" />
             <RemoveFolder Id='CleanUpShortCut' Directory='ApplicationProgramsFolder' On='uninstall'/>
             <RegistryValue Root='HKCU' Key='Software\OxidizeBot\OxidizeBot' Name='installed' Type='integer' Value='1' KeyPath='yes'/>
           </Component>
@@ -79,7 +79,7 @@
 
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch OxidizeBot" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
-    <Property Id="WixShellExecTarget" Value="[#oxidize.exe]" />
+    <Property Id="WixShellExecTarget" Value="[#oxidize.exe] --watchdog" />
     <CustomAction Id="LaunchApplication" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" />
   </Product>
 </Wix>
