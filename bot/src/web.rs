@@ -823,7 +823,8 @@ impl Api {
                 api::spotify::DeviceType::Computer => "Computer",
                 api::spotify::DeviceType::Smartphone => "Smart Phone",
                 api::spotify::DeviceType::Speaker => "Speaker",
-                api::spotify::DeviceType::Unknown => "Unknown",
+                api::spotify::DeviceType::CastAudio => "Cast Audio",
+                _ => "Unknown",
             }
         }
 

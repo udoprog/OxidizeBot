@@ -1222,5 +1222,7 @@ pub enum DeviceType {
     Computer,
     Smartphone,
     Speaker,
+    CastAudio,
+    #[serde(other)]
     Unknown,
 }
