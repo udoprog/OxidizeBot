@@ -35,7 +35,7 @@ pub struct Token {
     pub scopes: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 pub struct ConnectionMeta {
     pub id: String,
     pub title: String,

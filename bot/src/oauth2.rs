@@ -153,6 +153,7 @@ struct ConnectionFactory {
     injector: Injector,
     key: Key<SyncToken>,
     server: web::Server,
+    current_hash: Option<String>,
 }
 
 enum Validation {
@@ -172,14 +173,23 @@ impl ConnectionFactory {
             Validation::Cleared => {
                 self.settings.set_silent("connection", None::<Connection>)?;
                 self.sync_token.clear();
-                self.injector.clear_key(&self.key);
+
+                if !self.current_hash.is_none() {
+                    self.injector.clear_key(&self.key);
+                }
+
                 self.server.clear_connection(&self.flow_id);
             }
             Validation::Updated(connection) => {
                 let meta = connection.as_meta();
                 self.settings.set_silent("connection", Some(&connection))?;
                 self.sync_token.update(connection);
-                self.injector.update_key(&self.key, self.sync_token.clone());
+
+                if self.current_hash.as_ref() != Some(&meta.hash) {
+                    self.injector.update_key(&self.key, self.sync_token.clone());
+                    self.current_hash = Some(meta.hash.clone());
+                }
+
                 self.server.update_connection(&self.flow_id, meta);
             }
         }
@@ -209,11 +219,20 @@ impl ConnectionFactory {
         if let Some(connection) = connection {
             let meta = connection.as_meta();
             self.sync_token.update(connection);
-            self.injector.update_key(&self.key, self.sync_token.clone());
+
+            if self.current_hash.as_ref() != Some(&meta.hash) {
+                self.injector.update_key(&self.key, self.sync_token.clone());
+                self.current_hash = Some(meta.hash.clone());
+            }
+
             self.server.update_connection(&self.flow_id, meta);
         } else {
             self.sync_token.clear();
-            self.injector.clear_key(&self.key);
+
+            if !self.current_hash.is_none() {
+                self.injector.clear_key(&self.key);
+            }
+
             self.server.clear_connection(&self.flow_id);
         }
 
@@ -401,6 +420,7 @@ pub async fn build(
         injector,
         key,
         server,
+        current_hash: None,
     };
 
     // check for expirations.
