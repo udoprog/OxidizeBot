@@ -15,17 +15,16 @@ diesel = { version = "1.4.2", features = ["sqlite", "chrono"] }
 diesel_migrations = "1.4.0"
 eudex = "0.1.1"
 hashbrown = { version = "0.6.0", features = ["serde"] }
-warp = { version = "0.1.20", git = "https://github.com/jxs/warp.git" }
+warp = { version = "0.2.0-alpha.1", git = "https://github.com/udoprog/warp" }
 log = "0.4.8"
-oauth2 = {version = "2.0.0-alpha.5", git = "https://github.com/udoprog/oauth2-rs", branch = "async"}
 relative-path = { version = "0.4.0", features = ["serde"] }
-reqwest = { version = "0.10.0-alpha.0", git = "https://github.com/seanmonstar/reqwest.git", rev = "ebe57e10" }
+reqwest = { version = "0.10.0-alpha.0", git = "https://github.com/seanmonstar/reqwest.git" }
 serde = { version = "1.0.101", features = ["rc"] }
 serde_yaml = "0.8.9"
 serde_json = "1.0.40"
 serde_cbor = "0.10.1"
 serde_urlencoded = "0.6.1"
-tokio = "0.2.0-alpha.5"
+tokio = "0.2.0-alpha.6"
 url = { version = "2.1", features = ["serde"] }
 Inflector = "0.11.4"
 base64 = "0.10.1"
@@ -55,13 +54,14 @@ crossbeam = "0.7.2"
 hex = "0.4.0"
 graphql_client = "0.8.0"
 futures-option = "0.1.2"
-futures-cache = "0.7.1"
+futures-cache = "0.8.0"
 failure = "0.1.5"
-async-injector = "0.2.2"
+async-injector = "0.3.0"
 async-trait = "0.1.13"
-leaky-bucket = { version = "0.3.1",  features = ["tokio02"] }
+leaky-bucket = "0.4.1"
 regex = "1.3.1"
 backtrace = "0.3.38"
+futures-preview = "0.3.0-alpha.19"
 
 [dependencies.tracing]
 version = "0.1"
@@ -78,10 +78,6 @@ features = ["tokio-alpha"]
 version = "0.13.6"
 git = "https://github.com/udoprog/irc.git"
 branch = "next"
-
-[dependencies.futures]
-package = "futures-preview"
-version = "0.3.0-alpha.18"
 
 [build-dependencies]
 winres = "0.1.11"
