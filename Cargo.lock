@@ -109,7 +109,7 @@ dependencies = [
 [[package]]
 name = "async-oauth2"
 version = "0.1.0"
-source = "git+https://github.com/udoprog/async-oauth2#9d15823e08010a204d02d8403352720e4ea8f910"
+source = "git+https://github.com/udoprog/async-oauth2#338f31c5e9fba8aa499556d4694578ab66f323f3"
 dependencies = [
  "base64",
  "rand 0.6.5",
@@ -906,6 +906,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4914ae450db1921a56c91bde97a27846287d062087d4a652efc09bb3a01ebda"
 
 [[package]]
+name = "futures-join-macro-preview"
+version = "0.3.0-alpha.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59e260e6b48ce7d99936c40a7088d782a499a67bef41da5481d21b439454bcea"
+dependencies = [
+ "proc-macro-hack",
+ "proc-macro2 1.0.5",
+ "quote 1.0.2",
+ "syn 1.0.5",
+]
+
+[[package]]
 name = "futures-option"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -955,6 +967,7 @@ dependencies = [
  "futures-channel-preview",
  "futures-core-preview",
  "futures-io-preview",
+ "futures-join-macro-preview",
  "futures-select-macro-preview",
  "futures-sink-preview",
  "memchr",

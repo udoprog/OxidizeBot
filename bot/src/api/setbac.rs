@@ -26,13 +26,13 @@ pub struct Token {
     /// Flow that generated the token.
     pub flow_id: String,
     /// Access token.
-    pub access_token: ::oauth2::AccessToken,
+    pub access_token: String,
     /// When the token was refreshed.
     pub refreshed_at: DateTime<Utc>,
     /// Expires in seconds.
     pub expires_in: Option<u64>,
     /// Scopes associated with token.
-    pub scopes: Vec<::oauth2::Scope>,
+    pub scopes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -66,12 +66,12 @@ impl Connection {
 impl Token {
     /// The client id that generated the token.
     pub fn client_id(&self) -> &str {
-        self.client_id.as_str()
+        &self.client_id
     }
 
     /// Get the current access token.
     pub fn access_token(&self) -> &str {
-        self.access_token.secret().as_str()
+        &self.access_token
     }
 
     /// Return `true` if the token expires within 30 minutes.
@@ -98,7 +98,7 @@ impl Token {
             .collect::<HashSet<String>>();
 
         for s in &self.scopes {
-            scopes.remove(s.as_ref());
+            scopes.remove(s);
         }
 
         scopes.is_empty()

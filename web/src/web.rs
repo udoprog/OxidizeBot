@@ -1,4 +1,5 @@
 use crate::{api, db, oauth2, session};
+use ::oauth2::State;
 use chrono::{DateTime, Utc};
 use failure::format_err;
 use futures::prelude::*;
@@ -99,11 +100,11 @@ pub fn setup(
                 _ = interval.select_next_some() => {
                     let now = Utc::now();
                     let mut tokens = pending_tokens.lock();
-                    let mut to_remove = smallvec::SmallVec::<[String; 16]>::new();
+                    let mut to_remove = smallvec::SmallVec::<[State; 16]>::new();
 
                     for (key, pending) in &*tokens {
                         if now > pending.created_at + expires {
-                            to_remove.push(key.to_string());
+                            to_remove.push(*key);
                         }
                     }
 
@@ -210,7 +211,7 @@ pub struct Handler {
     spotify: api::Spotify,
     login_flow: Arc<oauth2::Flow>,
     flows: HashMap<String, Arc<oauth2::Flow>>,
-    pending_tokens: Arc<Mutex<HashMap<String, PendingToken>>>,
+    pending_tokens: Arc<Mutex<HashMap<State, PendingToken>>>,
     random: ring::rand::SystemRandom,
     week: chrono::Duration,
 }
@@ -221,7 +222,7 @@ impl Handler {
         fallback: Cow<'static, [u8]>,
         tree: Arc<sled::Tree>,
         config: Config,
-        pending_tokens: Arc<Mutex<HashMap<String, PendingToken>>>,
+        pending_tokens: Arc<Mutex<HashMap<State, PendingToken>>>,
     ) -> Result<Self, failure::Error> {
         let db = db::Database::load(tree)?;
         let (login_flow, flows) = oauth2::setup_flows(&config.base_url, &config.oauth2)?;
@@ -608,7 +609,7 @@ impl Handler {
         })?;
 
         self.pending_tokens.lock().insert(
-            exchange_token.csrf_token.secret().to_string(),
+            exchange_token.state.clone(),
             PendingToken {
                 created_at: Utc::now(),
                 flow,
@@ -726,7 +727,7 @@ impl Handler {
 
         let (return_to, connected) = match action {
             Action::RegisterOrLogin(action) => {
-                let result = self.auth_twitch_token(token.access_token.secret()).await?;
+                let result = self.auth_twitch_token(&token.access_token).await?;
 
                 self.db.add_connection(
                     &result.user_id,
@@ -808,7 +809,7 @@ impl Handler {
         })?;
 
         self.pending_tokens.lock().insert(
-            exchange_token.csrf_token.secret().to_string(),
+            exchange_token.state,
             PendingToken {
                 created_at: Utc::now(),
                 flow: self.login_flow.clone(),
@@ -930,13 +931,13 @@ impl Handler {
             oauth2::FlowType::Twitch => {
                 let result = self
                     .id_twitch_client
-                    .validate_token(token.access_token.secret())
+                    .validate_token(&token.access_token)
                     .await?;
 
                 Ok(serde_cbor::value::to_value(&result)?)
             }
             oauth2::FlowType::Spotify => {
-                let result = self.spotify.v1_me(token.access_token.secret()).await?;
+                let result = self.spotify.v1_me(&token.access_token).await?;
                 Ok(serde_cbor::value::to_value(&result)?)
             }
             _ => Ok(serde_cbor::value::to_value(&Empty {})?),

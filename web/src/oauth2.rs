@@ -1,6 +1,6 @@
 use ::oauth2::{
-    AccessToken, AuthorizationCode, Client, ClientSecret, CsrfToken, RefreshToken,
-    RequestTokenError, Scope, StandardToken, Token, TokenType,
+    AccessToken, AuthorizationCode, Client, ClientSecret, RefreshToken, RequestTokenError, Scope,
+    StandardToken, State, Token, TokenType,
 };
 use chrono::{DateTime, Utc};
 use failure::{bail, format_err, Error};
@@ -33,9 +33,15 @@ pub struct FlowConfig {
 impl FlowConfig {
     /// Convert configuration into Flow.
     pub fn as_flow(&self, base_url: &Url, config: &Config) -> Result<Flow, Error> {
-        let mut client = Client::new(self.client_id.clone(), self.auth_url.clone())?;
+        let http_client = reqwest::r#async::Client::new();
+
+        let mut client = Client::new(
+            self.client_id.clone(),
+            self.auth_url.clone(),
+            self.token_url.clone(),
+        );
+
         client.set_client_secret(self.client_secret.clone());
-        client.set_token_url(self.token_url.clone());
 
         let mut url = base_url.clone();
         url.path_segments_mut()
@@ -48,7 +54,7 @@ impl FlowConfig {
             client.add_scope(scope.clone());
         }
 
-        let mut flow = Flow::new(client, self.clone());
+        let mut flow = Flow::new(http_client, client, self.clone());
 
         for (key, value) in &self.extra_params {
             flow.extra_param(key.clone(), value.clone());
@@ -99,7 +105,7 @@ impl SavedToken {
 
     /// Generate a unique hash corresponding to this token.
     pub fn hash(&self) -> Result<String, Error> {
-        let bytes = serde_cbor::to_vec(&[&self.client_id, self.access_token.secret()])?;
+        let bytes = serde_cbor::to_vec(&[&self.client_id, &*self.access_token])?;
         let digest = ring::digest::digest(&ring::digest::SHA256, &bytes);
         Ok(base64::encode(digest.as_ref()))
     }
@@ -142,12 +148,12 @@ pub fn setup_flows(
 #[derive(Debug, Deserialize)]
 pub struct TokenQuery {
     pub code: AuthorizationCode,
-    pub state: String,
+    pub state: State,
 }
 
 #[derive(Debug)]
 pub struct ExchangeToken {
-    pub csrf_token: CsrfToken,
+    pub state: State,
     pub auth_url: Url,
 }
 
@@ -165,6 +171,7 @@ pub enum FlowType {
 
 #[derive(Debug)]
 pub struct Flow {
+    http_client: reqwest::r#async::Client,
     client: Client,
     extra_params: Vec<(String, String)>,
     pub config: FlowConfig,
@@ -172,8 +179,9 @@ pub struct Flow {
 
 impl Flow {
     /// Construct a new web integration.
-    pub fn new(client: Client, config: FlowConfig) -> Self {
+    pub fn new(http_client: reqwest::r#async::Client, client: Client, config: FlowConfig) -> Self {
         Flow {
+            http_client,
             client,
             extra_params: Vec::new(),
             config,
@@ -213,16 +221,14 @@ impl Flow {
 
     /// Exchange token with the given client.
     pub fn exchange_token(&self) -> ExchangeToken {
-        let (mut auth_url, csrf_token) = self.client.authorize_url(CsrfToken::new_random);
+        let state = State::new_random();
+        let mut auth_url = self.client.authorize_url(&state);
 
         for (key, value) in self.extra_params.iter() {
             auth_url.query_pairs_mut().append_pair(key, value);
         }
 
-        ExchangeToken {
-            csrf_token,
-            auth_url,
-        }
+        ExchangeToken { state, auth_url }
     }
 
     /// Handle a received token.
@@ -231,7 +237,7 @@ impl Flow {
         exchange: ExchangeToken,
         received_token: TokenQuery,
     ) -> Result<SavedToken, Error> {
-        if *exchange.csrf_token.secret() != received_token.state {
+        if exchange.state != received_token.state {
             bail!("CSRF Token Mismatch");
         }
 
@@ -263,7 +269,8 @@ impl Flow {
             .client
             .exchange_code(code)
             .param("client_id", self.config.client_id.as_str())
-            .param("client_secret", self.config.client_secret.secret())
+            .param("client_secret", &self.config.client_secret)
+            .with_client(&self.http_client)
             .execute::<T>()
             .await;
 
@@ -334,7 +341,8 @@ impl Flow {
             .client
             .exchange_refresh_token(refresh_token)
             .param("client_id", self.config.client_id.as_str())
-            .param("client_secret", self.config.client_secret.secret().as_str())
+            .param("client_secret", &self.config.client_secret)
+            .with_client(&self.http_client)
             .execute::<T>()
             .await;
 
