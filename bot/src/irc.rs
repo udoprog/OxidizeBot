@@ -40,8 +40,10 @@ const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
 struct TwitchSetup {
     streamer_stream: injector::Stream<oauth2::SyncToken>,
     streamer: Option<oauth2::SyncToken>,
+    streamer_user: Option<Arc<twitch::User>>,
     bot_stream: injector::Stream<oauth2::SyncToken>,
     bot: Option<oauth2::SyncToken>,
+    bot_user: Option<Arc<twitch::User>>,
 }
 
 impl TwitchSetup {
@@ -117,8 +119,46 @@ impl TwitchSetup {
             let bot = Arc::new(bot);
             let streamer = Arc::new(streamer);
 
+            self.bot_user = Some(bot.clone());
+            self.streamer_user = Some(streamer.clone());
+
             return Ok((bot, bot_twitch, streamer, streamer_twitch));
         }
+    }
+
+    /// Inner update helper function.
+    async fn update_token_for(
+        token_update: &mut Option<oauth2::SyncToken>,
+        existing_user: Option<&Arc<twitch::User>>,
+        token: Option<oauth2::SyncToken>,
+    ) -> Result<bool, Error> {
+        *token_update = token;
+
+        let token = match token_update.as_ref() {
+            None => return Ok(true),
+            Some(token) => token,
+        };
+
+        let old_user = match existing_user.clone() {
+            None => return Ok(true),
+            Some(user) => user,
+        };
+
+        let user = api::Twitch::new(token.clone())?.user().await?;
+        return Ok(user.id != old_user.id);
+    }
+
+    /// Update the bot token and force a restart in case it has changed.
+    pub async fn update_streamer(
+        &mut self,
+        token: Option<oauth2::SyncToken>,
+    ) -> Result<bool, Error> {
+        Self::update_token_for(&mut self.streamer, self.streamer_user.as_ref(), token).await
+    }
+
+    /// Update the bot token and force a restart in case it has changed.
+    pub async fn update_bot(&mut self, token: Option<oauth2::SyncToken>) -> Result<bool, Error> {
+        Self::update_token_for(&mut self.bot, self.bot_user.as_ref(), token).await
     }
 }
 
@@ -164,8 +204,10 @@ impl Irc {
         let mut twitch_setup = TwitchSetup {
             streamer_stream,
             streamer,
+            streamer_user: None,
             bot_stream,
             bot,
+            bot_user: None,
         };
 
         'outer: loop {
@@ -324,7 +366,10 @@ impl Irc {
             let (mut api_url_stream, api_url) = settings.stream("remote/api-url").optional()?;
 
             let join_message = chat_settings.get::<String>("join-message")?;
-            let leave_message = chat_settings.get::<String>("leave-message")?;
+
+            let leave_message = chat_settings
+                .get::<String>("leave-message")?
+                .unwrap_or_else(|| String::from("Leaving chat... VoHiYo"));
 
             let mut chat_log_builder = chat_log::Builder::new(
                 bot_twitch.clone(),
@@ -367,7 +412,12 @@ impl Irc {
                 channel,
             };
 
+            let mut outgoing = client
+                .outgoing()
+                .ok_or_else(|| format_err!("missing outgoing future for irc client"))?;
+
             let mut client_stream = client.stream()?;
+
             let mut ping_interval =
                 tokio::timer::Interval::new_interval(time::Duration::from_secs(10));
 
@@ -381,9 +431,9 @@ impl Irc {
 
             let mut commands = command_bus.add_rx();
 
-            let mut leave = false;
+            let mut leave = None;
 
-            while !leave {
+            while leave.is_none() {
                 futures::select! {
                     command = commands.select_next_some() => {
                         match command {
@@ -410,10 +460,14 @@ impl Irc {
                         }
                     }
                     update = twitch_setup.streamer_stream.select_next_some() => {
-                        twitch_setup.streamer = update;
+                        if twitch_setup.update_streamer(update).await? {
+                            leave = Some(tokio::timer::delay(time::Instant::now() + time::Duration::from_secs(1)));
+                        }
                     },
                     update = twitch_setup.bot_stream.select_next_some() => {
-                        twitch_setup.bot = update;
+                        if twitch_setup.update_bot(update).await? {
+                            leave = Some(tokio::timer::delay(time::Instant::now() + time::Duration::from_secs(1)));
+                        }
                     },
                     update = commands_stream.select_next_some() => {
                         handler.commands = update;
@@ -462,13 +516,26 @@ impl Irc {
                             bail!("handler forcibly shut down");
                         }
                     }
+                    _ = outgoing => {
+                        bail!("outgoing future ended unexpectedly");
+                    }
+                    _ = leave.current() => {
+                        break;
+                    }
                 }
             }
 
-            // NB: probably not being sent right now. Figure out a better way to do graceful shutdown.
-            if let Some(leave_message) = leave_message.as_ref() {
-                // greeting when bot leaves
-                handler.sender.privmsg_immediate(leave_message);
+            handler.sender.privmsg_immediate(leave_message);
+
+            loop {
+                futures::select! {
+                    _ = outgoing => {
+                        bail!("outgoing future ended unexpectedly");
+                    }
+                    _ = leave.current() => {
+                        break;
+                    }
+                }
             }
         }
 
