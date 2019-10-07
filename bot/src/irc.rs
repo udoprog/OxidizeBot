@@ -411,11 +411,9 @@ impl Irc {
                     }
                     update = twitch_setup.streamer_stream.select_next_some() => {
                         twitch_setup.streamer = update;
-                        leave = true;
                     },
                     update = twitch_setup.bot_stream.select_next_some() => {
                         twitch_setup.bot = update;
-                        leave = true;
                     },
                     update = commands_stream.select_next_some() => {
                         handler.commands = update;
