@@ -18,7 +18,7 @@ name = "!admin refresh-mods"
 content = "Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running."
 
 [[groups.commands]]
-name = "!admin settings <key>"
+name = "!admin settings `<key>`"
 content = "Read the value of a setting."
 
 [[groups.commands.examples]]
@@ -263,4 +263,525 @@ Clips are small video snippets that can be created quickly on Twitch.
 name = "!clip"
 content = """
 Creates a Twitch Clip 30 seconds long from the current time.
+"""
+
+[[groups]]
+name = "Song Commands"
+content = """
+Commands to request and manage songs playing on stream.
+"""
+
+[[groups.commands]]
+name = "!song request spotify:track:<id>"
+content = """
+Request a song through a Spotify URI.
+"""
+
+[[groups.commands]]
+name = "!song request `https://open.spotify.com/track/<id>`"
+content = """
+Request a song by spotify URL.
+"""
+
+[[groups.commands.examples]]
+name = "Request a song from Spotify by URL"
+content = """
+setbac: !song request https://open.spotify.com/track/4pbJqGIASGPr0ZpGpnWkDn
+SetMod: setbac -> Added "We Will Rock You - Remastered" by Queen at position #1!
+"""
+
+[[groups.commands]]
+name = "!song request `<search>`"
+content = """
+Request a song by searching for it. The first hit will be used.
+"""
+[[groups.commands]]
+name = "!song skip"
+content = """
+Skip the current song.
+"""
+[[groups.commands]]
+name = "!song play"
+content = """
+Play the current song.
+"""
+[[groups.commands]]
+name = "!song pause"
+content = """
+Pause the current song.
+"""
+[[groups.commands]]
+name = "!song toggle"
+content = """
+Toggle the current song (Pause/Play).
+"""
+[[groups.commands]]
+name = "!song volume"
+content = """
+Get the current volume.
+"""
+[[groups.commands]]
+name = "!song volume `<volume>`"
+content = """
+Set the current volume to `<volume>`.
+"""
+[[groups.commands]]
+name = "!song length"
+content = """
+Get the current length of the queue.
+"""
+[[groups.commands]]
+name = "!song current"
+content = """
+Get information on the current song in the queue.
+"""
+
+[[groups.commands.examples]]
+name = "Get the current song in the queue"
+content = """
+setbac: !song current
+SetMod: setbac -> Current song: "We Will Rock You - Remastered" by Queen, requested by setbac - 01:19 / 02:02 - https://open.spotify.com/track/4pbJqGIASGPr0ZpGpnWkDn
+"""
+
+[[groups.commands]]
+name = "!song delete last"
+content = """
+Delete the last song in the queue.
+"""
+
+[[groups.commands.examples]]
+name = "Delete the last song in the queue"
+content = """
+setbac: !song delete last
+SetMod: setbac -> Removed: "We Will Rock You - Remastered" by Queen!
+"""
+
+[[groups.commands]]
+name = "!song delete last `<user>`"
+content = """
+Delete the last song in the queue added by the given `<user>`.
+
+This is typically only permitted by moderators.
+"""
+
+[[groups.commands]]
+name = "!song delete mine"
+content = """
+Delete the last song that _you_ added.
+
+Any user is allowed to delete their own songs.
+"""
+
+[[groups.commands]]
+name = "!song delete `<position>`"
+content = """
+Delete a song at the given `<position>`.
+"""
+
+[[groups.commands]]
+name = "!song list"
+content = """
+List the songs that will play.
+
+This will usually take you to the appropriate player on https://setbac.tv/players - unless the streamer has configured it differently.
+"""
+
+[[groups.commands]]
+name = "!song list `<n>`"
+content = """
+List the next `<n>` songs in chat.
+
+This will usually take you to the appropriate player on https://setbac.tv/players - unless the streamer has configured it differently.
+"""
+
+[[groups.commands]]
+name = "!song theme `<name>`"
+content = """
+Play the specified theme song by `<name>` (see `!theme` command).
+"""
+
+[[groups.commands]]
+name = "!song close `[reason]`"
+content = """
+Close the song queue with an optional `[reason]`.
+
+Closing the queue prevents subsequent song requests from being queued up.
+"""
+
+[[groups.commands.examples]]
+name = "Closing the queue"
+content = """
+setbac: !song close We won't be rocking any more...
+SetMod: setbac -> Closed player from further requests.
+setbactesting: !song request we will rock you
+SetMod: setbactesting -> We won't be rocking any more...
+"""
+
+[[groups.commands]]
+name = "!song open"
+content = """
+Open the song player for further requests.
+"""
+
+[[groups.commands]]
+name = "!song promote `<position>`"
+content = """
+Promote the song at the given `<position>` in the queue to the head of the queue, which is the next song that will play.
+"""
+
+[[groups.commands]]
+name = "!song when"
+content = """
+Find out when your song will play.
+"""
+
+[[groups.commands]]
+name = "!song when `<user>`"
+content = """
+Find out when the song for a specific user will play.
+"""
+
+[[groups]]
+name = "8-Ball"
+content = """
+A simple 8 ball which might or might not tell your fortune.
+"""
+
+[[groups.commands]]
+name = "!8ball `<question...>`"
+content = """
+Ask the 8 ball a `<question...>` and receive your fortune.
+"""
+
+[[groups.commands.examples]]
+name = "Asking the 8 ball a question"
+content = """
+setbac: !8ball Will I eat lunch?
+SetMod: setbac -> Better not tell you now.
+"""
+
+[[groups]]
+name = "Currency Commands"
+content = """
+Commands related to managing your _stream currency_.
+
+The stream currency is named differently, and `thingies` below will match your currency.
+
+For example, the stream currency of `setbac` is `ether`.
+"""
+
+[[groups.commands]]
+name = "!currency"
+content = """
+Get your current balance.
+"""
+
+[[groups.commands.examples]]
+name = "Getting your balance"
+content = """
+setbac: !ether
+SetMod: setbac -> You have 40307 ether.
+"""
+
+[[groups.commands]]
+name = "!currency give `<user>` `<amount>`"
+content = """
+Give `<amount>` of stream currency to `<user>`.
+
+Anyone can do this, as long as they have the necessary balance.
+"""
+
+[[groups.commands.examples]]
+name = "setbac giving bdogs_gaming 100 ether"
+content = """
+setbac: !ether give bdogs_gaming 100
+SetMod: setbac -> Gave bdogs_gaming 100 ether!
+"""
+
+[[groups.commands]]
+name = "!currency boost `<user>` `<amount>`"
+content = """
+Make up `<amount>` of currency, and give it to `<user>`.
+
+This will create the currency out of nothing. Use sparingly!
+"""
+
+[[groups.commands.examples]]
+name = "`setbac` boosting `bdogs_gaming` with 100 ether"
+content = """
+setbac: !ether boost bdogs_gaming 100
+SetMod: setbac -> Gave bdogs_gaming 100 ether!
+"""
+
+[[groups.commands]]
+name = "!currency windfall `<amount>`"
+content = """
+Give everyone in chat `<amount>` of currency.
+"""
+
+[[groups.commands.examples]]
+name = "`setbac` boosting everyone with 10 ether"
+content = """
+setbac: !ether windfall 10
+SetMod: setbac -> Gave their viewers 1500 ether!
+"""
+
+[[groups.commands]]
+name = "!currency show `<user>`"
+content = """
+Show the balance for `<user>`.
+
+This is typically only permitted by moderators.
+"""
+
+[[groups.commands.examples]]
+name = "`setbac` showing the balance of bdogs_gaming"
+content = """
+setbac: !ether show bdogs_gaming
+SetMod: setbac -> bdogs_gaming has 390 ether.
+"""
+
+[[groups]]
+name = "Swearjar"
+content = """
+If the streamer has a potty mouth that they wish to rid themselves of, they can make use of the swearjar command.
+"""
+
+[[groups.commands]]
+name = "!swearjar"
+content = """
+Invoke the swearjar. Causing the streamer to give all their viewers some stream currency.
+"""
+
+[[groups]]
+name = "Countdown"
+content = """
+A simple command to keep track of a timer in a file.
+"""
+
+[[groups.commands]]
+name = "!countdown set `<duration>` `<template...>`"
+content = """
+Set the countdown, available `<template...>` variable are:
+* `{{remaining}}` - The remaining time in the countdown.
+* `{{elapsed}}` - The elapsed time in the countdown.
+* `{{duration}}` - The total duration of the countdown.
+"""
+
+[[groups.commands.examples]]
+name = "`setbac` setting a countdown of 5s 30s"
+content = """
+setbac: !countdown set 5m30s Thing will happen in {{remaining}}
+SetMod: setbac -> Countdown set!
+"""
+
+[[groups.commands]]
+name = "!countdown clear"
+content = """
+Clear the current countdown.
+"""
+
+[[groups]]
+name = "Water reminders"
+content = """
+A helper command to remind the streamer to drink water.
+"""
+
+[[groups.commands]]
+name = "!water"
+content = """
+Remind the streamer to drink water and receive a currency reward.
+"""
+
+[[groups.commands.examples]]
+name = "`bdogs_gaming` reminding `setbac` to drink some water"
+content = """
+bdogs_gaming: !water
+SetMod: bdogs_gaming -> setbac, DRINK SOME WATER! bdogs_gaming has been rewarded 34 ether for the reminder.
+"""
+
+[[groups.commands]]
+name = "!water undo"
+content = """
+Undo the last water command.
+"""
+
+[[groups.commands.examples]]
+name = "`setbac` undoing `bdogs_gaming`'s water command"
+content = """
+setbac: !water udno
+bdogs_gaming issued a bad !water that is now being undone FeelsBadMan
+"""
+
+[[groups]]
+name = "Promotions"
+content = """
+Set promotions which will run at a periodic interval in chat.
+"""
+
+[[groups.commands]]
+name = "!promo list"
+content = "List all available promotions."
+
+[[groups.commands]]
+name = "!promo edit <id> <frequency> <what>"
+content = "Set the promotion identified by <id> to send the message <what> every <frequency>."
+
+[[groups.commands.examples]]
+name = "Set a promition for your Discord"
+content = """
+setbac: !promo edit discord 30m Want to provide suggestions for future features? You can !afterstream me or join my Discord at https://discord.gg/v5AeNkT
+SetMod: setbac -> Edited promo.
+"""
+
+[[groups.commands]]
+name = "!promo clear-group `<name>`"
+content = "Clear the group for promotion `<name>`."
+
+[[groups.commands]]
+name = "!promo group `<name>`"
+content = "Get the group the given promotion belongs to."
+
+[[groups.commands]]
+name = "!promo group `<name>` `<group>`"
+content = "Set the promotion `<name>` to be in the group `<group>`."
+
+[[groups.commands]]
+name = "!promo delete `<name>`"
+content = "Delete the promotion with the given `<name>`."
+
+[[groups.commands]]
+name = "!promo rename `<from>` `<to>`"
+content = "Rename promotion `<from>` to `<to>`."
+
+[[groups]]
+name = "Theme Commands"
+content = """
+These are commands which administrate available theme songs.
+
+Theme songs are songs which can be played instantly through the player using: !song theme `<name>`
+"""
+
+[[groups.commands]]
+name = "!theme list"
+content = "List all available themes."
+
+[[groups.commands]]
+name = "!theme edit `<id>` `<track-uri>`"
+content = "Set the theme identified by `<id>` to play the track `<track-uri>`."
+
+[[groups.commands.examples]]
+name = "Set the theme to a Spotify Song"
+content = """
+setbac: !theme edit setup spotify:track:2fZpKgrcAlWzWYwQeFG43O
+SetMod: setbac -> Edited theme.
+"""
+
+[[groups.commands.examples]]
+name = "Set the theme to a YouTube Song"
+content = """
+setbac: !theme edit ayaya youtube:video:D0q0QeQbw9U
+SetMod: setbac -> Edited theme.
+"""
+
+[[groups.commands]]
+name = "!theme edit-duration `<start>` `[end]`"
+content = """
+Set the playback duration of the theme from `<start>` up until an optional `[end]`.
+
+If no `[end]` is specific, the theme will play until the end of the song.
+"""
+
+[[groups.commands.examples]]
+name = "Set the duration of the theme `setup` to start at _10 seconds_ and end at `01:10`"
+content = """
+setbac: !theme edit-duration setup 00:10 01:10
+SetMod: setbac -> Edited theme.
+"""
+
+[[groups.commands]]
+name = "!theme clear-group `<name>`"
+content = "Clear the group for theme `<name>`."
+
+[[groups.commands]]
+name = "!theme group `<name>`"
+content = "Get the group the given theme belongs to."
+
+[[groups.commands]]
+name = "!theme group `<name>` `<group>`"
+content = "Set the theme `<name>` to be in the group `<group>`."
+
+[[groups.commands]]
+name = "!theme delete `<id>`"
+content = "Delete the theme with the given `<id>`."
+
+[[groups.commands]]
+name = "!theme rename `<from>` `<to>`"
+content = "Rename the theme `<from>` to `<to>`."
+
+[[groups]]
+name = "Time Commands"
+content = """
+Commands related to dealing with the current time.
+"""
+
+[[groups.commands]]
+name = "!time"
+content = "Show the current, _configured_ time for the streamer."
+
+[[groups.commands.examples]]
+name = "Showing the current time for the streamer"
+content = """
+setbac: !time
+SetMod: setbac -> The time in Stockholm, Sweden is 15:21:57+0200
+"""
+
+[[groups]]
+name = "Polling Commands"
+content = """
+These are commands related to running in-chat polls.
+"""
+
+[[groups.commands]]
+name = "!poll run <question> <options...>"
+content = "Run the poll with the given `<question>`, providing the options listed in `<options...>`."
+
+[[groups.commands.examples]]
+name = "Streamer running a poll for which game to play"
+content = """
+setbac: !poll run "Which game should I play?" 1="GTA 5" 2="GTA SA" 3="don't care"
+SetMod: setbac -> Started poll `Which game should I play?`
+turtle: 2
+SetMod: Now playing: "The Veldt - Radio Edit" by deadmau5.
+hare: 1
+setbac: !poll close
+SetMod: setbac -> Which game should I play? -> GTA SA = one vote (50%), GTA 5 = one vote (50%), don't care = no votes (0%).
+"""
+
+[[groups]]
+name = "Weather Commands"
+content = """
+Commands for getting the weather at a specific location.
+"""
+
+[[groups.commands]]
+name = "!weather current"
+content = "Get the current weather at the streamer's location"
+
+[[groups.commands.examples]]
+name = "Getting the current weather at the streamer's location"
+content = """
+setbac: !weather current
+SetMod: setbac -> Stockholm -> 7.9 °C, shower rain 🌧️.
+"""
+
+[[groups.commands]]
+name = "!weather current `<location...>`"
+content = "Get the current weather at the specified `<location...>`."
+
+[[groups.commands.examples]]
+name = "Getting the current weather at the specified location"
+content = """
+setbac: !weather current Moscow
+SetMod: setbac -> Moscow -> 3.2 °C, overcast clouds 🌧️.
 """

@@ -20,7 +20,7 @@ class Example extends React.Component {
 
   render() {
     return <>
-      <div className="example-name"><b>Example:</b> {this.props.name}</div>
+      <div className="example-name"><b>Example:</b> <Header source={this.props.name} /></div>
       <div className="example-content"><ExampleContent source={this.props.content} /></div>
     </>;
   }

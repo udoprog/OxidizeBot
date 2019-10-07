@@ -47,11 +47,13 @@ export default class Help extends React.Component {
   constructor(props) {
     super(props);
 
+    let q = new URLSearchParams(this.props.location.search);
+
     this.state = {
       loading: true,
       error: null,
       groups: commands.groups,
-      filter: "",
+      filter: q.get("q") || "",
     }
   }
 
@@ -60,26 +62,54 @@ export default class Help extends React.Component {
   }
 
   filter(groups) {
-    if (this.state.filter === "") {
+    let filter = this.state.filter;
+
+    if (filter === "") {
       return groups;
     }
 
-    let test = hash(this.state.filter);
+    if (filter.startsWith('!')) {
+      groups = groups.map(g => {
+        let commands = g.commands.filter(c => {
+          return c.name.startsWith(filter);
+        });
 
-    groups = groups.map(g => {
-      let commands = g.commands.filter(c => {
-        return matches(test, c.name);
+        let modified = commands.length != g.commands;
+        return Object.assign({}, g, {commands, modified});
       });
+    } else {
+      let test = hash(filter);
 
-      let modified = commands.length != g.commands;
-      return Object.assign({}, g, {commands, modified});
-    });
+      groups = groups.map(g => {
+        let commands = g.commands.filter(c => {
+          return matches(test, c.name);
+        });
+
+        let modified = commands.length != g.commands;
+        return Object.assign({}, g, {commands, modified});
+      });
+    }
 
     return groups.filter(g => g.commands.length > 0);
   }
 
   handleOnChange(e) {
-    this.setState({filter: e.target.value});
+    var path = `${this.props.location.pathname}`;
+    let filter = e.target.value;
+
+    if (!!filter) {
+      var search = new URLSearchParams(this.props.location.search);
+      search.set("q", filter);
+      path = `${path}?${search}`
+    }
+
+    this.props.history.replace(path);
+    this.setState({filter});
+  }
+
+  prevent(e) {
+    e.preventDefault();
+    return false;
   }
 
   render() {
@@ -97,7 +127,7 @@ export default class Help extends React.Component {
           Please contribute to the <a href="https://github.com/udoprog/OxidizeBot/blob/master/shared/commands.toml"><code>commands.toml</code></a> file that this is based off!
         </Alert>
 
-        <Form>
+        <Form onSubmit={this.prevent.bind(this)}>
           <FormControl value={this.state.filter || ""} onChange={e => this.handleOnChange(e)} />
         </Form>
 
