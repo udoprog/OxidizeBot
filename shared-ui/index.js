@@ -36,7 +36,6 @@ class Example extends React.Component {
 
 class Command extends React.Component {
   constructor(props) {
-    console.log(props);
     super(props);
   }
 
@@ -44,20 +43,22 @@ class Command extends React.Component {
     let examples = null;
 
     if (this.props.examples && this.props.examples.length > 0) {
-      examples = <>
+      examples = <div className="command-examples">
         {(this.props.examples || []).map((e, i) => {
           return <Example key={i} {...e} />;
         })}
-      </>;
+      </div>;
     }
 
     return <>
-      <div className="command">
-        <div className="command-name"><code>{this.props.name}</code></div>
-        <div className="command-content"><Content source={this.props.content} /></div>
+      <tr className="command">
+        <td>
+          <div className="command-name">{this.props.name}</div>
+          <div className="command-content"><Content source={this.props.content} /></div>
 
-        {examples}
-      </div>
+          {examples}
+        </td>
+      </tr>
     </>;
   }
 }
@@ -65,22 +66,52 @@ class Command extends React.Component {
 export class CommandGroup extends React.Component {
   constructor(props) {
     super(props);
+
+    this.state = {
+      expanded: false,
+    };
+  }
+
+  toggle(expanded) {
+    this.setState({expanded});
   }
 
   render() {
     let commands = null;
 
-    if (this.props.commands && this.props.commands.length > 0) {
-      commands = <>
-        {(this.props.commands || []).map((c, i) => {
-          return <Command key={i} {...c} />;
-        })}
-      </>;
+    let expand = this.state.expanded || !!this.props.modified;
+
+    if (this.props.commands && this.props.commands.length > 0 && expand) {
+      commands = <table className="table table-dark table-striped">
+        <tbody>
+          {(this.props.commands || []).map((c, i) => {
+            return <Command key={i} {...c} />;
+          })}
+        </tbody>
+      </table>;
+    }
+
+    let show = null;
+
+    if (this.props.commands.length > 0 && !this.props.modified) {
+      if (!this.state.expanded) {
+        show = <button className="btn btn-info btn-sm" onClick={() => this.toggle(true)}>
+          Show
+        </button>;
+      } else {
+        show = <button className="btn btn-info btn-sm" onClick={() => this.toggle(false)}>
+          Hide
+        </button>;
+      }
     }
 
     return <>
       <div className="command-group">
-        <div className="command-group-name">{this.props.name}</div>
+        <div className="command-group-name">
+          {this.props.name}
+        </div>
+
+        <div className="command-group-actions">{show}</div>
         <div className="command-group-content"><ReactMarkdown source={this.props.content} /></div>
 
         {commands}

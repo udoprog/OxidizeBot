@@ -15,7 +15,7 @@ $p-margin: 6px;
   &-name {
     font-size: 160%;
     font-weight: bold;
-    margin: $margin 0px;
+    margin-top: $margin;
   }
 
   &-commands {
@@ -23,11 +23,13 @@ $p-margin: 6px;
     font-weight: bold;
     margin: $margin 0px;
   }
+
+  &-actions {
+    margin-bottom: 10px;
+  }
 }
 
 .command {
-  display: block;
-
   &-content {
     margin: 0px;
 
@@ -36,24 +38,25 @@ $p-margin: 6px;
     }
 
     p {
-      margin: $p-margin 0px;
+      margin: 0;
     }
   }
 
   &-name {
-    font-size: 120%;
+    font-size: 140%;
+    margin-bottom: $margin;
   }
 
   &-examples {
-    font-size: 100%;
-    font-weight: bold;
-    margin: $margin 0px;
+    margin-top: $margin;
   }
 }
 
 .example {
+  margin-bottom: $margin;
+
   &-name {
-    margin: $margin 0px;
+    margin-bottom: $margin;
   }
 
   &-content {

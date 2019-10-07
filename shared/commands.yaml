@@ -5,6 +5,11 @@ groups:
       - name: "!admin version"
         content: >
           Responds with the current version of Oxidize Bot package.
+        examples:
+          - name: The output of the command.
+            content:
+              - "setbac: !admin version"
+              - "SetMod: setbac -> OxidizeBot Version 1.0.0-beta.21"
       - name: "!admin refresh-mods"
         content: >
           Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running.
@@ -20,7 +25,7 @@ groups:
         content: >
           Write the value of a setting.
         examples:
-          - name: Disabling the `!afterstream` command
+          - name: Disabling the afterstream command
             content:
               - "setbac: !admin settings afterstream/enabled false"
               - "SetMod: setbac -> afterstream/enabled = false"
@@ -39,3 +44,27 @@ groups:
       - name: "!admin disable-group <group>"
         content: >
           Disable all commands, aliases, and promotions part of the specified group.
+
+  - name: "Misc Commands"
+    content: "Miscellaneous comands"
+    commands:
+      - name: "!uptime"
+        content: >
+          Get the amount of time that the stream has been live for.
+        examples:
+          - name: The output of the uptime command.
+            content:
+              - "setbac: !uptime"
+              - "SetMod: setbac -> Stream has been live for 5h 1m 21s."
+      - name: "!title"
+        content: >
+          Get the current title of the stream.
+      - name: "!title <title>"
+        content: >
+          Set the title of the stream.
+      - name: "!game"
+        content: >
+          Get the current game of the stream.
+      - name: "!game <game>"
+        content: >
+          Set the game of the stream.

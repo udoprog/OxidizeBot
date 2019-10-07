@@ -1,15 +1,47 @@
 import React from "react";
 import { RouteLayout } from "./Layout.js";
-import { Alert, Table, Button, Form, FormControl, InputGroup, ButtonGroup } from "react-bootstrap";
-import { api, currentConnections, currentUser } from "../globals.js";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import copy from 'copy-to-clipboard';
+import { Form, FormControl } from "react-bootstrap";
 import Loading from "./Loading.js";
-import If from "./If.js";
-import UserPrompt from "./UserPrompt";
-import Connection from "./Connection";
 import { CommandGroup } from "shared-ui";
 import commands from 'json-loader!yaml-loader!../../../shared/commands.yaml';
+
+function hash(s) {
+  let out = new Set();
+
+  for (let e of s.split(/\s+/)) {
+    e = e.toLowerCase().trim();
+
+    if (e.length === 0) {
+      continue;
+    }
+
+    out.add(e);
+  }
+
+  return out;
+}
+
+function matches(test, s) {
+  s = hash(s);
+
+  for (let value of test.values()) {
+    if (!setAny(s.values(), s => s.startsWith(value))) {
+      return false;
+    }
+  }
+
+  return true;
+
+  function setAny(values, f) {
+    for (let value of values) {
+      if (f(value)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+}
 
 export default class Help extends React.Component {
   constructor(props) {
@@ -19,6 +51,7 @@ export default class Help extends React.Component {
       loading: true,
       error: null,
       groups: commands.groups,
+      filter: "",
     }
   }
 
@@ -26,18 +59,47 @@ export default class Help extends React.Component {
     this.setState({loading: false});
   }
 
+  filter(groups) {
+    if (this.state.filter === "") {
+      return groups;
+    }
+
+    let test = hash(this.state.filter);
+
+    groups = groups.map(g => {
+      let commands = g.commands.filter(c => {
+        return matches(test, c.name);
+      });
+
+      let modified = commands.length != g.commands;
+      return Object.assign({}, g, {commands, modified});
+    });
+
+    return groups.filter(g => g.commands.length > 0);
+  }
+
+  handleOnChange(e) {
+    this.setState({filter: e.target.value});
+  }
+
   render() {
     let error = null;
+
+    let groups = this.filter(this.state.groups);
 
     return (
       <RouteLayout>
         <h2 className="page-title">Help</h2>
 
+        <Form>
+          <FormControl value={this.state.filter || ""} onChange={e => this.handleOnChange(e)} />
+        </Form>
+
         <Loading isLoading={this.state.loading} />
         {error}
 
-        {this.state.groups.map((c, i) => {
-          return <CommandGroup key={i} {...c} />;
+        {groups.map(c => {
+          return <CommandGroup key={c.name} {...c} />;
         })}
       </RouteLayout>
     );
