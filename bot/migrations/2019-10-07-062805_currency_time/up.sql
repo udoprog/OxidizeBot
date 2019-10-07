@@ -1,0 +1,1 @@
+ALTER TABLE balances ADD COLUMN watch_time INTEGER DEFAULT 0;

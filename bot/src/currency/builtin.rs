@@ -1,7 +1,7 @@
 //! Module for the built-in currency which uses the regular databse support.
 
 use crate::{
-    currency::BalanceTransferError,
+    currency::{BalanceOf, BalanceTransferError},
     db::{models, schema, user_id, Database},
     prelude::*,
 };
@@ -112,7 +112,10 @@ impl Backend {
                     }
                     Some(_) => {
                         diesel::update(filter)
-                            .set(dsl::amount.eq(balance.amount))
+                            .set((
+                                dsl::amount.eq(balance.amount),
+                                dsl::watch_time.eq(balance.watch_time),
+                            ))
                             .execute(&*c)?;
                     }
                 }
@@ -127,7 +130,7 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i64>, Error> {
+    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>, Error> {
         use self::schema::balances::dsl;
 
         let channel = channel_id(channel);
@@ -137,13 +140,21 @@ impl Backend {
         let future = async move {
             let c = pool.lock();
 
-            let balance = dsl::balances
-                .select(dsl::amount)
+            let result = dsl::balances
+                .select((dsl::amount, dsl::watch_time))
                 .filter(dsl::channel.eq(channel).and(dsl::user.eq(user)))
-                .first::<i64>(&*c)
+                .first::<(i64, i64)>(&*c)
                 .optional()?;
 
-            Ok(balance)
+            let (balance, watch_time) = match result {
+                Some((balance, watch_time)) => (balance, watch_time),
+                None => return Ok(None),
+            };
+
+            Ok(Some(BalanceOf {
+                balance,
+                watch_time,
+            }))
         };
 
         let (future, handle) = future.remote_handle();
@@ -173,6 +184,7 @@ impl Backend {
         channel: &str,
         users: impl IntoIterator<Item = String> + Send + 'static,
         amount: i64,
+        watch_time: i64,
     ) -> Result<(), Error> {
         use self::schema::balances::dsl;
 
@@ -196,7 +208,8 @@ impl Backend {
                         let balance = models::Balance {
                             channel: channel.to_string(),
                             user: user.clone(),
-                            amount: amount,
+                            amount,
+                            watch_time,
                         };
 
                         diesel::insert_into(dsl::balances)
@@ -205,9 +218,10 @@ impl Backend {
                     }
                     Some(b) => {
                         let value = b.amount.saturating_add(amount);
+                        let watch_time = b.watch_time.saturating_add(watch_time);
 
                         diesel::update(filter)
-                            .set(dsl::amount.eq(value))
+                            .set((dsl::amount.eq(value), dsl::watch_time.eq(watch_time)))
                             .execute(&*c)?;
                     }
                 }
@@ -238,7 +252,8 @@ fn modify_balance(
             let balance = models::Balance {
                 channel: channel.to_string(),
                 user: user.to_string(),
-                amount: amount,
+                amount,
+                watch_time: 0,
             };
 
             diesel::insert_into(dsl::balances)

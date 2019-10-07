@@ -8,7 +8,10 @@ use chrono::NaiveDateTime;
 pub struct Balance {
     pub channel: String,
     pub user: String,
+    #[serde(default)]
     pub amount: i64,
+    #[serde(default)]
+    pub watch_time: i64,
 }
 
 impl Balance {
@@ -18,6 +21,7 @@ impl Balance {
             channel: self.channel,
             user: super::user_id(&self.user),
             amount: self.amount,
+            watch_time: self.watch_time,
         }
     }
 }

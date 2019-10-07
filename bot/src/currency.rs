@@ -1,12 +1,30 @@
 //! Stream currency configuration.
-pub use crate::db::models::Balance;
 use crate::{api, db::Database};
+pub use crate::{db::models::Balance, utils::Duration};
 use failure::Error;
 use hashbrown::HashSet;
 use std::sync::Arc;
 
 mod builtin;
 mod mysql;
+
+/// Balance of a single user.
+#[derive(Default)]
+pub struct BalanceOf {
+    pub balance: i64,
+    pub watch_time: i64,
+}
+
+impl BalanceOf {
+    /// Get the current watch time for the specified balance as a duration.
+    pub fn watch_time(&self) -> Duration {
+        if self.watch_time < 0 {
+            return Duration::default();
+        }
+
+        Duration::seconds(self.watch_time as u64)
+    }
+}
 
 /// Helper struct to construct a currency.
 pub struct CurrencyBuilder {
@@ -165,7 +183,7 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i64>, Error> {
+    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>, Error> {
         use self::Backend::*;
 
         match *self {
@@ -190,6 +208,7 @@ impl Backend {
         channel: &str,
         users: I,
         amount: i64,
+        watch_time: i64,
     ) -> Result<(), Error>
     where
         I: IntoIterator<Item = String> + Send + 'static,
@@ -198,7 +217,11 @@ impl Backend {
         use self::Backend::*;
 
         match *self {
-            BuiltIn(ref backend) => backend.balances_increment(channel, users, amount).await,
+            BuiltIn(ref backend) => {
+                backend
+                    .balances_increment(channel, users, amount, watch_time)
+                    .await
+            }
             MySql(ref backend) => backend.balances_increment(channel, users, amount).await,
         }
     }
@@ -223,6 +246,7 @@ impl Currency {
         &self,
         channel: &str,
         reward: i64,
+        watch_time: i64,
     ) -> Result<usize, failure::Error> {
         let chatters = self.inner.twitch.chatters(channel).await?;
 
@@ -235,7 +259,7 @@ impl Currency {
 
         self.inner
             .backend
-            .balances_increment(channel, users, reward)
+            .balances_increment(channel, users, reward, watch_time)
             .await?;
 
         Ok(len)
@@ -267,7 +291,7 @@ impl Currency {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<i64>, Error> {
+    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>, Error> {
         self.inner.backend.balance_of(channel, user).await
     }
 
@@ -282,6 +306,7 @@ impl Currency {
         channel: &str,
         users: I,
         amount: i64,
+        watch_time: i64,
     ) -> Result<(), Error>
     where
         I: IntoIterator<Item = String> + Send + 'static,
@@ -289,7 +314,7 @@ impl Currency {
     {
         self.inner
             .backend
-            .balances_increment(channel, users, amount)
+            .balances_increment(channel, users, amount, watch_time)
             .await
     }
 }

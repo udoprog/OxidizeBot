@@ -3,6 +3,7 @@ table! {
         channel -> Text,
         user -> Text,
         amount -> BigInt,
+        watch_time -> BigInt,
     }
 }
 

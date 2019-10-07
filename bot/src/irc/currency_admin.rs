@@ -5,6 +5,7 @@ use crate::{
     db,
     injector::Injector,
     prelude::*,
+    utils,
 };
 use failure::Error;
 use parking_lot::RwLock;
@@ -53,11 +54,13 @@ impl command::Handler for Handler {
                 match result {
                     Ok(balance) => {
                         let balance = balance.unwrap_or_default();
+                        let watch_time = utils::compact_duration(&balance.watch_time().as_std());
 
                         user.respond(format!(
-                            "You have {balance} {name}.",
-                            balance = balance,
-                            name = currency.name
+                            "You have {balance} {name} [{watch_time}].",
+                            balance = balance.balance,
+                            name = currency.name,
+                            watch_time = watch_time,
                         ));
                     }
                     Err(e) => {
@@ -73,12 +76,14 @@ impl command::Handler for Handler {
                 match currency.balance_of(ctx.channel(), to_show.as_str()).await {
                     Ok(balance) => {
                         let balance = balance.unwrap_or_default();
+                        let watch_time = utils::compact_duration(&balance.watch_time().as_std());
 
                         ctx.respond(format!(
-                            "{user} has {balance} {name}.",
+                            "{user} has {balance} {name} [{watch_time}].",
                             user = to_show,
-                            balance = balance,
-                            name = currency.name
+                            balance = balance.balance,
+                            name = currency.name,
+                            watch_time = watch_time,
                         ));
                     }
                     Err(e) => {
@@ -199,7 +204,7 @@ impl command::Handler for Handler {
                 let sender = ctx.sender.clone();
 
                 ctx.spawn(async move {
-                    let result = currency.add_channel_all(user.channel(), amount).await;
+                    let result = currency.add_channel_all(user.channel(), amount, 0).await;
 
                     match result {
                         Ok(_) => {

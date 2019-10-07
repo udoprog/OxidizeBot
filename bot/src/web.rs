@@ -760,7 +760,10 @@ struct Api {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Balance {
     name: String,
+    #[serde(default)]
     balance: i64,
+    #[serde(default)]
+    watch_time: i64,
 }
 
 impl Api {

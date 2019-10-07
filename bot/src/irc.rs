@@ -491,7 +491,7 @@ fn currency_loop<'a>(
     let reward = 10;
     let default_interval = Duration::seconds(60 * 10);
 
-    let (mut interval_stream, mut interval) = chat_settings
+    let (mut interval_stream, mut reward_interval) = chat_settings
         .stream("viewer-reward/interval")
         .or_with(default_interval)?;
 
@@ -542,13 +542,13 @@ fn currency_loop<'a>(
             _ => None,
         };
 
-        let mut timer = new_timer(&interval, viewer_reward);
+        let mut timer = new_timer(&reward_interval, viewer_reward);
 
         loop {
             futures::select! {
                 update = interval_stream.select_next_some() => {
-                    interval = update;
-                    timer = new_timer(&interval, viewer_reward);
+                    reward_interval = update;
+                    timer = new_timer(&reward_interval, viewer_reward);
                 }
                 update = notify_rewards_stream.select_next_some() => {
                     notify_rewards = update;
@@ -582,7 +582,7 @@ fn currency_loop<'a>(
                     currency = build(injector, &builder);
                 }
                 viewer_reward = viewer_reward_stream.select_next_some() => {
-                    timer = new_timer(&interval, viewer_reward);
+                    timer = new_timer(&reward_interval, viewer_reward);
                 }
                 _ = timer.select_next_some() => {
                     let currency = match currency.as_ref() {
@@ -590,11 +590,13 @@ fn currency_loop<'a>(
                         None => continue,
                     };
 
+                    let seconds = reward_interval.num_seconds() as i64;
+
                     log::trace!("running reward loop");
 
                     let reward = (reward * *reward_percentage.read() as i64) / 100i64;
                     let count = currency
-                        .add_channel_all(&channel.name, reward)
+                        .add_channel_all(&channel.name, reward, seconds)
                         .await?;
 
                     if notify_rewards && count > 0 && !idle.is_idle() {

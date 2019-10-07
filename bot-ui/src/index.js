@@ -119,7 +119,7 @@ class ImportExportPage extends React.Component {
       <RouteLayout>
         <Row>
           <Col>
-            <ImportExport api={this.api} />
+            <ImportExport api={this.api} {...this.props} />
           </Col>
         </Row>
       </RouteLayout>
@@ -389,7 +389,7 @@ function AppRouter() {
       <Route path="/authorization" exact component={props => (
         <AuthorizedPage><Authorization {...props} /></AuthorizedPage>
       )} />
-      <Route path="/import-export" exact component={ImportExportPage} />
+      <Route path="/import-export" component={ImportExportPage} />
       <Route path="/aliases" exact render={props => (
         <AuthorizedPage><Aliases {...props} /></AuthorizedPage>
       )} />

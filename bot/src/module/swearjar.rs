@@ -67,7 +67,7 @@ impl<'a> command::Handler for Handler<'a> {
                 .await?;
 
             currency
-                .balances_increment(user.channel(), u, reward)
+                .balances_increment(user.channel(), u, reward, 0)
                 .await?;
 
             user.sender().privmsg(format!(

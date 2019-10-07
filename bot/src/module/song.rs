@@ -143,12 +143,12 @@ impl Handler {
                             .await?
                             .unwrap_or_default();
 
-                        if balance < min_currency {
+                        if balance.balance < min_currency {
                             user.respond(format!(
                                 "You don't have enough {currency} to request songs. Need {required}, but you have {balance}, sorry :(",
                                 currency = currency.name,
                                 required = min_currency,
-                                balance = balance,
+                                balance = balance.balance,
                             ));
 
                             return Ok(());

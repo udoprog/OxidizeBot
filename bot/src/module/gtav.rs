@@ -980,7 +980,11 @@ impl command::Handler for Handler {
                     .await?
                     .unwrap_or_default();
 
-                let balance = if balance < 0 { 0u32 } else { balance as u32 };
+                let balance = if balance.balance < 0 {
+                    0u32
+                } else {
+                    balance.balance as u32
+                };
 
                 if balance < cost {
                     user.respond(format!(

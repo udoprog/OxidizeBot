@@ -8,7 +8,7 @@
 //! 2) Name the fields holding channel, user, and amount.
 
 use crate::{
-    currency::BalanceTransferError,
+    currency::{BalanceOf, BalanceTransferError},
     db::{models::Balance, user_id},
 };
 
@@ -239,6 +239,7 @@ impl Backend {
                 channel: channel.clone(),
                 user: user,
                 amount: balance as i64,
+                watch_time: 0,
             });
         }
 
@@ -267,7 +268,7 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, _channel: &str, user: &str) -> Result<Option<i64>, Error> {
+    pub async fn balance_of(&self, _channel: &str, user: &str) -> Result<Option<BalanceOf>, Error> {
         let user = user_id(&user);
         let opts = mysql::TransactionOptions::new();
         let tx = self.pool.start_transaction(opts).await?;
@@ -275,11 +276,14 @@ impl Backend {
         let (_, balance) = self.queries.select_balance(tx, &user).await?;
 
         let balance = match balance {
-            Some(b) => Some(b.try_into()?),
-            None => None,
+            Some(b) => b.try_into()?,
+            None => return Ok(None),
         };
 
-        Ok(balance)
+        Ok(Some(BalanceOf {
+            balance,
+            watch_time: 0,
+        }))
     }
 
     /// Add (or subtract) from the balance for a single user.
