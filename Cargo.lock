@@ -1998,6 +1998,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxidize-shared"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "toml 0.5.3",
+]
+
+[[package]]
 name = "oxidize-web"
 version = "0.0.0"
 dependencies = [

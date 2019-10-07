@@ -19,7 +19,7 @@ pub const URL: &'static str = "http://localhost:12345";
 
 mod assets {
     #[derive(rust_embed::RustEmbed)]
-    #[folder = "$CARGO_MANIFEST_DIR/ui/dist"]
+    #[folder = "$CARGO_MANIFEST_DIR/../bot-ui/dist"]
     pub struct Asset;
 }
 

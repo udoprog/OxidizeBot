@@ -33,7 +33,7 @@ pub struct Config {
 
 mod assets {
     #[derive(rust_embed::RustEmbed)]
-    #[folder = "$CARGO_MANIFEST_DIR/ui/dist"]
+    #[folder = "$CARGO_MANIFEST_DIR/../web-ui/dist"]
     pub struct Asset;
 }
 

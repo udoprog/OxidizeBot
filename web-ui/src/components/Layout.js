@@ -35,6 +35,14 @@ function links(props) {
     </Nav.Item>
   );
 
+  links.push(
+    <Nav.Item key="help">
+      <Nav.Link as={Link} active={props.match.path === "/help"} to="/help">
+        <FontAwesomeIcon icon="question" /> Help
+      </Nav.Link>
+    </Nav.Item>
+  );
+
   return links;
 }
 

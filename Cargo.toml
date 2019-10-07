@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "shared",
     "bot",
     "web",
 ]

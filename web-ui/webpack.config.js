@@ -10,7 +10,7 @@ const htmlPlugin = new HtmlWebPackPlugin({
 
 const cdn = new DynamicCdnWebpackPlugin();
 
-const faviconPlugin = new FaviconsWebpackPlugin("../../bot/res/icon.png");
+const faviconPlugin = new FaviconsWebpackPlugin("../bot/res/icon.png");
 
 module.exports = function(_, argv) {
   return {

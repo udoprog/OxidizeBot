@@ -1,0 +1,71 @@
+$margin: 10px;
+$p-margin: 6px;
+
+.command-group {
+  &-content {
+    * {
+      margin: 0px;
+    }
+
+    p {
+      margin: $p-margin 0px;
+    }
+  }
+
+  &-name {
+    font-size: 160%;
+    font-weight: bold;
+    margin: $margin 0px;
+  }
+
+  &-commands {
+    font-size: 140%;
+    font-weight: bold;
+    margin: $margin 0px;
+  }
+}
+
+.command {
+  display: block;
+
+  &-content {
+    margin: 0px;
+
+    * {
+      margin: 0px;
+    }
+
+    p {
+      margin: $p-margin 0px;
+    }
+  }
+
+  &-name {
+    font-size: 120%;
+  }
+
+  &-examples {
+    font-size: 100%;
+    font-weight: bold;
+    margin: $margin 0px;
+  }
+}
+
+.example {
+  &-name {
+    margin: $margin 0px;
+  }
+
+  &-content {
+    border-left: 4px solid orangered;
+    font-size: 80%;
+    padding-left: 10px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    background-color: #efefef;
+
+    * {
+      margin: 0px;
+    }
+  }
+}
