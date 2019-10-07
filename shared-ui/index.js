@@ -1,24 +1,16 @@
 import React from "react";
 import ReactMarkdown from 'react-markdown';
 
+function Header(props) {
+  return <ReactMarkdown source={props.source} />
+}
+
 function Content(props) {
-  let source = props.source;
-
-  if (source instanceof Array) {
-    source = source.join('\n');
-  }
-
-  return <ReactMarkdown source={source} />
+  return <ReactMarkdown source={props.source} />
 }
 
 function ExampleContent(props) {
-  let source = props.source;
-
-  if (source instanceof Array) {
-    source = source.join('\n');
-  }
-
-  return <pre><code>{source}</code></pre>
+  return <pre><code>{props.source}</code></pre>
 }
 
 class Example extends React.Component {
@@ -53,7 +45,7 @@ class Command extends React.Component {
     return <>
       <tr className="command">
         <td>
-          <div className="command-name">{this.props.name}</div>
+          <div className="command-name"><Header source={this.props.name} /></div>
           <div className="command-content"><Content source={this.props.content} /></div>
 
           {examples}
@@ -79,7 +71,7 @@ export class CommandGroup extends React.Component {
   render() {
     let commands = null;
 
-    let expand = this.state.expanded || !!this.props.modified;
+    let expand = this.state.expanded || !this.props.expandable || !!this.props.modified;
 
     if (this.props.commands && this.props.commands.length > 0 && expand) {
       commands = <table className="table table-dark table-striped">
@@ -93,7 +85,7 @@ export class CommandGroup extends React.Component {
 
     let show = null;
 
-    if (this.props.commands.length > 0 && !this.props.modified) {
+    if (this.props.commands.length > 0 && !this.props.modified && this.props.expandable) {
       if (!this.state.expanded) {
         show = <button className="btn btn-info btn-sm" onClick={() => this.toggle(true)}>
           Show
@@ -111,8 +103,9 @@ export class CommandGroup extends React.Component {
           {this.props.name}
         </div>
 
-        <div className="command-group-actions">{show}</div>
         <div className="command-group-content"><ReactMarkdown source={this.props.content} /></div>
+
+        <div className="command-group-actions">{show}</div>
 
         {commands}
       </div>

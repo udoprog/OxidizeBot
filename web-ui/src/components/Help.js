@@ -1,15 +1,15 @@
 import React from "react";
 import { RouteLayout } from "./Layout.js";
-import { Form, FormControl } from "react-bootstrap";
+import { Form, FormControl, Alert } from "react-bootstrap";
 import Loading from "./Loading.js";
 import { CommandGroup } from "shared-ui";
-import commands from 'json-loader!yaml-loader!../../../shared/commands.yaml';
+import commands from 'toml-loader!../../../shared/commands.toml';
 
 function hash(s) {
   let out = new Set();
 
   for (let e of s.split(/\s+/)) {
-    e = e.toLowerCase().trim();
+    e = e.toLowerCase().replace(/[\s!<>`]+/, '');
 
     if (e.length === 0) {
       continue;
@@ -89,7 +89,13 @@ export default class Help extends React.Component {
 
     return (
       <RouteLayout>
-        <h2 className="page-title">Help</h2>
+        <h2 className="page-title">Command Help</h2>
+
+        <Alert variant="info">
+          <b>Would you like to help expand this page?</b><br />
+
+          Please contribute to the <a href="https://github.com/udoprog/OxidizeBot/blob/master/shared/commands.toml"><code>commands.toml</code></a> file that this is based off!
+        </Alert>
 
         <Form>
           <FormControl value={this.state.filter || ""} onChange={e => this.handleOnChange(e)} />

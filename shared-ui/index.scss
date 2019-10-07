@@ -1,14 +1,11 @@
 $margin: 10px;
-$p-margin: 6px;
+$content-margin: 8px;
 
 .command-group {
   &-content {
-    * {
-      margin: 0px;
-    }
-
-    p {
-      margin: $p-margin 0px;
+    & > * {
+      margin-top: $content-margin;
+      margin-bottom: $content-margin;
     }
   }
 
@@ -16,6 +13,7 @@ $p-margin: 6px;
     font-size: 160%;
     font-weight: bold;
     margin-top: $margin;
+    margin-bottom: $margin;
   }
 
   &-commands {
@@ -33,18 +31,19 @@ $p-margin: 6px;
   &-content {
     margin: 0px;
 
-    * {
-      margin: 0px;
-    }
-
-    p {
-      margin: 0;
+    & > * {
+      margin-top: $content-margin;
+      margin-bottom: $content-margin;
     }
   }
 
   &-name {
     font-size: 140%;
     margin-bottom: $margin;
+
+    * {
+      margin: 0px;
+    }
   }
 
   &-examples {
@@ -56,6 +55,7 @@ $p-margin: 6px;
   margin-bottom: $margin;
 
   &-name {
+    font-size: 120%;
     margin-bottom: $margin;
   }
 
@@ -67,8 +67,9 @@ $p-margin: 6px;
     padding-bottom: 4px;
     background-color: #efefef;
 
-    * {
-      margin: 0px;
+    & > * {
+      margin-top: $content-margin;
+      margin-bottom: $content-margin;
     }
   }
 }

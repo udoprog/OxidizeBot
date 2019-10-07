@@ -14,6 +14,12 @@ const faviconPlugin = new FaviconsWebpackPlugin("../bot/res/icon.png");
 
 module.exports = function(_, argv) {
   return {
+    resolveLoader: {
+      modules: [
+        'node_modules',
+        path.resolve(__dirname, 'loaders')
+      ]
+    },
     output: {
       path: path.join(__dirname, 'dist'),
       filename: '[name].[chunkhash].js',

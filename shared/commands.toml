@@ -1,0 +1,266 @@
+[[groups]]
+name = "!admin commands"
+content = "Administrative commands"
+
+[[groups.commands]]
+name = "!admin version"
+content = "Responds with the current version of Oxidize Bot package."
+
+[[groups.commands.examples]]
+name = "The output of the command."
+content = """
+setbac: !admin version
+SetMod: setbac -> OxidizeBot Version 1.0.0-beta.21
+"""
+
+[[groups.commands]]
+name = "!admin refresh-mods"
+content = "Refresh the set of moderators in the bot. This is required if someone is modded or unmodded while the bot is running."
+
+[[groups.commands]]
+name = "!admin settings <key>"
+content = "Read the value of a setting."
+
+[[groups.commands.examples]]
+name = "Getting the value of a configuration."
+content = """
+setbac: !admin settings afterstream/enabled
+SetMod: setbac -> afterstream/enabled = true
+"""
+
+[[groups.commands]]
+name = "!admin settings `<key>` `<value>`"
+content = "Write the value of a setting."
+
+[[groups.commands.examples]]
+name = "Disabling the afterstream command"
+content = """
+setbac: !admin settings afterstream/enabled false
+SetMod: setbac -> afterstream/enabled = false
+"""
+
+[[groups.commands]]
+name = "!admin push `<key>` `<value>`"
+content = "Add the value to a setting which is a collection."
+
+[[groups.commands]]
+name ="!admin delete `<key>` `<value>`"
+content = "Delete avalue from a setting which is a collection."
+
+[[groups.commands]]
+name = "!admin shutdown"
+content = "Shutdown the bot, causing it to (hopefully) restart."
+
+[[groups.commands]]
+name = "!admin enable-group `<group>`"
+content = "Enable all commands, aliases, and promotions part of the specified group."
+
+[[groups.commands]]
+name = "!admin disable-group `<group>`"
+content = "Disable all commands, aliases, and promotions part of the specified group."
+
+[[groups]]
+name = "Misc Commands"
+content = "Miscellaneous comands"
+
+[[groups.commands]]
+name = "!uptime"
+content = "Get the amount of time that the stream has been live for."
+
+[[groups.commands.examples]]
+name = "The output of the uptime command."
+content = """
+setbac: !uptime
+SetMod: setbac -> Stream has been live for 5h 1m 21s.
+"""
+
+[[groups.commands]]
+name = "!title"
+content = "Get the current title of the stream."
+
+[[groups.commands]]
+name = "!title `<title>`"
+content = "Set the title of the stream."
+
+[[groups.commands]]
+name = "!game"
+content = " Get the current game of the stream."
+
+[[groups.commands]]
+name = "!game `<game>`"
+content = "Set the game of the stream."
+
+[[groups]]
+name = "!command"
+content = """
+Commands related to custom command administration.
+"""
+
+[[groups.commands]]
+name = "!command edit `<name>` `<template...>`"
+content = """
+Set the command `<name>` to respond with `<template...>`.
+
+`<template...>` can use the following variables:
+
+* `{{count}}` - The number of times the command has been invoked.
+* `{{name}}` - The user who invoked the command.
+* `{{target}}` - The channel where the word was sent.
+* regex capture groups - Like `{{0}}` or `{{1}}` if a pattern used (see `!command pattern`).
+"""
+
+[[groups.commands.examples]]
+name = "Setting and using a command"
+content = """
+setbac: !command edit !github {{name}} -> Visit my github at https://github.com/udoprog
+SetMod: setbac -> Edited command.
+setbac: !github
+SetMod: setbac -> Visit my github at https://github.com/udoprog
+"""
+
+[[groups.commands]]
+name = "!command pattern `<name>` `<pattern...>`"
+content = """
+Set the command `<name>` to respond when it matches the regular expression in `<pattern...>`.
+
+Patterns can define capture groups, which will be made available to `<template...>` through `{{0}}`, `{{1}}`, etc...
+"""
+
+[[groups.commands.examples]]
+name = "Setting and using a command with a pattern"
+content = """
+setbac: !command edit why {{name}} -> Because it's faster...
+SetMod: setbac -> Edited command.
+setbac: !command pattern why (?i)why.*\?
+SetMod: setbac -> Edited pattern for command.
+setbac: Why are you doing this?
+SetMod: setbac -> Because it's faster...
+"""
+
+[[groups.commands.examples]]
+name = "Using a capture group in the template"
+content = """
+setbac: !command edit why {{name}} -> Because "{{1}}" is faster...
+SetMod: setbac -> Edited command.
+setbac: !command pattern why (?i)why are you (.+)\?
+SetMod: setbac -> Edited pattern for command.
+setbac: Why are you taking that car?
+SetMod: setbac -> Because "taking that car" is faster...
+"""
+
+[[groups.commands]]
+name = "!command pattern `<name>`"
+content = """
+Clear the pattern from the given command `<name>`.
+"""
+
+[[groups.commands]]
+name = "!command group `<name>`"
+content = """
+Get the group the command `<name>` belongs to.
+"""
+
+[[groups.commands]]
+name = "!command group `<name>` `<group>`"
+content = """
+Add the command `<name>`  to the group `<group>`.
+"""
+
+[[groups.commands]]
+name = "!command clear-group `<name>`"
+content = """
+Remove the command `<name>` from all groups.
+"""
+
+[[groups.commands]]
+name = "!command delete `<name>`"
+content = """
+Delete the command `<name>`.
+"""
+
+[[groups.commands]]
+name = "!command rename `<from>` `<to>`"
+content = """
+Rename to command `<from>` to `<to>`.
+"""
+
+[[groups]]
+name = "!alias"
+content = """
+Simple aliases which can be expanded to complex commands.
+
+This is typically used to take a longer command like `!song request` and shorten it to something like `!sr`.
+"""
+
+[[groups.commands]]
+name = "!alias edit `<name>` `<template...>`"
+content = """
+Set the command <name> to alias to <template...>.
+
+In the template you can use the variable `{{rest}}` to expand to the rest of the command being called.
+"""
+
+[[groups.commands.examples]]
+name = "Using a capture group in the template"
+content = """
+setbac: !alias edit !sr !song request {{rest}}
+SetMod: setbac -> Edited alias.
+setbac: !sr we will rock you
+SetMod: setbac -> Added "We Will Rock You - Remastered" by Queen at position #1!
+"""
+
+[[groups.commands]]
+name = "!alias clear-group `<name>`"
+content = """
+Remove the alias `<name>` from all groups.
+"""
+
+[[groups.commands]]
+name = "!alias group `<name>`"
+content = """
+Get the group the alias `<name>` belongs to, if any.
+"""
+
+[[groups.commands]]
+name = "!alias group `<name>` `<group>`"
+content = """
+Set the alias `<name>` to be in the group `<group>`.
+"""
+
+[[groups.commands]]
+name = "!alias delete `<name>`"
+content = """
+Delete the alias named `<name>`.
+"""
+
+[[groups.commands]]
+name = "!alias rename `<from>` `<to>`"
+content = """
+Rename the command `<from>` to `<to>`.
+"""
+
+[[groups]]
+name = "!afterstream"
+content = """
+Adds an "afterstream message" to the bot, which will be available to the streamer after the stream is over.
+"""
+
+[[groups.commands]]
+name = "!afterstream `<message...>`"
+content = """
+Adds the message `<message...>` to be read by the streamer after the stream is over.
+
+Messages are avilable [in the After Streams page](http://localhost:12345/after-streams) of the bot.
+"""
+
+[[groups]]
+name = "Clip Command"
+content = """
+Clips are small video snippets that can be created quickly on Twitch.
+"""
+
+[[groups.commands]]
+name = "!clip"
+content = """
+Creates a Twitch Clip 30 seconds long from the current time.
+"""
