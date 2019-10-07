@@ -1,4 +1,25 @@
 [[groups]]
+name = "Help Command"
+content = """
+Commands for receiving command help in OxidizeBot.
+"""
+
+[[groups.commands]]
+name = "!help"
+content = "Links to this page."
+
+[[groups.commands]]
+name = "!help <command>"
+content = "Get help for a specific `<command>`, like `!song`."
+
+[[groups.commands.examples]]
+name = "Help for the song command"
+content = """
+setbac: !help !song
+SetMod: setbac -> For help on that, go to https://setbac.tv/help?q=%21song
+"""
+
+[[groups]]
 name = "!admin commands"
 content = "Administrative commands"
 
@@ -516,14 +537,14 @@ SetMod: setbac -> Gave bdogs_gaming 100 ether!
 [[groups.commands]]
 name = "!currency windfall `<amount>`"
 content = """
-Give everyone in chat `<amount>` of currency.
+setbac: !ether windfall 10
 """
 
 [[groups.commands.examples]]
 name = "`setbac` boosting everyone with 10 ether"
 content = """
 setbac: !ether windfall 10
-SetMod: setbac -> Gave their viewers 1500 ether!
+* SetMod gave 10 ether to EVERYONE!
 """
 
 [[groups.commands]]
@@ -551,6 +572,13 @@ If the streamer has a potty mouth that they wish to rid themselves of, they can 
 name = "!swearjar"
 content = """
 Invoke the swearjar. Causing the streamer to give all their viewers some stream currency.
+"""
+
+[[groups.commands.examples]]
+name = "`setbac` invoking the swearjar"
+content = """
+setbac: !swearjar
+* SetMod has taken 110 ether from setbac and given it to the viewers for listening to their bad mouth!
 """
 
 [[groups]]

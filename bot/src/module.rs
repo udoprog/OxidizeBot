@@ -12,6 +12,7 @@ pub mod command_admin;
 pub mod countdown;
 pub mod eight_ball;
 pub mod gtav;
+pub mod help;
 pub mod misc;
 pub mod poll;
 pub mod promotions;

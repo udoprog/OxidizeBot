@@ -202,14 +202,19 @@ impl Twitch {
 
     /// Get chatters for the given channel using TMI.
     pub async fn chatters(&self, channel: &str) -> Result<Chatters, Error> {
-        let url = format!("{}/group/user/{}/chatters", TMI_TWITCH_URL, channel);
+        let channel = channel.trim_start_matches('#');
 
-        let res = self.client.get(&url).send().await?;
-        let body = res.bytes().await?;
+        let url = Url::parse(&format!(
+            "{}/group/user/{}/chatters",
+            TMI_TWITCH_URL, channel
+        ))?;
 
-        return serde_json::from_slice::<Response>(body.as_ref())
-            .map(|l| l.chatters)
-            .map_err(Into::into);
+        let req = RequestBuilder::new(self.client.clone(), Method::GET, url)
+            .header(header::ACCEPT, "application/json");
+
+        let body = req.execute().await?.json::<Response>()?;
+
+        return Ok(body.chatters);
 
         #[derive(serde::Deserialize)]
         struct Response {

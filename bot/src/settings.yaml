@@ -514,3 +514,15 @@ types:
   chat-log/emotes-enabled:
     doc: Render emotes in the chat log (experimental).
     type: {id: bool}
+  help/enabled:
+    title: Help Command
+    feature: true
+    doc: >
+      If the `!help` command is enabled or not.
+    type: {id: bool}
+  help/url:
+    title: Documentation URL
+    doc: >
+      The URL to base the `!help` command from.
+      Default is <https://setbac.tv>.
+    type: {id: string}

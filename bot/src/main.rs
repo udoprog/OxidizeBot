@@ -719,6 +719,7 @@ async fn try_main(
     modules.push(Box::new(module::auth::Module));
     modules.push(Box::new(module::poll::Module));
     modules.push(Box::new(module::weather::Module));
+    modules.push(Box::new(module::help::Module));
 
     let (stream_state_tx, stream_state_rx) = mpsc::channel(64);
 
