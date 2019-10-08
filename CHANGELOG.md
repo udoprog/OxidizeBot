@@ -4,18 +4,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-
 ## [Unreleased]
+
+[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/0.4.4...master
+
+## [1.0.0]
 
 ### Changed
 - Renamed all `irc/` settings to `chat/` settings.
+- Authentication must now happen through a remote service, like https://setbac.tv
+- Moved to tokio and associated ecosystem's async/await alpha's.
 
 ### Added
 - Support for complex object fields in settings configuration.
 - Support for matching a command pattern `!command pattern <name> [pattern]`.
 - Support capture groups in pattern. Like `I like (.+)` will allow you to use the variable `{{1}}` for the group.
+- Added `!help` command to send you to https://setbac.tv/help
 
-[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/0.4.4...master
+[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/0.4.4...1.0.0
 
 ## [0.4.4]
 
