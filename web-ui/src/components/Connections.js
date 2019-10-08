@@ -283,7 +283,7 @@ export default class Connections extends React.Component {
 
         <If isNot={this.state.loading}>
           <p>
-            Connections allows OxidizeBot to access the services associated with the granted connection. This might be necessary for the bot to provide certain services, like song requests through YouTube.
+            Connections allow OxidizeBot to access third party services like Spotify and Twitch. This might be necessary for the bot to provide certain features, like viewer-driven song requests.
           </p>
 
           <h4>Secret Key</h4>

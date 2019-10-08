@@ -1,5 +1,5 @@
 import React from "react";
-import { Card, CardDeck } from "react-bootstrap";
+import { Card, CardDeck, Row, Col } from "react-bootstrap";
 import { RouteLayout } from "./Layout.js";
 import dollarImg from "../assets/dollar.png";
 import toolboxImg from "../assets/toolbox.png";
@@ -11,6 +11,7 @@ import macImg from "../assets/mac.svg";
 import SVG from 'react-inlinesvg';
 import { api } from '../globals.js';
 import Loading from './Loading';
+import logo from "../assets/logo.png";
 
 const VERSION_REGEX = /(\d+)\.(\d+)\.(\d+)(-[a-z]+\.(\d+))?/;
 
@@ -175,7 +176,7 @@ export default class Index extends React.Component {
       unstable = this.renderDownloadLinks(this.state.unstable, filter, "Unstable Installer");
     }
 
-    return <Card bg="light">
+    return <Card>
       <Card.Img as={SVG} src={img} height="80px" className="mb-3 mt-3" />
       <Card.Body>
         <Card.Title className="center">{title}</Card.Title>
@@ -192,15 +193,35 @@ export default class Index extends React.Component {
 
     return (
       <RouteLayout>
-        <h2 className="page-title">OxidizeBot</h2>
+        <Row className="oxi-intro">
+          <Col sm="8">
+            <h1 className="oxi-title">OxidizeBot</h1>
 
-        <div className="center mb-4">
-          <b>OxidizeBot</b> is the high octane <a href="https://twitch.tv"><img src={twitchDarkLogo} height="16px" width="48px" alt="twitch" /></a> bot written in <a href="https://rust-lang.org">Rust</a>!
-        </div>
+            <p>
+              The high octane <a href="https://twitch.tv"><img src={twitchDarkLogo} height="16px" width="48px" alt="twitch" /></a> bot.
+            </p>
+
+            <p>
+              <b>OxidizeBot</b> as an open source Twitch Bot empowering you to focus on what's important.
+            </p>
+
+            <p>
+              It allows for a richer interaction between you and your chat.
+              From a song request system, to groundbreaking game modes where your viewers can interact directly with you and your game.
+            </p>
+
+            <p>
+              It's written in <a href="https://rust-lang.org">Rust</a>, providing an unparalleled level of reliability and performance.
+            </p>
+          </Col>
+
+          <Col sm="4" className="oxi-logo-big">
+            <img src={logo} />
+          </Col>
+        </Row>
 
         <CardDeck className="mb-4">
           <Card>
-            <Card.Img variant="top" src={dollarImg} />
             <Card.Body>
               <Card.Title className="center"><b>Free</b> and <b>Open Source</b></Card.Title>
               <Card.Text>
@@ -211,7 +232,6 @@ export default class Index extends React.Component {
           </Card>
 
           <Card>
-            <Card.Img variant="top" src={toolboxImg} />
             <Card.Body>
               <Card.Title className="center"><b>Packed</b> with <b>Features</b></Card.Title>
               <Card.Text>
@@ -224,20 +244,23 @@ export default class Index extends React.Component {
           </Card>
 
           <Card>
-            <Card.Img variant="top" src={cloudImg} />
             <Card.Body>
               <Card.Title className="center">Runs on <b>Your Computer</b></Card.Title>
               <Card.Text>
                 <em>You</em> own your data.
                 It uses <em>your</em> internet for the best possible latency.
-                It's light on system resources (Low CPU and about 50MB of ram).
+                It's light on system resources*.
                 And running locally means it can perform rich interactions with your games like <a href="https://github.com/udoprog/ChaosMod">Chaos%</a>.
+
+                <div className="oxi-subtext">
+                  *: Low CPU usage and about 50MB of ram.
+                </div>
               </Card.Text>
             </Card.Body>
           </Card>
         </CardDeck>
 
-        <h4 className="center mb-4">Download</h4>
+        <h4 className="center mb-4">Downloads</h4>
 
         <CardDeck>
           {windowsCard}

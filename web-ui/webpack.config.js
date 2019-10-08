@@ -1,7 +1,9 @@
+const path = require('path');
+const glob = require('glob')
+
 const HtmlWebPackPlugin = require("html-webpack-plugin");
 const DynamicCdnWebpackPlugin = require('dynamic-cdn-webpack-plugin');
 const FaviconsWebpackPlugin = require('favicons-webpack-plugin')
-const path = require('path');
 
 const htmlPlugin = new HtmlWebPackPlugin({
   template: "./src/index.html",
@@ -9,8 +11,8 @@ const htmlPlugin = new HtmlWebPackPlugin({
 });
 
 const cdn = new DynamicCdnWebpackPlugin();
-
 const faviconPlugin = new FaviconsWebpackPlugin("../bot/res/icon.png");
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
 module.exports = function(_, argv) {
   return {
@@ -22,8 +24,8 @@ module.exports = function(_, argv) {
     },
     output: {
       path: path.join(__dirname, 'dist'),
-      filename: '[name].[chunkhash].js',
-      chunkFilename: '[name].[chunkhash].js'
+      filename: '[chunkhash].js',
+      chunkFilename: '[chunkhash].js'
     },
     module: {
       rules: [
@@ -35,19 +37,28 @@ module.exports = function(_, argv) {
           }
         },
         {
-          test: /\.svg$/,
-          loader: 'svg-inline-loader'
-        },
-        {
           test: /\.scss$/,
           use: [
-              "style-loader", // creates style nodes from JS strings
-              "css-loader", // translates CSS into CommonJS
-              "sass-loader" // compiles Sass to CSS, using Node Sass by default
+              {
+                loader: MiniCssExtractPlugin.loader,
+                options: {
+                  hmr: process.env.NODE_ENV === 'development',
+                },
+              },
+              'css-loader',
+              {
+                loader: 'sass-loader',
+                options: {
+                  implementation: require('sass'),
+                  sassOptions: {
+                    fiber: false,
+                  },
+                },
+              },
           ]
         },
         {
-          test: /\.(png|jpe?g|gif)$/,
+          test: /\.(png|jpe?g|gif|svg)$/,
           use: [
             {
               loader: 'file-loader',
@@ -61,12 +72,16 @@ module.exports = function(_, argv) {
       htmlPlugin,
       faviconPlugin,
       cdn,
+      new MiniCssExtractPlugin({
+        filename: '[name].[hash].css',
+        chunkFilename: '[id].[hash].css',
+      })
     ],
     devServer: {
       historyApiFallback: true,
       proxy: {
         '/api': {
-          target: 'http://localhost:8000',
+          target: 'https://setbac.tv',
           secure: false,
         },
       },

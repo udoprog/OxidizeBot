@@ -86,7 +86,7 @@ export default class Player extends React.Component {
 
     return (
       <RouteLayout>
-        <h2 className="page-title">Player for {this.props.match.params.id}</h2>
+        <h2 className="page-title">Playlist for {this.props.match.params.id}</h2>
         <Loading isLoading={this.state.loading} />
         {content}
       </RouteLayout>

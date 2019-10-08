@@ -49,19 +49,21 @@ export default class Help extends React.Component {
       loading: true,
       groups: props.commands.groups,
       filter: q.get('q') || '',
-      showAll: false,
-    }
+      groupsLimit: 3,
+    };
+
+    this.defaultGroupsLimit = 3;
   }
 
   componentDidMount() {
     this.setState({loading: false});
   }
 
-  filter(groups) {
+  filter(groups, def) {
     let filter = this.state.filter;
 
     if (filter === '') {
-      return [];
+      return def;
     }
 
     if (filter.startsWith('!')) {
@@ -99,7 +101,7 @@ export default class Help extends React.Component {
     }
 
     this.props.history.replace(path);
-    this.setState({filter, showAll: false});
+    this.setState({filter, groupsLimit: this.defaultGroupsLimit});
   }
 
   prevent(e) {
@@ -107,52 +109,50 @@ export default class Help extends React.Component {
     return false;
   }
 
-  toggleShowAll() {
-    this.setState({showAll: !this.state.showAll, filter: ''});
+  showMore() {
+    this.setState({groupsLimit: this.state.groupsLimit + 1});
+  }
+
+  showRest() {
+    this.setState({groupsLimit: null});
   }
 
   render() {
-    let groups = [];
+    let groups = this.filter(this.state.groups, this.state.groups);
 
-    if (this.state.showAll) {
-      groups = this.state.groups;
-    } else {
-      groups = this.filter(this.state.groups);
+    let showMore = null;
+
+    if (this.state.groupsLimit !== null && groups.length > this.state.groupsLimit) {
+      let more = groups.length - this.state.groupsLimit;
+
+      groups = groups.slice(0, this.state.groupsLimit);
+
+      showMore = <div className="mt-3 mb-3 center">
+        <div className="btn-group">
+          <button className="btn btn-primary btn-lg" onClick={() => this.showRest()}>Show More ({more} more)</button>
+        </div>
+      </div>;
     }
 
     let clear = null;
 
     if (this.state.filter !== '') {
       clear = <div className='input-group-append'>
-        <button className='btn btn-primary' onClick={() => this.changeFilter('')}>Clear Filter</button>
+        <button className='btn btn-danger' onClick={() => this.changeFilter('')}>Clear Filter</button>
       </div>;
     }
 
-    let toggleShowButton = null;
-
-    if (this.state.filter === '') {
-      if (this.state.showAll) {
-        toggleShowButton = <button className="btn btn-default btn-danger" onClick={() => this.toggleShowAll()}>
-          Hide all documentation
-        </button>;
-      } else {
-        toggleShowButton = <button className="btn btn-default btn-danger" onClick={() => this.toggleShowAll()}>
-          Show all documentation
-        </button>;
-      }
-
-      toggleShowButton = <div className="mt-3 mb-3">
-        {toggleShowButton}
-      </div>;
-    }
+    let toggleShowButton = <div className="input-group-append">
+      {toggleShowButton}
+    </div>;
 
     let groupsRender = null;
 
     if (this.state.filter !== '' && groups.length === 0) {
       groupsRender = <div className="alert alert-warning mt-3 mb-3">No documentation matching "{this.state.filter}"</div>;
     } else {
-      groupsRender = groups.map(c => {
-        return <CommandGroup key={c.name} {...c} />;
+      groupsRender = groups.map((c, index) => {
+        return <CommandGroup key={index} {...c} />;
       });
     }
 
@@ -170,14 +170,15 @@ export default class Help extends React.Component {
 
         <form onSubmit={this.prevent.bind(this)}>
           <div className='input-group'>
-            <input className='form-control' placeholder='filter' value={this.state.filter || ''} onChange={e => this.changeFilter(e.target.value)} />
+            <input className='form-control' placeholder='type to search...' value={this.state.filter || ''} onChange={e => this.changeFilter(e.target.value)} />
             {clear}
+            {toggleShowButton}
           </div>
         </form>
 
-        {toggleShowButton}
-
         {groupsRender}
+
+        {showMore}
       </>
     );
   }

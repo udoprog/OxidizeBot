@@ -40,7 +40,7 @@ export default class Players extends React.Component {
         );
       } else {
         content = (
-          <Table striped bordered hover>
+          <Table bordered hover>
             <tbody>
               {this.state.players.map(p => {
                 return (
@@ -57,7 +57,12 @@ export default class Players extends React.Component {
 
     return (
       <RouteLayout>
-        <h2 className="page-title">Players</h2>
+        <h2 className="page-title">Playlists</h2>
+
+        <p className="center">
+          This page features people who have enabled remote playlists in OxidizeBot.
+        </p>
+
         <Loading isLoading={this.state.loading} />
         {content}
       </RouteLayout>

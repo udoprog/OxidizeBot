@@ -4,41 +4,31 @@ import { withRouter } from "react-router-dom";
 import { Container, Navbar, Nav } from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import CurrentUser from "./CurrentUser.js";
-import logo from "../assets/logo.png";
+import logo32 from "../assets/logo-32px.png";
 
 function links(props) {
   let links = [];
 
   links.push(
-    <Nav.Item key="players">
-      <Nav.Link as={Link} active={props.match.path === "/players"} to="/players">
-        <FontAwesomeIcon icon="music" /> Players
+    <Nav.Item key="help">
+      <Nav.Link as={Link} active={props.match.path === "/help"} to="/help">
+        <FontAwesomeIcon icon="question" />&nbsp;Help
       </Nav.Link>
     </Nav.Item>
   );
-
-  if (props.match.path === "/player/:id") {
-    links.push(
-      <Nav.Item key="player-self">
-        <Nav.Link as={Link} active={true} to={props.location.pathname}>
-          {props.match.params.id}
-        </Nav.Link>
-      </Nav.Item>
-    );
-  }
 
   links.push(
     <Nav.Item key="connections">
       <Nav.Link as={Link} active={props.match.path === "/connections"} to="/connections">
-        <FontAwesomeIcon icon="globe" /> My Connections
+        <FontAwesomeIcon icon="globe" />&nbsp;My&nbsp;Connections
       </Nav.Link>
     </Nav.Item>
   );
 
   links.push(
-    <Nav.Item key="help">
-      <Nav.Link as={Link} active={props.match.path === "/help"} to="/help">
-        <FontAwesomeIcon icon="question" /> Help
+    <Nav.Item key="playlists">
+      <Nav.Link as={Link} active={props.match.path === "/playlists" || props.match.path === "/player/:id"} to="/playlists">
+        <FontAwesomeIcon icon="music" />&nbsp;Playlists
       </Nav.Link>
     </Nav.Item>
   );
@@ -54,39 +44,43 @@ class Layout extends React.Component {
   render() {
     let navLinks = links(this.props);
 
-    return [
+    return <>
       <div key="navigation" id="navbar">
-        <Container>
-          <Navbar key="nav" expand="sm" className="mb-3" variant="dark">
-            <Navbar.Brand>
-              <img src={logo} alt="Logo" width="32" height="32"></img>
-            </Navbar.Brand>
-            <Navbar.Toggle aria-controls="basic-navbar-nav" />
-            <Navbar.Collapse id="basic-navbar-nav">
-              <Nav>
-                <Nav.Item>
-                  <Nav.Link as={Link} active={this.props.match.path === "/"} to="/">
-                    <FontAwesomeIcon icon="home" /> OxidizeBot
-                  </Nav.Link>
-                </Nav.Item>
-                {navLinks}
-              </Nav>
-            </Navbar.Collapse>
+        <Navbar key="nav" expand="sm" className="mb-3" bg="light">
+          <Container>
+          <Navbar.Brand>
+            <Link to="/">
+              <img src={logo32} alt="Logo" width="32" height="32"></img>
+            </Link>
+          </Navbar.Brand>
 
-            <CurrentUser />
-          </Navbar>
-        </Container>
-      </div>,
+          <Navbar.Collapse>
+            <Nav>
+              {navLinks}
+            </Nav>
+
+            <Nav className="ml-auto">
+              <Nav.Item className="nav-link">
+                <CurrentUser />
+              </Nav.Item>
+            </Nav>
+          </Navbar.Collapse>
+
+          <Navbar.Toggle aria-controls="basic-navbar-nav" />
+          </Container>
+        </Navbar>
+      </div>
 
       <Container key="content" id="content" className="mb-3">
         {this.props.children}
-      </Container>,
+      </Container>
 
       <Container key="footer" id="footer" className="pt-2 pb-2">
-        <span className="highlight">setbac.tv</span> is operated by <a href="https://twitch.tv/setbac">setbac</a><br />
+        <span className="highlight">setbac.tv</span> is built and operated with ♥ by <a href="https://twitch.tv/setbac">setbac</a> (<a href="https://github.com/udoprog" title="Github"><FontAwesomeIcon icon={['fab', 'github']} /></a> - <a href="https://twitter.com/udoprog" title="Twitter"><FontAwesomeIcon icon={['fab', 'twitter']} /></a> - <a href="https://twitch.com/setbac"><FontAwesomeIcon icon={['fab', 'twitch']} title="Twitch" /></a>)<br />
+        Come join my <a href="https://discord.gg/v5AeNkT">Discord Community</a> if you want to participate in this Project<br />
         <Link to="/">Start Page</Link> &ndash; <Link to="/privacy">Privacy Policy</Link>
       </Container>
-    ];
+    </>;
   }
 }
 
