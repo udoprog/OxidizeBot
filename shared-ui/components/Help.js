@@ -49,6 +49,7 @@ export default class Help extends React.Component {
       loading: true,
       groups: props.commands.groups,
       filter: q.get('q') || '',
+      showAll: false,
     }
   }
 
@@ -60,7 +61,7 @@ export default class Help extends React.Component {
     let filter = this.state.filter;
 
     if (filter === '') {
-      return groups;
+      return [];
     }
 
     if (filter.startsWith('!')) {
@@ -98,7 +99,7 @@ export default class Help extends React.Component {
     }
 
     this.props.history.replace(path);
-    this.setState({filter});
+    this.setState({filter, showAll: false});
   }
 
   prevent(e) {
@@ -106,8 +107,18 @@ export default class Help extends React.Component {
     return false;
   }
 
+  toggleShowAll() {
+    this.setState({showAll: !this.state.showAll, filter: ''});
+  }
+
   render() {
-    let groups = this.filter(this.state.groups);
+    let groups = [];
+
+    if (this.state.showAll) {
+      groups = this.state.groups;
+    } else {
+      groups = this.filter(this.state.groups);
+    }
 
     let clear = null;
 
@@ -115,6 +126,34 @@ export default class Help extends React.Component {
       clear = <div className='input-group-append'>
         <button className='btn btn-primary' onClick={() => this.changeFilter('')}>Clear Filter</button>
       </div>;
+    }
+
+    let toggleShowButton = null;
+
+    if (this.state.filter === '') {
+      if (this.state.showAll) {
+        toggleShowButton = <button className="btn btn-default btn-danger" onClick={() => this.toggleShowAll()}>
+          Hide all documentation
+        </button>;
+      } else {
+        toggleShowButton = <button className="btn btn-default btn-danger" onClick={() => this.toggleShowAll()}>
+          Show all documentation
+        </button>;
+      }
+
+      toggleShowButton = <div className="mt-3 mb-3">
+        {toggleShowButton}
+      </div>;
+    }
+
+    let groupsRender = null;
+
+    if (this.state.filter !== '' && groups.length === 0) {
+      groupsRender = <div className="alert alert-warning mt-3 mb-3">No documentation matching "{this.state.filter}"</div>;
+    } else {
+      groupsRender = groups.map(c => {
+        return <CommandGroup key={c.name} {...c} />;
+      });
     }
 
     return (
@@ -127,6 +166,8 @@ export default class Help extends React.Component {
           You can do that by contributing to the <a href='https://github.com/udoprog/OxidizeBot/blob/master/shared/commands.toml'><code>commands.toml</code></a> file on Github!
         </div>
 
+        <h4>Search:</h4>
+
         <form onSubmit={this.prevent.bind(this)}>
           <div className='input-group'>
             <input className='form-control' placeholder='filter' value={this.state.filter || ''} onChange={e => this.changeFilter(e.target.value)} />
@@ -134,9 +175,9 @@ export default class Help extends React.Component {
           </div>
         </form>
 
-        {groups.map(c => {
-          return <CommandGroup key={c.name} {...c} />;
-        })}
+        {toggleShowButton}
+
+        {groupsRender}
       </>
     );
   }
