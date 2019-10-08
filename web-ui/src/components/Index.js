@@ -10,6 +10,7 @@ import debianImg from "../assets/debian.svg";
 import macImg from "../assets/mac.svg";
 import SVG from 'react-inlinesvg';
 import { api } from '../globals.js';
+import Loading from './Loading';
 
 const VERSION_REGEX = /(\d+)\.(\d+)\.(\d+)(-[a-z]+\.(\d+))?/;
 
@@ -113,15 +114,24 @@ export default class Index extends React.Component {
       releases: [],
       stable: null,
       unstable: null,
+      loadingReleases: true,
     };
   }
 
-  async componentDidMount() {
+  /**
+   * Refresh the known collection of releases.
+   */
+  async refreshReleases() {
+    this.setState({ loadingReleases: true });
     let releases = await api.githubReleases('udoprog', 'OxidizeBot');
     let {stable, unstable} = filterReleases(releases);
     stable = partitionDownloads(stable);
     unstable = partitionDownloads(unstable);
-    this.setState({ releases, stable, unstable });
+    this.setState({ releases, stable, unstable, loadingReleases: false });
+  }
+
+  async componentDidMount() {
+    await this.refreshReleases();
   }
 
   /**
@@ -157,13 +167,19 @@ export default class Index extends React.Component {
   }
 
   renderCard(filter, title, img) {
-    let stable = this.renderDownloadLinks(this.state.stable, filter, "Stable Installer");
-    let unstable = this.renderDownloadLinks(this.state.unstable, filter, "Unstable Installer");
+    let stable = null;
+    let unstable = null;
+
+    if (!this.state.loadingReleases) {
+      stable = this.renderDownloadLinks(this.state.stable, filter, "Stable Installer");
+      unstable = this.renderDownloadLinks(this.state.unstable, filter, "Unstable Installer");
+    }
 
     return <Card bg="light">
       <Card.Img as={SVG} src={img} height="80px" className="mb-3 mt-3" />
       <Card.Body>
         <Card.Title className="center">{title}</Card.Title>
+        <Loading isLoading={this.state.loadingReleases} />
         {unstable}
         {stable}
       </Card.Body>
