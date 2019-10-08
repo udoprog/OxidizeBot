@@ -225,46 +225,7 @@ fn setup_logs(
     Ok(())
 }
 
-/// Test if this is a watchdog process and return all arguments except for the
-/// watchdog arguments.
-fn is_watchdog() -> bool {
-    if let Some(first) = env::args_os().skip(1).next() {
-        return first == OsStr::new("--watchdog");
-    }
-
-    false
-}
-
-/// Run the underlying process being watchdogged.
-fn run_watchdog() -> io::Result<()> {
-    let exe = env::current_exe()?;
-    let args = env::args_os().skip(2).collect::<Vec<_>>();
-
-    println!("Running watchdog (pid: {})", process::id());
-
-    loop {
-        let mut child = process::Command::new(&exe).args(&args).spawn()?;
-        println!("Started child process (pid: {})", child.id());
-        let status = child.wait()?;
-
-        // gracefully shut down.
-        if status.success() {
-            return Ok(());
-        }
-
-        println!("Child process exited unexpectedly: {}", status);
-    }
-}
-
 fn main() -> Result<(), Error> {
-    if is_watchdog() {
-        if let Err(e) = run_watchdog() {
-            eprintln!("Watched process failed: {}", e);
-        }
-
-        return Ok(());
-    }
-
     let opts = opts();
     let m = opts.get_matches();
 
