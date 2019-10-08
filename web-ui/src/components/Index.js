@@ -9,13 +9,171 @@ import windowsImg from "../assets/windows.svg";
 import debianImg from "../assets/debian.svg";
 import macImg from "../assets/mac.svg";
 import SVG from 'react-inlinesvg';
+import { api } from '../globals.js';
+
+const VERSION_REGEX = /(\d+)\.(\d+)\.(\d+)(-[a-z]+\.(\d+))?/;
+
+class Version {
+  constructor(version) {
+    let out = version.match(VERSION_REGEX);
+
+    if (!out) {
+      throw new Error("Illegal Version: " + version);
+    }
+
+    this.parts = [parseInt(out[1]), parseInt(out[2]), parseInt(out[3]), Infinity];
+    let prerelease = out[5];
+
+    if (prerelease !== undefined) {
+      this.parts[3] = parseInt(prerelease);
+    }
+
+    this.versionString = version;
+  }
+
+  cmp(o) {
+    for (let i = 0; i < 4; i++) {
+      if (this.parts[i] > o.parts[i]) {
+        return 1;
+      }
+
+      if (this.parts[i] < o.parts[i]) {
+        return -1;
+      }
+    }
+
+    return 0;
+  }
+
+  toString() {
+    return this.versionString;
+  }
+}
+
+/**
+ * Split releases into a stable and a prerelease.
+ *
+ * @param {*} releases
+ */
+function filterReleases(releases) {
+  let stable = latestRelease(releases.filter(r => !r.prerelease));
+  let unstable = latestRelease(releases.filter(r => r.prerelease));
+  return {stable, unstable};
+}
+
+/**
+ * Get the latest release out of a collection of releases.
+ *
+ * @param {*} releases
+ */
+function latestRelease(releases) {
+  releases = releases.map(release => {
+    return {version: new Version(release.tag_name), release};
+  });
+
+  releases.sort((a, b) => b.version.cmp(a.version));
+
+  if (releases.length === 0) {
+    return null;
+  }
+
+  return releases[0];
+}
+
+function partitionDownloads(incoming) {
+  let debian = null;
+  let windows = null;
+
+  if (incoming === null) {
+    return {debian, windows};
+  }
+
+  let {release, version} = incoming;
+
+  for (let asset of release.assets) {
+    if (asset.name.endsWith(".deb")) {
+      debian = {asset, version};
+      continue;
+    }
+
+    if (asset.name.endsWith(".msi")) {
+      windows = {asset, version};
+      continue;
+    }
+  }
+
+  return {debian, windows};
+}
 
 export default class Index extends React.Component {
   constructor(props) {
     super(props);
+
+    this.state = {
+      releases: [],
+      stable: null,
+      unstable: null,
+    };
+  }
+
+  async componentDidMount() {
+    let releases = await api.githubReleases('udoprog', 'OxidizeBot');
+    let {stable, unstable} = filterReleases(releases);
+    stable = partitionDownloads(stable);
+    unstable = partitionDownloads(unstable);
+    this.setState({ releases, stable, unstable });
+  }
+
+  /**
+   * Optionally render download links in case they are available.
+   *
+   * @param {*} data
+   * @param {*} filter
+   * @param {*} title
+   */
+  renderDownloadLinks(data, filter, title) {
+    if (data === null) {
+      return null;
+    }
+
+    data = filter(data);
+
+    if (data === null) {
+      return null;
+    }
+
+    let {asset, version} = data;
+    let m = asset.name.match(/\.[a-z]+$/);
+
+    let ext = null;
+
+    if (m !== null) {
+      ext = <> ({m[0]})</>;
+    }
+
+    return <Card.Text className="center">
+      <a href={asset.browser_download_url}>{version.toString()} {title}{ext}</a>
+    </Card.Text>;
+  }
+
+  renderCard(filter, title, img) {
+    let stable = this.renderDownloadLinks(this.state.stable, filter, "Stable Installer");
+    let unstable = this.renderDownloadLinks(this.state.unstable, filter, "Unstable Installer");
+
+    return <Card bg="light">
+      <Card.Img as={SVG} src={img} height="80px" className="mb-3 mt-3" />
+      <Card.Body>
+        <Card.Title className="center">{title}</Card.Title>
+        {unstable}
+        {stable}
+      </Card.Body>
+    </Card>;
   }
 
   render() {
+    let windowsCard = this.renderCard(r => r.windows, "Windows", windowsImg);
+    let debianCard = this.renderCard(r => r.debian, "Debian", debianImg);
+
     return (
       <RouteLayout>
         <h2 className="page-title">OxidizeBot</h2>
@@ -35,6 +193,7 @@ export default class Index extends React.Component {
               </Card.Text>
             </Card.Body>
           </Card>
+
           <Card>
             <Card.Img variant="top" src={toolboxImg} />
             <Card.Body>
@@ -47,6 +206,7 @@ export default class Index extends React.Component {
               </Card.Text>
             </Card.Body>
           </Card>
+
           <Card>
             <Card.Img variant="top" src={cloudImg} />
             <Card.Body>
@@ -64,24 +224,8 @@ export default class Index extends React.Component {
         <h4 className="center mb-4">Download</h4>
 
         <CardDeck>
-          <Card bg="light">
-            <Card.Img as={SVG} src={windowsImg} height="80px" className="mb-3 mt-3" />
-            <Card.Body>
-              <Card.Title className="center">Windows</Card.Title>
-              <Card.Text className="center">
-                <a href="https://github.com/udoprog/OxidizeBot/releases/download/1.0.0-beta.19/oxidize-1.0.19-x86_64.msi">1.0.0-beta.19 Beta Installer (.msi)</a>
-              </Card.Text>
-            </Card.Body>
-          </Card>
-          <Card bg="light">
-            <Card.Img as={SVG} src={debianImg} height="80px" className="mb-3 mt-3" />
-            <Card.Body>
-              <Card.Title className="center">Debian</Card.Title>
-              <Card.Text className="center">
-                <a href="https://github.com/udoprog/OxidizeBot/releases/download/1.0.0-beta.19/oxidize_1.0.0.beta.19_amd64.deb">1.0.0-beta.19 Beta Installer (.deb)</a>
-              </Card.Text>
-            </Card.Body>
-          </Card>
+          {windowsCard}
+          {debianCard}
         </CardDeck>
       </RouteLayout>
     );

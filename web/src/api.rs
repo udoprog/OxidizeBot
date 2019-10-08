@@ -3,9 +3,11 @@
 use bytes::Bytes;
 use reqwest::{header, r#async::Client, Method, Url};
 
+pub mod github;
 pub mod spotify;
 pub mod twitch;
 
+pub use self::github::GitHub;
 pub use self::spotify::Spotify;
 pub use self::twitch::IdTwitchClient;
 

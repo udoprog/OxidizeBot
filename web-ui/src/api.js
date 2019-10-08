@@ -109,6 +109,10 @@ export default class Api {
   getKey() {
     return this.fetch(["key"]);
   }
+
+  githubReleases(user, repo) {
+    return this.fetch(["github-releases", user, repo]);
+  }
 }
 
 function encodePath(path) {

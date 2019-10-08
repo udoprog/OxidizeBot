@@ -1,4 +1,4 @@
-use crate::oauth2;
+use crate::{api, oauth2};
 use failure::Error;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{fmt, sync::Arc};
@@ -44,6 +44,11 @@ pub enum Key {
     /// User data.
     User {
         user_id: String,
+    },
+    /// The latest github release for the given project
+    GithubReleases {
+        user: String,
+        repo: String,
     },
     /// Key from unsupported namespace.
     Unsupported(String, Vec<serde_cbor::Value>),
@@ -123,6 +128,17 @@ impl<'de> serde::Deserialize<'de> for Key {
 
                         Key::User { user_id }
                     }
+                    "github-releases" => {
+                        let user = visitor
+                            .next_element::<String>()?
+                            .ok_or_else(|| Error::custom("expected: user"))?;
+
+                        let repo = visitor
+                            .next_element::<String>()?
+                            .ok_or_else(|| Error::custom("expected: repo"))?;
+
+                        Key::GithubReleases { user, repo }
+                    }
                     _ => {
                         let mut args = Vec::new();
 
@@ -173,6 +189,11 @@ impl serde::Serialize for Key {
             Self::User { ref user_id } => {
                 seq.serialize_element("user")?;
                 seq.serialize_element(user_id)?;
+            }
+            Self::GithubReleases { ref repo, ref user } => {
+                seq.serialize_element("github-releases")?;
+                seq.serialize_element(repo)?;
+                seq.serialize_element(user)?;
             }
             Self::Unsupported(ref ns, ref args) => {
                 seq.serialize_element(ns)?;
@@ -346,6 +367,35 @@ impl Database {
         }
 
         Ok(out)
+    }
+
+    /// Get all github releases associated with the specified repository.
+    pub fn get_github_releases(
+        &self,
+        user: &str,
+        repo: &str,
+    ) -> Result<Option<Vec<api::github::Release>>, Error> {
+        let key = Key::GithubReleases {
+            user: user.to_string(),
+            repo: repo.to_string(),
+        };
+
+        self.get(&key)
+    }
+
+    /// Write the current github releases.
+    pub fn write_github_releases(
+        &self,
+        user: &str,
+        repo: &str,
+        releases: Vec<api::github::Release>,
+    ) -> Result<(), Error> {
+        let key = Key::GithubReleases {
+            user: user.to_string(),
+            repo: repo.to_string(),
+        };
+
+        self.insert(&key, releases)
     }
 
     /// Run the given set of operations in a transaction.

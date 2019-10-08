@@ -12,7 +12,6 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     net::SocketAddr,
-    path::Path,
     sync::{Arc, RwLock},
     time,
 };
@@ -23,12 +22,12 @@ static SPOTIFY_TRACK_URL: &'static str = "https://open.spotify.com/track";
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Config {
     #[serde(default)]
-    verify_connection: bool,
-    database: RelativePathBuf,
-    base_url: Url,
+    pub verify_connection: bool,
+    pub database: RelativePathBuf,
+    pub base_url: Url,
     #[serde(default)]
-    session: session::Config,
-    oauth2: oauth2::Config,
+    pub session: session::Config,
+    pub oauth2: oauth2::Config,
 }
 
 mod assets {
@@ -38,7 +37,7 @@ mod assets {
 }
 
 pub fn setup(
-    root: &Path,
+    db: db::Database,
     host: String,
     port: u32,
     config: Config,
@@ -46,17 +45,9 @@ pub fn setup(
     let fallback = assets::Asset::get("index.html")
         .ok_or_else(|| format_err!("missing index.html in assets"))?;
 
-    let db = sled::Db::open(config.database.to_path(root))?;
-    let tree = Arc::new(db.open_tree("storage")?);
-
     let pending_tokens = Arc::new(Mutex::new(HashMap::new()));
 
-    let handler = Arc::new(Handler::new(
-        fallback,
-        tree,
-        config,
-        pending_tokens.clone(),
-    )?);
+    let handler = Arc::new(Handler::new(fallback, db, config, pending_tokens.clone())?);
 
     let bind = format!("{}:{}", host, port);
     log::info!("Listening on: http://{}", bind);
@@ -204,11 +195,10 @@ impl Handler {
     /// Construct a new server.
     pub fn new(
         fallback: Cow<'static, [u8]>,
-        tree: Arc<sled::Tree>,
+        db: db::Database,
         config: Config,
         pending_tokens: Arc<Mutex<HashMap<State, PendingToken>>>,
     ) -> Result<Self, failure::Error> {
-        let db = db::Database::load(tree)?;
         let (login_flow, flows) = oauth2::setup_flows(&config.base_url, &config.oauth2)?;
         let session = session::Session::new(db.clone(), &config.session)?;
 
@@ -295,6 +285,9 @@ impl Handler {
             (&Method::POST, &["api", "player"]) => {
                 drop(path);
                 self.player_update(req).await
+            }
+            (&Method::GET, &["api", "github-releases", user, repo]) => {
+                self.get_github_releases(user, repo).await
             }
             (&Method::GET, _) => return Ok(self.static_asset(uri.path())),
             _ => Err(Error::NotFound),
@@ -859,6 +852,16 @@ impl Handler {
                 _ => None,
             }
         }
+    }
+
+    /// Get the latest known github releases for the specified user/repo combo.
+    async fn get_github_releases(&self, user: &str, repo: &str) -> Result<Response<Body>, Error> {
+        let releases = match self.db.get_github_releases(user, repo)? {
+            Some(releases) => releases,
+            None => return Err(Error::NotFound),
+        };
+
+        json_ok(&releases)
     }
 
     /// Test for authentication, if enabled.

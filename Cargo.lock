@@ -2014,6 +2014,7 @@ dependencies = [
  "mime 0.3.14",
  "mime_guess 2.0.1",
  "parking_lot",
+ "pin-utils",
  "pretty_env_logger",
  "relative-path",
  "reqwest",
