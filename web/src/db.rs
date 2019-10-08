@@ -25,9 +25,35 @@ pub struct User {
     pub login: String,
 }
 
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct PlayerItem {
+    /// Name of the song.
+    pub name: String,
+    /// Artists of the song.
+    #[serde(default)]
+    pub artists: Option<String>,
+    /// The URL of a track.
+    pub track_url: String,
+    /// User who requested the song.
+    #[serde(default)]
+    pub user: Option<String>,
+    /// Length of the song.
+    pub duration: String,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct Player {
+    pub current: Option<PlayerItem>,
+    pub items: Vec<PlayerItem>,
+}
+
 /// Internal key serialization.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Key {
+    Players,
+    Player {
+        user_login: String,
+    },
     Connection {
         user_id: String,
         id: String,
@@ -97,6 +123,10 @@ impl<'de> serde::Deserialize<'de> for Key {
                 };
 
                 let key = match ns.as_str() {
+                    "player" => match visitor.next_element::<String>()? {
+                        Some(user_login) => Key::Player { user_login },
+                        None => Key::Players,
+                    },
                     "connections" => {
                         let user_id = visitor
                             .next_element::<String>()?
@@ -166,6 +196,13 @@ impl serde::Serialize for Key {
         let mut seq = serializer.serialize_seq(None)?;
 
         match self {
+            Self::Players => {
+                seq.serialize_element("player")?;
+            }
+            Self::Player { ref user_login } => {
+                seq.serialize_element("player")?;
+                seq.serialize_element(user_login)?;
+            }
             Self::Connection {
                 ref user_id,
                 ref id,
@@ -220,12 +257,42 @@ impl Database {
     }
 
     /// Get information on the given user.
-    pub fn get_user(&self, user_id: &str) -> Result<Option<User>, Error> {
-        let key = Key::User {
-            user_id: user_id.to_string(),
+    pub fn list_players(&self) -> Result<Vec<String>, Error> {
+        let key = Key::Players.serialize()?;
+        let prefix = &key[..(key.len() - 1)];
+
+        let mut out = Vec::new();
+
+        for result in self.tree.range(prefix..) {
+            let (key, _) = result?;
+
+            match Key::deserialize(key.as_ref())? {
+                Key::Player { ref user_login } => {
+                    out.push(user_login.to_string());
+                }
+                _ => break,
+            }
+        }
+
+        Ok(out)
+    }
+
+    /// Get data for a single player.
+    pub fn get_player(&self, user_login: &str) -> Result<Option<Player>, Error> {
+        let key = Key::Player {
+            user_login: user_login.to_string(),
         };
 
-        self.get::<User>(&key)
+        self.get::<Player>(&key)
+    }
+
+    /// Get data for a single player.
+    pub fn insert_player(&self, user_login: &str, player: Player) -> Result<(), Error> {
+        let key = Key::Player {
+            user_login: user_login.to_string(),
+        };
+
+        self.insert(&key, player)
     }
 
     /// Get information on the given user.
@@ -235,6 +302,15 @@ impl Database {
         };
 
         self.insert(&key, &user)
+    }
+
+    /// Get information on the given user.
+    pub fn get_user(&self, user_id: &str) -> Result<Option<User>, Error> {
+        let key = Key::User {
+            user_id: user_id.to_string(),
+        };
+
+        self.get::<User>(&key)
     }
 
     /// Get the current key by the specified user.

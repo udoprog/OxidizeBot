@@ -8,13 +8,7 @@ use parking_lot::Mutex;
 use relative_path::RelativePathBuf;
 use serde::{de, Deserialize, Serialize};
 use smallvec::SmallVec;
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    net::SocketAddr,
-    sync::{Arc, RwLock},
-    time,
-};
+use std::{borrow::Cow, collections::HashMap, net::SocketAddr, sync::Arc, time};
 use url::Url;
 
 static SPOTIFY_TRACK_URL: &'static str = "https://open.spotify.com/track";
@@ -181,7 +175,6 @@ pub struct Handler {
     config: Config,
     session: session::Session,
     fallback: Cow<'static, [u8]>,
-    players: Arc<RwLock<HashMap<String, Player>>>,
     id_twitch_client: api::IdTwitchClient,
     spotify: api::Spotify,
     login_flow: Arc<oauth2::Flow>,
@@ -207,7 +200,6 @@ impl Handler {
             config,
             session,
             fallback,
-            players: Arc::new(RwLock::new(Default::default())),
             id_twitch_client: api::IdTwitchClient::new()?,
             spotify: api::Spotify::new()?,
             login_flow,
@@ -627,15 +619,13 @@ impl Handler {
 
     /// Handle listing players.
     async fn player_list(&self) -> Result<Response<Body>, Error> {
-        let players = self.players.read().expect("poisoned");
-        let keys = players.keys().map(|s| s.as_str()).collect::<Vec<&str>>();
+        let keys = self.db.list_players()?;
         json_ok(&keys)
     }
 
     /// Get information for a single player.
     async fn player_get(&self, id: &str) -> Result<Response<Body>, Error> {
-        let players = self.players.read().expect("poisoned");
-        let player = players.get(id);
+        let player = self.db.get_player(id)?;
         json_ok(&player)
     }
 
@@ -812,14 +802,16 @@ impl Handler {
         };
 
         {
-            let mut players = self.players.write().expect("poisoned");
-            let player = players.entry(login).or_insert_with(Default::default);
-            player.current = update.current.map(Item::into_player_item);
-            player.items = update
-                .items
-                .into_iter()
-                .map(Item::into_player_item)
-                .collect();
+            let player = db::Player {
+                current: update.current.map(Item::into_player_item),
+                items: update
+                    .items
+                    .into_iter()
+                    .map(Item::into_player_item)
+                    .collect(),
+            };
+
+            self.db.insert_player(&login, player)?;
         }
 
         return json_empty();
@@ -940,28 +932,6 @@ fn referer<B>(req: &Request<B>) -> Result<Option<Url>, Error> {
     Ok(Some(referer))
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct Player {
-    current: Option<PlayerItem>,
-    items: Vec<PlayerItem>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-pub struct PlayerItem {
-    /// Name of the song.
-    name: String,
-    /// Artists of the song.
-    #[serde(default)]
-    artists: Option<String>,
-    /// The URL of a track.
-    track_url: String,
-    /// User who requested the song.
-    #[serde(default)]
-    user: Option<String>,
-    /// Length of the song.
-    duration: String,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Item {
     /// Name of the song.
@@ -981,10 +951,10 @@ pub struct Item {
 }
 
 impl Item {
-    pub fn into_player_item(self) -> PlayerItem {
+    pub fn into_player_item(self) -> db::PlayerItem {
         let track_id = self.track_id;
 
-        PlayerItem {
+        db::PlayerItem {
             name: self.name,
             artists: self.artists,
             track_url: self
