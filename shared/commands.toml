@@ -1,16 +1,16 @@
 [[groups]]
-name = "Help Command"
+name = "Documentation"
 content = """
 Commands for receiving command help in OxidizeBot.
 """
 
 [[groups.commands]]
 name = "!help"
-content = "Links to this page."
+content = "Links to this help page."
 
 [[groups.commands]]
-name = "!help <command>"
-content = "Get help for a specific `<command>`, like `!song`."
+name = "!help `<topic...>`"
+content = "Get help for a specific `<topic...>`, like `!song`."
 
 [[groups.commands.examples]]
 name = "Help for the song command"
@@ -20,8 +20,8 @@ SetMod: setbac -> For help on that, go to https://setbac.tv/help?q=%21song
 """
 
 [[groups]]
-name = "!admin commands"
-content = "Administrative commands"
+name = "Admin Commands"
+content = "Commands for changing how the bot behaves."
 
 [[groups.commands]]
 name = "!admin version"
@@ -82,7 +82,7 @@ content = "Disable all commands, aliases, and promotions part of the specified g
 
 [[groups]]
 name = "Misc Commands"
-content = "Miscellaneous comands"
+content = "Various commands."
 
 [[groups.commands]]
 name = "!uptime"
@@ -812,4 +812,54 @@ name = "Getting the current weather at the specified location"
 content = """
 setbac: !weather current Moscow
 SetMod: setbac -> Moscow -> 3.2 °C, overcast clouds 🌧️.
+"""
+
+[[groups]]
+name = "speedrun.com integration"
+content = """
+Commands integrating with speedrun.com
+"""
+
+[[groups.commands]]
+name = "!speedrun game `<game>` `[filters]`"
+content = """
+Get the record for a specific `<game>`.
+
+Available `[filters]` are:
+* `--user <name>` - Limit results to the given user.
+* `--abbrev` - Abbreviate sub-categories (e.g. "100% No Mission Skips" becomes "100% NMS").
+* `--category <name>` - Limit results to the given category.
+* `--sub-category <name>` - Limit results to the given sub-category.
+* `--misc` - Include misc categories.
+* `--misc-only` - Only list misc categories.
+"""
+
+[[groups.commands.examples]]
+name = "Get the record for the 100% categories of GTA V"
+content = """
+setbac: !speedrun game gtav --category 100%
+SetMod: setbac -> 100% (No Mission Skips) -> burhác: 9h 49m 44s (#1) | 100% (Mission Skips) -> Reloe: 8h 17m 39s (#1)
+"""
+
+[[groups.commands]]
+name = "!speedrun personal-bests `<user>` `[filters]`"
+content = """
+Get all personal bests for the specified `<user>`.
+
+Available `[filters]` are:
+* `--game <game>` - Limit results to the given game.
+* `--abbrev` - Abbreviate sub-categories (e.g. "100% No Mission Skips" becomes "100% NMS").
+* `--per-level` - Show per-level personal bests.
+* `--level <level>` - Filter by the given level.
+* `--category <name>` - Limit results to the given category.
+* `--sub-category <name>` - Limit results to the given sub-category.
+* `--misc` - Include misc categories.
+* `--misc-only` - Only list misc categories.
+"""
+
+[[groups.commands.examples]]
+name = "Get the personal bests for `setbac` in GTA V"
+content = """
+setbac: !speedrun personal-bests setbac --game gtav
+SetMod: setbac -> Grand Theft Auto V (gtav) -> Classic%: 6h 44m 4s (#11)
 """

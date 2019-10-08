@@ -1,11 +1,11 @@
-$margin: 10px;
-$content-margin: 8px;
+$margin: 8px;
+$example-margin: 12px;
 
 .command-group {
   &-content {
     & > * {
-      margin-top: $content-margin;
-      margin-bottom: $content-margin;
+      margin-top: $margin;
+      margin-bottom: $margin;
     }
   }
 
@@ -28,26 +28,27 @@ $content-margin: 8px;
 }
 
 .command {
-  &-content {
-    margin: 0px;
+  margin: 0px;
 
-    & > * {
-      margin-top: $content-margin;
-      margin-bottom: $content-margin;
+  & > * {
+    margin-top: $margin;
+    margin-bottom: $margin;
+
+    &:last-child {
+      margin-bottom: 0;
     }
   }
 
   &-name {
     font-size: 140%;
+    margin-top: 0;
     margin-bottom: $margin;
 
-    * {
-      margin: 0px;
+    & > * {
+      display: inline;
+      margin: 0;
+      padding: 0;
     }
-  }
-
-  &-examples {
-    margin-top: $margin;
   }
 }
 
@@ -55,8 +56,9 @@ $content-margin: 8px;
   margin-bottom: $margin;
 
   &-name {
-    font-size: 120%;
-    margin-bottom: $margin;
+    font-size: 100%;
+    margin-top: $example-margin;
+    margin-bottom: $example-margin;
 
     & > * {
       display: inline;
@@ -68,14 +70,11 @@ $content-margin: 8px;
   &-content {
     border-left: 4px solid orangered;
     font-size: 80%;
-    padding-left: 10px;
-    padding-top: 4px;
-    padding-bottom: 4px;
+    padding: 8px;
     background-color: #efefef;
 
     & > * {
-      margin-top: $content-margin;
-      margin-bottom: $content-margin;
+      margin: 0;
     }
   }
 }
