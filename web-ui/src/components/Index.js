@@ -64,10 +64,16 @@ function filterReleases(releases) {
  *
  * @param {*} releases
  */
-function latestRelease(releases) {
-  releases = releases.map(release => {
-    return {version: new Version(release.tag_name), release};
-  });
+function latestRelease(releasesIn) {
+  let releases = [];
+
+  for (let release of releasesIn) {
+    try {
+      releases.push({version: new Version(release.tag_name), release});
+    } catch(e) {
+      continue;
+    }
+  }
 
   releases.sort((a, b) => b.version.cmp(a.version));
 
@@ -158,18 +164,30 @@ export default class Index extends React.Component {
       ext = <> ({m[0]})</>;
     }
 
-    return <Card.Text className="oxi-center">
+    let element = (key) => <Card.Text key={key} className="oxi-center">
       <a href={asset.browser_download_url}>{version.toString()} {title}{ext}</a>
     </Card.Text>;
+
+    return {element, version};
   }
 
   renderCard(filter, title, img) {
-    let stable = null;
-    let unstable = null;
+    let releases = [];
 
     if (!this.state.loadingReleases) {
-      stable = this.renderDownloadLinks(this.state.stable, filter, "Stable Installer");
-      unstable = this.renderDownloadLinks(this.state.unstable, filter, "Unstable Installer");
+      let stable = this.renderDownloadLinks(this.state.stable, filter, "Stable Installer");
+
+      if (stable !== null) {
+        releases.push(stable);
+      }
+
+      let unstable = this.renderDownloadLinks(this.state.unstable, filter, "Unstable Installer");
+
+      if (unstable !== null) {
+        releases.push(unstable);
+      }
+
+      releases.sort((a, b) => b.version.cmp(a.version));
     }
 
     return <Card>
@@ -177,8 +195,7 @@ export default class Index extends React.Component {
       <Card.Body>
         <Card.Title className="oxi-center">{title}</Card.Title>
         <Loading isLoading={this.state.loadingReleases} />
-        {unstable}
-        {stable}
+        {releases.map((r, i) => r.element(i))}
       </Card.Body>
     </Card>;
   }
@@ -247,11 +264,11 @@ export default class Index extends React.Component {
                 It uses <em>your</em> internet for the best possible latency.
                 It's light on system resources*.
                 And running locally means it can perform rich interactions with your games like <a href="https://github.com/udoprog/ChaosMod">Chaos%</a>.
-
-                <div className="oxi-subtext">
-                  *: Low CPU usage and about 50MB of ram.
-                </div>
               </Card.Text>
+
+              <div className="oxi-subtext">
+                *: Low CPU usage and about 50MB of ram.
+              </div>
             </Card.Body>
           </Card>
         </CardDeck>

@@ -11,7 +11,7 @@ const htmlPlugin = new HtmlWebPackPlugin({
 });
 
 const cdn = new DynamicCdnWebpackPlugin();
-const faviconPlugin = new FaviconsWebpackPlugin("../bot/res/icon.png");
+const faviconPlugin = new FaviconsWebpackPlugin("../bot/res/icon-local.png");
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
 module.exports = function(_, argv) {
@@ -81,7 +81,7 @@ module.exports = function(_, argv) {
       historyApiFallback: true,
       proxy: {
         '/api': {
-          target: 'https://setbac.tv',
+          target: 'http://localhost:8000',
           secure: false,
         },
       },
