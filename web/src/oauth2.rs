@@ -33,7 +33,7 @@ pub struct FlowConfig {
 impl FlowConfig {
     /// Convert configuration into Flow.
     pub fn as_flow(&self, base_url: &Url, config: &Config) -> Result<Flow, Error> {
-        let http_client = reqwest::r#async::Client::new();
+        let http_client = reqwest::Client::new();
 
         let mut client = Client::new(
             self.client_id.clone(),
@@ -171,7 +171,7 @@ pub enum FlowType {
 
 #[derive(Debug)]
 pub struct Flow {
-    http_client: reqwest::r#async::Client,
+    http_client: reqwest::Client,
     client: Client,
     extra_params: Vec<(String, String)>,
     pub config: FlowConfig,
@@ -179,7 +179,7 @@ pub struct Flow {
 
 impl Flow {
     /// Construct a new web integration.
-    pub fn new(http_client: reqwest::r#async::Client, client: Client, config: FlowConfig) -> Self {
+    pub fn new(http_client: reqwest::Client, client: Client, config: FlowConfig) -> Self {
         Flow {
             http_client,
             client,

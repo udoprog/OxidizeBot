@@ -3,7 +3,7 @@
 use crate::api::RequestBuilder;
 use failure::Error;
 use hashbrown::HashMap;
-use reqwest::{header, r#async::Client, Method, Url};
+use reqwest::{header, Client, Method, Url};
 
 const V1_URL: &'static str = "https://api.frankerfacez.com/v1";
 

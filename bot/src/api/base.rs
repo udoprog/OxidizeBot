@@ -1,7 +1,7 @@
 use crate::oauth2;
 use bytes::Bytes;
 use failure::Error;
-use reqwest::{header, r#async::Client, Method, StatusCode, Url};
+use reqwest::{header, Client, Method, StatusCode, Url};
 
 /// Trait to deal with optional bodies.
 ///

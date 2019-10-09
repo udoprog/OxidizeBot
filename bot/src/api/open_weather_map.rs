@@ -2,7 +2,7 @@
 
 use crate::{api::RequestBuilder, injector::Injector, prelude::*, settings::Settings};
 use failure::{format_err, Error};
-use reqwest::{header, r#async::Client, Method, Url};
+use reqwest::{header, Client, Method, Url};
 use std::{fmt, sync::Arc};
 
 const V2_URL: &'static str = "http://api.openweathermap.org/data/2.5";

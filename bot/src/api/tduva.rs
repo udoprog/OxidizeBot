@@ -2,7 +2,7 @@
 
 use crate::api::RequestBuilder;
 use failure::Error;
-use reqwest::{header, r#async::Client, Method, Url};
+use reqwest::{header, Client, Method, Url};
 
 const URL: &'static str = "https://tduva.com";
 

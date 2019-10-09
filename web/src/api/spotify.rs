@@ -1,5 +1,5 @@
 use super::RequestBuilder;
-use reqwest::{header, r#async::Client, Method, Url};
+use reqwest::{header, Client, Method, Url};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 const URL: &'static str = "https://api.spotify.com";

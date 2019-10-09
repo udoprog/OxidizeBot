@@ -1,5 +1,5 @@
 use super::RequestBuilder;
-use reqwest::{header, r#async::Client, Method, Url};
+use reqwest::{header, Client, Method, Url};
 use serde::{Deserialize, Serialize};
 const ID_TWITCH_URL: &'static str = "https://id.twitch.tv";
 

@@ -18,7 +18,7 @@ hashbrown = { version = "0.6.0", features = ["serde"] }
 warp = { version = "0.2.0-alpha.1", git = "https://github.com/udoprog/warp" }
 log = "0.4.8"
 relative-path = { version = "0.4.0", features = ["serde"] }
-reqwest = { version = "0.10.0-alpha.0", git = "https://github.com/seanmonstar/reqwest.git" }
+reqwest = "=0.10.0-alpha.1"
 serde = { version = "1.0.101", features = ["rc"] }
 serde_yaml = "0.8.9"
 serde_json = "1.0.40"
@@ -62,17 +62,9 @@ leaky-bucket = "0.4.1"
 regex = "1.3.1"
 backtrace = "0.3.38"
 futures-preview = { version = "0.3.0-alpha.19", features = ["async-await"] }
-
-[dependencies.tracing]
-version = "0.1"
-
-[dependencies.tracing-core]
-version = "0.1"
-
-[dependencies.tracing-futures]
-git = "https://github.com/tokio-rs/tracing.git"
-default-features = false
-features = ["tokio-alpha"]
+tracing = "0.1.0"
+tracing-core = "0.1.0"
+tracing-futures = { version = "0.1.0", default-features = false, features = ["tokio-alpha"] }
 
 [dependencies.irc]
 version = "0.13.6"

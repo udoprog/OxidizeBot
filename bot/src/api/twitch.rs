@@ -5,7 +5,7 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use failure::{Error, ResultExt};
 use hashbrown::HashMap;
-use reqwest::{header, r#async::Client, Method, StatusCode, Url};
+use reqwest::{header, Client, Method, StatusCode, Url};
 
 pub const CLIPS_URL: &'static str = "http://clips.twitch.tv";
 const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";

@@ -1,7 +1,7 @@
 use super::RequestBuilder;
 use chrono::{DateTime, Utc};
 use failure::Error;
-use reqwest::{r#async::Client, Method, Url};
+use reqwest::{Client, Method, Url};
 
 const API_URL: &'static str = "https://api.github.com";
 

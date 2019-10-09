@@ -1,7 +1,7 @@
 //! Twitch API helpers.
 
 use bytes::Bytes;
-use reqwest::{header, r#async::Client, Method, Url};
+use reqwest::{header, Client, Method, Url};
 
 pub mod github;
 pub mod spotify;

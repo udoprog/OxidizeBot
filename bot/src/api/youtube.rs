@@ -3,7 +3,7 @@
 use crate::{api::RequestBuilder, oauth2};
 use chrono::{DateTime, Utc};
 use hashbrown::HashMap;
-use reqwest::{r#async::Client, Method, Url};
+use reqwest::{Client, Method, Url};
 
 const V3_URL: &'static str = "https://www.googleapis.com/youtube/v3";
 const GET_VIDEO_INFO_URL: &'static str = "https://www.youtube.com/get_video_info";

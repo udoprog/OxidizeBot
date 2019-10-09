@@ -10,10 +10,7 @@ use oxidize::{
 use parking_lot::RwLock;
 use std::{
     env,
-    ffi::OsStr,
-    io,
     path::{Path, PathBuf},
-    process,
     sync::Arc,
     time,
 };

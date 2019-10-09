@@ -12,7 +12,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use failure::Error;
-use reqwest::{header, r#async::Client, Method, Url};
+use reqwest::{header, Client, Method, Url};
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 

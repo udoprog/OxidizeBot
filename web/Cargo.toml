@@ -18,7 +18,7 @@ serde_urlencoded = "0.6.1"
 futures-preview = { version = "=0.3.0-alpha.19", features = ["async-await"] }
 log = "0.4.6"
 pretty_env_logger = "0.3.0"
-reqwest = { version = "0.10.0-alpha.0", git = "https://github.com/seanmonstar/reqwest.git" }
+reqwest = "=0.10.0-alpha.1"
 chrono = { version = "0.4.6", features = ["serde"] }
 clap = "2.33.0"
 rust-embed = { version = "5.1.0", features = ["interpolate-folder-path"] }
@@ -28,7 +28,7 @@ smallvec = "0.6.10"
 cookie = { version = "0.12.0", features = ["percent-encode"] }
 base64 = "0.10.1"
 time = "0.1.42"
-async-oauth2 = {version = "0.1.0", git = "https://github.com/udoprog/async-oauth2"}
+async-oauth2 = "=0.1.0-alpha.1"
 url = { version = "2.1.0", features = ["serde"] }
 parking_lot = "0.9.0"
 sled = "0.28.0"

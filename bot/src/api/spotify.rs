@@ -13,7 +13,7 @@ pub use self::model::{
 use crate::{api::RequestBuilder, oauth2, prelude::*};
 use bytes::Bytes;
 use failure::Error;
-use reqwest::{header, r#async::Client, Method, StatusCode};
+use reqwest::{header, Client, Method, StatusCode};
 use std::{
     pin::Pin,
     task::{Context, Poll},

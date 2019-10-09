@@ -4,7 +4,7 @@ use crate::{api::RequestBuilder, utils::PtDuration};
 use chrono::{DateTime, NaiveDate, Utc};
 use failure::Error;
 use hashbrown::HashMap;
-use reqwest::{header, r#async::Client, Method, StatusCode, Url};
+use reqwest::{header, Client, Method, StatusCode, Url};
 use std::collections::{BTreeMap, BTreeSet};
 
 const V1_URL: &'static str = "https://speedrun.com/api/v1";

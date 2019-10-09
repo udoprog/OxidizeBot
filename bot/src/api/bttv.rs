@@ -3,7 +3,7 @@
 use crate::api::RequestBuilder;
 use failure::Error;
 use hashbrown::HashSet;
-use reqwest::{header, r#async::Client, Method, Url};
+use reqwest::{header, Client, Method, Url};
 
 const V2_URL: &'static str = "https://api.betterttv.net/2";
 
