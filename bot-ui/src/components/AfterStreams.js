@@ -11,6 +11,7 @@ export default class AfterStreams extends React.Component {
 
     this.state = {
       loading: false,
+      configLoading: false,
       error: null,
       data: null,
     };
@@ -110,9 +111,13 @@ export default class AfterStreams extends React.Component {
 
     return <>
       <h1 className='oxi-page-title'>After Streams</h1>
-      <Loading isLoading={this.state.loading} />
+      <Loading isLoading={this.state.loading || this.state.configLoading} />
       <Error error={this.state.error} />
-      <ConfigurationPrompt api={this.api} filter={{prefix: ["afterstream"]}} />
+      <ConfigurationPrompt api={this.api} filter={{prefix: ["afterstream"]}}
+        onLoading={configLoading => this.setState({configLoading, error: null})}
+        onError={error => this.setState({configLoading: false, error})}
+      />
+
       {content}
     </>;
   }

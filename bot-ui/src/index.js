@@ -4,7 +4,7 @@ import {Api} from "./api.js";
 import React from "react";
 import ReactDOM from "react-dom";
 import {BrowserRouter as Router, Route, Link, withRouter} from "react-router-dom";
-import {Container, Row, Col, Navbar, Nav, NavDropdown, Alert} from "react-bootstrap";
+import {Container, Row, Col, Navbar, Nav, NavDropdown, Alert, Button, Form} from "react-bootstrap";
 import Connections from "./components/Connections.js";
 import Devices from "./components/Devices.js";
 import AfterStreams from "./components/AfterStreams.js";
@@ -281,80 +281,98 @@ class IndexPage extends React.Component {
   }
 }
 
-function Layout(props) {
-  let path = props.location.pathname;
+class Layout extends React.Component {
+  constructor(props) {
+    super(props)
+  }
 
-  return (
-    <Container className="content">
-      <Navbar bg="light" expand="sm" className="mb-3">
-        <Navbar.Brand>
-          <img src={logo} alt="Logo" width="32" height="32"></img>
-        </Navbar.Brand>
-        <Navbar.Toggle aria-controls="basic-navbar-nav" />
+  goToWebsite() {
+    location.href = "https://setbac.tv";
+  }
 
-        <Navbar.Collapse id="basic-navbar-nav">
-          <Nav>
-            <Nav.Link as={Link} active={path === "/"} to="/">
-              Home
-            </Nav.Link>
-            <Nav.Link as={Link} active={path.startsWith("/modules")} to="/modules">
-              Modules
-            </Nav.Link>
-            <Nav.Link as={Link} active={path === "/authorization"} to="/authorization">
-              Authorization
-            </Nav.Link>
+  render() {
+    let path = this.props.location.pathname;
 
-            <NavDropdown title="Chat">
-              <NavDropdown.Item as={Link} active={path === "/after-streams"} to="/after-streams">
-                After Streams
-              </NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/aliases"} to="/aliases">
-                Aliases
-              </NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/commands"} to="/commands">
-                Commands
-              </NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/promotions"} to="/promotions">
-                Promotions
-              </NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/themes"} to="/themes">
-                Themes
-              </NavDropdown.Item>
-            </NavDropdown>
+    return <>
+      <Navbar className="mb-3" bg="dark" variant="dark" expand="md">
+        <Container>
+          <Navbar.Brand as={Link} to="/" >
+            <img src={logo} alt="Logo" width="32" height="32"></img>
+          </Navbar.Brand>
 
-            <NavDropdown title="Advanced">
-              <NavDropdown.Item as={Link} active={path === "/settings"} to="/settings">
-                Settings
-              </NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/cache"} to="/cache">
-                Cache
-              </NavDropdown.Item>
-            </NavDropdown>
+          <Navbar.Collapse>
+            <Nav>
+              <Nav.Link as={Link} active={path.startsWith("/modules")} to="/modules">
+                Modules
+              </Nav.Link>
+              <Nav.Link as={Link} active={path === "/authorization"} to="/authorization">
+                Authorization
+              </Nav.Link>
 
-            <NavDropdown title="Misc">
-              <NavDropdown.Item as={Link} active={path === "/import-export"} to="/import-export">
-                Import / Export
-              </NavDropdown.Item>
-            </NavDropdown>
+              <NavDropdown title="Chat">
+                <NavDropdown.Item as={Link} active={path === "/after-streams"} to="/after-streams">
+                  After Streams
+                </NavDropdown.Item>
+                <NavDropdown.Item as={Link} active={path === "/aliases"} to="/aliases">
+                  Aliases
+                </NavDropdown.Item>
+                <NavDropdown.Item as={Link} active={path === "/commands"} to="/commands">
+                  Commands
+                </NavDropdown.Item>
+                <NavDropdown.Item as={Link} active={path === "/promotions"} to="/promotions">
+                  Promotions
+                </NavDropdown.Item>
+                <NavDropdown.Item as={Link} active={path === "/themes"} to="/themes">
+                  Themes
+                </NavDropdown.Item>
+              </NavDropdown>
 
-            <NavDropdown title="Experimental">
-              <NavDropdown.Item as={Link} active={path === "/overlay"} to="/overlay" target="overlay">
-                Overlay
-              </NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/youtube"} to="/youtube" target="youtube">
-                YouTube Player
-              </NavDropdown.Item>
-              <NavDropdown.Item as={Link} active={path === "/chat"} to="/chat" target="chat">
-                Chat
-              </NavDropdown.Item>
-            </NavDropdown>
-          </Nav>
-        </Navbar.Collapse>
+              <NavDropdown title="Advanced">
+                <NavDropdown.Item as={Link} active={path === "/settings"} to="/settings">
+                  Settings
+                </NavDropdown.Item>
+                <NavDropdown.Item as={Link} active={path === "/cache"} to="/cache">
+                  Cache
+                </NavDropdown.Item>
+              </NavDropdown>
+
+              <NavDropdown title="Misc">
+                <NavDropdown.Item as={Link} active={path === "/import-export"} to="/import-export">
+                  Import / Export
+                </NavDropdown.Item>
+              </NavDropdown>
+
+              <NavDropdown title="Experimental">
+                <NavDropdown.Item as={Link} active={path === "/overlay"} to="/overlay" target="overlay">
+                  Overlay
+                </NavDropdown.Item>
+                <NavDropdown.Item as={Link} active={path === "/youtube"} to="/youtube" target="youtube">
+                  YouTube Player
+                </NavDropdown.Item>
+                <NavDropdown.Item as={Link} active={path === "/chat"} to="/chat" target="chat">
+                  Chat
+                </NavDropdown.Item>
+              </NavDropdown>
+            </Nav>
+
+            <Nav className="ml-auto">
+              <Form inline key="second">
+                <a href="https://setbac.tv" title="Go to https://setbac.tv">
+                  <Button variant="primary" size="sm">Go to setbac.tv</Button>
+                </a>
+              </Form>
+            </Nav>
+          </Navbar.Collapse>
+
+          <Navbar.Toggle aria-controls="basic-navbar-nav" />
+        </Container>
       </Navbar>
 
-      {props.children}
-    </Container>
-  );
+      <Container className="content">
+        {this.props.children}
+      </Container>
+    </>;
+  }
 }
 
 function AppRouter() {

@@ -1,7 +1,5 @@
 import React from "react";
-import {Row, Col, Alert} from "react-bootstrap";
 import Settings from "./Settings.js";
-import Error from 'shared-ui/components/Error';
 
 export default class ConfigurationPrompt extends React.Component {
   constructor(props) {
@@ -9,8 +7,18 @@ export default class ConfigurationPrompt extends React.Component {
 
     this.state = {
       configured: true,
-      loading: false,
-      error: null,
+    }
+
+    this.onLoading = () => {};
+
+    if (this.props.onLoading !== undefined) {
+      this.onLoading = this.props.onLoading;
+    }
+
+    this.onError = () => {};
+
+    if (this.props.onError !== undefined) {
+      this.onError = this.props.onError;
     }
   }
 
@@ -23,21 +31,18 @@ export default class ConfigurationPrompt extends React.Component {
       return;
     }
 
-    // test if configured...
-    this.setState({loading: true});
+    this.onLoading(true);
 
     try {
       let settings = await this.props.api.settings(this.props.filter);
 
+      this.onLoading(false);
+
       this.setState({
         configured: settings.every(s => s.value !== null),
-        loading: false,
       });
     } catch(e) {
-      this.setState({
-        error: e,
-        loading: false,
-      });
+      this.onError(e);
     }
   }
 
@@ -47,21 +52,19 @@ export default class ConfigurationPrompt extends React.Component {
     }
 
     return <>
-      <Error error={this.state.error} />
       {this.props.children}
-      <Row key="settings">
-        <Col>
-          <Settings
-            useTitle={this.props.useTitle}
-            disableDoc={this.props.disableDoc}
-            group={this.props.group}
-            api={this.props.api}
-            filter={this.props.filter}
-            filterable={!!this.props.filterable}
-            location={this.props.location}
-            history={this.props.history} />
-        </Col>
-      </Row>
+      <Settings
+        useTitle={this.props.useTitle}
+        disableDoc={this.props.disableDoc}
+        group={this.props.group}
+        api={this.props.api}
+        filter={this.props.filter}
+        filterable={!!this.props.filterable}
+        location={this.props.location}
+        history={this.props.history}
+        onLoading={this.onLoading}
+        onError={this.onError}
+        />
     </>;
   }
 }

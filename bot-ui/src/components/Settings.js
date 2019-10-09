@@ -19,20 +19,26 @@ export default class Settings extends React.Component {
     this.api = this.props.api;
 
     this.state = {
-      loading: false,
-      error: null,
       data: null,
       // current filter being applied to filter visible settings.
       filter,
     };
-  }
 
-  componentWillMount() {
-    if (this.state.loading) {
-      return;
+    this.onLoading = () => {};
+
+    if (this.props.onLoading !== undefined) {
+      this.onLoading = this.props.onLoading;
     }
 
-    this.list()
+    this.onError = () => {};
+
+    if (this.props.onError !== undefined) {
+      this.onError = this.props.onError;
+    }
+  }
+
+  async componentDidMount() {
+    await this.list();
   }
 
   /**
@@ -57,43 +63,34 @@ export default class Settings extends React.Component {
   /**
    * Refresh the list of settings.
    */
-  list() {
-    this.setState({
-      loading: true,
-    });
+  async list() {
+    this.onLoading(true);
 
-    this.api.settings(this.props.filter)
-      .then(data => {
-        data = data.map(d => {
-          let control = types.decode(d.schema.type);
+    try {
+      let data = await this.api.settings(this.props.filter);
 
-          let value = null;
+      data = data.map(d => {
+        let control = types.decode(d.schema.type);
 
-          if (d.value !== null) {
-            value = control.construct(d.value);
-          }
+        let value = null;
 
-          return {
-            key: d.key,
-            control,
-            value,
-            ...d.schema,
-          }
-        });
+        if (d.value !== null) {
+          value = control.construct(d.value);
+        }
 
-        this.setState({
-          loading: false,
-          error: null,
-          data,
-        });
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to request settings: ${e}`,
-          data: null,
-        });
+        return {
+          key: d.key,
+          control,
+          value,
+          ...d.schema,
+        }
       });
+
+      this.setState({data});
+      this.onLoading(false);
+    } catch(e) {
+      this.onError(e);
+    }
   }
 
   /**
@@ -101,21 +98,15 @@ export default class Settings extends React.Component {
    *
    * @param {string} key key of the setting to delete.
    */
-  delete(key) {
-    this.setState({
-      loading: true,
-    });
+  async delete(key) {
+    this.onLoading(true);
 
-    this.api.deleteSetting(key)
-      .then(
-        () => this.list(),
-        e => {
-          this.setState({
-            loading: false,
-            error: `failed to delete setting: ${e}`,
-          });
-        }
-      );
+    try {
+      await this.api.deleteSetting(key);
+      this.onLoading(false);
+    } catch(e) {
+      this.onError(e);
+    }
   }
 
   /**
@@ -124,7 +115,9 @@ export default class Settings extends React.Component {
    * @param {string} key key of the setting to edit.
    * @param {string} value the new value to edit it to.
    */
-  edit(key, control, value) {
+  async edit(key, control, value) {
+    this.onLoading(true);
+
     this.setState(state => {
       let data = state.data.map(setting => {
         if (setting.key === key) {
@@ -134,22 +127,16 @@ export default class Settings extends React.Component {
         return setting;
       });
 
-      return {
-        data,
-        loading: true,
-      };
+      return {data};
     });
 
-    this.api.editSetting(key, control.serialize(value))
-      .then(
-        () => this.list(),
-        e => {
-          this.setState({
-            loading: false,
-            error: `failed to edit setting: ${e}`,
-          });
-        }
-      );
+    try {
+      await this.api.editSetting(key, control.serialize(value));
+      await this.list();
+      this.onLoading(false);
+    } catch(e) {
+      this.onError(e);
+    }
   }
 
   /**
@@ -331,8 +318,6 @@ export default class Settings extends React.Component {
 
     return (
       <div className="settings">
-        <Loading isLoading={this.state.loading} />
-        <Error error={this.state.error} />
         {filter}
         {content}
       </div>

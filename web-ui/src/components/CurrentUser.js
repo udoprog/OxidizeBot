@@ -29,11 +29,9 @@ export default class CurrentUser extends React.Component {
     let backLink = null;
 
     if (cameFromBot !== null) {
-      backLink = (
-        <Button variant="warning" size="sm" onClick={() => this.backToBot()} title="Go back to your local OxidizeBot instance">
-          Back to <img src={logo} width="18" height="18"></img>
-        </Button>
-      );
+      backLink = <Button variant="warning" size="sm" onClick={() => this.backToBot()} title="Go back to your local OxidizeBot instance">
+        Back to <img src={logo} width="18" height="18"></img>
+      </Button>;
     }
 
     let button = (

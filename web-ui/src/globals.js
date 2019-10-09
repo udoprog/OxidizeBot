@@ -26,7 +26,7 @@ export async function updateGlobals() {
   currentUser = user;
   currentConnections = connections;
 
-  if (document.referrer.startsWith("http://localhost:12345")) {
+  if (document.referrer.startsWith("http://localhost")) {
     cameFromBot = document.referrer;
   }
 }

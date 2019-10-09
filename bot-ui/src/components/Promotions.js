@@ -11,6 +11,7 @@ export default class Promotions extends React.Component {
 
     this.state = {
       loading: false,
+      configLoading: false,
       error: null,
       data: null,
     };
@@ -116,9 +117,15 @@ export default class Promotions extends React.Component {
 
     return <>
       <h1 className="oxi-page-title">Promotions</h1>
-      <Loading isLoading={this.state.loading} />
-      <Error error={this.state.error} />
-      <ConfigurationPrompt api={this.api} filter={{prefix: ["promotions"]}} />
+      <Loading isLoading={this.state.loading || this.state.configLoading} />
+      <Error error={this.state.error || this.state.configError} />
+
+      <ConfigurationPrompt
+        api={this.api}
+        filter={{prefix: ["promotions"]}}
+        onLoading={configLoading => this.setState({configLoading, error: null})}
+        onError={error => this.setState({configLoading: false, error})} />
+
       {content}
     </>;
   }

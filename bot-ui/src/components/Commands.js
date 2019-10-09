@@ -11,17 +11,14 @@ export default class Commands extends React.Component {
 
     this.state = {
       loading: false,
+      configLoading: false,
       error: null,
       data: null,
     };
   }
 
-  componentWillMount() {
-    if (this.state.loading) {
-      return;
-    }
-
-    this.list()
+  async componentDidMount() {
+    await this.list()
   }
 
   /**
@@ -127,10 +124,14 @@ export default class Commands extends React.Component {
     return <>
       <h1 className="oxi-page-title">Commands</h1>
 
-      <ConfigurationPrompt api={this.api} filter={{prefix: ["command"]}} />
+      <Error error={this.state.error} />
+      <Loading isLoading={this.state.loading || this.state.configLoading} />
 
-      <Loading isLoading={this.state.loading} />
-      <Error error={this.state.errro} />
+      <ConfigurationPrompt
+        api={this.api} filter={{prefix: ["command"]}}
+        onLoading={configLoading => this.setState({configLoading, error: null})}
+        onError={error => this.setState({configLoading: false, error})}
+      />
 
       {content}
     </>;

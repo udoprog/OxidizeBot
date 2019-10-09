@@ -6,7 +6,7 @@ const htmlPlugin = new HtmlWebPackPlugin({
   filename: "./index.html"
 });
 
-const faviconPlugin = new FaviconsWebpackPlugin("../bot/res/icon.png");
+const faviconPlugin = new FaviconsWebpackPlugin("../bot/res/icon-local.png");
 
 module.exports = function(_, argv) {
   return {
