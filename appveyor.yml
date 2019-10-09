@@ -1,10 +1,9 @@
-image: Visual Studio 2017
+image: Visual Studio 2019
 
 environment:
-  CERTIFICATE_PASSWORD:
-    secure: 99B1UlTjBA9q8gz1AwtMy5CKpyA5UcFZwIT7dXbxGUXBo4uwGRU0uPYBnI+/AGkN
+  SIGNTOOL: "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.18362.0\\x64\\signtool.exe"
   matrix:
-    - channel: nightly
+    - channel: beta
       target: x86_64-pc-windows-msvc
 
 install:
@@ -16,7 +15,7 @@ install:
   - cargo install cargo-wix
 
 build_script:
-  - ps: .\tools\build.ps1
+  - cargo run --manifest-path tools/builder/Cargo.toml
 
 artifacts:
   - path: "*.zip"
@@ -27,8 +26,7 @@ artifacts:
 branches:
   only:
     - master
-    - /\d+\.\d+\.\d+/
-    - /point-\d+\.\d+/
+    - /^\d+\.\d+\.\d+(-[a-z]+\.\d+)?$/
 
 deploy:
   - release: $(appveyor_repo_tag_name)

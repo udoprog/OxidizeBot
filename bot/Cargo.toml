@@ -52,7 +52,7 @@ mime_guess = "2.0.1"
 uom = "0.25.0"
 crossbeam = "0.7.2"
 hex = "0.4.0"
-graphql_client = "0.8.0"
+graphql_client = { version = "0.8.0", default-features = false }
 futures-option = "0.1.2"
 futures-cache = "0.8.0"
 failure = "0.1.5"

@@ -5,6 +5,10 @@ members = [
     "web",
 ]
 
+exclude = [
+    "tools/builder"
+]
+
 [profile.release]
 opt-level = 'z'
 lto = true
