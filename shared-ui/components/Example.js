@@ -8,8 +8,8 @@ export default class Example extends React.Component {
 
   render() {
     return <>
-      <div className='example-name'><b>Example:</b> <Header source={this.props.name} /></div>
-      <div className='example-content'><ExampleContent source={this.props.content} /></div>
+      <div className='oxi-example-name'><b>Example:</b> <Header source={this.props.name} /></div>
+      <div className='oxi-example-content'><ExampleContent source={this.props.content} /></div>
     </>;
   }
 }

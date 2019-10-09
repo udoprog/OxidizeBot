@@ -10,7 +10,7 @@ export default class Privacy extends React.Component {
   render() {
     return (
       <RouteLayout>
-        <h1>Privacy Policy</h1>
+        <h1 className="oxi-page-title">Privacy Policy</h1>
 
         <p>Effective date: October 4, 2019</p>
 

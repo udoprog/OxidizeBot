@@ -90,12 +90,12 @@ export default class Connection extends React.Component {
         return null;
     }
 
-    return <div className="connected-meta">Connected account: {account}</div>;
+    return <div className="oxi-connected-meta">Connected account: {account}</div>;
   }
 
   validate() {
     if (this.props.outdated) {
-      return <div className="connected-validate danger">
+      return <div className="oxi-connected-validate danger">
         <b>Connection is outdated, in order to use it properly it needs to be refreshed!</b>
       </div>;
     }
@@ -110,7 +110,7 @@ export default class Connection extends React.Component {
           return null;
         }
 
-        return <div className="connected-validate danger"><b>You need a Premium Spotify Account</b></div>;
+        return <div className="oxi-connected-validate danger"><b>You need a Premium Spotify Account</b></div>;
       default:
         return null;
     }
@@ -182,11 +182,11 @@ export default class Connection extends React.Component {
 
     return (
       <tr>
-        <td className="connected">
-          <div className="connected-title">{icon} {this.props.title}</div>
+        <td className="oxi-connected">
+          <div className="oxi-connected-title">{icon} {this.props.title}</div>
           {meta}
           {validate}
-          <div className="connected-description">{this.props.description}</div>
+          <div className="oxi-connected-description">{this.props.description}</div>
         </td>
         <td align="right">{buttons}</td>
       </tr>

@@ -3,7 +3,7 @@ import { Table, Alert, Spinner } from "react-bootstrap";
 import { Link } from "react-router-dom";
 import { api } from "../globals.js";
 import { RouteLayout } from "./Layout";
-import Loading from "./Loading";
+import Loading from 'shared-ui/components/Loading';
 
 export default class Players extends React.Component {
   constructor(props) {
@@ -30,11 +30,11 @@ export default class Players extends React.Component {
     if (!this.state.loading) {
       if (this.state.error !== null) {
         content = (
-          <Alert variant="danger" className="center">{this.state.error.toString()}</Alert>
+          <Alert variant="danger" className="oxi-center">{this.state.error.toString()}</Alert>
         );
       } else if (this.state.players.length === 0) {
         content = (
-          <Alert variant="warning" className="center">
+          <Alert variant="warning" className="oxi-center">
             No active players!
           </Alert>
         );
@@ -57,9 +57,9 @@ export default class Players extends React.Component {
 
     return (
       <RouteLayout>
-        <h2 className="page-title">Playlists</h2>
+        <h2 className="oxi-page-title">Playlists</h2>
 
-        <p className="center">
+        <p className="oxi-center">
           This page features people who have enabled remote playlists in OxidizeBot.
         </p>
 

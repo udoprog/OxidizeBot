@@ -1,9 +1,9 @@
 import React from "react";
 import {Button, Form, Alert} from "react-bootstrap";
-import { faUtensilSpoon } from "@fortawesome/fontawesome-free-solid";
 import * as utils from "../utils.js";
 import {Nav, Row, Col, Card} from "react-bootstrap";
 import {Route, Link} from "react-router-dom";
+import Loading from 'shared-ui/components/Loading';
 
 export default class ImportExport extends React.Component {
   constructor(props) {
@@ -298,12 +298,6 @@ class DrangryBotImportCsvForm extends React.Component {
       message = <Alert variant="danger">{this.state.error}</Alert>;
     }
 
-    var spinner = null;
-
-    if (this.state.loading) {
-      spinner = <utils.Spinner />;
-    }
-
     var channelError = null;
 
     if (!!this.state.errors.channel) {
@@ -350,7 +344,7 @@ class DrangryBotImportCsvForm extends React.Component {
           Import
         </Button>
 
-        {spinner}
+        <Loading isLoading={this.state.loading} />
       </Form>
       </div>
     );
@@ -502,12 +496,6 @@ class PhantomBotImportCsvForm extends React.Component {
       message = <Alert variant="danger">{this.state.error}</Alert>;
     }
 
-    var spinner = null;
-
-    if (this.state.loading) {
-      spinner = <utils.Spinner />;
-    }
-
     var channelError = null;
 
     if (!!this.state.errors.channel) {
@@ -555,7 +543,7 @@ class PhantomBotImportCsvForm extends React.Component {
           Import
         </Button>
 
-        {spinner}
+        <Loading isLoading={this.state.loading} />
       </Form>
       </div>
     );

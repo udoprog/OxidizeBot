@@ -1,7 +1,7 @@
-import {Spinner} from "../utils.js";
 import React from "react";
 import {Alert, Table} from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import Loading from 'shared-ui/components/Loading';
 
 export default class Authentication extends React.Component {
   constructor(props) {
@@ -15,37 +15,33 @@ export default class Authentication extends React.Component {
     };
   }
 
-  componentWillMount() {
-    if (this.state.loading) {
-      return;
-    }
-
-    this.listDevices()
+  async componentDidMount() {
+    await this.listDevices();
   }
 
   /**
    * Refresh the list of devices.
    */
-  listDevices() {
+  async listDevices() {
     this.setState({
       loading: true,
     });
 
-    this.api.devices()
-      .then(data => {
-        this.setState({
-          loading: false,
-          error: null,
-          data,
-        });
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to request devices: ${e}`,
-          data: null,
-        });
+    try {
+      let data = await this.api.devices();
+
+      this.setState({
+        loading: false,
+        error: null,
+        data,
       });
+    } catch (e) {
+      this.setState({
+        loading: false,
+        error: `failed to request devices: ${e}`,
+        data: null,
+      });
+    }
   }
 
   /**
@@ -53,25 +49,19 @@ export default class Authentication extends React.Component {
    *
    * @param {string} id the device to pick.
    */
-  pickDevice(id) {
-    if (this.state.loading) {
-      return;
-    }
-
+  async pickDevice(id) {
     this.setState({
       loading: true,
     });
 
-    this.api.setDevice(id)
-      .then(_ => {
-        return this.listDevices();
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to pick device: ${e}`,
-        });
+    try {
+      await this.api.setDevice(id);
+    } catch(e) {
+      this.setState({
+        loading: false,
+        error: `failed to pick device: ${e}`,
       });
+    }
   }
 
   render() {
@@ -79,16 +69,6 @@ export default class Authentication extends React.Component {
 
     if (this.state.error) {
       error = <Alert variant="warning">{this.state.error}</Alert>;
-    }
-
-    let refresh = null;
-    let loading = null;
-
-    if (this.state.loading) {
-      loading = <Spinner />;
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh right" />;
-    } else {
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh clickable right" onClick={() => this.listDevices()} />;
     }
 
     let selectOne = null;
@@ -157,10 +137,10 @@ export default class Authentication extends React.Component {
 
     return (
       <>
+        <Loading isLoading={this.state.loading} />
         {error}
         {selectOne}
         {content}
-        {loading}
       </>
     );
   }

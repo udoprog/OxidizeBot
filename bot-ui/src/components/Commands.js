@@ -1,8 +1,7 @@
-import {Spinner} from "../utils.js";
 import React from "react";
 import {Button, Alert, Table} from "react-bootstrap";
-import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import ConfigurationPrompt from "./ConfigurationPrompt";
+import { Loading, Error } from 'shared-ui/components';
 
 export default class Commands extends React.Component {
   constructor(props) {
@@ -28,57 +27,52 @@ export default class Commands extends React.Component {
   /**
    * Refresh the list of after streams.
    */
-  list() {
+  async list() {
     this.setState({
       loading: true,
     });
 
-    this.api.commands(this.props.current.channel)
-      .then(data => {
-        this.setState({
-          loading: false,
-          error: null,
-          data,
-        });
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to request after streams: ${e}`,
-          data: null,
-        });
+    try {
+      let data = await this.api.commands(this.props.current.channel);
+
+      this.setState({
+        loading: false,
+        error: null,
+        data,
       });
+    } catch(e) {
+      this.setState({
+        loading: false,
+        error: `failed to request after streams: ${e}`,
+      });
+    }
   }
 
-  editDisabled(key, disabled) {
+  async editDisabled(key, disabled) {
     this.setState({
       loading: true,
       error: null,
     });
 
-    this.api.commandsEditDisabled(key, disabled).then(_ => {
-      return this.list();
-    }, e => {
+    await this.api.commandsEditDisabled(key, disabled);
+    await this.list();
+
+    try {
       this.setState({
         loading: false,
         error: `Failed to set disabled state: ${e}`,
       });
-    });
+    } catch (e) {
+      e => {
+        this.setState({
+          loading: false,
+          error: `Failed to set disabled state: ${e}`,
+        });
+      }
+    }
   }
 
   render() {
-    let error = null;
-
-    if (this.state.error) {
-      error = <Alert variant="warning">{this.state.error}</Alert>;
-    }
-
-    let loading = null;
-
-    if (this.state.loading) {
-      loading = <Spinner />;
-    }
-
     let content = null;
 
     if (this.state.data) {
@@ -130,16 +124,15 @@ export default class Commands extends React.Component {
       }
     }
 
-    return (
-      <div>
-        <h3>Settings</h3>
-        <ConfigurationPrompt api={this.api} filter={{prefix: ["command"]}} />
+    return <>
+      <h1 className="oxi-page-title">Commands</h1>
 
-        <h3>Commands</h3>
-        {error}
-        {content}
-        {loading}
-      </div>
-    );
+      <ConfigurationPrompt api={this.api} filter={{prefix: ["command"]}} />
+
+      <Loading isLoading={this.state.loading} />
+      <Error error={this.state.errro} />
+
+      {content}
+    </>;
   }
 }

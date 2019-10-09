@@ -16,7 +16,7 @@ export default class UserPrompt extends React.Component {
   render() {
     return (
       <>
-        <Alert variant="warning" className="center">
+        <Alert variant="warning" className="oxi-center">
           <div className="mb-3">
             This page requires you to sign in!
           </div>

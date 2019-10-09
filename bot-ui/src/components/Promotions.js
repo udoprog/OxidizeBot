@@ -1,8 +1,7 @@
-import {Spinner} from "../utils.js";
 import React from "react";
 import {Button, Alert, Table} from "react-bootstrap";
-import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import ConfigurationPrompt from "./ConfigurationPrompt";
+import {Loading, Error} from 'shared-ui/components';
 
 export default class Promotions extends React.Component {
   constructor(props) {
@@ -17,68 +16,53 @@ export default class Promotions extends React.Component {
     };
   }
 
-  componentWillMount() {
-    if (this.state.loading) {
-      return;
-    }
-
-    this.list()
+  async componentDidMount() {
+    await this.list();
   }
 
   /**
    * Refresh the list of after streams.
    */
-  list() {
+  async list() {
     this.setState({
       loading: true,
     });
 
-    this.api.promotions(this.props.current.channel)
-      .then(data => {
-        this.setState({
-          loading: false,
-          error: null,
-          data,
-        });
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to request after streams: ${e}`,
-          data: null,
-        });
+    try {
+      let data = await this.api.promotions(this.props.current.channel);
+
+      this.setState({
+        loading: false,
+        error: null,
+        data,
       });
+    } catch(e) {
+      this.setState({
+        loading: false,
+        error: `failed to request after streams: ${e}`,
+        data: null,
+      });
+    }
   }
 
-  editDisabled(key, disabled) {
+  async editDisabled(key, disabled) {
     this.setState({
       loading: true,
       error: null,
     });
 
-    this.api.promotionsEditDisabled(key, disabled).then(_ => {
-      return this.list();
-    }, e => {
+    try {
+      await this.api.promotionsEditDisabled(key, disabled);
+      await this.list();
+    } catch(e) {
       this.setState({
         loading: false,
         error: `Failed to set disabled state: ${e}`,
       });
-    });
+    }
   }
 
   render() {
-    let error = null;
-
-    if (this.state.error) {
-      error = <Alert variant="warning">{this.state.error}</Alert>;
-    }
-
-    let loading = null;
-
-    if (this.state.loading) {
-      loading = <Spinner />;
-    }
-
     let content = null;
 
     if (this.state.data) {
@@ -130,16 +114,12 @@ export default class Promotions extends React.Component {
       }
     }
 
-    return (
-      <div>
-        <h3>Settings</h3>
-        <ConfigurationPrompt api={this.api} filter={{prefix: ["promotions"]}} />
-
-        <h3>Promotions</h3>
-        {error}
-        {content}
-        {loading}
-      </div>
-    );
+    return <>
+      <h1 className="oxi-page-title">Promotions</h1>
+      <Loading isLoading={this.state.loading} />
+      <Error error={this.state.error} />
+      <ConfigurationPrompt api={this.api} filter={{prefix: ["promotions"]}} />
+      {content}
+    </>;
   }
 }

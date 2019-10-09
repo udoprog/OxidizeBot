@@ -158,7 +158,7 @@ export default class Help extends React.Component {
 
     return (
       <>
-        <h2 className='page-title'>Command Help</h2>
+        <h2 className='oxi-page-title'>Command Help</h2>
 
         <div className='alert alert-info'>
           <b>Want to help expand this page?</b><br />

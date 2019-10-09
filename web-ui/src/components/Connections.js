@@ -3,9 +3,7 @@ import { RouteLayout } from "./Layout.js";
 import { Alert, Table, Button, Form, FormControl, InputGroup, ButtonGroup } from "react-bootstrap";
 import { api, currentConnections, currentUser } from "../globals.js";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import copy from 'copy-to-clipboard';
-import Loading from "./Loading.js";
-import If from "./If.js";
+import Loading from 'shared-ui/components/Loading';
 import UserPrompt from "./UserPrompt";
 import Connection from "./Connection";
 
@@ -188,7 +186,7 @@ export default class Connections extends React.Component {
     }
 
     return (
-      <Alert variant="info" className="center">
+      <Alert variant="info" className="oxi-center">
         <b>Successfully connected {connected.title}</b>{otherAccount}
       </Alert>
     );
@@ -271,47 +269,52 @@ export default class Connections extends React.Component {
       userPrompt = <UserPrompt />;
     }
 
+    let content = null;
+
+    if (!this.state.loading) {
+      content = <>
+        <p>
+          Connections allow OxidizeBot to access third party services like Spotify and Twitch. This might be necessary for the bot to provide certain features, like viewer-driven song requests.
+        </p>
+
+        <h4>Secret Key</h4>
+
+        <p>
+          This key should be configured in your bot to allow it to communicate with this service.
+        </p>
+
+        {key}
+
+        <h4>Connections</h4>
+
+        <p>
+          Each connection adds capabilities to OxidizeBot.
+          You'll have to enable and authenticate them here.
+        </p>
+        <Table>
+          <tbody>
+            {currentConnections.map((c, index) => {
+              return <Connection
+                key={index}
+                onDisconnect={() => this.onDisconnect(c.id)}
+                onError={e => this.onError(e)}
+                {...c} {...this.state.connections[c.id]} />;
+            })}
+          </tbody>
+        </Table>
+      </>;
+    }
+
     return (
       <RouteLayout>
-        <h2 className="page-title">My Connections</h2>
+        <h2 className="oxi-page-title">My Connections</h2>
 
         {justConnected}
         {userPrompt}
 
         <Loading isLoading={this.state.loading} />
         {error}
-
-        <If isNot={this.state.loading}>
-          <p>
-            Connections allow OxidizeBot to access third party services like Spotify and Twitch. This might be necessary for the bot to provide certain features, like viewer-driven song requests.
-          </p>
-
-          <h4>Secret Key</h4>
-
-          <p>
-            This key should be configured in your bot to allow it to communicate with this service.
-          </p>
-
-          {key}
-
-          <h4>Connections</h4>
-
-          <p>
-            Each connection adds capabilities to OxidizeBot.
-            You'll have to enable and authenticate them here.
-          </p>
-          <Table>
-            <tbody>
-              {currentConnections.map((c, index) => {
-                return <Connection
-                  key={index}
-                  onDisconnect={() => this.onDisconnect(c.id)}
-                  onError={e => this.onError(e)}
-                  {...c} {...this.state.connections[c.id]} />;
-              })}
-            </tbody>
-          </Table>
-        </If>
+        {content}
       </RouteLayout>
     );
   }

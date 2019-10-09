@@ -76,7 +76,7 @@ class Layout extends React.Component {
       </Container>
 
       <Container key="footer" id="footer" className="pt-2 pb-2">
-        <span className="highlight">setbac.tv</span> is built and operated with ♥ by <a href="https://twitch.tv/setbac">setbac</a> (<a href="https://github.com/udoprog" title="Github"><FontAwesomeIcon icon={['fab', 'github']} /></a> - <a href="https://twitter.com/udoprog" title="Twitter"><FontAwesomeIcon icon={['fab', 'twitter']} /></a> - <a href="https://twitch.com/setbac"><FontAwesomeIcon icon={['fab', 'twitch']} title="Twitch" /></a>)<br />
+        <span className="oxi-highlight">setbac.tv</span> is built and operated with ♥ by <a href="https://twitch.tv/setbac">setbac</a> (<a href="https://github.com/udoprog" title="Github"><FontAwesomeIcon icon={['fab', 'github']} /></a> - <a href="https://twitter.com/udoprog" title="Twitter"><FontAwesomeIcon icon={['fab', 'twitter']} /></a> - <a href="https://twitch.com/setbac"><FontAwesomeIcon icon={['fab', 'twitch']} title="Twitch" /></a>)<br />
         Come join my <a href="https://discord.gg/v5AeNkT">Discord Community</a> if you want to participate in this Project<br />
         <Link to="/">Start Page</Link> &ndash; <Link to="/privacy">Privacy Policy</Link>
       </Container>

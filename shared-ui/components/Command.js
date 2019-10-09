@@ -18,8 +18,8 @@ export default class Command extends React.Component {
 
     return <>
       <tr>
-        <td className='command'>
-          <div className='command-name'><Header source={this.props.name} /></div>
+        <td className='oxi-command'>
+          <div className='oxi-command-name'><Header source={this.props.name} /></div>
           <Content source={this.props.content} />
           {examples}
         </td>

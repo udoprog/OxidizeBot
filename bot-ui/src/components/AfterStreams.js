@@ -1,8 +1,8 @@
-import {Spinner} from "../utils.js";
 import React from "react";
 import {Button, Alert, Table} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import ConfigurationPrompt from "./ConfigurationPrompt";
+import {Loading, Error} from 'shared-ui/components';
 
 export default class AfterStreams extends React.Component {
   constructor(props) {
@@ -16,37 +16,33 @@ export default class AfterStreams extends React.Component {
     };
   }
 
-  componentWillMount() {
-    if (this.state.loading) {
-      return;
-    }
-
-    this.list()
+  async componentDidMount() {
+    await this.list();
   }
 
   /**
    * Refresh the list of after streams.
    */
-  list() {
+  async list() {
     this.setState({
       loading: true,
     });
 
-    this.api.afterStreams()
-      .then(data => {
-        this.setState({
-          loading: false,
-          error: null,
-          data,
-        });
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to request after streams: ${e}`,
-          data: null,
-        });
+    try {
+      let data = await this.api.afterStreams();
+
+      this.setState({
+        loading: false,
+        error: null,
+        data,
       });
+    } catch(e) {
+      this.setState({
+        loading: false,
+        error: `failed to request after streams: ${e}`,
+        data: null,
+      });
+    }
   }
 
   /**
@@ -54,36 +50,19 @@ export default class AfterStreams extends React.Component {
    *
    * @param {number} id afterstream id to delete
    */
-  delete(id) {
-    this.api.deleteAfterStream(id)
-      .then(() => {
-        return this.list();
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to delete after stream: ${e}`,
-        });
+  async delete(id) {
+    try {
+      await this.api.deleteAfterStream(id);
+      await this.list();
+    } catch(e) {
+      this.setState({
+        loading: false,
+        error: `failed to delete after stream: ${e}`,
       });
+    }
   }
 
   render() {
-    let error = null;
-
-    if (this.state.error) {
-      error = <Alert variant="warning">{this.state.error}</Alert>;
-    }
-
-    let refresh = null;
-    let loading = null;
-
-    if (this.state.loading) {
-      loading = <Spinner />;
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh right" />;
-    } else {
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh clickable right" onClick={() => this.list()} />;
-    }
-
     let content = null;
 
     if (this.state.data) {
@@ -129,16 +108,12 @@ export default class AfterStreams extends React.Component {
       }
     }
 
-    return (
-      <div>
-        <h3>Settings</h3>
-        <ConfigurationPrompt api={this.api} filter={{prefix: ["afterstream"]}} />
-
-        <h3>After Streams</h3>
-        {error}
-        {content}
-        {loading}
-      </div>
-    );
+    return <>
+      <h1 className='oxi-page-title'>After Streams</h1>
+      <Loading isLoading={this.state.loading} />
+      <Error error={this.state.error} />
+      <ConfigurationPrompt api={this.api} filter={{prefix: ["afterstream"]}} />
+      {content}
+    </>;
   }
 }

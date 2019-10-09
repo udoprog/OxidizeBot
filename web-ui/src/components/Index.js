@@ -1,16 +1,12 @@
 import React from "react";
 import { Card, CardDeck, Row, Col } from "react-bootstrap";
 import { RouteLayout } from "./Layout.js";
-import dollarImg from "../assets/dollar.png";
-import toolboxImg from "../assets/toolbox.png";
-import cloudImg from "../assets/cloud.png";
 import twitchDarkLogo from "../assets/twitch-dark.png";
 import windowsImg from "../assets/windows.svg";
 import debianImg from "../assets/debian.svg";
-import macImg from "../assets/mac.svg";
 import SVG from 'react-inlinesvg';
 import { api } from '../globals.js';
-import Loading from './Loading';
+import Loading from 'shared-ui/components/Loading';
 import logo from "../assets/logo.png";
 
 const VERSION_REGEX = /(\d+)\.(\d+)\.(\d+)(-[a-z]+\.(\d+))?/;
@@ -162,7 +158,7 @@ export default class Index extends React.Component {
       ext = <> ({m[0]})</>;
     }
 
-    return <Card.Text className="center">
+    return <Card.Text className="oxi-center">
       <a href={asset.browser_download_url}>{version.toString()} {title}{ext}</a>
     </Card.Text>;
   }
@@ -179,7 +175,7 @@ export default class Index extends React.Component {
     return <Card>
       <Card.Img as={SVG} src={img} height="80px" className="mb-3 mt-3" />
       <Card.Body>
-        <Card.Title className="center">{title}</Card.Title>
+        <Card.Title className="oxi-center">{title}</Card.Title>
         <Loading isLoading={this.state.loadingReleases} />
         {unstable}
         {stable}
@@ -223,7 +219,7 @@ export default class Index extends React.Component {
         <CardDeck className="mb-4">
           <Card>
             <Card.Body>
-              <Card.Title className="center"><b>Free</b> and <b>Open Source</b></Card.Title>
+              <Card.Title className="oxi-center"><b>Free</b> and <b>Open Source</b></Card.Title>
               <Card.Text>
                 OxidizeBot doesn't cost you anything,
                 and its source code is available on <a href="https://github.com/udoprog/OxidizeBot">GitHub</a> for anyone to tinker with!
@@ -233,7 +229,7 @@ export default class Index extends React.Component {
 
           <Card>
             <Card.Body>
-              <Card.Title className="center"><b>Packed</b> with <b>Features</b></Card.Title>
+              <Card.Title className="oxi-center"><b>Packed</b> with <b>Features</b></Card.Title>
               <Card.Text>
                 Plays music, moderates your chat, plays games, you name it!
               </Card.Text>
@@ -245,7 +241,7 @@ export default class Index extends React.Component {
 
           <Card>
             <Card.Body>
-              <Card.Title className="center">Runs on <b>Your Computer</b></Card.Title>
+              <Card.Title className="oxi-center">Runs on <b>Your Computer</b></Card.Title>
               <Card.Text>
                 <em>You</em> own your data.
                 It uses <em>your</em> internet for the best possible latency.
@@ -260,7 +256,7 @@ export default class Index extends React.Component {
           </Card>
         </CardDeck>
 
-        <h4 className="center mb-4">Downloads</h4>
+        <h4 className="oxi-center mb-4">Downloads</h4>
 
         <CardDeck>
           {windowsCard}

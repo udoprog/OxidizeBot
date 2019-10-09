@@ -15,7 +15,6 @@
     "@fortawesome/fontawesome-svg-core": "^1.2.25",
     "@fortawesome/free-solid-svg-icons": "^5.11.2",
     "@fortawesome/react-fontawesome": "^0.1.5",
-    "bootstrap": "^4.3.1",
     "core-js": "^3.2.1",
     "moment-timezone": "^0.5.26",
     "npm": "^6.11.3",
@@ -26,7 +25,8 @@
     "react-markdown": "^4.2.2",
     "react-websocket": "^2.1.0",
     "semver": "^6.3.0",
-    "yaml": "^1.7.0"
+    "yaml": "^1.7.0",
+    "shared-ui": "file:../shared-ui"
   },
   "devDependencies": {
     "@babel/core": "^7.6.2",

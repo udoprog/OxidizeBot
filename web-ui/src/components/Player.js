@@ -2,8 +2,7 @@ import React from "react";
 import { Row, Col, Table, Alert } from "react-bootstrap";
 import { api } from "../globals.js";
 import { RouteLayout } from "./Layout.js";
-import Loading from "./Loading.js";
-import If from "./If.js";
+import Loading from 'shared-ui/components/Loading';
 
 export default class Player extends React.Component {
   constructor(props) {
@@ -33,9 +32,9 @@ export default class Player extends React.Component {
 
     if (!this.state.loading) {
       if (this.state.error !== null) {
-        content = <Alert variant="danger" className="center">{this.state.error}</Alert>;
+        content = <Alert variant="danger" className="oxi-center">{this.state.error}</Alert>;
       } else if (this.state.player === null) {
-        content = <Alert variant="warning" className="center">User doesn't have an active player!</Alert>;
+        content = <Alert variant="warning" className="oxi-center">User doesn't have an active player!</Alert>;
       } else {
         content = <>
           <Table>
@@ -55,7 +54,7 @@ export default class Player extends React.Component {
 
               if (index == 0) {
                 current = <span title="Current Song">&#9654;</span>;
-                classes = "current";
+                classes = "oxi-current";
               }
 
               let userInfo = null;
@@ -86,7 +85,7 @@ export default class Player extends React.Component {
 
     return (
       <RouteLayout>
-        <h2 className="page-title">Playlist for {this.props.match.params.id}</h2>
+        <h2 className="oxi-page-title">Playlist for {this.props.match.params.id}</h2>
         <Loading isLoading={this.state.loading} />
         {content}
       </RouteLayout>

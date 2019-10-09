@@ -1,7 +1,6 @@
-import {Spinner} from "../utils.js";
 import React from "react";
 import {Button, Alert, Table} from "react-bootstrap";
-import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+import {Loading, Error} from 'shared-ui/components';
 
 function trackUrl(trackId) {
   if (trackId.startsWith("spotify:track:")) {
@@ -24,78 +23,60 @@ export default class Themes extends React.Component {
     this.api = this.props.api;
 
     this.state = {
-      loading: false,
+      loading: true,
       error: null,
       data: null,
     };
   }
 
-  componentWillMount() {
-    if (this.state.loading) {
-      return;
-    }
-
-    this.list()
+  async componentDidMount() {
+    await this.list();
   }
 
   /**
    * Refresh the list of after streams.
    */
-  list() {
+  async list() {
     this.setState({
       loading: true,
     });
 
-    this.api.themes(this.props.current.channel)
-      .then(data => {
-        this.setState({
-          loading: false,
-          error: null,
-          data,
-        });
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to request after streams: ${e}`,
-          data: null,
-        });
+    try {
+      let data = await this.api.themes(this.props.current.channel);
+
+      this.setState({
+        loading: false,
+        error: null,
+        data,
       });
+    } catch(e) {
+      this.setState({
+        loading: false,
+        error: `failed to request after streams: ${e}`,
+        data: null,
+      });
+    }
   }
 
-  editDisabled(key, disabled) {
+  async editDisabled(key, disabled) {
     this.setState({
       loading: true,
       error: null,
     });
 
-    this.api.themesEditDisabled(key, disabled).then(_ => {
-      return this.list();
-    }, e => {
+    try {
+      await this.api.themesEditDisabled(key, disabled);
+      await this.list();
+    } catch(e) {
       this.setState({
         loading: false,
         error: `Failed to set disabled state: ${e}`,
       });
-    });
+    }
   }
 
   render() {
-    let error = null;
-
-    if (this.state.error) {
-      error = <Alert variant="warning">{this.state.error}</Alert>;
-    }
-
-    let refresh = null;
     let loading = null;
-
-    if (this.state.loading) {
-      loading = <Spinner />;
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh right" />;
-    } else {
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh clickable right" onClick={() => this.list()} />;
-    }
-
     let content = null;
 
     if (this.state.data) {
@@ -161,8 +142,9 @@ export default class Themes extends React.Component {
 
     return (
       <div>
-        <h3>Themes</h3>
-        {error}
+        <h1 className="oxi-page-title">Themes</h1>
+        <Loading isLoading={this.state.loading} />
+        <Error error={this.state.error} />
         {content}
         {loading}
       </div>

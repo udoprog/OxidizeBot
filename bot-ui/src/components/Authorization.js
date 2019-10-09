@@ -1,8 +1,9 @@
-import {Spinner, True, False, partition} from "../utils";
+import {True, False, partition} from "../utils";
 import React from "react";
 import {Alert, Table, Button, InputGroup, Form, Modal} from "react-bootstrap";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import * as ReactMarkdown from 'react-markdown';
+import { Loading, Error } from 'shared-ui/components';
 
 /**
  * Special role that everyone belongs to.
@@ -50,12 +51,8 @@ export default class Authorization extends React.Component {
     };
   }
 
-  componentWillMount() {
-    if (this.state.loading) {
-      return;
-    }
-
-    this.list()
+  async componentDidMount() {
+    await this.list();
   }
 
   /**
@@ -77,16 +74,17 @@ export default class Authorization extends React.Component {
   /**
    * Refresh the list of after streams.
    */
-  list() {
-    this.setState({
-      loading: true,
-    });
+  async list() {
+    this.setState({loading: true});
 
-    let roles = this.api.authRoles(this.props.current.channel);
-    let scopes = this.api.authScopes(this.props.current.channel);
-    let grants = this.api.authGrants(this.props.current.channel);
+    let requests = [
+      this.api.authRoles(this.props.current.channel),
+      this.api.authScopes(this.props.current.channel),
+      this.api.authGrants(this.props.current.channel),
+    ];
 
-    Promise.all([roles, scopes, grants]).then(([roles, scopes, grants]) => {
+    try {
+      let [roles, scopes, grants] = await Promise.all(requests);
       let allowsObject = {};
 
       for (let [scope, role] of grants) {
@@ -98,40 +96,41 @@ export default class Authorization extends React.Component {
         error: null,
         data: {roles, scopes, grants: allowsObject},
       });
-    },
-    e => {
+    } catch (e) {
       this.setState({
         loading: false,
         error: `failed to request after streams: ${e}`,
         data: null,
       });
-    });
+    }
   }
 
-  deny(scope, role) {
-    this.api.authDeleteGrant(scope, role)
-      .then(() => {
-        return this.list();
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to insert an allow permit: ${e}`,
-        });
+  async deny(scope, role) {
+    this.setState({loading: true});
+
+    try {
+      await this.api.authDeleteGrant(scope, role);
+      await this.list();
+    } catch(e) {
+      this.setState({
+        loading: false,
+        error: `failed to insert an allow permit: ${e}`,
       });
+    }
   }
 
-  allow(scope, role) {
-    this.api.authInsertGrant({scope, role})
-      .then(() => {
-        return this.list();
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to insert an allow permit: ${e}`,
-        });
+  async allow(scope, role) {
+    this.setState({loading: true});
+
+    try {
+      await this.api.authInsertGrant({scope, role});
+      await this.list();
+    } catch(e) {
+      this.setState({
+        loading: false,
+        error: `failed to insert an allow permit: ${e}`,
       });
+    }
   }
 
   filtered(data) {
@@ -294,22 +293,6 @@ export default class Authorization extends React.Component {
   }
 
   render() {
-    let error = null;
-
-    if (this.state.error) {
-      error = <Alert variant="warning">{this.state.error}</Alert>;
-    }
-
-    let refresh = null;
-    let loading = null;
-
-    if (this.state.loading) {
-      loading = <Spinner />;
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh right" />;
-    } else {
-      refresh = <FontAwesomeIcon icon="sync" className="title-refresh clickable right" onClick={() => this.list()} />;
-    }
-
     let content = null;
 
     let data = null;
@@ -405,14 +388,13 @@ export default class Authorization extends React.Component {
 
     return (
       <div>
-        <h2>
-          Authorization
-          {refresh}
-        </h2>
-        {error}
+        <h1 className="oxi-page-title">Authorization</h1>
+
+        <Loading isLoading={this.state.loading} />
+        <Error error={this.state.error} />
+
         {filter}
         {content}
-        {loading}
         {modal}
       </div>
     );

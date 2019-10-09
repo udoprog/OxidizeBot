@@ -1,8 +1,8 @@
-import {Spinner} from "../utils";
 import React from "react";
 import {Form, Button, Alert, Table, InputGroup, Modal, ButtonGroup} from "react-bootstrap";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import * as moment from "moment";
+import {Loading, Error} from 'shared-ui/components';
 
 export default class Cache extends React.Component {
   constructor(props) {
@@ -27,20 +27,13 @@ export default class Cache extends React.Component {
     };
   }
 
-  componentDidMount() {
+  async componentDidMount() {
     this.interval = setInterval(() => this.setState({ time: Date.now() }), 1000);
+    await this.list();
   }
 
   componentWillUnmount() {
     clearInterval(this.interval);
-  }
-
-  componentWillMount() {
-    if (this.state.loading) {
-      return;
-    }
-
-    this.list()
   }
 
   /**
@@ -65,43 +58,41 @@ export default class Cache extends React.Component {
   /**
    * Refresh the list of settings.
    */
-  list() {
-    this.setState({
-      loading: true,
-    });
+  async list() {
+    this.setState({loading: true});
 
-    this.api.cache()
-      .then(data => {
-        this.setState({
-          loading: false,
-          error: null,
-          data,
-        });
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to request cache: ${e}`,
-          data: null,
-        });
+    try {
+      let data = await this.api.cache();
+
+      this.setState({
+        loading: false,
+        error: null,
+        data,
       });
+    } catch(e) {
+      this.setState({
+        loading: false,
+        error: `failed to request cache: ${e}`,
+        data: null,
+      });
+    }
   }
 
   /**
    * Remove a cache entry.
    */
-  cacheDelete(key) {
-    this.api.cacheDelete(key)
-      .then(
-        () => this.list(),
-        e => {
-          this.setState({
-            loading: false,
-            error: `failed to delete cache entry: ${e}`,
-            data: null,
-          });
-        }
-      );
+  async cacheDelete(key) {
+    this.setState({loading: true});
+
+    try {
+      await this.api.cacheDelete(key);
+      await this.list();
+    } catch(e) {
+      this.setState({
+        loading: false,
+        error: `failed to delete cache entry: ${e}`
+      });
+    }
   }
 
   /**
@@ -241,18 +232,6 @@ export default class Cache extends React.Component {
   }
 
   render() {
-    let error = null;
-
-    if (this.state.error) {
-      error = <Alert variant="warning">{this.state.error}</Alert>;
-    }
-
-    let loading = null;
-
-    if (this.state.loading) {
-      loading = <Spinner />;
-    }
-
     let filterOnChange = e => this.setFilter(e.target.value);
     let clearFilter = () => this.setFilter("");
 
@@ -320,11 +299,11 @@ export default class Cache extends React.Component {
 
     return (
       <div className="cache">
-        {error}
+        <Loading isLoading={this.state.loading} />
+        <Error error={this.state.error} />
         {filter}
         {modal}
         {content}
-        {loading}
       </div>
     );
   }

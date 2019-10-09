@@ -1,6 +1,7 @@
-import {Spinner} from "../utils.js";
 import React from "react";
 import {Alert, Table} from "react-bootstrap";
+import Loading from 'shared-ui/components/Loading';
+import Error from 'shared-ui/components/Error';
 
 export default class Connections extends React.Component {
   constructor(props) {
@@ -40,9 +41,7 @@ export default class Connections extends React.Component {
 
     let content = null;
 
-    if (this.state.loading) {
-      content = <Spinner />;
-    } else {
+    if (!this.state.loading) {
       content = (
         <Table responsive="sm">
           <tbody>
@@ -68,7 +67,9 @@ export default class Connections extends React.Component {
           You can manage them in <a href="https://setbac.tv/connections">My Connections on setbac.tv</a>.
         </p>
 
-        {error}
+        <Loading isLoading={this.state.loading} />
+        <Error error={this.state.error} />
+
         {content}
       </>
     );

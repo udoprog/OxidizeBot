@@ -1,39 +1,8 @@
-@import "custom";
-@import "~bootstrap/scss/bootstrap";
 @import "~shared-ui/index";
 
 * {
   box-sizing: border-box;
   font-weight: 300;
-}
-
-.oxi {
-  &-intro {
-    margin: 40px auto;
-    max-width: 720px;
-  }
-
-  &-title {
-    font-size: 400%;
-    font-weight: 300;
-  }
-
-  &-logo-big {
-    text-align: center;
-  }
-
-  &-subtext {
-    font-size: 80%;
-    margin-top: 10px;
-  }
-}
-
-.loading {
-  text-align: center;
-}
-
-.highlight {
-  color: $purple;
 }
 
 #index {
@@ -53,31 +22,4 @@ html, body {
 #footer {
   text-align: center;
   font-size: 80%;
-}
-
-.page-title {
-  text-align: center;
-  margin-bottom: 20px;
-}
-
-.center {
-  text-align: center;
-}
-
-.connected {
-  &-title {
-    font-weight: bold;
-  }
-
-  &-validate {
-    font-size: 80%;
-  }
-
-  &-meta {
-    font-size: 80%;
-  }
-
-  &-description {
-    margin-top: 8px;
-  }
 }

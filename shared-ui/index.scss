@@ -1,80 +1,162 @@
+@import "custom";
+@import "~bootstrap/scss/bootstrap";
+
 $margin: 8px;
 $example-margin: 12px;
 
-.command-group {
-  &-content {
-    & > * {
+.oxi {
+  &-intro {
+    margin: 40px auto;
+    max-width: 720px;
+  }
+
+  &-title {
+    font-size: 400%;
+    font-weight: 300;
+  }
+
+  &-logo-big {
+    text-align: center;
+  }
+
+  &-subtext {
+    font-size: 80%;
+    margin-top: 10px;
+  }
+
+  &-connected {
+    &-title {
+      font-weight: bold;
+    }
+
+    &-validate {
+      font-size: 80%;
+    }
+
+    &-meta {
+      font-size: 80%;
+    }
+
+    &-description {
+      margin-top: 8px;
+    }
+  }
+
+  &-error {
+    font-size: 120%;
+    text-align: center;
+  }
+
+  &-inline-loading {
+    height: 18px;
+    width: 18px;
+    font-size: 50%;
+  }
+
+  &-loading {
+    text-align: center;
+
+    &-info {
+      margin-top: 10px;
+      margin-bottom: 10px;
+      font-size: 140%;
+      font-weight: 300;
+    }
+  }
+
+  &-highlight {
+    color: $purple;
+  }
+
+  &-page-title {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+
+  &-center {
+    text-align: center;
+  }
+
+  &-command-group {
+    &-content {
+      & > * {
+        margin-top: $margin;
+        margin-bottom: $margin;
+      }
+    }
+
+    &-name {
+      font-size: 160%;
+      font-weight: bold;
       margin-top: $margin;
       margin-bottom: $margin;
     }
-  }
 
-  &-name {
-    font-size: 160%;
-    font-weight: bold;
-    margin-top: $margin;
-    margin-bottom: $margin;
-  }
+    &-commands {
+      font-size: 140%;
+      font-weight: bold;
+      margin: $margin 0px;
+    }
 
-  &-commands {
-    font-size: 140%;
-    font-weight: bold;
-    margin: $margin 0px;
-  }
-
-  &-actions {
-    margin-bottom: 10px;
-  }
-}
-
-.command {
-  margin: 0px;
-
-  & > * {
-    margin-top: $margin;
-    margin-bottom: $margin;
-
-    &:last-child {
-      margin-bottom: 0;
+    &-actions {
+      margin-bottom: 10px;
     }
   }
 
-  &-name {
-    font-size: 140%;
-    margin-top: 0;
-    margin-bottom: $margin;
+  &-command {
+    margin: 0px;
 
     & > * {
-      display: inline;
-      margin: 0;
-      padding: 0;
+      margin-top: $margin;
+      margin-bottom: $margin;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+    }
+
+    &-name {
+      font-size: 140%;
+      margin-top: 0;
+      margin-bottom: $margin;
+
+      & > * {
+        display: inline;
+        margin: 0;
+        padding: 0;
+      }
     }
   }
-}
 
-.example {
-  margin-bottom: $margin;
+  &-example {
+    margin-bottom: $margin;
 
-  &-name {
-    font-size: 100%;
-    margin-top: $example-margin;
-    margin-bottom: $example-margin;
+    &-name {
+      font-size: 100%;
+      margin-top: $example-margin;
+      margin-bottom: $example-margin;
 
-    & > * {
-      display: inline;
-      margin: 0;
-      padding: 0;
+      & > * {
+        display: inline;
+        margin: 0;
+        padding: 0;
+      }
+    }
+
+    &-content {
+      border-left: 4px solid orangered;
+      font-size: 80%;
+      padding: 8px;
+      background-color: #efefef;
+
+      & > * {
+        margin: 0;
+      }
     }
   }
 
-  &-content {
-    border-left: 4px solid orangered;
-    font-size: 80%;
-    padding: 8px;
-    background-color: #efefef;
-
-    & > * {
-      margin: 0;
-    }
+  &-header-action {
+    font-size: 50%;
+    margin-left: 0.5rem;
   }
 }

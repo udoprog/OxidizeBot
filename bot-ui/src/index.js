@@ -25,6 +25,7 @@ import ConfigurationPrompt from "./components/ConfigurationPrompt";
 import * as semver from "semver";
 import logo from "./logo.png";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { InlineLoading, Loading, Error } from 'shared-ui/components';
 
 /**
  * Required spotify configuration.
@@ -41,11 +42,7 @@ class AfterStreamsPage extends React.Component {
   render() {
     return (
       <RouteLayout>
-        <Row>
-          <Col>
-            <AfterStreams api={this.api} />
-          </Col>
-        </Row>
+        <AfterStreams api={this.api} />
       </RouteLayout>
     );
   }
@@ -60,13 +57,9 @@ class SettingsPage extends React.Component {
   render() {
     return (
       <RouteLayout>
-        <h2>Settings</h2>
+        <h1 className="oxi-page-title">Settings</h1>
 
-        <Row>
-          <Col>
-            <Settings group={true} api={this.api} filterable={true} {...this.props} />
-          </Col>
-        </Row>
+        <Settings group={true} api={this.api} filterable={true} {...this.props} />
       </RouteLayout>
     );
   }
@@ -81,13 +74,9 @@ class CachePage extends React.Component {
   render() {
     return (
       <RouteLayout>
-        <h2>Cache</h2>
+        <h1 className="oxi-page-title">Cache</h1>
 
-        <Row>
-          <Col>
-            <Cache api={this.api} {...this.props} />
-          </Col>
-        </Row>
+        <Cache api={this.api} {...this.props} />
       </RouteLayout>
     );
   }
@@ -117,11 +106,7 @@ class ImportExportPage extends React.Component {
   render() {
     return (
       <RouteLayout>
-        <Row>
-          <Col>
-            <ImportExport api={this.api} {...this.props} />
-          </Col>
-        </Row>
+        <ImportExport api={this.api} {...this.props} />
       </RouteLayout>
     );
   }
@@ -133,30 +118,32 @@ class AuthorizedPage extends React.Component {
 
     this.state = {
       current: null,
+      error: null,
     };
 
     this.api = new Api(utils.apiUrl());
     this.page = page;
   }
 
-  componentWillMount() {
-    this.api.current().then(current => {
+  async componentDidMount() {
+    try {
+      let current = await this.api.current();
+
       if (current.channel) {
         this.setState({current});
       }
-    });
+    } catch (e) {
+      this.setState({error: `Failed to get current user: ${e}`})
+    }
   }
 
   render() {
+    if (this.state.error) {
+      return <RouteLayout><Error error={this.state.error} /></RouteLayout>;
+    }
+
     if (!this.state.current) {
-      return (
-        <RouteLayout>
-          <div className="loading">
-            Loading Current User
-            <utils.Spinner />
-          </div>
-        </RouteLayout>
-      );
+      return <RouteLayout><Loading>Loading user information</Loading></RouteLayout>;
     }
 
     const children = React.Children.map(this.props.children, child => {
@@ -164,11 +151,7 @@ class AuthorizedPage extends React.Component {
     });
 
     return (
-      <RouteLayout>
-        <Row>
-          <Col>{children}</Col>
-        </Row>
-      </RouteLayout>
+      <RouteLayout>{children}</RouteLayout>
     );
   }
 }
@@ -185,7 +168,7 @@ function HeaderAction(props) {
     link.to = props.to;
   }
 
-  return <Link className="header-action" {...link}><FontAwesomeIcon {...icon} />&nbsp;{props.children}</Link>;
+  return <Link className="oxi-header-action" {...link}><FontAwesomeIcon {...icon} />&nbsp;{props.children}</Link>;
 }
 
 class IndexPage extends React.Component {
@@ -221,8 +204,8 @@ class IndexPage extends React.Component {
   /**
    * Get information on new versions available, or the current version of the bot.
    */
-  versionInfo() {
-    let version = <utils.Spinner />;
+  renderVersionInfo() {
+    let version = <InlineLoading />;
     let latest = null;
 
     if (this.state.version) {
@@ -261,15 +244,11 @@ class IndexPage extends React.Component {
       </Alert>;
     }
 
-    let versionInfo = this.versionInfo();
+    let versionInfo = this.renderVersionInfo();
 
     return (
       <RouteLayout>
-        <Row>
-          <Col>
-            {versionInfo}
-          </Col>
-        </Row>
+        {versionInfo}
 
         <Row>
           <Col lg="6">

@@ -1,7 +1,6 @@
-import {Spinner} from "../utils.js";
 import React from "react";
 import {Button, Alert, Table} from "react-bootstrap";
-import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+import Loading from 'shared-ui/components/Loading';
 
 export default class Aliases extends React.Component {
   constructor(props) {
@@ -10,59 +9,57 @@ export default class Aliases extends React.Component {
     this.api = this.props.api;
 
     this.state = {
-      loading: false,
+      loading: true,
       error: null,
       data: null,
     };
   }
 
-  componentWillMount() {
-    if (this.state.loading) {
-      return;
-    }
-
-    this.list()
+  async componentDidMount() {
+    await this.list();
   }
 
   /**
    * Refresh the list of after streams.
    */
-  list() {
+  async list() {
     this.setState({
       loading: true,
     });
 
-    this.api.aliases(this.props.current.channel)
-      .then(data => {
-        this.setState({
-          loading: false,
-          error: null,
-          data,
-        });
-      },
-      e => {
-        this.setState({
-          loading: false,
-          error: `failed to request after streams: ${e}`,
-          data: null,
-        });
+    try {
+      let data = await this.api.aliases(this.props.current.channel);
+
+      this.setState({
+        loading: false,
+        error: null,
+        data,
       });
+    } catch (e) {
+      this.setState({
+        loading: false,
+        error: `failed to request after streams: ${e}`,
+        data: null,
+      });
+    }
   }
 
-  editDisabled(key, disabled) {
+  async editDisabled(key, disabled) {
     this.setState({
       loading: true,
       error: null,
     });
 
-    this.api.aliasesEditDisabled(key, disabled).then(_ => {
-      return this.list();
-    }, e => {
+    try {
+      await this.api.aliasesEditDisabled(key, disabled);
+    } catch(e) {
       this.setState({
         loading: false,
         error: `Failed to set disabled state: ${e}`,
       });
-    });
+    }
+
+    return this.list();
   }
 
   render() {
@@ -70,12 +67,6 @@ export default class Aliases extends React.Component {
 
     if (this.state.error) {
       error = <Alert variant="warning">{this.state.error}</Alert>;
-    }
-
-    let loading = null;
-
-    if (this.state.loading) {
-      loading = <Spinner />;
     }
 
     let content = null;
@@ -129,13 +120,11 @@ export default class Aliases extends React.Component {
       }
     }
 
-    return (
-      <div>
-        <h3>Aliases</h3>
-        {error}
-        {content}
-        {loading}
-      </div>
-    );
+    return <>
+      <h1 className="oxi-page-title">Aliases</h1>
+      <Loading isLoading={this.state.loading} />
+      {error}
+      {content}
+    </>;
   }
 }

@@ -45,14 +45,14 @@ export default class CommandGroup extends React.Component {
     }
 
     return <>
-      <div className='command-group'>
-        <div className='command-group-name'>
+      <div className='oxi-command-group'>
+        <div className='oxi-command-group-name'>
           {this.props.name}
         </div>
 
-        <div className='command-group-content'><Content source={this.props.content} /></div>
+        <div className='oxi-command-group-content'><Content source={this.props.content} /></div>
 
-        <div className='command-group-actions'>{show}</div>
+        <div className='oxi-command-group-actions'>{show}</div>
 
         {commands}
       </div>

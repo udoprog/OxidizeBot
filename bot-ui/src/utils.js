@@ -147,19 +147,6 @@ export function pickArtist(artists) {
 }
 
 /**
- * A simple spinner component.
- */
-export function Spinner() {
-  return (
-    <span className="spinner">
-      <span className="bounce1"></span>
-      <span className="bounce2"></span>
-      <span className="bounce3"></span>
-    </span>
-  );
-}
-
-/**
  * Indicator that a value is true.
  */
 export function True() {

@@ -1,8 +1,7 @@
-import {Spinner} from "../utils.js";
 import React from "react";
-import {Button, Table} from "react-bootstrap";
 import {websocketUrl} from "../utils.js";
 import Websocket from "react-websocket";
+import Loading from 'shared-ui/components/Loading';
 
 const OBS_CSS = [
   "body.youtube-body { background-color: rgba(0, 0, 0, 0); }",
@@ -158,18 +157,10 @@ export default class YouTube extends React.Component {
   }
 
   render() {
-    var loading = null;
     var ws = null;
-
     var playerStyle = {};
 
-    if (this.state.loading) {
-      loading = (
-        <div className="player-loading">
-          <Spinner />
-        </div>
-      );
-    } else {
+    if (!this.state.loading) {
       ws = <Websocket url={websocketUrl("ws/youtube")} onMessage={this.handleData.bind(this)} />;
     }
 
@@ -195,10 +186,8 @@ export default class YouTube extends React.Component {
     return (
       <div id="youtube">
         {ws}
-
         {noVideo}
-
-        {loading}
+        <Loading isLoading={this.state.loading} />
 
         <div className="youtube-container" style={playerStyle}>
           <div ref={this.playerRef} className="youtube-embedded"></div>

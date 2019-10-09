@@ -1,8 +1,9 @@
 import React from "react";
-import {Spinner, partition} from "../utils";
+import {partition} from "../utils";
 import {Form, Button, Alert, Table, InputGroup} from "react-bootstrap";
 import * as types from "./Settings/Types.js";
 import Setting from "./Setting";
+import {Loading, Error} from 'shared-ui/components';
 
 export default class Settings extends React.Component {
   constructor(props) {
@@ -301,18 +302,6 @@ export default class Settings extends React.Component {
   }
 
   render() {
-    let error = null;
-
-    if (this.state.error) {
-      error = <Alert variant="warning">{this.state.error}</Alert>;
-    }
-
-    let loading = null;
-
-    if (this.state.loading) {
-      loading = <Spinner />;
-    }
-
     let content = this.content();
     let filter = null;
 
@@ -342,10 +331,10 @@ export default class Settings extends React.Component {
 
     return (
       <div className="settings">
-        {error}
+        <Loading isLoading={this.state.loading} />
+        <Error error={this.state.error} />
         {filter}
         {content}
-        {loading}
       </div>
     );
   }
