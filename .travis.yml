@@ -1,3 +1,5 @@
+env:
+- RUST_LIB_BACKTRACE=1
 os:
 - linux
 dist: bionic
@@ -5,11 +7,9 @@ language: rust
 rust:
 - nightly
 before_install:
-- sudo apt-get update
-- sudo apt-get install -y libmysqlclient-dev
 - cargo install cargo-deb
 script:
-- tools/build.sh
+- cargo run --manifest-path tools/builder/Cargo.toml
 deploy:
   provider: releases
   skip_cleanup: true
