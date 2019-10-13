@@ -159,4 +159,11 @@ $example-margin: 12px;
     font-size: 50%;
     margin-left: 0.5rem;
   }
+
+  &-unstable {
+    color: orangered;
+    font-weight: 300;
+    font-size: 80%;
+    font-weight: bold;
+  }
 }

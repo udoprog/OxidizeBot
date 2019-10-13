@@ -55,8 +55,8 @@ class Version {
  * @param {*} releases
  */
 function filterReleases(releases) {
-  let stable = latestRelease(releases.filter(r => !r.prerelease));
-  let unstable = latestRelease(releases.filter(r => r.prerelease));
+  let stable = latestReleases(releases.filter(r => !r.prerelease), 2);
+  let unstable = latestReleases(releases.filter(r => r.prerelease), 2);
   return {stable, unstable};
 }
 
@@ -65,7 +65,7 @@ function filterReleases(releases) {
  *
  * @param {*} releases
  */
-function latestRelease(releasesIn) {
+function latestReleases(releasesIn, n) {
   let releases = [];
 
   for (let release of releasesIn) {
@@ -77,50 +77,41 @@ function latestRelease(releasesIn) {
   }
 
   releases.sort((a, b) => b.version.cmp(a.version));
-
-  if (releases.length === 0) {
-    return null;
-  }
-
-  return releases[0];
+  return releases.slice(0, Math.min(n, releases.length));
 }
 
-function partitionDownloads(incoming, kind) {
-  let debian = [];
-  let windows = [];
-  let mac = [];
+function partitionDownloads(incoming, unstable) {
+  return incoming.map(({release, version}) => {
+    let debian = [];
+    let windows = [];
+    let mac = [];
 
-  if (incoming === null) {
-    return {debian, windows, mac};
-  }
-
-  let {release, version} = incoming;
-
-  for (let asset of release.assets) {
-    if (asset.name.endsWith(".deb")) {
-      debian.push({asset, version, title: `${kind} Package`, prio: 1});
-      continue;
-    }
-
-    if (asset.name.endsWith(".msi")) {
-      windows.push({asset, version, title: `${kind} Installer`, prio: 1});
-      continue;
-    }
-
-    if (asset.name.endsWith(".zip")) {
-      if (asset.name.indexOf("windows") != -1) {
-        windows.push({asset, version, title: `${kind} Zip Archive`, prio: 0});
-      } else if (asset.name.indexOf("linux") != -1) {
-        debian.push({asset, version, title: `${kind} Zip Archive`, prio: 0});
-      } else if (asset.name.indexOf("macos") != -1) {
-        mac.push({asset, version, title: `${kind} Zip Archive`, prio: 0});
+    for (let asset of release.assets) {
+      if (asset.name.endsWith(".deb")) {
+        debian.push({asset, title: `Package`, prio: 1});
+        continue;
       }
 
-      continue;
-    }
-  }
+      if (asset.name.endsWith(".msi")) {
+        windows.push({asset, title: `Installer`, prio: 1});
+        continue;
+      }
 
-  return {debian, windows, mac};
+      if (asset.name.endsWith(".zip")) {
+        if (asset.name.indexOf("windows") != -1) {
+          windows.push({asset, title: `Zip Archive`, prio: 0});
+        } else if (asset.name.indexOf("linux") != -1) {
+          debian.push({asset, title: `Zip Archive`, prio: 0});
+        } else if (asset.name.indexOf("macos") != -1) {
+          mac.push({asset, title: `Zip Archive`, prio: 0});
+        }
+
+        continue;
+      }
+    }
+
+    return {version, unstable, debian, windows, mac};
+  });
 }
 
 export default class Index extends React.Component {
@@ -142,8 +133,8 @@ export default class Index extends React.Component {
     this.setState({ loadingReleases: true });
     let releases = await api.githubReleases('udoprog', 'OxidizeBot');
     let {stable, unstable} = filterReleases(releases);
-    stable = partitionDownloads(stable, "Stable");
-    unstable = partitionDownloads(unstable, "Unstable");
+    stable = partitionDownloads(stable, false);
+    unstable = partitionDownloads(unstable, true);
     this.setState({ releases, stable, unstable, loadingReleases: false });
   }
 
@@ -155,26 +146,28 @@ export default class Index extends React.Component {
    * Optionally render download links in case they are available.
    */
   renderDownloadLinks(data, filter) {
-    if (data === null) {
-      return [];
-    }
+    return data.flatMap(({version, unstable, ...other}) => {
+      return (filter(other) || []).map(({asset, title, prio}) => {
+        let m = asset.name.match(/\.[a-z]+$/);
 
-    data = filter(data);
+        let ext = null;
 
-    return data.map(({asset, version, title, prio}) => {
-      let m = asset.name.match(/\.[a-z]+$/);
+        if (m !== null) {
+          ext = <> ({m[0]})</>;
+        }
 
-      let ext = null;
+        let unstableEl = null;
 
-      if (m !== null) {
-        ext = <> ({m[0]})</>;
-      }
+        if (unstable) {
+          unstableEl = <> <span className="oxi-unstable" title="Development version with new features, but has a higher risk of bugs">DEV</span></>;
+        }
 
-      let element = (key) => <Card.Text key={key}>
-        <a href={asset.browser_download_url}>{version.toString()} {title}{ext}</a>
-      </Card.Text>;
+        let element = (key) => <Card.Text key={key}>
+          <a href={asset.browser_download_url}><b>{version.toString()}</b> &ndash; {title}{ext}</a>{unstableEl}
+        </Card.Text>;
 
-      return {element, version, prio};
+        return {element, version, prio};
+      });
     });
   }
 
