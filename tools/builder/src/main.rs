@@ -150,11 +150,14 @@ fn create_zip(file: &Path, it: impl IntoIterator<Item = PathBuf>) -> Result<()> 
     let mut it = it.into_iter();
 
     while let Some(p) = it.next() {
+        println!("Adding to zip: {}", p.display());
+
         let file_name = p
             .file_name()
             .ok_or_else(|| anyhow!("file without file name"))?
             .to_str()
             .ok_or_else(|| anyhow!("file name is not a string"))?;
+
         zip.start_file(file_name, options)?;
         let mut from = fs::File::open(&p)?;
         io::copy(&mut from, &mut zip)?;
@@ -186,6 +189,7 @@ where
 
         let target = target.join(name);
 
+        println!("{} -> {}", installer.display(), target.display());
         fs::copy(installer, &target)?;
         visitor(&target)?;
     }
@@ -194,17 +198,16 @@ where
 }
 
 /// Create a zip distribution.
-fn create_zip_dist(root: &Path, exe: PathBuf, version: &Version) -> Result<()> {
-    create_zip(
-        &root.join(format!(
-            "oxidize-{version}-{os}-{arch}.zip",
-            version = version,
-            os = std::env::consts::OS,
-            arch = std::env::consts::ARCH
-        )),
-        vec![root.join("README.md"), exe],
-    )?;
+fn create_zip_dist(dest: &Path, root: &Path, exe: &Path, version: &Version) -> Result<()> {
+    let zip_file = dest.join(format!(
+        "oxidize-{version}-{os}-{arch}.zip",
+        version = version,
+        os = std::env::consts::OS,
+        arch = std::env::consts::ARCH
+    ));
 
+    println!("Creating Zip File: {}", zip_file.display());
+    create_zip(&zip_file, vec![root.join("README.md"), exe.to_owned()])?;
     Ok(())
 }
 
@@ -268,7 +271,7 @@ fn windows_build(root: &Path) -> Result<()> {
         Ok(())
     })?;
 
-    create_zip_dist(&root, exe, &version)?;
+    create_zip_dist(&root, &root, &exe, &version)?;
     Ok(())
 }
 
@@ -303,19 +306,27 @@ fn linux_build(root: &Path) -> Result<()> {
         cargo(&["deb", "-p", "oxidize"])?;
     }
 
-    copy_files(&debian_dir, &root, "deb", |_| Ok(()))?;
+    let upload = root.join("target/upload");
+
+    if !upload.is_dir() {
+        fs::create_dir_all(&upload)?;
+    }
+
+    copy_files(&debian_dir, &upload, "deb", |_| Ok(()))?;
 
     if !exe.is_file() {
         println!("building: {}", exe.display());
         cargo(&["build", "--release", "--bin", "oxidize"])?;
     }
 
-    create_zip_dist(&root, exe, &version)?;
+    create_zip_dist(&upload, &root, &exe, &version)?;
     Ok(())
 }
 
 fn main() -> Result<()> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()?;
     println!("root: {}", root.display());
 
     #[cfg(target_os = "windows")]
