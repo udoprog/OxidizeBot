@@ -10,14 +10,6 @@
   <a href="https://github.com/udoprog/OxidizeBot/actions">
     <img alt="GitHub Actions Build Status" src="https://github.com/udoprog/OxidizeBot/workflows/Rust/badge.svg">
   </a>
-
-  <a href="https://travis-ci.org/udoprog/OxidizeBot">
-    <img alt="Build Status" src="https://travis-ci.org/udoprog/OxidizeBot.svg?branch=master">
-  </a>
-
-  <a href="https://ci.appveyor.com/project/udoprog/OxidizeBot/branch/master">
-    <img alt="Windows Build Status" src="https://ci.appveyor.com/api/projects/status/cxagsq3idti252a4/branch/master?svg=true">
-  </a>
 </p>
 
 <p align="center">
