@@ -287,7 +287,7 @@ fn linux_build(root: &Path) -> Result<()> {
     let debian_dir = root.join("target/debian");
 
     if !debian_dir.is_dir() {
-        cargo(&["deb", "-p", "oxidize"])?;
+        cargo(&["deb", "-p", "oxidize", "--", "--no-default-features"])?;
     }
 
     let upload = root.join("target/upload");
@@ -300,7 +300,7 @@ fn linux_build(root: &Path) -> Result<()> {
 
     if !exe.is_file() {
         println!("building: {}", exe.display());
-        cargo(&["build", "--release", "--bin", "oxidize"])?;
+        cargo(&["build", "--release", "--bin", "oxidize", "--no-default-features"])?;
     }
 
     create_zip_dist(&upload, &root, &exe, &version)?;
@@ -322,7 +322,7 @@ fn macos_build(root: &Path) -> Result<()> {
 
     if !exe.is_file() {
         println!("building: {}", exe.display());
-        cargo(&["build", "--release", "--bin", "oxidize"])?;
+        cargo(&["build", "--release", "--bin", "oxidize", "--no-default-features"])?;
     }
 
     let upload = root.join("target/upload");
