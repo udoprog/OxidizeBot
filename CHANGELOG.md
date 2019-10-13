@@ -6,7 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/0.4.4...master
+[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/1.0.1...master
+
+## [1.0.1]
+
+### Changed
+- Fixed issue where tray icon doesn't work for some Windows versions.
+
+[1.0.1]: https://github.com/udoprog/OxidizeBot/compare/1.0.0...1.0.1
 
 ## [1.0.0]
 
@@ -21,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support capture groups in pattern. Like `I like (.+)` will allow you to use the variable `{{1}}` for the group.
 - Added `!help` command to send you to https://setbac.tv/help
 
-[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/0.4.4...1.0.0
+[1.0.0]: https://github.com/udoprog/OxidizeBot/compare/0.4.4...1.0.0
 
 ## [0.4.4]
 
