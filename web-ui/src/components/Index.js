@@ -4,6 +4,7 @@ import { RouteLayout } from "./Layout.js";
 import twitchDarkLogo from "../assets/twitch-dark.png";
 import windowsImg from "../assets/windows.svg";
 import debianImg from "../assets/debian.svg";
+import macImg from "../assets/mac.svg";
 import SVG from 'react-inlinesvg';
 import { api } from '../globals.js';
 import Loading from 'shared-ui/components/Loading';
@@ -84,29 +85,42 @@ function latestRelease(releasesIn) {
   return releases[0];
 }
 
-function partitionDownloads(incoming) {
-  let debian = null;
-  let windows = null;
+function partitionDownloads(incoming, kind) {
+  let debian = [];
+  let windows = [];
+  let mac = [];
 
   if (incoming === null) {
-    return {debian, windows};
+    return {debian, windows, mac};
   }
 
   let {release, version} = incoming;
 
   for (let asset of release.assets) {
     if (asset.name.endsWith(".deb")) {
-      debian = {asset, version};
+      debian.push({asset, version, title: `${kind} Package`, prio: 1});
       continue;
     }
 
     if (asset.name.endsWith(".msi")) {
-      windows = {asset, version};
+      windows.push({asset, version, title: `${kind} Installer`, prio: 1});
+      continue;
+    }
+
+    if (asset.name.endsWith(".zip")) {
+      if (asset.name.indexOf("windows") != -1) {
+        windows.push({asset, version, title: `${kind} Zip Archive`, prio: 0});
+      } else if (asset.name.indexOf("linux") != -1) {
+        debian.push({asset, version, title: `${kind} Zip Archive`, prio: 0});
+      } else if (asset.name.indexOf("macos") != -1) {
+        mac.push({asset, version, title: `${kind} Zip Archive`, prio: 0});
+      }
+
       continue;
     }
   }
 
-  return {debian, windows};
+  return {debian, windows, mac};
 }
 
 export default class Index extends React.Component {
@@ -128,8 +142,8 @@ export default class Index extends React.Component {
     this.setState({ loadingReleases: true });
     let releases = await api.githubReleases('udoprog', 'OxidizeBot');
     let {stable, unstable} = filterReleases(releases);
-    stable = partitionDownloads(stable);
-    unstable = partitionDownloads(unstable);
+    stable = partitionDownloads(stable, "Stable");
+    unstable = partitionDownloads(unstable, "Unstable");
     this.setState({ releases, stable, unstable, loadingReleases: false });
   }
 
@@ -139,55 +153,53 @@ export default class Index extends React.Component {
 
   /**
    * Optionally render download links in case they are available.
-   *
-   * @param {*} data
-   * @param {*} filter
-   * @param {*} title
    */
-  renderDownloadLinks(data, filter, title) {
+  renderDownloadLinks(data, filter) {
     if (data === null) {
-      return null;
+      return [];
     }
 
     data = filter(data);
 
-    if (data === null) {
-      return null;
-    }
+    return data.map(({asset, version, title, prio}) => {
+      let m = asset.name.match(/\.[a-z]+$/);
 
-    let {asset, version} = data;
-    let m = asset.name.match(/\.[a-z]+$/);
+      let ext = null;
 
-    let ext = null;
+      if (m !== null) {
+        ext = <> ({m[0]})</>;
+      }
 
-    if (m !== null) {
-      ext = <> ({m[0]})</>;
-    }
+      let element = (key) => <Card.Text key={key}>
+        <a href={asset.browser_download_url}>{version.toString()} {title}{ext}</a>
+      </Card.Text>;
 
-    let element = (key) => <Card.Text key={key} className="oxi-center">
-      <a href={asset.browser_download_url}>{version.toString()} {title}{ext}</a>
-    </Card.Text>;
-
-    return {element, version};
+      return {element, version, prio};
+    });
   }
 
   renderCard(filter, title, img) {
     let releases = [];
 
     if (!this.state.loadingReleases) {
-      let stable = this.renderDownloadLinks(this.state.stable, filter, "Stable Installer");
+      releases.push(...this.renderDownloadLinks(this.state.stable, filter));
+      releases.push(...this.renderDownloadLinks(this.state.unstable, filter));
 
-      if (stable !== null) {
-        releases.push(stable);
-      }
+      releases.sort((a, b) => {
+        let byVersion = b.version.cmp(a.version);
 
-      let unstable = this.renderDownloadLinks(this.state.unstable, filter, "Unstable Installer");
+        if (byVersion === 0) {
+          return b.prio - a.prio;
+        }
 
-      if (unstable !== null) {
-        releases.push(unstable);
-      }
+        return byVersion;
+      });
+    }
 
-      releases.sort((a, b) => b.version.cmp(a.version));
+    if (releases.length > 0) {
+      releases = releases.map((r, i) => r.element(i));
+    } else {
+      releases = <Card.Text key="no-release" className="oxi-center">No Releases Yet!</Card.Text>;
     }
 
     return <Card>
@@ -195,7 +207,7 @@ export default class Index extends React.Component {
       <Card.Body>
         <Card.Title className="oxi-center">{title}</Card.Title>
         <Loading isLoading={this.state.loadingReleases} />
-        {releases.map((r, i) => r.element(i))}
+        {releases}
       </Card.Body>
     </Card>;
   }
@@ -203,6 +215,7 @@ export default class Index extends React.Component {
   render() {
     let windowsCard = this.renderCard(r => r.windows, "Windows", windowsImg);
     let debianCard = this.renderCard(r => r.debian, "Debian", debianImg);
+    let macCard = this.renderCard(r => r.mac, "Mac OS", macImg);
 
     return (
       <RouteLayout>
@@ -278,6 +291,7 @@ export default class Index extends React.Component {
         <CardDeck>
           {windowsCard}
           {debianCard}
+          {macCard}
         </CardDeck>
       </RouteLayout>
     );
