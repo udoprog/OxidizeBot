@@ -25,7 +25,6 @@ artifacts:
 
 branches:
   only:
-    - master
     - /^\d+\.\d+\.\d+(-[a-z]+\.\d+)?$/
 
 deploy:
