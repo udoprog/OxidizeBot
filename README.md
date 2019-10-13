@@ -7,6 +7,10 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/udoprog/OxidizeBot/actions">
+    <img alt="GitHub Actions Build Status" src="https://github.com/udoprog/OxidizeBot/workflows/Rust/badge.svg">
+  </a>
+
   <a href="https://travis-ci.org/udoprog/OxidizeBot">
     <img alt="Build Status" src="https://travis-ci.org/udoprog/OxidizeBot.svg?branch=master">
   </a>

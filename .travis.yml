@@ -4,6 +4,7 @@ os:
 - linux
 dist: bionic
 language: rust
+if: tag IS present
 rust:
 - nightly
 before_install:
