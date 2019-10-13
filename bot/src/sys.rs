@@ -1,5 +1,5 @@
 use failure::Error;
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 #[cfg(target_os = "windows")]
 #[path = "sys/windows.rs"]
@@ -40,6 +40,17 @@ pub struct Notification {
     pub icon: NotificationIcon,
     pub timeout: Option<Duration>,
     pub on_click: Option<Callback>,
+}
+
+impl fmt::Debug for Notification {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.debug_struct("Notification")
+            .field("message", &self.message)
+            .field("title", &self.title)
+            .field("icon", &self.icon)
+            .field("timeout", &self.timeout)
+            .finish()
+    }
 }
 
 impl Notification {

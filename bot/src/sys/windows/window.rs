@@ -2,6 +2,7 @@
 
 use super::convert::{FromWide as _, ToWide as _};
 use crate::{prelude::*, sys::Notification};
+use failure::{format_err, Error, ResultExt as _};
 use std::{
     cell::RefCell,
     ffi::OsStr,
@@ -24,7 +25,7 @@ use winapi::{
         libloaderapi, shellapi,
         winuser::{
             self, IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, MENUINFO, MENUITEMINFOW,
-            MFT_SEPARATOR, MFT_STRING, MIIM_FTYPE, MIIM_ID, MIIM_STATE, MIIM_STRING,
+            MFS_DEFAULT, MFT_SEPARATOR, MFT_STRING, MIIM_FTYPE, MIIM_ID, MIIM_STATE, MIIM_STRING,
             MIM_APPLYTOSUBMENUS, MIM_STYLE, MNS_NOTIFYBYPOS, WM_DESTROY, WM_USER, WNDCLASSW,
             WS_OVERLAPPEDWINDOW,
         },
@@ -219,7 +220,10 @@ unsafe fn init_window(name: &str) -> Result<WindowInfo, io::Error> {
     );
 
     if result == FALSE {
-        return Err(io::Error::last_os_error());
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "Shell_NotifyIconW: failed",
+        ));
     }
 
     // Setup menu
@@ -240,9 +244,9 @@ unsafe fn init_window(name: &str) -> Result<WindowInfo, io::Error> {
     }
 
     Ok(WindowInfo {
-        hwnd: hwnd,
-        hmenu: hmenu,
-        hinstance: hinstance,
+        hwnd,
+        hmenu,
+        hinstance,
     })
 }
 
@@ -312,7 +316,7 @@ impl Window {
             .map_err(|_| io::Error::new(io::ErrorKind::Other, "canceled"))??;
 
         let w = Window {
-            info: info,
+            info,
             shutdown_rx: Some(shutdown_rx),
             events_rx,
             thread: Some(thread),
@@ -337,24 +341,51 @@ impl Window {
     }
 
     /// Set the tooltip we get when hovering over the systray icon.
-    pub fn set_tooltip(&self, tooltip: &str) -> Result<(), io::Error> {
+    pub fn set_tooltip(&self, tooltip: &str) -> Result<(), Error> {
+        self.raw_set_tooltip(tooltip)
+            .with_context(|_| format_err!("failed to set tooltip `{}`", tooltip))
+            .map_err(Error::from)
+    }
+
+    fn raw_set_tooltip(&self, tooltip: &str) -> Result<(), io::Error> {
         let mut nid = new_nid(&self.info.hwnd);
         copy_wstring(&mut nid.szTip, tooltip);
 
-        unsafe {
-            if shellapi::Shell_NotifyIconW(
+        let result = unsafe {
+            shellapi::Shell_NotifyIconW(
                 shellapi::NIM_MODIFY,
                 &mut nid as *mut shellapi::NOTIFYICONDATAW,
-            ) == FALSE
-            {
-                return Err(io::Error::last_os_error());
-            }
+            )
+        };
+
+        if result == FALSE {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Shell_NotifyIconW: failed",
+            ));
         }
 
         Ok(())
     }
 
-    pub fn add_menu_entry(&self, item_idx: u32, item_name: &str) -> Result<(), io::Error> {
+    /// Add a menu entry.
+    pub fn add_menu_entry(
+        &self,
+        item_idx: u32,
+        item_name: &str,
+        default: bool,
+    ) -> Result<(), Error> {
+        self.raw_add_menu_entry(item_idx, item_name, default)
+            .with_context(|_| format_err!("failed to add meny entry {} `{}`", item_idx, item_name))
+            .map_err(Error::from)
+    }
+
+    fn raw_add_menu_entry(
+        &self,
+        item_idx: u32,
+        item_name: &str,
+        default: bool,
+    ) -> Result<(), io::Error> {
         let mut st = item_name.to_wide_null();
         let mut item = new_menuitem();
         item.fMask = MIIM_FTYPE | MIIM_STRING | MIIM_ID | MIIM_STATE;
@@ -362,28 +393,43 @@ impl Window {
         item.wID = item_idx;
         item.dwTypeData = st.as_mut_ptr();
         item.cch = (item_name.len() * 2) as u32;
-        unsafe {
-            if winuser::InsertMenuItemW(self.info.hmenu, item_idx, 1, &item as *const MENUITEMINFOW)
-                == FALSE
-            {
-                return Err(io::Error::last_os_error());
-            }
+
+        if default {
+            item.fState = MFS_DEFAULT;
         }
+
+        let result = unsafe {
+            winuser::InsertMenuItemW(self.info.hmenu, item_idx, 1, &item as *const MENUITEMINFOW)
+        };
+
+        if result == FALSE {
+            return Err(io::Error::last_os_error());
+        }
+
         Ok(())
     }
 
-    pub fn add_menu_separator(&self, item_idx: u32) -> Result<(), io::Error> {
+    /// Add a menu separator with the associated index.
+    pub fn add_menu_separator(&self, item_idx: u32) -> Result<(), Error> {
+        self.raw_add_menu_separator(item_idx)
+            .with_context(|_| format_err!("failed to add menu separator"))
+            .map_err(Error::from)
+    }
+
+    fn raw_add_menu_separator(&self, item_idx: u32) -> Result<(), io::Error> {
         let mut item = new_menuitem();
         item.fMask = MIIM_FTYPE;
         item.fType = MFT_SEPARATOR;
         item.wID = item_idx;
-        unsafe {
-            if winuser::InsertMenuItemW(self.info.hmenu, item_idx, 1, &item as *const MENUITEMINFOW)
-                == FALSE
-            {
-                return Err(io::Error::last_os_error());
-            }
+
+        let result = unsafe {
+            winuser::InsertMenuItemW(self.info.hmenu, item_idx, 1, &item as *const MENUITEMINFOW)
+        };
+
+        if result == FALSE {
+            return Err(io::Error::last_os_error());
         }
+
         Ok(())
     }
 
@@ -406,14 +452,18 @@ impl Window {
 
         nid.dwInfoFlags = n.icon.into_flags();
 
-        unsafe {
-            if shellapi::Shell_NotifyIconW(
+        let result = unsafe {
+            shellapi::Shell_NotifyIconW(
                 shellapi::NIM_MODIFY,
                 &mut nid as *mut shellapi::NOTIFYICONDATAW,
-            ) == FALSE
-            {
-                return Err(io::Error::last_os_error());
-            }
+            )
+        };
+
+        if result == FALSE {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Shell_NotifyIconW: failed",
+            ));
         }
 
         Ok(())
@@ -471,6 +521,18 @@ impl Window {
         buffer: &[u8],
         width: u32,
         height: u32,
+    ) -> Result<(), Error> {
+        self.raw_set_icon_from_buffer(buffer, width, height)
+            .with_context(|_| format_err!("error setting icon from buffer"))
+            .map_err(Error::from)
+    }
+
+    /// Set an icon from a buffer.
+    fn raw_set_icon_from_buffer(
+        &self,
+        buffer: &[u8],
+        width: u32,
+        height: u32,
     ) -> Result<(), io::Error> {
         let offset = unsafe {
             winuser::LookupIconIdFromDirectoryEx(
@@ -491,7 +553,7 @@ impl Window {
         let hicon = unsafe {
             winuser::CreateIconFromResourceEx(
                 icon_data.as_ptr() as PBYTE,
-                0,
+                icon_data.len() as DWORD,
                 TRUE,
                 0x30000,
                 width as i32,
@@ -509,18 +571,21 @@ impl Window {
 
     /// Shutdown the given window.
     fn shutdown(&self) -> Result<(), io::Error> {
-        unsafe {
+        let result = unsafe {
             let mut nid = new_nid(&self.info.hwnd);
             nid.uFlags = shellapi::NIF_ICON;
 
-            let result = shellapi::Shell_NotifyIconW(
+            shellapi::Shell_NotifyIconW(
                 shellapi::NIM_DELETE,
                 &mut nid as *mut shellapi::NOTIFYICONDATAW,
-            );
+            )
+        };
 
-            if result == FALSE {
-                return Err(io::Error::last_os_error());
-            }
+        if result == FALSE {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Shell_NotifyIconW: failed",
+            ));
         }
 
         Ok(())
@@ -528,19 +593,22 @@ impl Window {
 
     /// Internal call to set icon.
     fn set_icon(&self, icon: HICON) -> Result<(), io::Error> {
-        unsafe {
+        let result = unsafe {
             let mut nid = new_nid(&self.info.hwnd);
             nid.uFlags = shellapi::NIF_ICON;
             nid.hIcon = icon;
 
-            let result = shellapi::Shell_NotifyIconW(
+            shellapi::Shell_NotifyIconW(
                 shellapi::NIM_MODIFY,
                 &mut nid as *mut shellapi::NOTIFYICONDATAW,
-            );
+            )
+        };
 
-            if result == FALSE {
-                return Err(io::Error::last_os_error());
-            }
+        if result == FALSE {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Shell_NotifyIconW: failed",
+            ));
         }
 
         Ok(())

@@ -1,5 +1,5 @@
 use crate::{prelude::*, sys::Notification, web};
-use failure::{bail, format_err, Error};
+use failure::{bail, format_err, Error, ResultExt as _};
 use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::{
@@ -24,6 +24,7 @@ mod window;
 const ICON: &[u8] = include_bytes!("../../res/icon.ico");
 const ICON_ERROR: &[u8] = include_bytes!("../../res/icon-error.ico");
 
+#[derive(Debug)]
 pub enum Event {
     Cleared,
     Errored(String),
@@ -181,19 +182,21 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
 
         window.set_icon_from_buffer(ICON, 128, 128)?;
 
-        window.add_menu_entry(0, "Open UI ...")?;
+        window.add_menu_entry(0, &format!("OxidizeBot {}", crate::VERSION), true)?;
         window.add_menu_separator(1)?;
-        window.add_menu_entry(2, "Open Log File ...")?;
-        window.add_menu_entry(3, "Open Directory ...")?;
-        window.add_menu_entry(4, "Restart Bot")?;
+        window.add_menu_entry(2, "Log File ...", false)?;
+        window.add_menu_entry(3, "Directory ...", false)?;
+        window.add_menu_entry(4, "Restart", false)?;
         window.add_menu_separator(5)?;
-        window.add_menu_entry(6, "Quit Bot")?;
+        window.add_menu_entry(6, "Exit", false)?;
 
         let mut notification_on_click = VecDeque::new();
 
         loop {
             futures::select! {
                 event = events_rx.select_next_some() => {
+                    log::trace!("Event: {:?}", event);
+
                     match event {
                         Event::Cleared => {
                             window.set_icon_from_buffer(ICON, 128, 128)?;
@@ -205,7 +208,8 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                         }
                         Event::Notification(mut n) => {
                             notification_on_click.push_back(n.on_click.take());
-                            window.send_notification(n)?;
+                            window.send_notification(n)
+                            .with_context(|_| format_err!("sending notification"))?;
                         }
                     }
                 }
