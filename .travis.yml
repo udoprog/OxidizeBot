@@ -2,6 +2,7 @@ env:
 - RUST_LIB_BACKTRACE=1
 os:
 - linux
+- osx
 dist: bionic
 language: rust
 if: tag IS present

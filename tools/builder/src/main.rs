@@ -168,6 +168,7 @@ fn create_zip(file: &Path, it: impl IntoIterator<Item = PathBuf>) -> Result<()> 
 }
 
 /// Copy a bunch of files with the matching file extension from one directory to another.
+#[allow(unused)]
 fn copy_files<F>(from: &Path, target: &Path, ext: &str, visitor: F) -> Result<()>
 where
     F: Fn(&Path) -> Result<()>,
@@ -323,6 +324,46 @@ fn linux_build(root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Perform a MacOS build.
+#[cfg(target_os = "macos")]
+fn macos_build(root: &Path) -> Result<()> {
+    let version = match env::var("TRAVIS_TAG") {
+        Ok(version) if version != "" => Version::open(&version)?,
+        _ => None,
+    };
+
+    let pull_request = match env::var("TRAVIS_PULL_REQUEST") {
+        Ok(pull_request) if pull_request != "false" => Some(str::parse::<u32>(&pull_request)?),
+        _ => None,
+    };
+
+    let version = match (&pull_request, &version) {
+        (None, Some(version)) => version,
+        _ => {
+            println!("Testing...");
+            cargo(&["build", "--all"])?;
+            cargo(&["test", "--all"])?;
+            return Ok(());
+        }
+    };
+
+    let exe = root.join("target/release/oxidize");
+
+    if !exe.is_file() {
+        println!("building: {}", exe.display());
+        cargo(&["build", "--release", "--bin", "oxidize"])?;
+    }
+
+    let upload = root.join("target/upload");
+
+    if !upload.is_dir() {
+        fs::create_dir_all(&upload)?;
+    }
+
+    create_zip_dist(&upload, &root, &exe, &version)?;
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -337,6 +378,11 @@ fn main() -> Result<()> {
     #[cfg(target_os = "linux")]
     {
         linux_build(&root)?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        macos_build(&root)?;
     }
 
     Ok(())
