@@ -220,22 +220,14 @@ fn windows_build(root: &Path) -> Result<()> {
         None => None,
     };
 
+    let version = version.ok_or_else(|| anyhow!("missing: APPVEYOR_REPO_TAG_NAME"))?;
+    println!("version: {}", version);
+
     let signer = match (env::var("SIGNTOOL"), env::var("CERTIFICATE_PASSWORD")) {
         (Ok(signtool), Ok(password)) => {
             SignTool::open(root.to_owned(), PathBuf::from(signtool), password)
         }
         _ => None,
-    };
-
-    // Is this a release?
-    let version = match version {
-        Some(version) => version,
-        None => {
-            println!("Testing...");
-            cargo(&["build", "--all"])?;
-            cargo(&["test", "--all"])?;
-            return Ok(());
-        }
     };
 
     let exe = root.join("target/release/oxidize.exe");
@@ -284,20 +276,11 @@ fn linux_build(root: &Path) -> Result<()> {
         _ => None,
     };
 
-    let pull_request = match env::var("TRAVIS_PULL_REQUEST") {
-        Ok(pull_request) if pull_request != "false" => Some(str::parse::<u32>(&pull_request)?),
-        _ => None,
-    };
+    let version = version.ok_or_else(|| anyhow!("missing: TRAVIS_TAG"))?;
+    println!("version: {}", version);
 
-    let version = match (&pull_request, &version) {
-        (None, Some(version)) => version,
-        _ => {
-            println!("Testing...");
-            cargo(&["build", "--all"])?;
-            cargo(&["test", "--all"])?;
-            return Ok(());
-        }
-    };
+    // Install cargo-deb for building the package below.
+    cargo(&["install", "cargo-deb"]);
 
     let exe = root.join("target/release/oxidize");
 
@@ -332,20 +315,8 @@ fn macos_build(root: &Path) -> Result<()> {
         _ => None,
     };
 
-    let pull_request = match env::var("TRAVIS_PULL_REQUEST") {
-        Ok(pull_request) if pull_request != "false" => Some(str::parse::<u32>(&pull_request)?),
-        _ => None,
-    };
-
-    let version = match (&pull_request, &version) {
-        (None, Some(version)) => version,
-        _ => {
-            println!("Testing...");
-            cargo(&["build", "--all"])?;
-            cargo(&["test", "--all"])?;
-            return Ok(());
-        }
-    };
+    let version = version.ok_or_else(|| anyhow!("missing: TRAVIS_TAG"))?;
+    println!("version: {}", version);
 
     let exe = root.join("target/release/oxidize");
 

@@ -7,9 +7,7 @@ dist: bionic
 language: rust
 if: tag IS present
 rust:
-- nightly
-before_install:
-- cargo install cargo-deb
+- beta
 script:
 - cargo run --manifest-path tools/builder/Cargo.toml
 deploy:
