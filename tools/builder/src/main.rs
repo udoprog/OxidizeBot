@@ -1,7 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use regex::Regex;
 use std::{
-    env,
+    env::{self, consts},
     ffi::OsStr,
     fmt, fs, io,
     path::{Path, PathBuf},
@@ -9,14 +9,12 @@ use std::{
 };
 use walkdir::WalkDir;
 
-#[cfg(target_os = "windows")]
 pub struct SignTool {
     root: PathBuf,
     signtool: PathBuf,
     password: String,
 }
 
-#[cfg(target_os = "windows")]
 impl SignTool {
     /// Construct a new signtool signer.
     pub fn open(root: PathBuf, signtool: PathBuf, password: String) -> Option<Self> {
@@ -59,35 +57,117 @@ impl SignTool {
     }
 }
 
-/// Calculate an MSI-safe version number.
-/// Unfortunately this enforces some unfortunate constraints on the available
-/// version range.
-///
-/// The computed patch component must fit within 65535
-#[cfg(target_os = "windows")]
-fn msi_version(version: &Version) -> Result<String> {
-    if version.patch > 64 {
-        bail!(
-            "patch version must not be greater than 64: {}",
-            version.patch
-        );
-    }
+struct WixBuilder {
+    candle_bin: PathBuf,
+    light_bin: PathBuf,
+    wixobj_path: PathBuf,
+    installer_path: PathBuf,
+}
 
-    let mut last = 999;
+impl WixBuilder {
+    /// Construct a new WIX builder.
+    fn new(out: &Path, version: &Version) -> Result<Self> {
+        let wix_bin = match env::var_os("WIX") {
+            Some(wix_bin) => PathBuf::from(wix_bin).join("bin"),
+            None => bail!("missing: WIX"),
+        };
 
-    if let Some(pre) = version.pre {
-        if pre >= 999 {
-            bail!(
-                "patch version must not be greater than 64: {}",
-                version.patch
-            );
+        if !wix_bin.is_dir() {
+            bail!("missing: {}", wix_bin.display());
         }
 
-        last = pre;
+        let candle_bin = wix_bin.join("candle.exe");
+
+        if !candle_bin.is_file() {
+            bail!("missing: {}", candle_bin.display());
+        }
+
+        let light_bin = wix_bin.join("light.exe");
+
+        if !light_bin.is_file() {
+            bail!("missing: {}", light_bin.display());
+        }
+
+        let base = format!(
+            "oxidize-{version}-{os}-{arch}",
+            version = version,
+            os = consts::OS,
+            arch = consts::ARCH
+        );
+
+        let wixobj_path = out.join(format!("{}.wixobj", base));
+        let installer_path = out.join(format!("{}.msi", base));
+
+        Ok(Self {
+            candle_bin,
+            light_bin,
+            wixobj_path,
+            installer_path,
+        })
     }
 
-    last += version.patch * 1000;
-    Ok(format!("{}.{}.{}", version.major, version.minor, last))
+    pub fn build(&self, source: &Path, file_version: &str) -> Result<()> {
+        if self.wixobj_path.is_file() {
+            return Ok(());
+        }
+
+        let platform = match consts::ARCH {
+            "x86_64" => "x64",
+            _ => "x86",
+        };
+
+        let mut command = Command::new(&self.candle_bin);
+
+        command
+            .arg(&format!("-dVersion={}", file_version))
+            .arg(&format!("-dPlatform={}", platform))
+            .args(&["-ext", "WixUtilExtension"])
+            .arg("-o")
+            .arg(&self.wixobj_path)
+            .arg(source);
+
+        println!("running: {:?}", command);
+
+        let status = command.status()?;
+
+        if !status.success() {
+            bail!("candle: failed: {}", status);
+        }
+
+        Ok(())
+    }
+
+    /// Link the current project.
+    pub fn link(&self) -> Result<()> {
+        if !self.wixobj_path.is_file() {
+            bail!("missing: {}", self.wixobj_path.display());
+        }
+
+        if self.installer_path.is_file() {
+            return Ok(());
+        }
+
+        let mut command = Command::new(&self.light_bin);
+
+        command
+            .arg("-spdb")
+            .args(&["-ext", "WixUIExtension"])
+            .args(&["-ext", "WixUtilExtension"])
+            .arg("-cultures:en-us")
+            .arg(&self.wixobj_path)
+            .arg("-out")
+            .arg(&self.installer_path);
+
+        println!("running: {:?}", command);
+
+        let status = command.status()?;
+
+        if !status.success() {
+            bail!("light: failed: {}", status);
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -123,11 +203,47 @@ impl Version {
             pre,
         }))
     }
+
+    /// Calculate an MSI-safe version number.
+    /// Unfortunately this enforces some unfortunate constraints on the available
+    /// version range.
+    ///
+    /// The computed patch component must fit within 65535
+    pub fn as_windows_file_version(&self) -> Result<String> {
+        if self.patch > 64 {
+            bail!("patch version must not be greater than 64: {}", self.patch);
+        }
+
+        let mut last = 999;
+
+        if let Some(pre) = self.pre {
+            if pre >= 999 {
+                bail!("patch version must not be greater than 64: {}", self.patch);
+            }
+
+            last = pre;
+        }
+
+        last += self.patch * 1000;
+        Ok(format!("{}.{}.{}", self.major, self.minor, last))
+    }
 }
 
 impl fmt::Display for Version {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.base.fmt(fmt)
+    }
+}
+
+impl AsRef<[u8]> for Version {
+    fn as_ref(&self) -> &[u8] {
+        self.base.as_bytes()
+    }
+}
+
+impl AsRef<OsStr> for Version {
+    fn as_ref(&self) -> &OsStr {
+        self.base.as_ref()
     }
 }
 
@@ -147,15 +263,13 @@ fn create_zip(file: &Path, it: impl IntoIterator<Item = PathBuf>) -> Result<()> 
         zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     let mut zip = zip::ZipWriter::new(fs::File::create(file)?);
-    let mut it = it.into_iter();
 
-    while let Some(p) = it.next() {
+    for p in it {
         println!("Adding to zip: {}", p.display());
 
         let file_name = p
             .file_name()
-            .ok_or_else(|| anyhow!("file without file name"))?
-            .to_str()
+            .and_then(OsStr::to_str)
             .ok_or_else(|| anyhow!("file name is not a string"))?;
 
         zip.start_file(file_name, options)?;
@@ -168,30 +282,27 @@ fn create_zip(file: &Path, it: impl IntoIterator<Item = PathBuf>) -> Result<()> 
 }
 
 /// Copy a bunch of files with the matching file extension from one directory to another.
-#[allow(unused)]
 fn copy_files<F>(from: &Path, target: &Path, ext: &str, visitor: F) -> Result<()>
 where
     F: Fn(&Path) -> Result<()>,
 {
-    let mut files = Vec::new();
+    if !target.is_dir() {
+        fs::create_dir_all(target)?;
+    }
 
     for e in WalkDir::new(from) {
         let e = e?;
 
-        if e.path().extension() == Some(OsStr::new(ext)) {
-            files.push(e.path().to_owned());
+        let source = e.path();
+
+        if source.extension() != Some(OsStr::new(ext)) {
+            continue;
         }
-    }
 
-    for installer in &files {
-        let name = installer
-            .file_name()
-            .ok_or_else(|| anyhow!("no file name"))?;
-
+        let name = source.file_name().ok_or_else(|| anyhow!("no file name"))?;
         let target = target.join(name);
-
-        println!("{} -> {}", installer.display(), target.display());
-        fs::copy(installer, &target)?;
+        println!("{} -> {}", source.display(), target.display());
+        fs::copy(source, &target)?;
         visitor(&target)?;
     }
 
@@ -199,28 +310,31 @@ where
 }
 
 /// Create a zip distribution.
-fn create_zip_dist(dest: &Path, root: &Path, exe: &Path, version: &Version) -> Result<()> {
+fn create_zip_dist(dest: &Path, version: &Version, files: Vec<PathBuf>) -> Result<()> {
+    if !dest.is_dir() {
+        fs::create_dir_all(dest)?;
+    }
+
     let zip_file = dest.join(format!(
         "oxidize-{version}-{os}-{arch}.zip",
         version = version,
-        os = std::env::consts::OS,
-        arch = std::env::consts::ARCH
+        os = consts::OS,
+        arch = consts::ARCH
     ));
 
     println!("Creating Zip File: {}", zip_file.display());
-    create_zip(&zip_file, vec![root.join("README.md"), exe.to_owned()])?;
+    create_zip(&zip_file, files)?;
     Ok(())
 }
 
 /// Perform a Windows build.
-#[cfg(target_os = "windows")]
 fn windows_build(root: &Path) -> Result<()> {
-    let version = match env::var("APPVEYOR_REPO_TAG_NAME").ok() {
-        Some(version) => Version::open(version)?,
-        None => None,
-    };
+    let version = github_ref_version()?;
+    let file_version = version.as_windows_file_version()?;
 
-    let version = version.ok_or_else(|| anyhow!("missing: APPVEYOR_REPO_TAG_NAME"))?;
+    env::set_var("OXIDIZE_VERSION", &version);
+    env::set_var("OXIDIZE_FILE_VERSION", &file_version);
+
     println!("version: {}", version);
 
     let signer = match (env::var("SIGNTOOL"), env::var("CERTIFICATE_PASSWORD")) {
@@ -230,7 +344,11 @@ fn windows_build(root: &Path) -> Result<()> {
         _ => None,
     };
 
-    let exe = root.join("target/release/oxidize.exe");
+    let exe = root.join("target").join("release").join("oxidize.exe");
+    let wix_dir = root.join("target").join("wix");
+    let upload = root.join("target").join("upload");
+
+    let wix_builder = WixBuilder::new(&wix_dir, &version)?;
 
     if !exe.is_file() {
         println!("building: {}", exe.display());
@@ -241,22 +359,10 @@ fn windows_build(root: &Path) -> Result<()> {
         signer.sign(&exe, "OxidizeBot")?;
     }
 
-    let wix_dir = root.join("target/wix");
+    wix_builder.build(&root.join("wix").join("main.wxs"), &file_version)?;
+    wix_builder.link()?;
 
-    if !wix_dir.is_dir() {
-        let msi_version = msi_version(&version)?;
-
-        cargo(&[
-            "wix",
-            "-n",
-            "oxidize",
-            "--install-version",
-            &msi_version,
-            "--nocapture",
-        ])?;
-    }
-
-    copy_files(&wix_dir, &root, "msi", |file| {
+    copy_files(&wix_dir, &upload, "msi", |file| {
         if let Some(signer) = &signer {
             signer.sign(file, "OxidizeBot Installer")?;
         }
@@ -264,96 +370,107 @@ fn windows_build(root: &Path) -> Result<()> {
         Ok(())
     })?;
 
-    create_zip_dist(&root, &root, &exe, &version)?;
+    create_zip_dist(&upload, &version, vec![root.join("README.md"), exe])?;
     Ok(())
 }
 
 /// Perform a Linux build.
-#[cfg(target_os = "linux")]
 fn linux_build(root: &Path) -> Result<()> {
-    let version = match env::var("TRAVIS_TAG") {
-        Ok(version) if version != "" => Version::open(&version)?,
-        _ => None,
-    };
-
-    let version = version.ok_or_else(|| anyhow!("missing: TRAVIS_TAG"))?;
+    let version = github_ref_version()?;
+    env::set_var("OXIDIZE_VERSION", &version);
     println!("version: {}", version);
 
     // Install cargo-deb for building the package below.
-    cargo(&["install", "cargo-deb"]);
+    cargo(&["install", "cargo-deb"])?;
 
     let exe = root.join("target/release/oxidize");
-
     let debian_dir = root.join("target/debian");
-
-    if !debian_dir.is_dir() {
-        cargo(&["deb", "-p", "oxidize", "--", "--no-default-features"])?;
-    }
-
     let upload = root.join("target/upload");
 
-    if !upload.is_dir() {
-        fs::create_dir_all(&upload)?;
+    if !debian_dir.is_dir() {
+        cargo(&[
+            "deb",
+            "-p",
+            "oxidize",
+            "--deb-version",
+            &version.to_string(),
+            "--",
+            "--no-default-features",
+        ])?;
     }
 
     copy_files(&debian_dir, &upload, "deb", |_| Ok(()))?;
 
     if !exe.is_file() {
         println!("building: {}", exe.display());
-        cargo(&["build", "--release", "--bin", "oxidize", "--no-default-features"])?;
+        cargo(&[
+            "build",
+            "--release",
+            "--bin",
+            "oxidize",
+            "--no-default-features",
+        ])?;
     }
 
-    create_zip_dist(&upload, &root, &exe, &version)?;
+    create_zip_dist(&upload, &version, vec![root.join("README.md"), exe])?;
     Ok(())
 }
 
-/// Perform a MacOS build.
-#[cfg(target_os = "macos")]
-fn macos_build(root: &Path) -> Result<()> {
-    let version = match env::var("TRAVIS_TAG") {
-        Ok(version) if version != "" => Version::open(&version)?,
-        _ => None,
+/// Get the version from GITHUB_REF.
+fn github_ref_version() -> Result<Version> {
+    let version = match env::var("GITHUB_REF") {
+        Ok(version) => version,
+        _ => bail!("missing: GITHUB_REF"),
     };
 
-    let version = version.ok_or_else(|| anyhow!("missing: TRAVIS_TAG"))?;
+    let mut it = version.split('/');
+
+    let version = match (it.next(), it.next(), it.next()) {
+        (Some("refs"), Some("tags"), Some(version)) => {
+            Version::open(version)?.ok_or_else(|| anyhow!("Expected valid version"))?
+        }
+        _ => bail!("expected GITHUB_REF: refs/tags/*"),
+    };
+
+    Ok(version)
+}
+
+/// Perform a MacOS build.
+fn macos_build(root: &Path) -> Result<()> {
+    let version = github_ref_version()?;
+    env::set_var("OXIDIZE_VERSION", &version);
     println!("version: {}", version);
 
     let exe = root.join("target/release/oxidize");
+    let upload = root.join("target/upload");
 
     if !exe.is_file() {
         println!("building: {}", exe.display());
-        cargo(&["build", "--release", "--bin", "oxidize", "--no-default-features"])?;
+        cargo(&[
+            "build",
+            "--release",
+            "--bin",
+            "oxidize",
+            "--no-default-features",
+        ])?;
     }
 
-    let upload = root.join("target/upload");
-
-    if !upload.is_dir() {
-        fs::create_dir_all(&upload)?;
-    }
-
-    create_zip_dist(&upload, &root, &exe, &version)?;
+    create_zip_dist(&upload, &version, vec![root.join("README.md"), exe])?;
     Ok(())
 }
 
 fn main() -> Result<()> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()?;
+    let root = env::current_dir()?;
     println!("root: {}", root.display());
 
-    #[cfg(target_os = "windows")]
-    {
+    if cfg!(target_os = "windows") {
         windows_build(&root)?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
+    } else if cfg!(target_os = "linux") {
         linux_build(&root)?;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
+    } else if cfg!(target_os = "macos") {
         macos_build(&root)?;
+    } else {
+        bail!("unsupported operating system: {}", consts::OS);
     }
 
     Ok(())

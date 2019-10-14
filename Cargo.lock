@@ -1933,7 +1933,7 @@ dependencies = [
 
 [[package]]
 name = "oxidize"
-version = "1.0.1"
+version = "0.0.0"
 dependencies = [
  "Inflector",
  "async-injector",

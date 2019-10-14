@@ -9,7 +9,7 @@ extern crate smallvec;
 
 pub use async_injector as injector;
 
-pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+pub const VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/version.txt"));
 
 #[macro_use]
 mod macros;

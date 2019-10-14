@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/udoprog/OxidizeBot/actions">
-    <img alt="GitHub Actions Build Status" src="https://github.com/udoprog/OxidizeBot/workflows/Rust/badge.svg">
+    <img alt="GitHub Actions Build Status" src="https://github.com/udoprog/OxidizeBot/workflows/Build/badge.svg">
   </a>
 </p>
 

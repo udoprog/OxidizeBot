@@ -26,7 +26,7 @@
     <Directory Id='TARGETDIR' Name='SourceDir'>
       <Directory Id="ProgramMenuFolder">
         <Directory Id="ApplicationProgramsFolder" Name="OxidizeBot">
-          <Component Id='ApplicationShortcut' Guid='{9458d268-a228-415c-ba3c-03059ebe889d}' Win64='$(var.Win64)'>
+          <Component Id='ApplicationShortcut' Guid='{9458D268-A228-415C-BA3C-03059EBE889D}' Win64='$(var.Win64)'>
             <Shortcut Id='ApplicationStartMenuShortcut' Name='OxidizeBot' Description='Oxidize Twitch Bot' Target='[!oxidize.exe]' WorkingDirectory='APPLICATIONFOLDER' />
             <RemoveFolder Id='CleanUpShortCut' Directory='ApplicationProgramsFolder' On='uninstall'/>
             <RegistryValue Root='HKCU' Key='Software\OxidizeBot\OxidizeBot' Name='installed' Type='integer' Value='1' KeyPath='yes'/>
@@ -36,11 +36,11 @@
 
       <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
         <Directory Id='APPLICATIONFOLDER' Name='OxidizeBot'>
-          <Component Id='oxidize.exe' Guid='{dd1e4a01-ff62-4d96-a9ce-a5d7d7548fad}' Win64='$(var.Win64)'>
-            <File Id='oxidize.exe' Name='oxidize.exe' DiskId='1' Source='target\release\oxidize.exe' KeyPath='yes'/>
+          <Component Id='oxidize.exe' Guid='{DD1E4A01-FF62-4D96-A9CE-A5D7D7548FAD}' Win64='$(var.Win64)'>
+            <File Id='oxidize.exe' Name='oxidize.exe' DiskId='1' Source='target/release/oxidize.exe' KeyPath='yes'/>
           </Component>
 
-          <Component Id="RegistryAutostart" Guid="{35977dfa-73b2-4418-a713-c3fa83c6076a}" Win64='$(var.Win64)'>
+          <Component Id="RegistryAutostart" Guid="{35977DFA-73B2-4418-A713-C3FA83C6076A}" Win64='$(var.Win64)'>
             <RegistryValue Root="HKCU" Action="write" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="OxidizeBot" Value='"[APPLICATIONFOLDER]oxidize.exe" --silent' Type="string" />
             <Condition>START_VIA_REGISTRY</Condition>
           </Component>
@@ -61,9 +61,7 @@
 
     <Icon Id='ProductICO' SourceFile='bot\res\icon.ico'/>
     <Property Id='ARPPRODUCTICON' Value='ProductICO' />
-
-
-    <Property Id='ARPHELPLINK' Value='https://github.com/udoprog/oxidize'/>
+    <Property Id='ARPHELPLINK' Value='https://setbac.tv'/>
 
     <UI>
       <UIRef Id='WixUI_FeatureTree'/>
