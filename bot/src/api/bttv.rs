@@ -1,9 +1,9 @@
 //! BetterTTV API Client.
 
 use crate::api::RequestBuilder;
-use failure::Error;
-use hashbrown::HashSet;
+use anyhow::Error;
 use reqwest::{header, Client, Method, Url};
+use std::collections::HashSet;
 
 const V2_URL: &'static str = "https://api.betterttv.net/2";
 

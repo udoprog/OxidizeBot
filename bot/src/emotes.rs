@@ -5,12 +5,15 @@ use crate::{
     storage::Cache,
     template,
 };
-use failure::Error;
+use anyhow::Error;
 use futures_cache as cache;
-use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
 use smallvec::SmallVec;
-use std::{mem, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    mem,
+    sync::Arc,
+};
 
 /// Number of badges inlined for performance reasons.
 /// Should be a value larger than the typical number of badges you'd see.

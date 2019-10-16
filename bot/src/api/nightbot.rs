@@ -1,7 +1,7 @@
 //! nightbot.tv API helpers.
 
 use crate::{api::base::RequestBuilder, oauth2};
-use failure::Error;
+use anyhow::Error;
 use reqwest::{header, Client, Method, Url};
 
 static NIGHTBOT_URL_V1: &'static str = "https://api.nightbot.tv/1";

@@ -48,7 +48,7 @@ pub struct Spotify {
 
 impl Spotify {
     /// Create a new Spotify client.
-    pub fn new() -> Result<Spotify, failure::Error> {
+    pub fn new() -> Result<Spotify, anyhow::Error> {
         Ok(Spotify {
             client: Client::new(),
             api_url: str::parse::<Url>(URL)?,
@@ -63,7 +63,7 @@ impl Spotify {
     }
 
     // Get user information about the token.
-    pub async fn v1_me(&self, token: &str) -> Result<User, failure::Error> {
+    pub async fn v1_me(&self, token: &str) -> Result<User, anyhow::Error> {
         let request = self
             .request(Method::GET, &["v1", "me"])
             .header(header::AUTHORIZATION, &format!("Bearer {}", token));

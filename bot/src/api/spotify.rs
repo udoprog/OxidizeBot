@@ -11,8 +11,8 @@ pub use self::model::{
     track::{FullTrack, SavedTrack},
 };
 use crate::{api::RequestBuilder, oauth2, prelude::*};
+use anyhow::Error;
 use bytes::Bytes;
-use failure::Error;
 use reqwest::{header, Client, Method, StatusCode};
 use std::{
     pin::Pin,

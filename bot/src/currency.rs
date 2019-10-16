@@ -1,9 +1,8 @@
 //! Stream currency configuration.
 use crate::{api, db::Database};
 pub use crate::{db::models::Balance, utils::Duration};
-use failure::Error;
-use hashbrown::HashSet;
-use std::sync::Arc;
+use anyhow::Error;
+use std::{collections::HashSet, sync::Arc};
 
 mod builtin;
 mod mysql;
@@ -247,7 +246,7 @@ impl Currency {
         channel: &str,
         reward: i64,
         watch_time: i64,
-    ) -> Result<usize, failure::Error> {
+    ) -> Result<usize, anyhow::Error> {
         let chatters = self.inner.twitch.chatters(channel).await?;
 
         let mut users = HashSet::new();

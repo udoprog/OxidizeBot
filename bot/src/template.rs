@@ -1,5 +1,4 @@
-use hashbrown::HashSet;
-use std::{fmt, io, string};
+use std::{collections::HashSet, fmt, io, string};
 
 lazy_static::lazy_static! {
     static ref REGISTRY: handlebars::Handlebars = {
@@ -73,7 +72,7 @@ impl serde::Serialize for Template {
 }
 
 impl Template {
-    pub fn compile(s: &str) -> Result<Template, failure::Error> {
+    pub fn compile(s: &str) -> Result<Template, anyhow::Error> {
         Ok(Template {
             source: s.to_string(),
             template: handlebars::Template::compile(s)?,
@@ -85,13 +84,13 @@ impl Template {
         &self,
         out: &mut impl io::Write,
         data: impl serde::Serialize,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         let mut output = WriteOutput::new(out);
         self.render_internal(&mut output, data)
     }
 
     /// Render the template to a string.
-    pub fn render_to_string(&self, data: impl serde::Serialize) -> Result<String, failure::Error> {
+    pub fn render_to_string(&self, data: impl serde::Serialize) -> Result<String, anyhow::Error> {
         let mut output = StringOutput::new();
         self.render_internal(&mut output, data)?;
         output.into_string().map_err(Into::into)
@@ -168,7 +167,7 @@ impl Template {
         &self,
         output: &mut dyn handlebars::Output,
         data: impl serde::Serialize,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         use handlebars::Renderable as _;
 
         let ctx = handlebars::Context::wraps(data)?;
@@ -180,7 +179,7 @@ impl Template {
 }
 
 impl std::str::FromStr for Template {
-    type Err = failure::Error;
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::compile(s)
@@ -238,7 +237,7 @@ impl StringOutput {
 #[cfg(test)]
 mod tests {
     use super::Template;
-    use failure::Error;
+    use anyhow::Error;
     use hashbrown::HashSet;
 
     #[test]

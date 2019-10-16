@@ -1,7 +1,6 @@
 use crate::{db, template};
-use hashbrown::HashMap;
 use parking_lot::{RwLock, RwLockReadGuard};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 /// Tokenize the given word.
 pub fn tokenize(word: &str) -> String {
@@ -17,7 +16,7 @@ struct Inner {
 
 impl Inner {
     /// Insert a bad word.
-    fn insert(&mut self, word: &str, why: Option<&str>) -> Result<(), failure::Error> {
+    fn insert(&mut self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error> {
         let word = Word {
             word: tokenize(word),
             why: why.map(template::Template::compile).transpose()?,
@@ -43,13 +42,13 @@ impl Inner {
 /// The backend of a words store.
 pub trait Backend: Clone + Send + Sync {
     /// List all words in backend.
-    fn list(&self) -> Result<Vec<db::models::BadWord>, failure::Error>;
+    fn list(&self) -> Result<Vec<db::models::BadWord>, anyhow::Error>;
 
     /// Insert or update an existing word.
-    fn edit(&self, word: &str, why: Option<&str>) -> Result<(), failure::Error>;
+    fn edit(&self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error>;
 
     /// Delete the given word from the backend.
-    fn delete(&self, word: &str) -> Result<bool, failure::Error>;
+    fn delete(&self, word: &str) -> Result<bool, anyhow::Error>;
 }
 
 #[derive(Clone)]
@@ -60,7 +59,7 @@ pub struct Words {
 
 impl Words {
     /// Load all words from the backend.
-    pub fn load(db: db::Database) -> Result<Words, failure::Error> {
+    pub fn load(db: db::Database) -> Result<Words, anyhow::Error> {
         let mut inner = Inner::default();
 
         for word in db.list()? {
@@ -74,7 +73,7 @@ impl Words {
     }
 
     /// Insert a word into the bad words list.
-    pub fn edit(&self, word: &str, why: Option<&str>) -> Result<(), failure::Error> {
+    pub fn edit(&self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error> {
         self.db.edit(word, why)?;
         let mut inner = self.inner.write();
         inner.insert(word, why)?;
@@ -82,7 +81,7 @@ impl Words {
     }
 
     /// Remove a word from the bad words list.
-    pub fn delete(&self, word: &str) -> Result<bool, failure::Error> {
+    pub fn delete(&self, word: &str) -> Result<bool, anyhow::Error> {
         if !self.db.delete(word)? {
             return Ok(false);
         }

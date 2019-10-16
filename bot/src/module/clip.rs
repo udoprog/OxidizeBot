@@ -4,7 +4,7 @@ use crate::{
     stream_info,
     utils::{Cooldown, Duration},
 };
-use failure::Error;
+use anyhow::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 

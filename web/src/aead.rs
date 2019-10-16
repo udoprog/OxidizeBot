@@ -1,4 +1,4 @@
-use failure::{format_err, Error};
+use anyhow::{anyhow, Error};
 use ring::{
     aead, pbkdf2,
     rand::{SecureRandom as _, SystemRandom},
@@ -44,7 +44,7 @@ impl AeadSealer {
 
         random
             .fill(&mut key)
-            .map_err(|_| format_err!("failed to fill random key"))?;
+            .map_err(|_| anyhow!("failed to fill random key"))?;
 
         AeadSealer::inner(random, alg, &key)
     }
@@ -55,8 +55,7 @@ impl AeadSealer {
         alg: &'static aead::Algorithm,
         key: &[u8],
     ) -> Result<AeadSealer, Error> {
-        let key =
-            aead::UnboundKey::new(alg, key).map_err(|_| format_err!("failed to create key"))?;
+        let key = aead::UnboundKey::new(alg, key).map_err(|_| anyhow!("failed to create key"))?;
 
         Ok(AeadSealer {
             random,
@@ -70,7 +69,7 @@ impl AeadSealer {
         let mut nonce_buf = [0u8; 12];
         self.random
             .fill(&mut nonce_buf)
-            .map_err(|_| format_err!("failed to fill random nonce"))?;
+            .map_err(|_| anyhow!("failed to fill random nonce"))?;
         let nonce = aead::Nonce::assume_unique_for_key(nonce_buf);
         let aad = aead::Aad::empty();
 
@@ -82,7 +81,7 @@ impl AeadSealer {
         let tag = self
             .key
             .seal_in_place_separate_tag(nonce, aad, &mut ciphertext[nonce_buf.len()..])
-            .map_err(|_| format_err!("failed to seal data"))?;
+            .map_err(|_| anyhow!("failed to seal data"))?;
 
         ciphertext.extend(tag.as_ref());
         Ok(ciphertext)
@@ -98,7 +97,7 @@ impl AeadSealer {
         }
 
         let nonce = aead::Nonce::try_assume_unique_for_key(&ciphertext[0..nonce_len])
-            .map_err(|_| format_err!("failed to extract nonce"))?;
+            .map_err(|_| anyhow!("failed to extract nonce"))?;
 
         let aad = aead::Aad::empty();
 

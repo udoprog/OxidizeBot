@@ -1,9 +1,8 @@
 //! Traits and shared plumbing for bot commands (e.g. `!uptime`)
 
 use crate::{auth::Scope, irc, prelude::*, utils};
-use failure::Error;
-use hashbrown::HashMap;
-use std::{fmt, time::Instant};
+use anyhow::{bail, Error};
+use std::{collections::HashMap, fmt, time::Instant};
 
 #[async_trait]
 /// The handler trait for a given command.
@@ -71,7 +70,7 @@ impl<'a> Context<'a> {
                 ));
             }
 
-            failure::bail!(
+            bail!(
                 "Scope `{}` not associated with user {:?}",
                 scope,
                 self.user.name()
@@ -91,7 +90,7 @@ impl<'a> Context<'a> {
                     utils::compact_duration(&duration),
                 ));
 
-                failure::bail!("Scope `{}` is in cooldown", scope);
+                bail!("Scope `{}` is in cooldown", scope);
             }
 
             cooldown.poke(now);

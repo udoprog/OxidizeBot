@@ -9,8 +9,8 @@ use crate::{
     track_id::TrackId,
     utils::{self, Cooldown, Duration},
 };
+use anyhow::{Context as _, Error};
 use chrono::Utc;
-use failure::{Error, ResultExt as _};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -328,7 +328,7 @@ impl command::Handler for Handler {
         Some(Scope::Song)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

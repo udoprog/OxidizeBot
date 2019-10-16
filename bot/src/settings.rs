@@ -4,9 +4,8 @@ use crate::{auth::Scope, db, prelude::*, utils};
 use chrono_tz::Tz;
 use diesel::prelude::*;
 use futures::ready;
-use hashbrown::HashMap;
 use parking_lot::{Mutex, RwLock};
-use std::{borrow::Cow, error, fmt, marker, pin::Pin, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, error, fmt, marker, pin::Pin, sync::Arc};
 
 const SEPARATOR: char = '/';
 
@@ -46,8 +45,8 @@ pub enum Error {
     Json(serde_json::Error),
     /// Diesel error.
     Diesel(diesel::result::Error),
-    /// Convert from a failure::Error.
-    Error(failure::Error),
+    /// Convert from a anyhow::Error.
+    Error(anyhow::Error),
     /// Failed to load schema.
     FailedToLoadSchema(serde_yaml::Error),
     /// Bad boolean value.
@@ -100,8 +99,8 @@ impl From<diesel::result::Error> for Error {
     }
 }
 
-impl From<failure::Error> for Error {
-    fn from(e: failure::Error) -> Self {
+impl From<anyhow::Error> for Error {
+    fn from(e: anyhow::Error) -> Self {
         Error::Error(e)
     }
 }

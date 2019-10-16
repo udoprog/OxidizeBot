@@ -2,10 +2,9 @@ use crate::{
     api::{self, twitch},
     prelude::*,
 };
-use failure::{format_err, Error};
-use hashbrown::HashSet;
+use anyhow::{anyhow, Error};
 use parking_lot::RwLock;
-use std::{sync::Arc, time};
+use std::{collections::HashSet, sync::Arc, time};
 
 #[derive(Debug, Default)]
 pub struct Data {
@@ -104,7 +103,7 @@ impl StreamInfo {
             stream_state_tx
                 .send(update)
                 .await
-                .map_err(|_| format_err!("failed to send stream state update"))?;
+                .map_err(|_| anyhow!("failed to send stream state update"))?;
         }
 
         let mut info = self.data.write();

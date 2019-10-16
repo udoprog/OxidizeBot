@@ -1,9 +1,11 @@
 use crate::{auth, command, irc, module, prelude::*, utils};
+use anyhow::Error;
 use chrono::{DateTime, Utc};
-use failure::Error;
-use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 /// Handler for the !poll command.
 pub struct Poll {
@@ -17,7 +19,7 @@ impl command::Handler for Poll {
         Some(auth::Scope::Poll)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -182,7 +184,7 @@ impl super::Module for Module {
         module::HookContext {
             handlers, settings, ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         handlers.insert(
             "poll",
             Poll {

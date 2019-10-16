@@ -1,10 +1,10 @@
 use crate::{auth, command, module, prelude::*, template::Template};
+use anyhow::Error;
 use chrono::{
     offset::{Offset as _, TimeZone as _},
     Datelike as _, Timelike as _, Utc,
 };
 use chrono_tz::{Etc, Tz};
-use failure::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 

@@ -1,6 +1,6 @@
 use crate::{auth, command, module, prelude::*, utils::Duration};
+use anyhow::Error;
 use chrono::Utc;
-use failure::Error;
 
 /// Handler for the !auth command.
 pub struct Handler<'a> {

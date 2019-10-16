@@ -1,8 +1,7 @@
 use crate::{player, track_id::TrackId};
 use futures::channel::mpsc;
-use hashbrown::HashMap;
 use parking_lot::Mutex;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 pub trait Message: 'static + Clone + Send + Sync + serde::Serialize {
     /// The ID of a bussed message.
@@ -205,7 +204,7 @@ impl Global {
     }
 
     /// Construct a message that the given song is running.
-    pub fn song(song: Option<&player::Song>) -> Result<Self, failure::Error> {
+    pub fn song(song: Option<&player::Song>) -> Result<Self, anyhow::Error> {
         let song = match song {
             Some(song) => song,
             None => {

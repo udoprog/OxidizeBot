@@ -1,5 +1,5 @@
 use crate::{api, player, prelude::*, settings::Settings, track_id::SpotifyId};
-use failure::{bail, Error};
+use anyhow::{bail, Error};
 use parking_lot::RwLock;
 use std::sync::Arc;
 use std::{
@@ -185,7 +185,7 @@ pub struct ConnectStream {
 }
 
 impl Stream for ConnectStream {
-    type Item = Result<player::IntegrationEvent, failure::Error>;
+    type Item = Result<player::IntegrationEvent, anyhow::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use self::player::IntegrationEvent::*;

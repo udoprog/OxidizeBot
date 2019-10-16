@@ -47,7 +47,7 @@ impl Chat {
     }
 
     /// Run a command.
-    fn command(&self, query: CommandQuery) -> Result<impl warp::Reply, failure::Error> {
+    fn command(&self, query: CommandQuery) -> Result<impl warp::Reply, anyhow::Error> {
         self.bus.send(bus::Command::Raw {
             command: query.command,
         });
@@ -56,7 +56,7 @@ impl Chat {
     }
 
     /// Get all stored messages.
-    fn messages(&self) -> Result<impl warp::Reply, failure::Error> {
+    fn messages(&self) -> Result<impl warp::Reply, anyhow::Error> {
         let messages = self.message_log.messages();
         Ok(warp::reply::json(&*messages))
     }

@@ -12,7 +12,7 @@ use crate::{
     db::{models::Balance, user_id},
 };
 
-use failure::Error;
+use anyhow::Error;
 use mysql_async as mysql;
 use std::{convert::TryInto as _, sync::Arc};
 

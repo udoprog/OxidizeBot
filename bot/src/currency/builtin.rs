@@ -6,8 +6,8 @@ use crate::{
     prelude::*,
 };
 
+use anyhow::Error;
 use diesel::prelude::*;
-use failure::Error;
 
 pub struct Backend {
     db: Database,

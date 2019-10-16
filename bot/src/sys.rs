@@ -1,4 +1,4 @@
-use failure::Error;
+use anyhow::Error;
 use std::{fmt, time::Duration};
 
 #[cfg(target_os = "windows")]

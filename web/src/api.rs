@@ -1,5 +1,6 @@
 //! Twitch API helpers.
 
+use anyhow::bail;
 use bytes::Bytes;
 use reqwest::{header, Client, Method, Url};
 
@@ -32,7 +33,7 @@ impl RequestBuilder {
     }
 
     /// Execute the request.
-    pub async fn execute<T>(self) -> Result<T, failure::Error>
+    pub async fn execute<T>(self) -> Result<T, anyhow::Error>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -51,7 +52,7 @@ impl RequestBuilder {
         let body = res.bytes().await?;
 
         if !status.is_success() {
-            failure::bail!(
+            bail!(
                 "bad response: {}: {}",
                 status,
                 String::from_utf8_lossy(body.as_ref())

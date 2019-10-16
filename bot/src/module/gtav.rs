@@ -4,10 +4,15 @@ use crate::{
     prelude::*,
     utils::{compact_duration, Cooldown, Duration},
 };
-use failure::{bail, Error};
-use hashbrown::{hash_map, HashMap};
+use anyhow::{bail, Error};
 use parking_lot::RwLock;
-use std::{fmt, net::SocketAddr, sync::Arc, time};
+use std::{
+    collections::{hash_map, HashMap},
+    fmt,
+    net::SocketAddr,
+    sync::Arc,
+    time,
+};
 use tokio::net::UdpSocket;
 
 const VEHICLE_URL: &'static str = "http://bit.ly/gtavvehicles";
@@ -886,7 +891,7 @@ impl Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

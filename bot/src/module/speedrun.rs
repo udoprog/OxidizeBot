@@ -11,10 +11,9 @@ use crate::{
     storage::Cache,
     utils,
 };
-use failure::{format_err, Error};
-use hashbrown::HashMap;
+use anyhow::{anyhow, Error};
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 /// Handler for the !speedrun command.
 pub struct Speedrun {
@@ -752,10 +751,10 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_, '_>,
     ) -> Result<(), Error> {
-        let cache: Cache = injector.get().ok_or_else(|| format_err!("missing cache"))?;
+        let cache: Cache = injector.get().ok_or_else(|| anyhow!("missing cache"))?;
         let speedrun = injector
             .get()
-            .ok_or_else(|| format_err!("missing speedrun api"))?;
+            .ok_or_else(|| anyhow!("missing speedrun api"))?;
 
         let speedrun = CachedSpeedrun {
             cache: cache.namespaced(&"speedrun")?,

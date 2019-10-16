@@ -10,7 +10,7 @@ struct Database(db::Database);
 impl Database {
     private_database_group_fns!(aliases, Alias, db::Key);
 
-    fn edit(&self, key: &db::Key, text: &str) -> Result<db::models::Alias, failure::Error> {
+    fn edit(&self, key: &db::Key, text: &str) -> Result<db::models::Alias, anyhow::Error> {
         use db::schema::aliases::dsl;
         let c = self.0.pool.lock();
 
@@ -49,7 +49,7 @@ impl Database {
         &self,
         key: &db::Key,
         pattern: Option<&regex::Regex>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         use db::schema::aliases::dsl;
         let c = self.0.pool.lock();
 
@@ -75,7 +75,7 @@ impl Aliases {
     database_group_fns!(Alias, db::Key);
 
     /// Construct a new commands store with a db.
-    pub fn load(db: db::Database) -> Result<Aliases, failure::Error> {
+    pub fn load(db: db::Database) -> Result<Aliases, anyhow::Error> {
         let mut inner = db::Matcher::new();
 
         let db = Database(db);
@@ -120,7 +120,7 @@ impl Aliases {
         channel: &str,
         name: &str,
         template: template::Template,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         let key = db::Key::new(channel, name);
 
         let alias = self.db.edit(&key, template.source())?;
@@ -150,7 +150,7 @@ impl Aliases {
         channel: &str,
         name: &str,
         pattern: Option<regex::Regex>,
-    ) -> Result<bool, failure::Error> {
+    ) -> Result<bool, anyhow::Error> {
         let key = db::Key::new(channel, name);
         self.db.edit_pattern(&key, pattern.as_ref())?;
 
@@ -183,7 +183,7 @@ impl Alias {
     pub const NAME: &'static str = "alias";
 
     /// Convert a database alias into an in-memory alias.
-    pub fn from_db(alias: &db::models::Alias) -> Result<Alias, failure::Error> {
+    pub fn from_db(alias: &db::models::Alias) -> Result<Alias, anyhow::Error> {
         let key = db::Key::new(&alias.channel, &alias.name);
         let pattern = db::Pattern::from_db(alias.pattern.as_ref())?;
         let template = template::Template::compile(&alias.text)?;

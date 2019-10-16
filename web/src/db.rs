@@ -1,5 +1,5 @@
 use crate::{api, oauth2};
-use failure::Error;
+use anyhow::Error;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{fmt, sync::Arc};
 
@@ -577,7 +577,7 @@ impl Transaction<'_> {
 #[cfg(test)]
 mod tests {
     use super::Key;
-    use failure::Error;
+    use anyhow::Error;
 
     #[test]
     fn test_subset() -> Result<(), Error> {

@@ -7,7 +7,7 @@ use crate::{
     prelude::*,
     utils,
 };
-use failure::Error;
+use anyhow::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 

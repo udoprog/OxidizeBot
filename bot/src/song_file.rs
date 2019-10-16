@@ -56,12 +56,12 @@ pub struct SongFile {
 
 impl SongFile {
     /// Either creates or truncates the current song file.
-    fn create_or_truncate(&self) -> Result<File, failure::Error> {
+    fn create_or_truncate(&self) -> Result<File, anyhow::Error> {
         File::create(&self.path).map_err(Into::into)
     }
 
     /// Blank the current file.
-    pub fn blank(&self) -> Result<(), failure::Error> {
+    pub fn blank(&self) -> Result<(), anyhow::Error> {
         use std::io::Write as _;
         let mut f = self.create_or_truncate()?;
 
@@ -75,7 +75,7 @@ impl SongFile {
     }
 
     /// Write the current song to a path.
-    pub fn write(&self, song: &player::Song, state: player::State) -> Result<(), failure::Error> {
+    pub fn write(&self, song: &player::Song, state: player::State) -> Result<(), anyhow::Error> {
         let mut f = self.create_or_truncate()?;
         let data = song.data(state)?;
         self.template.render(&mut f, &data)?;

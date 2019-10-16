@@ -1,8 +1,11 @@
 use crate::{db, track_id::TrackId, utils};
 use diesel::prelude::*;
-use hashbrown::{hash_map, HashMap};
 use parking_lot::RwLock;
-use std::{fmt, sync::Arc};
+use std::{
+    collections::{hash_map, HashMap},
+    fmt,
+    sync::Arc,
+};
 
 /// Local database wrapper.
 #[derive(Clone)]
@@ -15,7 +18,7 @@ impl Database {
         &self,
         key: &Key,
         track_id: &TrackId,
-    ) -> Result<Option<db::models::Theme>, failure::Error> {
+    ) -> Result<Option<db::models::Theme>, anyhow::Error> {
         use db::schema::themes::dsl;
         let c = self.0.pool.lock();
 
@@ -59,7 +62,7 @@ impl Database {
         key: &Key,
         start: utils::Offset,
         end: Option<utils::Offset>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         use db::schema::themes::dsl;
         let c = self.0.pool.lock();
 
@@ -86,7 +89,7 @@ impl Themes {
     database_group_fns!(Theme, Key);
 
     /// Construct a new commands store with a db.
-    pub fn load(db: db::Database) -> Result<Themes, failure::Error> {
+    pub fn load(db: db::Database) -> Result<Themes, anyhow::Error> {
         let mut inner = HashMap::new();
 
         let db = Database(db);
@@ -103,7 +106,7 @@ impl Themes {
     }
 
     /// Insert a word into the bad words list.
-    pub fn edit(&self, channel: &str, name: &str, track_id: TrackId) -> Result<(), failure::Error> {
+    pub fn edit(&self, channel: &str, name: &str, track_id: TrackId) -> Result<(), anyhow::Error> {
         let key = Key::new(channel, name);
 
         let mut inner = self.inner.write();
@@ -137,7 +140,7 @@ impl Themes {
         name: &str,
         start: utils::Offset,
         end: Option<utils::Offset>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         let key = Key::new(channel, name);
         self.db.edit_duration(&key, start.clone(), end.clone())?;
 
@@ -183,7 +186,7 @@ impl Theme {
     pub const NAME: &'static str = "theme";
 
     /// Convert a database theme into an in-memory theme.
-    pub fn from_db(theme: &db::models::Theme) -> Result<Theme, failure::Error> {
+    pub fn from_db(theme: &db::models::Theme) -> Result<Theme, anyhow::Error> {
         let key = Key::new(&theme.channel, &theme.name);
 
         let start = utils::Offset::milliseconds(theme.start as u32);

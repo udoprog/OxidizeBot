@@ -3,7 +3,7 @@ use crate::{
     emotes, injector, irc, message_log, settings,
     storage::Cache,
 };
-use failure::Error;
+use anyhow::Error;
 
 pub struct Builder {
     twitch: Twitch,

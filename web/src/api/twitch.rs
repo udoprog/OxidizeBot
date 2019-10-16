@@ -21,7 +21,7 @@ pub struct IdTwitchClient {
 
 impl IdTwitchClient {
     /// Create a new API integration.
-    pub fn new() -> Result<IdTwitchClient, failure::Error> {
+    pub fn new() -> Result<IdTwitchClient, anyhow::Error> {
         Ok(IdTwitchClient {
             client: Client::new(),
             api_url: str::parse::<Url>(ID_TWITCH_URL)?,
@@ -36,7 +36,7 @@ impl IdTwitchClient {
     }
 
     // Validate the specified token through twitch validation API.
-    pub async fn validate_token(&self, token: &str) -> Result<ValidateToken, failure::Error> {
+    pub async fn validate_token(&self, token: &str) -> Result<ValidateToken, anyhow::Error> {
         let request = self
             .request(Method::GET, &["oauth2", "validate"])
             .header(header::AUTHORIZATION, &format!("OAuth {}", token));

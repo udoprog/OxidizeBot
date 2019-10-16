@@ -1,9 +1,9 @@
 use crate::{db, template, utils};
+use anyhow::{anyhow, Context as _, Error};
 use diesel::prelude::*;
-use failure::{format_err, Error, ResultExt as _};
-use hashbrown::HashSet;
 use parking_lot::RwLock;
 use std::{
+    collections::HashSet,
     fmt,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -61,7 +61,7 @@ impl Database {
         &self,
         key: &db::Key,
         pattern: Option<&regex::Regex>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         use db::schema::commands::dsl;
         let c = self.0.pool.lock();
 
@@ -154,7 +154,7 @@ impl Commands {
         channel: &str,
         name: &str,
         pattern: Option<regex::Regex>,
-    ) -> Result<bool, failure::Error> {
+    ) -> Result<bool, anyhow::Error> {
         let key = db::Key::new(channel, name);
         self.db.edit_pattern(&key, pattern.as_ref())?;
 
@@ -217,7 +217,7 @@ impl Command {
     /// Load a command from the database.
     pub fn from_db(command: &db::models::Command) -> Result<Command, Error> {
         let template = template::Template::compile(&command.text)
-            .with_context(|_| format_err!("failed to compile command `{:?}` from db", command))?;
+            .with_context(|| anyhow!("failed to compile command `{:?}` from db", command))?;
 
         let key = db::Key::new(&command.channel, &command.name);
         let count = Arc::new(AtomicUsize::new(command.count as usize));

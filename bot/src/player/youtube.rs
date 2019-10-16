@@ -1,5 +1,5 @@
 use crate::{bus, player, prelude::*, settings::Settings};
-use failure::Error;
+use anyhow::Error;
 use parking_lot::RwLock;
 use std::{sync::Arc, time::Duration};
 
@@ -7,7 +7,7 @@ use std::{sync::Arc, time::Duration};
 pub fn setup(
     bus: Arc<bus::Bus<bus::YouTube>>,
     settings: Settings,
-) -> Result<(YouTubePlayer, impl Future<Output = Result<(), Error>>), failure::Error> {
+) -> Result<(YouTubePlayer, impl Future<Output = Result<(), Error>>), anyhow::Error> {
     let (mut volume_scale_stream, mut volume_scale) =
         settings.stream("volume-scale").or_with(100)?;
     let (mut volume_stream, volume) = settings.stream("volume").or_with(50)?;

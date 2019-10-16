@@ -1,11 +1,11 @@
 //! Twitch API helpers.
 
 use crate::{api::RequestBuilder, oauth2, prelude::*};
+use anyhow::{Context as _, Error};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use failure::{Error, ResultExt};
-use hashbrown::HashMap;
 use reqwest::{header, Client, Method, StatusCode, Url};
+use std::collections::HashMap;
 
 pub const CLIPS_URL: &'static str = "http://clips.twitch.tv";
 const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";

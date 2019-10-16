@@ -1,9 +1,10 @@
 //! Twitch API helpers.
 
 use crate::{api::RequestBuilder, oauth2};
+use anyhow::bail;
 use chrono::{DateTime, Utc};
-use hashbrown::HashMap;
 use reqwest::{Client, Method, Url};
+use std::collections::HashMap;
 
 const V3_URL: &'static str = "https://www.googleapis.com/youtube/v3";
 const GET_VIDEO_INFO_URL: &'static str = "https://www.youtube.com/get_video_info";
@@ -19,7 +20,7 @@ pub struct YouTube {
 
 impl YouTube {
     /// Create a new API integration.
-    pub fn new(token: oauth2::SyncToken) -> Result<YouTube, failure::Error> {
+    pub fn new(token: oauth2::SyncToken) -> Result<YouTube, anyhow::Error> {
         Ok(YouTube {
             client: Client::new(),
             v3_url: str::parse::<Url>(V3_URL)?,
@@ -45,7 +46,7 @@ impl YouTube {
         &self,
         video_id: &str,
         part: &str,
-    ) -> Result<Option<Video>, failure::Error> {
+    ) -> Result<Option<Video>, anyhow::Error> {
         let req = self
             .v3(Method::GET, &["videos"])
             .query_param("part", part)
@@ -60,7 +61,7 @@ impl YouTube {
     }
 
     /// Search YouTube.
-    pub async fn search(&self, q: &str) -> Result<SearchResults, failure::Error> {
+    pub async fn search(&self, q: &str) -> Result<SearchResults, anyhow::Error> {
         let req = self
             .v3(Method::GET, &["search"])
             .query_param("part", "snippet")
@@ -68,7 +69,7 @@ impl YouTube {
 
         match req.execute().await?.not_found().json::<SearchResults>()? {
             Some(result) => Ok(result),
-            None => failure::bail!("got empty response"),
+            None => bail!("got empty response"),
         }
     }
 
@@ -76,7 +77,7 @@ impl YouTube {
     pub async fn get_video_info(
         &self,
         video_id: String,
-    ) -> Result<Option<VideoInfo>, failure::Error> {
+    ) -> Result<Option<VideoInfo>, anyhow::Error> {
         let mut url = self.get_video_info_url.clone();
         url.query_pairs_mut()
             .append_pair("video_id", video_id.as_str());
@@ -260,7 +261,7 @@ pub struct VideoInfo {
 
 impl RawVideoInfo {
     /// Convert into a decoded version.
-    pub fn into_decoded(self) -> Result<VideoInfo, failure::Error> {
+    pub fn into_decoded(self) -> Result<VideoInfo, anyhow::Error> {
         let player_response = match self.player_response.as_ref() {
             Some(player_response) => Some(serde_json::from_str(player_response)?),
             None => None,

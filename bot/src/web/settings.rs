@@ -1,8 +1,7 @@
 use crate::web::{Fragment, EMPTY};
-use failure::bail;
-use hashbrown::HashSet;
+use anyhow::bail;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 use warp::{body, filters, path, Filter as _};
 
 #[derive(serde::Deserialize)]
@@ -100,7 +99,7 @@ impl Settings {
     /// Access underlying settings abstraction.
     fn settings(
         &self,
-    ) -> Result<MappedRwLockReadGuard<'_, crate::settings::Settings>, failure::Error> {
+    ) -> Result<MappedRwLockReadGuard<'_, crate::settings::Settings>, anyhow::Error> {
         match RwLockReadGuard::try_map(self.0.read(), |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("settings not configured"),
@@ -108,7 +107,7 @@ impl Settings {
     }
 
     /// Get the list of all settings in the bot.
-    fn get_settings(&self, query: SettingsQuery) -> Result<impl warp::Reply, failure::Error> {
+    fn get_settings(&self, query: SettingsQuery) -> Result<impl warp::Reply, anyhow::Error> {
         let mut settings = match query.prefix {
             Some(prefix) => {
                 let mut out = Vec::new();
@@ -155,13 +154,13 @@ impl Settings {
     }
 
     /// Delete the given setting by key.
-    fn delete_setting(&self, key: &str) -> Result<impl warp::Reply, failure::Error> {
+    fn delete_setting(&self, key: &str) -> Result<impl warp::Reply, anyhow::Error> {
         self.settings()?.clear(key)?;
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Get the given setting by key.
-    fn get_setting(&self, key: &str) -> Result<impl warp::Reply, failure::Error> {
+    fn get_setting(&self, key: &str) -> Result<impl warp::Reply, anyhow::Error> {
         let setting: Option<crate::settings::Setting> = self
             .settings()?
             .setting::<serde_json::Value>(key)?
@@ -174,7 +173,7 @@ impl Settings {
         &self,
         key: &str,
         value: serde_json::Value,
-    ) -> Result<impl warp::Reply, failure::Error> {
+    ) -> Result<impl warp::Reply, anyhow::Error> {
         self.settings()?.set_json(key, value)?;
         Ok(warp::reply::json(&EMPTY))
     }

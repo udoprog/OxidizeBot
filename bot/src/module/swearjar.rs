@@ -7,10 +7,9 @@ use crate::{
     prelude::*,
     utils::{Cooldown, Duration},
 };
-use failure::Error;
-use hashbrown::HashSet;
+use anyhow::{bail, Error};
 use parking_lot::RwLock;
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 pub struct Handler<'a> {
     enabled: Arc<RwLock<bool>>,
@@ -57,7 +56,7 @@ impl<'a> command::Handler for Handler<'a> {
             u.extend(chatters.moderators);
 
             if u.is_empty() {
-                failure::bail!("no chatters to reward");
+                bail!("no chatters to reward");
             }
 
             let total_reward = reward * u.len() as i64;

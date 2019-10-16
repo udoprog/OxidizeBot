@@ -1,4 +1,5 @@
 #![recursion_limit = "512"]
+#![cfg_attr(feature = "nightly", feature(backtrace))]
 
 #[macro_use]
 extern crate diesel;

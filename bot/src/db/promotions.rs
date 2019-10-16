@@ -1,10 +1,9 @@
 use crate::{db, template, utils};
+use anyhow::{anyhow, Context as _};
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
-use failure::{format_err, ResultExt as _};
-use hashbrown::HashMap;
 use parking_lot::RwLock;
-use std::{fmt, sync::Arc};
+use std::{collections::HashMap, fmt, sync::Arc};
 
 #[derive(Debug, err_derive::Error)]
 pub enum BumpError {
@@ -13,7 +12,7 @@ pub enum BumpError {
     Missing,
     /// Database error occurred.
     #[error(display = "database error: {}", _0)]
-    Database(failure::Error),
+    Database(anyhow::Error),
 }
 
 /// Local database wrapper.
@@ -28,7 +27,7 @@ impl Database {
         key: &Key,
         frequency: utils::Duration,
         text: &str,
-    ) -> Result<Option<db::models::Promotion>, failure::Error> {
+    ) -> Result<Option<db::models::Promotion>, anyhow::Error> {
         use db::schema::promotions::dsl;
 
         let c = self.0.pool.lock();
@@ -75,7 +74,7 @@ impl Database {
         }
     }
 
-    fn bump_promoted_at(&self, from: &Key, now: &DateTime<Utc>) -> Result<bool, failure::Error> {
+    fn bump_promoted_at(&self, from: &Key, now: &DateTime<Utc>) -> Result<bool, anyhow::Error> {
         use db::schema::promotions::dsl;
 
         let c = self.0.pool.lock();
@@ -99,7 +98,7 @@ impl Promotions {
     database_group_fns!(Promotion, Key);
 
     /// Construct a new promos store with a db.
-    pub fn load(db: db::Database) -> Result<Promotions, failure::Error> {
+    pub fn load(db: db::Database) -> Result<Promotions, anyhow::Error> {
         let db = Database(db);
 
         let mut inner = HashMap::new();
@@ -122,7 +121,7 @@ impl Promotions {
         name: &str,
         frequency: utils::Duration,
         template: template::Template,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         let key = Key::new(channel, name);
 
         let mut inner = self.inner.write();
@@ -199,10 +198,9 @@ pub struct Promotion {
 impl Promotion {
     pub const NAME: &'static str = "promotion";
 
-    pub fn from_db(promotion: &db::models::Promotion) -> Result<Promotion, failure::Error> {
-        let template = template::Template::compile(&promotion.text).with_context(|_| {
-            format_err!("failed to compile promotion `{:?}` from db", promotion)
-        })?;
+    pub fn from_db(promotion: &db::models::Promotion) -> Result<Promotion, anyhow::Error> {
+        let template = template::Template::compile(&promotion.text)
+            .with_context(|| anyhow!("failed to compile promotion `{:?}` from db", promotion))?;
 
         let key = Key::new(&promotion.channel, &promotion.name);
         let frequency = utils::Duration::seconds(promotion.frequency as u64);
@@ -221,7 +219,7 @@ impl Promotion {
     }
 
     /// Render the given promotion.
-    pub fn render<T>(&self, data: &T) -> Result<String, failure::Error>
+    pub fn render<T>(&self, data: &T) -> Result<String, anyhow::Error>
     where
         T: serde::Serialize,
     {

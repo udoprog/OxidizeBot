@@ -20,7 +20,7 @@ impl command::Handler for Handler {
         Some(auth::Scope::Countdown)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -76,7 +76,7 @@ impl super::Module for Module {
             settings,
             ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         let settings = settings.scoped("countdown");
 
         let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(true)?;
@@ -158,7 +158,7 @@ struct FileWriter {
 }
 
 impl FileWriter {
-    fn write(&self, timer: &Timer) -> Result<(), failure::Error> {
+    fn write(&self, timer: &Timer) -> Result<(), anyhow::Error> {
         let path = match &self.path {
             Some(path) => path,
             None => return Ok(()),
@@ -196,7 +196,7 @@ impl FileWriter {
         }
     }
 
-    fn clear(&self) -> Result<(), failure::Error> {
+    fn clear(&self) -> Result<(), anyhow::Error> {
         let path = match &self.path {
             Some(path) => path,
             None => return Ok(()),

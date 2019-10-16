@@ -2,7 +2,7 @@
 
 use super::convert::{FromWide as _, ToWide as _};
 use crate::{prelude::*, sys::Notification};
-use failure::{format_err, Error, ResultExt as _};
+use anyhow::{anyhow, Context as _, Error};
 use std::{
     cell::RefCell,
     ffi::OsStr,
@@ -343,7 +343,7 @@ impl Window {
     /// Set the tooltip we get when hovering over the systray icon.
     pub fn set_tooltip(&self, tooltip: &str) -> Result<(), Error> {
         self.raw_set_tooltip(tooltip)
-            .with_context(|_| format_err!("failed to set tooltip `{}`", tooltip))
+            .with_context(|| anyhow!("failed to set tooltip `{}`", tooltip))
             .map_err(Error::from)
     }
 
@@ -376,7 +376,7 @@ impl Window {
         default: bool,
     ) -> Result<(), Error> {
         self.raw_add_menu_entry(item_idx, item_name, default)
-            .with_context(|_| format_err!("failed to add meny entry {} `{}`", item_idx, item_name))
+            .with_context(|| anyhow!("failed to add meny entry {} `{}`", item_idx, item_name))
             .map_err(Error::from)
     }
 
@@ -412,7 +412,7 @@ impl Window {
     /// Add a menu separator with the associated index.
     pub fn add_menu_separator(&self, item_idx: u32) -> Result<(), Error> {
         self.raw_add_menu_separator(item_idx)
-            .with_context(|_| format_err!("failed to add menu separator"))
+            .with_context(|| anyhow!("failed to add menu separator"))
             .map_err(Error::from)
     }
 
@@ -523,7 +523,7 @@ impl Window {
         height: u32,
     ) -> Result<(), Error> {
         self.raw_set_icon_from_buffer(buffer, width, height)
-            .with_context(|_| format_err!("error setting icon from buffer"))
+            .with_context(|| anyhow!("error setting icon from buffer"))
             .map_err(Error::from)
     }
 

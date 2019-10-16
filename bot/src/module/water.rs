@@ -1,6 +1,6 @@
 use crate::{auth, command, currency::Currency, module, prelude::*, stream_info, utils};
+use anyhow::Error;
 use chrono::{DateTime, Utc};
-use failure::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 

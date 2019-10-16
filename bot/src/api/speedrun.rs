@@ -1,11 +1,10 @@
 //! speedrun.com API client.
 
 use crate::{api::RequestBuilder, utils::PtDuration};
+use anyhow::Error;
 use chrono::{DateTime, NaiveDate, Utc};
-use failure::Error;
-use hashbrown::HashMap;
 use reqwest::{header, Client, Method, StatusCode, Url};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const V1_URL: &'static str = "https://speedrun.com/api/v1";
 

@@ -2,12 +2,15 @@ use crate::{
     db,
     utils::{Cooldown, Duration},
 };
+use anyhow::{Context as _, Error};
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
-use failure::{Error, ResultExt as _};
-use hashbrown::{HashMap, HashSet};
 use parking_lot::RwLock;
-use std::{fmt, iter, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt, iter,
+    sync::Arc,
+};
 
 const SCHEMA: &'static [u8] = include_bytes!("auth.yaml");
 
@@ -19,7 +22,7 @@ pub struct Schema {
 
 impl Schema {
     /// Load schema from the given set of bytes.
-    pub fn load_static() -> Result<Schema, failure::Error> {
+    pub fn load_static() -> Result<Schema, anyhow::Error> {
         Ok(serde_yaml::from_slice(SCHEMA).context("failed to load auth.yaml")?)
     }
 }

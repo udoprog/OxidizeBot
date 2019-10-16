@@ -1,9 +1,9 @@
 //! FrankerFaceZ API Client.
 
 use crate::api::RequestBuilder;
-use failure::Error;
-use hashbrown::HashMap;
+use anyhow::Error;
 use reqwest::{header, Client, Method, Url};
+use std::collections::HashMap;
 
 const V1_URL: &'static str = "https://api.frankerfacez.com/v1";
 

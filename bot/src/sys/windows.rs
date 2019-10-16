@@ -1,5 +1,5 @@
 use crate::{prelude::*, sys::Notification, web};
-use failure::{bail, format_err, Error, ResultExt as _};
+use anyhow::{anyhow, bail, Context as _, Error};
 use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::{
@@ -104,7 +104,7 @@ impl System {
 
         let exe = exe
             .to_str()
-            .ok_or_else(|| format_err!("bad executable string"))?;
+            .ok_or_else(|| anyhow!("bad executable string"))?;
 
         Ok(format!("\"{}\" --silent", exe))
     }
@@ -209,7 +209,7 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                         Event::Notification(mut n) => {
                             notification_on_click.push_back(n.on_click.take());
                             window.send_notification(n)
-                            .with_context(|_| format_err!("sending notification"))?;
+                            .context("sending notification")?;
                         }
                     }
                 }

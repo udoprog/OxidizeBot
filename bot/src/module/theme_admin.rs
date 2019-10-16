@@ -8,7 +8,7 @@ pub struct Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
         let themes = match self.themes.read().clone() {
             Some(themes) => themes,
             None => return Ok(()),
@@ -60,7 +60,7 @@ impl super::Module for Module {
         module::HookContext {
             injector, handlers, ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         handlers.insert(
             "theme",
             Handler {

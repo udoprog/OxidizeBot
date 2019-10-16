@@ -1,5 +1,5 @@
 use crate::{auth, command, db, module, prelude::*, settings};
-use failure::Error;
+use anyhow::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
@@ -63,7 +63,7 @@ impl<'a> command::Handler for Handler<'a> {
         Some(auth::Scope::Admin)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
         match ctx.next().as_ref().map(String::as_str) {
             Some("refresh-mods") => {
                 ctx.privmsg("/mods");

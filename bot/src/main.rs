@@ -1,8 +1,8 @@
 #![recursion_limit = "256"]
 #![cfg_attr(feature = "windows", windows_subsystem = "windows")]
 
+use anyhow::{anyhow, bail, Context, Error};
 use backoff::backoff::Backoff as _;
-use failure::{bail, format_err, Error, ResultExt};
 use oxidize::{
     api, auth, bus, db, injector, irc, message_log, module, oauth2, player, prelude::*, settings,
     storage, stream_info, sys, tracing_utils, updater, utils, web,
@@ -230,7 +230,7 @@ fn main() -> Result<(), Error> {
         Some(root) => (None, PathBuf::from(root)),
         None => {
             let base = dirs::config_dir()
-                .ok_or_else(|| format_err!("no standard configuration directory available"))?;
+                .ok_or_else(|| anyhow!("no standard configuration directory available"))?;
             let old = base.join(OLD_CONFIG_DIR);
             let new = base.join(CONFIG_DIR);
             (Some(old), new)
@@ -364,7 +364,7 @@ async fn try_main(
 
     if !root.is_dir() {
         std::fs::create_dir_all(&root)
-            .with_context(|_| format_err!("failed to create root: {}", root.display()))?;
+            .with_context(|| anyhow!("failed to create root: {}", root.display()))?;
     }
 
     let injector = injector::Injector::new();
@@ -379,8 +379,8 @@ async fn try_main(
             let old = old.join("setmod.sql");
 
             if old.is_file() && !new.is_file() {
-                std::fs::copy(&old, &new).with_context(|_| {
-                    format_err!(
+                std::fs::copy(&old, &new).with_context(|| {
+                    anyhow!(
                         "failed to copy database: {} to {}",
                         old.display(),
                         new.display()
@@ -393,7 +393,7 @@ async fn try_main(
     };
 
     let db = db::Database::open(&database_path)
-        .with_context(|_| format_err!("failed to open database at: {}", database_path.display()))?;
+        .with_context(|| anyhow!("failed to open database at: {}", database_path.display()))?;
     injector.update(db.clone());
 
     let scopes_schema = auth::Schema::load_static()?;
@@ -476,7 +476,7 @@ async fn try_main(
 
     futures.push(
         future
-            .map(|_| Err::<(), _>(format_err!("web server exited unexpectedly")))
+            .map(|_| Err::<(), _>(anyhow!("web server exited unexpectedly")))
             .boxed()
             .instrument(trace_span!(target: "futures", "web")),
     );

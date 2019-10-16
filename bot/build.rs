@@ -1,7 +1,5 @@
-use failure::{format_err, ResultExt as _};
+use anyhow::{anyhow, Context as _, Result};
 use std::{env, fs, path::PathBuf, process::Command};
-
-type Result<T> = std::result::Result<T, failure::Error>;
 
 fn version() -> Result<String> {
     if let Ok(version) = env::var("OXIDIZE_VERSION") {
@@ -57,8 +55,7 @@ fn main() -> Result<()> {
         res.compile().context("compiling resorces")?;
     }
 
-    let out_dir =
-        PathBuf::from(env::var_os("OUT_DIR").ok_or_else(|| format_err!("missing: OUT_DIR"))?);
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").ok_or_else(|| anyhow!("missing: OUT_DIR"))?);
     fs::write(out_dir.join("version.txt"), &version).context("writing version.txt")?;
     Ok(())
 }

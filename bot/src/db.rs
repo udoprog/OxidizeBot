@@ -11,6 +11,7 @@ mod themes;
 mod words;
 
 use crate::{player, track_id::TrackId, utils};
+use anyhow::bail;
 use std::path::Path;
 
 pub use self::{
@@ -26,9 +27,9 @@ pub use self::{
 pub use self::matcher::Key;
 pub(crate) use self::matcher::{Matchable, Matcher, Pattern};
 
+use anyhow::{anyhow, Context as _, Error};
 use chrono::Utc;
 use diesel::prelude::*;
-use failure::{format_err, Error, ResultExt as _};
 use parking_lot::Mutex;
 use std::sync::Arc;
 
@@ -54,7 +55,7 @@ impl Database {
         // Run all migrations and provide some diagnostics on errors.
         let result = embedded_migrations::run_with_output(&pool, &mut output);
         let output = String::from_utf8_lossy(&output);
-        result.with_context(|_| format_err!("error when running migrations: {}", output))?;
+        result.with_context(|| anyhow!("error when running migrations: {}", output))?;
 
         if !output.is_empty() {
             log::trace!("migrations output:\n{}", output);
@@ -210,7 +211,7 @@ impl player::Backend for Database {
 
         let since = match Utc::now().checked_sub_signed(duration.as_chrono()) {
             Some(since) => since,
-            None => failure::bail!("duration too long"),
+            None => bail!("duration too long"),
         };
 
         let since = since.naive_utc();

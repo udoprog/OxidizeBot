@@ -9,7 +9,7 @@ use crate::{
     utils::Duration,
     web,
 };
-use failure::Error;
+use anyhow::Error;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use serde::Serialize;
 use std::collections::VecDeque;

@@ -1,5 +1,5 @@
 use crate::api;
-use failure::Error;
+use anyhow::Error;
 use irc::{
     client,
     proto::{

@@ -10,8 +10,8 @@ use crate::{
     Uri,
 };
 
+use anyhow::{anyhow, bail, Error};
 use chrono::{DateTime, Utc};
-use failure::{bail, format_err, Error};
 use parking_lot::RwLock;
 use std::{
     collections::VecDeque,
@@ -639,7 +639,7 @@ impl Player {
         self.inner
             .commands_tx
             .unbounded_send(command)
-            .map_err(|_| format_err!("failed to send command"))
+            .map_err(|_| anyhow!("failed to send command"))
     }
 
     /// Get the next N songs in queue.
@@ -1588,7 +1588,7 @@ impl PlaybackFuture {
 
             let track_id = TrackId::Spotify(
                 SpotifyId::from_base62(&track_id)
-                    .map_err(|_| format_err!("bad spotify id: {}", track_id))?,
+                    .map_err(|_| anyhow!("bad spotify id: {}", track_id))?,
             );
 
             let duration = Duration::from_millis(track.duration_ms.into());
@@ -1620,7 +1620,7 @@ impl PlaybackFuture {
 
             let track_id = TrackId::Spotify(
                 SpotifyId::from_base62(&track_id)
-                    .map_err(|_| format_err!("bad spotify id: {}", track_id))?,
+                    .map_err(|_| anyhow!("bad spotify id: {}", track_id))?,
             );
 
             let duration = Duration::from_millis(track.duration_ms.into());
@@ -2085,7 +2085,7 @@ async fn convert_item(
             let content_details = video
                 .content_details
                 .as_ref()
-                .ok_or_else(|| failure::format_err!("video does not have content details"))?;
+                .ok_or_else(|| anyhow::anyhow!("video does not have content details"))?;
 
             let duration = str::parse::<PtDuration>(&content_details.duration)?;
             (Track::YouTube { video }, duration.into_std())

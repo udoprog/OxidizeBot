@@ -1,4 +1,5 @@
 use crate::utils;
+use anyhow::bail;
 use std::{fmt, time};
 
 /// A duration with second precision.
@@ -118,7 +119,7 @@ impl fmt::Display for Duration {
 }
 
 impl std::str::FromStr for Duration {
-    type Err = failure::Error;
+    type Err = anyhow::Error;
 
     fn from_str(mut s: &str) -> Result<Self, Self::Err> {
         let mut seconds = 0u64;
@@ -146,9 +147,9 @@ impl std::str::FromStr for Duration {
                     s = &s[(i + 1)..];
                 }
                 Some(i) => {
-                    failure::bail!("bad suffix: {}", &s[i..]);
+                    bail!("bad suffix: {}", &s[i..]);
                 }
-                _ => failure::bail!("unexpected end"),
+                _ => bail!("unexpected end"),
             }
         }
 

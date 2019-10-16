@@ -7,14 +7,13 @@ license = "MIT/Apache-2.0"
 description = "High octane Twitch bot powered by Rust"
 
 [dependencies]
+eudex = "0.1.1"
 chrono = { version = "0.4.9", features = ["serde"] }
 chrono-tz = { version = "0.5.1", features = ["serde"] }
 clap = "2.33.0"
-mysql_async = "0.21.0-alpha.1"
+mysql_async = { version = "0.21.0-alpha.1", git = "https://github.com/udoprog/mysql_async", branch = "thiserror" }
 diesel = { version = "1.4.2", features = ["sqlite", "chrono"] }
 diesel_migrations = "1.4.0"
-eudex = "0.1.1"
-hashbrown = { version = "0.6.0", features = ["serde"] }
 warp = { version = "0.2.0-alpha.1", git = "https://github.com/udoprog/warp" }
 log = "0.4.8"
 relative-path = { version = "0.4.0", features = ["serde"] }
@@ -35,7 +34,7 @@ handlebars = "2.0.2"
 htmlescape = "0.3.1"
 lazy_static = "1.4.0"
 # set the bundled feature to use the bundled libsqlite3
-libsqlite3-sys = { version = "0.12.0", features = ["bundled", "unlock_notify"] }
+libsqlite3-sys = { version = "0.16.0", features = ["bundled", "unlock_notify"] }
 webbrowser = "0.5.2"
 parking_lot = "0.9.0"
 err-derive = "0.1.5"
@@ -55,7 +54,7 @@ hex = "0.4.0"
 graphql_client = { version = "0.8.0", default-features = false }
 futures-option = "0.1.2"
 futures-cache = "0.8.0"
-failure = "0.1.5"
+anyhow = "1.0.13"
 async-injector = "0.3.0"
 async-trait = "0.1.13"
 leaky-bucket = "0.4.1"
@@ -73,7 +72,7 @@ branch = "next"
 
 [build-dependencies]
 winres = "0.1.11"
-failure = "0.1.5"
+anyhow = "1.0.13"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3.8", features = ["shellapi", "impl-default"] }

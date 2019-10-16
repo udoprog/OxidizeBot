@@ -1,5 +1,5 @@
 use crate::{api, injector::Injector, prelude::*, storage::Cache, utils::Duration};
-use failure::Error;
+use anyhow::Error;
 use parking_lot::RwLock;
 use std::{sync::Arc, time::Instant};
 

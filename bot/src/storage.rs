@@ -1,4 +1,4 @@
-use failure::Error;
+use anyhow::Error;
 use std::{path::Path, sync::Arc};
 
 pub use futures_cache::{sled, Cache};

@@ -1,5 +1,5 @@
 use crate::web::EMPTY;
-use failure::bail;
+use anyhow::bail;
 use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use std::sync::Arc;
 use warp::{body, filters, path, Filter as _};
@@ -44,7 +44,7 @@ impl Cache {
     }
 
     /// Access underlying cache abstraction.
-    fn cache(&self) -> Result<MappedRwLockReadGuard<'_, crate::storage::Cache>, failure::Error> {
+    fn cache(&self) -> Result<MappedRwLockReadGuard<'_, crate::storage::Cache>, anyhow::Error> {
         match RwLockReadGuard::try_map(self.0.read(), |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("cache not configured"),
@@ -52,13 +52,13 @@ impl Cache {
     }
 
     /// List all cache entries.
-    fn list(&self) -> Result<impl warp::Reply, failure::Error> {
+    fn list(&self) -> Result<impl warp::Reply, anyhow::Error> {
         let entries = self.cache()?.list_json()?;
         Ok(warp::reply::json(&entries))
     }
 
     /// Delete a cache entry.
-    fn delete(&self, request: DeleteRequest) -> Result<impl warp::Reply, failure::Error> {
+    fn delete(&self, request: DeleteRequest) -> Result<impl warp::Reply, anyhow::Error> {
         self.cache()?
             .delete_with_ns(request.ns.as_ref(), &request.key)?;
         Ok(warp::reply::json(&EMPTY))

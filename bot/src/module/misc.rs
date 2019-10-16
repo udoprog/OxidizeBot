@@ -1,8 +1,8 @@
 //! module for misc smaller commands.
 
 use crate::{api, auth, command, irc, module, prelude::*, stream_info, utils};
+use anyhow::Error;
 use chrono::Utc;
-use failure::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 

@@ -2,8 +2,8 @@ use ::oauth2::{
     AccessToken, AuthorizationCode, Client, ClientSecret, RefreshToken, RequestTokenError, Scope,
     StandardToken, State, Token, TokenType,
 };
+use anyhow::{anyhow, bail, Error};
 use chrono::{DateTime, Utc};
-use failure::{bail, format_err, Error};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -282,7 +282,7 @@ impl Flow {
                     e,
                     String::from_utf8_lossy(&res)
                 );
-                return Err(format_err!("bad response from server"));
+                return Err(anyhow!("bad response from server"));
             }
             Err(e) => return Err(Error::from(e)),
         };
@@ -350,7 +350,7 @@ impl Flow {
             Ok(t) => t,
             Err(RequestTokenError::Parse(_, res)) => {
                 log::error!("bad token response: {}", String::from_utf8_lossy(&res));
-                return Err(format_err!("bad response from server"));
+                return Err(anyhow!("bad response from server"));
             }
             Err(e) => return Err(Error::from(e)),
         };

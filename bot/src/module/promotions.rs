@@ -10,7 +10,7 @@ pub struct Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -61,7 +61,7 @@ impl super::Module for Module {
             idle,
             ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         let settings = settings.scoped("promotions");
         let enabled = settings.var("enabled", false)?;
 
@@ -127,7 +127,7 @@ impl super::Module for Module {
 }
 
 /// Run the next promotion.
-fn promote(promotions: db::Promotions, sender: irc::Sender) -> Result<(), failure::Error> {
+fn promote(promotions: db::Promotions, sender: irc::Sender) -> Result<(), anyhow::Error> {
     let channel = sender.channel();
 
     if let Some(p) = pick(promotions.list(channel)) {

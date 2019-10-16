@@ -1,5 +1,5 @@
 use crate::sys::Notification;
-use failure::Error;
+use anyhow::Error;
 use futures::{channel::oneshot, future};
 use std::path::Path;
 

@@ -1,6 +1,6 @@
 use crate::oauth2;
+use anyhow::{bail, Error};
 use bytes::Bytes;
-use failure::Error;
 use reqwest::{header, Client, Method, StatusCode, Url};
 
 /// Trait to deal with optional bodies.
@@ -121,7 +121,7 @@ impl RequestBuilder {
 
         let body = String::from_utf8_lossy(body.as_ref());
 
-        failure::bail!(
+        bail!(
             "Bad response: {}: {}: {}: {}",
             self.method,
             self.url,
@@ -214,7 +214,7 @@ impl Response<'_, Bytes> {
 
         let body = String::from_utf8_lossy(self.body.as_ref());
 
-        failure::bail!(
+        bail!(
             "Bad response: {}: {}: {}: {}",
             self.method,
             self.url,
@@ -230,7 +230,7 @@ impl Response<'_, Bytes> {
     {
         if !self.status.is_success() {
             let body = String::from_utf8_lossy(self.body.as_ref());
-            failure::bail!(
+            bail!(
                 "Bad response: {}: {}: {}: {}",
                 self.method,
                 self.url,
@@ -243,7 +243,7 @@ impl Response<'_, Bytes> {
             Ok(body) => Ok(body),
             Err(e) => {
                 let body = String::from_utf8_lossy(self.body.as_ref());
-                failure::bail!(
+                bail!(
                     "Bad response: {}: {}: {}: {}: {}",
                     self.method,
                     self.url,
@@ -269,7 +269,7 @@ impl Response<'_, Option<Bytes>> {
 
         if !self.status.is_success() {
             let body = String::from_utf8_lossy(body.as_ref());
-            failure::bail!(
+            bail!(
                 "Bad response: {}: {}: {}: {}",
                 self.method,
                 self.url,
@@ -282,7 +282,7 @@ impl Response<'_, Option<Bytes>> {
             Ok(body) => Ok(Some(body)),
             Err(e) => {
                 let body = String::from_utf8_lossy(body.as_ref());
-                failure::bail!(
+                bail!(
                     "Bad response: {}: {}: {}: {}: {}",
                     self.method,
                     self.url,
@@ -303,7 +303,7 @@ impl Response<'_, Option<Bytes>> {
 
         if !self.status.is_success() {
             let body = String::from_utf8_lossy(body.as_ref());
-            failure::bail!(
+            bail!(
                 "Bad response: {}: {}: {}: {}",
                 self.method,
                 self.url,

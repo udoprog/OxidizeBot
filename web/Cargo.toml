@@ -9,7 +9,7 @@ license = "MIT/Apache-2.0"
 bytes = "0.4.12"
 hyper = "=0.13.0-alpha.4"
 tokio = "=0.2.0-alpha.6"
-failure = "0.1.5"
+anyhow = "1.0.13"
 serde = { version = "1.0.100", features = ["rc", "derive"] }
 serde_json = "1.0.39"
 serde_cbor = "0.10.1"

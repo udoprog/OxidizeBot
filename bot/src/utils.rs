@@ -6,19 +6,19 @@ use std::{borrow, fmt, mem, sync::Arc, time};
 mod duration;
 
 pub type Futures<'a> =
-    futures::stream::FuturesUnordered<future::BoxFuture<'a, Result<(), failure::Error>>>;
+    futures::stream::FuturesUnordered<future::BoxFuture<'a, Result<(), anyhow::Error>>>;
 
 pub trait Driver<'a> {
     /// Drive the given future.
     fn drive<F>(&mut self, future: F)
     where
-        F: 'a + Send + Future<Output = Result<(), failure::Error>>;
+        F: 'a + Send + Future<Output = Result<(), anyhow::Error>>;
 }
 
-impl<'a> Driver<'a> for Vec<future::BoxFuture<'a, Result<(), failure::Error>>> {
+impl<'a> Driver<'a> for Vec<future::BoxFuture<'a, Result<(), anyhow::Error>>> {
     fn drive<F>(&mut self, future: F)
     where
-        F: 'a + Send + Future<Output = Result<(), failure::Error>>,
+        F: 'a + Send + Future<Output = Result<(), anyhow::Error>>,
     {
         self.push(future.boxed());
     }
@@ -511,7 +511,7 @@ fn is_url_character(c: char) -> bool {
 pub struct Offset(u32);
 
 impl std::str::FromStr for Offset {
-    type Err = failure::Error;
+    type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (s, ms) = match s.rfind('.') {
@@ -704,7 +704,7 @@ impl PtDuration {
 }
 
 impl std::str::FromStr for PtDuration {
-    type Err = failure::Error;
+    type Err = anyhow::Error;
 
     fn from_str(duration: &str) -> Result<Self, Self::Err> {
         let duration = duration.trim_start_matches("PT");
@@ -800,7 +800,7 @@ mod tests {
     use super::{Offset, TrimmedWords, Urls, Words};
 
     #[test]
-    pub fn test_offset() -> Result<(), failure::Error> {
+    pub fn test_offset() -> Result<(), anyhow::Error> {
         assert_eq!(Offset::milliseconds(1_000), str::parse::<Offset>("1")?);
         assert_eq!(Offset::milliseconds(1_000), str::parse::<Offset>("01")?);
         assert_eq!(Offset::milliseconds(61_000), str::parse::<Offset>("01:01")?);

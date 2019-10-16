@@ -2,24 +2,21 @@
 #[macro_export]
 macro_rules! log_err {
     ($e:expr, $fmt:expr $(, $($arg:tt)*)?) => {{
-        let e = failure::Error::from($e);
+        let e = anyhow::Error::from($e);
 
         log::error!("{what}: {error}", what = format!($fmt $(, $($arg)*)*), error = e);
 
-        let mut bt = e.backtrace().to_string();
-
-        if !bt.is_empty() {
-            log::error!("{}", e.backtrace());
+        #[cfg(feature = "nightly")]
+        {
+            log::error!("{:?}", e.backtrace());
         }
 
-        for cause in e.iter_causes() {
-            log::error!("caused by: {}", cause);
+        for e in e.chain().skip(1) {
+            log::error!("caused by: {}", e);
 
-            bt.clear();
-            write!(&mut bt as &mut dyn std::fmt::Write, "{}", e.backtrace()).expect("failed to write string");
-
-            if !bt.is_empty() {
-                log::error!("{}", e.backtrace());
+            #[cfg(feature = "nightly")]
+            {
+                log::error!("{:?}", e.backtrace());
             }
         }
     }};
@@ -33,7 +30,7 @@ macro_rules! try_infinite {
             Err(e) => return Err(e.into()),
             Ok(a) => match a {
                 futures01::Async::NotReady => None,
-                futures01::Async::Ready(None) => failure::bail!("stream ended unexpectedly"),
+                futures01::Async::Ready(None) => anyhow::bail!("stream ended unexpectedly"),
                 futures01::Async::Ready(Some(v)) => Some(v),
             },
         }
@@ -44,7 +41,7 @@ macro_rules! try_infinite {
 #[macro_export]
 macro_rules! try_infinite_empty {
     ($expr:expr) => {
-        try_infinite!($expr.map_err(|()| failure::format_err!("stream unexpectedly errored")))
+        try_infinite!($expr.map_err(|()| anyhow::anyhow!("stream unexpectedly errored")))
     };
 }
 

@@ -1,6 +1,6 @@
 use crate::{aead::AeadSealer, db};
+use anyhow::Error;
 use cookie::{Cookie, CookieBuilder, CookieJar};
-use failure::Error;
 use hyper::{header, HeaderMap, Request};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;

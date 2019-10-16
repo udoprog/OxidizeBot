@@ -1,7 +1,7 @@
 use crate::{api, db, oauth2, session};
 use ::oauth2::State;
+use anyhow::anyhow;
 use chrono::{DateTime, Utc};
-use failure::format_err;
 use futures::prelude::*;
 use hyper::{body::Body, error, header, server, service, Method, Request, Response, StatusCode};
 use parking_lot::Mutex;
@@ -35,9 +35,9 @@ pub fn setup(
     host: String,
     port: u32,
     config: Config,
-) -> Result<impl Future<Output = Result<(), error::Error>>, failure::Error> {
-    let fallback = assets::Asset::get("index.html")
-        .ok_or_else(|| format_err!("missing index.html in assets"))?;
+) -> Result<impl Future<Output = Result<(), error::Error>>, anyhow::Error> {
+    let fallback =
+        assets::Asset::get("index.html").ok_or_else(|| anyhow!("missing index.html in assets"))?;
 
     let pending_tokens = Arc::new(Mutex::new(HashMap::new()));
 
@@ -100,7 +100,7 @@ pub enum Error {
     /// User unauthorized to perform the given request.
     Unauthorized,
     /// Generic error.
-    Error(failure::Error),
+    Error(anyhow::Error),
 }
 
 impl Error {
@@ -116,8 +116,8 @@ impl From<serde_cbor::error::Error> for Error {
     }
 }
 
-impl From<failure::Error> for Error {
-    fn from(value: failure::Error) -> Error {
+impl From<anyhow::Error> for Error {
+    fn from(value: anyhow::Error) -> Error {
         Error::Error(value)
     }
 }
@@ -191,7 +191,7 @@ impl Handler {
         db: db::Database,
         config: Config,
         pending_tokens: Arc<Mutex<HashMap<State, PendingToken>>>,
-    ) -> Result<Self, failure::Error> {
+    ) -> Result<Self, anyhow::Error> {
         let (login_flow, flows) = oauth2::setup_flows(&config.base_url, &config.oauth2)?;
         let session = session::Session::new(db.clone(), &config.session)?;
 
@@ -244,7 +244,7 @@ impl Handler {
         r
     }
 
-    async fn call(self: Arc<Self>, req: Request<Body>) -> Result<Response<Body>, failure::Error> {
+    async fn call(self: Arc<Self>, req: Request<Body>) -> Result<Response<Body>, anyhow::Error> {
         let uri = req.uri();
 
         log::info!("{} {}", req.method(), uri.path());
@@ -586,7 +586,7 @@ impl Handler {
         let mut buf = [0u8; 32];
         self.random
             .fill(&mut buf)
-            .map_err(|_| format_err!("failed to generate random key"))?;
+            .map_err(|_| anyhow!("failed to generate random key"))?;
         let key = base64::encode(&buf);
         self.db.insert_key(&user.user_id, &key)?;
 
@@ -739,7 +739,7 @@ impl Handler {
 
         r.headers_mut().insert(
             header::LOCATION,
-            return_to.parse().map_err(failure::Error::from)?,
+            return_to.parse().map_err(anyhow::Error::from)?,
         );
 
         Ok(r)
@@ -883,7 +883,7 @@ impl Handler {
         &self,
         flow: &oauth2::Flow,
         token: &oauth2::SavedToken,
-    ) -> Result<serde_cbor::Value, failure::Error> {
+    ) -> Result<serde_cbor::Value, anyhow::Error> {
         return match flow.config.ty {
             oauth2::FlowType::Twitch => {
                 let result = self
@@ -972,7 +972,7 @@ pub fn http_error(status: StatusCode, message: &str) -> Result<Response<Body>, E
         status: status.as_u16(),
         message,
     })
-    .map_err(failure::Error::from)?;
+    .map_err(anyhow::Error::from)?;
 
     let mut r = Response::new(Body::from(body));
 
@@ -1002,12 +1002,7 @@ where
     let mut bytes = Vec::new();
     let mut received = 0;
 
-    while let Some(chunk) = body
-        .next()
-        .await
-        .transpose()
-        .map_err(failure::Error::from)?
-    {
+    while let Some(chunk) = body.next().await.transpose().map_err(anyhow::Error::from)? {
         received += chunk.len();
 
         if received > max_bytes {
@@ -1031,7 +1026,7 @@ pub fn html(body: String) -> Result<Response<Body>, Error> {
         header::CONTENT_TYPE,
         "text/html; charset=utf-8"
             .parse()
-            .map_err(failure::Error::from)?,
+            .map_err(anyhow::Error::from)?,
     );
 
     Ok(r)
@@ -1039,13 +1034,13 @@ pub fn html(body: String) -> Result<Response<Body>, Error> {
 
 /// Construct a JSON OK response.
 pub fn json_ok(body: impl Serialize) -> Result<Response<Body>, Error> {
-    let body = serde_json::to_string(&body).map_err(failure::Error::from)?;
+    let body = serde_json::to_string(&body).map_err(anyhow::Error::from)?;
 
     let mut r = Response::new(Body::from(body));
 
     r.headers_mut().insert(
         header::CONTENT_TYPE,
-        "application/json".parse().map_err(failure::Error::from)?,
+        "application/json".parse().map_err(anyhow::Error::from)?,
     );
 
     Ok(r)

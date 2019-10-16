@@ -7,7 +7,7 @@ macro_rules! database_group_fns {
             channel: &str,
             name: &str,
             group: Option<String>,
-        ) -> Result<bool, failure::Error> {
+        ) -> Result<bool, anyhow::Error> {
             let key = <$key>::new(channel, name);
 
             let mut inner = self.inner.write();
@@ -23,7 +23,7 @@ macro_rules! database_group_fns {
         }
 
         /// Enable the given thing.
-        pub fn enable(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
+        pub fn enable(&self, channel: &str, name: &str) -> Result<bool, anyhow::Error> {
             let key = <$key>::new(channel, name);
 
             let thing = match self.db.fetch(&key)? {
@@ -37,7 +37,7 @@ macro_rules! database_group_fns {
         }
 
         /// Disable the given thing.
-        pub fn disable(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
+        pub fn disable(&self, channel: &str, name: &str) -> Result<bool, anyhow::Error> {
             let key = <$key>::new(channel, name);
             let mut inner = self.inner.write();
 
@@ -50,7 +50,7 @@ macro_rules! database_group_fns {
         }
 
         /// Enable all things in the given group.
-        pub fn enable_group(&self, channel: &str, group: &str) -> Result<(), failure::Error> {
+        pub fn enable_group(&self, channel: &str, group: &str) -> Result<(), anyhow::Error> {
             self.db.set_group_disabled(channel, group, false)?;
 
             let mut inner = self.inner.write();
@@ -64,7 +64,7 @@ macro_rules! database_group_fns {
         }
 
         /// Disable all things in the given group.
-        pub fn disable_group(&self, channel: &str, group: &str) -> Result<(), failure::Error> {
+        pub fn disable_group(&self, channel: &str, group: &str) -> Result<(), anyhow::Error> {
             self.db.set_group_disabled(channel, group, true)?;
 
             let mut inner = self.inner.write();
@@ -85,7 +85,7 @@ macro_rules! database_group_fns {
         }
 
         /// Get a list of all members.
-        pub fn list_all(&self, channel: &str) -> Result<Vec<$thing>, failure::Error> {
+        pub fn list_all(&self, channel: &str) -> Result<Vec<$thing>, anyhow::Error> {
             let mut out = Vec::new();
 
             for p in self.db.list_all(channel)? {
@@ -96,7 +96,7 @@ macro_rules! database_group_fns {
         }
 
         /// Remove thing.
-        pub fn delete(&self, channel: &str, name: &str) -> Result<bool, failure::Error> {
+        pub fn delete(&self, channel: &str, name: &str) -> Result<bool, anyhow::Error> {
             let key = <$key>::new(channel, name);
 
             if !self.db.delete(&key)? {
@@ -121,7 +121,7 @@ macro_rules! database_group_fns {
         }
 
         /// Get the given thing by name directly from the database.
-        pub fn get_any<'a>(&'a self, channel: &str, name: &str) -> Result<Option<$thing>, failure::Error> {
+        pub fn get_any<'a>(&'a self, channel: &str, name: &str) -> Result<Option<$thing>, anyhow::Error> {
             let key = <$key>::new(channel, name);
             let thing = match self.db.fetch(&key)? {
                 Some(thing) => thing,
@@ -186,7 +186,7 @@ macro_rules! database_group_fns {
 macro_rules! private_database_group_fns {
     ($module:ident, $thing:ident, $key:ty) => {
         /// List all members that are not disabled.
-        fn list(&self) -> Result<Vec<db::models::$thing>, failure::Error> {
+        fn list(&self) -> Result<Vec<db::models::$thing>, anyhow::Error> {
             use db::schema::$module::dsl;
             let c = self.0.pool.lock();
             Ok(dsl::$module
@@ -195,7 +195,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// List all members, including disabled ones.
-        fn list_all(&self, channel: &str) -> Result<Vec<db::models::$thing>, failure::Error> {
+        fn list_all(&self, channel: &str) -> Result<Vec<db::models::$thing>, anyhow::Error> {
             use db::schema::$module::dsl;
             let c = self.0.pool.lock();
             Ok(dsl::$module
@@ -208,7 +208,7 @@ macro_rules! private_database_group_fns {
             &self,
             channel: &str,
             group: &str,
-        ) -> Result<Vec<db::models::$thing>, failure::Error> {
+        ) -> Result<Vec<db::models::$thing>, anyhow::Error> {
             use db::schema::$module::dsl;
             let c = self.0.pool.lock();
 
@@ -222,7 +222,7 @@ macro_rules! private_database_group_fns {
             channel: &str,
             group: &str,
             disabled: bool,
-        ) -> Result<(), failure::Error> {
+        ) -> Result<(), anyhow::Error> {
             use db::schema::$module::dsl;
             let c = self.0.pool.lock();
 
@@ -234,7 +234,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// Edit the group membership of the given thing.
-        fn edit_group(&self, key: &$key, group: Option<String>) -> Result<(), failure::Error> {
+        fn edit_group(&self, key: &$key, group: Option<String>) -> Result<(), anyhow::Error> {
             use db::schema::$module::dsl;
             let c = self.0.pool.lock();
 
@@ -248,7 +248,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// Set the disabled state of the given command.
-        fn edit_disabled(&self, key: &$key, disabled: bool) -> Result<(), failure::Error> {
+        fn edit_disabled(&self, key: &$key, disabled: bool) -> Result<(), anyhow::Error> {
             use db::schema::$module::dsl;
             let c = self.0.pool.lock();
 
@@ -262,7 +262,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// Fetch a single entity.
-        fn fetch(&self, key: &$key) -> Result<Option<db::models::$thing>, failure::Error> {
+        fn fetch(&self, key: &$key) -> Result<Option<db::models::$thing>, anyhow::Error> {
             use db::schema::$module::dsl;
             let c = self.0.pool.lock();
 
@@ -274,7 +274,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// Delete a single thing.
-        fn delete(&self, key: &$key) -> Result<bool, failure::Error> {
+        fn delete(&self, key: &$key) -> Result<bool, anyhow::Error> {
             use db::schema::$module::dsl;
 
             let c = self.0.pool.lock();
@@ -286,7 +286,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// Rename one thing to another.
-        fn rename(&self, from: &$key, to: &$key) -> Result<bool, failure::Error> {
+        fn rename(&self, from: &$key, to: &$key) -> Result<bool, anyhow::Error> {
             use db::schema::$module::dsl;
 
             let c = self.0.pool.lock();

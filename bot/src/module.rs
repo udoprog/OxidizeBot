@@ -1,5 +1,5 @@
 use crate::{api, command, idle, injector, irc, settings, stream_info, utils};
-use hashbrown::HashMap;
+use std::collections::HashMap;
 
 #[macro_use]
 mod macros;
@@ -62,5 +62,5 @@ pub trait Module: 'static + Send + Sync {
     fn ty(&self) -> &'static str;
 
     /// Set up command handlers for this module.
-    async fn hook(&self, _: HookContext<'_, '_>) -> Result<(), failure::Error>;
+    async fn hook(&self, _: HookContext<'_, '_>) -> Result<(), anyhow::Error>;
 }

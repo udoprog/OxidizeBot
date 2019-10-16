@@ -15,7 +15,7 @@ impl command::Handler for AfterStream {
         Some(auth::Scope::AfterStream)
     }
 
-    async fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), failure::Error> {
+    async fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -69,7 +69,7 @@ impl super::Module for Module {
             settings,
             ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         let settings = settings.scoped("afterstream");
 
         handlers.insert(

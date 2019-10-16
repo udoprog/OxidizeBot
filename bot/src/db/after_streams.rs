@@ -10,12 +10,12 @@ pub struct AfterStreams {
 
 impl AfterStreams {
     /// Open the after streams database.
-    pub fn load(db: db::Database) -> Result<Self, failure::Error> {
+    pub fn load(db: db::Database) -> Result<Self, anyhow::Error> {
         Ok(AfterStreams { db })
     }
 
     /// Push the given afterstream message.
-    pub fn push(&self, channel: &str, user: &str, text: &str) -> Result<(), failure::Error> {
+    pub fn push(&self, channel: &str, user: &str, text: &str) -> Result<(), anyhow::Error> {
         use self::schema::after_streams::dsl;
         let c = self.db.pool.lock();
 
@@ -33,7 +33,7 @@ impl AfterStreams {
     }
 
     /// Delete the after stream with the given id.
-    pub fn delete(&self, id: i32) -> Result<bool, failure::Error> {
+    pub fn delete(&self, id: i32) -> Result<bool, anyhow::Error> {
         use self::schema::after_streams::dsl;
         let c = self.db.pool.lock();
         let count = diesel::delete(dsl::after_streams.filter(dsl::id.eq(id))).execute(&*c)?;
@@ -41,7 +41,7 @@ impl AfterStreams {
     }
 
     /// List all available after streams.
-    pub fn list(&self) -> Result<Vec<AfterStream>, failure::Error> {
+    pub fn list(&self) -> Result<Vec<AfterStream>, anyhow::Error> {
         use self::schema::after_streams::dsl;
         let c = self.db.pool.lock();
         Ok(dsl::after_streams

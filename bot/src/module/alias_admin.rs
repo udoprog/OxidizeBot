@@ -1,5 +1,5 @@
 use crate::{auth, command, db, module, prelude::*};
-use failure::Error;
+use anyhow::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 

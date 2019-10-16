@@ -10,8 +10,8 @@ use crate::{
     settings::Settings,
     utils,
 };
+use anyhow::Error;
 use chrono::{DateTime, Utc};
-use failure::Error;
 use reqwest::{header, Client, Method, Url};
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
@@ -90,7 +90,7 @@ impl Token {
 
     /// Test that token has all the specified scopes.
     pub fn has_scopes(&self, scopes: &[String]) -> bool {
-        use hashbrown::HashSet;
+        use std::collections::HashSet;
 
         let mut scopes = scopes
             .iter()

@@ -11,8 +11,7 @@ use crate::{
     settings, stream_info,
     utils::{self, Cooldown, Duration},
 };
-use failure::{bail, format_err, Error, ResultExt as _};
-use hashbrown::{HashMap, HashSet};
+use anyhow::{anyhow, bail, Context as _, Error};
 use irc::{
     client::{self, Client},
     proto::{
@@ -22,7 +21,12 @@ use irc::{
 };
 use leaky_bucket::LeakyBuckets;
 use parking_lot::RwLock;
-use std::{fmt, sync::Arc, time};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+    sync::Arc,
+    time,
+};
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
 
@@ -282,7 +286,7 @@ impl Irc {
                         stream_state_tx
                             .send(m)
                             .await
-                            .map_err(|_| format_err!("failed to send"))?;
+                            .map_err(|_| anyhow!("failed to send"))?;
                     }
                 };
 
@@ -328,9 +332,7 @@ impl Irc {
                     })
                     .await;
 
-                result.with_context(|_| {
-                    format_err!("failed to initialize module: {}", module.ty())
-                })?;
+                result.with_context(|| anyhow!("failed to initialize module: {}", module.ty()))?;
             }
 
             let (future, currency_handler) = currency_admin::setup(&injector)?;
@@ -414,7 +416,7 @@ impl Irc {
 
             let mut outgoing = client
                 .outgoing()
-                .ok_or_else(|| format_err!("missing outgoing future for irc client"))?;
+                .ok_or_else(|| anyhow!("missing outgoing future for irc client"))?;
 
             let mut client_stream = client.stream()?;
 
@@ -881,7 +883,7 @@ impl<'a> Handler<'a> {
     pub async fn process_message(&mut self, user: &User, mut message: &str) -> Result<(), Error> {
         for (key, hook) in &mut self.message_hooks {
             hook.peek(&user, message)
-                .with_context(|_| format_err!("hook `{}` failed", key))?;
+                .with_context(|| anyhow!("hook `{}` failed", key))?;
         }
 
         // only non-moderators and non-streamer bumps the idle counter.
@@ -1003,7 +1005,7 @@ impl<'a> Handler<'a> {
 
                 let name = m
                     .source_nickname()
-                    .ok_or_else(|| format_err!("expected user info"))?
+                    .ok_or_else(|| anyhow!("expected user info"))?
                     .to_string();
 
                 if let Some(chat_log) = self.chat_log.as_ref().cloned() {

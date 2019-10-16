@@ -13,7 +13,7 @@ impl command::Handler for Handler {
         Some(auth::Scope::Command)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), failure::Error> {
+    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -83,7 +83,7 @@ impl super::Module for Module {
             settings,
             ..
         }: module::HookContext<'_, '_>,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         let enabled = settings.var("command/enabled", true)?;
         let commands = injector.var()?;
         handlers.insert("command", Handler { enabled, commands });

@@ -1,4 +1,4 @@
-use failure::{bail, Error};
+use anyhow::{bail, Error};
 use futures::prelude::*;
 use oxidize_web::{api, db, web};
 use std::{fs, path::Path, sync::Arc, time};
