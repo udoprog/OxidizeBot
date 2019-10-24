@@ -1,20 +1,28 @@
-<p align="center">
-  <a href="https://setbac.tv"><img src="https://raw.githubusercontent.com/udoprog/OxidizeBot/master/bot/res/icon48.png" title="Oxidize Bot"></a>
-</p>
+<div align="center">
+  <a href="https://setbac.tv">
+    <img src="https://raw.githubusercontent.com/udoprog/OxidizeBot/master/bot/res/icon48.png" title="Oxidize Bot">
+  </a>
+</div>
 
 <p align="center">
   A high performance Twitch Bot powered by Rust
 </p>
 
-<p align="center">
+<div align="center">
   <a href="https://github.com/udoprog/OxidizeBot/actions">
     <img alt="GitHub Actions Build Status" src="https://github.com/udoprog/OxidizeBot/workflows/Build/badge.svg">
   </a>
-</p>
 
-<p align="center">
-  <a href="https://setbac.tv/" rel="nofollow">Website</a>
-</p>
+  <a href="https://discord.gg/v5AeNkT">
+    <img alt="Chat on Discord" src="https://img.shields.io/discord/558644981137670144.svg?logo=discord&style=flat-square">
+  </a>
+</div>
+
+<div align="center">
+  <a href="https://setbac.tv/" rel="nofollow">Site 🌐</a>
+  &ndash;
+  <a href="https://setbac.tv/help" rel="nofollow">Command Help ❓</a>
+</div>
 
 ## Features
 
