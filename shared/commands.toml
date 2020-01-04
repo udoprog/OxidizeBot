@@ -365,6 +365,19 @@ SetMod: setbac -> Current song: "We Will Rock You - Remastered" by Queen, reques
 """
 
 [[groups.commands]]
+name = "!song purge"
+content = """
+Deletes all songs in the queue
+"""
+
+[[groups.commands.examples]]
+name = "The output of the command."
+content = """
+setbac: !song purge
+SetMod: setbac -> Song queue purged.
+"""
+
+[[groups.commands]]
 name = "!song delete last"
 content = """
 Delete the last song in the queue.
