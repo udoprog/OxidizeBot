@@ -405,6 +405,7 @@ fn linux_build(root: &Path) -> Result<()> {
         println!("building: {}", exe.display());
         cargo(&[
             "build",
+            "--manifest-path=bot/Cargo.toml",
             "--release",
             "--bin",
             "oxidize",
@@ -448,6 +449,7 @@ fn macos_build(root: &Path) -> Result<()> {
         println!("building: {}", exe.display());
         cargo(&[
             "build",
+            "--manifest-path=bot/Cargo.toml",
             "--release",
             "--bin",
             "oxidize",
