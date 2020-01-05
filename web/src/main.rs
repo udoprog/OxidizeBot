@@ -60,8 +60,7 @@ async fn main() -> Result<(), Error> {
 
     let github = api::GitHub::new()?;
 
-    let mut releases_interval =
-        tokio::timer::Interval::new(time::Instant::now(), time::Duration::from_secs(60 * 10));
+    let mut releases_interval = tokio::time::interval(time::Duration::from_secs(60 * 10)).fuse();
 
     let web = web::setup(db.clone(), host, port, config)?;
     pin_utils::pin_mut!(web);

@@ -175,10 +175,7 @@ impl Sender {
                     Err(api::nightbot::RequestError::TooManyRequests) => {
                         // since we still hold the lock, no one else can send.
                         // sleep for 100 ms an retry the send.
-                        tokio::timer::delay(
-                            time::Instant::now() + time::Duration::from_millis(1000),
-                        )
-                        .await;
+                        tokio::time::delay_for(time::Duration::from_millis(1000)).await;
 
                         continue;
                     }

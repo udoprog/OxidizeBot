@@ -250,7 +250,7 @@ struct Prefix {
 
 /// The future that drives a synchronized variable.
 struct Driver {
-    future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
+    future: Pin<Box<dyn Future<Output = ()> + Send + Sync + 'static>>,
 }
 
 impl Future for Driver {
@@ -630,18 +630,17 @@ impl Settings {
             + serde::de::DeserializeOwned,
     {
         let (mut stream, value) = self.stream(key).or_with(default)?;
+
         let value = Arc::new(RwLock::new(value));
         let future_value = value.clone();
 
-        let future = async move {
+        let future = Box::pin(async move {
             while let Some(update) = stream.next().await {
                 *future_value.write() = update;
             }
-        };
-
-        let result = self.inner.drivers.unbounded_send(Driver {
-            future: future.boxed(),
         });
+
+        let result = self.inner.drivers.unbounded_send(Driver { future });
 
         if let Err(e) = result {
             if !e.is_disconnected() {
@@ -667,15 +666,13 @@ impl Settings {
         let value = Arc::new(RwLock::new(value));
         let future_value = value.clone();
 
-        let future = async move {
+        let future = Box::pin(async move {
             while let Some(update) = stream.next().await {
                 *future_value.write() = update;
             }
-        };
-
-        let result = self.inner.drivers.unbounded_send(Driver {
-            future: future.boxed(),
         });
+
+        let result = self.inner.drivers.unbounded_send(Driver { future });
 
         if let Err(e) = result {
             if !e.is_disconnected() {

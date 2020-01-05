@@ -425,7 +425,7 @@ pub async fn build(
     };
 
     // check for expirations.
-    let mut check_interval = tokio::timer::Interval::new_interval(check_interval.as_std());
+    let mut check_interval = tokio::time::interval(check_interval.as_std()).fuse();
 
     builder.update_from_settings(connection).await?;
 
@@ -452,7 +452,7 @@ pub async fn build(
                     builder.update().await?;
                 }
                 update = check_interval_stream.select_next_some() => {
-                    check_interval = tokio::timer::Interval::new_interval(update.as_std());
+                    check_interval = tokio::time::interval(update.as_std()).fuse();
                 }
             }
         }

@@ -289,7 +289,11 @@ fn main() -> Result<(), Error> {
             try_main(system, old_root, root).instrument(trace_span!(target: "futures", "main",))
         };
 
-        let runtime = tokio::runtime::Runtime::new()?;
+        let mut runtime = tokio::runtime::Builder::new()
+            .threaded_scheduler()
+            .enable_all()
+            .build()?;
+
         let result = runtime.block_on(future);
 
         match result {
@@ -338,7 +342,7 @@ fn main() -> Result<(), Error> {
                 .await;
             };
 
-            let delay = tokio::timer::delay(time::Instant::now() + *current_backoff);
+            let delay = tokio::time::delay_for(*current_backoff);
 
             let _ = runtime.block_on(future::select(system_interrupt.boxed(), delay));
         }

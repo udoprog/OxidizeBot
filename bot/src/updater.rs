@@ -1,7 +1,7 @@
 use crate::{api, injector::Injector, prelude::*, storage::Cache, utils::Duration};
 use anyhow::Error;
 use parking_lot::RwLock;
-use std::{sync::Arc, time::Instant};
+use std::sync::Arc;
 
 const USER: &'static str = "udoprog";
 const REPO: &'static str = "OxidizeBot";
@@ -18,7 +18,7 @@ pub fn run(
 
     let future = async move {
         let github = api::GitHub::new()?;
-        let mut interval = tokio::timer::Interval::new(Instant::now(), Duration::hours(6).as_std());
+        let mut interval = tokio::time::interval(Duration::hours(6).as_std()).fuse();
 
         let (mut cache_stream, mut cache) = injector.stream::<Cache>();
 

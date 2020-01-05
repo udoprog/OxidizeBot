@@ -52,7 +52,7 @@ impl NightBot {
         let req = self
             .request(Method::POST, &["channel", "send"])
             .header(header::CONTENT_TYPE, "application/json")
-            .body(message.as_bytes());
+            .body(message.into_bytes());
 
         let _ = req.execute().await?.json::<Status>()?;
         Ok(())

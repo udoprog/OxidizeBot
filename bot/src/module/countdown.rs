@@ -129,7 +129,7 @@ impl super::Module for Module {
                                 let mut t = Timer {
                                     duration,
                                     elapsed: Default::default(),
-                                    interval: tokio::timer::Interval::new_interval(time::Duration::from_secs(1)),
+                                    interval: tokio::time::interval(time::Duration::from_secs(1)),
                                 };
 
                                 writer.template = Some(template);
@@ -230,7 +230,7 @@ impl FileWriter {
 struct Timer {
     duration: utils::Duration,
     elapsed: utils::Duration,
-    interval: tokio::timer::Interval,
+    interval: tokio::time::Interval,
 }
 
 impl Stream for Timer {

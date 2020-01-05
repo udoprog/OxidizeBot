@@ -128,11 +128,8 @@ pub fn setup(
         data: Default::default(),
     };
 
-    let now = time::Instant::now();
-    let mut stream_interval =
-        tokio::timer::Interval::new(now.clone(), time::Duration::from_secs(30));
-    let mut subs_interval =
-        tokio::timer::Interval::new(now.clone(), time::Duration::from_secs(60 * 10));
+    let mut stream_interval = tokio::time::interval(time::Duration::from_secs(30)).fuse();
+    let mut subs_interval = tokio::time::interval(time::Duration::from_secs(60 * 10)).fuse();
 
     let future_info = stream_info.clone();
 

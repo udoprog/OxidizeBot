@@ -251,7 +251,7 @@ impl Irc {
 
             let nightbot = injector.var::<Arc<api::NightBot>>()?;
 
-            let buckets = LeakyBuckets::new();
+            let mut buckets = LeakyBuckets::new();
 
             let sender = Sender::new(
                 sender_ty,
@@ -263,8 +263,10 @@ impl Irc {
 
             let mut futures = futures::stream::FuturesUnordered::new();
 
+            let coordinate = buckets.coordinate()?;
+
             let future = async move {
-                buckets.coordinate().await?;
+                coordinate.await?;
                 Ok(())
             };
 
@@ -420,8 +422,7 @@ impl Irc {
 
             let mut client_stream = client.stream()?;
 
-            let mut ping_interval =
-                tokio::timer::Interval::new_interval(time::Duration::from_secs(10));
+            let mut ping_interval = tokio::time::interval(time::Duration::from_secs(10)).fuse();
 
             handler.sender.cap_req(TWITCH_TAGS_CAP);
             handler.sender.cap_req(TWITCH_COMMANDS_CAP);
@@ -456,19 +457,19 @@ impl Irc {
                             }
                             Err(e) => {
                                 log::warn!("IRC component errored, restarting in 5 seconds: {}", e);
-                                tokio::timer::delay(time::Instant::now() + time::Duration::from_secs(5)).await;
+                                tokio::time::delay_for(time::Duration::from_secs(5)).await;
                                 continue 'outer;
                             }
                         }
                     }
                     update = twitch_setup.streamer_stream.select_next_some() => {
                         if twitch_setup.update_streamer(update).await? {
-                            leave = Some(tokio::timer::delay(time::Instant::now() + time::Duration::from_secs(1)));
+                            leave = Some(tokio::time::delay_for(time::Duration::from_secs(1)));
                         }
                     },
                     update = twitch_setup.bot_stream.select_next_some() => {
                         if twitch_setup.update_bot(update).await? {
-                            leave = Some(tokio::timer::delay(time::Instant::now() + time::Duration::from_secs(1)));
+                            leave = Some(tokio::time::delay_for(time::Duration::from_secs(1)));
                         }
                     },
                     update = commands_stream.select_next_some() => {
@@ -603,9 +604,7 @@ fn currency_loop<'a>(
 
     return Ok(async move {
         let new_timer = |interval: &Duration, viewer_reward: bool| match viewer_reward {
-            true if !interval.is_empty() => {
-                Some(tokio::timer::Interval::new_interval(interval.as_std()))
-            }
+            true if !interval.is_empty() => Some(tokio::time::interval(interval.as_std())),
             _ => None,
         };
 
@@ -709,7 +708,7 @@ struct Handler<'a> {
     /// Build idle detection.
     idle: &'a idle::Idle,
     /// Pong timeout currently running.
-    pong_timeout: &'a mut Option<tokio::timer::Delay>,
+    pong_timeout: &'a mut Option<tokio::time::Delay>,
     /// OAuth 2.0 Token used to authenticate with IRC.
     token: &'a oauth2::SyncToken,
     /// Force a shutdown.
@@ -872,9 +871,7 @@ impl<'a> Handler<'a> {
         self.sender
             .send_immediate(Command::PING(String::from(SERVER), None));
 
-        *self.pong_timeout = Some(tokio::timer::delay(
-            time::Instant::now() + time::Duration::from_secs(5),
-        ));
+        *self.pong_timeout = Some(tokio::time::delay_for(time::Duration::from_secs(5)));
 
         Ok(())
     }
@@ -1570,7 +1567,7 @@ pub struct CommandVars<'a> {
 
 // Future to refresh moderators every 5 minutes.
 async fn refresh_mods_future(sender: Sender) -> Result<(), Error> {
-    let mut interval = tokio::timer::Interval::new_interval(time::Duration::from_secs(60 * 5));
+    let mut interval = tokio::time::interval(time::Duration::from_secs(60 * 5));
 
     while let Some(_) = interval.next().await {
         log::trace!("refreshing mods and vips");

@@ -221,9 +221,7 @@ pub fn run(
 
     let song_update_interval = match song_update_interval.is_empty() {
         true => None,
-        false => Some(tokio::timer::Interval::new_interval(
-            song_update_interval.as_std(),
-        )),
+        false => Some(tokio::time::interval(song_update_interval.as_std())),
     };
 
     let (commands_tx, commands) = mpsc::unbounded();
@@ -1382,13 +1380,13 @@ pub struct PlaybackFuture {
     /// Song config.
     song_switch_feedback: Arc<RwLock<bool>>,
     /// Optional stream indicating that we want to send a song update on the global bus.
-    song_update_interval: Option<tokio::timer::Interval>,
+    song_update_interval: Option<tokio::time::Interval>,
     /// Stream for when song update interval is updated.
     song_update_interval_stream: settings::Stream<utils::Duration>,
     /// Notifier to use when sending song updates.
     global_bus: Arc<bus::Bus<bus::Global>>,
     /// Timeout for end of song.
-    timeout: Option<tokio::timer::Delay>,
+    timeout: Option<tokio::time::Delay>,
 }
 
 impl PlaybackFuture {
@@ -1482,7 +1480,7 @@ impl PlaybackFuture {
                 value = self.song_update_interval_stream.select_next_some() => {
                     self.song_update_interval = match value.is_empty() {
                         true => None,
-                        false => Some(tokio::timer::Interval::new_interval(value.as_std())),
+                        false => Some(tokio::time::interval(value.as_std())),
                     };
                 }
                 _ = self.song_update_interval.select_next_some() => {
@@ -1747,7 +1745,7 @@ impl PlaybackFuture {
     async fn play_song(&mut self, source: Source, mut song: Song) -> Result<(), Error> {
         song.play();
 
-        self.timeout = Some(tokio::timer::delay(song.deadline()));
+        self.timeout = Some(tokio::time::delay_until(song.deadline().into()));
 
         self.send_play_command(song.clone()).await;
         self.switch_current_player(song.player()).await;
@@ -1766,7 +1764,7 @@ impl PlaybackFuture {
 
     /// Resume playing a specific song.
     async fn resume_song(&mut self, source: Source, song: Song) -> Result<(), Error> {
-        self.timeout = Some(tokio::timer::delay(song.deadline()));
+        self.timeout = Some(tokio::time::delay_until(song.deadline().into()));
 
         self.send_play_command(song.clone()).await;
         self.switch_current_player(song.player()).await;
@@ -1913,7 +1911,7 @@ impl PlaybackFuture {
                 self.state = song.state();
 
                 if let State::Playing = self.state {
-                    self.timeout = Some(tokio::timer::delay(song.deadline()));
+                    self.timeout = Some(tokio::time::delay_until(song.deadline().into()));
                 } else {
                     self.timeout = None;
                 }

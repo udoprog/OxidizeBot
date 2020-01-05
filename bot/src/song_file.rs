@@ -24,7 +24,7 @@ impl SongFileBuilder {
             true => return None,
         };
 
-        let update_interval = tokio::timer::Interval::new_interval(update_interval.as_std());
+        let update_interval = tokio::time::interval(update_interval.as_std());
 
         Some(SongFile {
             path: path.clone(),
@@ -51,7 +51,7 @@ pub struct SongFile {
     /// Message to show when no song is playing.
     stopped_template: Option<Template>,
     /// Update frequency.
-    pub update_interval: tokio::timer::Interval,
+    pub update_interval: tokio::time::Interval,
 }
 
 impl SongFile {

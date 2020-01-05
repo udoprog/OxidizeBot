@@ -23,6 +23,15 @@ mod assets {
 }
 
 #[derive(Debug)]
+struct CustomReject(anyhow::Error);
+
+impl warp::reject::Reject for CustomReject {}
+
+pub(crate) fn custom_reject(error: impl Into<anyhow::Error>) -> warp::Rejection {
+    warp::reject::custom(CustomReject(error.into()))
+}
+
+#[derive(Debug)]
 enum Error {
     BadRequest,
     NotFound,
@@ -80,17 +89,17 @@ impl Aliases {
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Aliases(aliases);
 
-        let list = warp::get2()
+        let list = warp::get()
             .and(path!("aliases" / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment| {
                     let api = api.clone();
-                    async move { api.list(channel.as_str()).map_err(warp::reject::custom) }
+                    async move { api.list(channel.as_str()).map_err(custom_reject) }
                 }
             });
 
-        let delete = warp::delete2()
+        let delete = warp::delete()
             .and(path!("aliases" / Fragment / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
@@ -98,12 +107,12 @@ impl Aliases {
                     let api = api.clone();
                     async move {
                         api.delete(channel.as_str(), name.as_str())
-                            .map_err(warp::reject::custom)
+                            .map_err(custom_reject)
                     }
                 }
             });
 
-        let edit = warp::put2()
+        let edit = warp::put()
             .and(path!("aliases" / Fragment / Fragment).and(path::end()))
             .and(body::json())
             .and_then({
@@ -112,12 +121,12 @@ impl Aliases {
                     let api = api.clone();
                     async move {
                         api.edit(channel.as_str(), name.as_str(), body.template)
-                            .map_err(warp::reject::custom)
+                            .map_err(custom_reject)
                     }
                 }
             });
 
-        let edit_disabled = warp::post2()
+        let edit_disabled = warp::post()
             .and(path!("aliases" / Fragment / Fragment / "disabled").and(path::end()))
             .and(body::json())
             .and_then({
@@ -126,7 +135,7 @@ impl Aliases {
                     let api = api.clone();
                     async move {
                         api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
-                            .map_err(warp::reject::custom)
+                            .map_err(custom_reject)
                     }
                 }
             });
@@ -197,17 +206,17 @@ impl Commands {
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Commands(commands);
 
-        let list = warp::get2()
+        let list = warp::get()
             .and(path!("commands" / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment| {
                     let api = api.clone();
-                    async move { api.list(channel.as_str()).map_err(warp::reject::custom) }
+                    async move { api.list(channel.as_str()).map_err(custom_reject) }
                 }
             });
 
-        let delete = warp::delete2()
+        let delete = warp::delete()
             .and(path!("commands" / Fragment / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
@@ -215,12 +224,12 @@ impl Commands {
                     let api = api.clone();
                     async move {
                         api.delete(channel.as_str(), name.as_str())
-                            .map_err(warp::reject::custom)
+                            .map_err(custom_reject)
                     }
                 }
             });
 
-        let edit_disabled = warp::post2()
+        let edit_disabled = warp::post()
             .and(path!("commands" / Fragment / Fragment / "disabled").and(path::end()))
             .and(body::json())
             .and_then({
@@ -230,12 +239,12 @@ impl Commands {
 
                     async move {
                         api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
-                            .map_err(warp::reject::custom)
+                            .map_err(custom_reject)
                     }
                 }
             });
 
-        let edit = warp::put2()
+        let edit = warp::put()
             .and(path!("commands" / Fragment / Fragment).and(path::end()))
             .and(body::json())
             .and_then({
@@ -244,7 +253,7 @@ impl Commands {
                     let api = api.clone();
                     async move {
                         api.edit(channel.as_str(), name.as_str(), body.template)
-                            .map_err(warp::reject::custom)
+                            .map_err(custom_reject)
                     }
                 }
             });
@@ -315,17 +324,17 @@ impl Promotions {
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Promotions(promotions);
 
-        let list = warp::get2()
+        let list = warp::get()
             .and(path!("promotions" / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment| {
                     let api = api.clone();
-                    async move { api.list(channel.as_str()).map_err(warp::reject::custom) }
+                    async move { api.list(channel.as_str()).map_err(custom_reject) }
                 }
             });
 
-        let delete = warp::delete2()
+        let delete = warp::delete()
             .and(path!("promotions" / Fragment / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
@@ -334,12 +343,12 @@ impl Promotions {
 
                     async move {
                         api.delete(channel.as_str(), name.as_str())
-                            .map_err(warp::reject::custom)
+                            .map_err(custom_reject)
                     }
                 }
             });
 
-        let edit = warp::put2()
+        let edit = warp::put()
             .and(path!("promotions" / Fragment / Fragment).and(path::end()))
             .and(body::json())
             .and_then({
@@ -354,12 +363,12 @@ impl Promotions {
                             body.frequency,
                             body.template,
                         )
-                        .map_err(warp::reject::custom)
+                        .map_err(custom_reject)
                     }
                 }
             });
 
-        let edit_disabled = warp::post2()
+        let edit_disabled = warp::post()
             .and(path!("promotions" / Fragment / Fragment / "disabled").and(path::end()))
             .and(body::json())
             .and_then({
@@ -369,7 +378,7 @@ impl Promotions {
 
                     async move {
                         api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
-                            .map_err(warp::reject::custom)
+                            .map_err(custom_reject)
                     }
                 }
             });
@@ -441,17 +450,17 @@ impl Themes {
     fn route(themes: Arc<RwLock<Option<db::Themes>>>) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Themes(themes);
 
-        let list = warp::get2()
+        let list = warp::get()
             .and(path!("themes" / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
                 move |channel: Fragment| {
                     let api = api.clone();
-                    async move { api.list(channel.as_str()).map_err(warp::reject::custom) }
+                    async move { api.list(channel.as_str()).map_err(custom_reject) }
                 }
             });
 
-        let delete = warp::delete2()
+        let delete = warp::delete()
             .and(path!("themes" / Fragment / Fragment).and(path::end()))
             .and_then({
                 let api = api.clone();
@@ -460,12 +469,12 @@ impl Themes {
 
                     async move {
                         api.delete(channel.as_str(), name.as_str())
-                            .map_err(warp::reject::custom)
+                            .map_err(custom_reject)
                     }
                 }
             });
 
-        let edit = warp::put2()
+        let edit = warp::put()
             .and(path!("themes" / Fragment / Fragment).and(path::end()))
             .and(body::json())
             .and_then({
@@ -475,12 +484,12 @@ impl Themes {
 
                     async move {
                         api.edit(channel.as_str(), name.as_str(), body.track_id)
-                            .map_err(warp::reject::custom)
+                            .map_err(custom_reject)
                     }
                 }
             });
 
-        let edit_disabled = warp::post2()
+        let edit_disabled = warp::post()
             .and(path!("themes" / Fragment / Fragment / "disabled").and(path::end()))
             .and(body::json())
             .and_then({
@@ -490,7 +499,7 @@ impl Themes {
 
                     async move {
                         api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
-                            .map_err(warp::reject::custom)
+                            .map_err(custom_reject)
                     }
                 }
             });
@@ -577,55 +586,55 @@ impl Auth {
             settings,
         };
 
-        let route = warp::get2()
+        let route = warp::get()
             .and(warp::path!("connections").and(path::end()))
             .and_then({
                 let api = api.clone();
                 move || {
                     let api = api.clone();
-                    async move { api.connections().map_err(warp::reject::custom) }
+                    async move { api.connections().map_err(custom_reject) }
                 }
             })
             .boxed();
 
         let route = route
-            .or(warp::get2()
+            .or(warp::get()
                 .and(warp::path!("roles").and(path::end()))
                 .and_then({
                     let api = api.clone();
                     move || {
                         let api = api.clone();
-                        async move { api.roles().map_err(warp::reject::custom) }
+                        async move { api.roles().map_err(custom_reject) }
                     }
                 }))
             .boxed();
 
         let route = route
-            .or(warp::get2()
+            .or(warp::get()
                 .and(warp::path!("scopes").and(path::end()))
                 .and_then({
                     let api = api.clone();
                     move || {
                         let api = api.clone();
-                        async move { api.scopes().map_err(warp::reject::custom) }
+                        async move { api.scopes().map_err(custom_reject) }
                     }
                 }))
             .boxed();
 
         let route = route
-            .or(warp::get2()
+            .or(warp::get()
                 .and(warp::path!("grants").and(path::end()))
                 .and_then({
                     let api = api.clone();
                     move || {
                         let api = api.clone();
-                        async move { api.grants().map_err(warp::reject::custom) }
+                        async move { api.grants().map_err(custom_reject) }
                     }
                 }))
             .boxed();
 
         let route = route
-            .or(warp::put2()
+            .or(warp::put()
                 .and(warp::path!("grants").and(path::end()))
                 .and(body::json())
                 .and_then({
@@ -634,14 +643,14 @@ impl Auth {
                         let api = api.clone();
                         async move {
                             api.insert_grant(body.scope, body.role)
-                                .map_err(warp::reject::custom)
+                                .map_err(custom_reject)
                         }
                     }
                 }))
             .boxed();
 
         let route = route
-            .or(warp::delete2()
+            .or(warp::delete()
                 .and(warp::path!("grants" / Fragment / Fragment).and(path::end()))
                 .and_then({
                     let api = api.clone();
@@ -649,14 +658,14 @@ impl Auth {
                         let api = api.clone();
                         async move {
                             api.delete_grant(scope.as_str(), role.as_str())
-                                .map_err(warp::reject::custom)
+                                .map_err(custom_reject)
                         }
                     }
                 }))
             .boxed();
 
         let route = route
-            .or(warp::get2()
+            .or(warp::get()
                 .and(
                     warp::path!("key")
                         .and(warp::query::<AuthKeyQuery>())
@@ -666,7 +675,7 @@ impl Auth {
                     let api = api.clone();
                     move |query: AuthKeyQuery| {
                         let api = api.clone();
-                        async move { api.set_key(query).map_err(warp::reject::custom) }
+                        async move { api.set_key(query).map_err(custom_reject) }
                     }
                 }))
             .boxed();
@@ -957,64 +966,59 @@ pub async fn setup(
     };
 
     let api = {
-        let route = warp::post2()
+        let route = warp::post()
             .and(path!("device" / String))
             .and_then({
                 let api = api.clone();
                 move |id| {
                     let api = api.clone();
-                    async move {
-                        api.clone()
-                            .set_device(id)
-                            .await
-                            .map_err(warp::reject::custom)
-                    }
+                    async move { api.clone().set_device(id).await.map_err(custom_reject) }
                 }
             })
             .boxed();
 
         let route = route
-            .or(warp::get2().and(warp::path("version")).and_then({
+            .or(warp::get().and(warp::path("version")).and_then({
                 let api = api.clone();
                 move || {
                     let api = api.clone();
-                    async move { api.version().map_err(warp::reject::custom) }
+                    async move { api.version().map_err(custom_reject) }
                 }
             }))
             .boxed();
 
         let route = route
-            .or(warp::get2().and(warp::path("devices")).and_then({
+            .or(warp::get().and(warp::path("devices")).and_then({
                 let api = api.clone();
                 move || {
                     let api = api.clone();
-                    async move { api.clone().devices().await.map_err(warp::reject::custom) }
+                    async move { api.clone().devices().await.map_err(custom_reject) }
                 }
             }))
             .boxed();
 
         let route = route
-            .or(warp::delete2().and(path!("after-stream" / i32)).and_then({
+            .or(warp::delete().and(path!("after-stream" / i32)).and_then({
                 let api = api.clone();
                 move |id| {
                     let api = api.clone();
-                    async move { api.delete_after_stream(id).map_err(warp::reject::custom) }
+                    async move { api.delete_after_stream(id).map_err(custom_reject) }
                 }
             }))
             .boxed();
 
         let route = route
-            .or(warp::get2().and(warp::path("after-streams")).and_then({
+            .or(warp::get().and(warp::path("after-streams")).and_then({
                 let api = api.clone();
                 move || {
                     let api = api.clone();
-                    async move { api.get_after_streams().map_err(warp::reject::custom) }
+                    async move { api.get_after_streams().map_err(custom_reject) }
                 }
             }))
             .boxed();
 
         let route = route
-            .or(warp::put2()
+            .or(warp::put()
                 .and(warp::path("balances"))
                 .and(body::json())
                 .and_then({
@@ -1026,24 +1030,19 @@ pub async fn setup(
                             api.clone()
                                 .import_balances(balances)
                                 .await
-                                .map_err(warp::reject::custom)
+                                .map_err(custom_reject)
                         }
                     }
                 }))
             .boxed();
 
         let route = route
-            .or(warp::get2().and(warp::path("balances")).and_then({
+            .or(warp::get().and(warp::path("balances")).and_then({
                 let api = api.clone();
                 move || {
                     let api = api.clone();
 
-                    async move {
-                        api.clone()
-                            .export_balances()
-                            .await
-                            .map_err(warp::reject::custom)
-                    }
+                    async move { api.clone().export_balances().await.map_err(custom_reject) }
                 }
             }))
             .boxed();
@@ -1066,7 +1065,7 @@ pub async fn setup(
         // TODO: move endpoint into abstraction thingie.
         let route = route
             .or(
-                warp::get2().and(path!("current").and(path::end()).and_then(move || {
+                warp::get().and(path!("current").and(path::end()).and_then(move || {
                     let channel = channel.clone();
 
                     async move {
@@ -1088,15 +1087,15 @@ pub async fn setup(
         warp::path("api").and(route)
     };
 
-    let ws_messages = warp::get2()
+    let ws_messages = warp::get()
         .and(warp::path!("ws" / "messages"))
         .and(send_bus(message_bus).recover(recover));
 
-    let ws_overlay = warp::get2()
+    let ws_overlay = warp::get()
         .and(warp::path!("ws" / "overlay"))
         .and(send_bus(global_bus).recover(recover));
 
-    let ws_youtube = warp::get2()
+    let ws_youtube = warp::get()
         .and(warp::path!("ws" / "youtube"))
         .and(send_bus(youtube_bus).recover(recover));
 
@@ -1108,7 +1107,7 @@ pub async fn setup(
     let fallback = Asset::get("index.html");
 
     let routes =
-        routes.or(warp::get2()
+        routes.or(warp::get()
             .and(warp::path::tail())
             .and_then(move |tail: path::Tail| {
                 let fallback = fallback.clone();
@@ -1192,7 +1191,7 @@ impl<'de> serde::Deserialize<'de> for Fragment {
 // This function receives a `Rejection` and tries to return a custom
 // value, othewise simply passes the rejection along.
 async fn recover(err: warp::Rejection) -> Result<impl warp::Reply, warp::Rejection> {
-    if let Some(e) = err.find_cause::<Error>() {
+    if let Some(e) = err.find::<Error>() {
         let code = match *e {
             Error::BadRequest => warp::http::StatusCode::BAD_REQUEST,
             Error::NotFound => warp::http::StatusCode::NOT_FOUND,
@@ -1256,11 +1255,11 @@ fn send_bus<T>(bus: Arc<bus::Bus<T>>) -> filters::BoxedFilter<(impl warp::Reply,
 where
     T: bus::Message,
 {
-    warp::ws2()
+    warp::ws()
         .map({
             let bus = bus.clone();
 
-            move |ws: warp::ws::Ws2| {
+            move |ws: warp::ws::Ws| {
                 let bus = bus.clone();
 
                 ws.on_upgrade(move |websocket: warp::filters::ws::WebSocket| {

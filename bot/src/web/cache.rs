@@ -20,22 +20,22 @@ impl Cache {
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Cache(cache);
 
-        let list = warp::get2()
+        let list = warp::get()
             .and(path::end().and_then({
                 let api = api.clone();
                 move || {
                     let api = api.clone();
-                    async move { api.list().map_err(warp::reject::custom) }
+                    async move { api.list().map_err(super::custom_reject) }
                 }
             }))
             .boxed();
 
-        let delete = warp::delete2()
+        let delete = warp::delete()
             .and(path::end().and(body::json()).and_then({
                 let api = api.clone();
                 move |body: DeleteRequest| {
                     let api = api.clone();
-                    async move { api.delete(body).map_err(warp::reject::custom) }
+                    async move { api.delete(body).map_err(super::custom_reject) }
                 }
             }))
             .boxed();

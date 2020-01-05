@@ -56,7 +56,7 @@ pub fn setup(
     }));
 
     let future = async move {
-        let mut interval = tokio::timer::Interval::new_interval(time::Duration::from_secs(30));
+        let mut interval = tokio::time::interval(time::Duration::from_secs(30)).fuse();
         let expires = chrono::Duration::minutes(5);
 
         let mut server_future = server_future.fuse();

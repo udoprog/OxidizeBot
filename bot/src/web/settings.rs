@@ -29,19 +29,19 @@ impl Settings {
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Settings(settings);
 
-        let list = warp::get2()
+        let list = warp::get()
             .and(warp::path("settings").and(warp::query::<SettingsQuery>()))
             .and_then({
                 let api = api.clone();
                 move |query: SettingsQuery| {
                     let api = api.clone();
 
-                    async move { api.get_settings(query).map_err(warp::reject::custom) }
+                    async move { api.get_settings(query).map_err(super::custom_reject) }
                 }
             })
             .boxed();
 
-        let get = warp::get2()
+        let get = warp::get()
             .and(warp::path("settings").and(path::tail()).and_then({
                 let api = api.clone();
                 move |key: path::Tail| {
@@ -49,14 +49,14 @@ impl Settings {
 
                     async move {
                         let key =
-                            str::parse::<Fragment>(key.as_str()).map_err(warp::reject::custom)?;
-                        api.get_setting(key.as_str()).map_err(warp::reject::custom)
+                            str::parse::<Fragment>(key.as_str()).map_err(super::custom_reject)?;
+                        api.get_setting(key.as_str()).map_err(super::custom_reject)
                     }
                 }
             }))
             .boxed();
 
-        let delete = warp::delete2()
+        let delete = warp::delete()
             .and(warp::path("settings").and(path::tail()).and_then({
                 let api = api.clone();
 
@@ -65,15 +65,15 @@ impl Settings {
 
                     async move {
                         let key =
-                            str::parse::<Fragment>(key.as_str()).map_err(warp::reject::custom)?;
+                            str::parse::<Fragment>(key.as_str()).map_err(super::custom_reject)?;
                         api.delete_setting(key.as_str())
-                            .map_err(warp::reject::custom)
+                            .map_err(super::custom_reject)
                     }
                 }
             }))
             .boxed();
 
-        let edit = warp::put2()
+        let edit = warp::put()
             .and(
                 warp::path("settings")
                     .and(path::tail().and(body::json()))
@@ -84,9 +84,9 @@ impl Settings {
 
                             async move {
                                 let key = str::parse::<Fragment>(key.as_str())
-                                    .map_err(warp::reject::custom)?;
+                                    .map_err(super::custom_reject)?;
                                 api.edit_setting(key.as_str(), body.value)
-                                    .map_err(warp::reject::custom)
+                                    .map_err(super::custom_reject)
                             }
                         }
                     }),
