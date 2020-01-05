@@ -61,7 +61,8 @@ pub struct Channel {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Emotes {
-    pub status: u32,
+    #[serde(default)]
+    pub status: Option<u32>,
     pub url_template: String,
     pub emotes: Vec<Emote>,
 }
