@@ -238,7 +238,7 @@ impl StringOutput {
 mod tests {
     use super::Template;
     use anyhow::Error;
-    use hashbrown::HashSet;
+    use std::collections::HashSet;
 
     #[test]
     pub fn test_template_vars() -> Result<(), Error> {

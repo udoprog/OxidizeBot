@@ -1601,7 +1601,7 @@ fn parse_room_members(message: &str) -> HashSet<String> {
 #[cfg(test)]
 mod tests {
     use super::parse_room_members;
-    use hashbrown::HashSet;
+    use std::collections::HashSet;
 
     #[test]
     fn test_parse_room_mods() {
