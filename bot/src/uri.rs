@@ -33,13 +33,12 @@ impl std::str::FromStr for Uri {
         let mut it = s.split(':');
 
         match it.next() {
-            Some("youtube") => match (it.next(), it.next()) {
-                (Some("video"), Some(id)) => {
+            Some("youtube") => {
+                if let (Some("video"), Some(id)) = (it.next(), it.next()) {
                     let video_id = Uri::YouTubeVideo(id.to_string());
                     return Ok(video_id);
                 }
-                _ => (),
-            },
+            }
             Some("spotify") => match (it.next(), it.next()) {
                 (Some("track"), Some(id)) => {
                     let id = SpotifyId::from_base62(id)

@@ -26,7 +26,7 @@ impl command::Handler for Time {
             return Ok(());
         }
 
-        let tz = self.timezone.read().clone();
+        let tz = *self.timezone.read();
         let now = Utc::now();
 
         let offset = tz.offset_from_utc_datetime(&now.naive_utc());

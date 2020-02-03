@@ -5,7 +5,7 @@ use anyhow::Error;
 use chrono::{DateTime, Utc};
 use reqwest::{Client, Method, Url};
 
-const API_URL: &'static str = "https://api.github.com";
+const API_URL: &str = "https://api.github.com";
 
 /// API integration.
 #[derive(Clone, Debug)]

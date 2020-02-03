@@ -17,8 +17,8 @@ use std::{
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
 
-const OLD_CONFIG_DIR: &'static str = "SetMod";
-const CONFIG_DIR: &'static str = "OxidizeBot";
+const OLD_CONFIG_DIR: &str = "SetMod";
+const CONFIG_DIR: &str = "OxidizeBot";
 const FILE: &str = "file";
 #[cfg(not(feature = "windows"))]
 const STDOUT: &str = "stdout";
@@ -134,7 +134,7 @@ fn tracing_config() -> Result<(), Error> {
 fn default_log_config(
     log_path: &Path,
     trace: bool,
-    modules: &Vec<&str>,
+    modules: &[&str],
 ) -> Result<log4rs::config::Config, Error> {
     use self::internal::{config_builder, logger_builder, root_builder};
     use log::LevelFilter;

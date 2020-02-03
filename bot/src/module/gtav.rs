@@ -15,7 +15,7 @@ use std::{
 };
 use tokio::net::UdpSocket;
 
-const VEHICLE_URL: &'static str = "http://bit.ly/gtavvehicles";
+const VEHICLE_URL: &str = "http://bit.ly/gtavvehicles";
 
 mod vehicle;
 mod weapon;
@@ -346,27 +346,27 @@ impl Command {
             SpawnRandomVehicle(vehicle) | SpawnVehicle(vehicle) => {
                 format!("spawn-vehicle {}", vehicle)
             }
-            Repair => String::from("repair"),
-            KillEngine => String::from("kill-engine"),
-            BlowTires => String::from("blow-tires"),
+            Repair => "repair".to_string(),
+            KillEngine => "kill-engine".to_string(),
+            BlowTires => "blow-tires".to_string(),
             GiveWeapon(ref weapon) => format!("give-weapon {}", weapon),
-            TakeWeapon => String::from("take-weapon"),
-            TakeAllWeapons => String::from("take-all-weapons"),
-            Stumble => String::from("stumble"),
-            Fall => String::from("fall"),
+            TakeWeapon => "take-weapon".to_string(),
+            TakeAllWeapons => "take-all-weapons".to_string(),
+            Stumble => "stumble".to_string(),
+            Fall => "fall".to_string(),
             Wanted(n) => format!("wanted {}", n),
-            GiveHealth => format!("give-health"),
-            GiveArmor => format!("give-armor"),
-            TakeHealth => format!("take-health"),
+            GiveHealth => "give-health".to_string(),
+            GiveArmor => "give-armor".to_string(),
+            TakeHealth => "take-health".to_string(),
             License(ref license) => format!("license {}", license),
-            RandomizeColor => format!("randomize-color"),
-            RandomizeWeather => format!("randomize-weather"),
-            RandomizeCharacter => format!("randomize-character"),
-            Brake => format!("brake"),
-            TakeAmmo => format!("take-ammo"),
-            GiveAmmo => format!("give-ammo"),
-            Boost => format!("boost"),
-            SuperBoost => format!("super-boost"),
+            RandomizeColor => "randomize-color".to_string(),
+            RandomizeWeather => "randomize-weather".to_string(),
+            RandomizeCharacter => "randomize-character".to_string(),
+            Brake => "brake".to_string(),
+            TakeAmmo => "take-ammo".to_string(),
+            GiveAmmo => "give-ammo".to_string(),
+            Boost => "boost".to_string(),
+            SuperBoost => "super-boost".to_string(),
             SuperSpeed(n) => format!("super-speed {}", n),
             SuperSwim(n) => format!("super-swim {}", n),
             SuperJump(n) => format!("super-jump {}", n),
@@ -375,27 +375,27 @@ impl Command {
             ExplodingBullets(n) => format!("exploding-bullets {}", n),
             FireAmmo(n) => format!("fire-ammo {}", n),
             ExplodingPunches(n) => format!("exploding-punches {}", n),
-            Drunk => format!("drunk"),
-            VeryDrunk => format!("very-drunk"),
-            SetOnFire => format!("set-on-fire"),
-            SetPedsOnFire => format!("set-peds-on-fire"),
-            MakePedsAggressive => format!("make-peds-aggressive"),
-            MatrixSlam => format!("matrix-slam"),
-            CloseParachute => format!("close-parachute"),
+            Drunk => "drunk".to_string(),
+            VeryDrunk => "very-drunk".to_string(),
+            SetOnFire => "set-on-fire".to_string(),
+            SetPedsOnFire => "set-peds-on-fire".to_string(),
+            MakePedsAggressive => "make-peds-aggressive".to_string(),
+            MatrixSlam => "matrix-slam".to_string(),
+            CloseParachute => "close-parachute".to_string(),
             DisableControl(ref control) => format!("disable-control {}", control),
             ModVehicle(ref m) => format!("mod-vehicle {}", m),
-            Levitate => format!("levitate"),
-            LevitateEntities => format!("levitate-entities"),
-            Eject => format!("eject"),
-            SlowDownTime => format!("slow-down-time"),
+            Levitate => "levitate".to_string(),
+            LevitateEntities => "levitate-entities".to_string(),
+            Eject => "eject".to_string(),
+            SlowDownTime => "slow-down-time".to_string(),
             MakeFireProof(n) => format!("make-fire-proof {}", n),
-            FuelLeakage => format!("fuel-leakage"),
+            FuelLeakage => "fuel-leakage".to_string(),
             ChangeCurrentVehicle(ref vehicle) => format!("change-current-vehicle {}", vehicle),
-            RandomizeDoors => format!("randomize-doors"),
-            Skyfall => format!("skyfall"),
-            Taze => format!("taze"),
-            TazeOthers => format!("taze-others"),
-            ReduceGravity => format!("reduce-gravity"),
+            RandomizeDoors => "randomize-doors".to_string(),
+            Skyfall => "skyfall".to_string(),
+            Taze => "taze".to_string(),
+            TazeOthers => "taze-others".to_string(),
+            ReduceGravity => "reduce-gravity".to_string(),
             Raw(ref cmd) => cmd.to_string(),
         }
     }
@@ -692,7 +692,7 @@ impl Handler {
         &mut self,
         ctx: &mut command::Context<'_>,
     ) -> Result<Option<(Command, u32)>, Error> {
-        let command = match ctx.next().as_ref().map(String::as_str) {
+        let command = match ctx.next().as_deref() {
             Some("randomize-color") => Command::RandomizeColor,
             Some("randomize-weather") => Command::RandomizeWeather,
             Some("randomize-character") => Command::RandomizeCharacter,
@@ -727,7 +727,7 @@ impl Handler {
         &mut self,
         ctx: &mut command::Context<'_>,
     ) -> Result<Option<(Command, u32)>, Error> {
-        let command = match ctx.next().as_ref().map(String::as_str) {
+        let command = match ctx.next().as_deref() {
             Some("stumble") => Command::Stumble,
             Some("fall") => Command::Fall,
             Some("tires") => Command::BlowTires,
@@ -793,7 +793,7 @@ impl Handler {
             Some("taze") => Command::Taze,
             Some("taze-others") => Command::TazeOthers,
             _ => {
-                ctx.respond(format!("See !chaos% for available punishments.",));
+                ctx.respond("See !chaos% for available punishments.");
 
                 return Ok(None);
             }
@@ -807,7 +807,7 @@ impl Handler {
         &mut self,
         ctx: &mut command::Context<'_>,
     ) -> Result<Option<(Command, u32)>, Error> {
-        let command = match ctx.next().as_ref().map(String::as_str) {
+        let command = match ctx.next().as_deref() {
             Some("car") => Command::SpawnRandomVehicle(Vehicle::random_car()),
             Some("vehicle") => {
                 let vehicle = vehicle!(ctx, "!gtav reward vehicle");
@@ -820,7 +820,7 @@ impl Handler {
                 let weapon = match ctx.next().and_then(Weapon::from_id) {
                     Some(weapon) => weapon,
                     None => {
-                        ctx.respond(format!("No such weapon, sorry :(.",));
+                        ctx.respond("No such weapon, sorry :(.");
 
                         return Ok(None);
                     }
@@ -880,7 +880,7 @@ impl Handler {
             Some("skyfall") => Command::Skyfall,
             Some("reduce-gravity") => Command::ReduceGravity,
             _ => {
-                ctx.respond(format!("See !chaos% for available rewards."));
+                ctx.respond("See !chaos% for available rewards.");
                 return Ok(None);
             }
         };
@@ -898,14 +898,14 @@ impl command::Handler for Handler {
 
         let currency = self.currency.read().as_ref().cloned();
         let currency = match currency {
-            Some(currency) => currency.clone(),
+            Some(currency) => currency,
             None => {
                 ctx.respond("No currency configured for stream, sorry :(");
                 return Ok(());
             }
         };
 
-        let (result, category_cooldown) = match ctx.next().as_ref().map(String::as_str) {
+        let (result, category_cooldown) = match ctx.next().as_deref() {
             Some("other") => {
                 let command = self.handle_other(&mut ctx)?;
                 (command, None)
@@ -921,12 +921,12 @@ impl command::Handler for Handler {
                 (command, Some(cooldown))
             }
             _ => {
-                ctx.respond(format!(
+                ctx.respond(
                     "You have the following actions available: \
                     reward - To reward the streamer, \
                     punish - To punish the streamer,
                     other - To do other kinds of modifications.",
-                ));
+                );
 
                 return Ok(());
             }
@@ -1028,7 +1028,7 @@ impl command::Handler for Handler {
                 ));
             }
 
-            if let Err(_) = tx.unbounded_send((user, id, command)) {
+            if tx.unbounded_send((user, id, command)).is_err() {
                 bail!("failed to send event");
             }
 
@@ -1145,10 +1145,7 @@ impl super::Module for Module {
             .await?;
 
         let future = async move {
-            let mut receiver = match *enabled.read() {
-                true => Some(&mut rx),
-                false => None,
-            };
+            let mut receiver = if *enabled.read() { Some(&mut rx) } else { None };
 
             loop {
                 futures::select! {
@@ -1196,14 +1193,12 @@ enum VehicleMod {
 
 impl VehicleMod {
     /// Human-readable display of this mod.
-    pub fn display(&self) -> String {
-        use self::VehicleMod::*;
-
-        match *self {
-            Random => format!("random mods BlessRNG"),
-            LowTier => format!("low tier mods"),
-            MidTier => format!("mid tier mods"),
-            HighTier => format!("high tier mods"),
+    pub fn display(self) -> impl fmt::Display {
+        match self {
+            Self::Random => "random mods BlessRNG",
+            Self::LowTier => "low tier mods",
+            Self::MidTier => "mid tier mods",
+            Self::HighTier => "high tier mods",
         }
     }
 
@@ -1221,14 +1216,12 @@ impl VehicleMod {
     }
 
     /// Get the cost of a mod tier.
-    fn cost(&self) -> u32 {
-        use self::VehicleMod::*;
-
-        match *self {
-            Random => 5,
-            LowTier => 5,
-            MidTier => 5,
-            HighTier => 10,
+    fn cost(self) -> u32 {
+        match self {
+            Self::Random => 5,
+            Self::LowTier => 5,
+            Self::MidTier => 5,
+            Self::HighTier => 10,
         }
     }
 
@@ -1262,11 +1255,9 @@ enum Control {
 
 impl Control {
     /// Human-readable display of this control.
-    pub fn display(&self) -> String {
-        use self::Control::*;
-
-        match *self {
-            Steering => format!("steering"),
+    pub fn display(self) -> impl fmt::Display {
+        match self {
+            Self::Steering => "steering",
         }
     }
 
@@ -1281,11 +1272,9 @@ impl Control {
     }
 
     /// Get the cost of a control.
-    fn cost(&self) -> u32 {
-        use self::Control::*;
-
-        match *self {
-            Steering => 50,
+    fn cost(self) -> u32 {
+        match self {
+            Self::Steering => 50,
         }
     }
 

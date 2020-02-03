@@ -4,7 +4,7 @@ use crate::api::RequestBuilder;
 use anyhow::Error;
 use reqwest::{header, Client, Method, Url};
 
-const URL: &'static str = "https://tduva.com";
+const URL: &str = "https://tduva.com";
 
 /// API integration.
 #[derive(Clone, Debug)]

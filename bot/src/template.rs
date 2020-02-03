@@ -47,7 +47,7 @@ impl<'de> serde::Deserialize<'de> for Template {
         let template = handlebars::Template::compile(&s).map_err(serde::de::Error::custom)?;
 
         return Ok(Template {
-            source: s.to_string(),
+            source: s,
             template,
         });
 
@@ -231,6 +231,12 @@ impl StringOutput {
 
     pub fn into_string(self) -> Result<String, string::FromUtf8Error> {
         String::from_utf8(self.buf)
+    }
+}
+
+impl Default for StringOutput {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

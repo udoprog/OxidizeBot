@@ -124,7 +124,6 @@ impl Sender {
         match *self.ty.read() {
             Type::NightBot => {
                 self.send_nightbot(&*self.inner, f.to_string());
-                return;
             }
             Type::Chat => {
                 self.send(Command::PRIVMSG(self.inner.target.clone(), f.to_string()));
@@ -157,7 +156,6 @@ impl Sender {
             }
         };
 
-        let m = m.to_string();
         let limiter = inner.nightbot_limiter.clone();
 
         let future = async move {

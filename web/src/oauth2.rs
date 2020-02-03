@@ -98,7 +98,7 @@ impl SavedToken {
             client_id: &self.client_id,
             access_token: &self.access_token,
             refreshed_at: &self.refreshed_at,
-            expires_in: self.expires_in.clone(),
+            expires_in: self.expires_in,
             scopes: &self.scopes,
         }
     }
@@ -128,11 +128,10 @@ pub struct ExportedToken<'a> {
     pub scopes: &'a [Scope],
 }
 
+type Flows = (Arc<Flow>, HashMap<String, Arc<Flow>>);
+
 /// Setup all required flows.
-pub fn setup_flows(
-    base_url: &Url,
-    config: &Config,
-) -> Result<(Arc<Flow>, HashMap<String, Arc<Flow>>), Error> {
+pub fn setup_flows(base_url: &Url, config: &Config) -> Result<Flows, Error> {
     let mut out = HashMap::new();
 
     let login_flow = Arc::new(config.login.as_flow(base_url, config)?);
@@ -299,12 +298,9 @@ impl Flow {
             client_id: self.config.client_id.clone(),
             refresh_token,
             access_token: token_response.access_token().clone(),
-            refreshed_at: refreshed_at.clone(),
+            refreshed_at,
             expires_in: token_response.expires_in().map(|e| e.as_secs()),
-            scopes: token_response
-                .scopes()
-                .map(|s| s.clone())
-                .unwrap_or_default(),
+            scopes: token_response.scopes().cloned().unwrap_or_default(),
         };
 
         Ok(token)
@@ -357,7 +353,7 @@ impl Flow {
 
         let refresh_token = token_response
             .refresh_token()
-            .map(|r| r.clone())
+            .cloned()
             .unwrap_or_else(|| refresh_token.clone());
 
         let refreshed_at = Utc::now();
@@ -369,10 +365,7 @@ impl Flow {
             access_token: token_response.access_token().clone(),
             refreshed_at,
             expires_in: token_response.expires_in().map(|e| e.as_secs()),
-            scopes: token_response
-                .scopes()
-                .map(|s| s.clone())
-                .unwrap_or_default(),
+            scopes: token_response.scopes().cloned().unwrap_or_default(),
         };
 
         Ok(token)

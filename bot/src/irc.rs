@@ -37,9 +37,9 @@ mod chat_log;
 mod currency_admin;
 mod sender;
 
-const SERVER: &'static str = "irc.chat.twitch.tv";
-const TWITCH_TAGS_CAP: &'static str = "twitch.tv/tags";
-const TWITCH_COMMANDS_CAP: &'static str = "twitch.tv/commands";
+const SERVER: &str = "irc.chat.twitch.tv";
+const TWITCH_TAGS_CAP: &str = "twitch.tv/tags";
+const TWITCH_COMMANDS_CAP: &str = "twitch.tv/commands";
 
 struct TwitchSetup {
     streamer_stream: injector::Stream<oauth2::SyncToken>,
@@ -139,17 +139,17 @@ impl TwitchSetup {
         *token_update = token;
 
         let token = match token_update.as_ref() {
-            None => return Ok(true),
             Some(token) => token,
+            None => return Ok(true),
         };
 
-        let old_user = match existing_user.clone() {
-            None => return Ok(true),
+        let old_user = match existing_user {
             Some(user) => user,
+            None => return Ok(true),
         };
 
         let user = api::Twitch::new(token.clone())?.user().await?;
-        return Ok(user.id != old_user.id);
+        Ok(user.id != old_user.id)
     }
 
     /// Update the bot token and force a restart in case it has changed.
@@ -436,6 +436,7 @@ impl Irc {
 
             let mut leave = None;
 
+            #[allow(clippy::unnecessary_mut_passed)]
             while leave.is_none() {
                 futures::select! {
                     command = commands.select_next_some() => {
@@ -530,6 +531,7 @@ impl Irc {
 
             handler.sender.privmsg_immediate(leave_message);
 
+            #[allow(clippy::never_loop, clippy::unnecessary_mut_passed)]
             loop {
                 futures::select! {
                     _ = outgoing => {
@@ -581,7 +583,7 @@ fn currency_loop<'a>(
 
     let (mut db_stream, db) = injector.stream::<db::Database>();
 
-    let mut builder = CurrencyBuilder::new(twitch.clone(), mysql_schema);
+    let mut builder = CurrencyBuilder::new(twitch, mysql_schema);
     builder.db = db;
     builder.ty = ty;
     builder.enabled = enabled;
@@ -602,10 +604,13 @@ fn currency_loop<'a>(
 
     let mut currency = build(injector, &builder);
 
-    return Ok(async move {
-        let new_timer = |interval: &Duration, viewer_reward: bool| match viewer_reward {
-            true if !interval.is_empty() => Some(tokio::time::interval(interval.as_std())),
-            _ => None,
+    Ok(async move {
+        let new_timer = |interval: &Duration, viewer_reward: bool| {
+            if viewer_reward && !interval.is_empty() {
+                Some(tokio::time::interval(interval.as_std()))
+            } else {
+                None
+            }
         };
 
         let mut timer = new_timer(&reward_interval, viewer_reward);
@@ -674,7 +679,7 @@ fn currency_loop<'a>(
                 }
             }
         }
-    });
+    })
 }
 
 /// Handler for incoming messages.
@@ -767,13 +772,11 @@ pub async fn process_command<'a, 'b: 'a>(
                     if !ctx.user.has_scope(scope) {
                         if ctx.user.is_moderator() {
                             ctx.respond("You are not allowed to run that command");
-                        } else {
-                            if let Some(display_name) = ctx.user.display_name() {
-                                ctx.privmsg(format!(
-                                    "Do you think this is a democracy {name}? LUL",
-                                    name = display_name
-                                ));
-                            }
+                        } else if let Some(display_name) = ctx.user.display_name() {
+                            ctx.privmsg(format!(
+                                "Do you think this is a democracy {name}? LUL",
+                                name = display_name
+                            ));
                         }
 
                         return Ok(());
@@ -831,9 +834,13 @@ impl<'a> Handler<'a> {
             }
         }
 
-        if !user.has_scope(Scope::ChatBypassUrlWhitelist) && *self.url_whitelist_enabled.read() {
-            if self.has_bad_link(message) {
-                return true;
+        #[allow(clippy::collapsible_if)]
+        {
+            if !user.has_scope(Scope::ChatBypassUrlWhitelist) && *self.url_whitelist_enabled.read()
+            {
+                if self.has_bad_link(message) {
+                    return true;
+                }
             }
         }
 
@@ -895,12 +902,7 @@ impl<'a> Handler<'a> {
         let mut path = Vec::new();
 
         if let Some(aliases) = self.aliases.as_ref() {
-            loop {
-                let (key, next) = match aliases.resolve(user.channel(), message) {
-                    Some((key, next)) => (key, next),
-                    None => break,
-                };
-
+            while let Some((key, next)) = aliases.resolve(user.channel(), message) {
                 path.push(key.to_string());
 
                 if !seen.insert(key.clone()) {
@@ -921,7 +923,7 @@ impl<'a> Handler<'a> {
 
         if let Some(commands) = self.commands.as_ref() {
             if let Some((command, captures)) =
-                commands.resolve(user.channel(), first.as_ref().map(String::as_str), &it)
+                commands.resolve(user.channel(), first.as_deref(), &it)
             {
                 if command.has_var("count") {
                     commands.increment(&*command)?;
@@ -944,7 +946,7 @@ impl<'a> Handler<'a> {
                 let command = &command[1..];
 
                 let ctx = command::Context {
-                    api_url: self.api_url.as_ref().map(|s| s.as_str()),
+                    api_url: self.api_url.as_deref(),
                     sender: &self.sender,
                     user: user.clone(),
                     it,
@@ -1032,7 +1034,8 @@ impl<'a> Handler<'a> {
                 self.process_message(&user, message).await?;
             }
             Command::CAP(_, CapSubCommand::ACK, _, ref what) => {
-                match what.as_ref().map(|w| w.as_str()) {
+                #[allow(clippy::single_match)]
+                match what.as_deref() {
                     // twitch commands capabilities have been acknowledged.
                     // do what needs to happen with them (like `/mods`).
                     Some(TWITCH_COMMANDS_CAP) => {
@@ -1067,7 +1070,7 @@ impl<'a> Handler<'a> {
             Command::NOTICE(_, ref message) => {
                 let tags = Tags::from_tags(m.tags.take());
 
-                match tags.msg_id.as_ref().map(|id| id.as_str()) {
+                match tags.msg_id.as_deref() {
                     _ if message == "Login authentication failed" => {
                         self.token.force_refresh()?;
                         self.handler_shutdown = true;
@@ -1156,8 +1159,7 @@ impl<'a> RealUser<'a> {
     pub fn display_name(&self) -> &'a str {
         self.tags
             .display_name
-            .as_ref()
-            .map(|d| d.as_str())
+            .as_deref()
             .unwrap_or_else(|| self.name)
     }
 
@@ -1281,8 +1283,7 @@ impl User {
         self.inner
             .tags
             .display_name
-            .as_ref()
-            .map(|d| d.as_str())
+            .as_deref()
             .or_else(|| self.name())
     }
 
@@ -1388,7 +1389,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         use std::fmt::Write as _;
-        const TAIL: &'static str = "...";
+        const TAIL: &str = "...";
 
         self.line_buf.clear();
         // length of current line.
@@ -1399,6 +1400,7 @@ where
             write!(&mut self.item_buf, "{}", result)
                 .expect("a Display implementation returned an error unexpectedly");
 
+            #[allow(clippy::never_loop)]
             loop {
                 if len + self.item_buf.len() <= self.width {
                     if len > 0 {
@@ -1438,11 +1440,7 @@ where
 }
 
 /// Partition the results to fit the given width, using a separator defined in `part`.
-fn partition_response<'a, I, F>(
-    iter: I,
-    width: usize,
-    sep: &'a str,
-) -> PartitionResponse<'a, I::IntoIter>
+fn partition_response<I, F>(iter: I, width: usize, sep: &str) -> PartitionResponse<'_, I::IntoIter>
 where
     I: IntoIterator<Item = F>,
     F: fmt::Display,
@@ -1477,6 +1475,7 @@ pub struct Tags {
 
 impl Tags {
     /// Extract tags from message.
+    #[allow(clippy::single_match)]
     fn from_tags(tags: Option<Vec<Tag>>) -> Tags {
         let mut id = None;
         let mut msg_id = None;
@@ -1523,6 +1522,7 @@ struct ClearMsgTags {
 
 impl ClearMsgTags {
     /// Extract tags from message.
+    #[allow(clippy::single_match)]
     fn from_tags(tags: Option<Vec<Tag>>) -> Option<ClearMsgTags> {
         let mut target_msg_id = None;
 
@@ -1582,13 +1582,13 @@ async fn refresh_mods_future(sender: Sender) -> Result<(), Error> {
 fn parse_room_members(message: &str) -> HashSet<String> {
     let mut out = HashSet::default();
 
-    if let Some(index) = message.find(":") {
+    if let Some(index) = message.find(':') {
         let message = &message[(index + 1)..];
         let message = message.trim_end_matches('.');
 
         out.extend(
             message
-                .split(",")
+                .split(',')
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(String::from),

@@ -362,9 +362,7 @@ impl Database {
         };
 
         if let Some(key) = self.get::<String>(&user_to_key)? {
-            let key_to_user = Key::KeyToUserId {
-                key: key.to_string(),
-            };
+            let key_to_user = Key::KeyToUserId { key };
 
             let mut tx = self.transaction();
             tx.remove(&user_to_key)?;

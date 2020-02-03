@@ -33,7 +33,7 @@ impl Speedrun {
 
         category_filter.ty = Some(CategoryType::PerGame);
 
-        while let Some(arg) = ctx.next().as_ref().map(String::as_str) {
+        while let Some(arg) = ctx.next().as_deref() {
             match arg {
                 "--game" => match ctx.next() {
                     Some(g) => games.push(g.to_lowercase()),
@@ -111,7 +111,7 @@ impl Speedrun {
 
         let future = async move {
             let user = async_user;
-            let match_level = match_level.as_ref().map(|s| s.as_str());
+            let match_level = match_level.as_deref();
 
             let u = match speedrun.user_by_id(&query_user).await? {
                 Some(u) => u,
@@ -142,10 +142,8 @@ impl Speedrun {
                     None => continue,
                 };
 
-                if !games.is_empty() {
-                    if !games.iter().any(|g| game.matches(g)) {
-                        continue;
-                    }
+                if !games.is_empty() && !games.iter().any(|g| game.matches(g)) {
+                    continue;
                 }
 
                 let category = match run.category.take() {
@@ -271,7 +269,7 @@ impl Speedrun {
         let top = *self.top.read();
 
         let game_query = match ctx.next_str("<game> [options]") {
-            Some(game_query) => String::from(game_query),
+            Some(game_query) => game_query,
             None => return Ok(()),
         };
 
@@ -281,7 +279,7 @@ impl Speedrun {
 
         category_filter.ty = Some(CategoryType::PerGame);
 
-        while let Some(arg) = ctx.next().as_ref().map(String::as_str) {
+        while let Some(arg) = ctx.next().as_deref() {
             match arg {
                 "--user" => match ctx.next() {
                     Some(u) => match_user = Some(u.to_lowercase()),
@@ -331,7 +329,7 @@ impl Speedrun {
 
         let future = async move {
             let user = async_user;
-            let match_user = match_user.as_ref().map(|s| s.as_str());
+            let match_user = match_user.as_deref();
 
             let game = speedrun.game_by_id(&game_query).await?;
 
@@ -429,7 +427,7 @@ impl Speedrun {
                 let mut runs = Vec::new();
 
                 for run in records.runs.into_iter() {
-                    if runs.len() >= 3 || num_categories > 1 && runs.len() >= 1 {
+                    if runs.len() >= 3 || num_categories > 1 && !runs.is_empty() {
                         break;
                     }
 
@@ -528,7 +526,7 @@ impl command::Handler for Speedrun {
             return Ok(());
         }
 
-        match ctx.next().as_ref().map(String::as_str) {
+        match ctx.next().as_deref() {
             Some("personal-bests") => {
                 self.query_personal_bests(ctx)?;
             }
@@ -786,7 +784,7 @@ impl SubCategory {
     fn from_variables(variables: &[Variable]) -> Vec<SubCategory> {
         let mut results = Vec::new();
 
-        let variable = match variables.iter().filter(|v| v.is_subcategory).next() {
+        let variable = match variables.iter().find(|v| v.is_subcategory) {
             Some(variable) => variable,
             None => return results,
         };
@@ -842,7 +840,7 @@ fn abbreviate_text(mut text: &str) -> String {
     // If the last added element requires spacing.
     let mut last_spacing = false;
 
-    while text.len() > 0 {
+    while !text.is_empty() {
         let c = match text.chars().next() {
             Some(c) => c,
             None => break,
@@ -855,7 +853,7 @@ fn abbreviate_text(mut text: &str) -> String {
                     out.push(' ');
                 }
 
-                let e = text.find(' ').unwrap_or(text.len());
+                let e = text.find(' ').unwrap_or_else(|| text.len());
                 out.push_str(&text[..e]);
                 text = &text[e..];
 
@@ -867,7 +865,7 @@ fn abbreviate_text(mut text: &str) -> String {
                     last_spacing = false;
                 }
 
-                let e = text.find(' ').unwrap_or(text.len());
+                let e = text.find(' ').unwrap_or_else(|| text.len());
 
                 for c in c.to_uppercase() {
                     out.push(c);
@@ -924,10 +922,8 @@ impl CategoryFilter {
             if !self.misc {
                 return false;
             }
-        } else {
-            if !self.main {
-                return false;
-            }
+        } else if !self.main {
+            return false;
         }
 
         if let Some(category_name) = self.category_name.as_ref() {
@@ -945,10 +941,8 @@ impl CategoryFilter {
             if !self.misc {
                 return false;
             }
-        } else {
-            if !self.main {
-                return false;
-            }
+        } else if !self.main {
+            return false;
         }
 
         if let Some(name) = self.sub_category_name.as_ref() {

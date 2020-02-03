@@ -29,7 +29,7 @@ impl command::Handler for Uptime {
             .read()
             .stream
             .as_ref()
-            .map(|s| s.started_at.clone());
+            .map(|s| s.started_at);
 
         let now = Utc::now();
 

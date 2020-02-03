@@ -36,8 +36,7 @@ impl fmt::Display for SpotifyIdError {
     }
 }
 
-const BASE62_DIGITS: &'static [u8] =
-    b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const BASE62_DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 impl SpotifyId {
     pub fn from_base62(id: &str) -> Result<SpotifyId, SpotifyIdError> {
@@ -50,8 +49,8 @@ impl SpotifyId {
                 None => return Err(SpotifyIdError),
                 Some(x) => x as u128,
             };
-            n = n * 62u128;
-            n = n + d;
+            n *= 62u128;
+            n += d;
         }
 
         Ok(SpotifyId(n))

@@ -72,7 +72,7 @@ macro_rules! database_group_fns {
             let mut to_delete = Vec::new();
 
             for (key, value) in inner.iter() {
-                if value.group.as_ref().map(|s| s.as_str()) == Some(group) {
+                if value.group.as_deref() == Some(group) {
                     to_delete.push(key.clone());
                 }
             }

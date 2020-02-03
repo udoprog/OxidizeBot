@@ -22,7 +22,7 @@ impl command::Handler for Help {
         let next = ctx.next();
         let mut url = self.url.read().clone();
 
-        match next.as_ref().map(String::as_str) {
+        match next.as_deref() {
             None => {
                 ctx.respond(format!(
                     "You can find documentation for each command at {}",

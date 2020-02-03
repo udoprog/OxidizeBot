@@ -2,7 +2,7 @@ use crate::{auth, command, module, prelude::*};
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-static MAGIC_8BALL_ANSWER: &[&'static str] = &[
+static MAGIC_8BALL_ANSWER: &[&str] = &[
     "It is certain.",
     "It is decidedly so.",
     "Without a doubt.",

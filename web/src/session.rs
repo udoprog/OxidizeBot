@@ -142,7 +142,7 @@ impl Session {
 fn cookiejar_from_header(header: &[u8]) -> Result<CookieJar, Error> {
     let mut jar = CookieJar::new();
 
-    for p in header.split(|b| *b == ';' as u8) {
+    for p in header.split(|b| *b == b';') {
         let p = std::str::from_utf8(p)?;
         jar.add_original(Cookie::parse_encoded(p.trim().to_owned())?);
     }

@@ -24,7 +24,7 @@ impl command::Handler for Poll {
             return Ok(());
         }
 
-        match ctx.next().as_ref().map(String::as_str) {
+        match ctx.next().as_deref() {
             Some("run") => {
                 let question = ctx_try!(ctx.next_str("<question> <options...>"));
 
@@ -64,7 +64,7 @@ impl command::Handler for Poll {
                         let latest = self
                             .polls
                             .iter()
-                            .max_by_key(|e| e.1.inner.read().created_at.clone());
+                            .max_by_key(|e| e.1.inner.read().created_at);
 
                         match latest {
                             Some((question, _)) => question.to_string(),
@@ -95,8 +95,8 @@ impl command::Handler for Poll {
                     let p = utils::percentage(votes, total);
 
                     let votes = match votes {
-                        0 => format!("no votes"),
-                        1 => format!("one vote"),
+                        0 => "no votes".to_string(),
+                        1 => "one vote".to_string(),
                         n => format!("{} votes", n),
                     };
 
@@ -108,7 +108,7 @@ impl command::Handler for Poll {
             _ => ctx.respond("Expected: run, close."),
         }
 
-        return Ok(());
+        Ok(())
     }
 }
 

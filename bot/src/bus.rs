@@ -101,6 +101,12 @@ impl<T> Bus<T> {
     }
 }
 
+impl<T> Default for Bus<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
 pub enum YouTubeEvent {

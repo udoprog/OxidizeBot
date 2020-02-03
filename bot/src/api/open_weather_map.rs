@@ -5,7 +5,7 @@ use anyhow::{anyhow, Error};
 use reqwest::{header, Client, Method, Url};
 use std::{fmt, sync::Arc};
 
-const V2_URL: &'static str = "http://api.openweathermap.org/data/2.5";
+const V2_URL: &str = "http://api.openweathermap.org/data/2.5";
 
 /// API integration.
 #[derive(Clone, Debug)]

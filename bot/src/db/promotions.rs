@@ -234,7 +234,7 @@ impl fmt::Display for Promotion {
             "frequency = {frequency}, template = \"{template}\", group = {group}, disabled = {disabled}",
             frequency = self.frequency,
             template = self.template,
-            group = self.group.as_ref().map(|g| g.as_str()).unwrap_or("*none*"),
+            group = self.group.as_deref().unwrap_or("*none*"),
             disabled = self.disabled,
         )
     }

@@ -19,9 +19,10 @@ impl SongFileBuilder {
 
         let path = self.path.as_ref()?;
         let template = self.template.as_ref()?;
-        let update_interval = match self.update_interval.is_empty() {
-            false => &self.update_interval,
-            true => return None,
+        let update_interval = if self.update_interval.is_empty() {
+            &self.update_interval
+        } else {
+            return None;
         };
 
         let update_interval = tokio::time::interval(update_interval.as_std());
@@ -36,9 +37,8 @@ impl SongFileBuilder {
 
     /// Initialize the given current song.
     pub fn init(&self, option: &mut Option<SongFile>) {
-        match std::mem::replace(option, self.build()) {
-            Some(old) => old.blank_log(),
-            None => (),
+        if let Some(old) = std::mem::replace(option, self.build()) {
+            old.blank_log();
         }
     }
 }

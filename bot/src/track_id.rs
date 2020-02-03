@@ -1,8 +1,8 @@
 pub use crate::spotify_id::SpotifyId;
 use std::fmt;
 
-static YOUTUBE_URL: &'static str = "https://youtu.be";
-static SPOTIFY_URL: &'static str = "https://open.spotify.com/track";
+static YOUTUBE_URL: &str = "https://youtu.be";
+static SPOTIFY_URL: &str = "https://open.spotify.com/track";
 
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, diesel::FromSqlRow, diesel::AsExpression,
@@ -100,20 +100,20 @@ impl TrackId {
         if let Ok(url) = str::parse::<url::Url>(s) {
             match url.host() {
                 Some(ref host) if *host == url::Host::Domain("open.spotify.com") => {
-                    let parts = url.path().split("/").collect::<Vec<_>>();
+                    let parts = url.path().split('/').collect::<Vec<_>>();
 
                     let id = match parts.as_slice() {
-                        &["", "track", id] => SpotifyId::from_base62(id)
-                            .map_err(|_| ParseTrackIdError::BadBase62(id.to_string()))?,
+                        ["", "track", id] => SpotifyId::from_base62(id)
+                            .map_err(|_| ParseTrackIdError::BadBase62((*id).to_string()))?,
                         _ => return Err(ParseTrackIdError::BadUrl(url.to_string())),
                     };
 
                     return Ok(TrackId::Spotify(id));
                 }
                 Some(ref host) if is_long_youtube(host) => {
-                    let parts = url.path().split("/").collect::<Vec<_>>();
+                    let parts = url.path().split('/').collect::<Vec<_>>();
 
-                    if parts.as_slice() != &["", "watch"] {
+                    if parts.as_slice() != ["", "watch"] {
                         return Err(ParseTrackIdError::BadUrl(url.to_string()));
                     }
 
@@ -133,10 +133,10 @@ impl TrackId {
                     return Ok(TrackId::YouTube(video_id));
                 }
                 Some(ref host) if is_short_youtube(host) => {
-                    let parts = url.path().split("/").collect::<Vec<_>>();
+                    let parts = url.path().split('/').collect::<Vec<_>>();
 
                     let video_id = match parts.as_slice() {
-                        &["", video_id] => video_id.to_string(),
+                        ["", video_id] => *video_id,
                         _ => return Err(ParseTrackIdError::BadUrl(url.to_string())),
                     };
 

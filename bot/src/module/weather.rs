@@ -58,7 +58,7 @@ impl command::Handler for Weather {
             return Ok(());
         }
 
-        match ctx.next().as_ref().map(String::as_str) {
+        match ctx.next().as_deref() {
             Some("current") => {
                 let api = match self.api.read().clone() {
                     Some(api) => api,

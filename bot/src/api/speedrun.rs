@@ -6,7 +6,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use reqwest::{header, Client, Method, StatusCode, Url};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-const V1_URL: &'static str = "https://speedrun.com/api/v1";
+const V1_URL: &str = "https://speedrun.com/api/v1";
 
 /// API integration.
 #[derive(Clone, Debug)]
@@ -252,9 +252,7 @@ impl Embeds {
     pub fn to_query(&self) -> Option<String> {
         let mut it = self.0.iter().peekable();
 
-        if !it.peek().is_some() {
-            return None;
-        }
+        it.peek()?;
 
         let mut s = String::new();
 

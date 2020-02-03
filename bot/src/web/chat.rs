@@ -35,7 +35,6 @@ impl Chat {
         let messages = warp::get()
             .and(warp::path("messages").and(path::end()))
             .and_then({
-                let api = api.clone();
                 move || {
                     let api = api.clone();
                     async move { api.messages().map_err(super::custom_reject) }
@@ -43,7 +42,7 @@ impl Chat {
             })
             .boxed();
 
-        return warp::path("chat").and(command.or(messages)).boxed();
+        warp::path("chat").and(command.or(messages)).boxed()
     }
 
     /// Run a command.

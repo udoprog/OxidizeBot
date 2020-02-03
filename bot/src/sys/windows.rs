@@ -90,7 +90,7 @@ impl System {
     /// Join the current thread.
     pub fn join(&self) -> Result<(), Error> {
         if let Some(thread) = self.thread.lock().take() {
-            if let Err(_) = thread.join() {
+            if thread.join().is_err() {
                 bail!("thread panicked");
             }
         }

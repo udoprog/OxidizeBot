@@ -22,7 +22,7 @@ impl command::Handler for Handler {
 
         let next = command_base!(ctx, promotions, "promotion", PromoEdit);
 
-        match next.as_ref().map(String::as_str) {
+        match next.as_deref() {
             Some("edit") => {
                 ctx.check_scope(auth::Scope::PromoEdit)?;
 

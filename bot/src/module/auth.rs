@@ -10,10 +10,10 @@ pub struct Handler<'a> {
 #[async_trait]
 impl<'a> command::Handler for Handler<'a> {
     async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
-        match ctx.next().as_ref().map(String::as_str) {
+        match ctx.next().as_deref() {
             Some("scopes") => {
                 let filter = ctx.next();
-                let filter = filter.as_ref().map(String::as_str);
+                let filter = filter.as_deref();
 
                 let user = match ctx.user.real() {
                     Some(user) => user,

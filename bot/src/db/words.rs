@@ -63,7 +63,7 @@ impl Words {
         let mut inner = Inner::default();
 
         for word in db.list()? {
-            inner.insert(&word.word, word.why.as_ref().map(|s| s.as_str()))?;
+            inner.insert(&word.word, word.why.as_deref())?;
         }
 
         Ok(Words {

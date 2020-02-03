@@ -6,8 +6,8 @@ use chrono::{DateTime, Utc};
 use reqwest::{Client, Method, Url};
 use std::collections::HashMap;
 
-const V3_URL: &'static str = "https://www.googleapis.com/youtube/v3";
-const GET_VIDEO_INFO_URL: &'static str = "https://www.youtube.com/get_video_info";
+const V3_URL: &str = "https://www.googleapis.com/youtube/v3";
+const GET_VIDEO_INFO_URL: &str = "https://www.youtube.com/get_video_info";
 
 /// API integration.
 #[derive(Clone, Debug)]

@@ -2,7 +2,7 @@ use super::RequestBuilder;
 use reqwest::{header, Client, Method, Url};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-const URL: &'static str = "https://api.spotify.com";
+const URL: &str = "https://api.spotify.com";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Followers {

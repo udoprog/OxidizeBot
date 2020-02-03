@@ -19,7 +19,7 @@ use std::{
 /// Should be a value larger than the typical number of badges you'd see.
 const INLINED_BADGES: usize = 8;
 const DEFAULT_BADGE_SIZE: u32 = 18;
-const BTTV_BOT_BADGE: &'static str = "https://cdn.betterttv.net/tags/bot.png";
+const BTTV_BOT_BADGE: &str = "https://cdn.betterttv.net/tags/bot.png";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Url {
@@ -42,9 +42,11 @@ pub struct Urls {
 
 impl From<(u32, u32, ffz::Urls)> for Urls {
     fn from((width, height, urls): (u32, u32, ffz::Urls)) -> Self {
+        type LocalOption<'a> = [(u32, &'a mut Option<Url>, Option<String>); 3];
+
         let mut out = Urls::default();
 
-        let options: SmallVec<[(u32, &mut Option<Url>, Option<String>); 3]> = smallvec![
+        let options: SmallVec<LocalOption<'_>> = smallvec![
             (1u32, &mut out.small, urls.x1),
             (2u32, &mut out.medium, urls.x2),
             (4u32, &mut out.large, urls.x4),
@@ -554,6 +556,7 @@ impl Emotes {
         let mut d = TduvaData::default();
 
         for badge in badges {
+            #[allow(clippy::single_match)]
             match badge.id.as_str() {
                 "chatty" => {
                     d.chatty.push(TduvaBadge {
@@ -655,7 +658,7 @@ impl Emotes {
         return Ok(out);
 
         /// Split all the badges.
-        fn split_badges<'a>(badges: &'a str) -> impl Iterator<Item = (&'a str, u32)> {
+        fn split_badges(badges: &str) -> impl Iterator<Item = (&str, u32)> {
             badges.split(',').flat_map(|b| {
                 let mut it = b.split('/');
                 let badge = it.next()?;
@@ -997,7 +1000,7 @@ impl<'a> Iterator for Words<'a> {
             Some(n) => n,
             None => {
                 let string = mem::replace(&mut self.string, "");
-                self.n = self.n + string.len();
+                self.n += string.len();
                 return None;
             }
         };
@@ -1007,7 +1010,7 @@ impl<'a> Iterator for Words<'a> {
             None => {
                 let string = mem::replace(&mut self.string, "");
                 let n = self.n + s;
-                self.n = self.n + string.len();
+                self.n += string.len();
                 return Some((n, &string[s..]));
             }
         };
@@ -1015,7 +1018,7 @@ impl<'a> Iterator for Words<'a> {
         let string = &self.string[s..e];
         self.string = &self.string[e..];
         let s = self.n + s;
-        self.n = self.n + e;
+        self.n += e;
         Some((s, string))
     }
 }

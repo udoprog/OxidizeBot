@@ -4,7 +4,7 @@ use crate::{api::base::RequestBuilder, oauth2};
 use anyhow::Error;
 use reqwest::{header, Client, Method, Url};
 
-static NIGHTBOT_URL_V1: &'static str = "https://api.nightbot.tv/1";
+static NIGHTBOT_URL_V1: &str = "https://api.nightbot.tv/1";
 
 pub enum RequestError {
     TooManyRequests,
