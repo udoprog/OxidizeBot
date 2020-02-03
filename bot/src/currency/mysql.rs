@@ -56,9 +56,7 @@ impl Queries {
 
         let rows = tx.prep_exec(query, ()).await?;
 
-        let (tx, result) = rows
-            .map_and_drop(|row| mysql::from_row::<(String, i32)>(row))
-            .await?;
+        let (tx, result) = rows.map_and_drop(mysql::from_row::<(String, i32)>).await?;
 
         Ok((tx, result))
     }
@@ -85,9 +83,7 @@ impl Queries {
         log::trace!("select_balance: {} {:?}", query, params);
         let result = tx.prep_exec(query, params).await?;
 
-        let (tx, results) = result
-            .map_and_drop(|row| mysql::from_row::<(i32,)>(row))
-            .await?;
+        let (tx, results) = result.map_and_drop(mysql::from_row::<(i32,)>).await?;
 
         Ok((tx, results.into_iter().map(|(c, ..)| c).next()))
     }
@@ -237,7 +233,7 @@ impl Backend {
         for (user, balance) in balances {
             output.push(Balance {
                 channel: channel.clone(),
-                user: user,
+                user,
                 amount: balance as i64,
                 watch_time: 0,
             });

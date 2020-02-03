@@ -12,7 +12,7 @@ use std::{
     sync::Arc,
 };
 
-const SCHEMA: &'static [u8] = include_bytes!("auth.yaml");
+const SCHEMA: &[u8] = include_bytes!("auth.yaml");
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Schema {

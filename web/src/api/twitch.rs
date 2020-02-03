@@ -1,7 +1,7 @@
 use super::RequestBuilder;
 use reqwest::{header, Client, Method, Url};
 use serde::{Deserialize, Serialize};
-const ID_TWITCH_URL: &'static str = "https://id.twitch.tv";
+const ID_TWITCH_URL: &str = "https://id.twitch.tv";
 
 /// Response from the validate token endpoint.
 #[derive(Debug, Serialize, Deserialize)]

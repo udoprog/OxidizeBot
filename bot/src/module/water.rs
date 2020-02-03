@@ -25,7 +25,7 @@ impl Handler {
         ctx: &mut command::Context<'_>,
     ) -> Option<(DateTime<Utc>, Option<Reward>)> {
         if let Some((when, user)) = self.waters.last() {
-            return Some((when.clone(), user.clone()));
+            return Some((*when, user.clone()));
         }
 
         let started_at = self
@@ -34,7 +34,7 @@ impl Handler {
             .read()
             .stream
             .as_ref()
-            .map(|s| s.started_at.clone());
+            .map(|s| s.started_at);
 
         let started_at = match started_at {
             Some(started_at) => started_at,
@@ -44,7 +44,7 @@ impl Handler {
             }
         };
 
-        self.waters.push((started_at.clone(), None));
+        self.waters.push((started_at, None));
         Some((started_at, None))
     }
 }
@@ -72,7 +72,7 @@ impl command::Handler for Handler {
 
         let a = ctx.next();
 
-        match a.as_ref().map(String::as_str) {
+        match a.as_deref() {
             Some("undo") => {
                 ctx.check_scope(auth::Scope::WaterUndo)?;
 
@@ -118,7 +118,7 @@ impl command::Handler for Handler {
                 };
 
                 let now = Utc::now();
-                let diff = now.clone() - last;
+                let diff = now - last;
                 let amount = i64::max(0i64, diff.num_minutes());
                 let amount = (amount * *self.reward_multiplier.read() as i64) / 100i64;
 
@@ -183,7 +183,7 @@ impl super::Module for Module {
             "water",
             Handler {
                 enabled,
-                cooldown: cooldown.clone(),
+                cooldown,
                 currency: injector.var()?,
                 waters: Vec::new(),
                 stream_info: stream_info.clone(),

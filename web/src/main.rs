@@ -3,7 +3,7 @@ use futures::prelude::*;
 use oxidize_web::{api, db, web};
 use std::{fs, path::Path, sync::Arc, time};
 
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn opts() -> clap::App<'static, 'static> {
     clap::App::new("Oxidize Web")
@@ -66,6 +66,7 @@ async fn main() -> Result<(), Error> {
     pin_utils::pin_mut!(web);
     let mut web = web.fuse();
 
+    #[allow(clippy::unnecessary_mut_passed)]
     loop {
         futures::select! {
             _ = web => {

@@ -22,7 +22,7 @@ use url::Url;
 
 mod model;
 
-const API_URL: &'static str = "https://api.spotify.com/v1";
+const API_URL: &str = "https://api.spotify.com/v1";
 
 /// API integration.
 #[derive(Clone, Debug)]
@@ -197,8 +197,8 @@ impl Spotify {
 }
 
 /// Handle device control requests.
-fn device_control<C>(status: &StatusCode, _: &C) -> Result<Option<bool>, Error> {
-    match *status {
+fn device_control<C>(status: StatusCode, _: &C) -> Result<Option<bool>, Error> {
+    match status {
         StatusCode::NO_CONTENT => Ok(Some(true)),
         StatusCode::NOT_FOUND => Ok(Some(false)),
         _ => Ok(None),

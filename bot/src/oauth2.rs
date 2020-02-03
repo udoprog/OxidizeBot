@@ -131,7 +131,7 @@ impl SyncToken {
     /// Read the synchronized connection.
     ///
     /// This results in an error if there is no connection to read.
-    pub fn read<'a>(&'a self) -> Result<MappedRwLockReadGuard<'a, Token>, MissingTokenError> {
+    pub fn read(&self) -> Result<MappedRwLockReadGuard<'_, Token>, MissingTokenError> {
         match RwLockReadGuard::try_map(self.inner.read(), |i| {
             i.connection.as_ref().map(|c| &c.token)
         }) {
@@ -174,7 +174,7 @@ impl ConnectionFactory {
                 self.settings.set_silent("connection", None::<Connection>)?;
                 self.sync_token.clear();
 
-                if !self.current_hash.is_none() {
+                if self.current_hash.is_some() {
                     self.injector.clear_key(&self.key);
                 }
 

@@ -24,8 +24,8 @@ use tracing_futures::Instrument as _;
 mod connect;
 mod youtube;
 
-static DEFAULT_CURRENT_SONG_TEMPLATE: &'static str = "Song: {{name}}{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})\n{{#if user~}}Request by: @{{user~}}{{/if}}";
-static DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE: &'static str = "Not Playing";
+static DEFAULT_CURRENT_SONG_TEMPLATE: &str = "Song: {{name}}{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})\n{{#if user~}}Request by: @{{user~}}{{/if}}";
+static DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE: &str = "Not Playing";
 
 /// Event used by player integrations.
 #[derive(Debug)]
@@ -201,7 +201,7 @@ pub fn run(
             .boxed(),
     );
 
-    let (youtube_player, future) = youtube::setup(youtube_bus.clone(), settings.scoped("youtube"))?;
+    let (youtube_player, future) = youtube::setup(youtube_bus, settings.scoped("youtube"))?;
 
     futures.push(
         future
@@ -219,9 +219,10 @@ pub fn run(
         .stream("song-update-interval")
         .or_with(utils::Duration::seconds(1))?;
 
-    let song_update_interval = match song_update_interval.is_empty() {
-        true => None,
-        false => Some(tokio::time::interval(song_update_interval.as_std())),
+    let song_update_interval = if song_update_interval.is_empty() {
+        None
+    } else {
+        Some(tokio::time::interval(song_update_interval.as_std()))
     };
 
     let (commands_tx, commands) = mpsc::unbounded();
@@ -235,7 +236,7 @@ pub fn run(
 
     let parent_player = Player {
         inner: Arc::new(PlayerInner {
-            device: device.clone(),
+            device,
             queue: queue.clone(),
             connect_player: connect_player.clone(),
             youtube_player: youtube_player.clone(),
@@ -248,7 +249,7 @@ pub fn run(
             bus: bus.clone(),
             song: song.clone(),
             themes: injector.var()?,
-            closed: closed.clone(),
+            closed,
         }),
     };
 
@@ -263,7 +264,7 @@ pub fn run(
                 let item = convert_item(
                     &*spotify,
                     &*youtube,
-                    song.user.as_ref().map(|user| user.as_str()),
+                    song.user.as_deref(),
                     &song.track_id,
                     None,
                 )
@@ -429,7 +430,7 @@ impl Song {
 
     /// Duration of the current song.
     pub fn duration(&self) -> Duration {
-        self.item.duration.clone()
+        self.item.duration
     }
 
     /// Elapsed time on current song.
@@ -470,7 +471,7 @@ impl Song {
             track_id: &self.item.track_id,
             name: self.item.track.name(),
             artists,
-            user: self.item.user.as_ref().map(|s| s.as_str()),
+            user: self.item.user.as_deref(),
             duration: utils::digital_duration(&self.item.duration),
             elapsed: utils::digital_duration(&self.elapsed()),
         })
@@ -478,9 +479,10 @@ impl Song {
 
     /// Check if the song is currently playing.
     pub fn state(&self) -> State {
-        match self.started_at.is_some() {
-            true => State::Playing,
-            false => State::Paused,
+        if self.started_at.is_some() {
+            State::Playing
+        } else {
+            State::Paused
         }
     }
 
@@ -701,10 +703,10 @@ impl Player {
             TrackId::Spotify(..) => match self.inner.connect_player.volume(modify) {
                 Err(self::connect::CommandError::NoDevice) => {
                     self.inner.bus.send_sync(Event::NotConfigured);
-                    return Ok(None);
+                    Ok(None)
                 }
-                Err(e) => return Err(e.into()),
-                Ok(volume) => return Ok(Some(volume)),
+                Err(e) => Err(e.into()),
+                Ok(volume) => Ok(Some(volume)),
             },
             TrackId::YouTube(..) => Ok(Some(self.inner.youtube_player.volume(modify)?)),
         }
@@ -789,7 +791,7 @@ impl Player {
             duration,
         )
         .await
-        .map_err(|e| PlayThemeError::Error(e.into()))?;
+        .map_err(PlayThemeError::Error)?;
 
         let item = match item {
             Some(item) => item,
@@ -883,7 +885,7 @@ impl Player {
             None,
         )
         .await
-        .map_err(|e| AddTrackError::Error(e.into()))?;
+        .map_err(AddTrackError::Error)?;
 
         let mut item = match item {
             Some(item) => item,
@@ -904,7 +906,7 @@ impl Player {
             .queue
             .push_back(item.clone())
             .await
-            .map_err(|e| AddTrackError::Error(e.into()))?;
+            .map_err(AddTrackError::Error)?;
 
         self.inner
             .commands_tx
@@ -1416,7 +1418,7 @@ impl PlaybackFuture {
 
         // TODO: Remove fallback-uri migration next major release.
         if let Some(fallback_uri) = settings.get::<String>("fallback-uri")? {
-            if let Err(_) = str::parse::<Uri>(&fallback_uri) {
+            if str::parse::<Uri>(&fallback_uri).is_err() {
                 if let Ok(id) = SpotifyId::from_base62(&fallback_uri) {
                     settings.set("fallback-uri", Uri::SpotifyPlaylist(id))?;
                 }
@@ -2095,10 +2097,10 @@ async fn convert_item(
         None => duration,
     };
 
-    return Ok(Some(Item {
+    Ok(Some(Item {
         track_id: track_id.clone(),
         track,
         user: user.map(|user| user.to_string()),
         duration,
-    }));
+    }))
 }

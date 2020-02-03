@@ -175,7 +175,7 @@ pub struct SchemaType {
     pub title: Option<String>,
 }
 
-const SCHEMA: &'static [u8] = include_bytes!("settings.yaml");
+const SCHEMA: &[u8] = include_bytes!("settings.yaml");
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Schema {
@@ -1225,7 +1225,7 @@ impl Type {
                     return false;
                 }
 
-                return options.iter().any(|opt| opt.value == *json);
+                options.iter().any(|opt| opt.value == *json)
             }
             (Object { ref fields, .. }, Value::Object(ref object)) => {
                 // NB: check that all fields match expected schema.

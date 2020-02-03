@@ -76,7 +76,7 @@ impl Token {
 
     /// Return `true` if the token expires within 30 minutes.
     pub fn expires_within(&self, within: Duration) -> Result<bool, Error> {
-        let out = match self.expires_in.clone() {
+        let out = match self.expires_in {
             Some(expires_in) => {
                 let expires_in = chrono::Duration::seconds(expires_in as i64);
                 let diff = (self.refreshed_at + expires_in) - Utc::now();
@@ -312,7 +312,7 @@ impl Setbac {
             .header(header::CONTENT_TYPE, "application/json")
             .body(body);
 
-        let _ = req.execute().await?.ok()?;
+        req.execute().await?.ok()?;
         Ok(())
     }
 

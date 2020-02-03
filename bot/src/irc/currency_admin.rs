@@ -39,7 +39,7 @@ impl command::Handler for Handler {
             }
         };
 
-        match ctx.next().as_ref().map(String::as_str) {
+        match ctx.next().as_deref() {
             None => {
                 let user = match ctx.user.real() {
                     Some(user) => user,

@@ -204,7 +204,7 @@ macro_rules! command_base {
     ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
         let arg = $ctx.next();
 
-        match arg.as_ref().map(String::as_str) {
+        match arg.as_deref() {
             Some("clear-group") => {
                 command_clear_group!($ctx, $db, $what, $edit_scope);
                 return Ok(());

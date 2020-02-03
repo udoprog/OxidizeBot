@@ -3,8 +3,8 @@ use anyhow::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-const USER: &'static str = "udoprog";
-const REPO: &'static str = "OxidizeBot";
+const USER: &str = "udoprog";
+const REPO: &str = "OxidizeBot";
 
 pub fn run(
     injector: &Injector,

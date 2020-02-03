@@ -53,7 +53,7 @@ impl Handler<'_> {
             ctx.respond(response);
         }
 
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -64,7 +64,7 @@ impl<'a> command::Handler for Handler<'a> {
     }
 
     async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
-        match ctx.next().as_ref().map(String::as_str) {
+        match ctx.next().as_deref() {
             Some("refresh-mods") => {
                 ctx.privmsg("/mods");
                 ctx.respond("Refreshed information on mods");
@@ -230,7 +230,7 @@ impl<'a> command::Handler for Handler<'a> {
                             }
                         };
 
-                        if let Some(scope) = schema.scope.clone() {
+                        if let Some(scope) = schema.scope {
                             if !ctx.user.has_scope(scope) {
                                 ctx.respond(
                                     "You are not permitted to modify that setting, sorry :(",

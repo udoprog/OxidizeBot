@@ -96,11 +96,7 @@ impl Aliases {
         let mut it = utils::Words::new(message);
         let first = it.next();
 
-        if let Some((alias, captures)) =
-            self.inner
-                .read()
-                .resolve(channel, first.as_ref().map(String::as_str), &it)
-        {
+        if let Some((alias, captures)) = self.inner.read().resolve(channel, first.as_deref(), &it) {
             let key = alias.key.clone();
 
             match alias.template.render_to_string(&captures) {
@@ -205,7 +201,7 @@ impl fmt::Display for Alias {
             "template = \"{template}\", pattern = {pattern}, group = {group}, disabled = {disabled}",
             template = self.template,
             pattern = self.pattern,
-            group = self.group.as_ref().map(|g| g.as_str()).unwrap_or("*none*"),
+            group = self.group.as_deref().unwrap_or("*none*"),
             disabled = self.disabled,
         )
     }

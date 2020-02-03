@@ -11,7 +11,7 @@ use smallvec::SmallVec;
 use std::{borrow::Cow, collections::HashMap, net::SocketAddr, sync::Arc, time};
 use url::Url;
 
-static SPOTIFY_TRACK_URL: &'static str = "https://open.spotify.com/track";
+static SPOTIFY_TRACK_URL: &str = "https://open.spotify.com/track";
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Config {
@@ -61,6 +61,7 @@ pub fn setup(
 
         let mut server_future = server_future.fuse();
 
+        #[allow(clippy::unnecessary_mut_passed)]
         loop {
             futures::select! {
                 result = server_future => {
@@ -249,7 +250,7 @@ impl Handler {
 
         log::info!("{} {}", req.method(), uri.path());
 
-        let mut it = uri.path().split("/");
+        let mut it = uri.path().split('/');
         it.next();
 
         let path = it.collect::<SmallVec<[_; 8]>>();
@@ -373,7 +374,7 @@ impl Handler {
 
                 let outdated = !flow.is_compatible_with(&c.token);
 
-                match query.format.as_ref().map(String::as_str) {
+                match query.format.as_deref() {
                     Some("meta") => {
                         return json_ok(Data::from(Connection {
                             ty: flow.config.ty,
@@ -470,7 +471,7 @@ impl Handler {
             });
         }
 
-        return json_ok(&out);
+        json_ok(&out)
     }
 
     /// List connections for the current user.
@@ -480,7 +481,7 @@ impl Handler {
 
         let query = self.decode_query::<Query>(req)?;
 
-        let meta = match query.format.as_ref().map(String::as_str) {
+        let meta = match query.format.as_deref() {
             Some("meta") => true,
             _ => false,
         };
@@ -562,7 +563,7 @@ impl Handler {
                 flow,
                 exchange_token,
                 action: Action::Connect(Connect {
-                    user_id: user.user_id.to_string(),
+                    user_id: user.user_id,
                     id: String::from(id),
                     return_to: referer(req)?,
                 }),
@@ -602,7 +603,7 @@ impl Handler {
     async fn delete_key(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
         let user = self.verify(req)?;
         self.db.delete_key(&user.user_id)?;
-        return json_empty();
+        json_empty()
     }
 
     /// Get the current key.
@@ -727,7 +728,7 @@ impl Handler {
         };
 
         let mut return_to = match return_to {
-            Some(url) => url.clone(),
+            Some(url) => url,
             None => self.config.base_url.clone(),
         };
 
@@ -837,7 +838,7 @@ impl Handler {
                 _ => return None,
             };
 
-            let mut it = string.splitn(2, " ");
+            let mut it = string.splitn(2, ' ');
 
             match (it.next(), it.next()) {
                 (Some("OAuth"), Some(token)) => Some(token.to_string()),

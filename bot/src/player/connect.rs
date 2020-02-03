@@ -47,7 +47,7 @@ pub fn setup(
     let interface = ConnectDevice {
         spotify,
         device: device.clone(),
-        settings: settings.clone(),
+        settings,
     };
 
     let returned_player = player.clone();
@@ -60,7 +60,7 @@ pub fn setup(
                 update = device_stream.select_next_some() => {
                     *device.write() = update;
 
-                    if let Err(_) = config_tx.unbounded_send(ConfigurationEvent::DeviceChanged) {
+                    if config_tx.unbounded_send(ConfigurationEvent::DeviceChanged).is_err() {
                         bail!("failed to send configuration event");
                     }
                 }
@@ -190,17 +190,15 @@ impl Stream for ConnectStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use self::player::IntegrationEvent::*;
 
-        loop {
-            if let Poll::Ready(Some(e)) = Pin::new(&mut self.config_rx).poll_next(cx) {
-                match e {
-                    ConfigurationEvent::DeviceChanged => {
-                        return Poll::Ready(Some(Ok(DeviceChanged)));
-                    }
+        if let Poll::Ready(Some(e)) = Pin::new(&mut self.config_rx).poll_next(cx) {
+            match e {
+                ConfigurationEvent::DeviceChanged => {
+                    return Poll::Ready(Some(Ok(DeviceChanged)));
                 }
             }
-
-            return Poll::Pending;
         }
+
+        Poll::Pending
     }
 }
 

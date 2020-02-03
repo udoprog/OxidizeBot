@@ -5,7 +5,7 @@ use anyhow::Error;
 use reqwest::{header, Client, Method, Url};
 use std::collections::HashSet;
 
-const V2_URL: &'static str = "https://api.betterttv.net/2";
+const V2_URL: &str = "https://api.betterttv.net/2";
 
 /// API integration.
 #[derive(Clone, Debug)]

@@ -14,7 +14,7 @@ use chrono::Utc;
 use parking_lot::RwLock;
 use std::sync::Arc;
 
-const EXAMPLE_SEARCH: &'static str = "queen we will rock you";
+const EXAMPLE_SEARCH: &str = "queen we will rock you";
 
 /// Handler for the `!song` command.
 pub struct Handler {
@@ -117,8 +117,8 @@ impl Handler {
             };
 
             let min_currency = match track_id {
-                TrackId::Spotify(_) => spotify.min_currency.read().clone(),
-                TrackId::YouTube(_) => youtube.min_currency.read().clone(),
+                TrackId::Spotify(_) => *spotify.min_currency.read(),
+                TrackId::YouTube(_) => *youtube.min_currency.read(),
             };
 
             let has_bypass_constraints = user.has_scope(Scope::SongBypassConstraints);
@@ -341,12 +341,10 @@ impl command::Handler for Handler {
             }
         };
 
-        match ctx.next().as_ref().map(String::as_str) {
+        match ctx.next().as_deref() {
             Some("theme") => {
                 ctx.check_scope(Scope::SongTheme)?;
-                let name = ctx_try!(ctx.next_str("<name>")).to_string();
-
-                let player = player.clone();
+                let name = ctx_try!(ctx.next_str("<name>"));
                 let user = ctx.user.clone();
 
                 ctx.spawn(async move {
@@ -421,9 +419,10 @@ impl command::Handler for Handler {
 
                 let items = player.list();
 
-                let has_more = match items.len() > limit {
-                    true => Some(items.len() - limit),
-                    false => None,
+                let has_more = if items.len() > limit {
+                    Some(items.len() - limit)
+                } else {
+                    None
                 };
 
                 display_songs(&ctx.user, has_more, items.iter().take(limit).cloned());
@@ -520,7 +519,7 @@ impl command::Handler for Handler {
                 }
             }
             Some("delete") => {
-                let removed = match ctx.next().as_ref().map(String::as_str) {
+                let removed = match ctx.next().as_deref() {
                     Some("last") => match ctx.next() {
                         Some(last_user) => {
                             let last_user = last_user.to_lowercase();
@@ -554,7 +553,7 @@ impl command::Handler for Handler {
                         player.remove_at(n)?
                     }
                     None => {
-                        ctx.respond(format!("Expected: last, last <user>, or mine"));
+                        ctx.respond("Expected: last, last <user>, or mine");
                         return Ok(());
                     }
                 };
@@ -565,7 +564,7 @@ impl command::Handler for Handler {
                 }
             }
             Some("volume") => {
-                match ctx.next().as_ref().map(String::as_str) {
+                match ctx.next().as_deref() {
                     // setting volume
                     Some(other) => {
                         ctx.check_scope(Scope::SongVolume)?;
@@ -796,12 +795,12 @@ fn parse_queue_position(user: &irc::User, n: &str) -> Option<usize> {
     match str::parse::<usize>(n) {
         Ok(0) => {
             user.respond("Can't mess with the current song :(");
-            return None;
+            None
         }
         Ok(n) => Some(n.saturating_sub(1)),
         Err(_) => {
             user.respond("Expected whole number argument");
-            return None;
+            None
         }
     }
 }
@@ -875,9 +874,7 @@ async fn feedback(
                 sender.privmsg("Pausing playback.");
             }
             Event::Empty => {
-                sender.privmsg(format!(
-                    "Song queue is empty (use !song request <spotify-id> to add more).",
-                ));
+                sender.privmsg("Song queue is empty (use !song request <spotify-id> to add more).");
             }
             Event::NotConfigured => {
                 if configured_cooldown.is_open() {

@@ -32,7 +32,6 @@ impl Cache {
 
         let delete = warp::delete()
             .and(path::end().and(body::json()).and_then({
-                let api = api.clone();
                 move |body: DeleteRequest| {
                     let api = api.clone();
                     async move { api.delete(body).map_err(super::custom_reject) }
@@ -40,7 +39,7 @@ impl Cache {
             }))
             .boxed();
 
-        return warp::path("cache").and(list.or(delete)).boxed();
+        warp::path("cache").and(list.or(delete)).boxed()
     }
 
     /// Access underlying cache abstraction.

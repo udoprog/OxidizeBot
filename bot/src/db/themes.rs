@@ -210,8 +210,8 @@ impl fmt::Display for Theme {
             "track_id = {track_id}, start = {start}, end = {end}, group = {group}, disabled = {disabled}",
             track_id = self.track_id,
             start = self.start,
-            end = self.end.as_ref().map(|t| t.to_string()).unwrap_or(String::from("*none*")),
-            group = self.group.as_ref().map(|g| g.as_str()).unwrap_or("*none*"),
+            end = self.end.as_ref().map(|t| t.to_string()).unwrap_or_else(|| String::from("*none*")),
+            group = self.group.as_deref().unwrap_or("*none*"),
             disabled = self.disabled,
         )
     }

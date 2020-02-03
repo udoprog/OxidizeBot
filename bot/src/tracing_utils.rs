@@ -64,14 +64,19 @@ impl Subscriber {
     }
 }
 
+impl Default for Subscriber {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 thread_local! {
     static CURRENT: RefCell<Vec<Arc<SpanContext>>> = RefCell::new(Vec::new());
 }
 
 impl tracing_core::Subscriber for Subscriber {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-        let enabled = log::logger().enabled(&as_log(&metadata));
-        enabled
+        log::logger().enabled(&as_log(&metadata))
     }
 
     fn new_span(&self, attrs: &span::Attributes<'_>) -> Id {

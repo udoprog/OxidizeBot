@@ -108,14 +108,14 @@ impl RequestBuilder {
     /// Send request and only return status.
     pub async fn json_map<T>(
         self,
-        m: impl FnOnce(&StatusCode, &Bytes) -> Result<Option<T>, Error>,
+        m: impl FnOnce(StatusCode, &Bytes) -> Result<Option<T>, Error>,
     ) -> Result<T, Error>
     where
         T: serde::de::DeserializeOwned,
     {
         let Response { status, body, .. } = self.execute().await?;
 
-        if let Some(output) = m(&status, &body)? {
+        if let Some(output) = m(status, &body)? {
             return Ok(output);
         }
 

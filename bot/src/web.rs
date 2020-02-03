@@ -14,7 +14,7 @@ mod settings;
 
 use self::{cache::Cache, chat::Chat, settings::Settings};
 
-pub const URL: &'static str = "http://localhost:12345";
+pub const URL: &str = "http://localhost:12345";
 
 mod assets {
     #[derive(rust_embed::RustEmbed)]
@@ -130,7 +130,6 @@ impl Aliases {
             .and(path!("aliases" / Fragment / Fragment / "disabled").and(path::end()))
             .and(body::json())
             .and_then({
-                let api = api.clone();
                 move |channel: Fragment, name: Fragment, body: DisabledBody| {
                     let api = api.clone();
                     async move {
@@ -248,7 +247,6 @@ impl Commands {
             .and(path!("commands" / Fragment / Fragment).and(path::end()))
             .and(body::json())
             .and_then({
-                let api = api.clone();
                 move |channel: Fragment, name: Fragment, body: PutCommand| {
                     let api = api.clone();
                     async move {
@@ -372,7 +370,6 @@ impl Promotions {
             .and(path!("promotions" / Fragment / Fragment / "disabled").and(path::end()))
             .and(body::json())
             .and_then({
-                let api = api.clone();
                 move |channel: Fragment, name: Fragment, body: DisabledBody| {
                     let api = api.clone();
 
@@ -493,7 +490,6 @@ impl Themes {
             .and(path!("themes" / Fragment / Fragment / "disabled").and(path::end()))
             .and(body::json())
             .and_then({
-                let api = api.clone();
                 move |channel: Fragment, name: Fragment, body: DisabledBody| {
                     let api = api.clone();
 
@@ -672,7 +668,6 @@ impl Auth {
                         .and(path::end()),
                 )
                 .and_then({
-                    let api = api.clone();
                     move |query: AuthKeyQuery| {
                         let api = api.clone();
                         async move { api.set_key(query).map_err(custom_reject) }
@@ -952,7 +947,7 @@ pub async fn setup(
     channel: Arc<RwLock<Option<String>>>,
     latest: Arc<RwLock<Option<api::github::Release>>>,
 ) -> Result<(Server, impl Future<Output = ()>), anyhow::Error> {
-    let addr: SocketAddr = str::parse(&format!("0.0.0.0:12345"))?;
+    let addr: SocketAddr = str::parse("0.0.0.0:12345")?;
 
     let player = Arc::new(RwLock::new(None));
     let active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>> = Default::default();
@@ -1038,7 +1033,6 @@ pub async fn setup(
 
         let route = route
             .or(warp::get().and(warp::path("balances")).and_then({
-                let api = api.clone();
                 move || {
                     let api = api.clone();
 
@@ -1121,8 +1115,8 @@ pub async fn setup(
     let server_future = service.try_bind_ephemeral(addr)?.1.boxed();
 
     let server = Server {
-        player: player.clone(),
-        active_connections: active_connections.clone(),
+        player,
+        active_connections,
     };
 
     return Ok((server, server_future));
@@ -1137,7 +1131,7 @@ pub async fn setup(
                 (mime, asset)
             }
             None => {
-                let fallback = fallback.ok_or_else(|| warp::reject::not_found())?;
+                let fallback = fallback.ok_or_else(warp::reject::not_found)?;
                 (mime::TEXT_HTML_UTF_8, fallback)
             }
         };
@@ -1257,16 +1251,12 @@ where
 {
     warp::ws()
         .map({
-            let bus = bus.clone();
-
             move |ws: warp::ws::Ws| {
                 let bus = bus.clone();
 
-                ws.on_upgrade(move |websocket: warp::filters::ws::WebSocket| {
-                    async {
-                        if let Err(e) = send_bus_forward(bus, websocket).await {
-                            log::error!("websocket error: {}", e);
-                        }
+                ws.on_upgrade(move |websocket: warp::filters::ws::WebSocket| async {
+                    if let Err(e) = send_bus_forward(bus, websocket).await {
+                        log::error!("websocket error: {}", e);
                     }
                 })
             }

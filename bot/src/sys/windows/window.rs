@@ -150,13 +150,13 @@ unsafe extern "system" fn window_proc(
         _ => (),
     }
 
-    return winuser::DefWindowProcW(h_wnd, msg, w_param, l_param);
+    winuser::DefWindowProcW(h_wnd, msg, w_param, l_param)
 }
 
-fn new_nid(hwnd: &HWND) -> shellapi::NOTIFYICONDATAW {
+fn new_nid(hwnd: HWND) -> shellapi::NOTIFYICONDATAW {
     let mut nid = shellapi::NOTIFYICONDATAW::default();
     nid.cbSize = std::mem::size_of::<shellapi::NOTIFYICONDATAW>() as DWORD;
-    nid.hWnd = *hwnd;
+    nid.hWnd = hwnd;
     nid.uID = 0x1 as UINT;
     nid
 }
@@ -206,11 +206,11 @@ unsafe fn init_window(name: &str) -> Result<WindowInfo, io::Error> {
         std::ptr::null_mut(),
     );
 
-    if hwnd == std::ptr::null_mut() {
+    if hwnd.is_null() {
         return Err(io::Error::last_os_error());
     }
 
-    let mut nid = new_nid(&hwnd);
+    let mut nid = new_nid(hwnd);
     nid.uFlags = shellapi::NIF_MESSAGE;
     nid.uCallbackMessage = ICON_MSG_ID;
 
@@ -260,8 +260,8 @@ unsafe fn run_loop() {
             break;
         }
 
-        winuser::TranslateMessage(&mut msg);
-        winuser::DispatchMessageW(&mut msg);
+        winuser::TranslateMessage(&msg);
+        winuser::DispatchMessageW(&msg);
     }
 }
 
@@ -284,7 +284,7 @@ impl Window {
             let info = match init_window(name.as_str()) {
                 Ok(info) => info,
                 Err(e) => {
-                    if let Err(_) = tx.send(Err(e)) {
+                    if tx.send(Err(e)).is_err() {
                         panic!("failed to send error information to parent thread");
                     }
 
@@ -292,7 +292,7 @@ impl Window {
                 }
             };
 
-            if let Err(_) = tx.send(Ok(info.clone())) {
+            if tx.send(Ok(info.clone())).is_err() {
                 panic!("failed to send window information to parent thread");
             }
 
@@ -306,7 +306,7 @@ impl Window {
 
             run_loop();
 
-            if let Err(_) = shutdown_tx.send(()) {
+            if shutdown_tx.send(()).is_err() {
                 log::error!("shutdown receiver closed");
             }
         });
@@ -348,7 +348,7 @@ impl Window {
     }
 
     fn raw_set_tooltip(&self, tooltip: &str) -> Result<(), io::Error> {
-        let mut nid = new_nid(&self.info.hwnd);
+        let mut nid = new_nid(self.info.hwnd);
         copy_wstring(&mut nid.szTip, tooltip);
 
         let result = unsafe {
@@ -435,7 +435,7 @@ impl Window {
 
     /// Send a notification.
     pub fn send_notification(&self, n: Notification) -> Result<(), io::Error> {
-        let mut nid = new_nid(&self.info.hwnd);
+        let mut nid = new_nid(self.info.hwnd);
         nid.uFlags = shellapi::NIF_INFO;
 
         if let Some(title) = n.title {
@@ -484,7 +484,7 @@ impl Window {
             )
         };
 
-        if icon == std::ptr::null_mut() {
+        if icon.is_null() {
             return Err(io::Error::last_os_error());
         }
 
@@ -505,7 +505,7 @@ impl Window {
                 LR_LOADFROMFILE,
             );
 
-            if result == std::ptr::null_mut() {
+            if result.is_null() {
                 return Err(io::Error::last_os_error());
             }
 
@@ -562,7 +562,7 @@ impl Window {
             )
         };
 
-        if hicon == std::ptr::null_mut() {
+        if hicon.is_null() {
             return Err(io::Error::last_os_error());
         }
 
@@ -572,7 +572,7 @@ impl Window {
     /// Shutdown the given window.
     fn shutdown(&self) -> Result<(), io::Error> {
         let result = unsafe {
-            let mut nid = new_nid(&self.info.hwnd);
+            let mut nid = new_nid(self.info.hwnd);
             nid.uFlags = shellapi::NIF_ICON;
 
             shellapi::Shell_NotifyIconW(
@@ -594,7 +594,7 @@ impl Window {
     /// Internal call to set icon.
     fn set_icon(&self, icon: HICON) -> Result<(), io::Error> {
         let result = unsafe {
-            let mut nid = new_nid(&self.info.hwnd);
+            let mut nid = new_nid(self.info.hwnd);
             nid.uFlags = shellapi::NIF_ICON;
             nid.hIcon = icon;
 
@@ -629,19 +629,16 @@ impl<'a> Future for TickFuture<'a> {
     type Output = Event;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-        loop {
-            if let Poll::Ready(result) = Pin::new(&mut self.window.shutdown_rx.current()).poll(ctx)
-            {
-                result.expect("shutdown receiver ended");
-                return Poll::Ready(Event::Shutdown);
-            }
-
-            if let Poll::Ready(Some(event)) = Pin::new(&mut self.window.events_rx).poll_next(ctx) {
-                return Poll::Ready(event);
-            }
-
-            return Poll::Pending;
+        if let Poll::Ready(result) = Pin::new(&mut self.window.shutdown_rx.current()).poll(ctx) {
+            result.expect("shutdown receiver ended");
+            return Poll::Ready(Event::Shutdown);
         }
+
+        if let Poll::Ready(Some(event)) = Pin::new(&mut self.window.events_rx).poll_next(ctx) {
+            return Poll::Ready(event);
+        }
+
+        Poll::Pending
     }
 }
 

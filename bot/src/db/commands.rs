@@ -45,13 +45,13 @@ impl Database {
                 diesel::insert_into(dsl::commands)
                     .values(&command)
                     .execute(&*c)?;
-                return Ok(command);
+                Ok(command)
             }
             Some(command) => {
                 let mut set = db::models::UpdateCommand::default();
                 set.text = Some(text);
                 diesel::update(filter).set(&set).execute(&*c)?;
-                return Ok(command);
+                Ok(command)
             }
         }
     }
@@ -142,7 +142,7 @@ impl Commands {
                 disabled: command.disabled,
             });
 
-            self.inner.write().insert(key.clone(), command.clone());
+            self.inner.write().insert(key, command);
         }
 
         Ok(())
@@ -272,7 +272,7 @@ impl fmt::Display for Command {
             "template = \"{template}\", pattern = {pattern}, group = {group}, disabled = {disabled}",
             template = self.template,
             pattern = self.pattern,
-            group = self.group.as_ref().map(|g| g.as_str()).unwrap_or("*none*"),
+            group = self.group.as_deref().unwrap_or("*none*"),
             disabled = self.disabled,
         )
     }

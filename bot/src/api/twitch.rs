@@ -7,14 +7,14 @@ use chrono::{DateTime, Utc};
 use reqwest::{header, Client, Method, StatusCode, Url};
 use std::collections::HashMap;
 
-pub const CLIPS_URL: &'static str = "http://clips.twitch.tv";
-const TMI_TWITCH_URL: &'static str = "https://tmi.twitch.tv";
-const API_TWITCH_URL: &'static str = "https://api.twitch.tv";
-const ID_TWITCH_URL: &'static str = "https://id.twitch.tv";
-const BADGES_TWITCH_URL: &'static str = "https://badges.twitch.tv";
-const GQL_URL: &'static str = "https://gql.twitch.tv/gql";
+pub const CLIPS_URL: &str = "http://clips.twitch.tv";
+const TMI_TWITCH_URL: &str = "https://tmi.twitch.tv";
+const API_TWITCH_URL: &str = "https://api.twitch.tv";
+const ID_TWITCH_URL: &str = "https://id.twitch.tv";
+const BADGES_TWITCH_URL: &str = "https://badges.twitch.tv";
+const GQL_URL: &str = "https://gql.twitch.tv/gql";
 
-const GQL_CLIENT_ID: &'static str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
+const GQL_CLIENT_ID: &str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
 mod gql;
 
@@ -235,12 +235,12 @@ impl Twitch {
             .client_id_header("Client-ID")
             .use_oauth2_header();
 
-        return Ok(request
+        Ok(request
             .execute()
             .await?
             .empty_on_status(StatusCode::UNAUTHORIZED)
             .json()
-            .context("validate token error")?);
+            .context("validate token error")?)
     }
 
     /// Get badge URLs for the specified channel.

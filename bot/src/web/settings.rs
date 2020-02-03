@@ -78,7 +78,6 @@ impl Settings {
                 warp::path("settings")
                     .and(path::tail().and(body::json()))
                     .and_then({
-                        let api = api.clone();
                         move |key: path::Tail, body: PutSetting| {
                             let api = api.clone();
 
@@ -93,7 +92,7 @@ impl Settings {
             )
             .boxed();
 
-        return list.or(get).or(delete).or(edit).boxed();
+        list.or(get).or(delete).or(edit).boxed()
     }
 
     /// Access underlying settings abstraction.
@@ -112,7 +111,7 @@ impl Settings {
             Some(prefix) => {
                 let mut out = Vec::new();
 
-                for prefix in prefix.split(",") {
+                for prefix in prefix.split(',') {
                     out.extend(self.settings()?.list_by_prefix(&prefix)?);
                 }
 
@@ -123,7 +122,7 @@ impl Settings {
 
         if let Some(key) = query.key {
             let key = key
-                .split(",")
+                .split(',')
                 .map(|s| s.to_string())
                 .collect::<HashSet<_>>();
 

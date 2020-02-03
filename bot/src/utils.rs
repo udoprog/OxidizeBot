@@ -83,31 +83,31 @@ impl<'a> Iterator for QueryPairs<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         use percent_encoding::percent_decode;
 
-        while !self.query.is_empty() {
-            let s = match self.query.find('&') {
-                Some(index) => {
-                    let (s, rest) = self.query.split_at(index);
-                    self.query = &rest[1..];
-                    s
-                }
-                None => mem::replace(&mut self.query, ""),
-            };
-
-            match s.find('=') {
-                Some(index) => {
-                    let (s, rest) = s.split_at(index);
-                    let key = percent_decode(s.as_bytes());
-                    let value = percent_decode(rest[1..].as_bytes());
-                    return Some((key, Some(value)));
-                }
-                None => {
-                    let s = percent_decode(s.as_bytes());
-                    return Some((s, None));
-                }
-            }
+        if self.query.is_empty() {
+            return None;
         }
 
-        None
+        let s = match self.query.find('&') {
+            Some(index) => {
+                let (s, rest) = self.query.split_at(index);
+                self.query = &rest[1..];
+                s
+            }
+            None => mem::replace(&mut self.query, ""),
+        };
+
+        match s.find('=') {
+            Some(index) => {
+                let (s, rest) = s.split_at(index);
+                let key = percent_decode(s.as_bytes());
+                let value = percent_decode(rest[1..].as_bytes());
+                Some((key, Some(value)))
+            }
+            None => {
+                let s = percent_decode(s.as_bytes());
+                Some((s, None))
+            }
+        }
     }
 }
 
@@ -157,12 +157,15 @@ impl<'a> Words<'a> {
 
     /// Look at the next character.
     pub fn peek(&self) -> Option<(usize, char)> {
-        self.b0.clone()
+        self.b0
     }
 
     /// The rest of the input.
     pub fn rest(&self) -> &'a str {
-        let s = self.peek().map(|(i, _)| i).unwrap_or(self.string.len());
+        let s = self
+            .peek()
+            .map(|(i, _)| i)
+            .unwrap_or_else(|| self.string.len());
         &self.string[s..]
     }
 
@@ -377,19 +380,19 @@ pub fn long_duration(duration: &time::Duration) -> String {
 
     parts.extend(match p.hours {
         0 => None,
-        1 => Some(format!("one hour")),
+        1 => Some("one hour".to_string()),
         n => Some(format!("{} hours", english_num(n))),
     });
 
     parts.extend(match p.minutes {
         0 => None,
-        1 => Some(format!("one minute")),
+        1 => Some("one minute".to_string()),
         n => Some(format!("{} minutes", english_num(n))),
     });
 
     parts.extend(match p.seconds {
         0 => None,
-        1 => Some(format!("one second")),
+        1 => Some("one second".to_string()),
         n => Some(format!("{} seconds", english_num(n))),
     });
 
@@ -450,7 +453,7 @@ pub fn human_artists(artists: &[api::spotify::SimplifiedArtist]) -> Option<Strin
 
     let back = it.next_back();
 
-    while let Some(artist) = it.next() {
+    for artist in it {
         artists.push_str(", ");
         artists.push_str(artist.name.as_str());
     }
@@ -478,7 +481,7 @@ pub fn human_list(list: &[String]) -> Option<String> {
 
     let back = it.next_back();
 
-    while let Some(el) = it.next() {
+    for el in it {
         list.push_str(", ");
         list.push_str(el);
     }
@@ -846,7 +849,7 @@ mod tests {
 
         // test that rest kinda works.
         let mut it = Words::new("   foo\\\"baz  biz \"is good\"");
-        assert_eq!(it.next().as_ref().map(String::as_str), Some("foo\"baz"));
+        assert_eq!(it.next().as_deref(), Some("foo\"baz"));
         assert_eq!(it.rest(), "biz \"is good\"");
     }
 
