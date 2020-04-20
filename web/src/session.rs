@@ -56,7 +56,7 @@ impl Session {
         headers.insert(
             header::SET_COOKIE,
             self.cookie(name.to_string(), "")
-                .expires(time::at_utc(time::Timespec::new(0, 0)))
+                .expires(time::OffsetDateTime::unix_epoch())
                 .finish()
                 .encoded()
                 .to_string()
@@ -133,7 +133,7 @@ impl Session {
         &self,
         name: impl Into<Cow<'static, str>>,
         value: impl Into<Cow<'static, str>>,
-    ) -> CookieBuilder {
+    ) -> CookieBuilder<'static> {
         Cookie::build(name, value).http_only(true).path("/")
     }
 }
