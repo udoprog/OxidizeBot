@@ -1,7 +1,13 @@
 use crate::{api, oauth2};
 use anyhow::Error;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::{fmt, sync::Arc};
+use sled31 as sled;
+use std::fmt;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+#[error("failed to commit")]
+struct CommitError;
 
 #[derive(Serialize, Deserialize)]
 pub struct Connection {
@@ -247,12 +253,12 @@ impl serde::Serialize for Key {
 
 #[derive(Clone)]
 pub struct Database {
-    tree: Arc<sled::Tree>,
+    tree: sled::Tree,
 }
 
 impl Database {
     /// Open a new database instance.
-    pub fn load(tree: Arc<sled::Tree>) -> Result<Database, Error> {
+    pub fn load(tree: sled::Tree) -> Result<Database, Error> {
         Ok(Self { tree })
     }
 
@@ -351,7 +357,7 @@ impl Database {
         let mut tx = self.transaction();
         tx.insert(&user_to_key, &key)?;
         tx.insert(&key_to_user, &user_id)?;
-        tx.commit()?;
+        tx.commit().map_err(|_| CommitError)?;
         Ok(())
     }
 
@@ -367,7 +373,7 @@ impl Database {
             let mut tx = self.transaction();
             tx.remove(&user_to_key)?;
             tx.remove(&key_to_user)?;
-            tx.commit()?;
+            tx.commit().map_err(|_| CommitError)?;
         }
 
         Ok(())
@@ -475,7 +481,7 @@ impl Database {
     /// Run the given set of operations in a transaction.
     fn transaction(&self) -> Transaction<'_> {
         Transaction {
-            tree: &*self.tree,
+            tree: &self.tree,
             ops: Vec::new(),
         }
     }

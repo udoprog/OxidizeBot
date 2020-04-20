@@ -1,7 +1,7 @@
 use anyhow::{bail, Error};
 use futures::prelude::*;
 use oxidize_web::{api, db, web};
-use std::{fs, path::Path, sync::Arc, time};
+use std::{fs, path::Path, time};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -54,9 +54,32 @@ async fn main() -> Result<(), Error> {
     log::info!("Loading config: {}", config_path.display());
     let config = toml::from_str::<web::Config>(&fs::read_to_string(config_path)?)?;
 
-    let db = db::Database::load(Arc::new(
-        sled::Db::open(config.database.to_path(root))?.open_tree("storage")?,
-    ))?;
+    let base = config.database.to_path(root);
+    let v28 = base.clone();
+    let v31 = base.with_extension("31");
+    let v31_db;
+
+    if !v31.is_dir() {
+        log::warn!("migrating database {} -> {}", v28.display(), v31.display());
+
+        // migrate 28 to 31
+        let v28 = sled28::Db::open(v28)?.open_tree("storage")?;
+        v31_db = sled31::open(v31)?.open_tree("storage")?;
+
+        let mut count = 0;
+
+        for result in v28.scan_prefix(&[]) {
+            let (k, v) = result?;
+            v31_db.insert(k, &*v)?;
+            count += 1;
+        }
+
+        log::warn!("migrated {} records", count);
+    } else {
+        v31_db = sled31::open(v31)?.open_tree("storage")?;
+    }
+
+    let db = db::Database::load(v31_db)?;
 
     let github = api::GitHub::new()?;
 

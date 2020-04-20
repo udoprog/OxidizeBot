@@ -1999,7 +1999,9 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "sled 0.28.0",
+ "sled 0.31.0",
  "smallvec 1.3.0",
+ "thiserror",
  "time 0.2.10",
  "tokio",
  "toml",
@@ -2912,6 +2914,22 @@ name = "sled"
 version = "0.30.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2eb8c32cb0e34e67ad74fae1a77f4635d0cc7ffc873088a0136f3c4849336d71"
+dependencies = [
+ "crc32fast",
+ "crossbeam-epoch 0.8.2",
+ "crossbeam-utils 0.7.2",
+ "fs2",
+ "fxhash",
+ "libc",
+ "log 0.4.8",
+ "parking_lot 0.10.2",
+]
+
+[[package]]
+name = "sled"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fb6824dde66ad33bf20c6e8476f5b82b871bc8bc3c129a10ea2f7dae5060fa3"
 dependencies = [
  "crc32fast",
  "crossbeam-epoch 0.8.2",
