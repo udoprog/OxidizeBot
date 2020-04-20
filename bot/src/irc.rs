@@ -234,7 +234,7 @@ impl Irc {
                 password: Some(format!("oauth:{}", access_token)),
                 server: Some(String::from(SERVER)),
                 port: Some(6697),
-                use_ssl: true,
+                use_ssl: Some(true),
                 ..client::data::config::Config::default()
             };
 
@@ -1097,7 +1097,7 @@ impl<'a> Handler<'a> {
                     }
                 }
             }
-            Command::Raw(ref command, _, ref tail) => match command.as_str() {
+            Command::Raw(ref command, ref tail) => match command.as_str() {
                 "CLEARMSG" => {
                     if let Some(chat_log) = self.chat_log.as_ref() {
                         if let Some(tags) = ClearMsgTags::from_tags(m.tags) {
@@ -1107,7 +1107,7 @@ impl<'a> Handler<'a> {
                 }
                 "CLEARCHAT" => {
                     if let Some(chat_log) = self.chat_log.as_ref() {
-                        match tail {
+                        match tail.first() {
                             Some(user) => {
                                 chat_log.message_log.delete_by_user(user);
                             }

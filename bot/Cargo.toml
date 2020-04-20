@@ -8,71 +8,71 @@ description = "High octane Twitch bot powered by Rust"
 
 [dependencies]
 eudex = "0.1.1"
-chrono = { version = "0.4.9", features = ["serde"] }
+chrono = { version = "0.4.11", features = ["serde"] }
 chrono-tz = { version = "0.5.1", features = ["serde"] }
 clap = "2.33.0"
-mysql_async = "0.21.1"
-diesel = { version = "1.4.2", features = ["sqlite", "chrono"] }
+mysql_async = "0.23.0"
+diesel = { version = "1.4.4", features = ["sqlite", "chrono"] }
 diesel_migrations = "1.4.0"
-warp = { version = "0.2.0-alpha.0", git = "https://github.com/seanmonstar/warp" }
+warp = "0.2.2"
 log = "0.4.8"
-relative-path = { version = "0.4.0", features = ["serde"] }
-reqwest = "0.10.0"
-serde = { version = "1.0.101", features = ["rc"] }
-serde_yaml = "0.8.9"
-serde_json = "1.0.40"
-serde_cbor = "0.10.1"
+relative-path = { version = "1.0.0", features = ["serde"] }
+reqwest = "0.10.4"
+serde = { version = "1.0.106", features = ["rc"] }
+serde_yaml = "0.8.11"
+serde_json = "1.0.51"
+serde_cbor = "0.11.1"
 serde_urlencoded = "0.6.1"
-tokio = { version = "0.2.6", features = ["rt-threaded", "time"] }
-url = { version = "2.1", features = ["serde"] }
+tokio = { version = "0.2.18", features = ["rt-threaded", "time"] }
+url = { version = "2.1.1", features = ["serde"] }
 Inflector = "0.11.4"
-base64 = "0.10.1"
-rand = "0.7.2"
-fixed-map = "0.6.1"
-log4rs = "0.8.3"
-handlebars = "=2.0.2"
+base64 = "0.12.0"
+rand = "0.7.3"
+fixed-map = "0.7.1"
+log4rs = "0.11.0"
+handlebars = "3.0.1"
 htmlescape = "0.3.1"
 lazy_static = "1.4.0"
 # set the bundled feature to use the bundled libsqlite3
-libsqlite3-sys = { version = "0.16.0", features = ["bundled", "unlock_notify"] }
+libsqlite3-sys = { version = "0.17.3", features = ["bundled", "unlock_notify"] }
 webbrowser = "0.5.2"
-parking_lot = "0.10.0"
-err-derive = "0.1.5"
+parking_lot = "0.10.2"
+err-derive = "0.2.4"
 percent-encoding = "2.1.0"
-bytes = "0.5.3"
-uuid = { version = "0.7.4", features = ["serde", "v4"] }
+bytes = "0.5.4"
+uuid = { version = "0.8.1", features = ["serde", "v4"] }
 pin-utils = "0.1.0-alpha.4"
-smallvec = { version = "0.6.10", features = ["serde"] }
+smallvec = { version = "1.3.0", features = ["serde"] }
 dirs = "2.0.2"
-backoff = "0.1.5"
-rust-embed = { version = "5.1.0", features = ["interpolate-folder-path"] }
-mime = "0.3.14"
-mime_guess = "2.0.1"
-uom = "0.25.0"
-crossbeam = "0.7.2"
-hex = "0.4.0"
-graphql_client = { version = "0.8.0", default-features = false }
+backoff = "0.1.6"
+rust-embed = { version = "5.5.1", features = ["interpolate-folder-path"] }
+mime = "0.3.16"
+mime_guess = "2.0.3"
+uom = "0.27.0"
+crossbeam = "0.7.3"
+hex = "0.4.2"
+graphql_client = { version = "0.9.0", default-features = false }
 futures-option = "0.2.0"
 futures-cache = "0.9.0"
-anyhow = "1.0.13"
+anyhow = "1.0.28"
 async-injector = "0.4.2"
-async-trait = "0.1.13"
-leaky-bucket = "0.7.1"
-regex = "1.3.1"
-backtrace = "0.3.38"
-futures = { version = "0.3.0", features = ["async-await"] }
-tracing = "0.1.0"
-tracing-core = "0.1.0"
-tracing-futures = { version = "0.2.0", default-features = false, features = ["std-future"] }
+async-trait = "0.1.30"
+leaky-bucket = "0.7.3"
+regex = "1.3.7"
+backtrace = "0.3.46"
+futures = { version = "0.3.4", features = ["async-await"] }
+tracing = "0.1.13"
+tracing-core = "0.1.10"
+tracing-futures = { version = "0.2.3", default-features = false, features = ["std-future"] }
 
 [dependencies.irc]
 version = "0.13.6"
 git = "https://github.com/aatxe/irc.git"
-branch = "0.14"
+branch = "develop"
 
 [build-dependencies]
 winres = "0.1.11"
-anyhow = "1.0.13"
+anyhow = "1.0.28"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3.8", features = ["shellapi", "impl-default"] }

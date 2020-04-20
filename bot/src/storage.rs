@@ -10,7 +10,7 @@ pub struct Storage {
 impl Storage {
     /// Open the given storage location.
     pub fn open(path: &Path) -> Result<Storage, Error> {
-        let db = sled::open(path.join("sled.30"))?;
+        let db = sled::open(path.join("sled.31"))?;
         Ok(Storage { db: Arc::new(db) })
     }
 

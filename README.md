@@ -58,29 +58,32 @@ Starts automatically with Windows if you want it to.
 
 ## Installing and Running
 
-You can download an installer or an archive from [releases](https://github.com/udoprog/OxidizeBot/releases) or [build the project yourself](#building).
+You can download an installer or an archive from [releases] or [build the project yourself](#building).
+
+[releases]: https://github.com/udoprog/OxidizeBot/releases
 
 ## Building
 
 You'll need Rust and a working compiler: https://rustup.rs/
 
-For now and until `async_await` is stable, you will need to use the _beta_ Rust compiler.
-This can be installed and configured by running:
-
-```
-rustup toolchain install beta
-rustup default beta
-```
-
 After this, you build the project using cargo:
 
 ```
-cargo +beta build --release
+cargo --manifest-path=bot/Cargo.toml build --release
 ```
+
+If you want to run it directly from the project directory, you can do:
+
+```
+cargo --manifest-path=bot/Cargo.toml run --release --no-default-features
+```
+
+Note: `--no-default-features` disables the windows_subsystem configuration on
+Windows, allowing you to run the project in the terminal.
 
 ## License
 
-OxidizeBot is primarily distributed under the terms of both the MIT license
-and the Apache License (Version 2.0).
+OxidizeBot is distributed under the terms of both the MIT license and the
+Apache License (Version 2.0).
 
 See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT) for details.

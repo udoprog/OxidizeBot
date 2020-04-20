@@ -1,7 +1,7 @@
 use std::{collections::HashSet, fmt, io, string};
 
 lazy_static::lazy_static! {
-    static ref REGISTRY: handlebars::Handlebars = {
+    static ref REGISTRY: handlebars::Handlebars<'static> = {
         let mut reg = handlebars::Handlebars::new();
         reg.register_escape_fn(|s| s.to_string());
         reg
@@ -141,6 +141,7 @@ impl Template {
                 Parameter::Subexpression(ref e) => {
                     queue.push_back(&*e.element);
                 }
+                Parameter::Path(..) => (),
             }
         }
 

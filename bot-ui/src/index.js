@@ -213,7 +213,7 @@ class IndexPage extends React.Component {
       latest = this.state.version.latest;
     }
 
-    if (!latest || !semver.valid(latest.version)) {
+    if (!latest || !semver.valid(latest.version) || !semver.valid(version)) {
       return this.defaultVersionInfo(version);
     }
 
