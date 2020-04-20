@@ -134,14 +134,14 @@ impl Template {
             p: &'e Parameter,
         ) {
             match p {
-                Parameter::Name(ref name) => {
-                    out.insert(name.to_string());
-                }
-                Parameter::Literal(_) => (),
                 Parameter::Subexpression(ref e) => {
                     queue.push_back(&*e.element);
                 }
-                Parameter::Path(..) => (),
+                p => {
+                    if let Some(name) = p.as_name() {
+                        out.insert(name.to_string());
+                    }
+                }
             }
         }
 
