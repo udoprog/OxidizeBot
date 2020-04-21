@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use relative_path::RelativePathBuf;
 use serde::{de, Deserialize, Serialize};
 use smallvec::SmallVec;
-use std::{borrow::Cow, collections::HashMap, net::SocketAddr, sync::Arc, time};
+use std::{borrow::Cow, collections::HashMap, fmt, net::SocketAddr, sync::Arc, time};
 use url::Url;
 
 static SPOTIFY_TRACK_URL: &str = "https://open.spotify.com/track";
@@ -245,15 +245,16 @@ impl Handler {
         r
     }
 
-    async fn call(self: Arc<Self>, req: Request<Body>) -> Result<Response<Body>, anyhow::Error> {
-        let uri = req.uri();
-
-        log::info!("{} {}", req.method(), uri.path());
-
-        let mut it = uri.path().split('/');
-        it.next();
-
-        let path = it.collect::<SmallVec<[_; 8]>>();
+    async fn call(
+        self: Arc<Self>,
+        mut req: Request<Body>,
+    ) -> Result<Response<Body>, anyhow::Error> {
+        let path = req
+            .uri()
+            .path()
+            .split('/')
+            .skip(1)
+            .collect::<SmallVec<[_; 8]>>();
 
         let result = match (req.method(), &*path) {
             (&Method::GET, &["api", "auth", "redirect"]) => self.handle_auth_redirect(&req).await,
@@ -277,12 +278,12 @@ impl Handler {
             (&Method::GET, &["api", "player", id]) => self.player_get(id).await,
             (&Method::POST, &["api", "player"]) => {
                 drop(path);
-                self.player_update(req).await
+                self.player_update(&mut req).await
             }
             (&Method::GET, &["api", "github-releases", user, repo]) => {
                 self.get_github_releases(user, repo).await
             }
-            (&Method::GET, _) => return Ok(self.static_asset(uri.path())),
+            (&Method::GET, _) => return Ok(self.static_asset(req.uri().path())),
             _ => Err(Error::NotFound),
         };
 
@@ -322,7 +323,54 @@ impl Handler {
             }
         };
 
+        let user_agent = match req.headers().get(header::USER_AGENT) {
+            Some(header) => header.to_str().unwrap_or("?"),
+            None => "?",
+        };
+
+        let request_len = match req.headers().get(header::CONTENT_LENGTH) {
+            Some(h) => h
+                .to_str()
+                .map(ContentLength::Some)
+                .unwrap_or(ContentLength::None),
+            None => ContentLength::None,
+        };
+
+        let response_len = match response.headers().get(header::CONTENT_LENGTH) {
+            Some(h) => h
+                .to_str()
+                .map(ContentLength::Some)
+                .unwrap_or(ContentLength::None),
+            None => ContentLength::None,
+        };
+
+        log::info!(
+            target: "request",
+            "{method} {uri} (User Agent: {user_agent}) ({request_len} bytes) => {status} ({response_len} bytes)",
+            method = req.method(),
+            uri = req.uri(),
+            user_agent = user_agent,
+            status = response.status(),
+            request_len = request_len,
+            response_len = response_len,
+        );
+
         Ok(response)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ContentLength<'a> {
+    Some(&'a str),
+    None,
+}
+
+impl fmt::Display for ContentLength<'_> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            ContentLength::None => "?".fmt(fmt),
+            ContentLength::Some(len) => write!(fmt, "{} bytes", len),
+        }
     }
 }
 
@@ -627,6 +675,7 @@ impl Handler {
     /// Get information for a single player.
     async fn player_get(&self, id: &str) -> Result<Response<Body>, Error> {
         let player = self.db.get_player(id)?;
+        let player = player.ok_or_else(|| Error::NotFound)?;
         json_ok(&player)
     }
 
@@ -786,9 +835,9 @@ impl Handler {
     }
 
     /// Handle a playlist update.
-    async fn player_update(&self, req: Request<Body>) -> Result<Response<Body>, Error> {
-        let user = self.session.verify(&req)?;
-        let twitch_token = extract_twitch_token(&req);
+    async fn player_update(&self, req: &mut Request<Body>) -> Result<Response<Body>, Error> {
+        let user = self.session.verify(req)?;
+        let twitch_token = extract_twitch_token(req);
         let update = receive_json::<PlayerUpdate>(req, Self::MAX_BYTES);
 
         // NB: need to support special case for backwards compatibility.
@@ -810,6 +859,7 @@ impl Handler {
                     .into_iter()
                     .map(Item::into_player_item)
                     .collect(),
+                last_update: Some(Utc::now()),
             };
 
             self.db.insert_player(&login, player)?;
@@ -994,11 +1044,11 @@ pub fn http_error(status: StatusCode, message: &str) -> Result<Response<Body>, E
 }
 
 /// Concats the body and makes sure the request is not too large.
-async fn receive_json<T>(req: Request<Body>, max_bytes: usize) -> Result<T, Error>
+async fn receive_json<T>(req: &mut Request<Body>, max_bytes: usize) -> Result<T, Error>
 where
     T: de::DeserializeOwned,
 {
-    let mut body = req.into_body();
+    let body = req.body_mut();
 
     let mut bytes = Vec::new();
     let mut received = 0;

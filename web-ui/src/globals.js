@@ -1,4 +1,4 @@
-import Api from "./api.js";
+import {Api} from "./api.js";
 
 export const api = new Api(apiUrl());
 export var currentUser = null;

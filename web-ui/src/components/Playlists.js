@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../globals.js";
 import { RouteLayout } from "./Layout";
 import Loading from 'shared-ui/components/Loading';
+import * as utils from "../utils";
 
 export default class Players extends React.Component {
   constructor(props) {
@@ -40,12 +41,25 @@ export default class Players extends React.Component {
         );
       } else {
         content = (
-          <Table bordered hover>
+          <Table className="playlists" striped bordered hover>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th width="1%">Last&nbsp;Update</th>
+              </tr>
+            </thead>
             <tbody>
               {this.state.players.map(p => {
+                let lastUpdate = "?";
+
+                if (!!p.last_update) {
+                  lastUpdate = utils.humanDurationSince(new Date(p.last_update));
+                }
+
                 return (
-                  <tr key={p}>
-                    <td><Link to={`/player/${p}`}>{p}</Link></td>
+                  <tr key={p.user_login}>
+                    <td><Link alt="Go to player" to={`/player/${p.user_login}`}>{p.user_login}</Link></td>
+                    <td className="playlists-last-update">{lastUpdate}</td>
                   </tr>
                 );
               })}

@@ -1,4 +1,22 @@
-export default class Api {
+export class ApiError {
+  constructor(status, body) {
+    this.status = status;
+    this.body = body;
+  }
+
+  /**
+   * Test if the error is a 404 not found.
+   */
+  notFound() {
+    return this.status == 404;
+  }
+
+  toString() {
+    return `got bad status code ${this.status}: ${this.body}`;
+  }
+}
+
+export class Api {
   constructor(url) {
     this.url = url;
   }
@@ -8,22 +26,21 @@ export default class Api {
    * @param {string | array<string>} path
    * @param {*} data
    */
-  fetch(path, data = {}) {
+  async fetch(path, data = {}) {
     if (path instanceof Array) {
       path = encodePath(path);
     }
 
     data.credentials = "same-origin";
 
-    return fetch(`${this.url}/${path}`, data).then((r) => {
-      if (!r.ok) {
-        return r.text().then(text => {
-          throw Error(`got bad status code: ${r.status}: ${text}`);
-        });
-      }
+    const r = await fetch(`${this.url}/${path}`, data);
 
-      return r.json();
-    });
+    if (!r.ok) {
+      let text = await r.text();
+      throw new ApiError(r.status, text);
+    }
+
+    return await r.json();
   }
 
   /**

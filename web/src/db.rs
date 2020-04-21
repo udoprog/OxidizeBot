@@ -1,5 +1,6 @@
 use crate::{api, oauth2};
 use anyhow::Error;
+use chrono::{DateTime, Utc};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sled31 as sled;
 use std::fmt;
@@ -51,6 +52,14 @@ pub struct PlayerItem {
 pub struct Player {
     pub current: Option<PlayerItem>,
     pub items: Vec<PlayerItem>,
+    #[serde(default)]
+    pub last_update: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PlayerEntry {
+    pub user_login: String,
+    pub last_update: Option<DateTime<Utc>>,
 }
 
 /// Internal key serialization.
@@ -263,24 +272,34 @@ impl Database {
     }
 
     /// Get information on the given user.
-    pub fn list_players(&self) -> Result<Vec<String>, Error> {
+    pub fn list_players(&self) -> Result<Vec<PlayerEntry>, Error> {
         let key = Key::Players.serialize()?;
         let prefix = &key[..(key.len() - 1)];
 
         let mut out = Vec::new();
 
         for result in self.tree.range(prefix..) {
-            let (key, _) = result?;
+            let (key, value) = result?;
 
             match Key::deserialize(key.as_ref())? {
                 Key::Player { ref user_login } => {
-                    out.push(user_login.to_string());
+                    if let Some(partial) = Self::deserialize::<PlayerPartial>(&value).ok() {
+                        out.push(PlayerEntry {
+                            user_login: user_login.to_string(),
+                            last_update: partial.last_update,
+                        });
+                    }
                 }
                 _ => break,
             }
         }
 
-        Ok(out)
+        return Ok(out);
+
+        #[derive(Debug, Deserialize, Serialize)]
+        pub struct PlayerPartial {
+            pub last_update: Option<DateTime<Utc>>,
+        }
     }
 
     /// Get data for a single player.
@@ -516,7 +535,7 @@ impl Database {
             None => return Ok(None),
         };
 
-        let value = match serde_cbor::from_slice(value.as_ref()) {
+        let value = match Self::deserialize(&value) {
             Ok(value) => value,
             Err(e) => {
                 log::warn!("Ignoring invalid value stored at: {:?}: {}", key, e);
@@ -525,6 +544,14 @@ impl Database {
         };
 
         Ok(Some(value))
+    }
+
+    /// Helper function to deserialize a value.
+    fn deserialize<T>(value: &sled::IVec) -> serde_cbor::Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        serde_cbor::from_slice(&*value)
     }
 }
 

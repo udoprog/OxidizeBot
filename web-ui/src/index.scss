@@ -23,3 +23,24 @@ html, body {
   text-align: center;
   font-size: 80%;
 }
+
+.playlists {
+  th {
+    font-weight: bold;
+  }
+
+  &-last-update {
+    white-space: nowrap;
+  }
+}
+
+.player {
+  th {
+    font-weight: bold;
+  }
+
+  &-not-found-hint {
+    text-align: center;
+    margin-bottom: 1em;
+  }
+}
