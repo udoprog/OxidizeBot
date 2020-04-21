@@ -3,6 +3,8 @@ use anyhow::{bail, Error};
 use bytes::Bytes;
 use reqwest::{header, Client, Method, StatusCode, Url};
 
+pub const USER_AGENT: &str = concat!("OxidizeBot/", version_str!());
+
 /// Trait to deal with optional bodies.
 ///
 /// Fix and replace once we get HRTB's or HRT's :cry:
@@ -160,10 +162,7 @@ impl RequestBuilder {
                 }
             }
 
-            req = req.header(
-                header::USER_AGENT,
-                concat!("OxidizeBot/", env!("CARGO_PKG_VERSION")),
-            );
+            req = req.header(header::USER_AGENT, USER_AGENT);
 
             req
         };

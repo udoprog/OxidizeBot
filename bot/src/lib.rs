@@ -10,7 +10,14 @@ extern crate smallvec;
 
 pub use async_injector as injector;
 
-pub const VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/version.txt"));
+/// Get the version number of the project.
+macro_rules! version_str {
+    () => {
+        include_str!(concat!(env!("OUT_DIR"), "/version.txt"))
+    };
+}
+
+pub const VERSION: &str = version_str!();
 
 #[macro_use]
 mod macros;
