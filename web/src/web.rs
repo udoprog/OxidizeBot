@@ -3,7 +3,12 @@ use ::oauth2::State;
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use futures::prelude::*;
-use hyper::{body::Body, error, header, server, service, Method, Request, Response, StatusCode};
+use hyper::{
+    body::Body,
+    error, header,
+    server::{conn::AddrStream, Server},
+    service, Method, Request, Response, StatusCode,
+};
 use parking_lot::Mutex;
 use relative_path::RelativePathBuf;
 use serde::{de, Deserialize, Serialize};
@@ -49,11 +54,13 @@ pub fn setup(
     let addr: SocketAddr = str::parse(&bind)?;
 
     // TODO: add graceful shutdown.
-    let server_future = server::Server::bind(&addr).serve(service::make_service_fn(move |_| {
-        let handler = handler.clone();
-        let service = service::service_fn(move |req| handler.clone().call(req));
-        async move { Ok::<_, hyper::Error>(service) }
-    }));
+    let server_future =
+        Server::bind(&addr).serve(service::make_service_fn(move |s: &AddrStream| {
+            let handler = handler.clone();
+            let address = s.remote_addr();
+            let service = service::service_fn(move |req| handler.clone().call(address, req));
+            async move { Ok::<_, hyper::Error>(service) }
+        }));
 
     let future = async move {
         let mut interval = tokio::time::interval(time::Duration::from_secs(30)).fuse();
@@ -247,6 +254,7 @@ impl Handler {
 
     async fn call(
         self: Arc<Self>,
+        remote_address: SocketAddr,
         mut req: Request<Body>,
     ) -> Result<Response<Body>, anyhow::Error> {
         let path = req
@@ -346,7 +354,8 @@ impl Handler {
 
         log::info!(
             target: "request",
-            "{method} {uri} (User Agent: {user_agent}) ({request_len} bytes) => {status} ({response_len} bytes)",
+            "{remote_address} {method} {uri} (User Agent: {user_agent}) ({request_len} bytes) => {status} ({response_len} bytes)",
+            remote_address = remote_address,
             method = req.method(),
             uri = req.uri(),
             user_agent = user_agent,
