@@ -166,35 +166,33 @@ impl command::Handler for Handler {
                 let user = ctx.user.clone();
                 let currency = currency.clone();
 
-                ctx.spawn(async move {
-                    let result = currency
-                        .balance_add(user.channel(), &boosted_user, amount)
-                        .await;
+                let result = currency
+                    .balance_add(user.channel(), &boosted_user, amount)
+                    .await;
 
-                    match result {
-                        Ok(()) => {
-                            if amount >= 0 {
-                                user.respond(format!(
-                                    "Gave {user} {amount} {currency}!",
-                                    user = boosted_user,
-                                    amount = amount,
-                                    currency = currency.name
-                                ));
-                            } else {
-                                user.respond(format!(
-                                    "Took away {amount} {currency} from {user}!",
-                                    user = boosted_user,
-                                    amount = -amount,
-                                    currency = currency.name
-                                ));
-                            }
-                        }
-                        Err(e) => {
-                            user.respond("failed to boost user, sorry :(");
-                            log_err!(e, "failed to modify currency");
+                match result {
+                    Ok(()) => {
+                        if amount >= 0 {
+                            user.respond(format!(
+                                "Gave {user} {amount} {currency}!",
+                                user = boosted_user,
+                                amount = amount,
+                                currency = currency.name
+                            ));
+                        } else {
+                            user.respond(format!(
+                                "Took away {amount} {currency} from {user}!",
+                                user = boosted_user,
+                                amount = -amount,
+                                currency = currency.name
+                            ));
                         }
                     }
-                });
+                    Err(e) => {
+                        user.respond("failed to boost user, sorry :(");
+                        log_err!(e, "failed to modify currency");
+                    }
+                }
             }
             Some("windfall") => {
                 ctx.check_scope(Scope::CurrencyWindfall)?;

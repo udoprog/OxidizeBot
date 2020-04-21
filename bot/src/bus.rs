@@ -78,7 +78,7 @@ impl<T> Bus<T> {
             }
         }
 
-        for i in remove {
+        for i in remove.into_iter().rev() {
             inner.subs.swap_remove(i);
         }
     }

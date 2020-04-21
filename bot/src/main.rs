@@ -262,6 +262,7 @@ fn main() -> Result<(), Error> {
     let mut error_backoff = backoff::ExponentialBackoff::default();
     error_backoff.current_interval = time::Duration::from_secs(30);
     error_backoff.initial_interval = time::Duration::from_secs(30);
+    error_backoff.max_elapsed_time = None;
 
     let mut current_backoff;
     let mut errored = false;
@@ -326,25 +327,24 @@ fn main() -> Result<(), Error> {
             break;
         }
 
-        if let Some(current_backoff) = current_backoff.as_ref() {
+        if let Some(current_backoff) = current_backoff.clone() {
             log::info!(
                 "Restarting in {}...",
-                utils::compact_duration(current_backoff)
+                utils::compact_duration(&current_backoff)
             );
 
             let system = system.clone();
 
-            let system_interrupt = async move {
-                future::select(
-                    system.wait_for_shutdown().boxed(),
-                    system.wait_for_restart().boxed(),
-                )
-                .await;
-            };
-
-            let delay = tokio::time::delay_for(*current_backoff);
-
-            let _ = runtime.block_on(future::select(system_interrupt.boxed(), delay));
+            runtime.block_on(async move {
+                tokio::select! {
+                    _ = system.wait_for_shutdown() => {
+                    }
+                    _ = system.wait_for_restart() => {
+                    }
+                    _ = tokio::time::delay_for(current_backoff) => {
+                    }
+                }
+            });
         }
 
         if !errored {

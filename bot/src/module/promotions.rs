@@ -110,11 +110,9 @@ impl super::Module for Module {
                             let promotions = promotions.clone();
                             let sender = sender.clone();
 
-                            tokio::spawn(async move {
-                                if let Err(e) = promote(promotions, sender) {
-                                    log::error!("failed to send promotion: {}", e);
-                                }
-                            });
+                            if let Err(e) = promote(promotions, sender) {
+                                log::error!("failed to send promotion: {}", e);
+                            }
                         }
                     }
                 }
