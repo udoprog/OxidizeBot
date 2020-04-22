@@ -7,7 +7,7 @@ use hyper::{
     body::Body,
     error, header,
     server::{conn::AddrStream, Server},
-    service, Method, Request, Response, StatusCode,
+    service, Request, Response, StatusCode,
 };
 use parking_lot::Mutex;
 use relative_path::RelativePathBuf;
@@ -257,6 +257,8 @@ impl Handler {
         remote_address: SocketAddr,
         mut req: Request<Body>,
     ) -> Result<Response<Body>, anyhow::Error> {
+        use hyper::{body::HttpBody, Method};
+
         let path = req
             .uri()
             .path()
@@ -264,33 +266,36 @@ impl Handler {
             .skip(1)
             .collect::<SmallVec<[_; 8]>>();
 
+        let request_size = HttpBody::size_hint(req.body()).upper();
+
         let result = match (req.method(), &*path) {
-            (&Method::GET, &["api", "auth", "redirect"]) => self.handle_auth_redirect(&req).await,
-            (&Method::POST, &["api", "auth", "login"]) => self.handle_login(&req).await,
-            (&Method::POST, &["api", "auth", "logout"]) => self.handle_logout(&req).await,
-            (&Method::GET, &["api", "auth", "current"]) => self.handle_current(&req).await,
-            (&Method::GET, &["api", "connection-types"]) => self.connection_types_list(&req).await,
-            (&Method::GET, &["api", "connections"]) => self.connections_list(&req).await,
-            (&Method::GET, &["api", "connections", id]) => self.connections_get(&req, id).await,
-            (&Method::POST, &["api", "connections", id, "refresh"]) => {
-                self.connection_refresh(&req, id).await
-            }
-            (&Method::DELETE, &["api", "connections", id]) => {
-                self.connections_delete(&req, id).await
-            }
-            (&Method::POST, &["api", "connections", id]) => self.connections_create(&req, id).await,
-            (&Method::POST, &["api", "key"]) => self.create_key(&req).await,
-            (&Method::DELETE, &["api", "key"]) => self.delete_key(&req).await,
-            (&Method::GET, &["api", "key"]) => self.get_key(&req).await,
-            (&Method::GET, &["api", "players"]) => self.player_list().await,
-            (&Method::GET, &["api", "player", id]) => self.player_get(id).await,
-            (&Method::POST, &["api", "player"]) => {
-                drop(path);
-                self.player_update(&mut req).await
-            }
-            (&Method::GET, &["api", "github-releases", user, repo]) => {
-                self.get_github_releases(user, repo).await
-            }
+            (m, ["api", rest @ ..]) => match (m, rest) {
+                (&Method::GET, &["auth", "redirect"]) => self.auth_redirect(&req).await,
+                (&Method::POST, &["auth", "login"]) => self.auth_login(&req).await,
+                (&Method::POST, &["auth", "logout"]) => self.auth_logout(&req).await,
+                (&Method::GET, &["auth", "current"]) => self.get_auth_current(&req).await,
+                (&Method::GET, &["connection-types"]) => self.get_connection_types(&req).await,
+                (&Method::GET, &["connections"]) => self.list_connections(&req).await,
+                (&Method::GET, &["connections", id]) => self.get_connection(&req, id).await,
+                (&Method::POST, &["connections", id, "refresh"]) => {
+                    self.refresh_connection(&req, id).await
+                }
+                (&Method::DELETE, &["connections", id]) => self.delete_connection(&req, id).await,
+                (&Method::POST, &["connections", id]) => self.create_connection(&req, id).await,
+                (&Method::POST, &["key"]) => self.create_key(&req).await,
+                (&Method::DELETE, &["key"]) => self.delete_key(&req).await,
+                (&Method::GET, &["key"]) => self.get_key(&req).await,
+                (&Method::GET, &["players"]) => self.list_players().await,
+                (&Method::GET, &["player", id]) => self.get_player(id).await,
+                (&Method::POST, &["player"]) => {
+                    drop(path);
+                    self.update_player(&mut req).await
+                }
+                (&Method::GET, &["github-releases", user, repo]) => {
+                    self.get_github_releases(user, repo).await
+                }
+                _ => Err(Error::NotFound),
+            },
             (&Method::GET, _) => return Ok(self.static_asset(req.uri().path())),
             _ => Err(Error::NotFound),
         };
@@ -331,37 +336,44 @@ impl Handler {
             }
         };
 
+        let response_size = HttpBody::size_hint(response.body()).upper();
+
+        let request_size = request_size
+            .map(ContentLengthFmt::Some)
+            .unwrap_or(ContentLengthFmt::None);
+
+        let response_size = response_size
+            .map(ContentLengthFmt::Some)
+            .unwrap_or(ContentLengthFmt::None);
+
         let user_agent = match req.headers().get(header::USER_AGENT) {
             Some(header) => header.to_str().unwrap_or("?"),
             None => "?",
         };
 
-        let request_len = match req.headers().get(header::CONTENT_LENGTH) {
-            Some(h) => h
-                .to_str()
-                .map(ContentLength::Some)
-                .unwrap_or(ContentLength::None),
-            None => ContentLength::None,
-        };
+        let x_real_ip = req.headers().get("X-Real-IP").and_then(|h| h.to_str().ok());
 
-        let response_len = match response.headers().get(header::CONTENT_LENGTH) {
-            Some(h) => h
-                .to_str()
-                .map(ContentLength::Some)
-                .unwrap_or(ContentLength::None),
-            None => ContentLength::None,
+        let x_forwarded_for = req
+            .headers()
+            .get("X-Forwarded-For")
+            .and_then(|h| h.to_str().ok());
+
+        let remote_address = RemoteAddressFmt {
+            remote_address,
+            x_real_ip,
+            x_forwarded_for,
         };
 
         log::info!(
             target: "request",
-            "{remote_address} {method} {uri} (User Agent: {user_agent}) ({request_len} bytes) => {status} ({response_len} bytes)",
+            "{remote_address} {method} {uri} (User Agent: {user_agent}) ({request_size}) => {status} ({response_size})",
             remote_address = remote_address,
             method = req.method(),
             uri = req.uri(),
             user_agent = user_agent,
             status = response.status(),
-            request_len = request_len,
-            response_len = response_len,
+            request_size = request_size,
+            response_size = response_size,
         );
 
         Ok(response)
@@ -369,17 +381,40 @@ impl Handler {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum ContentLength<'a> {
-    Some(&'a str),
+enum ContentLengthFmt {
+    Some(u64),
     None,
 }
 
-impl fmt::Display for ContentLength<'_> {
+impl fmt::Display for ContentLengthFmt {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            ContentLength::None => "?".fmt(fmt),
-            ContentLength::Some(len) => write!(fmt, "{} bytes", len),
+            Self::None => "?".fmt(fmt),
+            Self::Some(len) => write!(fmt, "{} bytes", len),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct RemoteAddressFmt<'a> {
+    remote_address: SocketAddr,
+    x_real_ip: Option<&'a str>,
+    x_forwarded_for: Option<&'a str>,
+}
+
+impl fmt::Display for RemoteAddressFmt<'_> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "{}", self.remote_address)?;
+
+        if let Some(x_real_ip) = self.x_real_ip {
+            write!(fmt, " (X-Real-IP: {})", x_real_ip)?;
+        }
+
+        if let Some(x_forwarded_for) = self.x_forwarded_for {
+            write!(fmt, " (X-Forwarded-For: {})", x_forwarded_for)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -412,11 +447,7 @@ impl Handler {
     const MAX_BYTES: usize = 10_000;
 
     /// Get the token with the given ID.
-    async fn connections_get(
-        &self,
-        req: &Request<Body>,
-        id: &str,
-    ) -> Result<Response<Body>, Error> {
+    async fn get_connection(&self, req: &Request<Body>, id: &str) -> Result<Response<Body>, Error> {
         let user = self.verify(req)?;
 
         let c = self.db.get_connection(&user.user_id, id)?;
@@ -468,7 +499,7 @@ impl Handler {
     }
 
     /// Get the token with the given ID.
-    async fn connection_refresh(
+    async fn refresh_connection(
         &self,
         req: &Request<Body>,
         id: &str,
@@ -516,7 +547,7 @@ impl Handler {
     }
 
     /// Get a list of connection types.
-    async fn connection_types_list(&self, _: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn get_connection_types(&self, _: &Request<Body>) -> Result<Response<Body>, Error> {
         let mut out = Vec::new();
 
         for client_config in &self.config.oauth2.flows {
@@ -532,7 +563,7 @@ impl Handler {
     }
 
     /// List connections for the current user.
-    async fn connections_list(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn list_connections(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
         let user = self.verify(req)?;
         let connections = self.db.connections_by_user(&user.user_id)?;
 
@@ -578,7 +609,7 @@ impl Handler {
     }
 
     /// Delete the specified connection.
-    async fn connections_delete(
+    async fn delete_connection(
         &self,
         req: &Request<Body>,
         id: &str,
@@ -590,7 +621,7 @@ impl Handler {
     }
 
     /// List connections for the current user.
-    async fn connections_create(
+    async fn create_connection(
         &self,
         req: &Request<Body>,
         id: &str,
@@ -676,13 +707,13 @@ impl Handler {
     }
 
     /// Handle listing players.
-    async fn player_list(&self) -> Result<Response<Body>, Error> {
+    async fn list_players(&self) -> Result<Response<Body>, Error> {
         let keys = self.db.list_players()?;
         json_ok(&keys)
     }
 
     /// Get information for a single player.
-    async fn player_get(&self, id: &str) -> Result<Response<Body>, Error> {
+    async fn get_player(&self, id: &str) -> Result<Response<Body>, Error> {
         let player = self.db.get_player(id)?;
         let player = player.ok_or_else(|| Error::NotFound)?;
         json_ok(&player)
@@ -698,18 +729,10 @@ impl Handler {
     }
 
     /// Handle auth redirect coming back.
-    async fn handle_auth_redirect(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
-        let uri = req.uri();
+    async fn auth_redirect(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
         let mut r = json_empty()?;
         *r.status_mut() = StatusCode::TEMPORARY_REDIRECT;
-
-        let query = match uri.query() {
-            Some(query) => query,
-            None => return Err(Error::bad_request("missing query parameters")),
-        };
-
-        let query = serde_urlencoded::from_str::<oauth2::TokenQuery>(query)
-            .map_err(|_| Error::bad_request("bad query parameters"))?;
+        let query = self.decode_query::<oauth2::TokenQuery>(req)?;
 
         let removed = self.pending_tokens.lock().remove(&query.state);
 
@@ -805,7 +828,7 @@ impl Handler {
     }
 
     /// Handle login or registration.
-    async fn handle_login(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn auth_login(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
         let exchange_token = self.login_flow.exchange_token();
 
         let r = json_ok(&Login {
@@ -832,19 +855,19 @@ impl Handler {
     }
 
     /// Handle clearing cookies for logging out.
-    async fn handle_logout(&self, _: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn auth_logout(&self, _: &Request<Body>) -> Result<Response<Body>, Error> {
         let mut r = json_empty()?;
         self.session.delete_cookie(r.headers_mut(), "session")?;
         Ok(r)
     }
 
     /// Show the current session.
-    async fn handle_current(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn get_auth_current(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
         json_ok(&self.session.verify(req)?)
     }
 
     /// Handle a playlist update.
-    async fn player_update(&self, req: &mut Request<Body>) -> Result<Response<Body>, Error> {
+    async fn update_player(&self, req: &mut Request<Body>) -> Result<Response<Body>, Error> {
         let user = self.session.verify(req)?;
         let twitch_token = extract_twitch_token(req);
         let update = receive_json::<PlayerUpdate>(req, Self::MAX_BYTES);
@@ -925,19 +948,6 @@ impl Handler {
             .map_err(Error::Error)?)
     }
 
-    /// Decode query parameters using the specified model.
-    fn decode_query<'a, T>(&self, req: &'a Request<Body>) -> Result<T, Error>
-    where
-        T: Deserialize<'a>,
-    {
-        let query = req.uri().query().unwrap_or("");
-
-        let query =
-            serde_urlencoded::from_str::<T>(query).map_err(|_| Error::bad_request("bad query"))?;
-
-        Ok(query)
-    }
-
     /// Get token meta-information.
     async fn token_meta(
         &self,
@@ -962,6 +972,19 @@ impl Handler {
 
         #[derive(Serialize)]
         pub struct Empty {}
+    }
+
+    /// Decode query parameters using the specified model.
+    fn decode_query<'a, T>(&self, req: &'a Request<Body>) -> Result<T, Error>
+    where
+        T: Deserialize<'a>,
+    {
+        let query = req.uri().query().unwrap_or("");
+
+        let query =
+            serde_urlencoded::from_str::<T>(query).map_err(|_| Error::bad_request("bad query"))?;
+
+        Ok(query)
     }
 }
 
