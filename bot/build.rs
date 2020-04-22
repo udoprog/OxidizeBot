@@ -5,6 +5,8 @@ use std::{
     process::{Command, ExitStatus},
 };
 
+const URL: &str = "https://setbac.tv";
+
 // This code exercises the surface area that we expect of the std Backtrace
 // type. If the current toolchain is able to compile it, we go ahead and use
 // backtrace in oxidize.
@@ -100,17 +102,23 @@ fn main() -> Result<()> {
     let version;
     let user_agent;
 
+    let output = Command::new("git")
+        .args(&["rev-parse", "--short", "HEAD"])
+        .output()?;
+
+    let rev = std::str::from_utf8(&output.stdout)?.trim();
+
     if let Ok(oxidize_version) = env::var("OXIDIZE_VERSION") {
         version = oxidize_version;
-        user_agent = format!("OxidizeBot/{}", version);
+        user_agent = format!(
+            "OxidizeBot/{} (git {rev}; +{url})",
+            version,
+            rev = rev,
+            url = URL
+        );
     } else {
-        let output = Command::new("git")
-            .args(&["rev-parse", "--short", "HEAD"])
-            .output()?;
-
-        let rev = std::str::from_utf8(&output.stdout)?;
         version = format!("git-{}", rev);
-        user_agent = format!("OxidizeBot/0.0.0");
+        user_agent = format!("OxidizeBot/0 (git {rev}; +{url})", rev = rev, url = URL);
     }
 
     fs::write(out_dir.join("version.txt"), &version).context("writing version.txt")?;
