@@ -110,7 +110,7 @@ async fn main() -> Result<(), Error> {
 
                 tokio::spawn(async move {
                     if let Err(e) = future.await {
-                        log::error!("failed to refresh github release");
+                        log::error!("failed to refresh github release: {}", e);
                     }
                 });
             }

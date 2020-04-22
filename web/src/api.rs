@@ -12,6 +12,8 @@ pub use self::github::GitHub;
 pub use self::spotify::Spotify;
 pub use self::twitch::IdTwitchClient;
 
+const USER_AGENT: &str = "OxidizeWeb/0";
+
 struct RequestBuilder {
     client: Client,
     method: Method,
@@ -42,6 +44,8 @@ impl RequestBuilder {
         if let Some(body) = self.body {
             r = r.body(body);
         }
+
+        r = r.header(header::USER_AGENT, USER_AGENT);
 
         for (key, value) in self.headers {
             r = r.header(key, value);
