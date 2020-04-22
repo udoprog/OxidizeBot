@@ -2,8 +2,17 @@ use crate::oauth2;
 use anyhow::{bail, Error};
 use bytes::Bytes;
 use reqwest::{header, Client, Method, StatusCode, Url};
+use thiserror::Error;
 
-pub const USER_AGENT: &str = concat!("OxidizeBot/", version_str!());
+#[derive(Debug, Error)]
+#[error("error when sending request")]
+struct SendRequestError(#[source] reqwest::Error);
+
+#[derive(Debug, Error)]
+#[error("error when receiving response")]
+struct ReceiveResponseError(#[source] reqwest::Error);
+
+pub const USER_AGENT: &str = user_agent_str!();
 
 /// Trait to deal with optional bodies.
 ///
@@ -167,9 +176,9 @@ impl RequestBuilder {
             req
         };
 
-        let res = req.send().await?;
+        let res = req.send().await.map_err(SendRequestError)?;
         let status = res.status();
-        let body = res.bytes().await?;
+        let body = res.bytes().await.map_err(ReceiveResponseError)?;
 
         if log::log_enabled!(log::Level::Trace) {
             let response = String::from_utf8_lossy(&body);

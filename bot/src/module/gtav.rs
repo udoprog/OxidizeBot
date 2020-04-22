@@ -1038,7 +1038,7 @@ impl command::Handler for Handler {
         ctx.spawn(future.map(|result| match result {
             Ok(()) => (),
             Err(e) => {
-                log_err!(e, "failed to modify balance of user");
+                log_error!(e, "failed to modify balance of user");
             }
         }));
 

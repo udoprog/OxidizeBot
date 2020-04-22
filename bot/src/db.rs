@@ -13,6 +13,7 @@ mod words;
 use crate::{player, track_id::TrackId, utils};
 use anyhow::bail;
 use std::path::Path;
+use thiserror::Error;
 
 pub use self::{
     after_streams::{AfterStream, AfterStreams},
@@ -225,13 +226,13 @@ impl player::Backend for Database {
     }
 }
 
-#[derive(Debug, err_derive::Error)]
+#[derive(Debug, Error)]
 pub enum RenameError {
     /// Trying to rename something to a conflicting name.
-    #[error(display = "conflict")]
+    #[error("conflict")]
     Conflict,
     /// Trying to rename something which doesn't exist.
-    #[error(display = "missing")]
+    #[error("missing")]
     Missing,
 }
 

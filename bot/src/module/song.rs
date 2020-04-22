@@ -277,7 +277,7 @@ impl Handler {
                     ));
                 }
                 Err(e) => {
-                    log_err!(e, "failed to reward user for song request");
+                    log_error!(e, "failed to reward user for song request");
                 }
             };
 
@@ -290,7 +290,7 @@ impl Handler {
             Ok(()) => (),
             Err(e) => {
                 user.respond("There was a problem adding your song :(");
-                log_err!(e, "error when adding song");
+                log_error!(e, "error when adding song");
             }
         });
 
@@ -358,7 +358,7 @@ impl command::Handler for Handler {
                         }
                         Err(PlayThemeError::Error(e)) => {
                             user.respond("There was a problem playing that theme :(");
-                            log_err!(e, "failed to add song");
+                            log_error!(e, "failed to add song");
                         }
                         Err(PlayThemeError::MissingAuth) => {
                             user.respond(

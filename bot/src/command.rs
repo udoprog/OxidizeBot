@@ -24,14 +24,15 @@ pub trait MessageHook: std::any::Any + Send + Sync {
 
 /// Context for a single command invocation.
 pub struct Context<'a> {
-    pub api_url: Option<&'a str>,
+    pub(crate) api_url: Option<&'a str>,
     /// Sender associated with the command.
-    pub sender: &'a irc::Sender,
-    pub user: irc::User,
-    pub it: utils::Words<'a>,
-    pub shutdown: &'a utils::Shutdown,
-    pub scope_cooldowns: &'a mut HashMap<Scope, utils::Cooldown>,
-    pub message_hooks: &'a mut HashMap<String, Box<dyn MessageHook>>,
+    pub(crate) sender: &'a irc::Sender,
+    pub(crate) user: irc::User,
+    pub(crate) it: utils::Words<'a>,
+    pub(crate) shutdown: &'a utils::Shutdown,
+    pub(crate) scope_cooldowns: &'a mut HashMap<Scope, utils::Cooldown>,
+    pub(crate) message_hooks: &'a mut HashMap<String, Box<dyn MessageHook>>,
+    pub(crate) respond_buffer: &'a mut String,
 }
 
 impl<'a> Context<'a> {
@@ -47,7 +48,7 @@ impl<'a> Context<'a> {
     {
         self.spawn(async move {
             if let Err(e) = future.await {
-                log::error!("{}: failed: {}", id, e);
+                log_error!(e, "Task `{}` failed", id);
             }
         })
     }

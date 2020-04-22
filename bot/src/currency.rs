@@ -3,6 +3,7 @@ use crate::{api, db::Database};
 pub use crate::{db::models::Balance, utils::Duration};
 use anyhow::Error;
 use std::{collections::HashSet, sync::Arc};
+use thiserror::Error;
 
 mod builtin;
 mod mysql;
@@ -74,7 +75,7 @@ impl CurrencyBuilder {
                 let backend = match self::mysql::Backend::connect(channel, url, schema) {
                     Ok(backend) => backend,
                     Err(e) => {
-                        log_err!(e, "failed to establish connection");
+                        log_error!(e, "failed to establish connection");
                         return None;
                     }
                 };
@@ -93,7 +94,7 @@ impl CurrencyBuilder {
                 let backend = match self::mysql::Backend::connect(channel, url, schema) {
                     Ok(backend) => backend,
                     Err(e) => {
-                        log_err!(e, "failed to establish connection");
+                        log_error!(e, "failed to establish connection");
                         return None;
                     }
                 };
@@ -318,12 +319,12 @@ impl Currency {
     }
 }
 
-#[derive(Debug, err_derive::Error)]
+#[derive(Debug, Error)]
 pub enum BalanceTransferError {
-    #[error(display = "missing balance for transfer")]
+    #[error("missing balance for transfer")]
     NoBalance,
-    #[error(display = "other error: {}", _0)]
-    Other(Error),
+    #[error("other error: {}", _0)]
+    Other(#[source] Error),
 }
 
 impl From<Error> for BalanceTransferError {

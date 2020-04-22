@@ -215,14 +215,14 @@ impl FileWriter {
     /// Attempt to write an update and log on errors.
     fn write_log(&self, timer: &Timer) {
         if let Err(e) = self.write(timer) {
-            log_err!(e, "failed to write");
+            log_error!(e, "failed to write");
         }
     }
 
     /// Attempt to clear the file and log on errors.
     fn clear_log(&self) {
         if let Err(e) = self.clear() {
-            log_err!(e, "failed to clear");
+            log_error!(e, "failed to clear");
         }
     }
 }

@@ -88,7 +88,7 @@ impl TwitchSetup {
                     Ok(user) => Ok::<_, Error>(Some(user)),
                     Err(e) => {
                         streamer_twitch.token.force_refresh()?;
-                        log::warn!("Failed to get streamer information: {}", e);
+                        log_warn!(e, "Failed to get streamer information");
                         Ok(None)
                     }
                 }
@@ -99,7 +99,7 @@ impl TwitchSetup {
                     Ok(user) => Ok::<_, Error>(Some(user)),
                     Err(e) => {
                         bot_twitch.token.force_refresh()?;
-                        log::warn!("Failed to get bot information: {}", e);
+                        log_warn!(e, "Failed to get bot information");
                         Ok(None)
                     }
                 }
@@ -414,6 +414,7 @@ impl Irc {
                 message_hooks: Default::default(),
                 chat_log: chat_log_builder.build()?,
                 channel,
+                shared_respond_buffer: String::with_capacity(1024),
             };
 
             let mut outgoing = client
@@ -445,7 +446,7 @@ impl Irc {
                                 log::trace!("Raw command: {}", command);
 
                                 if let Err(e) = handler.raw(&command).await {
-                                    log::error!("Failed to handle message: {}", e);
+                                    log_error!(e, "Failed to handle message");
                                 }
                             }
                         }
@@ -457,7 +458,7 @@ impl Irc {
                                 break 'outer;
                             }
                             Err(e) => {
-                                log::warn!("IRC component errored, restarting in 5 seconds: {}", e);
+                                log_warn!(e, "IRC component errored, restarting in 5 seconds");
                                 tokio::time::delay_for(time::Duration::from_secs(5)).await;
                                 continue 'outer;
                             }
@@ -512,7 +513,7 @@ impl Irc {
                     message = client_stream.next() => {
                         if let Some(m) = message.transpose()? {
                             if let Err(e) = handler.handle(m).await {
-                                log::error!("Failed to handle message: {}", e);
+                                log_error!(e, "Failed to handle message");
                             }
                         }
 
@@ -734,6 +735,8 @@ struct Handler<'a> {
     chat_log: Option<chat_log::ChatLog>,
     /// Information on the current channel.
     channel: Arc<twitch::Channel>,
+    /// Shared buffer used for preparing responses.
+    shared_respond_buffer: String,
 }
 
 /// Handle a command.
@@ -825,7 +828,7 @@ impl<'a> Handler<'a> {
                             self.sender.privmsg(&why);
                         }
                         Err(e) => {
-                            log_err!(e, "failed to render response");
+                            log_error!(e, "failed to render response");
                         }
                     }
                 }
@@ -953,6 +956,7 @@ impl<'a> Handler<'a> {
                     shutdown: self.shutdown,
                     scope_cooldowns: &mut self.scope_cooldowns,
                     message_hooks: &mut self.message_hooks,
+                    respond_buffer: &mut self.shared_respond_buffer,
                 };
 
                 let result = process_command(
@@ -964,7 +968,7 @@ impl<'a> Handler<'a> {
                 );
 
                 if let Err(e) = result.await {
-                    log_err!(e, "failed to process command");
+                    log_error!(e, "failed to process command");
                 }
             }
         }

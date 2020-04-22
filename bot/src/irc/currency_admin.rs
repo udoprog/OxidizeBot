@@ -65,7 +65,7 @@ impl command::Handler for Handler {
                     }
                     Err(e) => {
                         user.respond("Could not get balance, sorry :(");
-                        log_err!(e, "failed to get balance");
+                        log_error!(e, "failed to get balance");
                     }
                 }
             }
@@ -88,7 +88,7 @@ impl command::Handler for Handler {
                     }
                     Err(e) => {
                         ctx.respond("Count not get balance, sorry :(");
-                        log_err!(e, "failed to get balance");
+                        log_error!(e, "failed to get balance");
                     }
                 }
             }
@@ -148,7 +148,7 @@ impl command::Handler for Handler {
                             "Failed to give {currency}, sorry :(",
                             currency = currency.name
                         ));
-                        log_err!(e, "failed to modify currency");
+                        log_error!(e, "failed to modify currency");
                     }
                 }
             }
@@ -190,7 +190,7 @@ impl command::Handler for Handler {
                     }
                     Err(e) => {
                         user.respond("failed to boost user, sorry :(");
-                        log_err!(e, "failed to modify currency");
+                        log_error!(e, "failed to modify currency");
                     }
                 }
             }
@@ -222,7 +222,7 @@ impl command::Handler for Handler {
                         }
                         Err(e) => {
                             user.respond("failed to windfall :(");
-                            log_err!(e, "failed to windfall");
+                            log_error!(e, "failed to windfall");
                         }
                     }
                 });

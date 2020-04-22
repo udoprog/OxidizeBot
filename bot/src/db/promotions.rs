@@ -4,15 +4,16 @@ use chrono::{DateTime, Utc};
 use diesel::prelude::*;
 use parking_lot::RwLock;
 use std::{collections::HashMap, fmt, sync::Arc};
+use thiserror::Error;
 
-#[derive(Debug, err_derive::Error)]
+#[derive(Debug, Error)]
 pub enum BumpError {
     /// Trying to bump something which doesn't exist.
-    #[error(display = "promotion missing")]
+    #[error("promotion missing")]
     Missing,
     /// Database error occurred.
-    #[error(display = "database error: {}", _0)]
-    Database(anyhow::Error),
+    #[error("database error: {}", _0)]
+    Database(#[source] anyhow::Error),
 }
 
 /// Local database wrapper.

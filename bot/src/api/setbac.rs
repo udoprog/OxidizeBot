@@ -109,7 +109,7 @@ fn parse_url(url: &str) -> Option<Url> {
     match str::parse(url) {
         Ok(api_url) => Some(api_url),
         Err(e) => {
-            log::warn!("bad api url: {}: {}", url, e);
+            log_warn!(e, "bad api url: {}", url);
             None
         }
     }
@@ -253,7 +253,7 @@ pub fn run(
                     }
 
                     if let Err(e) = setbac.player_update(update).await {
-                        log::error!("failed to perform remote player update: {}", e);
+                        log_error!(e, "Failed to perform remote player update");
                     }
                 }
             }

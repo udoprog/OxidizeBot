@@ -37,7 +37,6 @@ lazy_static = "1.4.0"
 libsqlite3-sys = { version = "0.17.3", features = ["bundled", "unlock_notify"] }
 webbrowser = "0.5.2"
 parking_lot = "0.10.2"
-err-derive = "0.2.4"
 percent-encoding = "2.1.0"
 bytes = "0.5.4"
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
@@ -55,6 +54,7 @@ graphql_client = { version = "0.9.0", default-features = false }
 futures-option = "0.2.0"
 futures-cache = "0.9.0"
 anyhow = "1.0.28"
+thiserror = "1.0.15"
 async-injector = "0.4.2"
 async-trait = "0.1.30"
 leaky-bucket = "0.7.3"

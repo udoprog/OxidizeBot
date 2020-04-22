@@ -1,5 +1,6 @@
 #![recursion_limit = "256"]
 #![cfg_attr(feature = "windows", windows_subsystem = "windows")]
+#![cfg_attr(backtrace, feature(backtrace))]
 
 use anyhow::{anyhow, bail, Context, Error};
 use backoff::backoff::Backoff as _;
@@ -314,7 +315,7 @@ fn main() -> Result<(), Error> {
 
                 system.notification(n);
                 system.error(String::from("Bot crashed, see log for more details."));
-                oxidize::log_err!(e, "Bot crashed");
+                oxidize::log_error!(e, "Bot crashed");
             }
             Ok(()) => {
                 error_backoff.reset();

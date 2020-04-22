@@ -1,5 +1,5 @@
 #![recursion_limit = "512"]
-#![cfg_attr(feature = "nightly", feature(backtrace))]
+#![cfg_attr(backtrace, feature(backtrace))]
 
 #[macro_use]
 extern crate diesel;
@@ -14,6 +14,13 @@ pub use async_injector as injector;
 macro_rules! version_str {
     () => {
         include_str!(concat!(env!("OUT_DIR"), "/version.txt"))
+    };
+}
+
+/// Get the user agent.
+macro_rules! user_agent_str {
+    () => {
+        include_str!(concat!(env!("OUT_DIR"), "/user_agent.txt"))
     };
 }
 

@@ -72,7 +72,7 @@ impl<T> Bus<T> {
                 }
                 Err(e) if e.is_full() => (),
                 Err(e) => {
-                    log::error!("error sending: {}", e);
+                    log::error!("Error sending: {}", e);
                 }
                 Ok(()) => (),
             }

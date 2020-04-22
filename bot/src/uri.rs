@@ -3,6 +3,7 @@
 /// URIs are strings that identify a single resource, like a track or a playlist.
 use crate::spotify_id::SpotifyId;
 use std::{fmt, str::FromStr as _};
+use thiserror::Error;
 
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, diesel::FromSqlRow, diesel::AsExpression,
@@ -17,12 +18,12 @@ pub enum Uri {
     YouTubeVideo(String),
 }
 
-#[derive(Debug, err_derive::Error)]
+#[derive(Debug, Error)]
 pub enum ParseUriError {
     /// Failed to parse an ID.
-    #[error(display = "bad spotify track id (expected base62): {}", _0)]
+    #[error("bad spotify track id (expected base62): {}", _0)]
     BadBase62(String),
-    #[error(display = "missing uri prefix, expected youtube:video:<id>, or spotify:track:<id>")]
+    #[error("missing uri prefix, expected youtube:video:<id>, or spotify:track:<id>")]
     BadURIPrefix,
 }
 

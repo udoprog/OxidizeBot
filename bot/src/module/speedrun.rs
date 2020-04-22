@@ -236,7 +236,7 @@ impl Speedrun {
                 Ok(()) => (),
                 Err(e) => {
                     user.respond("Failed to fetch records :(");
-                    log_err!(e, "Failed to fetch records");
+                    log_error!(e, "Failed to fetch records");
                 }
             }
         });
@@ -469,7 +469,7 @@ impl Speedrun {
                 Ok(()) => (),
                 Err(e) => {
                     user.respond("Failed to fetch records :(");
-                    log_err!(e, "Failed to fetch records");
+                    log_error!(e, "Failed to fetch records");
                 }
             }
         });

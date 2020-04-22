@@ -15,6 +15,7 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use std::fmt;
 use std::{sync::Arc, time};
+use thiserror::Error;
 
 /// Connection identifier used for dependency injection.
 #[derive(Debug, Clone, Serialize)]
@@ -26,13 +27,13 @@ pub enum TokenId {
     Spotify,
 }
 
-#[derive(Debug, err_derive::Error)]
-#[error(display = "Missing OAuth 2.0 Connection: {0}", _0)]
+#[derive(Debug, Error)]
+#[error("Missing OAuth 2.0 Connection: {0}")]
 pub struct MissingTokenError(&'static str);
 
-#[derive(Debug, err_derive::Error)]
-#[error(display = "Connection receive was cancelled")]
-pub struct CancelledToken;
+#[derive(Debug, Error)]
+#[error("Connection receive was cancelled")]
+pub struct CancelledToken(());
 
 #[derive(Debug, Default)]
 pub struct InnerSyncToken {
@@ -124,7 +125,7 @@ impl SyncToken {
 
         match rx.await {
             Ok(()) => Ok(()),
-            Err(oneshot::Canceled) => Err(CancelledToken),
+            Err(oneshot::Canceled) => Err(CancelledToken(())),
         }
     }
 
@@ -245,7 +246,7 @@ impl ConnectionFactory {
         match self.build().await {
             Ok(connection) => connection,
             Err(e) => {
-                log::error!("{}: Failed to build connection: {}", self.what, e);
+                log_error!(e, "{}: Failed to build connection", self.what);
                 Validation::Ok
             }
         }

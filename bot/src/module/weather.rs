@@ -131,7 +131,7 @@ impl command::Handler for Weather {
                         Ok(()) => (),
                         Err(e) => {
                             user2.respond("Failed to get current weather");
-                            log_err!(e, "Failed to get current weather");
+                            log_error!(e, "Failed to get current weather");
                         }
                     }
                 });

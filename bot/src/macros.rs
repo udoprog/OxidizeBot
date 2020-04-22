@@ -1,22 +1,39 @@
-/// Helper macro to log an error and all it's causes.
+/// Helper macro to log an error and all its causes.
 #[macro_export]
-macro_rules! log_err {
-    ($e:expr, $fmt:expr $(, $($arg:tt)*)?) => {{
+macro_rules! log_error {
+    ($e:expr, $fmt:expr $(, $($arg:tt)*)?) => {
+        $crate::log_base!(error, $e, $fmt $(, $($arg)*)*)
+    };
+}
+
+/// Helper macro to log a warning and all its causes.
+#[macro_export]
+macro_rules! log_warn {
+    ($e:expr, $fmt:expr $(, $($arg:tt)*)?) => {
+        $crate::log_base!(error, $e, $fmt $(, $($arg)*)*)
+    };
+}
+
+#[macro_export]
+macro_rules! log_base {
+    ($level:tt, $e:expr, $fmt:expr $(, $($arg:tt)*)?) => {{
         let e = anyhow::Error::from($e);
 
-        log::error!("{what}: {error}", what = format!($fmt $(, $($arg)*)*), error = e);
+        log::$level!($fmt $(, $($arg)*)*);
 
-        #[cfg(feature = "nightly")]
-        {
-            log::error!("{:?}", e.backtrace());
-        }
-
-        for e in e.chain().skip(1) {
-            log::error!("caused by: {}", e);
-
-            #[cfg(feature = "nightly")]
+        for e in e.chain() {
+            #[cfg(not(backtrace))]
             {
-                log::error!("{:?}", e.backtrace());
+                log::$level!("caused by: {}", e);
+            }
+
+            #[cfg(backtrace)]
+            {
+                if let Some(bt) = e.backtrace() {
+                    log::$level!("caused by: {}\n{}", e, bt);
+                } else {
+                    log::$level!("caused by: {}", e);
+                }
             }
         }
     }};
@@ -56,4 +73,22 @@ macro_rules! ctx_try {
             None => return Ok(()),
         }
     };
+}
+
+/// Helper macro to handle sending a response.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// let name = "Joseph";
+/// respond!(ctx, "Hello {}", name);
+/// ```
+#[macro_export]
+macro_rules! respond {
+    ($ctx:expr, $($t:tt)*) => {{
+        use std::fmt::Write as _;
+        write!($ctx.respond_buffer, $($t)*).expect("writing to a string buffer is infallible");
+        $ctx.respond(&$ctx.respond_buffer);
+        $ctx.respond_buffer.clear();
+    }}
 }

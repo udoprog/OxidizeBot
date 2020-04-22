@@ -7,6 +7,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
+use thiserror::Error;
 
 /// Setup a player.
 pub fn setup(
@@ -81,21 +82,21 @@ pub fn setup(
     Ok((stream, returned_player, interface, future))
 }
 
-#[derive(Debug, err_derive::Error)]
+#[derive(Debug, Error)]
 pub enum CommandError {
-    #[error(display = "error when issuing {} command", _0)]
+    #[error("error when issuing {} command", _0)]
     Error(&'static str),
-    #[error(display = "no device configured or available")]
+    #[error("no device configured or available")]
     NoDevice,
-    #[error(display = "other error")]
-    Other(Error),
+    #[error("other error")]
+    Other(#[source] Error),
 }
 
 impl CommandError {
     fn handle(result: Result<bool, Error>, what: &'static str) -> Result<(), CommandError> {
         match result {
             Err(e) => {
-                log_err!(e, "failed to issue {} command", what);
+                log_error!(e, "failed to issue {} command", what);
                 Err(CommandError::Error(what))
             }
             Ok(true) => Ok(()),
@@ -174,7 +175,7 @@ impl ConnectPlayer {
     /// Same as volume update, but logs instead of errors.
     async fn volume_update_log(&self, volume: u32) {
         if let Err(e) = self.volume_update(volume).await {
-            log::error!("Failed to update volume: {}", e);
+            log_warn!(e, "Failed to update volume");
         }
     }
 }

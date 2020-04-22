@@ -1,5 +1,6 @@
 pub use crate::spotify_id::SpotifyId;
 use std::fmt;
+use thiserror::Error;
 
 static YOUTUBE_URL: &str = "https://youtu.be";
 static SPOTIFY_URL: &str = "https://open.spotify.com/track";
@@ -15,23 +16,25 @@ pub enum TrackId {
     YouTube(String),
 }
 
-#[derive(Debug, err_derive::Error)]
+#[derive(Debug, Error)]
 pub enum ParseTrackIdError {
     /// Requested a URI from a bad host, like youtube.com.
-    #[error(display = "bad host, expected: open.spotify.com")]
+    #[error("bad host, expected: open.spotify.com")]
     BadHost(String),
-    #[error(display = "bad URL, expected: \
+    #[error(
+        "bad URL, expected: \
                        https://open.spotify.com/track/<id>, \
                        https://youtube.com/watch?v=<id>, or \
-                       https://youtu.be/<id>")]
+                       https://youtu.be/<id>"
+    )]
     BadUrl(String),
     /// Argument had a bad URI.
-    #[error(display = "bad URI, expected: spotify:tracks:<id>")]
+    #[error("bad URI, expected: spotify:tracks:<id>")]
     BadUri(String),
     /// Failed to parse an ID.
-    #[error(display = "bad spotify track id (expected base62): {}", _0)]
+    #[error("bad spotify track id (expected base62): {}", _0)]
     BadBase62(String),
-    #[error(display = "missing uri prefix, expected youtube:video:<id>, or spotify:track:<id>")]
+    #[error("missing uri prefix, expected youtube:video:<id>, or spotify:track:<id>")]
     MissingUriPrefix,
 }
 

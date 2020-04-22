@@ -121,7 +121,7 @@ impl<'a> command::Handler for Title<'a> {
                         user.respond("Title updated!");
                     }
                     Err(e) => {
-                        log_err!(e, "failed to update title");
+                        log_error!(e, "failed to update title");
                     }
                 }
             });
@@ -198,7 +198,7 @@ impl<'a> command::Handler for Game<'a> {
                     user.respond("Game updated!");
                 }
                 Err(e) => {
-                    log_err!(e, "failed to update game");
+                    log_error!(e, "failed to update game");
                 }
             }
         });

@@ -42,7 +42,7 @@ impl StreamInfo {
         let subs = match subs.await {
             Ok(subs) => subs,
             Err(e) => {
-                log_err!(e, "failed to fetch subscriptions");
+                log_error!(e, "failed to fetch subscriptions");
                 return;
             }
         };
@@ -65,7 +65,7 @@ impl StreamInfo {
         let channel = match twitch.channel_by_id(&streamer.id).await {
             Ok(channel) => channel,
             Err(e) => {
-                log_err!(e, "failed to refresh channel");
+                log_error!(e, "failed to refresh channel");
                 return Ok(());
             }
         };
@@ -86,7 +86,7 @@ impl StreamInfo {
         let stream = match twitch.stream_by_id(&streamer.id).await {
             Ok(stream) => stream,
             Err(e) => {
-                log_err!(e, "failed to refresh stream");
+                log_error!(e, "failed to refresh stream");
                 return Ok(());
             }
         };

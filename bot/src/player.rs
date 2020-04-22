@@ -1546,7 +1546,7 @@ impl PlaybackFuture {
         let (what, items) = match result {
             Ok(result) => result,
             Err(e) => {
-                log_err!(e, "Failed to configure fallback items");
+                log_error!(e, "Failed to configure fallback items");
                 return;
             }
         };

@@ -61,7 +61,7 @@ impl<'a> command::Handler for Clip<'a> {
                 }
                 Err(e) => {
                     user.respond("Failed to create clip, sorry :(");
-                    log_err!(e, "error when posting clip");
+                    log_error!(e, "error when posting clip");
                 }
             }
         });

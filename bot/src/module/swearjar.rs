@@ -80,7 +80,7 @@ impl<'a> command::Handler for Handler<'a> {
         ctx.spawn(future.map(|result| match result {
             Ok(()) => (),
             Err(e) => {
-                log_err!(e, "Failed to reward users for !swearjar");
+                log_error!(e, "Failed to reward users for !swearjar");
             }
         }));
 

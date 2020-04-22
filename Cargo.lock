@@ -760,20 +760,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "err-derive"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22deed3a8124cff5fa835713fa105621e43bbdc46690c3a6b68328a012d350d4"
-dependencies = [
- "proc-macro-error",
- "proc-macro2 1.0.10",
- "quote 1.0.3",
- "rustversion",
- "syn 1.0.17",
- "synstructure",
-]
-
-[[package]]
 name = "eudex"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1925,7 +1911,6 @@ dependencies = [
  "diesel",
  "diesel_migrations",
  "dirs",
- "err-derive",
  "eudex",
  "fixed-map",
  "futures",
@@ -1958,6 +1943,7 @@ dependencies = [
  "serde_urlencoded",
  "serde_yaml",
  "smallvec 1.3.0",
+ "thiserror",
  "tokio",
  "tracing",
  "tracing-core",
@@ -2226,32 +2212,6 @@ checksum = "926d36b9553851b8b0005f1275891b392ee4d2d833852c417ed025477350fb9d"
 dependencies = [
  "env_logger",
  "log 0.4.8",
-]
-
-[[package]]
-name = "proc-macro-error"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98e9e4b82e0ef281812565ea4751049f1bdcdfccda7d3f459f2e138a40c08678"
-dependencies = [
- "proc-macro-error-attr",
- "proc-macro2 1.0.10",
- "quote 1.0.3",
- "syn 1.0.17",
- "version_check 0.9.1",
-]
-
-[[package]]
-name = "proc-macro-error-attr"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f5444ead4e9935abd7f27dc51f7e852a0569ac888096d5ec2499470794e2e53"
-dependencies = [
- "proc-macro2 1.0.10",
- "quote 1.0.3",
- "syn 1.0.17",
- "syn-mid",
- "version_check 0.9.1",
 ]
 
 [[package]]
@@ -3070,17 +3030,6 @@ dependencies = [
  "proc-macro2 1.0.10",
  "quote 1.0.3",
  "unicode-xid 0.2.0",
-]
-
-[[package]]
-name = "syn-mid"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7be3539f6c128a931cf19dcee741c1af532c7fd387baa739c03dd2e96479338a"
-dependencies = [
- "proc-macro2 1.0.10",
- "quote 1.0.3",
- "syn 1.0.17",
 ]
 
 [[package]]

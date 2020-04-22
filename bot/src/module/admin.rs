@@ -41,7 +41,7 @@ impl Handler<'_> {
         }
 
         if results.is_empty() {
-            ctx.respond(format!("No settings starting with `{}`", key));
+            respond!(ctx, "No settings starting with `{}`", key);
         } else {
             let mut response = results.join(", ");
 
@@ -79,7 +79,7 @@ impl<'a> command::Handler for Handler<'a> {
                 ctx.respond("Refreshed information on mods and vips");
             }
             Some("version") => {
-                ctx.respond(format!("OxidizeBot Version {}", crate::VERSION));
+                respond!(ctx, "OxidizeBot Version {}", crate::VERSION);
             }
             Some("shutdown") | Some("restart") => {
                 if ctx.shutdown.shutdown() {
@@ -95,7 +95,7 @@ impl<'a> command::Handler for Handler<'a> {
                     None => return Ok(()),
                 };
 
-                let value = match self.value_in_set(&ctx, &key) {
+                let value = match self.edit_value_in_set(&mut ctx, &key) {
                     Some(ty) => ty,
                     None => return Ok(()),
                 };
@@ -107,7 +107,7 @@ impl<'a> command::Handler for Handler<'a> {
 
                 values.push(value);
                 self.settings.set(&key, values)?;
-                ctx.respond(format!("Updated the {} setting", key));
+                respond!(ctx, "Updated the {} setting", key);
             }
             // Delete a value from a setting.
             Some("delete") => {
@@ -116,7 +116,7 @@ impl<'a> command::Handler for Handler<'a> {
                     None => return Ok(()),
                 };
 
-                let value = match self.value_in_set(&ctx, &key) {
+                let value = match self.edit_value_in_set(&mut ctx, &key) {
                     Some(ty) => ty,
                     None => return Ok(()),
                 };
@@ -128,7 +128,10 @@ impl<'a> command::Handler for Handler<'a> {
 
                 values.retain(|v| v != &value);
                 self.settings.set(&key, values)?;
-                ctx.respond(format!("Updated the {} setting", key));
+                respond!(ctx, "Updated the {} setting", key);
+            }
+            Some("toggle") => {
+                self.toggle(ctx).await?;
             }
             Some("enable-group") => {
                 let group = match ctx.next() {
@@ -155,7 +158,7 @@ impl<'a> command::Handler for Handler<'a> {
                     themes.enable_group(ctx.channel(), &group)?;
                 }
 
-                ctx.respond(format!("Enabled group {}", group));
+                respond!(ctx, "Enabled group {}", group);
             }
             Some("disable-group") => {
                 let group = match ctx.next() {
@@ -182,7 +185,7 @@ impl<'a> command::Handler for Handler<'a> {
                     themes.disable_group(ctx.channel(), &group)?;
                 }
 
-                ctx.respond(format!("Disabled group {}", group));
+                respond!(ctx, "Disabled group {}", group);
             }
             // Get or set settings.
             Some("settings") => {
@@ -200,15 +203,11 @@ impl<'a> command::Handler for Handler<'a> {
                             };
 
                         if setting.schema.secret {
-                            ctx.respond(format!("Cannot show secret setting `{}`", key));
+                            respond!(ctx, "Cannot show secret setting `{}`", key);
                             return Ok(());
                         }
 
-                        ctx.respond(format!(
-                            "{} = {}",
-                            key,
-                            serde_json::to_string(&setting.value)?
-                        ));
+                        respond!(ctx, "{} = {}", key, serde_json::to_string(&setting.value)?);
                     }
                     value => {
                         let schema = match self.settings.lookup(&key) {
@@ -222,10 +221,7 @@ impl<'a> command::Handler for Handler<'a> {
                         let value = match schema.ty.parse_as_json(value) {
                             Ok(value) => value,
                             Err(e) => {
-                                ctx.respond(format!(
-                                    "Value is not a valid {} type: {}",
-                                    schema.ty, e
-                                ));
+                                respond!(ctx, "Value is not a valid {} type: {}", schema.ty, e);
                                 return Ok(());
                             }
                         };
@@ -241,7 +237,7 @@ impl<'a> command::Handler for Handler<'a> {
 
                         let value_string = serde_json::to_string(&value)?;
                         self.settings.set_json(&key, value)?;
-                        ctx.respond(format!("Updated setting {} = {}", key, value_string));
+                        respond!(ctx, "Updated setting {} = {}", key, value_string);
                     }
                 }
             }
@@ -262,8 +258,66 @@ impl<'a> command::Handler for Handler<'a> {
 }
 
 impl<'a> Handler<'a> {
-    /// Get a value that corresponds with the given set.
-    fn value_in_set(&mut self, ctx: &command::Context<'_>, key: &str) -> Option<serde_json::Value> {
+    /// Handler for the toggle command.
+    async fn toggle(&mut self, mut ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
+        let key = match key(&mut ctx) {
+            Some(key) => key,
+            None => {
+                ctx.respond("Expected: toggle <key>");
+                return Ok(());
+            }
+        };
+
+        let setting = match self.settings.setting::<serde_json::Value>(&key)? {
+            Some(value) => value,
+            None => {
+                respond!(ctx, "No setting matching key: {}", key);
+                return Ok(());
+            }
+        };
+
+        if let Some(scope) = setting.schema.scope {
+            if !ctx.user.has_scope(scope) {
+                ctx.respond("You are not permitted to modify that setting, sorry :(");
+                return Ok(());
+            }
+        }
+
+        // Check type of the setting.
+        let toggled = match &setting.schema.ty {
+            settings::Type {
+                kind: settings::Kind::Bool,
+                ..
+            } => match setting.value {
+                Some(serde_json::Value::Bool(value)) => serde_json::Value::Bool(!value),
+                // non-booleans are interpreted as `false`.
+                _ => serde_json::Value::Bool(false),
+            },
+            other => {
+                respond!(
+                    ctx,
+                    "Can only toggle bool settings, but {} is a {}",
+                    key,
+                    other
+                );
+                return Ok(());
+            }
+        };
+
+        let value_string = serde_json::to_string(&toggled)?;
+        self.settings.set_json(&key, toggled)?;
+        respond!(ctx, "Updated setting {} = {}", key, value_string);
+        Ok(())
+    }
+
+    /// Parse the rest of the context as a value corresponding to the given set.
+    ///
+    /// Also tests that we have the permission to modify the specified setting.
+    fn edit_value_in_set(
+        &mut self,
+        ctx: &mut command::Context<'_>,
+        key: &str,
+    ) -> Option<serde_json::Value> {
         let schema = match self.settings.lookup(key) {
             Some(schema) => schema,
             None => {
@@ -272,13 +326,21 @@ impl<'a> Handler<'a> {
             }
         };
 
+        // Test schema permissions.
+        if let Some(scope) = schema.scope {
+            if !ctx.user.has_scope(scope) {
+                ctx.respond("You are not permitted to modify that setting, sorry :(");
+                return None;
+            }
+        }
+
         let ty = match schema.ty {
             settings::Type {
                 kind: settings::Kind::Set { ref value },
                 ..
             } => value,
             ref other => {
-                ctx.respond(format!("Configuration is a {}, but expected a set", other));
+                respond!(ctx, "Configuration is a {}, but expected a set", other);
                 return None;
             }
         };
@@ -286,7 +348,7 @@ impl<'a> Handler<'a> {
         let value = match ty.parse_as_json(ctx.rest()) {
             Ok(value) => value,
             Err(e) => {
-                ctx.respond(format!("Value is not a valid {} type: {}", ty, e));
+                respond!(ctx, "Value is not a valid {} type: {}", ty, e);
                 return None;
             }
         };

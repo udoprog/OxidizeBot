@@ -102,12 +102,12 @@ impl Sender {
 
         tokio::spawn(async move {
             if let Err(e) = inner.limiter.acquire(1).await {
-                log_err!(e, "error in limiter");
+                log_error!(e, "error in limiter");
                 return;
             }
 
             if let Err(e) = inner.sender.send(m) {
-                log_err!(e, "failed to send message");
+                log_error!(e, "failed to send message");
             }
         });
     }
@@ -115,7 +115,7 @@ impl Sender {
     /// Send an immediate message, without taking rate limiting into account.
     pub fn send_immediate(&self, m: impl Into<Message>) {
         if let Err(e) = self.inner.sender.send(m) {
-            log_err!(e, "failed to send message");
+            log_error!(e, "failed to send message");
         }
     }
 
@@ -161,7 +161,7 @@ impl Sender {
         let future = async move {
             // wait for the initial permit, keep the lock in case message is rejected.
             if let Err(e) = limiter.acquire(1).await {
-                log_err!(e, "error in limiter");
+                log_error!(e, "error in limiter");
                 return;
             }
 
@@ -178,7 +178,7 @@ impl Sender {
                         continue;
                     }
                     Err(api::nightbot::RequestError::Other(e)) => {
-                        log_err!(e, "failed to send message via nightbot");
+                        log_error!(e, "failed to send message via nightbot");
                     }
                 }
 
