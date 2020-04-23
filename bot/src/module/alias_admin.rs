@@ -10,7 +10,7 @@ pub struct Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
+    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), Error> {
         let aliases = match self.aliases.read().clone() {
             Some(aliases) => aliases,
             None => return Ok(()),

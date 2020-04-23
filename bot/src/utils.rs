@@ -1,7 +1,7 @@
 use crate::{api, prelude::*};
 use parking_lot::Mutex;
 use percent_encoding::PercentDecode;
-use std::{borrow, fmt, mem, sync::Arc, time};
+use std::{borrow::Cow, fmt, mem, ops, sync::Arc, time};
 
 mod duration;
 
@@ -111,48 +111,88 @@ impl<'a> Iterator for QueryPairs<'a> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Words<'a> {
-    string: &'a str,
-    it: std::str::CharIndices<'a>,
+#[derive(Debug, Clone)]
+pub enum WordsStorage {
+    Shared(Arc<String>),
+    Static(&'static str),
+}
+
+impl ops::Deref for WordsStorage {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        match self {
+            Self::Shared(s) => &*s,
+            Self::Static(s) => s,
+        }
+    }
+}
+
+impl From<&'static str> for WordsStorage {
+    fn from(value: &'static str) -> Self {
+        Self::Static(value)
+    }
+}
+
+impl From<Arc<String>> for WordsStorage {
+    fn from(value: Arc<String>) -> Self {
+        Self::Shared(value)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Words {
+    string: WordsStorage,
+    off: usize,
     /// one character lookahead.
     b0: Option<(usize, char)>,
     buffer: String,
 }
 
-impl Words<'static> {
+impl Words {
     /// Construct an empty iterator over words.
     pub fn empty() -> Self {
         Self {
-            string: "",
-            it: "".char_indices(),
+            string: WordsStorage::Static(""),
+            off: 0,
             b0: None,
             buffer: String::new(),
         }
     }
 }
 
-impl<'a> Words<'a> {
-    /// Split the commandline.
-    pub fn new(string: &str) -> Words<'_> {
+impl Words {
+    /// Split the given string.
+    pub fn new(string: impl Into<WordsStorage>) -> Words {
+        let string = string.into();
         let mut it = string.char_indices();
         let b0 = it.next();
+        let off = it.next().map(|(n, _)| n).unwrap_or_else(|| string.len());
+
         Words {
             string,
-            it,
+            off,
             b0,
             buffer: String::new(),
         }
     }
 
     /// Access the underlying string.
-    pub fn string(&self) -> &'a str {
-        self.string
+    pub fn string(&self) -> &str {
+        &*self.string
     }
 
     /// Take the next character.
     pub fn take(&mut self) -> Option<(usize, char)> {
-        std::mem::replace(&mut self.b0, self.it.next())
+        let s = &self.string[self.off..];
+        let mut it = s.char_indices();
+        let next = it.next().map(|(_, c)| (self.off, c));
+        let out = std::mem::replace(&mut self.b0, next);
+        self.off += match it.next() {
+            Some((n, _)) => n,
+            None => s.len(),
+        };
+        out
     }
 
     /// Look at the next character.
@@ -161,12 +201,8 @@ impl<'a> Words<'a> {
     }
 
     /// The rest of the input.
-    pub fn rest(&self) -> &'a str {
-        let s = self
-            .peek()
-            .map(|(i, _)| i)
-            .unwrap_or_else(|| self.string.len());
-        &self.string[s..]
+    pub fn rest(&self) -> &str {
+        self.b0.map(|(n, _)| &self.string[n..]).unwrap_or_default()
     }
 
     /// Process an escape.
@@ -185,7 +221,7 @@ impl<'a> Words<'a> {
     }
 }
 
-impl<'a> Iterator for Words<'a> {
+impl Iterator for Words {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -421,7 +457,7 @@ pub fn digital_duration(duration: &time::Duration) -> String {
 }
 
 /// Format the given number as a string according to english conventions.
-pub fn english_num(n: u64) -> borrow::Cow<'static, str> {
+pub fn english_num(n: u64) -> Cow<'static, str> {
     let n = match n {
         1 => "one",
         2 => "two",
@@ -432,10 +468,10 @@ pub fn english_num(n: u64) -> borrow::Cow<'static, str> {
         7 => "seven",
         8 => "eight",
         9 => "nine",
-        n => return borrow::Cow::from(n.to_string()),
+        n => return Cow::from(n.to_string()),
     };
 
-    borrow::Cow::Borrowed(n)
+    Cow::Borrowed(n)
 }
 
 /// Render artists in a human readable form INCLUDING an oxford comma.

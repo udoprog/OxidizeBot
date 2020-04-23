@@ -1,7 +1,7 @@
 use crate::{
     api, auth, command, module,
     prelude::*,
-    stream_info, task,
+    stream_info,
     utils::{Cooldown, Duration},
 };
 use anyhow::Error;
@@ -22,7 +22,7 @@ impl<'a> command::Handler for Clip<'a> {
         Some(auth::Scope::Clip)
     }
 
-    async fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), Error> {
+    async fn handle(&mut self, ctx: command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -42,29 +42,27 @@ impl<'a> command::Handler for Clip<'a> {
         let twitch = self.twitch.clone();
         let user = ctx.user.clone();
 
-        task::spawn(async move {
-            match twitch.create_clip(&stream_user.id).await {
-                Ok(Some(clip)) => {
-                    user.respond(format!(
-                        "Created clip at {}/{}",
-                        api::twitch::CLIPS_URL,
-                        clip.id
-                    ));
+        match twitch.create_clip(&stream_user.id).await {
+            Ok(Some(clip)) => {
+                user.respond(format!(
+                    "Created clip at {}/{}",
+                    api::twitch::CLIPS_URL,
+                    clip.id
+                ));
 
-                    if let Some(_title) = title {
-                        log::warn!("Title was requested, but it can't be set (right now)")
-                    }
-                }
-                Ok(None) => {
-                    user.respond("Failed to create clip, sorry :(");
-                    log::error!("created clip, but API returned nothing");
-                }
-                Err(e) => {
-                    user.respond("Failed to create clip, sorry :(");
-                    log_error!(e, "error when posting clip");
+                if let Some(_title) = title {
+                    log::warn!("Title was requested, but it can't be set (right now)")
                 }
             }
-        });
+            Ok(None) => {
+                user.respond("Failed to create clip, sorry :(");
+                log::error!("created clip, but API returned nothing");
+            }
+            Err(e) => {
+                user.respond("Failed to create clip, sorry :(");
+                log_error!(e, "error when posting clip");
+            }
+        }
 
         Ok(())
     }

@@ -79,9 +79,9 @@ macro_rules! ctx_try {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```ignore
 /// let name = "Joseph";
-/// respond!(ctx, "Hello {}", name);
+/// oxidize::respond!(ctx, "Hello {}", name);
 /// ```
 #[macro_export]
 macro_rules! respond {

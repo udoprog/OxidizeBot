@@ -21,7 +21,7 @@ use irc::{
 };
 use leaky_bucket::LeakyBuckets;
 use parking_lot::RwLock;
-use std::{collections::HashSet, fmt, sync::Arc, time};
+use std::{collections::HashSet, fmt, mem, sync::Arc, time};
 use tokio::sync::Mutex;
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
@@ -734,7 +734,7 @@ struct Handler<'a> {
 /// Handle a command.
 pub async fn process_command<'a, 'b: 'a>(
     command: &'a str,
-    ctx: command::Context<'a>,
+    ctx: command::Context,
     global_bus: &'a Arc<bus::Bus<bus::Global>>,
     currency_handler: &'a mut currency_admin::Handler,
     handlers: &'a mut module::Handlers<'b>,
@@ -879,7 +879,11 @@ impl<'a> Handler<'a> {
     }
 
     /// Process the given command.
-    pub async fn process_message(&mut self, user: &User, mut message: String) -> Result<(), Error> {
+    pub async fn process_message(
+        &mut self,
+        user: &User,
+        mut message: Arc<String>,
+    ) -> Result<(), Error> {
         // Run message hooks.
         task::spawn({
             let user = user.clone();
@@ -890,7 +894,7 @@ impl<'a> Handler<'a> {
                 let mut message_hooks = context_inner.message_hooks.lock().await;
 
                 for (key, hook) in &mut *message_hooks {
-                    if let Err(e) = hook.peek(&user, &message).await {
+                    if let Err(e) = hook.peek(&user, &*message).await {
                         log_error!(e, "Hook `{}` failed", key);
                     }
                 }
@@ -907,7 +911,7 @@ impl<'a> Handler<'a> {
         let mut path = Vec::new();
 
         if let Some(aliases) = self.aliases.as_ref() {
-            while let Some((key, next)) = aliases.resolve(user.channel(), &message) {
+            while let Some((key, next)) = aliases.resolve(user.channel(), message.clone()) {
                 path.push(key.to_string());
 
                 if !seen.insert(key.clone()) {
@@ -918,11 +922,11 @@ impl<'a> Handler<'a> {
                     return Ok(());
                 }
 
-                message = next;
+                message = Arc::new(next);
             }
         }
 
-        let mut it = utils::Words::new(message);
+        let mut it = utils::Words::new(message.clone());
         let first = it.next();
 
         if let Some(commands) = self.commands.as_ref() {
@@ -970,7 +974,7 @@ impl<'a> Handler<'a> {
             }
         }
 
-        if self.should_be_deleted(&user, &message) {
+        if self.should_be_deleted(&user, &*message) {
             self.delete_message(&user)?;
         }
 
@@ -994,13 +998,14 @@ impl<'a> Handler<'a> {
             }),
         };
 
-        self.process_message(&user, message).await
+        self.process_message(&user, Arc::new(message)).await
     }
 
     /// Handle the given command.
     pub async fn handle(&mut self, mut m: Message) -> Result<(), Error> {
         match m.command {
-            Command::PRIVMSG(_, message) => {
+            Command::PRIVMSG(_, ref mut message) => {
+                let message = Arc::new(mem::replace(message, String::new()));
                 let tags = Tags::from_tags(m.tags.take());
 
                 let name = m
@@ -1015,7 +1020,7 @@ impl<'a> Handler<'a> {
                     let message = message.clone();
 
                     task::spawn(Box::pin(async move {
-                        chat_log.observe(&tags, &*channel, &name, &message).await;
+                        chat_log.observe(&tags, &*channel, &name, &*message).await;
                     }));
                 }
 

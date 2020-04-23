@@ -92,7 +92,7 @@ impl Aliases {
     }
 
     /// Resolve the given command.
-    pub fn resolve(&self, channel: &str, message: &str) -> Option<(db::Key, String)> {
+    pub fn resolve(&self, channel: &str, message: Arc<String>) -> Option<(db::Key, String)> {
         let mut it = utils::Words::new(message);
         let first = it.next();
 

@@ -14,7 +14,7 @@ pub struct Help {
 
 #[async_trait]
 impl command::Handler for Help {
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
+    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

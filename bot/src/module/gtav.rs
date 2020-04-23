@@ -2,7 +2,6 @@ use crate::{
     auth::Scope,
     command, currency, irc, module, player,
     prelude::*,
-    task,
     utils::{compact_duration, Cooldown, Duration},
 };
 use anyhow::{bail, Error};
@@ -565,35 +564,35 @@ pub struct Handler {
 
 impl Handler {
     /// Play the specified theme song.
-    fn play_theme_song(&mut self, ctx: &command::Context<'_>, id: &str) {
-        if let Some(player) = self.player.read().clone() {
+    async fn play_theme_song(&mut self, ctx: &command::Context, id: &str) {
+        let player = self.player.read().clone();
+
+        if let Some(player) = player {
             let target = ctx.channel().to_string();
             let id = id.to_string();
 
-            task::spawn(async move {
-                match player.play_theme(target.as_str(), id.as_str()).await {
-                    Ok(()) => (),
-                    Err(player::PlayThemeError::NoSuchTheme) => {
-                        log::error!("you need to configure the theme `{}`", id);
-                    }
-                    Err(player::PlayThemeError::NotConfigured) => {
-                        log::error!("themes system is not configured");
-                    }
-                    Err(player::PlayThemeError::MissingAuth) => {
-                        log::error!("missing authentication to play the theme `{}`", id);
-                    }
-                    Err(player::PlayThemeError::Error(e)) => {
-                        log::error!("error when playing theme: {}", e);
-                    }
+            match player.play_theme(target.as_str(), id.as_str()).await {
+                Ok(()) => (),
+                Err(player::PlayThemeError::NoSuchTheme) => {
+                    log::error!("you need to configure the theme `{}`", id);
                 }
-            });
+                Err(player::PlayThemeError::NotConfigured) => {
+                    log::error!("themes system is not configured");
+                }
+                Err(player::PlayThemeError::MissingAuth) => {
+                    log::error!("missing authentication to play the theme `{}`", id);
+                }
+                Err(player::PlayThemeError::Error(e)) => {
+                    log::error!("error when playing theme: {}", e);
+                }
+            }
         }
     }
 
     /// Check if the given user is subject to cooldown right now.
     fn check_cooldown(
         &mut self,
-        ctx: &command::Context<'_>,
+        ctx: &command::Context,
         command: &Command,
         category_cooldown: Option<Arc<RwLock<Cooldown>>>,
     ) -> Option<(&'static str, time::Duration)> {
@@ -691,7 +690,7 @@ impl Handler {
     /// Handle the other commands.
     async fn handle_other(
         &mut self,
-        ctx: &mut command::Context<'_>,
+        ctx: &mut command::Context,
     ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next().as_deref() {
             Some("randomize-color") => Command::RandomizeColor,
@@ -724,9 +723,9 @@ impl Handler {
     }
 
     /// Handle the punish command.
-    fn handle_punish(
+    async fn handle_punish(
         &mut self,
-        ctx: &mut command::Context<'_>,
+        ctx: &mut command::Context,
     ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next().as_deref() {
             Some("stumble") => Command::Stumble,
@@ -804,9 +803,9 @@ impl Handler {
     }
 
     /// Handle the reward command.
-    fn handle_reward(
+    async fn handle_reward(
         &mut self,
-        ctx: &mut command::Context<'_>,
+        ctx: &mut command::Context,
     ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next().as_deref() {
             Some("car") => Command::SpawnRandomVehicle(Vehicle::random_car()),
@@ -833,11 +832,11 @@ impl Handler {
             Some("armor") => Command::GiveArmor,
             Some("boost") => Command::Boost,
             Some("superboost") => {
-                self.play_theme_song(&ctx, "gtav/superboost");
+                self.play_theme_song(&ctx, "gtav/superboost").await;
                 Command::SuperBoost
             }
             Some("superspeed") => {
-                self.play_theme_song(&ctx, "gtav/superspeed");
+                self.play_theme_song(&ctx, "gtav/superspeed").await;
                 Command::SuperSpeed(30f32)
             }
             Some("superswim") => Command::SuperSwim(30f32),
@@ -892,7 +891,7 @@ impl Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
+    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), anyhow::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -912,12 +911,12 @@ impl command::Handler for Handler {
                 (command, None)
             }
             Some("punish") => {
-                let command = self.handle_punish(&mut ctx)?;
+                let command = self.handle_punish(&mut ctx).await?;
                 let cooldown = self.punish_cooldown.clone();
                 (command, Some(cooldown))
             }
             Some("reward") => {
-                let command = self.handle_reward(&mut ctx)?;
+                let command = self.handle_reward(&mut ctx).await?;
                 let cooldown = self.reward_cooldown.clone();
                 (command, Some(cooldown))
             }
@@ -976,79 +975,67 @@ impl command::Handler for Handler {
         let user = ctx.user.clone();
         let sender = ctx.inner.sender.clone();
         let prefix = self.prefix.read().clone();
-        let success_feedback = self.success_feedback.clone();
         let tx = self.tx.clone();
 
-        let future = async move {
-            if let Some(real) = user.real() {
-                let balance = currency
-                    .balance_of(user.channel(), real.name())
-                    .await?
-                    .unwrap_or_default();
+        if let Some(real) = user.real() {
+            let balance = currency
+                .balance_of(user.channel(), real.name())
+                .await?
+                .unwrap_or_default();
 
-                let balance = if balance.balance < 0 {
-                    0u32
-                } else {
-                    balance.balance as u32
-                };
+            let balance = if balance.balance < 0 {
+                0u32
+            } else {
+                balance.balance as u32
+            };
 
-                if balance < cost {
-                    user.respond(format!(
-                        "{prefix}\
-                         You need at least {limit} {currency} to reward the streamer, \
-                         you currently have {balance} {currency}. \
-                         Keep watching to earn more!",
-                        prefix = prefix,
-                        limit = cost,
-                        currency = currency.name,
-                        balance = balance,
-                    ));
-
-                    return Ok(());
-                }
-
-                currency
-                    .balance_add(user.channel(), real.name(), -(cost as i64))
-                    .await?;
-            }
-
-            if *success_feedback.read() {
-                let who = match user.display_name() {
-                    Some(name) => name,
-                    None => "Someone",
-                };
-
-                sender.privmsg(format!(
-                    "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
+            if balance < cost {
+                user.respond(format!(
+                    "{prefix}\
+                        You need at least {limit} {currency} to reward the streamer, \
+                        you currently have {balance} {currency}. \
+                        Keep watching to earn more!",
                     prefix = prefix,
-                    user = who,
-                    what = command.what(),
-                    command = command,
-                    cost = cost,
+                    limit = cost,
                     currency = currency.name,
+                    balance = balance,
                 ));
+
+                return Ok(());
             }
 
-            if tx.unbounded_send((user, id, command)).is_err() {
-                bail!("failed to send event");
-            }
+            currency
+                .balance_add(user.channel(), real.name(), -(cost as i64))
+                .await?;
+        }
 
-            Ok(())
-        };
+        if *self.success_feedback.read() {
+            let who = match user.display_name() {
+                Some(name) => name,
+                None => "Someone",
+            };
 
-        task::spawn(future.map(|result| match result {
-            Ok(()) => (),
-            Err(e) => {
-                log_error!(e, "failed to modify balance of user");
-            }
-        }));
+            sender.privmsg(format!(
+                "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
+                prefix = prefix,
+                user = who,
+                what = command.what(),
+                command = command,
+                cost = cost,
+                currency = currency.name,
+            ));
+        }
+
+        if tx.unbounded_send((user, id, command)).is_err() {
+            bail!("failed to send event");
+        }
 
         Ok(())
     }
 }
 
 /// Parse a license plate.Arc
-fn license(input: &str, ctx: &command::Context<'_>) -> Option<String> {
+fn license(input: &str, ctx: &command::Context) -> Option<String> {
     match input {
         "" => None,
         license if license.len() > 8 => {

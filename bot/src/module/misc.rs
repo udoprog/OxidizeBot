@@ -18,7 +18,7 @@ impl command::Handler for Uptime {
         Some(auth::Scope::Uptime)
     }
 
-    async fn handle(&mut self, ctx: command::Context<'_>) -> Result<(), Error> {
+    async fn handle(&mut self, ctx: command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -85,7 +85,7 @@ impl<'a> command::Handler for Title<'a> {
         Some(auth::Scope::Title)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
+    async fn handle(&mut self, ctx: command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -97,34 +97,16 @@ impl<'a> command::Handler for Title<'a> {
         } else {
             ctx.check_scope(auth::Scope::TitleEdit).await?;
 
-            let twitch = self.twitch.clone();
-            let title = rest.to_string();
-            let stream_info = self.stream_info.clone();
-
             let user = ctx.user.clone();
 
-            let future = async move {
-                let mut request = api::twitch::UpdateChannelRequest::default();
-                request.channel.status = Some(title);
-                twitch.update_channel(&user.streamer().id, request).await?;
-                stream_info
-                    .refresh_channel(&twitch, user.streamer())
-                    .await?;
-                Ok::<(), Error>(())
-            };
-
-            let user = ctx.user.clone();
-
-            task::spawn(async move {
-                match future.await {
-                    Ok(()) => {
-                        user.respond("Title updated!");
-                    }
-                    Err(e) => {
-                        log_error!(e, "failed to update title");
-                    }
-                }
-            });
+            let mut request = api::twitch::UpdateChannelRequest::default();
+            request.channel.status = Some(rest.to_string());
+            self.twitch
+                .update_channel(&user.streamer().id, request)
+                .await?;
+            self.stream_info
+                .refresh_channel(&self.twitch, user.streamer())
+                .await?;
         }
 
         Ok(())
@@ -160,7 +142,7 @@ impl<'a> command::Handler for Game<'a> {
         Some(auth::Scope::Game)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
+    async fn handle(&mut self, ctx: command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

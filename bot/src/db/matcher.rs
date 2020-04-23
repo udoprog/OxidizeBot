@@ -151,7 +151,7 @@ where
         &self,
         channel: &str,
         first: Option<&'a str>,
-        it: &utils::Words<'a>,
+        it: &'a utils::Words,
     ) -> Option<(&Arc<T>, Captures<'a>)> {
         if let Some(first) = first {
             let key = Key::new(channel, first);

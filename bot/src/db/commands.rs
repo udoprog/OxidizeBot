@@ -175,7 +175,7 @@ impl Commands {
         &self,
         channel: &str,
         first: Option<&'a str>,
-        it: &utils::Words<'a>,
+        it: &'a utils::Words,
     ) -> Option<(Arc<Command>, db::Captures<'a>)> {
         self.inner
             .read()

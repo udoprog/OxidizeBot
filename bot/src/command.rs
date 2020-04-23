@@ -14,7 +14,7 @@ pub trait Handler {
     }
 
     /// Handle the command.
-    async fn handle(&mut self, ctx: Context<'_>) -> Result<(), Error>;
+    async fn handle(&mut self, ctx: Context) -> Result<(), Error>;
 }
 
 #[async_trait]
@@ -36,14 +36,14 @@ pub(crate) struct ContextInner {
 }
 
 /// Context for a single command invocation.
-pub struct Context<'a> {
+pub struct Context {
     pub(crate) api_url: Arc<Option<String>>,
     pub(crate) user: irc::User,
-    pub(crate) it: utils::Words<'a>,
+    pub(crate) it: utils::Words,
     pub(crate) inner: Arc<ContextInner>,
 }
 
-impl<'a> Context<'a> {
+impl Context {
     /// Access the last known API url.
     pub fn api_url(&self) -> Option<&str> {
         self.api_url.as_deref()
@@ -75,7 +75,7 @@ impl<'a> Context<'a> {
     }
 
     /// Verify that the current user has the associated scope.
-    pub async fn check_scope(&mut self, scope: Scope) -> Result<(), Error> {
+    pub async fn check_scope(&self, scope: Scope) -> Result<(), Error> {
         if !self.user.has_scope(scope) {
             if let Some(name) = self.user.display_name() {
                 self.privmsg(format!(
@@ -131,7 +131,7 @@ impl<'a> Context<'a> {
     }
 
     /// Get the rest of the commandline.
-    pub fn rest(&self) -> &'a str {
+    pub fn rest(&self) -> &str {
         self.it.rest()
     }
 

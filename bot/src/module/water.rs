@@ -22,7 +22,7 @@ pub struct Handler {
 impl Handler {
     fn check_waters(
         &mut self,
-        ctx: &mut command::Context<'_>,
+        ctx: &mut command::Context,
     ) -> Option<(DateTime<Utc>, Option<Reward>)> {
         if let Some((when, user)) = self.waters.last() {
             return Some((*when, user.clone()));
@@ -51,7 +51,7 @@ impl Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
+    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

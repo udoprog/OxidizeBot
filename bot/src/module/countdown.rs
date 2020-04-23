@@ -20,7 +20,7 @@ impl command::Handler for Handler {
         Some(auth::Scope::Countdown)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), anyhow::Error> {
+    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), anyhow::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }

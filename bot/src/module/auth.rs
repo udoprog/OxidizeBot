@@ -9,7 +9,7 @@ pub struct Handler<'a> {
 
 #[async_trait]
 impl<'a> command::Handler for Handler<'a> {
-    async fn handle(&mut self, mut ctx: command::Context<'_>) -> Result<(), Error> {
+    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), Error> {
         match ctx.next().as_deref() {
             Some("scopes") => {
                 let filter = ctx.next();
