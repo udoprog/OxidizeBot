@@ -69,6 +69,19 @@ name ="!admin delete `<key>` `<value>`"
 content = "Delete avalue from a setting which is a collection."
 
 [[groups.commands]]
+name ="!admin toggle `<key>`"
+content = "Toggles the value of the specified setting if it's a boolean."
+
+[[groups.commands.examples]]
+name = "Toggling if the song player is detached"
+content = """
+setbac: !admin toggle player/detached
+SetMod: setbac -> Updated setting player/detached = true
+setbac: !admin toggle player/detached
+SetMod: setbac -> Updated setting player/detached = false
+"""
+
+[[groups.commands]]
 name = "!admin shutdown"
 content = "Shutdown the bot, causing it to (hopefully) restart."
 
