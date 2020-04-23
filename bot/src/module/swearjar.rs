@@ -5,6 +5,7 @@ use crate::{
     currency::Currency,
     module,
     prelude::*,
+    task,
     utils::{Cooldown, Duration},
 };
 use anyhow::{bail, Error};
@@ -77,7 +78,7 @@ impl<'a> command::Handler for Handler<'a> {
             Ok(())
         };
 
-        ctx.spawn(future.map(|result| match result {
+        task::spawn(future.map(|result| match result {
             Ok(()) => (),
             Err(e) => {
                 log_error!(e, "Failed to reward users for !swearjar");

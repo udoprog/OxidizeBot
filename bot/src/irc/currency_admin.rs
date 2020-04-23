@@ -5,7 +5,7 @@ use crate::{
     db,
     injector::Injector,
     prelude::*,
-    utils,
+    task, utils,
 };
 use anyhow::Error;
 use parking_lot::RwLock;
@@ -201,7 +201,7 @@ impl command::Handler for Handler {
                 let amount: i64 = ctx_try!(ctx.next_parse("<amount>"));
                 let sender = ctx.sender.clone();
 
-                ctx.spawn(async move {
+                task::spawn(async move {
                     let result = currency.add_channel_all(user.channel(), amount, 0).await;
 
                     match result {

@@ -8,7 +8,7 @@ use crate::{
     message_log::MessageLog,
     module, oauth2,
     prelude::*,
-    settings, stream_info,
+    settings, stream_info, task,
     utils::{self, Cooldown, Duration},
 };
 use anyhow::{anyhow, bail, Context as _, Error};
@@ -1017,9 +1017,9 @@ impl<'a> Handler<'a> {
                     let name = name.clone();
                     let message = message.clone();
 
-                    tokio::spawn(async move {
+                    task::spawn(Box::pin(async move {
                         chat_log.observe(&tags, &*channel, &name, &message).await;
-                    });
+                    }));
                 }
 
                 let user = User {

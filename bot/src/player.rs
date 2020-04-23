@@ -1,9 +1,8 @@
 use crate::{
-    api, bus, db, injector,
-    prelude::*,
-    settings,
+    api, bus, db, injector, settings,
     song_file::{SongFile, SongFileBuilder},
     spotify_id::SpotifyId,
+    task,
     template::Template,
     track_id::TrackId,
     utils::{self, PtDuration},
@@ -12,9 +11,12 @@ use crate::{
 
 use anyhow::{anyhow, bail, Error};
 use chrono::{DateTime, Utc};
+use futures::{channel::mpsc, prelude::*};
+use futures_option::OptionExt as _;
 use parking_lot::RwLock;
 use std::{
     collections::VecDeque,
+    future::Future,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -1143,23 +1145,22 @@ impl Queue {
     }
 
     /// Pop the front of the queue.
-    pub fn pop_front(
-        &self,
-    ) -> impl Future<Output = Result<Option<Arc<Item>>, Error>> + Send + 'static {
+    pub async fn pop_front(&self) -> Result<Option<Arc<Item>>, Error> {
         let db = self.db.clone();
         let queue = self.queue.clone();
 
-        let future = async move {
-            if let Some(item) = queue.write().pop_front() {
-                db.remove_song_log(&item.track_id);
+        task::asyncify(move || {
+            // NB: hold the lock over the database modification.
+            let mut queue = queue.write();
+
+            if let Some(item) = queue.pop_front() {
+                db.remove_song(&item.track_id)?;
+                Ok(Some(item))
+            } else {
+                Ok(None)
             }
-
-            Ok(None)
-        };
-
-        let (future, handle) = future.remote_handle();
-        tokio::spawn(future);
-        handle
+        })
+        .await
     }
 
     /// Push item to back of queue.
@@ -1167,20 +1168,20 @@ impl Queue {
         let db = self.db.clone();
         let queue = self.queue.clone();
 
-        let future = async move {
+        task::asyncify(move || {
+            // NB: hold the lock over the database modification.
+            let mut queue = queue.write();
+
             db.push_back(&db::models::AddSong {
                 track_id: item.track_id.clone(),
                 added_at: Utc::now().naive_utc(),
                 user: item.user.clone(),
             })?;
 
-            queue.write().push_back(item);
+            queue.push_back(item);
             Ok(())
-        };
-
-        let (task, future) = future.remote_handle();
-        tokio::spawn(task);
-        future.await
+        })
+        .await
     }
 
     /// Purge the song queue.

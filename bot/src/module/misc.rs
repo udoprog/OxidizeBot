@@ -1,6 +1,6 @@
 //! module for misc smaller commands.
 
-use crate::{api, auth, command, irc, module, prelude::*, stream_info, utils};
+use crate::{api, auth, command, irc, module, prelude::*, stream_info, task, utils};
 use anyhow::Error;
 use chrono::Utc;
 use parking_lot::RwLock;
@@ -115,7 +115,7 @@ impl<'a> command::Handler for Title<'a> {
 
             let user = ctx.user.clone();
 
-            ctx.spawn(async move {
+            task::spawn(async move {
                 match future.await {
                     Ok(()) => {
                         user.respond("Title updated!");
@@ -192,7 +192,7 @@ impl<'a> command::Handler for Game<'a> {
 
         let user = ctx.user.clone();
 
-        ctx.spawn(async move {
+        task::spawn(async move {
             match future.await {
                 Ok(()) => {
                     user.respond("Game updated!");

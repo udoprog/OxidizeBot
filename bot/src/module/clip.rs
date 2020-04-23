@@ -1,7 +1,7 @@
 use crate::{
     api, auth, command, module,
     prelude::*,
-    stream_info,
+    stream_info, task,
     utils::{Cooldown, Duration},
 };
 use anyhow::Error;
@@ -42,7 +42,7 @@ impl<'a> command::Handler for Clip<'a> {
         let twitch = self.twitch.clone();
         let user = ctx.user.clone();
 
-        ctx.spawn(async move {
+        task::spawn(async move {
             match twitch.create_clip(&stream_user.id).await {
                 Ok(Some(clip)) => {
                     user.respond(format!(

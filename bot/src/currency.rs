@@ -327,6 +327,12 @@ pub enum BalanceTransferError {
     Other(#[source] Error),
 }
 
+impl From<tokio::task::JoinError> for BalanceTransferError {
+    fn from(error: tokio::task::JoinError) -> Self {
+        Self::Other(Error::from(error))
+    }
+}
+
 impl From<Error> for BalanceTransferError {
     fn from(value: Error) -> Self {
         BalanceTransferError::Other(value)

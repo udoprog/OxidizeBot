@@ -9,7 +9,7 @@ use crate::{
     auth, command, module,
     prelude::*,
     storage::Cache,
-    utils,
+    task, utils,
 };
 use anyhow::{anyhow, Error};
 use parking_lot::RwLock;
@@ -231,7 +231,7 @@ impl Speedrun {
             Ok::<(), Error>(())
         };
 
-        ctx.spawn(async move {
+        task::spawn(async move {
             match future.await {
                 Ok(()) => (),
                 Err(e) => {
@@ -464,7 +464,7 @@ impl Speedrun {
             Ok(())
         };
 
-        ctx.spawn(async move {
+        task::spawn(async move {
             match future.await {
                 Ok(()) => (),
                 Err(e) => {

@@ -3,7 +3,7 @@
 use crate::{
     currency::{BalanceOf, BalanceTransferError},
     db::{models, schema, user_id, Database},
-    prelude::*,
+    task,
 };
 
 use anyhow::Error;
@@ -37,7 +37,7 @@ impl Backend {
         let giver = user_id(&giver);
         let pool = self.db.pool.clone();
 
-        let future = async move {
+        task::asyncify(move || {
             let c = pool.lock();
             let c = &*c;
 
@@ -59,11 +59,8 @@ impl Backend {
                 modify_balance(c, &channel, &giver, -amount)?;
                 Ok(())
             })
-        };
-
-        let (future, remote) = future.remote_handle();
-        tokio::spawn(future);
-        remote.await
+        })
+        .await
     }
 
     /// Get balances for all users.
@@ -72,15 +69,12 @@ impl Backend {
 
         let pool = self.db.pool.clone();
 
-        let future = async move {
+        task::asyncify(move || {
             let c = pool.lock();
             let balances = dsl::balances.load::<models::Balance>(&*c)?;
             Ok(balances)
-        };
-
-        let (future, handle) = future.remote_handle();
-        tokio::spawn(future);
-        handle.await
+        })
+        .await
     }
 
     /// Import balances for all users.
@@ -89,7 +83,7 @@ impl Backend {
 
         let pool = self.db.pool.clone();
 
-        let future = async move {
+        task::asyncify(move || {
             let c = pool.lock();
 
             for balance in balances {
@@ -122,11 +116,8 @@ impl Backend {
             }
 
             Ok(())
-        };
-
-        let (future, handle) = future.remote_handle();
-        tokio::spawn(future);
-        handle.await
+        })
+        .await
     }
 
     /// Find user balance.
@@ -137,7 +128,7 @@ impl Backend {
         let user = user_id(&user);
         let pool = self.db.pool.clone();
 
-        let future = async move {
+        task::asyncify(move || {
             let c = pool.lock();
 
             let result = dsl::balances
@@ -155,11 +146,8 @@ impl Backend {
                 balance,
                 watch_time,
             }))
-        };
-
-        let (future, handle) = future.remote_handle();
-        tokio::spawn(future);
-        handle.await
+        })
+        .await
     }
 
     /// Add (or subtract) from the balance for a single user.
@@ -168,14 +156,11 @@ impl Backend {
         let user = user_id(user);
         let pool = self.db.pool.clone();
 
-        let future = async move {
+        task::asyncify(move || {
             let c = pool.lock();
             modify_balance(&*c, &channel, &user, amount)
-        };
-
-        let (future, handle) = future.remote_handle();
-        tokio::spawn(future);
-        handle.await
+        })
+        .await
     }
 
     /// Add balance to users.
@@ -192,7 +177,7 @@ impl Backend {
         let channel = format!("#{}", channel);
         let pool = self.db.pool.clone();
 
-        let future = async move {
+        task::asyncify(move || {
             let c = pool.lock();
 
             for user in users {
@@ -228,11 +213,8 @@ impl Backend {
             }
 
             Ok(())
-        };
-
-        let (future, handle) = future.remote_handle();
-        tokio::spawn(future);
-        handle.await
+        })
+        .await
     }
 }
 

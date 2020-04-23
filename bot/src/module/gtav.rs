@@ -2,6 +2,7 @@ use crate::{
     auth::Scope,
     command, currency, irc, module, player,
     prelude::*,
+    task,
     utils::{compact_duration, Cooldown, Duration},
 };
 use anyhow::{bail, Error};
@@ -569,7 +570,7 @@ impl Handler {
             let target = ctx.channel().to_string();
             let id = id.to_string();
 
-            ctx.spawn(async move {
+            task::spawn(async move {
                 match player.play_theme(target.as_str(), id.as_str()).await {
                     Ok(()) => (),
                     Err(player::PlayThemeError::NoSuchTheme) => {
@@ -1035,7 +1036,7 @@ impl command::Handler for Handler {
             Ok(())
         };
 
-        ctx.spawn(future.map(|result| match result {
+        task::spawn(future.map(|result| match result {
             Ok(()) => (),
             Err(e) => {
                 log_error!(e, "failed to modify balance of user");

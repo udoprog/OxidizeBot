@@ -1,4 +1,4 @@
-use crate::{api::OpenWeatherMap, auth, command, module, prelude::*};
+use crate::{api::OpenWeatherMap, auth, command, module, prelude::*, task};
 use anyhow::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -126,7 +126,7 @@ impl command::Handler for Weather {
                     Ok::<(), Error>(())
                 };
 
-                ctx.spawn(async move {
+                task::spawn(async move {
                     match future.await {
                         Ok(()) => (),
                         Err(e) => {

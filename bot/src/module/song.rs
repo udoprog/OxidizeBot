@@ -5,7 +5,7 @@ use crate::{
     irc, module, player,
     player::{AddTrackError, Event, Item, PlayThemeError, Player},
     prelude::*,
-    settings, track_id,
+    settings, task, track_id,
     track_id::TrackId,
     utils::{self, Cooldown, Duration},
 };
@@ -294,7 +294,7 @@ impl Handler {
             }
         });
 
-        ctx.spawn(future);
+        task::spawn(future);
         Ok(())
     }
 
@@ -347,7 +347,7 @@ impl command::Handler for Handler {
                 let name = ctx_try!(ctx.next_str("<name>"));
                 let user = ctx.user.clone();
 
-                ctx.spawn(async move {
+                task::spawn(async move {
                     match player.play_theme(user.channel(), name.as_str()).await {
                         Ok(()) => (),
                         Err(PlayThemeError::NoSuchTheme) => {

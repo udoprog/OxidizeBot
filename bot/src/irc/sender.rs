@@ -1,4 +1,4 @@
-use crate::api;
+use crate::{api, task};
 use anyhow::Error;
 use irc::{
     client,
@@ -100,7 +100,7 @@ impl Sender {
 
         let inner = self.inner.clone();
 
-        tokio::spawn(async move {
+        task::spawn(async move {
             if let Err(e) = inner.limiter.acquire(1).await {
                 log_error!(e, "error in limiter");
                 return;
@@ -186,6 +186,6 @@ impl Sender {
             }
         };
 
-        tokio::spawn(future);
+        task::spawn(future);
     }
 }

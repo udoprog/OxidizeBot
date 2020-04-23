@@ -41,26 +41,6 @@ impl<'a> Context<'a> {
         self.sender.channel()
     }
 
-    /// Spawn the given result and log on errors.
-    pub fn spawn_result<F>(&self, id: &'static str, future: F)
-    where
-        F: std::future::Future<Output = Result<(), Error>> + Send + 'static,
-    {
-        self.spawn(async move {
-            if let Err(e) = future.await {
-                log_error!(e, "Task `{}` failed", id);
-            }
-        })
-    }
-
-    /// Spawn the given future on the thread pool associated with the context.
-    pub fn spawn<F>(&self, future: F)
-    where
-        F: std::future::Future<Output = ()> + Send + 'static,
-    {
-        tokio::spawn(future);
-    }
-
     /// Verify that the current user has the associated scope.
     pub fn check_scope(&mut self, scope: Scope) -> Result<(), Error> {
         if !self.user.has_scope(scope) {
