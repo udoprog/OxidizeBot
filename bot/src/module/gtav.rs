@@ -974,7 +974,7 @@ impl command::Handler for Handler {
 
         let cost = cost * percentage / 100;
         let user = ctx.user.clone();
-        let sender = ctx.sender.clone();
+        let sender = ctx.inner.sender.clone();
         let prefix = self.prefix.read().clone();
         let success_feedback = self.success_feedback.clone();
         let tx = self.tx.clone();

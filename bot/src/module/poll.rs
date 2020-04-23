@@ -51,10 +51,9 @@ impl command::Handler for Poll {
                     })),
                 };
 
-                ctx.message_hooks
-                    .insert(format!("poll/{}", question), Box::new(poll.clone()));
+                ctx.insert_hook(&format!("poll/{}", question), poll.clone())
+                    .await;
                 self.polls.insert(question.clone(), poll);
-
                 ctx.respond(format!("Started poll `{}`", question));
             }
             Some("close") => {
@@ -84,7 +83,7 @@ impl command::Handler for Poll {
                     }
                 };
 
-                ctx.message_hooks.remove(&format!("poll/{}", question));
+                ctx.remove_hook(&format!("poll/{}", question)).await;
                 let results = poll.close();
 
                 let total = results.iter().map(|(_, c)| c).sum::<u32>();

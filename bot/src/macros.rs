@@ -86,9 +86,6 @@ macro_rules! ctx_try {
 #[macro_export]
 macro_rules! respond {
     ($ctx:expr, $($t:tt)*) => {{
-        use std::fmt::Write as _;
-        write!($ctx.respond_buffer, $($t)*).expect("writing to a string buffer is infallible");
-        $ctx.respond(&$ctx.respond_buffer);
-        $ctx.respond_buffer.clear();
+        $ctx.respond(&format!($($t)*));
     }}
 }

@@ -21,12 +21,7 @@ use irc::{
 };
 use leaky_bucket::LeakyBuckets;
 use parking_lot::RwLock;
-use std::{
-    collections::{HashMap, HashSet},
-    fmt,
-    sync::Arc,
-    time,
-};
+use std::{collections::HashSet, fmt, sync::Arc, time};
 use tokio::sync::Mutex;
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
@@ -398,10 +393,9 @@ impl Irc {
                 bad_words: &bad_words,
                 global_bus: &global_bus,
                 aliases,
-                api_url,
+                api_url: Arc::new(api_url),
                 moderator_cooldown,
                 handlers,
-                shutdown: &shutdown,
                 idle: &idle,
                 pong_timeout: &mut pong_timeout,
                 token: &bot_twitch.token,
@@ -411,12 +405,13 @@ impl Irc {
                 currency_handler,
                 url_whitelist_enabled,
                 bad_words_enabled,
-                message_hooks: Default::default(),
                 chat_log: chat_log_builder.build()?,
                 channel,
-                shared_respond_buffer: String::with_capacity(1024),
                 context_inner: Arc::new(command::ContextInner {
+                    sender: sender.clone(),
                     scope_cooldowns: Mutex::new(auth.scope_cooldowns()),
+                    message_hooks: Mutex::new(Default::default()),
+                    shutdown: shutdown.clone(),
                 }),
             };
 
@@ -497,7 +492,7 @@ impl Irc {
                         handler.chat_log = chat_log_builder.build()?;
                     }
                     update = api_url_stream.select_next_some() => {
-                        handler.api_url = update;
+                        handler.api_url = Arc::new(update);
                     }
                     update = moderator_cooldown_stream.select_next_some() => {
                         handler.moderator_cooldown = update;
@@ -707,13 +702,11 @@ struct Handler<'a> {
     /// Aliases.
     aliases: Option<db::Aliases>,
     /// Configured API URL.
-    api_url: Option<String>,
+    api_url: Arc<Option<String>>,
     /// Active moderator cooldown.
     moderator_cooldown: Option<Cooldown>,
     /// Handlers for specific commands like `!skip`.
     handlers: module::Handlers<'a>,
-    /// Handler for shutting down the service.
-    shutdown: &'a utils::Shutdown,
     /// Build idle detection.
     idle: &'a idle::Idle,
     /// Pong timeout currently running.
@@ -730,14 +723,10 @@ struct Handler<'a> {
     currency_handler: currency_admin::Handler,
     bad_words_enabled: Arc<RwLock<bool>>,
     url_whitelist_enabled: Arc<RwLock<bool>>,
-    /// A hook that can be installed to peek at all incoming messages.
-    message_hooks: HashMap<String, Box<dyn command::MessageHook>>,
     /// Handler for chat logs.
     chat_log: Option<chat_log::ChatLog>,
     /// Information on the current channel.
     channel: Arc<twitch::Channel>,
-    /// Shared buffer used for preparing responses.
-    shared_respond_buffer: String,
     /// Shared context paramters.
     context_inner: Arc<command::ContextInner>,
 }
@@ -891,7 +880,7 @@ impl<'a> Handler<'a> {
 
     /// Process the given command.
     pub async fn process_message(&mut self, user: &User, mut message: &str) -> Result<(), Error> {
-        for (key, hook) in &mut self.message_hooks {
+        for (key, hook) in self.context_inner.message_hooks.lock().await.iter_mut() {
             hook.peek(&user, message)
                 .with_context(|| anyhow!("hook `{}` failed", key))?;
         }
@@ -952,13 +941,9 @@ impl<'a> Handler<'a> {
                 let command = &command[1..];
 
                 let ctx = command::Context {
-                    api_url: self.api_url.as_deref(),
-                    sender: &self.sender,
+                    api_url: self.api_url.clone(),
                     user: user.clone(),
                     it,
-                    shutdown: self.shutdown,
-                    message_hooks: &mut self.message_hooks,
-                    respond_buffer: &mut self.shared_respond_buffer,
                     inner: self.context_inner.clone(),
                 };
 

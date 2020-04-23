@@ -24,27 +24,53 @@ pub trait MessageHook: std::any::Any + Send + Sync {
 }
 
 pub(crate) struct ContextInner {
+    /// Sender associated with the command.
+    pub(crate) sender: irc::Sender,
     /// Active scope cooldowns.
     pub(crate) scope_cooldowns: Mutex<HashMap<Scope, utils::Cooldown>>,
+    /// A hook that can be installed to peek at all incoming messages.
+    pub(crate) message_hooks: Mutex<HashMap<String, Box<dyn MessageHook>>>,
+    /// Shutdown handler.
+    pub(crate) shutdown: utils::Shutdown,
 }
 
 /// Context for a single command invocation.
 pub struct Context<'a> {
-    pub(crate) api_url: Option<&'a str>,
-    /// Sender associated with the command.
-    pub(crate) sender: &'a irc::Sender,
+    pub(crate) api_url: Arc<Option<String>>,
     pub(crate) user: irc::User,
     pub(crate) it: utils::Words<'a>,
-    pub(crate) shutdown: &'a utils::Shutdown,
-    pub(crate) message_hooks: &'a mut HashMap<String, Box<dyn MessageHook>>,
-    pub(crate) respond_buffer: &'a mut String,
     pub(crate) inner: Arc<ContextInner>,
 }
 
 impl<'a> Context<'a> {
+    /// Access the last known API url.
+    pub fn api_url(&self) -> Option<&str> {
+        self.api_url.as_deref()
+    }
+
     /// Get the channel.
     pub fn channel(&self) -> &str {
-        self.sender.channel()
+        self.inner.sender.channel()
+    }
+
+    /// Signal that the bot should try to shut down.
+    pub fn shutdown(&self) -> bool {
+        self.inner.shutdown.shutdown()
+    }
+
+    /// Setup the specified hook.
+    pub async fn insert_hook<H>(&self, id: &str, hook: H)
+    where
+        H: MessageHook,
+    {
+        let mut hooks = self.inner.message_hooks.lock().await;
+        hooks.insert(id.to_string(), Box::new(hook));
+    }
+
+    /// Setup the specified hook.
+    pub async fn remove_hook(&self, id: &str) {
+        let mut hooks = self.inner.message_hooks.lock().await;
+        let _ = hooks.remove(id);
     }
 
     /// Verify that the current user has the associated scope.
@@ -95,7 +121,7 @@ impl<'a> Context<'a> {
 
     /// Send a privmsg to the channel.
     pub fn privmsg(&self, m: impl fmt::Display) {
-        self.sender.privmsg(m);
+        self.inner.sender.privmsg(m);
     }
 
     /// Get the next argument.

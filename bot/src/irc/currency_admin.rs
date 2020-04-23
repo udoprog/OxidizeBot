@@ -199,7 +199,7 @@ impl command::Handler for Handler {
 
                 let user = ctx.user.clone();
                 let amount: i64 = ctx_try!(ctx.next_parse("<amount>"));
-                let sender = ctx.sender.clone();
+                let sender = ctx.inner.sender.clone();
 
                 task::spawn(async move {
                     let result = currency.add_channel_all(user.channel(), amount, 0).await;

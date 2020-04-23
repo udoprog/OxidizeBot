@@ -82,7 +82,7 @@ impl<'a> command::Handler for Handler<'a> {
                 respond!(ctx, "OxidizeBot Version {}", crate::VERSION);
             }
             Some("shutdown") | Some("restart") => {
-                if ctx.shutdown.shutdown() {
+                if ctx.shutdown() {
                     ctx.respond("Restarting...");
                 } else {
                     ctx.respond("Already restarting...");

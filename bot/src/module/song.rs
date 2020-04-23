@@ -398,7 +398,7 @@ impl command::Handler for Handler {
                 ctx.respond("Opened player for requests.");
             }
             Some("list") => {
-                if let Some(api_url) = ctx.api_url {
+                if let Some(api_url) = ctx.api_url() {
                     ctx.respond(format!(
                         "You can find the queue at {}/player/{}",
                         api_url,
