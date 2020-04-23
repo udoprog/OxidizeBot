@@ -14,7 +14,7 @@ pub struct Help {
 
 #[async_trait]
 impl command::Handler for Help {
-    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -51,7 +51,7 @@ impl super::Module for Module {
         &self,
         module::HookContext {
             handlers, settings, ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), Error> {
         let default_url = Url::parse(DEFAULT_URL)?;
 

@@ -1,6 +1,6 @@
 //! module for misc smaller commands.
 
-use crate::{api, auth, command, irc, module, prelude::*, stream_info, task, utils};
+use crate::{api, auth, command, irc, module, prelude::*, stream_info, utils};
 use anyhow::Error;
 use chrono::Utc;
 use parking_lot::RwLock;
@@ -18,7 +18,7 @@ impl command::Handler for Uptime {
         Some(auth::Scope::Uptime)
     }
 
-    async fn handle(&mut self, ctx: command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -57,15 +57,15 @@ impl command::Handler for Uptime {
 }
 
 /// Handler for the `!title` command.
-pub struct Title<'a> {
+pub struct Title {
     pub enabled: Arc<RwLock<bool>>,
     pub stream_info: stream_info::StreamInfo,
-    pub twitch: &'a api::Twitch,
+    pub twitch: api::Twitch,
 }
 
-impl Title<'_> {
+impl Title {
     /// Handle the title command.
-    fn show(&mut self, user: &irc::User) {
+    fn show(&self, user: &irc::User) {
         let title = self.stream_info.data.read().title.clone();
 
         match title {
@@ -80,12 +80,12 @@ impl Title<'_> {
 }
 
 #[async_trait]
-impl<'a> command::Handler for Title<'a> {
+impl command::Handler for Title {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::Title)
     }
 
-    async fn handle(&mut self, ctx: command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -114,15 +114,15 @@ impl<'a> command::Handler for Title<'a> {
 }
 
 /// Handler for the `!title` command.
-pub struct Game<'a> {
+pub struct Game {
     pub enabled: Arc<RwLock<bool>>,
     pub stream_info: stream_info::StreamInfo,
-    pub twitch: &'a api::Twitch,
+    pub twitch: api::Twitch,
 }
 
-impl Game<'_> {
+impl Game {
     /// Handle the game command.
-    fn show(&mut self, user: &irc::User) {
+    fn show(&self, user: &irc::User) {
         let game = self.stream_info.data.read().game.clone();
 
         match game {
@@ -137,12 +137,12 @@ impl Game<'_> {
 }
 
 #[async_trait]
-impl<'a> command::Handler for Game<'a> {
+impl command::Handler for Game {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::Game)
     }
 
-    async fn handle(&mut self, ctx: command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -160,31 +160,16 @@ impl<'a> command::Handler for Game<'a> {
         let game = rest.to_string();
         let stream_info = self.stream_info.clone();
 
-        let user = ctx.user.clone();
+        let mut request = api::twitch::UpdateChannelRequest::default();
+        request.channel.game = Some(game);
+        twitch
+            .update_channel(&ctx.user.streamer().id, request)
+            .await?;
+        stream_info
+            .refresh_channel(&twitch, ctx.user.streamer())
+            .await?;
 
-        let future = async move {
-            let mut request = api::twitch::UpdateChannelRequest::default();
-            request.channel.game = Some(game);
-            twitch.update_channel(&user.streamer().id, request).await?;
-            stream_info
-                .refresh_channel(&twitch, user.streamer())
-                .await?;
-            Ok::<(), Error>(())
-        };
-
-        let user = ctx.user.clone();
-
-        task::spawn(async move {
-            match future.await {
-                Ok(()) => {
-                    user.respond("Game updated!");
-                }
-                Err(e) => {
-                    log_error!(e, "failed to update game");
-                }
-            }
-        });
-
+        ctx.respond("Game updated!");
         Ok(())
     }
 }
@@ -206,14 +191,14 @@ impl super::Module for Module {
             streamer_twitch,
             settings,
             ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), Error> {
         handlers.insert(
             "title",
             Title {
                 enabled: settings.var("title/enabled", true)?,
                 stream_info: stream_info.clone(),
-                twitch: &streamer_twitch,
+                twitch: streamer_twitch.clone(),
             },
         );
 
@@ -222,7 +207,7 @@ impl super::Module for Module {
             Game {
                 enabled: settings.var("game/enabled", true)?,
                 stream_info: stream_info.clone(),
-                twitch: &streamer_twitch,
+                twitch: streamer_twitch.clone(),
             },
         );
 

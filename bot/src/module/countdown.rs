@@ -20,7 +20,7 @@ impl command::Handler for Handler {
         Some(auth::Scope::Countdown)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -75,7 +75,7 @@ impl super::Module for Module {
             futures,
             settings,
             ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), anyhow::Error> {
         let settings = settings.scoped("countdown");
 

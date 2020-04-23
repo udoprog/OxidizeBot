@@ -5,35 +5,34 @@ use crate::{
     currency::Currency,
     module,
     prelude::*,
-    task,
     utils::{Cooldown, Duration},
 };
 use anyhow::{bail, Error};
 use parking_lot::RwLock;
 use std::{collections::HashSet, sync::Arc};
 
-pub struct Handler<'a> {
+pub struct Handler {
     enabled: Arc<RwLock<bool>>,
     reward: Arc<RwLock<i64>>,
     cooldown: Arc<RwLock<Cooldown>>,
     currency: Arc<RwLock<Option<Currency>>>,
-    twitch: &'a api::Twitch,
+    twitch: api::Twitch,
 }
 
 #[async_trait]
-impl<'a> command::Handler for Handler<'a> {
+impl command::Handler for Handler {
     fn scope(&self) -> Option<Scope> {
         Some(Scope::SwearJar)
     }
 
-    async fn handle(&mut self, ctx: command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
 
-        let currency = self.currency.read();
-        let currency = match currency.as_ref() {
-            Some(currency) => currency.clone(),
+        let currency = self.currency.read().clone();
+        let currency = match currency {
+            Some(currency) => currency,
             None => {
                 ctx.respond("No currency configured for stream, sorry :(");
                 return Ok(());
@@ -45,45 +44,33 @@ impl<'a> command::Handler for Handler<'a> {
             return Ok(());
         }
 
-        let twitch = self.twitch.clone();
-        let user = ctx.user.clone();
+        let user = &ctx.user;
         let reward = *self.reward.read();
 
-        let future = async move {
-            let chatters = twitch.chatters(user.channel()).await?;
+        let chatters = self.twitch.chatters(user.channel()).await?;
 
-            let mut u = HashSet::new();
-            u.extend(chatters.viewers);
-            u.extend(chatters.moderators);
+        let mut u = HashSet::new();
+        u.extend(chatters.viewers);
+        u.extend(chatters.moderators);
 
-            if u.is_empty() {
-                bail!("no chatters to reward");
-            }
+        if u.is_empty() {
+            bail!("no chatters to reward");
+        }
 
-            let total_reward = reward * u.len() as i64;
+        let total_reward = reward * u.len() as i64;
 
-            currency
-                .balance_add(user.channel(), &user.streamer().name, -total_reward)
-                .await?;
+        currency
+            .balance_add(user.channel(), &user.streamer().name, -total_reward)
+            .await?;
 
-            currency
-                .balances_increment(user.channel(), u, reward, 0)
-                .await?;
+        currency
+            .balances_increment(user.channel(), u, reward, 0)
+            .await?;
 
-            user.sender().privmsg(format!(
-                "/me has taken {} {currency} from {streamer} and given it to the viewers for listening to their bad mouth!",
-                total_reward, currency = currency.name, streamer = user.streamer().display_name,
-            ));
-
-            Ok(())
-        };
-
-        task::spawn(future.map(|result| match result {
-            Ok(()) => (),
-            Err(e) => {
-                log_error!(e, "Failed to reward users for !swearjar");
-            }
-        }));
+        user.sender().privmsg(format!(
+            "/me has taken {} {currency} from {streamer} and given it to the viewers for listening to their bad mouth!",
+            total_reward, currency = currency.name, streamer = user.streamer().display_name,
+        ));
 
         Ok(())
     }
@@ -107,7 +94,7 @@ impl super::Module for Module {
             futures,
             settings,
             ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), Error> {
         let enabled = settings.var("swearjar/enabled", false)?;
         let reward = settings.var("swearjar/reward", 10)?;
@@ -127,7 +114,7 @@ impl super::Module for Module {
                 reward,
                 cooldown: cooldown.clone(),
                 currency,
-                twitch,
+                twitch: twitch.clone(),
             },
         );
 

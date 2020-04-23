@@ -6,11 +6,12 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+use tokio::sync::Mutex;
 
 /// Handler for the !poll command.
 pub struct Poll {
     enabled: Arc<RwLock<bool>>,
-    polls: HashMap<String, ActivePoll>,
+    polls: Mutex<HashMap<String, ActivePoll>>,
 }
 
 #[async_trait]
@@ -19,7 +20,7 @@ impl command::Handler for Poll {
         Some(auth::Scope::Poll)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -53,17 +54,16 @@ impl command::Handler for Poll {
 
                 ctx.insert_hook(&format!("poll/{}", question), poll.clone())
                     .await;
-                self.polls.insert(question.clone(), poll);
+                self.polls.lock().await.insert(question.clone(), poll);
                 ctx.respond(format!("Started poll `{}`", question));
             }
             Some("close") => {
+                let mut polls = self.polls.lock().await;
+
                 let question = match ctx.next() {
                     Some(question) => question,
                     None => {
-                        let latest = self
-                            .polls
-                            .iter()
-                            .max_by_key(|e| e.1.inner.read().created_at);
+                        let latest = polls.iter().max_by_key(|e| e.1.inner.read().created_at);
 
                         match latest {
                             Some((question, _)) => question.to_string(),
@@ -75,7 +75,7 @@ impl command::Handler for Poll {
                     }
                 };
 
-                let mut poll = match self.polls.remove(&question) {
+                let poll = match polls.remove(&question) {
                     Some(poll) => poll,
                     None => {
                         ctx.respond(format!("No poll named `{}`!", question));
@@ -125,7 +125,7 @@ struct ActivePoll {
 
 impl ActivePoll {
     /// Close the poll.
-    pub fn close(&mut self) -> Vec<(String, u32)> {
+    pub fn close(&self) -> Vec<(String, u32)> {
         let inner = self.inner.read();
 
         let mut results = Vec::new();
@@ -183,12 +183,12 @@ impl super::Module for Module {
         &self,
         module::HookContext {
             handlers, settings, ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), anyhow::Error> {
         handlers.insert(
             "poll",
             Poll {
-                polls: Default::default(),
+                polls: Mutex::new(Default::default()),
                 enabled: settings.var("poll/enabled", false)?,
             },
         );

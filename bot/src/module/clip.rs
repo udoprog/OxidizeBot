@@ -9,20 +9,20 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Handler for the `!clip` command.
-pub struct Clip<'a> {
+pub struct Clip {
     pub enabled: Arc<RwLock<bool>>,
     pub stream_info: stream_info::StreamInfo,
     pub clip_cooldown: Arc<RwLock<Cooldown>>,
-    pub twitch: &'a api::Twitch,
+    pub twitch: api::Twitch,
 }
 
 #[async_trait]
-impl<'a> command::Handler for Clip<'a> {
+impl command::Handler for Clip {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::Clip)
     }
 
-    async fn handle(&mut self, ctx: command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -85,7 +85,7 @@ impl super::Module for Module {
             stream_info,
             twitch,
             ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), Error> {
         let settings = settings.scoped("clip");
 
@@ -96,7 +96,7 @@ impl super::Module for Module {
                 stream_info: stream_info.clone(),
                 clip_cooldown: settings
                     .var("cooldown", Cooldown::from_duration(Duration::seconds(30)))?,
-                twitch,
+                twitch: twitch.clone(),
             },
         );
 

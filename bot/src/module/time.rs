@@ -21,7 +21,7 @@ impl command::Handler for Time {
         Some(auth::Scope::Time)
     }
 
-    async fn handle(&mut self, ctx: command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -101,7 +101,7 @@ impl super::Module for Module {
         &self,
         module::HookContext {
             handlers, settings, ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), Error> {
         let default_template = Template::compile("The streamer's time is {{time}}{{offset}}")?;
 

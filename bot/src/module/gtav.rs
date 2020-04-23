@@ -10,10 +10,13 @@ use std::{
     collections::{hash_map, HashMap},
     fmt,
     net::SocketAddr,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
     time,
 };
-use tokio::net::UdpSocket;
+use tokio::{net::UdpSocket, sync::Mutex};
 
 const VEHICLE_URL: &str = "http://bit.ly/gtavvehicles";
 
@@ -555,16 +558,16 @@ pub struct Handler {
     punish_percentage: Arc<RwLock<u32>>,
     reward_percentage: Arc<RwLock<u32>>,
     success_feedback: Arc<RwLock<bool>>,
-    id_counter: usize,
+    id_counter: AtomicUsize,
     tx: mpsc::UnboundedSender<(irc::User, usize, Command)>,
-    per_user_cooldowns: HashMap<String, Cooldown>,
-    per_command_cooldowns: HashMap<&'static str, Cooldown>,
+    per_user_cooldowns: Mutex<HashMap<String, Cooldown>>,
+    per_command_cooldowns: Mutex<HashMap<&'static str, Cooldown>>,
     per_command_configs: Arc<RwLock<HashMap<String, CommandSetting>>>,
 }
 
 impl Handler {
     /// Play the specified theme song.
-    async fn play_theme_song(&mut self, ctx: &command::Context, id: &str) {
+    async fn play_theme_song(&self, ctx: &command::Context, id: &str) {
         let player = self.player.read().clone();
 
         if let Some(player) = player {
@@ -590,43 +593,50 @@ impl Handler {
     }
 
     /// Check if the given user is subject to cooldown right now.
-    fn check_cooldown(
-        &mut self,
+    async fn check_cooldown(
+        &self,
         ctx: &command::Context,
         command: &Command,
         category_cooldown: Option<Arc<RwLock<Cooldown>>>,
     ) -> Option<(&'static str, time::Duration)> {
-        let per_user_cooldown = self.per_user_cooldown.read();
+        let mut per_user_cooldowns = self.per_user_cooldowns.lock().await;
+        let mut per_command_cooldowns = self.per_command_cooldowns.lock().await;
+
+        let per_user_cooldown = self.per_user_cooldown.read().clone();
 
         // NB: only real users are subject to cooldown.
-        let mut user_cooldown = match ctx.user.real() {
-            Some(user) => match self.per_user_cooldowns.entry(user.name().to_string()) {
-                hash_map::Entry::Vacant(e) => Some(e.insert(per_user_cooldown.clone())),
+        let mut user_cooldown = {
+            match ctx.user.real() {
+                Some(user) => match per_user_cooldowns.entry(user.name().to_string()) {
+                    hash_map::Entry::Vacant(e) => Some(e.insert(per_user_cooldown.clone())),
+                    hash_map::Entry::Occupied(e) => {
+                        let cooldown = e.into_mut();
+
+                        if cooldown.cooldown != per_user_cooldown.cooldown {
+                            cooldown.cooldown = per_user_cooldown.cooldown.clone();
+                        }
+
+                        Some(cooldown)
+                    }
+                },
+                None => None,
+            }
+        };
+
+        let per_command_cooldown = self.per_command_cooldown.read().clone();
+
+        let command_cooldown = {
+            match per_command_cooldowns.entry(command.command_name()) {
+                hash_map::Entry::Vacant(e) => e.insert(per_command_cooldown.clone()),
                 hash_map::Entry::Occupied(e) => {
                     let cooldown = e.into_mut();
 
-                    if cooldown.cooldown != per_user_cooldown.cooldown {
-                        cooldown.cooldown = per_user_cooldown.cooldown.clone();
+                    if cooldown.cooldown != per_command_cooldown.cooldown {
+                        cooldown.cooldown = per_command_cooldown.cooldown.clone();
                     }
 
-                    Some(cooldown)
+                    cooldown
                 }
-            },
-            None => None,
-        };
-
-        let per_command_cooldown = self.per_command_cooldown.read();
-
-        let command_cooldown = match self.per_command_cooldowns.entry(command.command_name()) {
-            hash_map::Entry::Vacant(e) => e.insert(per_command_cooldown.clone()),
-            hash_map::Entry::Occupied(e) => {
-                let cooldown = e.into_mut();
-
-                if cooldown.cooldown != per_command_cooldown.cooldown {
-                    cooldown.cooldown = per_command_cooldown.cooldown.clone();
-                }
-
-                cooldown
             }
         };
 
@@ -689,7 +699,7 @@ impl Handler {
 
     /// Handle the other commands.
     async fn handle_other(
-        &mut self,
+        &self,
         ctx: &mut command::Context,
     ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next().as_deref() {
@@ -724,7 +734,7 @@ impl Handler {
 
     /// Handle the punish command.
     async fn handle_punish(
-        &mut self,
+        &self,
         ctx: &mut command::Context,
     ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next().as_deref() {
@@ -804,7 +814,7 @@ impl Handler {
 
     /// Handle the reward command.
     async fn handle_reward(
-        &mut self,
+        &self,
         ctx: &mut command::Context,
     ) -> Result<Option<(Command, u32)>, Error> {
         let command = match ctx.next().as_deref() {
@@ -891,7 +901,7 @@ impl Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -907,16 +917,16 @@ impl command::Handler for Handler {
 
         let (result, category_cooldown) = match ctx.next().as_deref() {
             Some("other") => {
-                let command = self.handle_other(&mut ctx).await?;
+                let command = self.handle_other(ctx).await?;
                 (command, None)
             }
             Some("punish") => {
-                let command = self.handle_punish(&mut ctx).await?;
+                let command = self.handle_punish(ctx).await?;
                 let cooldown = self.punish_cooldown.clone();
                 (command, Some(cooldown))
             }
             Some("reward") => {
-                let command = self.handle_reward(&mut ctx).await?;
+                let command = self.handle_reward(ctx).await?;
                 let cooldown = self.reward_cooldown.clone();
                 (command, Some(cooldown))
             }
@@ -956,7 +966,8 @@ impl command::Handler for Handler {
         let bypass_cooldown = ctx.user.has_scope(Scope::GtavBypassCooldown);
 
         if !bypass_cooldown {
-            if let Some((what, remaining)) = self.check_cooldown(&ctx, &command, category_cooldown)
+            if let Some((what, remaining)) =
+                self.check_cooldown(&ctx, &command, category_cooldown).await
             {
                 ctx.respond(format!(
                     "{} cooldown in effect, please wait at least {}!",
@@ -968,8 +979,7 @@ impl command::Handler for Handler {
             }
         }
 
-        let id = self.id_counter;
-        self.id_counter += 1;
+        let id = self.id_counter.fetch_add(1, Ordering::SeqCst);
 
         let cost = cost * percentage / 100;
         let user = ctx.user.clone();
@@ -1067,7 +1077,7 @@ impl super::Module for Module {
             futures,
             injector,
             ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), Error> {
         let currency = injector.var()?;
         let settings = settings.scoped("gtav");
@@ -1113,16 +1123,16 @@ impl super::Module for Module {
                 reward_cooldown,
                 punish_cooldown,
                 per_user_cooldown,
-                per_user_cooldowns: Default::default(),
+                per_user_cooldowns: Mutex::new(Default::default()),
                 per_command_cooldown,
-                per_command_cooldowns: Default::default(),
+                per_command_cooldowns: Mutex::new(Default::default()),
                 per_command_configs: per_command_configs.clone(),
                 prefix,
                 other_percentage,
                 punish_percentage,
                 reward_percentage,
                 success_feedback,
-                id_counter: 0,
+                id_counter: AtomicUsize::new(0),
                 tx,
             },
         );

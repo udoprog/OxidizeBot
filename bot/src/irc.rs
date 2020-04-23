@@ -346,9 +346,9 @@ impl Irc {
                 channel.clone(),
                 sender.clone(),
                 idle.clone(),
-                &injector,
-                &chat_settings,
-                &settings,
+                injector.clone(),
+                chat_settings.clone(),
+                settings.clone(),
             )?;
 
             futures.push(
@@ -553,9 +553,9 @@ fn currency_loop<'a>(
     channel: Arc<twitch::Channel>,
     sender: Sender,
     idle: idle::Idle,
-    injector: &'a Injector,
-    chat_settings: &settings::Settings,
-    settings: &settings::Settings,
+    injector: Injector,
+    chat_settings: settings::Settings,
+    settings: settings::Settings,
 ) -> Result<impl Future<Output = Result<(), Error>> + 'a, Error> {
     let reward = 10;
     let default_interval = Duration::seconds(60 * 10);
@@ -601,7 +601,7 @@ fn currency_loop<'a>(
         }
     };
 
-    let mut currency = build(injector, &builder);
+    let mut currency = build(&injector, &builder);
 
     Ok(async move {
         let new_timer = |interval: &Duration, viewer_reward: bool| {
@@ -625,31 +625,31 @@ fn currency_loop<'a>(
                 }
                 update = db_stream.select_next_some() => {
                     builder.db = update;
-                    currency = build(injector, &builder);
+                    currency = build(&injector, &builder);
                 }
                 enabled = enabled_stream.select_next_some() => {
                     builder.enabled = enabled;
-                    currency = build(injector, &builder);
+                    currency = build(&injector, &builder);
                 }
                 update = ty_stream.select_next_some() => {
                     builder.ty = update;
-                    currency = build(injector, &builder);
+                    currency = build(&injector, &builder);
                 }
                 name = name_stream.select_next_some() => {
                     builder.name = name.map(Arc::new);
-                    currency = build(injector, &builder);
+                    currency = build(&injector, &builder);
                 }
                 mysql_url = mysql_url_stream.select_next_some() => {
                     builder.mysql_url = mysql_url;
-                    currency = build(injector, &builder);
+                    currency = build(&injector, &builder);
                 }
                 update = mysql_schema_stream.select_next_some() => {
                     builder.mysql_schema = update;
-                    currency = build(injector, &builder);
+                    currency = build(&injector, &builder);
                 }
                 command_enabled = command_enabled_stream.select_next_some() => {
                     builder.command_enabled = command_enabled;
-                    currency = build(injector, &builder);
+                    currency = build(&injector, &builder);
                 }
                 viewer_reward = viewer_reward_stream.select_next_some() => {
                     timer = new_timer(&reward_interval, viewer_reward);
@@ -706,7 +706,7 @@ struct Handler<'a> {
     /// Active moderator cooldown.
     moderator_cooldown: Option<Cooldown>,
     /// Handlers for specific commands like `!skip`.
-    handlers: module::Handlers<'a>,
+    handlers: module::Handlers,
     /// Build idle detection.
     idle: &'a idle::Idle,
     /// Pong timeout currently running.
@@ -720,7 +720,7 @@ struct Handler<'a> {
     /// Information about auth.
     auth: &'a Auth,
     /// Handler for currencies.
-    currency_handler: currency_admin::Handler,
+    currency_handler: Arc<currency_admin::Handler>,
     bad_words_enabled: Arc<RwLock<bool>>,
     url_whitelist_enabled: Arc<RwLock<bool>>,
     /// Handler for chat logs.
@@ -732,16 +732,16 @@ struct Handler<'a> {
 }
 
 /// Handle a command.
-pub async fn process_command<'a, 'b: 'a>(
-    command: &'a str,
-    ctx: command::Context,
-    global_bus: &'a Arc<bus::Bus<bus::Global>>,
-    currency_handler: &'a mut currency_admin::Handler,
-    handlers: &'a mut module::Handlers<'b>,
+pub async fn process_command(
+    command: &str,
+    mut ctx: command::Context,
+    global_bus: &Arc<bus::Bus<bus::Global>>,
+    currency_handler: &Arc<currency_admin::Handler>,
+    handlers: &module::Handlers,
 ) -> Result<(), Error> {
     match command {
         "ping" => {
-            ctx.user.respond("What do you want?");
+            ctx.respond("What do you want?");
             global_bus.send(bus::Global::Ping);
         }
         other => {
@@ -749,9 +749,9 @@ pub async fn process_command<'a, 'b: 'a>(
 
             let handler = match (other, currency_handler.command_name()) {
                 (other, Some(ref name)) if other == **name => {
-                    Some(currency_handler as &mut (dyn command::Handler + Send))
+                    Some(currency_handler.clone() as Arc<dyn command::Handler>)
                 }
-                (other, Some(..)) | (other, None) => handlers.get_mut(other),
+                (other, Some(..)) | (other, None) => handlers.get(other),
             };
 
             if let Some(handler) = handler {
@@ -778,7 +778,13 @@ pub async fn process_command<'a, 'b: 'a>(
                     }
                 }
 
-                handler.handle(ctx).await?;
+                task::spawn(async move {
+                    if let Err(e) = handler.handle(&mut ctx).await {
+                        ctx.respond("Sorry, something went wrong :(");
+                        log_error!(e, "Error when processing command");
+                    }
+                });
+
                 return Ok(());
             }
         }
@@ -964,8 +970,8 @@ impl<'a> Handler<'a> {
                     command,
                     ctx,
                     &self.global_bus,
-                    &mut self.currency_handler,
-                    &mut self.handlers,
+                    &self.currency_handler,
+                    &self.handlers,
                 );
 
                 if let Err(e) = result.await {

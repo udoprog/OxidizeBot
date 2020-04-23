@@ -3,6 +3,7 @@ use anyhow::Error;
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct Reward {
@@ -14,17 +15,18 @@ pub struct Handler {
     enabled: Arc<RwLock<bool>>,
     cooldown: Arc<RwLock<utils::Cooldown>>,
     currency: Arc<RwLock<Option<Currency>>>,
-    waters: Vec<(DateTime<Utc>, Option<Reward>)>,
+    waters: Mutex<Vec<(DateTime<Utc>, Option<Reward>)>>,
     stream_info: stream_info::StreamInfo,
     reward_multiplier: Arc<RwLock<u32>>,
 }
 
 impl Handler {
     fn check_waters(
-        &mut self,
+        &self,
+        waters: &mut Vec<(DateTime<Utc>, Option<Reward>)>,
         ctx: &mut command::Context,
     ) -> Option<(DateTime<Utc>, Option<Reward>)> {
-        if let Some((when, user)) = self.waters.last() {
+        if let Some((when, user)) = waters.last() {
             return Some((*when, user.clone()));
         }
 
@@ -44,14 +46,14 @@ impl Handler {
             }
         };
 
-        self.waters.push((started_at, None));
+        waters.push((started_at, None));
         Some((started_at, None))
     }
 }
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -75,13 +77,14 @@ impl command::Handler for Handler {
         match a.as_deref() {
             Some("undo") => {
                 ctx.check_scope(auth::Scope::WaterUndo).await?;
+                let mut waters = self.waters.lock().await;
 
-                let (_, reward) = match self.check_waters(&mut ctx) {
+                let (_, reward) = match self.check_waters(&mut waters, ctx) {
                     Some(water) => water,
                     None => return Ok(()),
                 };
 
-                self.waters.pop();
+                waters.pop();
 
                 let reward = match reward {
                     Some(reward) => reward,
@@ -104,7 +107,9 @@ impl command::Handler for Handler {
                 }
             }
             None => {
-                let (last, _) = match self.check_waters(&mut ctx) {
+                let mut waters = self.waters.lock().await;
+
+                let (last, _) = match self.check_waters(&mut waters, ctx) {
                     Some(water) => water,
                     None => return Ok(()),
                 };
@@ -122,7 +127,7 @@ impl command::Handler for Handler {
                 let amount = i64::max(0i64, diff.num_minutes());
                 let amount = (amount * *self.reward_multiplier.read() as i64) / 100i64;
 
-                self.waters.push((
+                waters.push((
                     now,
                     Some(Reward {
                         user: user.name().to_string(),
@@ -170,7 +175,7 @@ impl super::Module for Module {
             settings,
             injector,
             ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), Error> {
         let enabled = settings.var("water/enabled", false)?;
         let cooldown = settings.var(
@@ -185,7 +190,7 @@ impl super::Module for Module {
                 enabled,
                 cooldown,
                 currency: injector.var()?,
-                waters: Vec::new(),
+                waters: Mutex::new(Vec::new()),
                 stream_info: stream_info.clone(),
                 reward_multiplier,
             },

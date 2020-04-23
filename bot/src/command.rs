@@ -7,14 +7,17 @@ use tokio::sync::Mutex;
 
 #[async_trait]
 /// The handler trait for a given command.
-pub trait Handler {
+pub trait Handler
+where
+    Self: 'static + Send + Sync,
+{
     /// Scope required to run command.
     fn scope(&self) -> Option<Scope> {
         None
     }
 
     /// Handle the command.
-    async fn handle(&mut self, ctx: Context) -> Result<(), Error>;
+    async fn handle(&self, ctx: &mut Context) -> Result<(), Error>;
 }
 
 #[async_trait]

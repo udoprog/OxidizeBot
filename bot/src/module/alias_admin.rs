@@ -10,7 +10,7 @@ pub struct Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         let aliases = match self.aliases.read().clone() {
             Some(aliases) => aliases,
             None => return Ok(()),
@@ -72,7 +72,7 @@ impl super::Module for Module {
         &self,
         module::HookContext {
             injector, handlers, ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), Error> {
         handlers.insert(
             "alias",

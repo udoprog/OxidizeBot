@@ -1,4 +1,4 @@
-use crate::{api::OpenWeatherMap, auth, command, module, prelude::*, task};
+use crate::{api::OpenWeatherMap, auth, command, module, prelude::*};
 use anyhow::Error;
 use parking_lot::RwLock;
 use std::sync::Arc;
@@ -53,7 +53,7 @@ impl command::Handler for Weather {
         Some(auth::Scope::Weather)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
@@ -81,60 +81,45 @@ impl command::Handler for Weather {
                     }
                 };
 
-                let user = ctx.user.clone();
-                let user2 = user.clone();
                 let temperature_unit = *self.temperature_unit.read();
 
-                let future = async move {
-                    let current = api.current(loc.clone()).await?;
+                let current = api.current(loc.clone()).await?;
 
-                    let current = match current {
-                        Some(current) => current,
-                        None => {
-                            user.respond(format!("Could not find location `{}`", loc));
-                            return Ok(());
-                        }
-                    };
-
-                    let mut parts = Vec::with_capacity(4);
-
-                    let t = ThermodynamicTemperature::new::<kelvin>(current.main.temp);
-
-                    parts.push(temperature_unit.with(t));
-
-                    for w in current.weather {
-                        parts.push(w.to_string());
+                let current = match current {
+                    Some(current) => current,
+                    None => {
+                        ctx.respond(format!("Could not find location `{}`", loc));
+                        return Ok(());
                     }
-
-                    if let Some(rain) = current.rain {
-                        parts.extend(match (rain._1h, rain._3h) {
-                            (Some(m), _) => Some(format!("raining {:.0}mm/h", m)),
-                            (_, Some(m)) => Some(format!("raining {:.0}mm/3h", m)),
-                            _ => None,
-                        });
-                    }
-
-                    if let Some(snow) = current.snow {
-                        parts.extend(match (snow._1h, snow._3h) {
-                            (Some(m), _) => Some(format!("snowing {:.0}mm/h", m)),
-                            (_, Some(m)) => Some(format!("snowing {:.0}mm/3h", m)),
-                            _ => None,
-                        });
-                    }
-
-                    user.respond(format!("{} -> {}.", current.name, parts.join(", ")));
-                    Ok::<(), Error>(())
                 };
 
-                task::spawn(async move {
-                    match future.await {
-                        Ok(()) => (),
-                        Err(e) => {
-                            user2.respond("Failed to get current weather");
-                            log_error!(e, "Failed to get current weather");
-                        }
-                    }
-                });
+                let mut parts = Vec::with_capacity(4);
+
+                let t = ThermodynamicTemperature::new::<kelvin>(current.main.temp);
+
+                parts.push(temperature_unit.with(t));
+
+                for w in current.weather {
+                    parts.push(w.to_string());
+                }
+
+                if let Some(rain) = current.rain {
+                    parts.extend(match (rain._1h, rain._3h) {
+                        (Some(m), _) => Some(format!("raining {:.0}mm/h", m)),
+                        (_, Some(m)) => Some(format!("raining {:.0}mm/3h", m)),
+                        _ => None,
+                    });
+                }
+
+                if let Some(snow) = current.snow {
+                    parts.extend(match (snow._1h, snow._3h) {
+                        (Some(m), _) => Some(format!("snowing {:.0}mm/h", m)),
+                        (_, Some(m)) => Some(format!("snowing {:.0}mm/3h", m)),
+                        _ => None,
+                    });
+                }
+
+                ctx.respond(format!("{} -> {}.", current.name, parts.join(", ")));
             }
             _ => {
                 ctx.respond("Expected: current.");
@@ -161,7 +146,7 @@ impl super::Module for Module {
             settings,
             injector,
             ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), Error> {
         handlers.insert(
             "weather",

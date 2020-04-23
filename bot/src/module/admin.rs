@@ -4,17 +4,17 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Handler for the !admin command.
-pub struct Handler<'a> {
-    settings: &'a settings::Settings,
+pub struct Handler {
+    settings: settings::Settings,
     aliases: Arc<RwLock<Option<db::Aliases>>>,
     commands: Arc<RwLock<Option<db::Commands>>>,
     promotions: Arc<RwLock<Option<db::Promotions>>>,
     themes: Arc<RwLock<Option<db::Themes>>>,
 }
 
-impl Handler<'_> {
+impl Handler {
     /// List settings by prefix.
-    fn list_settings_by_prefix(&self, ctx: command::Context, key: &str) -> Result<(), Error> {
+    fn list_settings_by_prefix(&self, ctx: &mut command::Context, key: &str) -> Result<(), Error> {
         let mut results = Vec::new();
 
         let settings = self.settings.list_by_prefix(key)?;
@@ -58,12 +58,12 @@ impl Handler<'_> {
 }
 
 #[async_trait]
-impl<'a> command::Handler for Handler<'a> {
+impl command::Handler for Handler {
     fn scope(&self) -> Option<auth::Scope> {
         Some(auth::Scope::Admin)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
         match ctx.next().as_deref() {
             Some("refresh-mods") => {
                 ctx.privmsg("/mods");
@@ -90,12 +90,12 @@ impl<'a> command::Handler for Handler<'a> {
             }
             // Insert a value into a setting.
             Some("push") => {
-                let key = match key(&mut ctx) {
+                let key = match key(ctx) {
                     Some(key) => key,
                     None => return Ok(()),
                 };
 
-                let value = match self.edit_value_in_set(&mut ctx, &key) {
+                let value = match self.edit_value_in_set(ctx, &key) {
                     Some(ty) => ty,
                     None => return Ok(()),
                 };
@@ -111,12 +111,12 @@ impl<'a> command::Handler for Handler<'a> {
             }
             // Delete a value from a setting.
             Some("delete") => {
-                let key = match key(&mut ctx) {
+                let key = match key(ctx) {
                     Some(key) => key,
                     None => return Ok(()),
                 };
 
-                let value = match self.edit_value_in_set(&mut ctx, &key) {
+                let value = match self.edit_value_in_set(ctx, &key) {
                     Some(ty) => ty,
                     None => return Ok(()),
                 };
@@ -189,7 +189,7 @@ impl<'a> command::Handler for Handler<'a> {
             }
             // Get or set settings.
             Some("settings") => {
-                let key = match key(&mut ctx) {
+                let key = match key(ctx) {
                     Some(key) => key,
                     None => return Ok(()),
                 };
@@ -257,10 +257,10 @@ impl<'a> command::Handler for Handler<'a> {
     }
 }
 
-impl<'a> Handler<'a> {
+impl Handler {
     /// Handler for the toggle command.
-    async fn toggle(&mut self, mut ctx: command::Context) -> Result<(), anyhow::Error> {
-        let key = match key(&mut ctx) {
+    async fn toggle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
+        let key = match key(ctx) {
             Some(key) => key,
             None => {
                 ctx.respond("Expected: toggle <key>");
@@ -314,7 +314,7 @@ impl<'a> Handler<'a> {
     ///
     /// Also tests that we have the permission to modify the specified setting.
     fn edit_value_in_set(
-        &mut self,
+        &self,
         ctx: &mut command::Context,
         key: &str,
     ) -> Option<serde_json::Value> {
@@ -390,12 +390,12 @@ impl super::Module for Module {
             handlers,
             settings,
             ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), Error> {
         handlers.insert(
             "admin",
             Handler {
-                settings,
+                settings: settings.clone(),
                 aliases: injector.var()?,
                 commands: injector.var()?,
                 promotions: injector.var()?,

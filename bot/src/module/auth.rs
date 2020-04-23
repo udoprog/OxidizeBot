@@ -3,13 +3,13 @@ use anyhow::Error;
 use chrono::Utc;
 
 /// Handler for the !auth command.
-pub struct Handler<'a> {
-    auth: &'a auth::Auth,
+pub struct Handler {
+    auth: auth::Auth,
 }
 
 #[async_trait]
-impl<'a> command::Handler for Handler<'a> {
-    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), Error> {
+impl command::Handler for Handler {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         match ctx.next().as_deref() {
             Some("scopes") => {
                 let filter = ctx.next();
@@ -121,9 +121,9 @@ impl super::Module for Module {
 
     async fn hook(
         &self,
-        module::HookContext { handlers, auth, .. }: module::HookContext<'_, '_>,
+        module::HookContext { handlers, auth, .. }: module::HookContext<'_>,
     ) -> Result<(), Error> {
-        handlers.insert("auth", Handler { auth });
+        handlers.insert("auth", Handler { auth: auth.clone() });
         Ok(())
     }
 }

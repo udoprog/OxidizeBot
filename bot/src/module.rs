@@ -1,5 +1,5 @@
 use crate::{api, command, idle, injector, irc, settings, stream_info, utils};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 #[macro_use]
 mod macros;
@@ -25,30 +25,30 @@ pub mod water;
 pub mod weather;
 
 #[derive(Default)]
-pub struct Handlers<'a> {
-    handlers: HashMap<String, Box<dyn command::Handler + Send + 'a>>,
+pub struct Handlers {
+    handlers: HashMap<String, Arc<dyn command::Handler>>,
 }
 
-impl<'a> Handlers<'a> {
+impl Handlers {
     /// Insert the given handler.
-    pub fn insert(&mut self, command: impl AsRef<str>, handler: impl command::Handler + Send + 'a) {
+    pub fn insert(&mut self, command: impl AsRef<str>, handler: impl command::Handler) {
         self.handlers
-            .insert(command.as_ref().to_string(), Box::new(handler));
+            .insert(command.as_ref().to_string(), Arc::new(handler));
     }
 
     /// Lookup the given command mutably.
-    pub fn get_mut(&mut self, command: &str) -> Option<&mut (dyn command::Handler + Send + 'a)> {
-        self.handlers.get_mut(command).map(|command| &mut **command)
+    pub fn get(&self, command: &str) -> Option<Arc<dyn command::Handler>> {
+        self.handlers.get(command).cloned()
     }
 }
 
 /// Context for a hook.
-pub struct HookContext<'a: 'b, 'b> {
-    pub injector: &'b injector::Injector,
-    pub handlers: &'b mut Handlers<'a>,
-    pub futures: &'b mut utils::Futures<'a>,
-    pub stream_info: &'b stream_info::StreamInfo,
-    pub idle: &'b idle::Idle,
+pub struct HookContext<'a> {
+    pub injector: &'a injector::Injector,
+    pub handlers: &'a mut Handlers,
+    pub futures: &'a mut utils::Futures,
+    pub stream_info: &'a stream_info::StreamInfo,
+    pub idle: &'a idle::Idle,
     pub twitch: &'a api::Twitch,
     pub streamer_twitch: &'a api::Twitch,
     pub sender: &'a irc::Sender,
@@ -57,10 +57,13 @@ pub struct HookContext<'a: 'b, 'b> {
 }
 
 #[async_trait::async_trait]
-pub trait Module: 'static + Send + Sync {
+pub trait Module
+where
+    Self: 'static + Send + Sync,
+{
     /// Type of the module as a string to help with diagnostics.
     fn ty(&self) -> &'static str;
 
     /// Set up command handlers for this module.
-    async fn hook(&self, _: HookContext<'_, '_>) -> Result<(), anyhow::Error>;
+    async fn hook(&self, _: HookContext<'_>) -> Result<(), anyhow::Error>;
 }

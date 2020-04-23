@@ -36,7 +36,7 @@ impl command::Handler for EightBall {
         Some(auth::Scope::EightBall)
     }
 
-    async fn handle(&mut self, ctx: command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
         use rand::Rng as _;
 
         if !*self.enabled.read() {
@@ -74,7 +74,7 @@ impl super::Module for Module {
         &self,
         module::HookContext {
             handlers, settings, ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), anyhow::Error> {
         handlers.insert(
             "8ball",

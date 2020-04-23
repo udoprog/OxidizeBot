@@ -30,7 +30,7 @@ impl Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         let currency = match self.currency.read().as_ref() {
             Some(currency) => currency.clone(),
             None => {
@@ -254,7 +254,7 @@ impl command::Handler for Handler {
 
 pub fn setup(
     injector: &Injector,
-) -> Result<(impl Future<Output = Result<(), Error>>, Handler), Error> {
+) -> Result<(impl Future<Output = Result<(), Error>>, Arc<Handler>), Error> {
     let (currency_stream, currency) = injector.stream::<Currency>();
     let currency = Arc::new(RwLock::new(currency));
 
@@ -274,5 +274,5 @@ pub fn setup(
         }
     };
 
-    Ok((future, handler))
+    Ok((future, Arc::new(handler)))
 }

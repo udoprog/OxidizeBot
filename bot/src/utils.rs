@@ -5,8 +5,8 @@ use std::{borrow::Cow, fmt, mem, ops, sync::Arc, time};
 
 mod duration;
 
-pub type Futures<'a> =
-    futures::stream::FuturesUnordered<future::BoxFuture<'a, Result<(), anyhow::Error>>>;
+pub type Futures =
+    futures::stream::FuturesUnordered<future::BoxFuture<'static, Result<(), anyhow::Error>>>;
 
 pub trait Driver<'a> {
     /// Drive the given future.

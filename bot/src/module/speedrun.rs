@@ -9,7 +9,7 @@ use crate::{
     auth, command, module,
     prelude::*,
     storage::Cache,
-    task, utils,
+    utils,
 };
 use anyhow::{anyhow, Error};
 use parking_lot::RwLock;
@@ -24,7 +24,7 @@ pub struct Speedrun {
 
 impl Speedrun {
     /// Query a user.
-    fn query_personal_bests(&self, mut ctx: command::Context) -> Result<(), Error> {
+    async fn query_personal_bests(&self, ctx: &mut command::Context) -> Result<(), Error> {
         let mut query_user = None;
         let mut category_filter = CategoryFilter::default();
         let mut games = Vec::new();
@@ -105,142 +105,123 @@ impl Speedrun {
             }
         };
 
-        let speedrun = self.speedrun.clone();
-        let user = ctx.user.clone();
-        let async_user = user.clone();
+        let match_level = match_level.as_deref();
 
-        let future = async move {
-            let user = async_user;
-            let match_level = match_level.as_deref();
+        let u = match self.speedrun.user_by_id(&query_user).await? {
+            Some(u) => u,
+            None => {
+                ctx.respond(format!("No user on speedrun.com named `{}`", query_user));
+                return Ok(());
+            }
+        };
 
-            let u = match speedrun.user_by_id(&query_user).await? {
-                Some(u) => u,
-                None => {
-                    user.respond(format!("No user on speedrun.com named `{}`", query_user));
-                    return Ok(());
-                }
+        let mut embeds = Embeds::default();
+        embeds.push(Embed::Game);
+        embeds.push(Embed::Category);
+        let personal_bests = self.speedrun.user_personal_bests(&u.id, &embeds).await?;
+
+        let personal_bests = match personal_bests {
+            Some(personal_bests) => personal_bests,
+            None => {
+                ctx.respond("No personal bests found");
+                return Ok(());
+            }
+        };
+
+        let mut by_game = HashMap::<String, Group>::new();
+
+        for mut run in personal_bests {
+            let game = match run.game.take() {
+                Some(game) => game.data,
+                None => continue,
             };
 
-            let mut embeds = Embeds::default();
-            embeds.push(Embed::Game);
-            embeds.push(Embed::Category);
-            let personal_bests = speedrun.user_personal_bests(&u.id, &embeds).await?;
+            if !games.is_empty() && !games.iter().any(|g| game.matches(g)) {
+                continue;
+            }
 
-            let personal_bests = match personal_bests {
-                Some(personal_bests) => personal_bests,
-                None => {
-                    user.respond("No personal bests found");
-                    return Ok(());
-                }
+            let category = match run.category.take() {
+                Some(category) => category.data,
+                None => continue,
             };
 
-            let mut by_game = HashMap::<String, Group>::new();
+            if !category_filter.match_category(&category) {
+                continue;
+            }
 
-            for mut run in personal_bests {
-                let game = match run.game.take() {
-                    Some(game) => game.data,
-                    None => continue,
-                };
+            let levels = self.speedrun.game_levels(&game.id);
+            let variables = self.speedrun.category_variables(&run.run.category);
 
-                if !games.is_empty() && !games.iter().any(|g| game.matches(g)) {
+            let (levels, variables) = future::try_join(levels, variables).await?;
+
+            let variables = match variables {
+                Some(variables) => variables,
+                None => continue,
+            };
+
+            let sub_categories = SubCategory::from_variables(&variables);
+
+            let mut name = category.name.clone();
+
+            if let Some(c) = SubCategory::match_run(&run.run, &sub_categories) {
+                if !category_filter.match_sub_category(&c) {
                     continue;
                 }
 
-                let category = match run.category.take() {
-                    Some(category) => category.data,
-                    None => continue,
-                };
-
-                if !category_filter.match_category(&category) {
+                if abbrev {
+                    name = format!("{} {}", name, abbreviate_text(&c.label));
+                } else {
+                    name = format!("{} / {}", name, c.label);
+                }
+            } else {
+                // skip if we are filtering over sub categories.
+                if category_filter.sub_category_name.is_some() {
                     continue;
                 }
+            }
 
-                let levels = speedrun.game_levels(&game.id);
-                let variables = speedrun.category_variables(&run.run.category);
-
-                let (levels, variables) = future::try_join(levels, variables).await?;
-
-                let variables = match variables {
-                    Some(variables) => variables,
-                    None => continue,
-                };
-
-                let sub_categories = SubCategory::from_variables(&variables);
-
-                let mut name = category.name.clone();
-
-                if let Some(c) = SubCategory::match_run(&run.run, &sub_categories) {
-                    if !category_filter.match_sub_category(&c) {
-                        continue;
+            if let Some(levels) = levels {
+                if let Some(level) = match_levels(run.run.level.as_ref(), &levels) {
+                    if let Some(match_level) = match_level {
+                        if !level.matches(match_level) {
+                            continue;
+                        }
                     }
 
                     if abbrev {
-                        name = format!("{} {}", name, abbreviate_text(&c.label));
+                        name = format!("{} {}", level.name, abbreviate_text(&name));
                     } else {
-                        name = format!("{} / {}", name, c.label);
-                    }
-                } else {
-                    // skip if we are filtering over sub categories.
-                    if category_filter.sub_category_name.is_some() {
-                        continue;
+                        name = format!("{} ({})", level.name, name);
                     }
                 }
-
-                if let Some(levels) = levels {
-                    if let Some(level) = match_levels(run.run.level.as_ref(), &levels) {
-                        if let Some(match_level) = match_level {
-                            if !level.matches(match_level) {
-                                continue;
-                            }
-                        }
-
-                        if abbrev {
-                            name = format!("{} {}", level.name, abbreviate_text(&name));
-                        } else {
-                            name = format!("{} ({})", level.name, name);
-                        }
-                    }
-                }
-
-                by_game
-                    .entry(game.id.clone())
-                    .or_insert_with(|| Group::new(game))
-                    .runs
-                    .push(GroupRun { name, run });
             }
 
-            let mut results = Vec::new();
+            by_game
+                .entry(game.id.clone())
+                .or_insert_with(|| Group::new(game))
+                .runs
+                .push(GroupRun { name, run });
+        }
 
-            for (_, group) in by_game {
-                let mut runs = Vec::new();
+        let mut results = Vec::new();
 
-                for GroupRun { name, run } in group.runs {
-                    let duration = utils::compact_duration(run.run.times.primary.as_std());
-                    runs.push(format!("{}: {} (#{})", name, duration, run.place));
-                }
+        for (_, group) in by_game {
+            let mut runs = Vec::new();
 
-                results.push(format!(
-                    "{} ({}) -> {}",
-                    group.game.names.name(),
-                    group.game.abbreviation,
-                    runs.join(" - ")
-                ));
+            for GroupRun { name, run } in group.runs {
+                let duration = utils::compact_duration(run.run.times.primary.as_std());
+                runs.push(format!("{}: {} (#{})", name, duration, run.place));
             }
 
-            user.respond_lines(results, "*no runs*");
-            Ok::<(), Error>(())
-        };
+            results.push(format!(
+                "{} ({}) -> {}",
+                group.game.names.name(),
+                group.game.abbreviation,
+                runs.join(" - ")
+            ));
+        }
 
-        task::spawn(async move {
-            match future.await {
-                Ok(()) => (),
-                Err(e) => {
-                    user.respond("Failed to fetch records :(");
-                    log_error!(e, "Failed to fetch records");
-                }
-            }
-        });
-
+        ctx.user.respond_lines(results, "*no runs*");
         return Ok(());
 
         /// Runs per game.
@@ -265,7 +246,7 @@ impl Speedrun {
     }
 
     /// Query a game.
-    fn query_game(&self, mut ctx: command::Context) -> Result<(), Error> {
+    async fn query_game(&self, ctx: &mut command::Context) -> Result<(), Error> {
         let top = *self.top.read();
 
         let game_query = match ctx.next_str("<game> [options]") {
@@ -323,157 +304,142 @@ impl Speedrun {
             }
         }
 
-        let speedrun = self.speedrun.clone();
-        let user = ctx.user.clone();
-        let async_user = user.clone();
+        let match_user = match_user.as_deref();
 
-        let future = async move {
-            let user = async_user;
-            let match_user = match_user.as_deref();
+        let game = self.speedrun.game_by_id(&game_query).await?;
 
-            let game = speedrun.game_by_id(&game_query).await?;
-
-            let game = match game {
-                Some(game) => game,
-                None => {
-                    user.respond(format!("No game matching `{}`", game_query));
-                    return Ok::<(), Error>(());
-                }
-            };
-
-            let mut embeds = Embeds::default();
-            embeds.push(Embed::Variables);
-
-            let categories = speedrun.game_categories_by_id(&game.id, &embeds).await?;
-
-            let categories = match categories {
-                Some(categories) => categories,
-                None => {
-                    user.respond("No categories for that game");
-                    return Ok(());
-                }
-            };
-
-            let mut results = Vec::new();
-
-            let mut categories_to_use = Vec::new();
-
-            for category in &categories {
-                if !category_filter.match_category(category) {
-                    continue;
-                }
-
-                let variables = match &category.variables {
-                    Some(variables) => &variables.data,
-                    None => continue,
-                };
-
-                let sub_categories = SubCategory::from_variables(variables);
-
-                if sub_categories.is_empty() {
-                    if category_filter.sub_category_name.is_some() {
-                        continue;
-                    }
-
-                    categories_to_use.push((category.name.clone(), Variables::default(), category));
-                    continue;
-                }
-
-                for c in sub_categories {
-                    if !category_filter.match_sub_category(&c) {
-                        continue;
-                    }
-
-                    let mut name = category.name.clone();
-                    let mut variables = Variables::default();
-
-                    variables.insert(c.key, c.value);
-
-                    if abbrev {
-                        name = format!("{} {}", name, abbreviate_text(&c.label));
-                    } else {
-                        name = format!("{} ({})", name, c.label);
-                    }
-
-                    categories_to_use.push((name, variables, category));
-                }
+        let game = match game {
+            Some(game) => game,
+            None => {
+                ctx.respond(format!("No game matching `{}`", game_query));
+                return Ok::<(), Error>(());
             }
-
-            let num_categories = categories_to_use.len();
-            let mut embeds = Embeds::default();
-            embeds.push(Embed::Players);
-
-            for (name, variables, category) in categories_to_use {
-                let records = speedrun
-                    .leaderboard(&game.id, &category.id, top, &variables, &embeds)
-                    .await?;
-
-                let records = match records {
-                    Some(records) => records,
-                    None => continue,
-                };
-
-                // Embedded players.
-                let mut embedded_players = HashMap::new();
-
-                if let Some(players) = records.players {
-                    for p in players.data {
-                        if let Players::User(p) = p {
-                            let _ = embedded_players.insert(p.id.clone(), p);
-                        }
-                    }
-                }
-
-                let mut runs = Vec::new();
-
-                for run in records.runs.into_iter() {
-                    if runs.len() >= 3 || num_categories > 1 && !runs.is_empty() {
-                        break;
-                    }
-
-                    let mut names = Vec::new();
-
-                    for player in run.run.players {
-                        let name =
-                            Self::player_name(&speedrun, &player, match_user, &embedded_players)
-                                .await?;
-                        names.extend(name);
-                    }
-
-                    let duration = utils::compact_duration(run.run.times.primary.as_std());
-
-                    let names = utils::human_list(&names).unwrap_or_else(|| String::from("*none*"));
-
-                    runs.push(format!(
-                        "{names}: {duration} (#{place})",
-                        names = names,
-                        duration = duration,
-                        place = run.place
-                    ));
-                }
-
-                let runs = match runs.as_slice() {
-                    [] => continue,
-                    runs => runs.join(" - "),
-                };
-
-                results.push(format!("{} -> {}", name, runs));
-            }
-
-            user.respond_lines(results, "*no runs*");
-            Ok(())
         };
 
-        task::spawn(async move {
-            match future.await {
-                Ok(()) => (),
-                Err(e) => {
-                    user.respond("Failed to fetch records :(");
-                    log_error!(e, "Failed to fetch records");
+        let mut embeds = Embeds::default();
+        embeds.push(Embed::Variables);
+
+        let categories = self
+            .speedrun
+            .game_categories_by_id(&game.id, &embeds)
+            .await?;
+
+        let categories = match categories {
+            Some(categories) => categories,
+            None => {
+                ctx.respond("No categories for that game");
+                return Ok(());
+            }
+        };
+
+        let mut results = Vec::new();
+
+        let mut categories_to_use = Vec::new();
+
+        for category in &categories {
+            if !category_filter.match_category(category) {
+                continue;
+            }
+
+            let variables = match &category.variables {
+                Some(variables) => &variables.data,
+                None => continue,
+            };
+
+            let sub_categories = SubCategory::from_variables(variables);
+
+            if sub_categories.is_empty() {
+                if category_filter.sub_category_name.is_some() {
+                    continue;
+                }
+
+                categories_to_use.push((category.name.clone(), Variables::default(), category));
+                continue;
+            }
+
+            for c in sub_categories {
+                if !category_filter.match_sub_category(&c) {
+                    continue;
+                }
+
+                let mut name = category.name.clone();
+                let mut variables = Variables::default();
+
+                variables.insert(c.key, c.value);
+
+                if abbrev {
+                    name = format!("{} {}", name, abbreviate_text(&c.label));
+                } else {
+                    name = format!("{} ({})", name, c.label);
+                }
+
+                categories_to_use.push((name, variables, category));
+            }
+        }
+
+        let num_categories = categories_to_use.len();
+        let mut embeds = Embeds::default();
+        embeds.push(Embed::Players);
+
+        for (name, variables, category) in categories_to_use {
+            let records = self
+                .speedrun
+                .leaderboard(&game.id, &category.id, top, &variables, &embeds)
+                .await?;
+
+            let records = match records {
+                Some(records) => records,
+                None => continue,
+            };
+
+            // Embedded players.
+            let mut embedded_players = HashMap::new();
+
+            if let Some(players) = records.players {
+                for p in players.data {
+                    if let Players::User(p) = p {
+                        let _ = embedded_players.insert(p.id.clone(), p);
+                    }
                 }
             }
-        });
 
+            let mut runs = Vec::new();
+
+            for run in records.runs.into_iter() {
+                if runs.len() >= 3 || num_categories > 1 && !runs.is_empty() {
+                    break;
+                }
+
+                let mut names = Vec::new();
+
+                for player in run.run.players {
+                    let name =
+                        Self::player_name(&self.speedrun, &player, match_user, &embedded_players)
+                            .await?;
+                    names.extend(name);
+                }
+
+                let duration = utils::compact_duration(run.run.times.primary.as_std());
+
+                let names = utils::human_list(&names).unwrap_or_else(|| String::from("*none*"));
+
+                runs.push(format!(
+                    "{names}: {duration} (#{place})",
+                    names = names,
+                    duration = duration,
+                    place = run.place
+                ));
+            }
+
+            let runs = match runs.as_slice() {
+                [] => continue,
+                runs => runs.join(" - "),
+            };
+
+            results.push(format!("{} -> {}", name, runs));
+        }
+
+        ctx.user.respond_lines(results, "*no runs*");
         Ok(())
     }
 
@@ -521,17 +487,17 @@ impl command::Handler for Speedrun {
         Some(auth::Scope::Speedrun)
     }
 
-    async fn handle(&mut self, mut ctx: command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
         if !*self.enabled.read() {
             return Ok(());
         }
 
         match ctx.next().as_deref() {
             Some("personal-bests") => {
-                self.query_personal_bests(ctx)?;
+                self.query_personal_bests(ctx).await?;
             }
             Some("record") | Some("game") => {
-                self.query_game(ctx)?;
+                self.query_game(ctx).await?;
             }
             _ => {
                 ctx.respond("Expected argument: record, personal-bests.");
@@ -747,7 +713,7 @@ impl super::Module for Module {
             settings,
             injector,
             ..
-        }: module::HookContext<'_, '_>,
+        }: module::HookContext<'_>,
     ) -> Result<(), Error> {
         let cache: Cache = injector.get().ok_or_else(|| anyhow!("missing cache"))?;
         let speedrun = injector
