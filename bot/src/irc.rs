@@ -443,7 +443,7 @@ impl Irc {
                             bus::Command::Raw { command } => {
                                 log::trace!("Raw command: {}", command);
 
-                                if let Err(e) = handler.raw(&command).await {
+                                if let Err(e) = handler.raw(command).await {
                                     log_error!(e, "Failed to handle message");
                                 }
                             }
@@ -879,11 +879,23 @@ impl<'a> Handler<'a> {
     }
 
     /// Process the given command.
-    pub async fn process_message(&mut self, user: &User, mut message: &str) -> Result<(), Error> {
-        for (key, hook) in self.context_inner.message_hooks.lock().await.iter_mut() {
-            hook.peek(&user, message)
-                .with_context(|| anyhow!("hook `{}` failed", key))?;
-        }
+    pub async fn process_message(&mut self, user: &User, mut message: String) -> Result<(), Error> {
+        // Run message hooks.
+        task::spawn({
+            let user = user.clone();
+            let context_inner = self.context_inner.clone();
+            let message = message.clone();
+
+            async move {
+                let mut message_hooks = context_inner.message_hooks.lock().await;
+
+                for (key, hook) in &mut *message_hooks {
+                    if let Err(e) = hook.peek(&user, &message).await {
+                        log_error!(e, "Hook `{}` failed", key);
+                    }
+                }
+            }
+        });
 
         // only non-moderators and non-streamer bumps the idle counter.
         if !user.is_streamer() {
@@ -891,13 +903,11 @@ impl<'a> Handler<'a> {
         }
 
         // NB: declared here to be in scope.
-        let mut resolved;
-
         let mut seen = HashSet::new();
         let mut path = Vec::new();
 
         if let Some(aliases) = self.aliases.as_ref() {
-            while let Some((key, next)) = aliases.resolve(user.channel(), message) {
+            while let Some((key, next)) = aliases.resolve(user.channel(), &message) {
                 path.push(key.to_string());
 
                 if !seen.insert(key.clone()) {
@@ -908,8 +918,7 @@ impl<'a> Handler<'a> {
                     return Ok(());
                 }
 
-                resolved = next;
-                message = &resolved;
+                message = next;
             }
         }
 
@@ -961,7 +970,7 @@ impl<'a> Handler<'a> {
             }
         }
 
-        if self.should_be_deleted(&user, message) {
+        if self.should_be_deleted(&user, &message) {
             self.delete_message(&user)?;
         }
 
@@ -969,7 +978,7 @@ impl<'a> Handler<'a> {
     }
 
     /// Run the given raw command.
-    pub async fn raw(&mut self, message: &str) -> Result<(), Error> {
+    pub async fn raw(&mut self, message: String) -> Result<(), Error> {
         let tags = Tags::default();
 
         let user = User {
@@ -991,7 +1000,7 @@ impl<'a> Handler<'a> {
     /// Handle the given command.
     pub async fn handle(&mut self, mut m: Message) -> Result<(), Error> {
         match m.command {
-            Command::PRIVMSG(_, ref message) => {
+            Command::PRIVMSG(_, message) => {
                 let tags = Tags::from_tags(m.tags.take());
 
                 let name = m

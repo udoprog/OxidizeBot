@@ -17,10 +17,11 @@ pub trait Handler {
     async fn handle(&mut self, ctx: Context<'_>) -> Result<(), Error>;
 }
 
+#[async_trait]
 /// A trait for peeking into chat messages.
 pub trait MessageHook: std::any::Any + Send + Sync {
     /// Peek the given message.
-    fn peek(&mut self, user: &irc::User, m: &str) -> Result<(), Error>;
+    async fn peek(&mut self, user: &irc::User, m: &str) -> Result<(), Error>;
 }
 
 pub(crate) struct ContextInner {

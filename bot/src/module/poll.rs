@@ -142,8 +142,9 @@ impl ActivePoll {
     }
 }
 
+#[async_trait]
 impl command::MessageHook for ActivePoll {
-    fn peek(&mut self, user: &irc::User, m: &str) -> Result<(), Error> {
+    async fn peek(&mut self, user: &irc::User, m: &str) -> Result<(), Error> {
         let mut inner = self.inner.write();
 
         let user = match user.real() {
