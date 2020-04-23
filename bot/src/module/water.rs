@@ -74,7 +74,7 @@ impl command::Handler for Handler {
 
         match a.as_deref() {
             Some("undo") => {
-                ctx.check_scope(auth::Scope::WaterUndo)?;
+                ctx.check_scope(auth::Scope::WaterUndo).await?;
 
                 let (_, reward) = match self.check_waters(&mut ctx) {
                     Some(water) => water,

@@ -1,7 +1,7 @@
 /// Helper macro for constructing an enable command.
 macro_rules! command_enable {
     ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
-        $ctx.check_scope(crate::auth::Scope::$edit_scope)?;
+        $ctx.check_scope(crate::auth::Scope::$edit_scope).await?;
 
         let name = match $ctx.next() {
             Some(name) => name,
@@ -23,7 +23,7 @@ macro_rules! command_enable {
 /// Helper macro for constructing an disable command.
 macro_rules! command_disable {
     ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
-        $ctx.check_scope(crate::auth::Scope::$edit_scope)?;
+        $ctx.check_scope(crate::auth::Scope::$edit_scope).await?;
 
         let name = match $ctx.next() {
             Some(name) => name,
@@ -45,7 +45,7 @@ macro_rules! command_disable {
 /// Helper macro for constructing a clear-group command.
 macro_rules! command_clear_group {
     ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
-        $ctx.check_scope(crate::auth::Scope::$edit_scope)?;
+        $ctx.check_scope(crate::auth::Scope::$edit_scope).await?;
 
         let name = match $ctx.next() {
             Some(name) => name,
@@ -67,7 +67,7 @@ macro_rules! command_clear_group {
 /// Helper macro for constructing a build command.
 macro_rules! command_group {
     ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
-        $ctx.check_scope(crate::auth::Scope::$edit_scope)?;
+        $ctx.check_scope(crate::auth::Scope::$edit_scope).await?;
 
         let name = match $ctx.next() {
             Some(name) => name,
@@ -135,7 +135,7 @@ macro_rules! command_list {
 
 macro_rules! command_delete {
     ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
-        $ctx.check_scope(crate::auth::Scope::$edit_scope)?;
+        $ctx.check_scope(crate::auth::Scope::$edit_scope).await?;
 
         let name = match $ctx.next() {
             Some(name) => name,
@@ -155,7 +155,7 @@ macro_rules! command_delete {
 
 macro_rules! command_rename {
     ($ctx:expr, $db:expr, $what:expr, $edit_scope:ident) => {{
-        $ctx.check_scope(crate::auth::Scope::$edit_scope)?;
+        $ctx.check_scope(crate::auth::Scope::$edit_scope).await?;
 
         let (from, to) = match ($ctx.next(), $ctx.next()) {
             (Some(from), Some(to)) => (from, to),

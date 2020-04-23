@@ -18,7 +18,7 @@ impl command::Handler for Handler {
 
         match next.as_deref() {
             Some("edit") => {
-                ctx.check_scope(auth::Scope::ThemeEdit)?;
+                ctx.check_scope(auth::Scope::ThemeEdit).await?;
 
                 let name = ctx_try!(ctx.next_str("<name> <track-id>"));
                 let track_id = ctx_try!(ctx.next_parse("<name> <track-id>"));
@@ -27,7 +27,7 @@ impl command::Handler for Handler {
                 ctx.respond("Edited theme.");
             }
             Some("edit-duration") => {
-                ctx.check_scope(auth::Scope::ThemeEdit)?;
+                ctx.check_scope(auth::Scope::ThemeEdit).await?;
 
                 let name = ctx_try!(ctx.next_str("<name> <start> <end>"));
                 let start = ctx_try!(ctx.next_parse("<name> <start> <end>"));

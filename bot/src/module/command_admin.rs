@@ -27,7 +27,7 @@ impl command::Handler for Handler {
 
         match next.as_deref() {
             Some("edit") => {
-                ctx.check_scope(auth::Scope::CommandEdit)?;
+                ctx.check_scope(auth::Scope::CommandEdit).await?;
 
                 let name = ctx_try!(ctx.next_str("<name>"));
                 let template = ctx_try!(ctx.rest_parse("<name> <template>"));
@@ -36,7 +36,7 @@ impl command::Handler for Handler {
                 ctx.respond("Edited command.");
             }
             Some("pattern") => {
-                ctx.check_scope(auth::Scope::CommandEdit)?;
+                ctx.check_scope(auth::Scope::CommandEdit).await?;
 
                 let name = ctx_try!(ctx.next_str("<name> [pattern]"));
 

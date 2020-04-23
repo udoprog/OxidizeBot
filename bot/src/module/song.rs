@@ -343,7 +343,7 @@ impl command::Handler for Handler {
 
         match ctx.next().as_deref() {
             Some("theme") => {
-                ctx.check_scope(Scope::SongTheme)?;
+                ctx.check_scope(Scope::SongTheme).await?;
                 let name = ctx_try!(ctx.next_str("<name>"));
                 let user = ctx.user.clone();
 
@@ -369,7 +369,7 @@ impl command::Handler for Handler {
                 });
             }
             Some("promote") => {
-                ctx.check_scope(Scope::SongEditQueue)?;
+                ctx.check_scope(Scope::SongEditQueue).await?;
 
                 let index = match ctx.next().and_then(|n| parse_queue_position(&ctx.user, &n)) {
                     Some(index) => index,
@@ -383,7 +383,7 @@ impl command::Handler for Handler {
                 }
             }
             Some("close") => {
-                ctx.check_scope(Scope::SongEditQueue)?;
+                ctx.check_scope(Scope::SongEditQueue).await?;
 
                 player.close(match ctx.rest() {
                     "" => None,
@@ -392,7 +392,7 @@ impl command::Handler for Handler {
                 ctx.respond("Closed player from further requests.");
             }
             Some("open") => {
-                ctx.check_scope(Scope::SongEditQueue)?;
+                ctx.check_scope(Scope::SongEditQueue).await?;
 
                 player.open();
                 ctx.respond("Opened player for requests.");
@@ -410,7 +410,7 @@ impl command::Handler for Handler {
                 let mut limit = 3usize;
 
                 if let Some(n) = ctx.next() {
-                    ctx.check_scope(Scope::SongListLimit)?;
+                    ctx.check_scope(Scope::SongListLimit).await?;
 
                     if let Ok(n) = str::parse(&n) {
                         limit = n;
@@ -456,7 +456,7 @@ impl command::Handler for Handler {
                 }
             },
             Some("purge") => {
-                ctx.check_scope(Scope::SongEditQueue)?;
+                ctx.check_scope(Scope::SongEditQueue).await?;
 
                 player.purge()?;
                 ctx.respond("Song queue purged.");
@@ -523,11 +523,11 @@ impl command::Handler for Handler {
                     Some("last") => match ctx.next() {
                         Some(last_user) => {
                             let last_user = last_user.to_lowercase();
-                            ctx.check_scope(Scope::SongEditQueue)?;
+                            ctx.check_scope(Scope::SongEditQueue).await?;
                             player.remove_last_by_user(&last_user)?
                         }
                         None => {
-                            ctx.check_scope(Scope::SongEditQueue)?;
+                            ctx.check_scope(Scope::SongEditQueue).await?;
                             player.remove_last()?
                         }
                     },
@@ -543,7 +543,7 @@ impl command::Handler for Handler {
                         player.remove_last_by_user(user.name())?
                     }
                     Some(n) => {
-                        ctx.check_scope(Scope::SongEditQueue)?;
+                        ctx.check_scope(Scope::SongEditQueue).await?;
 
                         let n = match parse_queue_position(&ctx.user, n) {
                             Some(n) => n,
@@ -567,7 +567,7 @@ impl command::Handler for Handler {
                 match ctx.next().as_deref() {
                     // setting volume
                     Some(other) => {
-                        ctx.check_scope(Scope::SongVolume)?;
+                        ctx.check_scope(Scope::SongVolume).await?;
 
                         let (diff, argument) = match other.chars().next() {
                             Some('+') => (Some(true), &other[1..]),
@@ -610,22 +610,22 @@ impl command::Handler for Handler {
                 }
             }
             Some("skip") => {
-                ctx.check_scope(Scope::SongPlaybackControl)?;
+                ctx.check_scope(Scope::SongPlaybackControl).await?;
                 player.skip()?;
             }
             Some("request") => {
                 self.handle_request(ctx, player)?;
             }
             Some("toggle") => {
-                ctx.check_scope(Scope::SongPlaybackControl)?;
+                ctx.check_scope(Scope::SongPlaybackControl).await?;
                 player.toggle()?;
             }
             Some("play") => {
-                ctx.check_scope(Scope::SongPlaybackControl)?;
+                ctx.check_scope(Scope::SongPlaybackControl).await?;
                 player.play()?;
             }
             Some("pause") => {
-                ctx.check_scope(Scope::SongPlaybackControl)?;
+                ctx.check_scope(Scope::SongPlaybackControl).await?;
                 player.pause()?;
             }
             Some("length") => {

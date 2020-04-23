@@ -27,6 +27,7 @@ use std::{
     sync::Arc,
     time,
 };
+use tokio::sync::Mutex;
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
 
@@ -407,7 +408,6 @@ impl Irc {
                 handler_shutdown: false,
                 stream_info: &stream_info,
                 auth: &auth,
-                scope_cooldowns: auth.scope_cooldowns(),
                 currency_handler,
                 url_whitelist_enabled,
                 bad_words_enabled,
@@ -415,6 +415,9 @@ impl Irc {
                 chat_log: chat_log_builder.build()?,
                 channel,
                 shared_respond_buffer: String::with_capacity(1024),
+                context_inner: Arc::new(command::ContextInner {
+                    scope_cooldowns: Mutex::new(auth.scope_cooldowns()),
+                }),
             };
 
             let mut outgoing = client
@@ -723,8 +726,6 @@ struct Handler<'a> {
     stream_info: &'a stream_info::StreamInfo,
     /// Information about auth.
     auth: &'a Auth,
-    /// Active scope cooldowns.
-    scope_cooldowns: HashMap<Scope, Cooldown>,
     /// Handler for currencies.
     currency_handler: currency_admin::Handler,
     bad_words_enabled: Arc<RwLock<bool>>,
@@ -737,6 +738,8 @@ struct Handler<'a> {
     channel: Arc<twitch::Channel>,
     /// Shared buffer used for preparing responses.
     shared_respond_buffer: String,
+    /// Shared context paramters.
+    context_inner: Arc<command::ContextInner>,
 }
 
 /// Handle a command.
@@ -954,9 +957,9 @@ impl<'a> Handler<'a> {
                     user: user.clone(),
                     it,
                     shutdown: self.shutdown,
-                    scope_cooldowns: &mut self.scope_cooldowns,
                     message_hooks: &mut self.message_hooks,
                     respond_buffer: &mut self.shared_respond_buffer,
+                    inner: self.context_inner.clone(),
                 };
 
                 let result = process_command(

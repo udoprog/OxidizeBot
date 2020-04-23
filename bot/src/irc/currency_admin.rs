@@ -70,7 +70,7 @@ impl command::Handler for Handler {
                 }
             }
             Some("show") => {
-                ctx.check_scope(Scope::CurrencyShow)?;
+                ctx.check_scope(Scope::CurrencyShow).await?;
                 let to_show = ctx_try!(ctx.next_str("<user>"));
 
                 match currency.balance_of(ctx.channel(), to_show.as_str()).await {
@@ -153,7 +153,7 @@ impl command::Handler for Handler {
                 }
             }
             Some("boost") => {
-                ctx.check_scope(Scope::CurrencyBoost)?;
+                ctx.check_scope(Scope::CurrencyBoost).await?;
 
                 let boosted_user = db::user_id(&ctx_try!(ctx.next_str("<user> <amount>")));
                 let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>"));
@@ -195,7 +195,7 @@ impl command::Handler for Handler {
                 }
             }
             Some("windfall") => {
-                ctx.check_scope(Scope::CurrencyWindfall)?;
+                ctx.check_scope(Scope::CurrencyWindfall).await?;
 
                 let user = ctx.user.clone();
                 let amount: i64 = ctx_try!(ctx.next_parse("<amount>"));

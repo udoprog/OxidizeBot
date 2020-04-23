@@ -59,7 +59,7 @@ impl<'a> command::Handler for Handler<'a> {
                 ctx.respond(format!("{}.", result.join("; ")));
             }
             Some("permit") => {
-                ctx.check_scope(auth::Scope::AuthPermit)?;
+                ctx.check_scope(auth::Scope::AuthPermit).await?;
 
                 let duration: Duration = match ctx.next_parse("<duration> <principal> <scope>") {
                     Some(duration) => duration,

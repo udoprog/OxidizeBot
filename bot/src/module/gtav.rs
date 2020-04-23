@@ -689,7 +689,7 @@ impl Handler {
     }
 
     /// Handle the other commands.
-    fn handle_other(
+    async fn handle_other(
         &mut self,
         ctx: &mut command::Context<'_>,
     ) -> Result<Option<(Command, u32)>, Error> {
@@ -703,7 +703,7 @@ impl Handler {
                 None => return Ok(None),
             },
             Some("raw") => {
-                ctx.check_scope(Scope::GtavRaw)?;
+                ctx.check_scope(Scope::GtavRaw).await?;
                 Command::Raw(ctx.rest().to_string())
             }
             Some(..) | None => {
@@ -908,7 +908,7 @@ impl command::Handler for Handler {
 
         let (result, category_cooldown) = match ctx.next().as_deref() {
             Some("other") => {
-                let command = self.handle_other(&mut ctx)?;
+                let command = self.handle_other(&mut ctx).await?;
                 (command, None)
             }
             Some("punish") => {

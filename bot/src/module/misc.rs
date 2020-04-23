@@ -95,7 +95,7 @@ impl<'a> command::Handler for Title<'a> {
         if rest.is_empty() {
             self.show(&ctx.user);
         } else {
-            ctx.check_scope(auth::Scope::TitleEdit)?;
+            ctx.check_scope(auth::Scope::TitleEdit).await?;
 
             let twitch = self.twitch.clone();
             let title = rest.to_string();
@@ -172,7 +172,7 @@ impl<'a> command::Handler for Game<'a> {
             return Ok(());
         }
 
-        ctx.check_scope(auth::Scope::GameEdit)?;
+        ctx.check_scope(auth::Scope::GameEdit).await?;
 
         let twitch = self.twitch.clone();
         let game = rest.to_string();

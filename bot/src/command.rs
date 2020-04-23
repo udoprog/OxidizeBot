@@ -2,7 +2,8 @@
 
 use crate::{auth::Scope, irc, prelude::*, utils};
 use anyhow::{bail, Error};
-use std::{collections::HashMap, fmt, time::Instant};
+use std::{collections::HashMap, fmt, sync::Arc, time::Instant};
+use tokio::sync::Mutex;
 
 #[async_trait]
 /// The handler trait for a given command.
@@ -22,6 +23,11 @@ pub trait MessageHook: std::any::Any + Send + Sync {
     fn peek(&mut self, user: &irc::User, m: &str) -> Result<(), Error>;
 }
 
+pub(crate) struct ContextInner {
+    /// Active scope cooldowns.
+    pub(crate) scope_cooldowns: Mutex<HashMap<Scope, utils::Cooldown>>,
+}
+
 /// Context for a single command invocation.
 pub struct Context<'a> {
     pub(crate) api_url: Option<&'a str>,
@@ -30,9 +36,9 @@ pub struct Context<'a> {
     pub(crate) user: irc::User,
     pub(crate) it: utils::Words<'a>,
     pub(crate) shutdown: &'a utils::Shutdown,
-    pub(crate) scope_cooldowns: &'a mut HashMap<Scope, utils::Cooldown>,
     pub(crate) message_hooks: &'a mut HashMap<String, Box<dyn MessageHook>>,
     pub(crate) respond_buffer: &'a mut String,
+    pub(crate) inner: Arc<ContextInner>,
 }
 
 impl<'a> Context<'a> {
@@ -42,7 +48,7 @@ impl<'a> Context<'a> {
     }
 
     /// Verify that the current user has the associated scope.
-    pub fn check_scope(&mut self, scope: Scope) -> Result<(), Error> {
+    pub async fn check_scope(&mut self, scope: Scope) -> Result<(), Error> {
         if !self.user.has_scope(scope) {
             if let Some(name) = self.user.display_name() {
                 self.privmsg(format!(
@@ -62,7 +68,9 @@ impl<'a> Context<'a> {
             return Ok(());
         }
 
-        if let Some(cooldown) = self.scope_cooldowns.get_mut(&scope) {
+        let mut scope_cooldowns = self.inner.scope_cooldowns.lock().await;
+
+        if let Some(cooldown) = scope_cooldowns.get_mut(&scope) {
             let now = Instant::now();
 
             if let Some(duration) = cooldown.check(now.clone()) {

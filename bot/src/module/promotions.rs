@@ -24,7 +24,7 @@ impl command::Handler for Handler {
 
         match next.as_deref() {
             Some("edit") => {
-                ctx.check_scope(auth::Scope::PromoEdit)?;
+                ctx.check_scope(auth::Scope::PromoEdit).await?;
 
                 let name = ctx_try!(ctx.next_str("<name> <frequency> <template..>"));
                 let frequency = ctx_try!(ctx.next_parse("<name> <frequency> <template..>"));
