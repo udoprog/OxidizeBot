@@ -1,6 +1,6 @@
 //! Stream currency configuration.
 use crate::{api, db::Database};
-pub use crate::{db::models::Balance, utils::Duration};
+pub use crate::{db::models::Balance, injector, utils::Duration};
 use anyhow::Error;
 use std::{collections::HashSet, sync::Arc};
 use thiserror::Error;
@@ -28,28 +28,48 @@ impl BalanceOf {
 
 /// Helper struct to construct a currency.
 pub struct CurrencyBuilder {
+    twitch: api::Twitch,
+    pub mysql_schema: mysql::Schema,
+    injector: injector::Injector,
     pub ty: BackendType,
     pub enabled: bool,
     pub command_enabled: bool,
     pub name: Option<Arc<String>>,
     pub db: Option<Database>,
-    pub twitch: api::Twitch,
     pub mysql_url: Option<String>,
-    pub mysql_schema: mysql::Schema,
 }
 
 impl CurrencyBuilder {
     /// Construct a new currency builder.
-    pub fn new(twitch: api::Twitch, mysql_schema: mysql::Schema) -> Self {
+    pub fn new(
+        twitch: api::Twitch,
+        mysql_schema: mysql::Schema,
+        injector: injector::Injector,
+    ) -> Self {
         Self {
+            twitch,
+            mysql_schema,
+            injector,
             ty: Default::default(),
             enabled: Default::default(),
             command_enabled: Default::default(),
             name: Default::default(),
             db: None,
-            twitch,
             mysql_url: None,
-            mysql_schema,
+        }
+    }
+
+    /// Inject the newly built value and return the result.
+    pub async fn build_and_inject(&self) -> Option<Currency> {
+        match self.build() {
+            Some(currency) => {
+                self.injector.update(currency.clone()).await;
+                Some(currency)
+            }
+            None => {
+                self.injector.clear::<Currency>().await;
+                None
+            }
         }
     }
 

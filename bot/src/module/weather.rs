@@ -1,7 +1,5 @@
 use crate::{api::OpenWeatherMap, auth, command, module, prelude::*};
 use anyhow::Error;
-use parking_lot::RwLock;
-use std::sync::Arc;
 use uom::si::{
     f32::ThermodynamicTemperature,
     thermodynamic_temperature::{degree_celsius, degree_fahrenheit, kelvin},
@@ -41,10 +39,10 @@ impl TemperatureUnit {
 
 /// Handler for the !weather command.
 pub struct Weather {
-    enabled: Arc<RwLock<bool>>,
-    temperature_unit: Arc<RwLock<TemperatureUnit>>,
-    location: Arc<RwLock<Option<String>>>,
-    api: Arc<RwLock<Option<OpenWeatherMap>>>,
+    enabled: settings::Var<bool>,
+    temperature_unit: settings::Var<TemperatureUnit>,
+    location: settings::Var<Option<String>>,
+    api: injector::Var<Option<OpenWeatherMap>>,
 }
 
 #[async_trait]
@@ -54,41 +52,41 @@ impl command::Handler for Weather {
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
         match ctx.next().as_deref() {
             Some("current") => {
-                let api = match self.api.read().clone() {
-                    Some(api) => api,
-                    None => {
-                        ctx.respond("API not configured");
-                        return Ok(());
-                    }
-                };
+                let api = self
+                    .api
+                    .read()
+                    .await
+                    .as_ref()
+                    .ok_or_else(|| respond_err!("API not configured"))?
+                    .clone();
 
                 let loc = match ctx.rest() {
-                    "" => None,
+                    "" => self.location.load().await,
                     rest => Some(rest.to_string()),
                 };
 
-                let loc = match loc.or_else(|| self.location.read().clone()) {
+                let loc = match loc {
                     Some(loc) => loc,
                     None => {
-                        ctx.respond("Must specify <location>");
+                        respond!(ctx, "Must specify <location>");
                         return Ok(());
                     }
                 };
 
-                let temperature_unit = *self.temperature_unit.read();
+                let temperature_unit = self.temperature_unit.load().await;
 
                 let current = api.current(loc.clone()).await?;
 
                 let current = match current {
                     Some(current) => current,
                     None => {
-                        ctx.respond(format!("Could not find location `{}`", loc));
+                        respond!(ctx, "Could not find location `{}`", loc);
                         return Ok(());
                     }
                 };
@@ -119,10 +117,10 @@ impl command::Handler for Weather {
                     });
                 }
 
-                ctx.respond(format!("{} -> {}.", current.name, parts.join(", ")));
+                respond!(ctx, "{} -> {}.", current.name, parts.join(", "));
             }
             _ => {
-                ctx.respond("Expected: current.");
+                respond!(ctx, "Expected: current.");
             }
         }
 
@@ -151,11 +149,12 @@ impl super::Module for Module {
         handlers.insert(
             "weather",
             Weather {
-                enabled: settings.var("weather/enabled", false)?,
+                enabled: settings.var("weather/enabled", false).await?,
                 temperature_unit: settings
-                    .var("weather/temperature-unit", TemperatureUnit::DegreesCelsius)?,
-                location: settings.optional("weather/location")?,
-                api: injector.var()?,
+                    .var("weather/temperature-unit", TemperatureUnit::DegreesCelsius)
+                    .await?,
+                location: settings.optional("weather/location").await?,
+                api: injector.var().await?,
             },
         );
 

@@ -10,7 +10,7 @@ pub(crate) mod schema;
 mod themes;
 mod words;
 
-use crate::{player, track_id::TrackId, utils};
+use crate::{task, track_id::TrackId, utils};
 use anyhow::bail;
 use std::path::Path;
 use thiserror::Error;
@@ -39,7 +39,7 @@ embed_migrations!("./migrations");
 /// Database abstraction.
 #[derive(Clone)]
 pub struct Database {
-    pub(crate) pool: Arc<Mutex<SqliteConnection>>,
+    pool: Arc<Mutex<SqliteConnection>>,
 }
 
 impl Database {
@@ -67,9 +67,26 @@ impl Database {
         })
     }
 
+    /// Run a blocking task with exlusive access to the database pool.
+    pub async fn asyncify<F, T, E>(&self, task: F) -> Result<T, E>
+    where
+        F: FnOnce(&SqliteConnection) -> Result<T, E> + Send + 'static,
+        T: Send + 'static,
+        E: Send + 'static,
+        E: From<tokio::task::JoinError>,
+    {
+        let pool = self.pool.clone();
+
+        task::asyncify(move || {
+            let guard = pool.lock();
+            task(&*guard)
+        })
+        .await
+    }
+
     /// Access auth from the database.
-    pub fn auth(&self, schema: crate::auth::Schema) -> Result<crate::auth::Auth, Error> {
-        Ok(crate::auth::Auth::new(self.clone(), schema)?)
+    pub async fn auth(&self, schema: crate::auth::Schema) -> Result<crate::auth::Auth, Error> {
+        Ok(crate::auth::Auth::new(self.clone(), schema).await?)
     }
 
     /// Access settings from the database.
@@ -79,151 +96,132 @@ impl Database {
     ) -> Result<crate::settings::Settings, Error> {
         Ok(crate::settings::Settings::new(self.clone(), schema))
     }
-}
 
-/// Convert a user display name into a user id.
-pub fn user_id(user: &str) -> String {
-    user.trim_start_matches('@').to_lowercase()
-}
-
-impl words::Backend for Database {
-    /// List all bad words.
-    fn list(&self) -> Result<Vec<models::BadWord>, Error> {
-        use self::schema::bad_words::dsl;
-        let c = self.pool.lock();
-        Ok(dsl::bad_words.load::<models::BadWord>(&*c)?)
-    }
-
-    /// Insert a bad word into the database.
-    fn edit(&self, word: &str, why: Option<&str>) -> Result<(), Error> {
-        use self::schema::bad_words::dsl;
-
-        let c = self.pool.lock();
-
-        let filter = dsl::bad_words.filter(dsl::word.eq(word));
-        let b = filter.clone().first::<models::BadWord>(&*c).optional()?;
-
-        match b {
-            None => {
-                let bad_word = models::BadWord {
-                    word: word.to_string(),
-                    why: why.map(|s| s.to_string()),
-                };
-
-                diesel::insert_into(dsl::bad_words)
-                    .values(&bad_word)
-                    .execute(&*c)?;
-            }
-            Some(_) => {
-                diesel::update(filter)
-                    .set(why.map(|w| dsl::why.eq(w)))
-                    .execute(&*c)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn delete(&self, word: &str) -> Result<bool, Error> {
-        use self::schema::bad_words::dsl;
-
-        let c = self.pool.lock();
-
-        let count = diesel::delete(dsl::bad_words.filter(dsl::word.eq(&word))).execute(&*c)?;
-        Ok(count == 1)
-    }
-}
-
-impl player::Backend for Database {
-    fn list(&self) -> Result<Vec<models::Song>, Error> {
+    /// List all counters in backend.
+    pub async fn player_list(&self) -> Result<Vec<models::Song>, Error> {
         use self::schema::songs::dsl;
-        let c = self.pool.lock();
-        let songs = dsl::songs
-            .filter(dsl::deleted.eq(false))
-            .order((dsl::promoted_at.desc(), dsl::added_at.asc()))
-            .load::<models::Song>(&*c)?;
-        Ok(songs)
+
+        self.asyncify(move |c| {
+            let songs = dsl::songs
+                .filter(dsl::deleted.eq(false))
+                .order((dsl::promoted_at.desc(), dsl::added_at.asc()))
+                .load::<models::Song>(c)?;
+            Ok(songs)
+        })
+        .await
     }
 
-    fn push_back(&self, song: &models::AddSong) -> Result<(), Error> {
+    /// Insert the given song into the backend.
+    pub async fn player_push_back(&self, song: &models::AddSong) -> Result<(), Error> {
         use self::schema::songs::dsl;
-        let c = self.pool.lock();
-        diesel::insert_into(dsl::songs).values(song).execute(&*c)?;
-        Ok(())
+
+        let song = song.clone();
+
+        self.asyncify(move |c| {
+            diesel::insert_into(dsl::songs).values(song).execute(c)?;
+            Ok(())
+        })
+        .await
     }
 
-    /// Purge the given channel from songs.
-    fn song_purge(&self) -> Result<usize, Error> {
+    /// Purge the songs database and return the number of items removed.
+    pub async fn player_song_purge(&self) -> Result<usize, Error> {
         use self::schema::songs::dsl;
-        let c = self.pool.lock();
-        Ok(diesel::update(dsl::songs.filter(dsl::deleted.eq(false)))
-            .set(dsl::deleted.eq(true))
-            .execute(&*c)?)
+
+        self.asyncify(move |c| {
+            Ok(diesel::update(dsl::songs.filter(dsl::deleted.eq(false)))
+                .set(dsl::deleted.eq(true))
+                .execute(c)?)
+        })
+        .await
     }
 
-    /// Remove the song at the given location.
-    fn remove_song(&self, track_id: &TrackId) -> Result<bool, Error> {
+    /// Remove the song with the given ID.
+    pub async fn player_remove_song(&self, track_id: &TrackId) -> Result<bool, Error> {
         use self::schema::songs::dsl;
-        let c = self.pool.lock();
 
-        let ids: Vec<i32> = dsl::songs
-            .select(dsl::id)
-            .filter(dsl::deleted.eq(false).and(dsl::track_id.eq(&track_id)))
-            .order(dsl::added_at.desc())
-            .limit(1)
-            .load(&*c)?;
+        let track_id = track_id.clone();
 
-        let count = diesel::update(dsl::songs.filter(dsl::id.eq_any(ids)))
-            .set(dsl::deleted.eq(true))
-            .execute(&*c)?;
+        self.asyncify(move |c| {
+            let ids: Vec<i32> = dsl::songs
+                .select(dsl::id)
+                .filter(dsl::deleted.eq(false).and(dsl::track_id.eq(&track_id)))
+                .order(dsl::added_at.desc())
+                .limit(1)
+                .load(c)?;
 
-        Ok(count == 1)
+            let count = diesel::update(dsl::songs.filter(dsl::id.eq_any(ids)))
+                .set(dsl::deleted.eq(true))
+                .execute(c)?;
+
+            Ok(count == 1)
+        })
+        .await
     }
 
-    /// Promote the song with the given ID.
-    fn promote_song(&self, user: Option<&str>, track_id: &TrackId) -> Result<bool, Error> {
+    /// Promote the track with the given ID.
+    pub async fn player_promote_song(
+        &self,
+        user: Option<&str>,
+        track_id: &TrackId,
+    ) -> Result<bool, Error> {
         use self::schema::songs::dsl;
-        let c = self.pool.lock();
 
-        let ids: Vec<i32> = dsl::songs
-            .select(dsl::id)
-            .filter(dsl::deleted.eq(false).and(dsl::track_id.eq(&track_id)))
-            .order(dsl::added_at.desc())
-            .limit(1)
-            .load(&*c)?;
+        let user = user.map(|s| s.to_string());
+        let track_id = track_id.clone();
 
-        let count = diesel::update(dsl::songs.filter(dsl::id.eq_any(ids)))
-            .set((
-                dsl::promoted_at.eq(Utc::now().naive_utc()),
-                dsl::promoted_by.eq(user),
-            ))
-            .execute(&*c)?;
+        self.asyncify(move |c| {
+            let ids: Vec<i32> = dsl::songs
+                .select(dsl::id)
+                .filter(dsl::deleted.eq(false).and(dsl::track_id.eq(&track_id)))
+                .order(dsl::added_at.desc())
+                .limit(1)
+                .load(c)?;
 
-        Ok(count == 1)
+            let count = diesel::update(dsl::songs.filter(dsl::id.eq_any(ids)))
+                .set((
+                    dsl::promoted_at.eq(Utc::now().naive_utc()),
+                    dsl::promoted_by.eq(user.as_deref()),
+                ))
+                .execute(c)?;
+
+            Ok(count == 1)
+        })
+        .await
     }
 
-    fn last_song_within(
+    /// Test if the song has been played within a given duration.
+    pub async fn player_last_song_within(
         &self,
         track_id: &TrackId,
         duration: utils::Duration,
     ) -> Result<Option<models::Song>, Error> {
         use self::schema::songs::dsl;
-        let c = self.pool.lock();
 
-        let since = match Utc::now().checked_sub_signed(duration.as_chrono()) {
-            Some(since) => since,
-            None => bail!("duration too long"),
-        };
+        let track_id = track_id.clone();
 
-        let since = since.naive_utc();
+        self.asyncify(move |c| {
+            let since = match Utc::now().checked_sub_signed(duration.as_chrono()) {
+                Some(since) => since,
+                None => bail!("duration too long"),
+            };
 
-        let song = dsl::songs
-            .filter(dsl::added_at.gt(&since).and(dsl::track_id.eq(&track_id)))
-            .first::<models::Song>(&*c)
-            .optional()?;
+            let since = since.naive_utc();
 
-        Ok(song)
+            let song = dsl::songs
+                .filter(dsl::added_at.gt(&since).and(dsl::track_id.eq(&track_id)))
+                .first::<models::Song>(c)
+                .optional()?;
+
+            Ok(song)
+        })
+        .await
     }
+}
+
+/// Convert a user display name into a user id.
+pub fn user_id(user: &str) -> String {
+    user.trim_start_matches('@').to_lowercase()
 }
 
 #[derive(Debug, Error)]

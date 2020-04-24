@@ -2,7 +2,6 @@ use crate::{
     api, bus, db, injector, settings,
     song_file::{SongFile, SongFileBuilder},
     spotify_id::SpotifyId,
-    task,
     template::Template,
     track_id::TrackId,
     utils::{self, PtDuration},
@@ -13,7 +12,6 @@ use anyhow::{anyhow, bail, Error};
 use chrono::{DateTime, Utc};
 use futures::{channel::mpsc, prelude::*};
 use futures_option::OptionExt as _;
-use parking_lot::RwLock;
 use std::{
     collections::VecDeque,
     future::Future,
@@ -181,7 +179,7 @@ impl Command {
 }
 
 /// Run the player.
-pub fn run(
+pub async fn run(
     injector: &injector::Injector,
     db: db::Database,
     spotify: Arc<api::Spotify>,
@@ -195,7 +193,7 @@ pub fn run(
     let mut futures = utils::Futures::default();
 
     let (connect_stream, connect_player, device, future) =
-        connect::setup(spotify.clone(), settings.scoped("spotify"))?;
+        connect::setup(spotify.clone(), settings.scoped("spotify")).await?;
 
     futures.push(
         future
@@ -203,7 +201,7 @@ pub fn run(
             .boxed(),
     );
 
-    let (youtube_player, future) = youtube::setup(youtube_bus, settings.scoped("youtube"))?;
+    let (youtube_player, future) = youtube::setup(youtube_bus, settings.scoped("youtube")).await?;
 
     futures.push(
         future
@@ -214,12 +212,13 @@ pub fn run(
     let bus = bus::Bus::new();
     let queue = Queue::new(db.clone());
 
-    let song = Arc::new(RwLock::new(None));
-    let closed = Arc::new(RwLock::new(None));
+    let song = injector::Var::new(None);
+    let closed = injector::Var::new(None);
 
     let (song_update_interval_stream, song_update_interval) = settings
         .stream("song-update-interval")
-        .or_with(utils::Duration::seconds(1))?;
+        .or_with(utils::Duration::seconds(1))
+        .await?;
 
     let song_update_interval = if song_update_interval.is_empty() {
         None
@@ -229,12 +228,14 @@ pub fn run(
 
     let (commands_tx, commands) = mpsc::unbounded();
 
-    let (detached_stream, detached) = settings.stream("detached").or_default()?;
+    let (detached_stream, detached) = settings.stream("detached").or_default().await?;
 
-    let duplicate_duration = settings.var("duplicate-duration", utils::Duration::default())?;
-    let song_switch_feedback = settings.var("song-switch-feedback", true)?;
-    let max_songs_per_user = settings.var("max-songs-per-user", 2)?;
-    let max_queue_length = settings.var("max-queue-length", 30)?;
+    let duplicate_duration = settings
+        .var("duplicate-duration", utils::Duration::default())
+        .await?;
+    let song_switch_feedback = settings.var("song-switch-feedback", true).await?;
+    let max_songs_per_user = settings.var("max-songs-per-user", 2).await?;
+    let max_queue_length = settings.var("max-queue-length", 30).await?;
 
     let parent_player = Player {
         inner: Arc::new(PlayerInner {
@@ -250,7 +251,7 @@ pub fn run(
             commands_tx,
             bus: bus.clone(),
             song: song.clone(),
-            themes: injector.var()?,
+            themes: injector.var().await?,
             closed,
         }),
     };
@@ -262,7 +263,7 @@ pub fn run(
     let future = async move {
         {
             // Add tracks from database.
-            for song in db.list()? {
+            for song in db.player_list().await? {
                 let item = convert_item(
                     &*spotify,
                     &*youtube,
@@ -273,7 +274,7 @@ pub fn run(
                 .await?;
 
                 if let Some(item) = item {
-                    queue.push_back_queue(Arc::new(item));
+                    queue.push_back_queue(Arc::new(item)).await;
                 } else {
                     log::warn!("failed to convert db item: {:?}", song);
                 }
@@ -544,19 +545,19 @@ pub struct PlayerInner {
     queue: Queue,
     connect_player: self::connect::ConnectPlayer,
     youtube_player: self::youtube::YouTubePlayer,
-    max_queue_length: Arc<RwLock<u32>>,
-    max_songs_per_user: Arc<RwLock<u32>>,
-    duplicate_duration: Arc<RwLock<utils::Duration>>,
+    max_queue_length: settings::Var<u32>,
+    max_songs_per_user: settings::Var<u32>,
+    duplicate_duration: settings::Var<utils::Duration>,
     spotify: Arc<api::Spotify>,
     youtube: Arc<api::YouTube>,
     commands_tx: mpsc::UnboundedSender<Command>,
     bus: bus::Bus<Event>,
     /// Song song that is loaded.
-    song: Arc<RwLock<Option<Song>>>,
+    song: injector::Var<Option<Song>>,
     /// Theme songs.
-    themes: Arc<RwLock<Option<db::Themes>>>,
+    themes: injector::Var<Option<db::Themes>>,
     /// Player is closed for more requests.
-    closed: Arc<RwLock<Option<Option<Arc<String>>>>>,
+    closed: injector::Var<Option<Option<Arc<String>>>>,
 }
 
 /// All parts of a Player that can be shared between threads.
@@ -593,10 +594,11 @@ impl Player {
                 Some(song) => {
                     log::trace!("Syncing playback");
                     let volume_percent = p.device.volume_percent;
-                    self.inner.device.sync_device(Some(p.device))?;
+                    self.inner.device.sync_device(Some(p.device)).await?;
                     self.inner
                         .connect_player
-                        .set_scaled_volume(volume_percent)?;
+                        .set_scaled_volume(volume_percent)
+                        .await?;
                     self.play_sync(song)?;
                 }
                 None => {
@@ -615,8 +617,8 @@ impl Player {
     }
 
     /// Get the current device.
-    pub fn current_device(&self) -> Option<String> {
-        self.inner.device.current_device()
+    pub async fn current_device(&self) -> Option<String> {
+        self.inner.device.current_device().await
     }
 
     /// List all available devices.
@@ -627,13 +629,13 @@ impl Player {
     /// External call to set device.
     ///
     /// Should always notify the player to change.
-    pub fn set_device(&self, device: String) -> Result<(), Error> {
-        self.inner.device.set_device(Some(device))
+    pub async fn set_device(&self, device: String) -> Result<(), Error> {
+        self.inner.device.set_device(Some(device)).await
     }
 
     /// Clear the current device.
-    pub fn clear_device(&self) -> Result<(), Error> {
-        self.inner.device.set_device(None)
+    pub async fn clear_device(&self) -> Result<(), Error> {
+        self.inner.device.set_device(None).await
     }
 
     /// Send the given command.
@@ -645,9 +647,9 @@ impl Player {
     }
 
     /// Get the next N songs in queue.
-    pub fn list(&self) -> Vec<Arc<Item>> {
-        let song = self.inner.song.read();
-        let queue = self.inner.queue.queue.read();
+    pub async fn list(&self) -> Vec<Arc<Item>> {
+        let queue = self.inner.queue.queue.read().await;
+        let song = self.inner.song.read().await;
 
         song.as_ref()
             .map(|c| c.item.clone())
@@ -657,14 +659,18 @@ impl Player {
     }
 
     /// Promote the given song to the head of the queue.
-    pub fn promote_song(&self, user: Option<&str>, n: usize) -> Option<Arc<Item>> {
-        let promoted = self.inner.queue.promote_song(user, n);
+    pub async fn promote_song(
+        &self,
+        user: Option<&str>,
+        n: usize,
+    ) -> Result<Option<Arc<Item>>, Error> {
+        let promoted = self.inner.queue.promote_song(user, n).await?;
 
         if promoted.is_some() {
             self.modified();
         }
 
-        promoted
+        Ok(promoted)
     }
 
     /// Toggle playback.
@@ -693,8 +699,8 @@ impl Player {
     }
 
     /// Update volume of the player.
-    pub fn volume(&self, modify: ModifyVolume) -> Result<Option<u32>, Error> {
-        let track_id = match self.inner.song.read().as_ref() {
+    pub async fn volume(&self, modify: ModifyVolume) -> Result<Option<u32>, Error> {
+        let track_id = match &*self.inner.song.read().await {
             Some(song) => song.item.track_id.clone(),
             None => {
                 return Ok(None);
@@ -702,7 +708,7 @@ impl Player {
         };
 
         match track_id {
-            TrackId::Spotify(..) => match self.inner.connect_player.volume(modify) {
+            TrackId::Spotify(..) => match self.inner.connect_player.volume(modify).await {
                 Err(self::connect::CommandError::NoDevice) => {
                     self.inner.bus.send_sync(Event::NotConfigured);
                     Ok(None)
@@ -710,33 +716,28 @@ impl Player {
                 Err(e) => Err(e.into()),
                 Ok(volume) => Ok(Some(volume)),
             },
-            TrackId::YouTube(..) => Ok(Some(self.inner.youtube_player.volume(modify)?)),
+            TrackId::YouTube(..) => Ok(Some(self.inner.youtube_player.volume(modify).await?)),
         }
     }
 
     /// Get the current volume.
-    pub fn current_volume(&self) -> Option<u32> {
-        let track_id = match self.inner.song.read().as_ref() {
-            Some(song) => song.item.track_id.clone(),
-            None => {
-                return None;
-            }
-        };
+    pub async fn current_volume(&self) -> Option<u32> {
+        let track_id = self.inner.song.read().await.as_ref()?.item.track_id.clone();
 
         match track_id {
-            TrackId::Spotify(..) => Some(self.inner.connect_player.current_volume()),
-            TrackId::YouTube(..) => Some(self.inner.youtube_player.current_volume()),
+            TrackId::Spotify(..) => Some(self.inner.connect_player.current_volume().await),
+            TrackId::YouTube(..) => Some(self.inner.youtube_player.current_volume().await),
         }
     }
 
     /// Close the player from more requests.
-    pub fn close(&self, reason: Option<String>) {
-        *self.inner.closed.write() = Some(reason.map(Arc::new));
+    pub async fn close(&self, reason: Option<String>) {
+        *self.inner.closed.write().await = Some(reason.map(Arc::new));
     }
 
     /// Open the player.
-    pub fn open(&self) {
-        *self.inner.closed.write() = None;
+    pub async fn open(&self) {
+        *self.inner.closed.write().await = None;
     }
 
     /// Search for a track.
@@ -773,12 +774,12 @@ impl Player {
 
     /// Play a theme track.
     pub async fn play_theme(&self, channel: &str, name: &str) -> Result<(), PlayThemeError> {
-        let themes = match self.inner.themes.read().clone() {
+        let themes = match self.inner.themes.load().await {
             Some(themes) => themes,
             None => return Err(PlayThemeError::NotConfigured),
         };
 
-        let theme = match themes.get(channel, name) {
+        let theme = match themes.get(channel, name).await {
             Some(theme) => theme,
             None => return Err(PlayThemeError::NoSuchTheme),
         };
@@ -822,28 +823,29 @@ impl Player {
         max_duration: Option<utils::Duration>,
     ) -> Result<(usize, Arc<Item>), AddTrackError> {
         let (user_count, len) = {
-            let queue_inner = self.inner.queue.queue.read();
+            let queue_inner = self.inner.queue.queue.read().await;
             let len = queue_inner.len();
 
             if !bypass_constraints {
-                if let Some(reason) = self.inner.closed.read().as_ref() {
+                if let Some(reason) = self.inner.closed.read().await.as_ref() {
                     return Err(AddTrackError::PlayerClosed(reason.clone()));
                 }
 
-                let max_queue_length = *self.inner.max_queue_length.read();
+                let max_queue_length = self.inner.max_queue_length.load().await;
 
                 // NB: moderator is allowed to violate max queue length.
                 if len >= max_queue_length as usize {
                     return Err(AddTrackError::QueueFull);
                 }
 
-                let duplicate_duration = self.inner.duplicate_duration.read().clone();
+                let duplicate_duration = self.inner.duplicate_duration.load().await;
 
                 if !duplicate_duration.is_empty() {
                     if let Some(last) = self
                         .inner
                         .queue
                         .last_song_within(&track_id, duplicate_duration.clone())
+                        .await
                         .map_err(AddTrackError::Error)?
                     {
                         let added_at = DateTime::from_utc(last.added_at, Utc);
@@ -872,7 +874,7 @@ impl Player {
             (user_count, len)
         };
 
-        let max_songs_per_user = *self.inner.max_songs_per_user.read();
+        let max_songs_per_user = self.inner.max_songs_per_user.load().await;
 
         // NB: moderator is allowed to add more songs.
         if !bypass_constraints && user_count >= max_songs_per_user {
@@ -923,8 +925,8 @@ impl Player {
         Ok(None)
     }
 
-    pub fn purge(&self) -> Result<Vec<Arc<Item>>, Error> {
-        let purged = self.inner.queue.purge()?;
+    pub async fn purge(&self) -> Result<Vec<Arc<Item>>, Error> {
+        let purged = self.inner.queue.purge().await?;
 
         if !purged.is_empty() {
             self.modified();
@@ -934,8 +936,8 @@ impl Player {
     }
 
     /// Remove the item at the given position.
-    pub fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, Error> {
-        let removed = self.inner.queue.remove_at(n)?;
+    pub async fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, Error> {
+        let removed = self.inner.queue.remove_at(n).await?;
 
         if removed.is_some() {
             self.modified();
@@ -945,8 +947,8 @@ impl Player {
     }
 
     /// Remove the first track in the queue.
-    pub fn remove_last(&self) -> Result<Option<Arc<Item>>, Error> {
-        let removed = self.inner.queue.remove_last()?;
+    pub async fn remove_last(&self) -> Result<Option<Arc<Item>>, Error> {
+        let removed = self.inner.queue.remove_last().await?;
 
         if removed.is_some() {
             self.modified();
@@ -956,8 +958,8 @@ impl Player {
     }
 
     /// Remove the last track by the given user.
-    pub fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, Error> {
-        let removed = self.inner.queue.remove_last_by_user(user)?;
+    pub async fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, Error> {
+        let removed = self.inner.queue.remove_last_by_user(user).await?;
 
         if removed.is_some() {
             self.modified();
@@ -967,10 +969,13 @@ impl Player {
     }
 
     /// Find the next item that matches the given predicate and how long until it plays.
-    pub fn find(&self, mut predicate: impl FnMut(&Item) -> bool) -> Option<(Duration, Arc<Item>)> {
+    pub async fn find(
+        &self,
+        mut predicate: impl FnMut(&Item) -> bool,
+    ) -> Option<(Duration, Arc<Item>)> {
         let mut duration = Duration::default();
 
-        if let Some(c) = self.inner.song.read().as_ref() {
+        if let Some(c) = self.inner.song.read().await.as_ref() {
             if predicate(&c.item) {
                 return Some((Default::default(), c.item.clone()));
             }
@@ -978,7 +983,7 @@ impl Player {
             duration += c.remaining();
         }
 
-        let queue = self.inner.queue.queue.read();
+        let queue = self.inner.queue.queue.read().await;
 
         for item in &*queue {
             if predicate(item) {
@@ -992,16 +997,16 @@ impl Player {
     }
 
     /// Get the length in number of items and total number of seconds in queue.
-    pub fn length(&self) -> (usize, Duration) {
+    pub async fn length(&self) -> (usize, Duration) {
         let mut count = 0;
         let mut duration = Duration::default();
 
-        if let Some(item) = self.inner.song.read().as_ref() {
+        if let Some(item) = self.inner.song.read().await.as_ref() {
             duration += item.remaining();
             count += 1;
         }
 
-        let queue = self.inner.queue.queue.read();
+        let queue = self.inner.queue.queue.read().await;
 
         for item in &*queue {
             duration += item.duration;
@@ -1012,8 +1017,8 @@ impl Player {
     }
 
     /// Get the current song, if it is set.
-    pub fn current(&self) -> Option<Song> {
-        self.inner.song.read().clone()
+    pub async fn current(&self) -> Option<Song> {
+        self.inner.song.load().await
     }
 
     /// Indicate that the queue has been modified.
@@ -1058,67 +1063,11 @@ pub enum AddTrackError {
     Error(Error),
 }
 
-/// The backend of a words store.
-pub trait Backend: Clone + Send + Sync {
-    /// List all counters in backend.
-    fn list(&self) -> Result<Vec<db::models::Song>, Error>;
-
-    /// Insert the given song into the backend.
-    fn push_back(&self, song: &db::models::AddSong) -> Result<(), Error>;
-
-    /// Remove the song, but only log on issues.
-    fn remove_song_log(&self, track_id: &TrackId) {
-        match self.remove_song(track_id) {
-            Err(e) => log::warn!("{}: failed to remove song from database: {}", track_id, e),
-            Ok(false) => log::warn!("{}: no songs removed from database", track_id),
-            Ok(true) => {}
-        }
-    }
-
-    /// Remove the song with the given ID.
-    fn remove_song(&self, track_id: &TrackId) -> Result<bool, Error>;
-
-    /// Purge the songs database, but only log on issues.
-    fn song_purge_log(&self) -> Option<usize> {
-        match self.song_purge() {
-            Err(e) => {
-                log::warn!("failed to purge songs from database: {}", e);
-                None
-            }
-            Ok(n) => Some(n),
-        }
-    }
-
-    /// Purge the songs database and return the number of items removed.
-    fn song_purge(&self) -> Result<usize, Error>;
-
-    /// Purge the songs database, but only log on issues.
-    fn promote_song_log(&self, user: Option<&str>, track_id: &TrackId) -> Option<bool> {
-        match self.promote_song(user, track_id) {
-            Err(e) => {
-                log::warn!("failed to promote song `{}` in database: {}", track_id, e);
-                None
-            }
-            Ok(n) => Some(n),
-        }
-    }
-
-    /// Promote the track with the given ID.
-    fn promote_song(&self, user: Option<&str>, track_id: &TrackId) -> Result<bool, Error>;
-
-    /// Test if the song has been played within a given duration.
-    fn last_song_within(
-        &self,
-        track_id: &TrackId,
-        duration: utils::Duration,
-    ) -> Result<Option<db::models::Song>, Error>;
-}
-
 /// The playback queue.
 #[derive(Clone)]
 struct Queue {
     db: db::Database,
-    queue: Arc<RwLock<VecDeque<Arc<Item>>>>,
+    queue: settings::Var<VecDeque<Arc<Item>>>,
 }
 
 impl Queue {
@@ -1126,67 +1075,58 @@ impl Queue {
     pub fn new(db: db::Database) -> Self {
         Self {
             db,
-            queue: Arc::new(RwLock::new(Default::default())),
+            queue: settings::Var::new(Default::default()),
         }
     }
 
     /// Check ifa song has been queued within the specified period of time.
-    pub fn last_song_within(
+    pub async fn last_song_within(
         &self,
         track_id: &TrackId,
         duration: utils::Duration,
     ) -> Result<Option<db::models::Song>, Error> {
-        self.db.last_song_within(track_id, duration)
+        self.db.player_last_song_within(track_id, duration).await
     }
 
     /// Get the front of the queue.
-    pub fn front(&self) -> Option<Arc<Item>> {
-        self.queue.read().front().cloned()
+    pub async fn front(&self) -> Option<Arc<Item>> {
+        self.queue.read().await.front().cloned()
     }
 
     /// Pop the front of the queue.
     pub async fn pop_front(&self) -> Result<Option<Arc<Item>>, Error> {
         let db = self.db.clone();
-        let queue = self.queue.clone();
+        // NB: hold the lock over the database modification.
+        let mut queue = self.queue.write().await;
 
-        task::asyncify(move || {
-            // NB: hold the lock over the database modification.
-            let mut queue = queue.write();
-
-            if let Some(item) = queue.pop_front() {
-                db.remove_song(&item.track_id)?;
-                Ok(Some(item))
-            } else {
-                Ok(None)
-            }
-        })
-        .await
+        if let Some(item) = queue.pop_front() {
+            db.player_remove_song(&item.track_id).await?;
+            Ok(Some(item))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Push item to back of queue.
     pub async fn push_back(&self, item: Arc<Item>) -> Result<(), Error> {
-        let db = self.db.clone();
-        let queue = self.queue.clone();
+        // NB: hold the lock over the database modification.
+        let mut queue = self.queue.write().await;
 
-        task::asyncify(move || {
-            // NB: hold the lock over the database modification.
-            let mut queue = queue.write();
-
-            db.push_back(&db::models::AddSong {
+        self.db
+            .player_push_back(&db::models::AddSong {
                 track_id: item.track_id.clone(),
                 added_at: Utc::now().naive_utc(),
                 user: item.user.clone(),
-            })?;
+            })
+            .await?;
 
-            queue.push_back(item);
-            Ok(())
-        })
-        .await
+        queue.push_back(item);
+        Ok(())
     }
 
     /// Purge the song queue.
-    pub fn purge(&self) -> Result<Vec<Arc<Item>>, Error> {
-        let mut q = self.queue.write();
+    pub async fn purge(&self) -> Result<Vec<Arc<Item>>, Error> {
+        let mut q = self.queue.write().await;
 
         if q.is_empty() {
             return Ok(vec![]);
@@ -1195,20 +1135,21 @@ impl Queue {
         let purged = std::mem::replace(&mut *q, VecDeque::new())
             .into_iter()
             .collect();
-        self.db.song_purge_log();
+
+        self.db.player_song_purge().await?;
         Ok(purged)
     }
 
     /// Remove the item at the given position.
-    pub fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, Error> {
-        let mut q = self.queue.write();
+    pub async fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, Error> {
+        let mut q = self.queue.write().await;
 
         if q.is_empty() {
             return Ok(None);
         }
 
         if let Some(item) = q.remove(n) {
-            self.db.remove_song_log(&item.track_id);
+            self.db.player_remove_song(&item.track_id).await?;
             return Ok(Some(item));
         }
 
@@ -1216,15 +1157,15 @@ impl Queue {
     }
 
     /// Remove the last element.
-    pub fn remove_last(&self) -> Result<Option<Arc<Item>>, Error> {
-        let mut q = self.queue.write();
+    pub async fn remove_last(&self) -> Result<Option<Arc<Item>>, Error> {
+        let mut q = self.queue.write().await;
 
         if q.is_empty() {
             return Ok(None);
         }
 
         if let Some(item) = q.pop_back() {
-            self.db.remove_song_log(&item.track_id);
+            self.db.player_remove_song(&item.track_id).await?;
             return Ok(Some(item));
         }
 
@@ -1232,8 +1173,8 @@ impl Queue {
     }
 
     /// Remove the last element by user.
-    pub fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, Error> {
-        let mut q = self.queue.write();
+    pub async fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, Error> {
+        let mut q = self.queue.write().await;
 
         if q.is_empty() {
             return Ok(None);
@@ -1244,7 +1185,7 @@ impl Queue {
             .rposition(|i| i.user.as_ref().map(|u| u == user).unwrap_or_default())
         {
             if let Some(item) = q.remove(position) {
-                self.db.remove_song_log(&item.track_id);
+                self.db.player_remove_song(&item.track_id).await?;
                 return Ok(Some(item));
             }
         }
@@ -1253,12 +1194,16 @@ impl Queue {
     }
 
     /// Promote the given song.
-    pub fn promote_song(&self, user: Option<&str>, n: usize) -> Option<Arc<Item>> {
-        let mut q = self.queue.write();
+    pub async fn promote_song(
+        &self,
+        user: Option<&str>,
+        n: usize,
+    ) -> Result<Option<Arc<Item>>, Error> {
+        let mut q = self.queue.write().await;
 
         // OK, but song doesn't exist or index is out of bound.
         if q.is_empty() || n >= q.len() {
-            return None;
+            return Ok(None);
         }
 
         if let Some(removed) = q.remove(n) {
@@ -1266,16 +1211,16 @@ impl Queue {
         }
 
         if let Some(item) = q.get(0).cloned() {
-            self.db.promote_song_log(user, &item.track_id);
-            return Some(item);
+            self.db.player_promote_song(user, &item.track_id).await?;
+            return Ok(Some(item));
         }
 
-        None
+        Ok(None)
     }
 
     /// Push item to back of queue without going through the database.
-    fn push_back_queue(&self, item: Arc<Item>) {
-        self.queue.write().push_back(item);
+    async fn push_back_queue(&self, item: Arc<Item>) {
+        self.queue.write().await.push_back(item);
     }
 }
 
@@ -1330,7 +1275,7 @@ impl Mixer {
         }
 
         // Take next from queue.
-        if let Some(item) = self.queue.front() {
+        if let Some(item) = self.queue.front().await {
             let _ = self.queue.pop_front().await?;
             return Ok(Some(Song::new(item, Default::default())));
         }
@@ -1377,11 +1322,11 @@ pub struct PlaybackFuture {
     /// Stream of settings if the player is detached.
     detached_stream: settings::Stream<bool>,
     /// Song that is currently loaded.
-    song: Arc<RwLock<Option<Song>>>,
+    song: injector::Var<Option<Song>>,
     /// Path to write current song.
     song_file: Option<SongFile>,
     /// Song config.
-    song_switch_feedback: Arc<RwLock<bool>>,
+    song_switch_feedback: settings::Var<bool>,
     /// Optional stream indicating that we want to send a song update on the global bus.
     song_update_interval: Option<tokio::time::Interval>,
     /// Stream for when song update interval is updated.
@@ -1397,36 +1342,41 @@ impl PlaybackFuture {
     pub async fn run(mut self, settings: settings::Settings) -> Result<(), Error> {
         let song_file = settings.scoped("song-file");
 
-        let (mut path_stream, path) = song_file.stream("path").optional()?;
+        let (mut path_stream, path) = song_file.stream("path").optional().await?;
 
         let (mut template_stream, template) = song_file
             .stream("template")
             .or(Some(Template::compile(DEFAULT_CURRENT_SONG_TEMPLATE)?))
-            .optional()?;
+            .optional()
+            .await?;
 
         let (mut stopped_template_stream, stopped_template) = song_file
             .stream("stopped-template")
             .or(Some(Template::compile(
                 DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE,
             )?))
-            .optional()?;
+            .optional()
+            .await?;
 
         let (mut update_interval_stream, update_interval) = song_file
             .stream("update-interval")
-            .or_with(utils::Duration::seconds(1))?;
+            .or_with(utils::Duration::seconds(1))
+            .await?;
 
-        let (mut enabled_stream, enabled) = song_file.stream("enabled").or_default()?;
+        let (mut enabled_stream, enabled) = song_file.stream("enabled").or_default().await?;
 
         // TODO: Remove fallback-uri migration next major release.
-        if let Some(fallback_uri) = settings.get::<String>("fallback-uri")? {
+        if let Some(fallback_uri) = settings.get::<String>("fallback-uri").await? {
             if str::parse::<Uri>(&fallback_uri).is_err() {
                 if let Ok(id) = SpotifyId::from_base62(&fallback_uri) {
-                    settings.set("fallback-uri", Uri::SpotifyPlaylist(id))?;
+                    settings
+                        .set("fallback-uri", Uri::SpotifyPlaylist(id))
+                        .await?;
                 }
             }
         }
 
-        let (mut fallback_stream, fallback) = settings.stream("fallback-uri").optional()?;
+        let (mut fallback_stream, fallback) = settings.stream("fallback-uri").optional().await?;
         self.update_fallback_items(fallback.clone()).await;
 
         let mut song_file = SongFileBuilder::default();
@@ -1466,7 +1416,7 @@ impl PlaybackFuture {
                     song_file.init(&mut self.song_file);
                 }
                 _ = song_file_update.select_next_some() => {
-                    let song = self.song.read();
+                    let song = self.song.read().await;
                     self.update_song_file(song.as_ref());
                 }
                 /* player */
@@ -1475,7 +1425,7 @@ impl PlaybackFuture {
                 }
                 update = self.detached_stream.select_next_some() => {
                     if update {
-                        self.detach()?;
+                        self.detach().await?;
                     }
 
                     self.detached = update;
@@ -1487,7 +1437,7 @@ impl PlaybackFuture {
                     };
                 }
                 _ = self.song_update_interval.select_next_some() => {
-                    let song = self.song.read();
+                    let song = self.song.read().await;
 
                     if let State::Playing = self.state {
                         self.global_bus
@@ -1646,8 +1596,8 @@ impl PlaybackFuture {
     }
 
     /// Write the current song.
-    fn write_song(&self, song: Option<Song>) -> Result<(), Error> {
-        *self.song.write() = song;
+    async fn write_song(&self, song: Option<Song>) -> Result<(), Error> {
+        *self.song.write().await = song;
         Ok(())
     }
 
@@ -1740,7 +1690,7 @@ impl PlaybackFuture {
             self.switch_current_player(PlayerKind::None).await;
         }
 
-        self.write_song(song)?;
+        self.write_song(song).await?;
         Ok(())
     }
 
@@ -1752,11 +1702,11 @@ impl PlaybackFuture {
 
         self.send_play_command(song.clone()).await;
         self.switch_current_player(song.player()).await;
-        self.write_song(Some(song.clone()))?;
+        self.write_song(Some(song.clone())).await?;
         self.notify_song_change(Some(&song))?;
 
         if let Source::Manual = source {
-            let feedback = *self.song_switch_feedback.read();
+            let feedback = self.song_switch_feedback.load().await;
             self.bus
                 .send_sync(Event::Playing(feedback, song.item.clone()));
         }
@@ -1774,7 +1724,7 @@ impl PlaybackFuture {
         self.notify_song_change(Some(&song))?;
 
         if let Source::Manual = source {
-            let feedback = *self.song_switch_feedback.read();
+            let feedback = self.song_switch_feedback.load().await;
             self.bus
                 .send_sync(Event::Playing(feedback, song.item.clone()));
         }
@@ -1784,14 +1734,14 @@ impl PlaybackFuture {
     }
 
     /// Detach the player.
-    fn detach(&mut self) -> Result<(), Error> {
+    async fn detach(&mut self) -> Result<(), Error> {
         // store the currently playing song in the sidelined slot.
-        if let Some(mut song) = self.song.write().take() {
+        if let Some(mut song) = self.song.write().await.take() {
             song.pause();
             self.mixer.sidelined.push_back(song);
         }
 
-        self.write_song(None)?;
+        self.write_song(None).await?;
         self.player = PlayerKind::None;
         self.state = State::None;
         self.timeout = None;
@@ -1863,7 +1813,7 @@ impl PlaybackFuture {
                 self.timeout = None;
                 self.state = State::Paused;
 
-                let mut song = self.song.write();
+                let mut song = self.song.write().await;
 
                 if let Some(song) = song.as_mut() {
                     song.pause();
@@ -1879,7 +1829,7 @@ impl PlaybackFuture {
                 log::trace!("Starting player");
 
                 let song = {
-                    match self.song.write().as_mut() {
+                    match self.song.write().await.as_mut() {
                         Some(song) => {
                             song.play();
                             Some(song.clone())
@@ -1902,7 +1852,7 @@ impl PlaybackFuture {
                         self.bus.send_sync(Event::Empty);
                     }
 
-                    self.write_song(None)?;
+                    self.write_song(None).await?;
                     self.state = State::Paused;
                 }
             }
@@ -1920,11 +1870,11 @@ impl PlaybackFuture {
                 }
 
                 self.notify_song_change(Some(&song))?;
-                self.write_song(Some(song))?;
+                self.write_song(Some(song)).await?;
             }
             // queue was modified in some way
             (Modified(source), State::Playing) => {
-                if self.song.read().is_none() {
+                if self.song.read().await.is_none() {
                     if let Some(song) = self.mixer.next_song().await? {
                         self.play_song(source, song).await?;
                     }
@@ -1936,7 +1886,7 @@ impl PlaybackFuture {
             (Inject(source, item, offset), State::Playing) => {
                 {
                     // store the currently playing song in the sidelined slot.
-                    if let Some(mut song) = self.song.write().take() {
+                    if let Some(mut song) = self.song.write().await.take() {
                         song.pause();
                         self.mixer.sidelined.push_back(song);
                     }
@@ -1998,7 +1948,7 @@ impl PlaybackFuture {
                 }
 
                 let (elapsed, duration, track_id) = {
-                    let mut song = self.song.write();
+                    let mut song = self.song.write().await;
 
                     let song = match song.as_mut() {
                         Some(song) => song,

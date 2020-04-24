@@ -2,13 +2,13 @@ use crate::{
     api::{self, twitch},
     auth::{Auth, Role, Scope},
     bus, command,
-    currency::{Currency, CurrencyBuilder},
+    currency::CurrencyBuilder,
     db, idle,
     injector::{self, Injector, Key},
     message_log::MessageLog,
     module, oauth2,
     prelude::*,
-    settings, stream_info, task,
+    stream_info, task,
     utils::{self, Cooldown, Duration},
 };
 use anyhow::{anyhow, bail, Context as _, Error};
@@ -22,7 +22,7 @@ use irc::{
 use leaky_bucket::LeakyBuckets;
 use parking_lot::RwLock;
 use std::{collections::HashSet, fmt, mem, sync::Arc, time};
-use tokio::sync::Mutex;
+use tokio::sync;
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
 
@@ -171,7 +171,7 @@ pub struct Irc {
     pub shutdown: utils::Shutdown,
     pub settings: settings::Settings,
     pub auth: Auth,
-    pub global_channel: Arc<RwLock<Option<String>>>,
+    pub global_channel: injector::Var<Option<String>>,
     pub injector: Injector,
     pub stream_state_tx: mpsc::Sender<stream_info::StreamState>,
     pub message_log: MessageLog,
@@ -193,13 +193,17 @@ impl Irc {
             message_log,
         } = self;
 
-        let (streamer_stream, streamer) = injector.stream_key(&Key::<oauth2::SyncToken>::tagged(
-            oauth2::TokenId::TwitchStreamer,
-        )?);
+        let (streamer_stream, streamer) = injector
+            .stream_key(&Key::<oauth2::SyncToken>::tagged(
+                oauth2::TokenId::TwitchStreamer,
+            )?)
+            .await;
 
-        let (bot_stream, bot) = injector.stream_key(&Key::<oauth2::SyncToken>::tagged(
-            oauth2::TokenId::TwitchBot,
-        )?);
+        let (bot_stream, bot) = injector
+            .stream_key(&Key::<oauth2::SyncToken>::tagged(
+                oauth2::TokenId::TwitchBot,
+            )?)
+            .await;
 
         let mut twitch_setup = TwitchSetup {
             streamer_stream,
@@ -220,7 +224,7 @@ impl Irc {
             log::trace!("Bot: {:?}", bot);
 
             let chat_channel = format!("#{}", channel.name);
-            *global_channel.write() = Some(chat_channel.clone());
+            *global_channel.write().await = Some(chat_channel.clone());
 
             let access_token = bot_twitch.token.read()?.access_token().to_string();
 
@@ -239,13 +243,13 @@ impl Irc {
 
             let chat_settings = settings.scoped("chat");
 
-            let url_whitelist_enabled = chat_settings.var("url-whitelist/enabled", true)?;
-            let bad_words_enabled = chat_settings.var("bad-words/enabled", false)?;
-            let sender_ty = chat_settings.var("sender-type", sender::Type::Chat)?;
-            let threshold = chat_settings.var("idle-detection/threshold", 5)?;
+            let url_whitelist_enabled = chat_settings.var("url-whitelist/enabled", true).await?;
+            let bad_words_enabled = chat_settings.var("bad-words/enabled", false).await?;
+            let sender_ty = chat_settings.var("sender-type", sender::Type::Chat).await?;
+            let threshold = chat_settings.var("idle-detection/threshold", 5).await?;
             let idle = idle::Idle::new(threshold);
 
-            let nightbot = injector.var::<Arc<api::NightBot>>()?;
+            let nightbot = injector.var::<Arc<api::NightBot>>().await?;
 
             let mut buckets = LeakyBuckets::new();
 
@@ -333,13 +337,7 @@ impl Irc {
                 result.with_context(|| anyhow!("failed to initialize module: {}", module.ty()))?;
             }
 
-            let (future, currency_handler) = currency_admin::setup(&injector)?;
-
-            futures.push(
-                future
-                    .instrument(trace_span!(target: "futures", "currency-adminm",))
-                    .boxed(),
-            );
+            let currency_handler = currency_admin::setup(&injector).await?;
 
             let future = currency_loop(
                 streamer_twitch.clone(),
@@ -349,7 +347,8 @@ impl Irc {
                 injector.clone(),
                 chat_settings.clone(),
                 settings.clone(),
-            )?;
+            )
+            .await?;
 
             futures.push(
                 future
@@ -357,18 +356,24 @@ impl Irc {
                     .boxed(),
             );
 
-            let (mut whitelisted_hosts_stream, whitelisted_hosts) =
-                chat_settings.stream("whitelisted-hosts").or_default()?;
+            let (mut whitelisted_hosts_stream, whitelisted_hosts) = chat_settings
+                .stream("whitelisted-hosts")
+                .or_default()
+                .await?;
 
-            let (mut moderator_cooldown_stream, moderator_cooldown) =
-                chat_settings.stream("moderator-cooldown").optional()?;
+            let (mut moderator_cooldown_stream, moderator_cooldown) = chat_settings
+                .stream("moderator-cooldown")
+                .optional()
+                .await?;
 
-            let (mut api_url_stream, api_url) = settings.stream("remote/api-url").optional()?;
+            let (mut api_url_stream, api_url) =
+                settings.stream("remote/api-url").optional().await?;
 
-            let join_message = chat_settings.get::<String>("join-message")?;
+            let join_message = chat_settings.get::<String>("join-message").await?;
 
             let leave_message = chat_settings
-                .get::<String>("leave-message")?
+                .get::<String>("leave-message")
+                .await?
                 .unwrap_or_else(|| String::from("Leaving chat... VoHiYo"));
 
             let mut chat_log_builder = chat_log::Builder::new(
@@ -376,10 +381,11 @@ impl Irc {
                 &injector,
                 message_log.clone(),
                 settings.scoped("chat-log"),
-            )?;
+            )
+            .await?;
 
-            let (mut commands_stream, commands) = injector.stream();
-            let (mut aliases_stream, aliases) = injector.stream();
+            let (mut commands_stream, commands) = injector.stream().await;
+            let (mut aliases_stream, aliases) = injector.stream().await;
 
             let mut pong_timeout = None;
 
@@ -409,8 +415,8 @@ impl Irc {
                 channel,
                 context_inner: Arc::new(command::ContextInner {
                     sender: sender.clone(),
-                    scope_cooldowns: Mutex::new(auth.scope_cooldowns()),
-                    message_hooks: Mutex::new(Default::default()),
+                    scope_cooldowns: sync::Mutex::new(auth.scope_cooldowns()),
+                    message_hooks: sync::RwLock::new(Default::default()),
                     shutdown: shutdown.clone(),
                 }),
             };
@@ -422,22 +428,29 @@ impl Irc {
             let mut client_stream = client.stream()?;
 
             let mut ping_interval = tokio::time::interval(time::Duration::from_secs(10)).fuse();
-
-            handler.sender.cap_req(TWITCH_TAGS_CAP);
-            handler.sender.cap_req(TWITCH_COMMANDS_CAP);
-
-            if let Some(join_message) = join_message.as_ref() {
-                // greeting when bot joins
-                handler.sender.privmsg_immediate(join_message);
-            }
-
             let mut commands = command_bus.add_rx();
 
             let mut leave = None;
 
+            let sender = handler.sender.clone();
+
+            // Things to do when joining.
+            let mut join_task = Some(Box::pin(async move {
+                sender.cap_req(TWITCH_TAGS_CAP).await;
+                sender.cap_req(TWITCH_COMMANDS_CAP).await;
+
+                if let Some(join_message) = join_message.as_ref() {
+                    // greeting when bot joins.
+                    sender.privmsg_immediate(join_message);
+                }
+            }));
+
             #[allow(clippy::unnecessary_mut_passed)]
             while leave.is_none() {
                 futures::select! {
+                    _ = join_task.current() => {
+                        log::trace!("Done sending capabilities request and join message");
+                    }
                     command = commands.select_next_some() => {
                         match command {
                             bus::Command::Raw { command } => {
@@ -548,7 +561,7 @@ impl Irc {
 }
 
 /// Set up a reward loop.
-fn currency_loop<'a>(
+async fn currency_loop(
     twitch: api::Twitch,
     channel: Arc<twitch::Channel>,
     sender: Sender,
@@ -556,33 +569,44 @@ fn currency_loop<'a>(
     injector: Injector,
     chat_settings: settings::Settings,
     settings: settings::Settings,
-) -> Result<impl Future<Output = Result<(), Error>> + 'a, Error> {
+) -> Result<impl Future<Output = Result<(), Error>>, Error> {
+    log::trace!("Setting up currency loop");
+
     let reward = 10;
     let default_interval = Duration::seconds(60 * 10);
 
     let (mut interval_stream, mut reward_interval) = chat_settings
         .stream("viewer-reward/interval")
-        .or_with(default_interval)?;
+        .or_with(default_interval)
+        .await?;
 
-    let reward_percentage = chat_settings.var("viewer-reward%", 100)?;
+    let reward_percentage = chat_settings.var("viewer-reward%", 100).await?;
     let (mut viewer_reward_stream, viewer_reward) = chat_settings
         .stream("viewer-reward/enabled")
-        .or_with(false)?;
-    let (mut notify_rewards_stream, mut notify_rewards) =
-        settings.stream("currency/notify-rewards").or_with(true)?;
+        .or_with(false)
+        .await?;
+    let (mut notify_rewards_stream, mut notify_rewards) = settings
+        .stream("currency/notify-rewards")
+        .or_with(true)
+        .await?;
 
-    let (mut ty_stream, ty) = settings.stream("currency/type").or_default()?;
-    let (mut enabled_stream, enabled) = settings.stream("currency/enabled").or_default()?;
-    let (mut name_stream, name) = settings.stream("currency/name").optional()?;
-    let (mut command_enabled_stream, command_enabled) =
-        settings.stream("currency/command-enabled").or_with(true)?;
-    let (mut mysql_url_stream, mysql_url) = settings.stream("currency/mysql/url").optional()?;
-    let (mut mysql_schema_stream, mysql_schema) =
-        settings.stream("currency/mysql/schema").or_default()?;
+    let (mut ty_stream, ty) = settings.stream("currency/type").or_default().await?;
+    let (mut enabled_stream, enabled) = settings.stream("currency/enabled").or_default().await?;
+    let (mut name_stream, name) = settings.stream("currency/name").optional().await?;
+    let (mut command_enabled_stream, command_enabled) = settings
+        .stream("currency/command-enabled")
+        .or_with(true)
+        .await?;
+    let (mut mysql_url_stream, mysql_url) =
+        settings.stream("currency/mysql/url").optional().await?;
+    let (mut mysql_schema_stream, mysql_schema) = settings
+        .stream("currency/mysql/schema")
+        .or_default()
+        .await?;
 
-    let (mut db_stream, db) = injector.stream::<db::Database>();
+    let (mut db_stream, db) = injector.stream::<db::Database>().await;
 
-    let mut builder = CurrencyBuilder::new(twitch, mysql_schema);
+    let mut builder = CurrencyBuilder::new(twitch, mysql_schema, injector.clone());
     builder.db = db;
     builder.ty = ty;
     builder.enabled = enabled;
@@ -590,18 +614,7 @@ fn currency_loop<'a>(
     builder.name = name.map(Arc::new);
     builder.mysql_url = mysql_url;
 
-    let build = |injector: &Injector, builder: &CurrencyBuilder| match builder.build() {
-        Some(currency) => {
-            injector.update(currency.clone());
-            Some(currency)
-        }
-        None => {
-            injector.clear::<Currency>();
-            None
-        }
-    };
-
-    let mut currency = build(&injector, &builder);
+    let mut currency = builder.build_and_inject().await;
 
     Ok(async move {
         let new_timer = |interval: &Duration, viewer_reward: bool| {
@@ -625,31 +638,31 @@ fn currency_loop<'a>(
                 }
                 update = db_stream.select_next_some() => {
                     builder.db = update;
-                    currency = build(&injector, &builder);
+                    currency = builder.build_and_inject().await;
                 }
                 enabled = enabled_stream.select_next_some() => {
                     builder.enabled = enabled;
-                    currency = build(&injector, &builder);
+                    currency = builder.build_and_inject().await;
                 }
                 update = ty_stream.select_next_some() => {
                     builder.ty = update;
-                    currency = build(&injector, &builder);
+                    currency = builder.build_and_inject().await;
                 }
                 name = name_stream.select_next_some() => {
                     builder.name = name.map(Arc::new);
-                    currency = build(&injector, &builder);
+                    currency = builder.build_and_inject().await;
                 }
                 mysql_url = mysql_url_stream.select_next_some() => {
                     builder.mysql_url = mysql_url;
-                    currency = build(&injector, &builder);
+                    currency = builder.build_and_inject().await;
                 }
                 update = mysql_schema_stream.select_next_some() => {
                     builder.mysql_schema = update;
-                    currency = build(&injector, &builder);
+                    currency = builder.build_and_inject().await;
                 }
                 command_enabled = command_enabled_stream.select_next_some() => {
                     builder.command_enabled = command_enabled;
-                    currency = build(&injector, &builder);
+                    currency = builder.build_and_inject().await;
                 }
                 viewer_reward = viewer_reward_stream.select_next_some() => {
                     timer = new_timer(&reward_interval, viewer_reward);
@@ -664,16 +677,16 @@ fn currency_loop<'a>(
 
                     log::trace!("running reward loop");
 
-                    let reward = (reward * *reward_percentage.read() as i64) / 100i64;
+                    let reward = (reward * reward_percentage.load().await as i64) / 100i64;
                     let count = currency
                         .add_channel_all(&channel.name, reward, seconds)
                         .await?;
 
-                    if notify_rewards && count > 0 && !idle.is_idle() {
+                    if notify_rewards && count > 0 && !idle.is_idle().await {
                         sender.privmsg(format!(
                             "/me has given {} {} to all viewers!",
                             reward, currency.name
-                        ));
+                        )).await;
                     }
                 }
             }
@@ -721,8 +734,8 @@ struct Handler<'a> {
     auth: &'a Auth,
     /// Handler for currencies.
     currency_handler: Arc<currency_admin::Handler>,
-    bad_words_enabled: Arc<RwLock<bool>>,
-    url_whitelist_enabled: Arc<RwLock<bool>>,
+    bad_words_enabled: settings::Var<bool>,
+    url_whitelist_enabled: settings::Var<bool>,
     /// Handler for chat logs.
     chat_log: Option<chat_log::ChatLog>,
     /// Information on the current channel.
@@ -741,13 +754,16 @@ pub async fn process_command(
 ) -> Result<(), Error> {
     match command {
         "ping" => {
-            ctx.respond("What do you want?");
+            respond!(ctx, "What do you want?");
             global_bus.send(bus::Global::Ping);
         }
         other => {
             log::trace!("Testing command: {}", other);
 
-            let handler = match (other, currency_handler.command_name()) {
+            // TODO: store currency name locally to match against.
+            let currency_command = currency_handler.command_name().await;
+
+            let handler = match (other, currency_command) {
                 (other, Some(ref name)) if other == **name => {
                     Some(currency_handler.clone() as Arc<dyn command::Handler>)
                 }
@@ -764,14 +780,15 @@ pub async fn process_command(
                 // Test if user has the required scope to run the given
                 // command.
                 if let Some(scope) = scope {
-                    if !ctx.user.has_scope(scope) {
+                    if !ctx.user.has_scope(scope).await {
                         if ctx.user.is_moderator() {
-                            ctx.respond("You are not allowed to run that command");
+                            respond!(ctx, "You are not allowed to run that command");
                         } else if let Some(display_name) = ctx.user.display_name() {
                             ctx.privmsg(format!(
                                 "Do you think this is a democracy {name}? LUL",
                                 name = display_name
-                            ));
+                            ))
+                            .await;
                         }
 
                         return Ok(());
@@ -780,8 +797,12 @@ pub async fn process_command(
 
                 task::spawn(async move {
                     if let Err(e) = handler.handle(&mut ctx).await {
-                        ctx.respond("Sorry, something went wrong :(");
-                        log_error!(e, "Error when processing command");
+                        if let Some(command::Respond(respond)) = e.downcast_ref() {
+                            respond!(ctx, respond);
+                        } else {
+                            respond!(ctx, "Sorry, something went wrong :(");
+                            log_error!(e, "Error when processing command");
+                        }
                     }
                 });
 
@@ -807,14 +828,14 @@ impl<'a> Handler<'a> {
     }
 
     /// Test if the message should be deleted.
-    fn should_be_deleted(&self, user: &User, message: &str) -> bool {
+    async fn should_be_deleted(&self, user: &User, message: &str) -> bool {
         // Moderators can say whatever they want.
         if user.is_moderator() {
             return false;
         }
 
-        if *self.bad_words_enabled.read() {
-            if let Some(word) = self.test_bad_words(message) {
+        if self.bad_words_enabled.load().await {
+            if let Some(word) = self.test_bad_words(message).await {
                 if let Some(why) = word.why.as_ref() {
                     let why = why.render_to_string(&BadWordsVars {
                         name: user.display_name(),
@@ -823,7 +844,7 @@ impl<'a> Handler<'a> {
 
                     match why {
                         Ok(why) => {
-                            self.sender.privmsg(&why);
+                            self.sender.privmsg(&why).await;
                         }
                         Err(e) => {
                             log_error!(e, "failed to render response");
@@ -837,7 +858,8 @@ impl<'a> Handler<'a> {
 
         #[allow(clippy::collapsible_if)]
         {
-            if !user.has_scope(Scope::ChatBypassUrlWhitelist) && *self.url_whitelist_enabled.read()
+            if !user.has_scope(Scope::ChatBypassUrlWhitelist).await
+                && self.url_whitelist_enabled.load().await
             {
                 if self.has_bad_link(message) {
                     return true;
@@ -849,8 +871,8 @@ impl<'a> Handler<'a> {
     }
 
     /// Test the message for bad words.
-    fn test_bad_words(&self, message: &str) -> Option<Arc<db::Word>> {
-        let tester = self.bad_words.tester();
+    async fn test_bad_words(&self, message: &str) -> Option<Arc<db::Word>> {
+        let tester = self.bad_words.tester().await;
 
         for word in utils::TrimmedWords::new(message) {
             if let Some(word) = tester.test(word) {
@@ -891,15 +913,15 @@ impl<'a> Handler<'a> {
         mut message: Arc<String>,
     ) -> Result<(), Error> {
         // Run message hooks.
-        task::spawn({
+        let _ = task::spawn({
             let user = user.clone();
             let context_inner = self.context_inner.clone();
             let message = message.clone();
 
             async move {
-                let mut message_hooks = context_inner.message_hooks.lock().await;
+                let message_hooks = context_inner.message_hooks.read().await;
 
-                for (key, hook) in &mut *message_hooks {
+                for (key, hook) in &*message_hooks {
                     if let Err(e) = hook.peek(&user, &*message).await {
                         log_error!(e, "Hook `{}` failed", key);
                     }
@@ -917,14 +939,15 @@ impl<'a> Handler<'a> {
         let mut path = Vec::new();
 
         if let Some(aliases) = self.aliases.as_ref() {
-            while let Some((key, next)) = aliases.resolve(user.channel(), message.clone()) {
+            while let Some((key, next)) = aliases.resolve(user.channel(), message.clone()).await {
                 path.push(key.to_string());
 
                 if !seen.insert(key.clone()) {
-                    user.respond(format!(
+                    respond!(
+                        user,
                         "Recursion found in alias expansion: {} :(",
                         path.join(" -> ")
-                    ));
+                    );
                     return Ok(());
                 }
 
@@ -936,11 +959,12 @@ impl<'a> Handler<'a> {
         let first = it.next();
 
         if let Some(commands) = self.commands.as_ref() {
-            if let Some((command, captures)) =
-                commands.resolve(user.channel(), first.as_deref(), &it)
+            if let Some((command, captures)) = commands
+                .resolve(user.channel(), first.as_deref(), &it)
+                .await
             {
                 if command.has_var("count") {
-                    commands.increment(&*command)?;
+                    commands.increment(&*command).await?;
                 }
 
                 let vars = CommandVars {
@@ -951,7 +975,7 @@ impl<'a> Handler<'a> {
                 };
 
                 let response = command.render(&vars)?;
-                self.sender.privmsg(response);
+                self.sender.privmsg(response).await;
             }
         }
 
@@ -980,7 +1004,7 @@ impl<'a> Handler<'a> {
             }
         }
 
-        if self.should_be_deleted(&user, &*message) {
+        if self.should_be_deleted(&user, &*message).await {
             self.delete_message(&user)?;
         }
 
@@ -1176,9 +1200,10 @@ impl<'a> RealUser<'a> {
     }
 
     /// Respond to the user with a message.
-    pub fn respond(&self, m: impl fmt::Display) {
+    pub async fn respond(&self, m: impl fmt::Display) {
         self.sender
-            .privmsg(format!("{} -> {}", self.display_name(), m));
+            .privmsg(format!("{} -> {}", self.display_name(), m))
+            .await;
     }
 
     /// Test if the current user is the given user.
@@ -1231,8 +1256,8 @@ impl<'a> RealUser<'a> {
     }
 
     /// Test if the current user has the given scope.
-    pub fn has_scope(&self, scope: Scope) -> bool {
-        self.auth.test_any(scope, self.name, self.roles())
+    pub async fn has_scope(&self, scope: Scope) -> bool {
+        self.auth.test_any(scope, self.name, self.roles()).await
     }
 }
 
@@ -1330,19 +1355,22 @@ impl User {
     }
 
     /// Respond to the user with a message.
-    pub fn respond(&self, m: impl fmt::Display) {
+    pub async fn respond(&self, m: impl fmt::Display) {
         match self.display_name() {
             Some(name) => {
-                self.inner.sender.privmsg(format!("{} -> {}", name, m));
+                self.inner
+                    .sender
+                    .privmsg(format!("{} -> {}", name, m))
+                    .await;
             }
             None => {
-                self.inner.sender.privmsg(m);
+                self.inner.sender.privmsg(m).await;
             }
         }
     }
 
     /// Pretty render the results.
-    pub fn respond_lines<F>(&self, results: impl IntoIterator<Item = F>, empty: &str)
+    pub async fn respond_lines<F>(&self, results: impl IntoIterator<Item = F>, empty: &str)
     where
         F: fmt::Display,
     {
@@ -1352,12 +1380,13 @@ impl User {
             let count = output.count();
 
             if count > 0 {
-                self.respond(format!("{} ... {} line(s) not shown", line, count,));
+                self.respond(format!("{} ... {} line(s) not shown", line, count))
+                    .await;
             } else {
-                self.respond(line);
+                self.respond(line).await;
             }
         } else {
-            self.respond(empty);
+            self.respond(empty).await;
         }
     }
 
@@ -1377,8 +1406,13 @@ impl User {
     }
 
     /// Test if the current user has the given scope.
-    pub fn has_scope(&self, scope: Scope) -> bool {
-        self.real().map(|u| u.has_scope(scope)).unwrap_or(true)
+    pub async fn has_scope(&self, scope: Scope) -> bool {
+        let user = match self.real() {
+            Some(user) => user,
+            None => return false,
+        };
+
+        user.has_scope(scope).await
     }
 }
 

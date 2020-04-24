@@ -1,6 +1,5 @@
 use crate::{api, player, prelude::*, settings::Settings, track_id::SpotifyId};
 use anyhow::{bail, Error};
-use parking_lot::RwLock;
 use std::sync::Arc;
 use std::{
     pin::Pin,
@@ -10,7 +9,7 @@ use std::{
 use thiserror::Error;
 
 /// Setup a player.
-pub fn setup(
+pub async fn setup(
     spotify: Arc<api::Spotify>,
     settings: Settings,
 ) -> Result<
@@ -22,15 +21,17 @@ pub fn setup(
     ),
     Error,
 > {
-    let (mut volume_stream, volume) = settings.stream("volume").or_with(50)?;
-    let (mut volume_scale_stream, volume_scale) = settings.stream("volume-scale").or_with(100)?;
-    let (mut device_stream, device) = settings.stream::<String>("device").optional()?;
+    let (mut volume_stream, volume) = settings.stream("volume").or_with(50).await?;
+    let (mut volume_scale_stream, volume_scale) =
+        settings.stream("volume-scale").or_with(100).await?;
+    let (mut device_stream, device) = settings.stream::<String>("device").optional().await?;
 
-    let device = Arc::new(RwLock::new(device));
-
+    // Locally scaled volume.
     let mut scaled_volume = (volume * volume_scale) / 100u32;
-    let volume = Arc::new(RwLock::new(volume));
-    let volume_scale = Arc::new(RwLock::new(volume_scale));
+
+    let device = injector::Var::new(device);
+    let volume = injector::Var::new(volume);
+    let volume_scale = injector::Var::new(volume_scale);
 
     let (config_tx, config_rx) = mpsc::unbounded();
 
@@ -59,20 +60,20 @@ pub fn setup(
         loop {
             futures::select! {
                 update = device_stream.select_next_some() => {
-                    *device.write() = update;
+                    *device.write().await = update;
 
                     if config_tx.unbounded_send(ConfigurationEvent::DeviceChanged).is_err() {
                         bail!("failed to send configuration event");
                     }
                 }
                 update = volume_scale_stream.select_next_some() => {
-                    *volume_scale.write() = update;
-                    scaled_volume = (*volume.read() * update) / 100u32;
+                    *volume_scale.write().await = update;
+                    scaled_volume = (volume.load().await * update) / 100u32;
                     player.volume_update_log(scaled_volume).await;
                 }
                 update = volume_stream.select_next_some() => {
-                    *volume.write() = update;
-                    scaled_volume = (update * *volume_scale.read()) / 100u32;
+                    *volume.write().await = update;
+                    scaled_volume = (update * volume_scale.load().await) / 100u32;
                     player.volume_update_log(scaled_volume).await;
                 }
             }
@@ -109,20 +110,20 @@ impl CommandError {
 pub struct ConnectPlayer {
     spotify: Arc<api::Spotify>,
     /// Currently configured device.
-    device: Arc<RwLock<Option<String>>>,
+    device: injector::Var<Option<String>>,
     /// Access to settings.
     settings: Settings,
     /// Current volume scale for this player.
-    volume_scale: Arc<RwLock<u32>>,
+    volume_scale: injector::Var<u32>,
     /// Current volume for this player.
-    volume: Arc<RwLock<u32>>,
+    volume: injector::Var<u32>,
 }
 
 impl ConnectPlayer {
     /// Play the specified song.
     pub async fn play(&self, elapsed: Duration, id: SpotifyId) -> Result<(), CommandError> {
         let track_uri = format!("spotify:track:{}", id.to_base62());
-        let device_id = self.device.read().clone();
+        let device_id = self.device.read().await.clone();
 
         let result = self
             .spotify
@@ -133,39 +134,40 @@ impl ConnectPlayer {
     }
 
     pub async fn pause(&self) -> Result<(), CommandError> {
-        let device_id = self.device.read().clone();
+        let device_id = self.device.read().await.clone();
         CommandError::handle(self.spotify.me_player_pause(device_id).await, "pause")
     }
 
     pub async fn stop(&self) -> Result<(), CommandError> {
-        let device_id = self.device.read().clone();
+        let device_id = self.device.read().await.clone();
         CommandError::handle(self.spotify.me_player_pause(device_id).await, "stop")
     }
 
     /// Update an unscaled volume.
-    pub(crate) fn set_scaled_volume(&self, scaled_volume: u32) -> Result<u32, CommandError> {
-        let volume_scale = *self.volume_scale.read();
+    pub(crate) async fn set_scaled_volume(&self, scaled_volume: u32) -> Result<u32, CommandError> {
+        let volume_scale = self.volume_scale.load().await;
         let update = u32::min((scaled_volume * 100) / volume_scale, 100);
-        self.volume(player::ModifyVolume::Set(update))
+        self.volume(player::ModifyVolume::Set(update)).await
     }
 
-    pub fn volume(&self, modify: player::ModifyVolume) -> Result<u32, CommandError> {
-        let mut volume = self.volume.write();
+    pub async fn volume(&self, modify: player::ModifyVolume) -> Result<u32, CommandError> {
+        let mut volume = self.volume.write().await;
         let update = modify.apply(*volume);
         *volume = update;
         self.settings
             .set("volume", update)
-            .map_err(|e| CommandError::Other(e.into()))?;
+            .map_err(|e| CommandError::Other(e.into()))
+            .await?;
         Ok(update)
     }
 
-    pub fn current_volume(&self) -> u32 {
-        *self.volume.read()
+    pub async fn current_volume(&self) -> u32 {
+        self.volume.load().await
     }
 
     async fn volume_update(&self, volume: u32) -> Result<(), CommandError> {
         let volume = (volume as f32) / 100f32;
-        let device_id = self.device.read().clone();
+        let device_id = self.device.load().await;
         CommandError::handle(
             self.spotify.me_player_volume(device_id, volume).await,
             "volume",
@@ -217,26 +219,26 @@ pub enum ConfigurationEvent {
 #[derive(Clone)]
 pub struct ConnectDevice {
     spotify: Arc<api::Spotify>,
-    pub device: Arc<RwLock<Option<String>>>,
+    pub device: injector::Var<Option<String>>,
     settings: Settings,
 }
 
 impl ConnectDevice {
     /// Synchronize the device.
-    pub fn sync_device(&self, device: Option<api::spotify::Device>) -> Result<(), Error> {
-        match (self.device.read().as_ref(), device.as_ref()) {
+    pub async fn sync_device(&self, device: Option<api::spotify::Device>) -> Result<(), Error> {
+        match (self.device.read().await.as_ref(), device.as_ref()) {
             (None, None) => return Ok(()),
             (Some(a), Some(b)) if *a == b.id => return Ok(()),
             _ => (),
         };
 
-        self.settings.set("device", device.map(|d| d.id))?;
+        self.settings.set("device", device.map(|d| d.id)).await?;
         Ok(())
     }
 
     /// Get the current device.
-    pub fn current_device(&self) -> Option<String> {
-        self.device.read().clone()
+    pub async fn current_device(&self) -> Option<String> {
+        self.device.read().await.clone()
     }
 
     /// List all available devices.
@@ -245,8 +247,8 @@ impl ConnectDevice {
     }
 
     /// Set which device to perform playback from.
-    pub fn set_device(&self, device: Option<String>) -> Result<(), Error> {
-        self.settings.set("device", device)?;
+    pub async fn set_device(&self, device: Option<String>) -> Result<(), Error> {
+        self.settings.set("device", device).await?;
         Ok(())
     }
 }

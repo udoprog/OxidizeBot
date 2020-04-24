@@ -1,4 +1,4 @@
-use crate::{api, task};
+use crate::{api, injector, settings};
 use anyhow::Error;
 use irc::{
     client,
@@ -8,7 +8,6 @@ use irc::{
     },
 };
 use leaky_bucket::{LeakyBucket, LeakyBuckets};
-use parking_lot::RwLock;
 use std::{fmt, sync::Arc, time};
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
@@ -30,22 +29,22 @@ struct Inner {
     sender: client::Sender,
     limiter: LeakyBucket,
     nightbot_limiter: LeakyBucket,
-    nightbot: Arc<RwLock<Option<Arc<api::NightBot>>>>,
+    nightbot: injector::Var<Option<Arc<api::NightBot>>>,
 }
 
 #[derive(Clone)]
 pub struct Sender {
-    ty: Arc<RwLock<Type>>,
+    ty: settings::Var<Type>,
     inner: Arc<Inner>,
 }
 
 impl Sender {
     /// Create a new sender.
     pub fn new(
-        ty: Arc<RwLock<Type>>,
+        ty: settings::Var<Type>,
         target: String,
         sender: client::Sender,
-        nightbot: Arc<RwLock<Option<Arc<api::NightBot>>>>,
+        nightbot: injector::Var<Option<Arc<api::NightBot>>>,
         buckets: &LeakyBuckets,
     ) -> Result<Sender, Error> {
         // limiter to use for IRC chat messages.
@@ -95,21 +94,17 @@ impl Sender {
     }
 
     /// Only send to chat, with rate limiting.
-    pub fn send(&self, m: impl Into<Message>) {
+    pub async fn send(&self, m: impl Into<Message>) {
         let m = m.into();
 
-        let inner = self.inner.clone();
+        if let Err(e) = self.inner.limiter.acquire(1).await {
+            log_error!(e, "error in limiter");
+            return;
+        }
 
-        task::spawn(async move {
-            if let Err(e) = inner.limiter.acquire(1).await {
-                log_error!(e, "error in limiter");
-                return;
-            }
-
-            if let Err(e) = inner.sender.send(m) {
-                log_error!(e, "failed to send message");
-            }
-        });
+        if let Err(e) = self.inner.sender.send(m) {
+            log_error!(e, "failed to send message");
+        }
     }
 
     /// Send an immediate message, without taking rate limiting into account.
@@ -120,13 +115,14 @@ impl Sender {
     }
 
     /// Send a PRIVMSG.
-    pub fn privmsg(&self, f: impl fmt::Display) {
-        match *self.ty.read() {
+    pub async fn privmsg(&self, f: impl fmt::Display) {
+        match self.ty.load().await {
             Type::NightBot => {
-                self.send_nightbot(&*self.inner, f.to_string());
+                self.send_nightbot(&*self.inner, f.to_string()).await;
             }
             Type::Chat => {
-                self.send(Command::PRIVMSG(self.inner.target.clone(), f.to_string()));
+                self.send(Command::PRIVMSG(self.inner.target.clone(), f.to_string()))
+                    .await;
             }
         }
     }
@@ -137,55 +133,50 @@ impl Sender {
     }
 
     /// Send a capability request.
-    pub fn cap_req(&self, cap: &str) {
+    pub async fn cap_req(&self, cap: &str) {
         self.send(Command::CAP(
             None,
             CapSubCommand::REQ,
             Some(String::from(cap)),
             None,
         ))
+        .await;
     }
 
     /// Send message via nightbot.
-    fn send_nightbot(&self, inner: &Inner, m: String) {
-        let nightbot = match inner.nightbot.read().as_ref() {
-            Some(nightbot) => nightbot.clone(),
+    async fn send_nightbot(&self, inner: &Inner, m: String) {
+        let nightbot = match inner.nightbot.load().await {
+            Some(nightbot) => nightbot,
             None => {
                 log::warn!("Nightbot API is not configured");
                 return;
             }
         };
 
-        let limiter = inner.nightbot_limiter.clone();
+        // wait for the initial permit, keep the lock in case message is rejected.
+        if let Err(e) = inner.nightbot_limiter.acquire(1).await {
+            log_error!(e, "error in limiter");
+            return;
+        }
 
-        let future = async move {
-            // wait for the initial permit, keep the lock in case message is rejected.
-            if let Err(e) = limiter.acquire(1).await {
-                log_error!(e, "error in limiter");
-                return;
-            }
+        loop {
+            let result = nightbot.channel_send(m.clone()).await;
 
-            loop {
-                let result = nightbot.channel_send(m.clone()).await;
+            match result {
+                Ok(()) => (),
+                Err(api::nightbot::RequestError::TooManyRequests) => {
+                    // since we still hold the lock, no one else can send.
+                    // sleep for 100 ms an retry the send.
+                    tokio::time::delay_for(time::Duration::from_millis(1000)).await;
 
-                match result {
-                    Ok(()) => (),
-                    Err(api::nightbot::RequestError::TooManyRequests) => {
-                        // since we still hold the lock, no one else can send.
-                        // sleep for 100 ms an retry the send.
-                        tokio::time::delay_for(time::Duration::from_millis(1000)).await;
-
-                        continue;
-                    }
-                    Err(api::nightbot::RequestError::Other(e)) => {
-                        log_error!(e, "failed to send message via nightbot");
-                    }
+                    continue;
                 }
-
-                break;
+                Err(api::nightbot::RequestError::Other(e)) => {
+                    log_error!(e, "failed to send message via nightbot");
+                }
             }
-        };
 
-        task::spawn(future);
+            break;
+        }
     }
 }

@@ -1,8 +1,6 @@
 use crate::{auth, command, currency::Currency, module, prelude::*, stream_info, utils};
 use anyhow::Error;
 use chrono::{DateTime, Utc};
-use parking_lot::RwLock;
-use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
@@ -12,22 +10,21 @@ pub struct Reward {
 }
 
 pub struct Handler {
-    enabled: Arc<RwLock<bool>>,
-    cooldown: Arc<RwLock<utils::Cooldown>>,
-    currency: Arc<RwLock<Option<Currency>>>,
+    enabled: settings::Var<bool>,
+    cooldown: settings::Var<utils::Cooldown>,
+    currency: injector::Var<Option<Currency>>,
     waters: Mutex<Vec<(DateTime<Utc>, Option<Reward>)>>,
     stream_info: stream_info::StreamInfo,
-    reward_multiplier: Arc<RwLock<u32>>,
+    reward_multiplier: settings::Var<u32>,
 }
 
 impl Handler {
-    fn check_waters(
+    async fn check_waters(
         &self,
         waters: &mut Vec<(DateTime<Utc>, Option<Reward>)>,
-        ctx: &mut command::Context,
-    ) -> Option<(DateTime<Utc>, Option<Reward>)> {
+    ) -> Result<(DateTime<Utc>, Option<Reward>), Error> {
         if let Some((when, user)) = waters.last() {
-            return Some((*when, user.clone()));
+            return Ok((*when, user.clone()));
         }
 
         let started_at = self
@@ -38,37 +35,35 @@ impl Handler {
             .as_ref()
             .map(|s| s.started_at);
 
-        let started_at = match started_at {
-            Some(started_at) => started_at,
-            None => {
-                ctx.respond("Sorry, the !water command is currently not available :(");
-                return None;
-            }
-        };
+        let started_at = started_at.ok_or_else(|| {
+            respond_err!("Sorry, the !water command is currently not available :(")
+        })?;
 
         waters.push((started_at, None));
-        Some((started_at, None))
+        Ok((started_at, None))
     }
 }
 
 #[async_trait]
 impl command::Handler for Handler {
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
-        let currency = self.currency.read().as_ref().cloned();
-        let currency = match currency {
+        let currency = match self.currency.load().await {
             Some(currency) => currency,
             None => {
-                ctx.respond("No currency configured for stream, sorry :(");
+                respond!(ctx, "No currency configured for stream, sorry :(");
                 return Ok(());
             }
         };
 
-        if !self.cooldown.write().is_open() {
-            ctx.respond("A !water command was recently issued, please wait a bit longer!");
+        if !self.cooldown.write().await.is_open() {
+            respond!(
+                ctx,
+                "A !water command was recently issued, please wait a bit longer!"
+            );
             return Ok(());
         }
 
@@ -78,18 +73,14 @@ impl command::Handler for Handler {
             Some("undo") => {
                 ctx.check_scope(auth::Scope::WaterUndo).await?;
                 let mut waters = self.waters.lock().await;
-
-                let (_, reward) = match self.check_waters(&mut waters, ctx) {
-                    Some(water) => water,
-                    None => return Ok(()),
-                };
+                let (_, reward) = self.check_waters(&mut waters).await?;
 
                 waters.pop();
 
                 let reward = match reward {
                     Some(reward) => reward,
                     None => {
-                        ctx.respond("No one has been rewarded for !water yet cmonBruh");
+                        respond!(ctx, "No one has been rewarded for !water yet cmonBruh");
                         return Ok(());
                     }
                 };
@@ -97,7 +88,8 @@ impl command::Handler for Handler {
                 ctx.privmsg(format!(
                     "{user} issued a bad !water that is now being undone FeelsBadMan",
                     user = reward.user
-                ));
+                ))
+                .await;
 
                 if let Err(e) = currency
                     .balance_add(ctx.channel(), &reward.user, -reward.amount)
@@ -108,16 +100,12 @@ impl command::Handler for Handler {
             }
             None => {
                 let mut waters = self.waters.lock().await;
-
-                let (last, _) = match self.check_waters(&mut waters, ctx) {
-                    Some(water) => water,
-                    None => return Ok(()),
-                };
+                let (last, _) = self.check_waters(&mut waters).await?;
 
                 let user = match ctx.user.real() {
                     Some(user) => user,
                     None => {
-                        ctx.privmsg("Can only get balance for real users.");
+                        ctx.privmsg("Can only get balance for real users.").await;
                         return Ok(());
                     }
                 };
@@ -125,7 +113,7 @@ impl command::Handler for Handler {
                 let now = Utc::now();
                 let diff = now - last;
                 let amount = i64::max(0i64, diff.num_minutes());
-                let amount = (amount * *self.reward_multiplier.read() as i64) / 100i64;
+                let amount = (amount * self.reward_multiplier.load().await as i64) / 100i64;
 
                 waters.push((
                     now,
@@ -135,12 +123,12 @@ impl command::Handler for Handler {
                     }),
                 ));
 
-                ctx.respond(format!(
+                respond!(ctx,
                     "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.", streamer = ctx.user.streamer().display_name,
                     user = user.display_name(),
                     amount = amount,
                     currency = currency.name
-                ));
+                );
 
                 if let Err(e) = currency
                     .balance_add(ctx.channel(), user.name(), amount)
@@ -150,7 +138,7 @@ impl command::Handler for Handler {
                 }
             }
             Some(_) => {
-                ctx.respond("Expected: !water, or !water undo.");
+                respond!(ctx, "Expected: !water, or !water undo.");
             }
         }
 
@@ -177,19 +165,21 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), Error> {
-        let enabled = settings.var("water/enabled", false)?;
-        let cooldown = settings.var(
-            "water/cooldown",
-            utils::Cooldown::from_duration(utils::Duration::seconds(60)),
-        )?;
-        let reward_multiplier = settings.var("water/reward%", 100)?;
+        let enabled = settings.var("water/enabled", false).await?;
+        let cooldown = settings
+            .var(
+                "water/cooldown",
+                utils::Cooldown::from_duration(utils::Duration::seconds(60)),
+            )
+            .await?;
+        let reward_multiplier = settings.var("water/reward%", 100).await?;
 
         handlers.insert(
             "water",
             Handler {
                 enabled,
                 cooldown,
-                currency: injector.var()?,
+                currency: injector.var().await?,
                 waters: Mutex::new(Vec::new()),
                 stream_info: stream_info.clone(),
                 reward_multiplier,

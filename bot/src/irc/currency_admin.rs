@@ -5,23 +5,20 @@ use crate::{
     db,
     injector::Injector,
     prelude::*,
-    task, utils,
+    utils,
 };
 use anyhow::Error;
-use parking_lot::RwLock;
 use std::sync::Arc;
 
 /// Handler for the !admin command.
 pub struct Handler {
-    pub currency: Arc<RwLock<Option<Currency>>>,
+    pub currency: injector::Var<Option<Currency>>,
 }
 
 impl Handler {
     /// Get the name of the command for the current currency.
-    pub fn command_name(&self) -> Option<Arc<String>> {
-        let currency = self.currency.read();
-
-        match currency.as_ref() {
+    pub async fn command_name(&self) -> Option<Arc<String>> {
+        match &*self.currency.read().await {
             Some(ref c) if c.command_enabled => Some(c.name.clone()),
             _ => None,
         }
@@ -31,20 +28,18 @@ impl Handler {
 #[async_trait]
 impl command::Handler for Handler {
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
-        let currency = match self.currency.read().as_ref() {
-            Some(currency) => currency.clone(),
-            None => {
-                ctx.respond("No currency configured");
-                return Ok(());
-            }
-        };
+        let currency = self
+            .currency
+            .load()
+            .await
+            .ok_or_else(|| respond_err!("No currency configured"))?;
 
         match ctx.next().as_deref() {
             None => {
                 let user = match ctx.user.real() {
                     Some(user) => user,
                     None => {
-                        ctx.respond("Only real users can check their balance");
+                        respond!(ctx, "Only real users can check their balance");
                         return Ok(());
                     }
                 };
@@ -56,64 +51,67 @@ impl command::Handler for Handler {
                         let balance = balance.unwrap_or_default();
                         let watch_time = utils::compact_duration(&balance.watch_time().as_std());
 
-                        user.respond(format!(
+                        respond!(
+                            user,
                             "You have {balance} {name} [{watch_time}].",
                             balance = balance.balance,
                             name = currency.name,
                             watch_time = watch_time,
-                        ));
+                        );
                     }
                     Err(e) => {
-                        user.respond("Could not get balance, sorry :(");
+                        respond!(user, "Could not get balance, sorry :(");
                         log_error!(e, "failed to get balance");
                     }
                 }
             }
             Some("show") => {
                 ctx.check_scope(Scope::CurrencyShow).await?;
-                let to_show = ctx_try!(ctx.next_str("<user>"));
+                let to_show = ctx.next_str("<user>")?;
 
                 match currency.balance_of(ctx.channel(), to_show.as_str()).await {
                     Ok(balance) => {
                         let balance = balance.unwrap_or_default();
                         let watch_time = utils::compact_duration(&balance.watch_time().as_std());
 
-                        ctx.respond(format!(
+                        respond!(
+                            ctx,
                             "{user} has {balance} {name} [{watch_time}].",
                             user = to_show,
                             balance = balance.balance,
                             name = currency.name,
                             watch_time = watch_time,
-                        ));
+                        );
                     }
                     Err(e) => {
-                        ctx.respond("Count not get balance, sorry :(");
+                        respond!(ctx, "Count not get balance, sorry :(");
                         log_error!(e, "failed to get balance");
                     }
                 }
             }
             Some("give") => {
-                let taker = db::user_id(&ctx_try!(ctx.next_str("<user> <amount>")));
-                let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>"));
+                let taker = db::user_id(&ctx.next_str("<user> <amount>")?);
+                let amount: i64 = ctx.next_parse("<user> <amount>")?;
 
                 let user = match ctx.user.real() {
                     Some(user) => user,
                     None => {
-                        ctx.respond("Only real users can give currency");
+                        respond!(ctx, "Only real users can give currency");
                         return Ok(());
                     }
                 };
 
                 if ctx.user.is(&taker) {
-                    ctx.respond("Giving to... yourself? But WHY?");
+                    respond!(ctx, "Giving to... yourself? But WHY?");
                     return Ok(());
                 }
 
                 if amount <= 0 {
-                    ctx.respond(format!(
+                    respond!(
+                        ctx,
                         "Can't give negative or zero {currency} LUL",
                         currency = currency.name
-                    ));
+                    );
                     return Ok(());
                 }
 
@@ -129,25 +127,28 @@ impl command::Handler for Handler {
 
                 match result {
                     Ok(()) => {
-                        user.respond(format!(
+                        respond!(
+                            user,
                             "Gave {user} {amount} {currency}!",
                             user = taker,
                             amount = amount,
                             currency = currency.name
-                        ));
+                        );
                     }
                     Err(BalanceTransferError::NoBalance) => {
-                        user.respond(format!(
+                        respond!(
+                            user,
                             "Not enough {currency} to transfer {amount}",
                             currency = currency.name,
                             amount = amount,
-                        ));
+                        );
                     }
                     Err(BalanceTransferError::Other(e)) => {
-                        user.respond(format!(
+                        respond!(
+                            user,
                             "Failed to give {currency}, sorry :(",
                             currency = currency.name
-                        ));
+                        );
                         log_error!(e, "failed to modify currency");
                     }
                 }
@@ -155,96 +156,88 @@ impl command::Handler for Handler {
             Some("boost") => {
                 ctx.check_scope(Scope::CurrencyBoost).await?;
 
-                let boosted_user = db::user_id(&ctx_try!(ctx.next_str("<user> <amount>")));
-                let amount: i64 = ctx_try!(ctx.next_parse("<user> <amount>"));
+                let boosted_user = db::user_id(&ctx.next_str("<user> <amount>")?);
+                let amount: i64 = ctx.next_parse("<user> <amount>")?;
 
                 if !ctx.user.is_streamer() && ctx.user.is(&boosted_user) {
-                    ctx.respond("You gonna have to play by the rules (or ask another mod) :(");
+                    respond!(
+                        ctx,
+                        "You gonna have to play by the rules (or ask another mod) :("
+                    );
                     return Ok(());
                 }
 
-                let user = ctx.user.clone();
-                let currency = currency.clone();
+                currency
+                    .balance_add(ctx.user.channel(), &boosted_user, amount)
+                    .await?;
 
-                let result = currency
-                    .balance_add(user.channel(), &boosted_user, amount)
-                    .await;
-
-                match result {
-                    Ok(()) => {
-                        if amount >= 0 {
-                            user.respond(format!(
-                                "Gave {user} {amount} {currency}!",
-                                user = boosted_user,
-                                amount = amount,
-                                currency = currency.name
-                            ));
-                        } else {
-                            user.respond(format!(
-                                "Took away {amount} {currency} from {user}!",
-                                user = boosted_user,
-                                amount = -amount,
-                                currency = currency.name
-                            ));
-                        }
-                    }
-                    Err(e) => {
-                        user.respond("failed to boost user, sorry :(");
-                        log_error!(e, "failed to modify currency");
-                    }
+                if amount >= 0 {
+                    respond!(
+                        ctx,
+                        "Gave {user} {amount} {currency}!",
+                        user = boosted_user,
+                        amount = amount,
+                        currency = currency.name
+                    );
+                } else {
+                    respond!(
+                        ctx,
+                        "Took away {amount} {currency} from {user}!",
+                        user = boosted_user,
+                        amount = -amount,
+                        currency = currency.name
+                    );
                 }
             }
             Some("windfall") => {
                 ctx.check_scope(Scope::CurrencyWindfall).await?;
 
-                let user = ctx.user.clone();
-                let amount: i64 = ctx_try!(ctx.next_parse("<amount>"));
-                let sender = ctx.inner.sender.clone();
+                let amount: i64 = ctx.next_parse("<amount>")?;
 
-                task::spawn(async move {
-                    let result = currency.add_channel_all(user.channel(), amount, 0).await;
+                currency
+                    .add_channel_all(ctx.user.channel(), amount, 0)
+                    .await?;
 
-                    match result {
-                        Ok(_) => {
-                            if amount >= 0 {
-                                sender.privmsg(format!(
-                                    "/me gave {amount} {currency} to EVERYONE!",
-                                    amount = amount,
-                                    currency = currency.name
-                                ));
-                            } else {
-                                sender.privmsg(format!(
-                                    "/me took away {amount} {currency} from EVERYONE!",
-                                    amount = amount,
-                                    currency = currency.name
-                                ));
-                            }
-                        }
-                        Err(e) => {
-                            user.respond("failed to windfall :(");
-                            log_error!(e, "failed to windfall");
-                        }
-                    }
-                });
+                if amount >= 0 {
+                    ctx.privmsg(format!(
+                        "/me gave {amount} {currency} to EVERYONE!",
+                        amount = amount,
+                        currency = currency.name
+                    ))
+                    .await;
+                } else {
+                    ctx.privmsg(format!(
+                        "/me took away {amount} {currency} from EVERYONE!",
+                        amount = amount,
+                        currency = currency.name
+                    ))
+                    .await;
+                }
             }
             Some(..) => {
                 let mut alts = Vec::new();
 
                 alts.push("give");
 
-                if ctx.user.has_scope(Scope::CurrencyBoost) {
+                if ctx.user.has_scope(Scope::CurrencyBoost).await {
                     alts.push("boost");
+                } else {
+                    alts.push("boost 🛇");
                 }
 
-                if ctx.user.has_scope(Scope::CurrencyWindfall) {
+                if ctx.user.has_scope(Scope::CurrencyWindfall).await {
                     alts.push("windfall");
+                } else {
+                    alts.push("windfall 🛇");
                 }
 
-                if ctx.user.has_scope(Scope::CurrencyShow) {
+                if ctx.user.has_scope(Scope::CurrencyShow).await {
                     alts.push("show");
+                } else {
+                    alts.push("show 🛇");
                 }
 
-                ctx.respond(format!("Expected: {alts}", alts = alts.join(", ")));
+                respond!(ctx, "Expected: {alts}", alts = alts.join(", "));
             }
         }
 
@@ -252,27 +245,8 @@ impl command::Handler for Handler {
     }
 }
 
-pub fn setup(
-    injector: &Injector,
-) -> Result<(impl Future<Output = Result<(), Error>>, Arc<Handler>), Error> {
-    let (currency_stream, currency) = injector.stream::<Currency>();
-    let currency = Arc::new(RwLock::new(currency));
-
-    let handler = Handler {
-        currency: currency.clone(),
-    };
-
-    let future = async move {
-        let mut currency_stream = currency_stream.fuse();
-
-        loop {
-            futures::select! {
-                update = currency_stream.select_next_some() => {
-                    *currency.write() = update;
-                }
-            }
-        }
-    };
-
-    Ok((future, Arc::new(handler)))
+pub async fn setup(injector: &Injector) -> Result<Arc<Handler>, Error> {
+    let currency = injector.var::<Currency>().await?;
+    let handler = Handler { currency };
+    Ok(Arc::new(handler))
 }

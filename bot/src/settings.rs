@@ -4,8 +4,13 @@ use crate::{auth::Scope, db, prelude::*, utils};
 use chrono_tz::Tz;
 use diesel::prelude::*;
 use futures::ready;
-use parking_lot::{Mutex, RwLock};
 use std::{borrow::Cow, collections::HashMap, error, fmt, marker, pin::Pin, sync::Arc};
+use tokio::{
+    sync::{Mutex, RwLock},
+    task::JoinError,
+};
+
+pub use crate::injector::Var;
 
 const SEPARATOR: char = '/';
 
@@ -51,24 +56,26 @@ pub enum Error {
     FailedToLoadSchema(serde_yaml::Error),
     /// Bad boolean value.
     BadBoolean(std::str::ParseBoolError),
+    /// Background task failed.
+    TaskError(JoinError),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use self::Error::*;
-
         match *self {
-            Shutdown => "injector is shutting down".fmt(fmt),
-            EndOfDriverStream => "end of driver stream".fmt(fmt),
-            DriverAlreadyConfigured => "driver already configured".fmt(fmt),
-            NoTargetForSchema(ref key) => write!(fmt, "no target for schema key: {}", key),
-            InvalidTimeZone(ref tz) => write!(fmt, "Invalid time zone: {}", tz,),
-            MissingRequiredField(ref field) => write!(fmt, "Missing required field: {}", field),
-            Expected(ref what) => write!(fmt, "Expected {}", what),
-            ExpectedType(ref ty) => write!(fmt, "Expected type: {}", ty),
-            IncompatibleField(ref field) => write!(fmt, "Incompatible field: {}", field),
-            ExpectedOneOf(ref alts) => write!(fmt, "Expected one of: {}", alts.join(", ")),
-            MigrationIncompatible {
+            Self::Shutdown => "injector is shutting down".fmt(fmt),
+            Self::EndOfDriverStream => "end of driver stream".fmt(fmt),
+            Self::DriverAlreadyConfigured => "driver already configured".fmt(fmt),
+            Self::NoTargetForSchema(ref key) => write!(fmt, "no target for schema key: {}", key),
+            Self::InvalidTimeZone(ref tz) => write!(fmt, "Invalid time zone: {}", tz,),
+            Self::MissingRequiredField(ref field) => {
+                write!(fmt, "Missing required field: {}", field)
+            }
+            Self::Expected(ref what) => write!(fmt, "Expected {}", what),
+            Self::ExpectedType(ref ty) => write!(fmt, "Expected type: {}", ty),
+            Self::IncompatibleField(ref field) => write!(fmt, "Incompatible field: {}", field),
+            Self::ExpectedOneOf(ref alts) => write!(fmt, "Expected one of: {}", alts.join(", ")),
+            Self::MigrationIncompatible {
                 ref from,
                 ref to,
                 ref ty,
@@ -78,11 +85,23 @@ impl fmt::Display for Error {
                 "value for {} (json: {}) is not compatible with {} ({})",
                 from, json, to, ty
             ),
-            Json(ref e) => write!(fmt, "JSON Error: {}", e),
-            Diesel(ref e) => write!(fmt, "Diesel Error: {}", e),
-            Error(ref e) => write!(fmt, "Error: {}", e),
-            FailedToLoadSchema(ref e) => write!(fmt, "Failed to load settings.yaml: {}", e),
-            BadBoolean(ref e) => write!(fmt, "Bad boolean value: {}", e),
+            Self::Json(ref e) => write!(fmt, "JSON Error: {}", e),
+            Self::Diesel(ref e) => write!(fmt, "Diesel Error: {}", e),
+            Self::Error(ref e) => write!(fmt, "Error: {}", e),
+            Self::FailedToLoadSchema(ref e) => write!(fmt, "Failed to load settings.yaml: {}", e),
+            Self::BadBoolean(ref e) => write!(fmt, "Bad boolean value: {}", e),
+            Self::TaskError(..) => write!(fmt, "Task failed"),
+        }
+    }
+}
+
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match *self {
+            Self::Json(ref e) => Some(e),
+            Self::Diesel(ref e) => Some(e),
+            Self::TaskError(ref e) => Some(e),
+            _ => None,
         }
     }
 }
@@ -105,15 +124,9 @@ impl From<anyhow::Error> for Error {
     }
 }
 
-impl error::Error for Error {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        use self::Error::*;
-
-        match *self {
-            Json(ref e) => Some(e),
-            Diesel(ref e) => Some(e),
-            _ => None,
-        }
+impl From<tokio::task::JoinError> for Error {
+    fn from(e: tokio::task::JoinError) -> Self {
+        Error::TaskError(e)
     }
 }
 
@@ -285,7 +298,6 @@ pub struct Settings {
 impl Settings {
     pub fn new(db: db::Database, schema: Schema) -> Self {
         let prefixes = schema.as_prefixes();
-
         let (drivers, drivers_rx) = mpsc::unbounded();
 
         Self {
@@ -302,12 +314,12 @@ impl Settings {
     }
 
     /// Run all settings migrations.
-    pub fn run_migrations(&self) -> Result<(), Error> {
+    pub async fn run_migrations(&self) -> Result<(), Error> {
         for m in &self.inner.schema.migrations {
             if m.prefix {
-                self.migrate_prefix(&m.from, &m.to)?;
+                self.migrate_prefix(&m.from, &m.to).await?;
             } else {
-                self.migrate_exact(&m.from, &m.to)?;
+                self.migrate_exact(&m.from, &m.to).await?;
             }
         }
 
@@ -315,18 +327,23 @@ impl Settings {
     }
 
     /// Migrate one prefix to another.
-    fn migrate_prefix(&self, from_key: &str, to_key: &str) -> Result<(), Error> {
+    async fn migrate_prefix(&self, from_key: &str, to_key: &str) -> Result<(), Error> {
         use self::db::schema::settings::dsl;
 
         let keys = {
-            let c = self.inner.db.pool.lock();
-
-            dsl::settings
-                .select(dsl::key)
-                .order(dsl::key)
-                .load::<String>(&*c)?
-                .into_iter()
-                .collect::<Vec<_>>()
+            self.inner
+                .db
+                .asyncify(|c| {
+                    Ok::<_, Error>(
+                        dsl::settings
+                            .select(dsl::key)
+                            .order(dsl::key)
+                            .load::<String>(c)?
+                            .into_iter()
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .await?
         };
 
         for current_key in keys {
@@ -336,11 +353,11 @@ impl Settings {
 
             let to_key = format!("{}{}", to_key, &current_key[from_key.len()..]);
 
-            match self.migrate_exact(&current_key, &to_key) {
+            match self.migrate_exact(&current_key, &to_key).await {
                 Ok(()) => (),
                 Err(Error::NoTargetForSchema(..)) => {
                     log::warn!("Clearing setting without schema: {}", current_key);
-                    self.inner_clear(&current_key)?;
+                    self.inner_clear(&current_key).await?;
                 }
                 Err(e) => return Err(e),
             }
@@ -350,15 +367,15 @@ impl Settings {
     }
 
     /// Migrate the exact key.
-    fn migrate_exact(&self, from_key: &str, to_key: &str) -> Result<(), Error> {
-        let from = match self.inner_get::<serde_json::Value>(&from_key)? {
+    async fn migrate_exact(&self, from_key: &str, to_key: &str) -> Result<(), Error> {
+        let from = match self.inner_get::<serde_json::Value>(from_key).await? {
             Some(from) => from,
             None => return Ok(()),
         };
 
         log::info!("Migrating setting: {} -> {}", from_key, to_key);
 
-        let to = match self.setting::<serde_json::Value>(&to_key)? {
+        let to = match self.setting::<serde_json::Value>(to_key).await? {
             Some(to) => to,
             None => return Err(Error::NoTargetForSchema(to_key.to_string())),
         };
@@ -373,7 +390,7 @@ impl Settings {
                 });
             }
 
-            self.set_json(&to_key, from)?;
+            self.set_json(&to_key, from).await?;
         } else {
             log::warn!(
                 "Ignoring value for {} since {} is already present",
@@ -382,7 +399,7 @@ impl Settings {
             );
         }
 
-        self.inner_clear(&from_key)?;
+        self.inner_clear(&from_key).await?;
         Ok(())
     }
 
@@ -393,53 +410,58 @@ impl Settings {
     }
 
     /// Get a setting by prefix.
-    pub fn list_by_prefix(&self, prefix: &str) -> Result<Vec<Setting>, Error> {
+    pub async fn list_by_prefix(&self, prefix: &str) -> Result<Vec<Setting>, Error> {
         use self::db::schema::settings::dsl;
 
         let prefix = self.key(prefix);
+        let inner = self.inner.clone();
+        let prefix = prefix.to_string();
 
-        let c = self.inner.db.pool.lock();
+        self.inner
+            .db
+            .asyncify(move |c| {
+                let prefix = match inner.prefixes.get(&prefix) {
+                    Some(prefix) => prefix,
+                    None => return Ok(Vec::default()),
+                };
 
-        let prefix = match self.inner.prefixes.get(prefix.as_ref()) {
-            Some(prefix) => prefix,
-            None => return Ok(Vec::default()),
-        };
+                let mut settings = Vec::new();
 
-        let mut settings = Vec::new();
+                let values = dsl::settings
+                    .select((dsl::key, dsl::value))
+                    .order(dsl::key)
+                    .load::<(String, String)>(c)?
+                    .into_iter()
+                    .collect::<HashMap<_, _>>();
 
-        let values = dsl::settings
-            .select((dsl::key, dsl::value))
-            .order(dsl::key)
-            .load::<(String, String)>(&*c)?
-            .into_iter()
-            .collect::<HashMap<_, _>>();
+                for key in &prefix.keys {
+                    let schema = match inner.schema.types.get(key) {
+                        Some(schema) => schema,
+                        None => continue,
+                    };
 
-        for key in &prefix.keys {
-            let schema = match self.inner.schema.types.get(key) {
-                Some(schema) => schema,
-                None => continue,
-            };
+                    let value = match values.get(key) {
+                        Some(value) => serde_json::from_str(value)?,
+                        None if schema.ty.optional => serde_json::Value::Null,
+                        None => continue,
+                    };
 
-            let value = match values.get(key) {
-                Some(value) => serde_json::from_str(value)?,
-                None if schema.ty.optional => serde_json::Value::Null,
-                None => continue,
-            };
+                    settings.push(Setting {
+                        schema: schema.clone(),
+                        key: key.to_string(),
+                        value,
+                    });
+                }
 
-            settings.push(Setting {
-                schema: schema.clone(),
-                key: key.to_string(),
-                value,
-            });
-        }
-
-        Ok(settings)
+                Ok(settings)
+            })
+            .await
     }
 
     /// Get the given setting.
     ///
     /// This includes the schema of the setting as well.
-    pub fn setting<'a, T>(&'a self, key: &str) -> Result<Option<SettingRef<'a, T>>, Error>
+    pub async fn setting<'a, T>(&'a self, key: &str) -> Result<Option<SettingRef<'a, T>>, Error>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -450,51 +472,51 @@ impl Settings {
             None => return Ok(None),
         };
 
-        let value = self.inner_get(&key)?;
+        let value = self.inner_get(&key).await?;
         Ok(Some(SettingRef { schema, key, value }))
     }
 
     /// Test if the given key exists in the database.
-    pub fn has(&self, key: &str) -> Result<bool, Error> {
+    pub async fn has(&self, key: &str) -> Result<bool, Error> {
         let key = self.key(key);
-        Ok(self.inner_get::<serde_json::Value>(&key)?.is_some())
+        Ok(self.inner_get::<serde_json::Value>(&key).await?.is_some())
     }
 
     /// Get the value of the given key from the database.
-    pub fn get<T>(&self, key: &str) -> Result<Option<T>, Error>
+    pub async fn get<T>(&self, key: &str) -> Result<Option<T>, Error>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
         let key = self.key(key);
-        self.inner_get(&key)
+        self.inner_get(&key).await
     }
 
     /// Insert the given setting without sending an update notification to other components.
-    pub fn set_silent<T>(&self, key: &str, value: T) -> Result<(), Error>
+    pub async fn set_silent<T>(&self, key: &str, value: T) -> Result<(), Error>
     where
         T: serde::Serialize,
     {
         let key = self.key(key);
-        self.inner_set(key.as_ref(), value, false)
+        self.inner_set(key.as_ref(), value, false).await
     }
 
     /// Insert the given setting.
-    pub fn set<T>(&self, key: &str, value: T) -> Result<(), Error>
+    pub async fn set<T>(&self, key: &str, value: T) -> Result<(), Error>
     where
         T: serde::Serialize,
     {
         let key = self.key(key);
-        self.inner_set(key.as_ref(), value, true)
+        self.inner_set(key.as_ref(), value, true).await
     }
 
     /// Insert the given setting as raw JSON.
-    pub fn set_json(&self, key: &str, value: serde_json::Value) -> Result<(), Error> {
+    pub async fn set_json(&self, key: &str, value: serde_json::Value) -> Result<(), Error> {
         let key = self.key(key);
-        self.inner_set_json(key.as_ref(), value, true)
+        self.inner_set_json(key.as_ref(), value, true).await
     }
 
     /// Inner implementation of set_json which doesn't do key translation.
-    fn inner_set_json(
+    async fn inner_set_json(
         &self,
         key: &str,
         value: serde_json::Value,
@@ -506,83 +528,104 @@ impl Settings {
             log::trace!("{}: Setting to {:?} (notify: {})", key, value, notify);
         }
 
-        let c = self.inner.db.pool.lock();
+        let key = key.to_string();
 
-        let filter = dsl::settings.filter(dsl::key.eq(&key));
+        let (key, value) = self
+            .inner
+            .db
+            .asyncify(move |c| {
+                let filter = dsl::settings.filter(dsl::key.eq(&key));
 
-        let b = filter
-            .clone()
-            .select((dsl::key, dsl::value))
-            .first::<(String, String)>(&*c)
-            .optional()?;
+                let b = filter
+                    .clone()
+                    .select((dsl::key, dsl::value))
+                    .first::<(String, String)>(c)
+                    .optional()?;
 
-        let json = serde_json::to_string(&value)?;
+                let json = serde_json::to_string(&value)?;
+
+                match b {
+                    None => {
+                        diesel::insert_into(dsl::settings)
+                            .values((dsl::key.eq(&key), dsl::value.eq(json)))
+                            .execute(c)?;
+                    }
+                    Some(_) => {
+                        diesel::update(filter)
+                            .set((dsl::key.eq(&key), dsl::value.eq(json)))
+                            .execute(c)?;
+                    }
+                }
+
+                Ok::<_, Error>((key, value))
+            })
+            .await?;
 
         if notify {
-            self.try_send(&key, Event::Set(value));
-        }
-
-        match b {
-            None => {
-                diesel::insert_into(dsl::settings)
-                    .values((dsl::key.eq(&key), dsl::value.eq(json)))
-                    .execute(&*c)?;
-            }
-            Some(_) => {
-                diesel::update(filter)
-                    .set((dsl::key.eq(&key), dsl::value.eq(json)))
-                    .execute(&*c)?;
-            }
+            self.try_send(&key, Event::Set(value)).await;
         }
 
         Ok(())
     }
 
     /// Insert the given setting.
-    pub fn list(&self) -> Result<Vec<Setting>, Error> {
+    pub async fn list(&self) -> Result<Vec<Setting>, Error> {
         use self::db::schema::settings::dsl;
-        let c = self.inner.db.pool.lock();
 
-        let mut settings = Vec::new();
+        let inner = self.inner.clone();
 
-        let values = dsl::settings
-            .select((dsl::key, dsl::value))
-            .order(dsl::key)
-            .load::<(String, String)>(&*c)?
-            .into_iter()
-            .collect::<HashMap<_, _>>();
+        self.inner
+            .db
+            .asyncify(move |c| {
+                let mut settings = Vec::new();
 
-        for (key, schema) in &self.inner.schema.types {
-            let value = match values.get(key) {
-                Some(value) => serde_json::from_str(value)?,
-                None if schema.ty.optional => serde_json::Value::Null,
-                None => continue,
-            };
+                let values = dsl::settings
+                    .select((dsl::key, dsl::value))
+                    .order(dsl::key)
+                    .load::<(String, String)>(c)?
+                    .into_iter()
+                    .collect::<HashMap<_, _>>();
 
-            settings.push(Setting {
-                schema: schema.clone(),
-                key: key.to_string(),
-                value,
-            });
-        }
+                for (key, schema) in &inner.schema.types {
+                    let value = match values.get(key) {
+                        Some(value) => serde_json::from_str(value)?,
+                        None if schema.ty.optional => serde_json::Value::Null,
+                        None => continue,
+                    };
 
-        Ok(settings)
+                    settings.push(Setting {
+                        schema: schema.clone(),
+                        key: key.to_string(),
+                        value,
+                    });
+                }
+
+                Ok(settings)
+            })
+            .await
     }
 
     /// Clear the given setting. Returning `true` if it was removed.
-    pub fn clear(&self, key: &str) -> Result<bool, Error> {
+    pub async fn clear(&self, key: &str) -> Result<bool, Error> {
         let key = self.key(key);
-        self.inner_clear(&key)
+        self.inner_clear(&key).await
     }
 
     /// Perform an inner clear of the given key.
-    fn inner_clear(&self, key: &str) -> Result<bool, Error> {
+    async fn inner_clear(&self, key: &str) -> Result<bool, Error> {
         use self::db::schema::settings::dsl;
 
-        self.try_send(&key, Event::Clear);
-        let c = self.inner.db.pool.lock();
-        let count = diesel::delete(dsl::settings.filter(dsl::key.eq(key))).execute(&*c)?;
-        Ok(count == 1)
+        let key = key.to_string();
+
+        self.try_send(&key, Event::Clear).await;
+
+        self.inner
+            .db
+            .asyncify(move |c| {
+                let count = diesel::delete(dsl::settings.filter(dsl::key.eq(key))).execute(c)?;
+                Ok(count == 1)
+            })
+            .await
     }
 
     /// Create a scoped setting.
@@ -619,7 +662,7 @@ impl Settings {
     }
 
     /// Get a synchronized variable for the given configuration key.
-    pub fn var<T>(&self, key: &str, default: T) -> Result<Arc<RwLock<T>>, Error>
+    pub async fn var<T>(&self, key: &str, default: T) -> Result<Var<T>, Error>
     where
         T: 'static
             + fmt::Debug
@@ -629,14 +672,14 @@ impl Settings {
             + serde::Serialize
             + serde::de::DeserializeOwned,
     {
-        let (mut stream, value) = self.stream(key).or_with(default)?;
+        let (mut stream, value) = self.stream(key).or_with(default).await?;
 
-        let value = Arc::new(RwLock::new(value));
-        let future_value = value.clone();
+        let var = Var::new(value);
+        let future_var = var.clone();
 
         let future = Box::pin(async move {
             while let Some(update) = stream.next().await {
-                *future_value.write() = update;
+                *future_var.write().await = update;
             }
         });
 
@@ -648,11 +691,11 @@ impl Settings {
             }
         }
 
-        Ok(value)
+        Ok(var)
     }
 
     /// Get an optional synchronized variable for the given configuration key.
-    pub fn optional<T>(&self, key: &str) -> Result<Arc<RwLock<Option<T>>>, Error>
+    pub async fn optional<T>(&self, key: &str) -> Result<Var<Option<T>>, Error>
     where
         T: 'static
             + fmt::Debug
@@ -662,13 +705,13 @@ impl Settings {
             + serde::Serialize
             + serde::de::DeserializeOwned,
     {
-        let (mut stream, value) = self.stream(key).optional()?;
-        let value = Arc::new(RwLock::new(value));
+        let (mut stream, value) = self.stream(key).optional().await?;
+        let value = settings::Var::new(value);
         let future_value = value.clone();
 
         let future = Box::pin(async move {
             while let Some(update) = stream.next().await {
-                *future_value.write() = update;
+                *future_value.write().await = update;
             }
         });
 
@@ -692,6 +735,7 @@ impl Settings {
             .inner
             .drivers_rx
             .lock()
+            .await
             .take()
             .ok_or(Error::DriverAlreadyConfigured)?;
 
@@ -712,19 +756,27 @@ impl Settings {
     }
 
     /// Get the value of the given key from the database.
-    fn inner_get<T>(&self, key: &str) -> Result<Option<T>, Error>
+    async fn inner_get<T>(&self, key: &str) -> Result<Option<T>, Error>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
         use self::db::schema::settings::dsl;
 
-        let c = self.inner.db.pool.lock();
+        let inner_key = key.to_string();
 
-        let result = dsl::settings
-            .select(dsl::value)
-            .filter(dsl::key.eq(&key))
-            .first::<String>(&*c)
-            .optional()?;
+        let result = self
+            .inner
+            .db
+            .asyncify(move |c| {
+                Ok::<_, Error>(
+                    dsl::settings
+                        .select(dsl::value)
+                        .filter(dsl::key.eq(&inner_key))
+                        .first::<String>(c)
+                        .optional()?,
+                )
+            })
+            .await?;
 
         let value = match result {
             Some(value) => match serde_json::from_str::<Option<T>>(&value) {
@@ -741,27 +793,27 @@ impl Settings {
     }
 
     /// Insert the given setting.
-    fn inner_set<T>(&self, key: &str, value: T, notify: bool) -> Result<(), Error>
+    async fn inner_set<T>(&self, key: &str, value: T, notify: bool) -> Result<(), Error>
     where
         T: serde::Serialize,
     {
         let value = serde_json::to_value(value)?;
-        self.inner_set_json(key, value, notify)
+        self.inner_set_json(key, value, notify).await
     }
 
     /// Subscribe for events on the given key.
-    fn make_stream<T>(&self, key: &str, default: T) -> Stream<T>
+    async fn make_stream<T>(&self, key: &str, default: T) -> Stream<T>
     where
         T: Clone + serde::Serialize + serde::de::DeserializeOwned,
     {
         Stream {
             default,
-            option_stream: self.make_option_stream(key),
+            option_stream: self.make_option_stream(key).await,
         }
     }
 
     /// Subscribe for any events on the given key.
-    fn make_option_stream<T>(&self, key: &str) -> OptionStream<T>
+    async fn make_option_stream<T>(&self, key: &str) -> OptionStream<T>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -772,7 +824,7 @@ impl Settings {
         }
 
         {
-            let mut subscriptions = self.inner.subscriptions.write();
+            let mut subscriptions = self.inner.subscriptions.write().await;
             let values = subscriptions.entry(key.to_string()).or_default();
 
             let mut update = Vec::with_capacity(values.len());
@@ -797,8 +849,8 @@ impl Settings {
     /// Try to send the specified event.
     ///
     /// Cleans up the existing subscription if the other side is closed.
-    fn try_send(&self, key: &str, event: Event<serde_json::Value>) {
-        let subscriptions = self.inner.subscriptions.upgradable_read();
+    async fn try_send(&self, key: &str, event: Event<serde_json::Value>) {
+        let subscriptions = self.inner.subscriptions.read().await;
 
         if let Some(subs) = subscriptions.get(key) {
             log::trace!("{}: Updating {} subscriptions", key, subs.len());
@@ -844,56 +896,56 @@ where
     T: serde::Serialize + serde::de::DeserializeOwned,
 {
     /// Make the setting required, falling back to using and storing the default value if necessary.
-    pub fn or_default(self) -> Result<(Stream<T>, T), Error>
+    pub async fn or_default(self) -> Result<(Stream<T>, T), Error>
     where
         T: Clone + Default,
     {
-        self.or_with(T::default())
+        self.or_with(T::default()).await
     }
 
     /// Make the setting required, falling back to using and storing the specified value if necessary.
-    pub fn or_with(self, value: T) -> Result<(Stream<T>, T), Error>
+    pub async fn or_with(self, value: T) -> Result<(Stream<T>, T), Error>
     where
         T: Clone,
     {
-        self.or_with_else(move || value)
+        self.or_with_else(move || value).await
     }
 
     /// Make the setting required, falling back to using and storing the specified value if necessary.
-    pub fn or_with_else<F>(self, value: F) -> Result<(Stream<T>, T), Error>
+    pub async fn or_with_else<F>(self, value: F) -> Result<(Stream<T>, T), Error>
     where
         T: Clone,
         F: FnOnce() -> T,
     {
-        let value = match self.settings.inner_get::<T>(&self.key)? {
+        let value = match self.settings.inner_get::<T>(&self.key).await? {
             Some(value) => value,
             None => {
                 let value = value();
-                self.settings.inner_set(&self.key, &value, true)?;
+                self.settings.inner_set(&self.key, &value, true).await?;
                 value
             }
         };
 
-        let stream = self.settings.make_stream(&self.key, value.clone());
+        let stream = self.settings.make_stream(&self.key, value.clone()).await;
         Ok((stream, value))
     }
 
     /// Make the setting optional.
-    pub fn optional(self) -> Result<(OptionStream<T>, Option<T>), Error> {
-        let value = self.settings.inner_get::<T>(&self.key)?;
+    pub async fn optional(self) -> Result<(OptionStream<T>, Option<T>), Error> {
+        let value = self.settings.inner_get::<T>(&self.key).await?;
 
         let value = match value {
             Some(value) => Some(value),
             None => match self.default_value {
                 Some(value) => {
-                    self.settings.inner_set(&self.key, &value, true)?;
+                    self.settings.inner_set(&self.key, &value, true).await?;
                     Some(value)
                 }
                 None => None,
             },
         };
 
-        let stream = self.settings.make_option_stream(&self.key);
+        let stream = self.settings.make_option_stream(&self.key).await;
         Ok((stream, value))
     }
 

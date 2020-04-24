@@ -8,14 +8,13 @@ use crate::{
     utils::{Cooldown, Duration},
 };
 use anyhow::{bail, Error};
-use parking_lot::RwLock;
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
 pub struct Handler {
-    enabled: Arc<RwLock<bool>>,
-    reward: Arc<RwLock<i64>>,
-    cooldown: Arc<RwLock<Cooldown>>,
-    currency: Arc<RwLock<Option<Currency>>>,
+    enabled: settings::Var<bool>,
+    reward: settings::Var<i64>,
+    cooldown: settings::Var<Cooldown>,
+    currency: injector::Var<Option<Currency>>,
     twitch: api::Twitch,
 }
 
@@ -26,26 +25,28 @@ impl command::Handler for Handler {
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
-        let currency = self.currency.read().clone();
-        let currency = match currency {
+        let currency = match self.currency.load().await {
             Some(currency) => currency,
             None => {
-                ctx.respond("No currency configured for stream, sorry :(");
+                respond!(ctx, "No currency configured for stream, sorry :(");
                 return Ok(());
             }
         };
 
-        if !self.cooldown.write().is_open() {
-            ctx.respond("A !swearjar command was recently issued, please wait a bit longer!");
+        if !self.cooldown.write().await.is_open() {
+            respond!(
+                ctx,
+                "A !swearjar command was recently issued, please wait a bit longer!"
+            );
             return Ok(());
         }
 
         let user = &ctx.user;
-        let reward = *self.reward.read();
+        let reward = self.reward.load().await;
 
         let chatters = self.twitch.chatters(user.channel()).await?;
 
@@ -70,7 +71,7 @@ impl command::Handler for Handler {
         user.sender().privmsg(format!(
             "/me has taken {} {currency} from {streamer} and given it to the viewers for listening to their bad mouth!",
             total_reward, currency = currency.name, streamer = user.streamer().display_name,
-        ));
+        )).await;
 
         Ok(())
     }
@@ -96,16 +97,17 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), Error> {
-        let enabled = settings.var("swearjar/enabled", false)?;
-        let reward = settings.var("swearjar/reward", 10)?;
+        let enabled = settings.var("swearjar/enabled", false).await?;
+        let reward = settings.var("swearjar/reward", 10).await?;
 
         let (mut cooldown_stream, cooldown) = settings
             .stream("swearjar/cooldown")
-            .or_with(Duration::seconds(60 * 10))?;
+            .or_with(Duration::seconds(60 * 10))
+            .await?;
 
-        let cooldown = Arc::new(RwLock::new(Cooldown::from_duration(cooldown)));
+        let cooldown = settings::Var::new(Cooldown::from_duration(cooldown));
 
-        let currency = injector.var()?;
+        let currency = injector.var().await?;
 
         handlers.insert(
             "swearjar",
@@ -122,7 +124,7 @@ impl super::Module for Module {
             loop {
                 futures::select! {
                     update = cooldown_stream.select_next_some() => {
-                        cooldown.write().cooldown = update;
+                        cooldown.write().await.cooldown = update;
                     }
                 }
             }

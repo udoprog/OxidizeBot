@@ -1,4 +1,9 @@
-use std::future::Future;
+use anyhow::Error;
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 /// Asyncify the given task.
 pub async fn asyncify<F, T, E>(task: F) -> Result<T, E>
@@ -14,11 +19,24 @@ where
     }
 }
 
+pub struct Handle<T> {
+    handle: tokio::task::JoinHandle<T>,
+}
+
+impl<T> Future for Handle<T> {
+    type Output = Result<T, Error>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Poll::Ready(Ok(futures::ready!(Pin::new(&mut self.handle).poll(cx))?))
+    }
+}
+
 /// Spawn the given task in the background.
-pub fn spawn<F>(future: F)
+pub fn spawn<F>(future: F) -> Handle<F::Output>
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
 {
-    let _ = tokio::spawn(future);
+    let handle = tokio::spawn(future);
+    Handle { handle }
 }

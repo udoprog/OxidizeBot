@@ -11,7 +11,6 @@ use crate::{
 };
 use anyhow::{Context as _, Error};
 use chrono::Utc;
-use parking_lot::RwLock;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -19,11 +18,11 @@ const EXAMPLE_SEARCH: &str = "queen we will rock you";
 
 /// Handler for the `!song` command.
 pub struct Handler {
-    enabled: Arc<RwLock<bool>>,
-    player: Arc<RwLock<Option<Player>>>,
+    enabled: settings::Var<bool>,
+    player: injector::Var<Option<Player>>,
     request_help_cooldown: Mutex<Cooldown>,
-    request_reward: Arc<RwLock<u32>>,
-    currency: Arc<RwLock<Option<Currency>>>,
+    request_reward: settings::Var<u32>,
+    currency: injector::Var<Option<Currency>>,
     spotify: Constraint,
     youtube: Constraint,
 }
@@ -41,8 +40,8 @@ impl Handler {
             return Ok(());
         }
 
-        let currency: Option<Currency> = self.currency.read().clone();
-        let request_reward = *self.request_reward.read();
+        let currency: Option<Currency> = self.currency.load().await;
+        let request_reward = self.request_reward.load().await;
         let spotify = self.spotify.clone();
         let youtube = self.youtube.clone();
         let user = ctx.user.clone();
@@ -70,7 +69,7 @@ impl Handler {
         let user = match user.real() {
             Some(user) => user,
             None => {
-                user.respond("Only real users can request songs");
+                user.respond("Only real users can request songs").await;
                 return Ok(());
             }
         };
@@ -83,49 +82,54 @@ impl Handler {
         let track_id = match track_id {
             Some(track_id) => track_id,
             None => {
-                user.respond("Could not find a track matching your request, sorry :(");
+                respond!(
+                    user,
+                    "Could not find a track matching your request, sorry :("
+                );
                 return Ok(());
             }
         };
 
         let (what, has_scope, enabled) = match track_id {
             TrackId::Spotify(..) => {
-                let enabled = *spotify.enabled.read();
-                ("Spotify", user.has_scope(Scope::SongSpotify), enabled)
+                let enabled = spotify.enabled.load().await;
+                ("Spotify", user.has_scope(Scope::SongSpotify).await, enabled)
             }
             TrackId::YouTube(..) => {
-                let enabled = *youtube.enabled.read();
-                ("YouTube", user.has_scope(Scope::SongYouTube), enabled)
+                let enabled = youtube.enabled.load().await;
+                ("YouTube", user.has_scope(Scope::SongYouTube).await, enabled)
             }
         };
 
         if !enabled {
-            user.respond(format!(
+            respond!(
+                user,
                 "{} song requests are currently not enabled, sorry :(",
                 what
-            ));
+            );
             return Ok(());
         }
 
         if !has_scope {
-            user.respond(format!(
+            respond!(
+                user,
                 "You are not allowed to do {what} requests, sorry :(",
                 what = what
-            ));
+            );
             return Ok(());
         }
 
         let max_duration = match track_id {
-            TrackId::Spotify(_) => spotify.max_duration.read().clone(),
-            TrackId::YouTube(_) => youtube.max_duration.read().clone(),
+            TrackId::Spotify(_) => spotify.max_duration.load().await,
+            TrackId::YouTube(_) => youtube.max_duration.load().await,
         };
 
         let min_currency = match track_id {
-            TrackId::Spotify(_) => *spotify.min_currency.read(),
-            TrackId::YouTube(_) => *youtube.min_currency.read(),
+            TrackId::Spotify(_) => spotify.min_currency.load().await,
+            TrackId::YouTube(_) => youtube.min_currency.load().await,
         };
 
-        let has_bypass_constraints = user.has_scope(Scope::SongBypassConstraints);
+        let has_bypass_constraints = user.has_scope(Scope::SongBypassConstraints).await;
 
         if !has_bypass_constraints {
             match min_currency {
@@ -135,7 +139,10 @@ impl Handler {
                     let currency = match currency.as_ref() {
                         Some(currency) => currency,
                         None => {
-                            user.respond("No currency configured for stream, but it is required.");
+                            respond!(
+                                user,
+                                "No currency configured for stream, but it is required."
+                            );
                             return Ok(());
                         }
                     };
@@ -146,12 +153,12 @@ impl Handler {
                         .unwrap_or_default();
 
                     if balance.balance < min_currency {
-                        user.respond(format!(
+                        respond!(user,
                                 "You don't have enough {currency} to request songs. Need {required}, but you have {balance}, sorry :(",
                                 currency = currency.name,
                                 required = min_currency,
                                 balance = balance.balance,
-                            ));
+                            );
 
                         return Ok(());
                     }
@@ -163,50 +170,55 @@ impl Handler {
             .add_track(user.name(), track_id, has_bypass_constraints, max_duration)
             .await;
 
+        // AFTER HERE
+
         let (pos, item) = match result {
             Ok((pos, item)) => (pos, item),
             Err(AddTrackError::PlayerClosed(reason)) => {
                 match reason {
                     Some(reason) => {
-                        user.respond(reason.as_str());
+                        respond!(user, reason.as_str());
                     }
                     None => {
-                        user.respond("Player is closed from further requests, sorry :(");
+                        respond!(user, "Player is closed from further requests, sorry :(");
                     }
                 }
 
                 return Ok(());
             }
             Err(AddTrackError::QueueContainsTrack(pos)) => {
-                user.respond(format!(
+                respond!(
+                    user,
                     "Player already contains that track (position #{pos}).",
                     pos = pos + 1,
-                ));
+                );
 
                 return Ok(());
             }
             Err(AddTrackError::TooManyUserTracks(count)) => {
                 match count {
                     0 => {
-                        user.respond("Unfortunately you are not allowed to add tracks :(");
+                        respond!(user, "Unfortunately you are not allowed to add tracks :(");
                     }
                     1 => {
-                        user.respond(
+                        respond!(
+                            user,
                             "<3 your enthusiasm, but you already have a track in the queue.",
                         );
                     }
                     count => {
-                        user.respond(format!(
+                        respond!(
+                            user,
                             "<3 your enthusiasm, but you already have {count} tracks in the queue.",
                             count = count,
-                        ));
+                        );
                     }
                 }
 
                 return Ok(());
             }
             Err(AddTrackError::QueueFull) => {
-                user.respond("Player is full, try again later!");
+                respond!(user, "Player is full, try again later!");
                 return Ok(());
             }
             Err(AddTrackError::Duplicate(when, who, limit)) => {
@@ -230,18 +242,19 @@ impl Handler {
                     None => String::from(" not too long ago"),
                 };
 
-                user.respond(format!(
+                respond!(
+                    user,
                     "That song was requested{who}{duration}, \
                          you have to wait at least {limit} between duplicate requests!",
                     who = who,
                     duration = duration,
                     limit = limit,
-                ));
+                );
 
                 return Ok(());
             }
             Err(AddTrackError::MissingAuth) => {
-                user.respond(
+                respond!(user,
                         "Cannot add the given song because the service has not been authenticated by the streamer!",
                     );
 
@@ -255,11 +268,12 @@ impl Handler {
         let currency = match currency.as_ref() {
             Some(currency) if request_reward > 0 => currency,
             _ => {
-                user.respond(format!(
+                respond!(
+                    user,
                     "Added {what} at position #{pos}!",
                     what = item.what(),
                     pos = pos + 1
-                ));
+                );
 
                 return Ok(());
             }
@@ -270,13 +284,14 @@ impl Handler {
             .await
         {
             Ok(()) => {
-                user.respond(format!(
+                respond!(
+                    user,
                     "Added {what} at position #{pos}, here's your {amount} {currency}!",
                     what = item.what(),
                     pos = pos + 1,
                     amount = request_reward,
                     currency = currency.name,
-                ));
+                );
             }
             Err(e) => {
                 log_error!(e, "failed to reward user for song request");
@@ -290,7 +305,7 @@ impl Handler {
     async fn request_help(&self, ctx: &mut command::Context, reason: Option<&str>) {
         if !self.request_help_cooldown.lock().await.is_open() {
             if let Some(reason) = reason {
-                ctx.respond(reason);
+                respond!(ctx, reason);
             }
 
             return;
@@ -306,7 +321,7 @@ impl Handler {
             response = format!("{}. {}", reason, response);
         }
 
-        ctx.respond(response);
+        respond!(ctx, response);
     }
 }
 
@@ -317,79 +332,83 @@ impl command::Handler for Handler {
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
-        let player = match self.player.read().as_ref() {
-            Some(player) => player.clone(),
-            None => {
-                ctx.respond("No player configured");
-                return Ok(());
-            }
-        };
+        let player = self
+            .player
+            .load()
+            .await
+            .ok_or_else(|| respond_err!("No player configured"))?;
 
         match ctx.next().as_deref() {
             Some("theme") => {
                 ctx.check_scope(Scope::SongTheme).await?;
-                let name = ctx_try!(ctx.next_str("<name>"));
+                let name = ctx.next_str("<name>")?;
                 let user = ctx.user.clone();
 
                 match player.play_theme(user.channel(), name.as_str()).await {
                     Ok(()) => (),
                     Err(PlayThemeError::NoSuchTheme) => {
-                        user.respond("No such theme :(");
+                        user.respond("No such theme :(").await;
                     }
                     Err(PlayThemeError::NotConfigured) => {
-                        user.respond("Theme system is not configured :(");
+                        user.respond("Theme system is not configured :(").await;
                     }
                     Err(PlayThemeError::Error(e)) => {
-                        user.respond("There was a problem playing that theme :(");
+                        user.respond("There was a problem playing that theme :(")
+                            .await;
                         log_error!(e, "failed to add song");
                     }
                     Err(PlayThemeError::MissingAuth) => {
                         user.respond(
                             "Cannot play the given theme because the service has not been authenticated by the streamer!",
-                        );
+                        ).await;
                     }
                 }
             }
             Some("promote") => {
                 ctx.check_scope(Scope::SongEditQueue).await?;
+                let index = ctx
+                    .next()
+                    .ok_or_else(|| respond_err!("Expected <number>"))?;
+                let index = parse_queue_position(&index).await?;
 
-                let index = match ctx.next().and_then(|n| parse_queue_position(&ctx.user, &n)) {
-                    Some(index) => index,
-                    None => return Ok(()),
-                };
-
-                if let Some(item) = player.promote_song(ctx.user.name(), index) {
-                    ctx.respond(format!("Promoted song to head of queue: {}", item.what()));
+                if let Some(item) = player.promote_song(ctx.user.name(), index).await? {
+                    respond!(
+                        ctx,
+                        format!("Promoted song to head of queue: {}", item.what())
+                    );
                 } else {
-                    ctx.respond("No such song to promote");
+                    respond!(ctx, "No such song to promote");
                 }
             }
             Some("close") => {
                 ctx.check_scope(Scope::SongEditQueue).await?;
 
-                player.close(match ctx.rest() {
-                    "" => None,
-                    other => Some(other.to_string()),
-                });
-                ctx.respond("Closed player from further requests.");
+                player
+                    .close(match ctx.rest() {
+                        "" => None,
+                        other => Some(other.to_string()),
+                    })
+                    .await;
+
+                respond!(ctx, "Closed player from further requests.");
             }
             Some("open") => {
                 ctx.check_scope(Scope::SongEditQueue).await?;
-
-                player.open();
-                ctx.respond("Opened player for requests.");
+                player.open().await;
+                respond!(ctx, "Opened player for requests.");
             }
             Some("list") => {
                 if let Some(api_url) = ctx.api_url() {
-                    ctx.respond(format!(
+                    respond!(
+                        ctx,
                         "You can find the queue at {}/player/{}",
                         api_url,
                         ctx.user.streamer().name
-                    ));
+                    );
                     return Ok(());
                 }
 
@@ -403,7 +422,7 @@ impl command::Handler for Handler {
                     }
                 }
 
-                let items = player.list();
+                let items = player.list().await;
 
                 let has_more = if items.len() > limit {
                     Some(items.len() - limit)
@@ -411,41 +430,42 @@ impl command::Handler for Handler {
                     None
                 };
 
-                display_songs(&ctx.user, has_more, items.iter().take(limit).cloned());
+                display_songs(&ctx.user, has_more, items.iter().take(limit).cloned()).await;
             }
-            Some("current") => match player.current() {
+            Some("current") => match player.current().await {
                 Some(current) => {
                     let elapsed = utils::digital_duration(&current.elapsed());
                     let duration = utils::digital_duration(&current.duration());
 
                     if let Some(name) = current.item.user.as_ref() {
-                        ctx.respond(format!(
+                        respond!(
+                            ctx,
                             "Current song: {}, requested by {} - {elapsed} / {duration} - {url}",
                             current.item.what(),
                             name,
                             elapsed = elapsed,
                             duration = duration,
                             url = current.item.track_id.url(),
-                        ));
+                        );
                     } else {
-                        ctx.respond(format!(
+                        respond!(
+                            ctx,
                             "Current song: {} - {elapsed} / {duration} - {url}",
                             current.item.what(),
                             elapsed = elapsed,
                             duration = duration,
                             url = current.item.track_id.url(),
-                        ));
+                        );
                     }
                 }
                 None => {
-                    ctx.respond("No song :(");
+                    respond!(ctx, "No song :(");
                 }
             },
             Some("purge") => {
                 ctx.check_scope(Scope::SongEditQueue).await?;
-
-                player.purge()?;
-                ctx.respond("Song queue purged.");
+                player.purge().await?;
+                respond!(ctx, "Song queue purged.");
             }
             // print when your next song will play.
             Some("when") => {
@@ -457,7 +477,7 @@ impl command::Handler for Handler {
                         let user = match ctx.user.real() {
                             Some(user) => user,
                             None => {
-                                ctx.respond("Not a real user");
+                                respond!(ctx, "Not a real user");
                                 return Ok(());
                             }
                         };
@@ -468,38 +488,35 @@ impl command::Handler for Handler {
 
                 let user = user.to_lowercase();
 
-                match player.find(|item| item.user.as_ref().map(|u| *u == user).unwrap_or_default())
-                {
+                let result = player
+                    .find(|item| item.user.as_ref().map(|u| *u == user).unwrap_or_default())
+                    .await;
+
+                match result {
                     Some((when, ref item)) if when.as_secs() == 0 => {
                         if your {
-                            ctx.respond("Your song is currently playing cmonBruh");
+                            respond!(ctx, "Your song is currently playing");
                         } else {
-                            ctx.respond(format!(
-                                "{}'s song {} is currently playing",
-                                user,
-                                item.what()
-                            ));
+                            respond!(ctx, "{}'s song {} is currently playing", user, item.what());
                         }
                     }
                     Some((when, item)) => {
                         let when = utils::compact_duration(&when);
 
                         if your {
-                            ctx.respond(format!("Your song {} will play in {}", item.what(), when));
+                            respond!(
+                                ctx,
+                                format!("Your song {} will play in {}", item.what(), when)
+                            );
                         } else {
-                            ctx.respond(format!(
-                                "{}'s song {} will play in {}",
-                                user,
-                                item.what(),
-                                when
-                            ));
+                            respond!(ctx, "{}'s song {} will play in {}", user, item.what(), when);
                         }
                     }
                     None => {
                         if your {
-                            ctx.respond("You don't have any songs in queue :(");
+                            respond!(ctx, "You don't have any songs in queue :(");
                         } else {
-                            ctx.respond(format!("{} doesn't have any songs in queue :(", user));
+                            respond!(ctx, format!("{} doesn't have any songs in queue :(", user));
                         }
                     }
                 }
@@ -510,43 +527,38 @@ impl command::Handler for Handler {
                         Some(last_user) => {
                             let last_user = last_user.to_lowercase();
                             ctx.check_scope(Scope::SongEditQueue).await?;
-                            player.remove_last_by_user(&last_user)?
+                            player.remove_last_by_user(&last_user).await?
                         }
                         None => {
                             ctx.check_scope(Scope::SongEditQueue).await?;
-                            player.remove_last()?
+                            player.remove_last().await?
                         }
                     },
                     Some("mine") => {
                         let user = match ctx.user.real() {
                             Some(user) => user,
                             None => {
-                                ctx.respond("Only real users can delete their own songs");
+                                respond!(ctx, "Only real users can delete their own songs");
                                 return Ok(());
                             }
                         };
 
-                        player.remove_last_by_user(user.name())?
+                        player.remove_last_by_user(user.name()).await?
                     }
                     Some(n) => {
                         ctx.check_scope(Scope::SongEditQueue).await?;
-
-                        let n = match parse_queue_position(&ctx.user, n) {
-                            Some(n) => n,
-                            None => return Ok(()),
-                        };
-
-                        player.remove_at(n)?
+                        let n = parse_queue_position(n).await?;
+                        player.remove_at(n).await?
                     }
                     None => {
-                        ctx.respond("Expected: last, last <user>, or mine");
+                        respond!(ctx, "Expected: last, last <user>, or mine");
                         return Ok(());
                     }
                 };
 
                 match removed {
-                    None => ctx.respond("No song removed, sorry :("),
-                    Some(item) => ctx.respond(format!("Removed: {}!", item.what())),
+                    None => ctx.respond("No song removed, sorry :(").await,
+                    Some(item) => ctx.respond(format!("Removed: {}!", item.what())).await,
                 }
             }
             Some("volume") => {
@@ -564,7 +576,7 @@ impl command::Handler for Handler {
                         let argument = match str::parse::<u32>(argument) {
                             Ok(argument) => argument,
                             Err(_) => {
-                                ctx.respond("expected whole number argument");
+                                respond!(ctx, "expected whole number argument");
                                 return Ok(());
                             }
                         };
@@ -575,22 +587,22 @@ impl command::Handler for Handler {
                             None => player::ModifyVolume::Set(argument),
                         };
 
-                        match player.volume(volume)? {
+                        match player.volume(volume).await? {
                             Some(volume) => {
-                                ctx.respond(format!("Updated volume to {}.", volume));
+                                respond!(ctx, format!("Updated volume to {}.", volume));
                             }
                             None => {
-                                ctx.respond("Cannot update volume");
+                                respond!(ctx, "Cannot update volume");
                             }
                         }
                     }
                     // reading volume
-                    None => match player.current_volume() {
+                    None => match player.current_volume().await {
                         Some(volume) => {
-                            ctx.respond(format!("Current volume: {}.", volume));
+                            respond!(ctx, format!("Current volume: {}.", volume));
                         }
                         None => {
-                            ctx.respond("No active player");
+                            respond!(ctx, "No active player");
                         }
                     },
                 }
@@ -615,46 +627,62 @@ impl command::Handler for Handler {
                 player.pause()?;
             }
             Some("length") => {
-                let (count, duration) = player.length();
+                let (count, duration) = player.length().await;
 
                 match count {
-                    0 => ctx.respond("No songs in queue :("),
+                    0 => ctx.respond("No songs in queue :(").await,
                     1 => {
                         let length = utils::long_duration(&duration);
-                        ctx.respond(format!("One song in queue with {} of play time.", length));
+                        ctx.respond(format!("One song in queue with {} of play time.", length))
+                            .await;
                     }
                     count => {
                         let length = utils::long_duration(&duration);
                         ctx.respond(format!(
                             "{} songs in queue with {} of play time.",
                             count, length
-                        ));
+                        ))
+                        .await;
                     }
                 }
             }
             _ => {
                 let mut alts = Vec::new();
 
-                if ctx.user.has_scope(Scope::SongTheme) {
+                if ctx.user.has_scope(Scope::SongTheme).await {
                     alts.push("theme");
+                } else {
+                    alts.push("theme 🛇");
                 }
 
-                if ctx.user.has_scope(Scope::SongEditQueue) {
+                if ctx.user.has_scope(Scope::SongEditQueue).await {
                     alts.push("promote");
                     alts.push("close");
                     alts.push("open");
                     alts.push("purge");
+                } else {
+                    alts.push("promote 🛇");
+                    alts.push("close 🛇");
+                    alts.push("open 🛇");
+                    alts.push("purge 🛇");
                 }
 
-                if ctx.user.has_scope(Scope::SongVolume) {
+                if ctx.user.has_scope(Scope::SongVolume).await {
                     alts.push("volume");
+                } else {
+                    alts.push("volume 🛇");
                 }
 
-                if ctx.user.has_scope(Scope::SongPlaybackControl) {
+                if ctx.user.has_scope(Scope::SongPlaybackControl).await {
                     alts.push("skip");
                     alts.push("toggle");
                     alts.push("play");
                     alts.push("pause");
+                } else {
+                    alts.push("skip 🛇");
+                    alts.push("toggle 🛇");
+                    alts.push("play 🛇");
+                    alts.push("pause 🛇");
                 }
 
                 alts.push("list");
@@ -663,7 +691,7 @@ impl command::Handler for Handler {
                 alts.push("delete");
                 alts.push("request");
                 alts.push("length");
-                ctx.respond(format!("Expected argument: {}.", alts.join(", ")));
+                respond!(ctx, format!("Expected argument: {}.", alts.join(", ")));
             }
         }
 
@@ -691,19 +719,19 @@ impl module::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), Error> {
-        let currency = injector.var()?;
+        let currency = injector.var().await?;
         let settings = settings.scoped("song");
 
-        let enabled = settings.var("enabled", false)?;
-        let chat_feedback = settings.var("chat-feedback", true)?;
-        let request_reward = settings.var("request-reward", 0)?;
+        let enabled = settings.var("enabled", false).await?;
+        let chat_feedback = settings.var("chat-feedback", true).await?;
+        let request_reward = settings.var("request-reward", 0).await?;
 
-        let spotify = Constraint::build(&mut settings.scoped("spotify"), true, 0)?;
-        let youtube = Constraint::build(&mut settings.scoped("youtube"), false, 60)?;
+        let spotify = Constraint::build(&mut settings.scoped("spotify"), true, 0).await?;
+        let youtube = Constraint::build(&mut settings.scoped("youtube"), false, 60).await?;
 
-        let (mut player_stream, player) = injector.stream();
+        let (mut player_stream, player) = injector.stream().await;
 
-        let shared_player = Arc::new(RwLock::new(player.clone()));
+        let shared_player = injector::Var::new(player.clone());
 
         let future = {
             let sender = sender.clone();
@@ -723,7 +751,7 @@ impl module::Module for Module {
                     futures::select! {
                         update = player_stream.select_next_some() => {
                             feedback_loop = new_feedback_loop(update.as_ref());
-                            *shared_player.write() = update;
+                            *shared_player.write().await = update;
                         }
                         result = feedback_loop.current() => {
                             if let Err(e) = result.context("feedback loop errored") {
@@ -758,20 +786,20 @@ impl module::Module for Module {
 /// Constraint for a single kind of track.
 #[derive(Debug, Clone)]
 struct Constraint {
-    enabled: Arc<RwLock<bool>>,
-    max_duration: Arc<RwLock<Option<Duration>>>,
-    min_currency: Arc<RwLock<i64>>,
+    enabled: settings::Var<bool>,
+    max_duration: settings::Var<Option<Duration>>,
+    min_currency: settings::Var<i64>,
 }
 
 impl Constraint {
-    fn build(
+    async fn build(
         vars: &mut settings::Settings,
         enabled: bool,
         min_currency: i64,
     ) -> Result<Self, Error> {
-        let enabled = vars.var("enabled", enabled)?;
-        let max_duration = vars.optional("max-duration")?;
-        let min_currency = vars.var("min-currency", min_currency)?;
+        let enabled = vars.var("enabled", enabled).await?;
+        let max_duration = vars.optional("max-duration").await?;
+        let min_currency = vars.var("min-currency", min_currency).await?;
 
         Ok(Constraint {
             enabled,
@@ -782,22 +810,16 @@ impl Constraint {
 }
 
 /// Parse a queue position.
-fn parse_queue_position(user: &irc::User, n: &str) -> Option<usize> {
+async fn parse_queue_position(n: &str) -> Result<usize, Error> {
     match str::parse::<usize>(n) {
-        Ok(0) => {
-            user.respond("Can't mess with the current song :(");
-            None
-        }
-        Ok(n) => Some(n.saturating_sub(1)),
-        Err(_) => {
-            user.respond("Expected whole number argument");
-            None
-        }
+        Ok(0) => respond_bail!("Can't mess with the current song :("),
+        Ok(n) => Ok(n.saturating_sub(1)),
+        Err(_) => respond_bail!("Expected whole number argument"),
     }
 }
 
 /// Display the collection of songs.
-fn display_songs(
+async fn display_songs(
     user: &irc::User,
     has_more: Option<usize>,
     it: impl IntoIterator<Item = Arc<Item>>,
@@ -816,23 +838,24 @@ fn display_songs(
     }
 
     if lines.is_empty() {
-        user.respond("Song queue is empty.");
+        user.respond("Song queue is empty.").await;
         return;
     }
 
     if let Some(more) = has_more {
-        user.respond(format!("{} ... and {} more.", lines.join("; "), more));
+        user.respond(format!("{} ... and {} more.", lines.join("; "), more))
+            .await;
         return;
     }
 
-    user.respond(format!("{}.", lines.join("; ")));
+    user.respond(format!("{}.", lines.join("; "))).await;
 }
 
 /// Notifications from the player.
 async fn feedback(
     player: Player,
     sender: irc::Sender,
-    chat_feedback: Arc<RwLock<bool>>,
+    chat_feedback: settings::Var<bool>,
 ) -> Result<(), Error> {
     let mut configured_cooldown = Cooldown::from_duration(Duration::seconds(10));
     let mut rx = player.add_rx();
@@ -843,10 +866,10 @@ async fn feedback(
 
         match e {
             Event::Detached => {
-                sender.privmsg("Player is detached!");
+                sender.privmsg("Player is detached!").await;
             }
             Event::Playing(feedback, item) => {
-                if !feedback || !*chat_feedback.read() {
+                if !feedback || !chat_feedback.load().await {
                     continue;
                 }
 
@@ -855,21 +878,23 @@ async fn feedback(
                     None => format!("Now playing: {}.", item.what(),),
                 };
 
-                sender.privmsg(message);
+                sender.privmsg(message).await;
             }
             Event::Pausing => {
-                if !*chat_feedback.read() {
+                if !chat_feedback.load().await {
                     continue;
                 }
 
-                sender.privmsg("Pausing playback.");
+                sender.privmsg("Pausing playback.").await;
             }
             Event::Empty => {
-                sender.privmsg("Song queue is empty (use !song request <spotify-id> to add more).");
+                sender
+                    .privmsg("Song queue is empty (use !song request <spotify-id> to add more).")
+                    .await;
             }
             Event::NotConfigured => {
                 if configured_cooldown.is_open() {
-                    sender.privmsg("Player has not been configured!");
+                    sender.privmsg("Player has not been configured!").await;
                 }
             }
             // other event we don't care about

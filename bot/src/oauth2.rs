@@ -172,26 +172,32 @@ impl ConnectionFactory {
         match self.log_build().await {
             Validation::Ok => (),
             Validation::Cleared => {
-                self.settings.set_silent("connection", None::<Connection>)?;
+                self.settings
+                    .set_silent("connection", None::<Connection>)
+                    .await?;
                 self.sync_token.clear();
 
                 if self.current_hash.is_some() {
-                    self.injector.clear_key(&self.key);
+                    self.injector.clear_key(&self.key).await;
                 }
 
-                self.server.clear_connection(&self.flow_id);
+                self.server.clear_connection(&self.flow_id).await;
             }
             Validation::Updated(connection) => {
                 let meta = connection.as_meta();
-                self.settings.set_silent("connection", Some(&connection))?;
+                self.settings
+                    .set_silent("connection", Some(&connection))
+                    .await?;
                 self.sync_token.update(connection);
 
                 if self.current_hash.as_ref() != Some(&meta.hash) {
-                    self.injector.update_key(&self.key, self.sync_token.clone());
+                    self.injector
+                        .update_key(&self.key, self.sync_token.clone())
+                        .await;
                     self.current_hash = Some(meta.hash.clone());
                 }
 
-                self.server.update_connection(&self.flow_id, meta);
+                self.server.update_connection(&self.flow_id, meta).await;
             }
         }
 
@@ -212,7 +218,9 @@ impl ConnectionFactory {
             Validation::Cleared if was_none => return Ok(()),
             Validation::Cleared => None,
             Validation::Updated(connection) => {
-                self.settings.set_silent("connection", Some(&connection))?;
+                self.settings
+                    .set_silent("connection", Some(&connection))
+                    .await?;
                 Some(connection)
             }
         };
@@ -222,20 +230,22 @@ impl ConnectionFactory {
             self.sync_token.update(connection);
 
             if self.current_hash.as_ref() != Some(&meta.hash) {
-                self.injector.update_key(&self.key, self.sync_token.clone());
+                self.injector
+                    .update_key(&self.key, self.sync_token.clone())
+                    .await;
                 self.current_hash = Some(meta.hash.clone());
             }
 
-            self.server.update_connection(&self.flow_id, meta);
+            self.server.update_connection(&self.flow_id, meta).await;
         } else {
             self.sync_token.clear();
 
             if self.current_hash.is_some() {
-                self.injector.clear_key(&self.key);
+                self.injector.clear_key(&self.key).await;
                 self.current_hash = None;
             }
 
-            self.server.clear_connection(&self.flow_id);
+            self.server.clear_connection(&self.flow_id).await;
         }
 
         Ok(())
@@ -401,12 +411,15 @@ pub async fn build(
     // queue used to force connection refreshes.
     let (force_refresh, mut force_refresh_rx) = mpsc::unbounded();
 
-    let (mut connection_stream, connection) =
-        settings.stream::<Connection>("connection").optional()?;
-    let (mut setbac_stream, setbac) = injector.stream::<Setbac>();
+    let (mut connection_stream, connection) = settings
+        .stream::<Connection>("connection")
+        .optional()
+        .await?;
+    let (mut setbac_stream, setbac) = injector.stream::<Setbac>().await;
     let (mut check_interval_stream, check_interval) = parent
         .stream::<Duration>("remote/check-interval")
-        .or_with(Duration::seconds(30))?;
+        .or_with(Duration::seconds(30))
+        .await?;
 
     let sync_token = SyncToken::new(what, force_refresh);
 

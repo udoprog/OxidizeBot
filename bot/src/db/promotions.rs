@@ -2,9 +2,9 @@ use crate::{db, template, utils};
 use anyhow::{anyhow, Context as _};
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
-use parking_lot::RwLock;
 use std::{collections::HashMap, fmt, sync::Arc};
 use thiserror::Error;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Error)]
 pub enum BumpError {
@@ -23,7 +23,7 @@ struct Database(db::Database);
 impl Database {
     private_database_group_fns!(promotions, Promotion, Key);
 
-    fn edit(
+    async fn edit(
         &self,
         key: &Key,
         frequency: utils::Duration,
@@ -31,61 +31,78 @@ impl Database {
     ) -> Result<Option<db::models::Promotion>, anyhow::Error> {
         use db::schema::promotions::dsl;
 
-        let c = self.0.pool.lock();
-        let filter =
-            dsl::promotions.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
-        let b = filter
-            .clone()
-            .first::<db::models::Promotion>(&*c)
-            .optional()?;
+        let key = key.clone();
+        let text = text.to_string();
 
-        let frequency = frequency.num_seconds() as i32;
+        self.0
+            .asyncify(move |c| {
+                let filter = dsl::promotions
+                    .filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
+                let b = filter
+                    .clone()
+                    .first::<db::models::Promotion>(c)
+                    .optional()?;
 
-        match b {
-            None => {
-                let command = db::models::Promotion {
-                    channel: key.channel.to_string(),
-                    name: key.name.to_string(),
-                    frequency,
-                    promoted_at: None,
-                    text: text.to_string(),
-                    group: None,
-                    disabled: false,
-                };
+                let frequency = frequency.num_seconds() as i32;
 
-                diesel::insert_into(dsl::promotions)
-                    .values(&command)
-                    .execute(&*c)?;
+                match b {
+                    None => {
+                        let command = db::models::Promotion {
+                            channel: key.channel.to_string(),
+                            name: key.name.to_string(),
+                            frequency,
+                            promoted_at: None,
+                            text: text.to_string(),
+                            group: None,
+                            disabled: false,
+                        };
 
-                Ok(None)
-            }
-            Some(promotion) => {
-                let mut set = db::models::UpdatePromotion::default();
-                set.text = Some(text);
-                set.frequency = Some(frequency);
+                        diesel::insert_into(dsl::promotions)
+                            .values(&command)
+                            .execute(c)?;
 
-                diesel::update(filter).set(&set).execute(&*c)?;
+                        Ok(None)
+                    }
+                    Some(promotion) => {
+                        let mut set = db::models::UpdatePromotion::default();
+                        set.text = Some(&text);
+                        set.frequency = Some(frequency);
 
-                if promotion.disabled {
-                    return Ok(None);
+                        diesel::update(filter).set(&set).execute(c)?;
+
+                        if promotion.disabled {
+                            return Ok(None);
+                        }
+
+                        Ok(Some(promotion))
+                    }
                 }
-
-                Ok(Some(promotion))
-            }
-        }
+            })
+            .await
     }
 
-    fn bump_promoted_at(&self, from: &Key, now: &DateTime<Utc>) -> Result<bool, anyhow::Error> {
+    async fn bump_promoted_at(
+        &self,
+        from: &Key,
+        now: &DateTime<Utc>,
+    ) -> Result<bool, anyhow::Error> {
         use db::schema::promotions::dsl;
 
-        let c = self.0.pool.lock();
-        let count = diesel::update(
-            dsl::promotions.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
-        )
-        .set(dsl::promoted_at.eq(now.naive_utc()))
-        .execute(&*c)?;
+        let from = from.clone();
+        let now = now.clone();
 
-        Ok(count == 1)
+        self.0
+            .asyncify(move |c| {
+                let count = diesel::update(
+                    dsl::promotions
+                        .filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
+                )
+                .set(dsl::promoted_at.eq(now.naive_utc()))
+                .execute(c)?;
+
+                Ok(count == 1)
+            })
+            .await
     }
 }
 
@@ -99,12 +116,12 @@ impl Promotions {
     database_group_fns!(Promotion, Key);
 
     /// Construct a new promos store with a db.
-    pub fn load(db: db::Database) -> Result<Promotions, anyhow::Error> {
+    pub async fn load(db: db::Database) -> Result<Promotions, anyhow::Error> {
         let db = Database(db);
 
         let mut inner = HashMap::new();
 
-        for promotion in db.list()? {
+        for promotion in db.list().await? {
             let promotion = Promotion::from_db(&promotion)?;
             inner.insert(promotion.key.clone(), Arc::new(promotion));
         }
@@ -116,7 +133,7 @@ impl Promotions {
     }
 
     /// Insert a word into the bad words list.
-    pub fn edit(
+    pub async fn edit(
         &self,
         channel: &str,
         name: &str,
@@ -125,9 +142,13 @@ impl Promotions {
     ) -> Result<(), anyhow::Error> {
         let key = Key::new(channel, name);
 
-        let mut inner = self.inner.write();
+        let mut inner = self.inner.write().await;
 
-        if let Some(promotion) = self.db.edit(&key, frequency.clone(), template.source())? {
+        if let Some(promotion) = self
+            .db
+            .edit(&key, frequency.clone(), template.source())
+            .await?
+        {
             let promoted_at = promotion.promoted_at.map(|d| DateTime::from_utc(d, Utc));
 
             inner.insert(
@@ -149,8 +170,8 @@ impl Promotions {
     }
 
     /// Bump that the given promotion was last promoted right now.
-    pub fn bump_promoted_at(&self, promotion: &Promotion) -> Result<(), BumpError> {
-        let mut inner = self.inner.write();
+    pub async fn bump_promoted_at(&self, promotion: &Promotion) -> Result<(), BumpError> {
+        let mut inner = self.inner.write().await;
 
         let promotion = match inner.remove(&promotion.key) {
             Some(promotion) => promotion,
@@ -161,6 +182,7 @@ impl Promotions {
 
         self.db
             .bump_promoted_at(&promotion.key, &now)
+            .await
             .map_err(BumpError::Database)?;
 
         let mut promotion = (*promotion).clone();

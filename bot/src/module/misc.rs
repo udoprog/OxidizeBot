@@ -3,12 +3,10 @@
 use crate::{api, auth, command, irc, module, prelude::*, stream_info, utils};
 use anyhow::Error;
 use chrono::Utc;
-use parking_lot::RwLock;
-use std::sync::Arc;
 
 /// Handler for the `!uptime` command.
 pub struct Uptime {
-    pub enabled: Arc<RwLock<bool>>,
+    pub enabled: settings::Var<bool>,
     pub stream_info: stream_info::StreamInfo,
 }
 
@@ -19,7 +17,7 @@ impl command::Handler for Uptime {
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
@@ -39,16 +37,13 @@ impl command::Handler for Uptime {
                 let uptime =
                     utils::compact_duration(&(now - *started_at).to_std().unwrap_or_default());
 
-                ctx.respond(format!(
-                    "Stream has been live for {uptime}.",
-                    uptime = uptime
-                ));
+                respond!(ctx, "Stream has been live for {uptime}.", uptime = uptime);
             }
             Some(_) => {
-                ctx.respond("Stream is live, but start time is weird!");
+                respond!(ctx, "Stream is live, but start time is weird!");
             }
             None => {
-                ctx.respond("Stream is not live right now, try again later!");
+                respond!(ctx, "Stream is not live right now, try again later!");
             }
         }
 
@@ -58,22 +53,23 @@ impl command::Handler for Uptime {
 
 /// Handler for the `!title` command.
 pub struct Title {
-    pub enabled: Arc<RwLock<bool>>,
+    pub enabled: settings::Var<bool>,
     pub stream_info: stream_info::StreamInfo,
     pub twitch: api::Twitch,
 }
 
 impl Title {
     /// Handle the title command.
-    fn show(&self, user: &irc::User) {
+    async fn show(&self, user: &irc::User) {
         let title = self.stream_info.data.read().title.clone();
 
         match title {
             Some(title) => {
-                user.respond(title);
+                user.respond(title).await;
             }
             None => {
-                user.respond("Stream is not live right now, try again later!");
+                user.respond("Stream is not live right now, try again later!")
+                    .await;
             }
         }
     }
@@ -86,14 +82,14 @@ impl command::Handler for Title {
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
         let rest = ctx.rest();
 
         if rest.is_empty() {
-            self.show(&ctx.user);
+            self.show(&ctx.user).await;
         } else {
             ctx.check_scope(auth::Scope::TitleEdit).await?;
 
@@ -115,22 +111,23 @@ impl command::Handler for Title {
 
 /// Handler for the `!title` command.
 pub struct Game {
-    pub enabled: Arc<RwLock<bool>>,
+    pub enabled: settings::Var<bool>,
     pub stream_info: stream_info::StreamInfo,
     pub twitch: api::Twitch,
 }
 
 impl Game {
     /// Handle the game command.
-    fn show(&self, user: &irc::User) {
+    async fn show(&self, user: &irc::User) {
         let game = self.stream_info.data.read().game.clone();
 
         match game {
             Some(game) => {
-                user.respond(game);
+                user.respond(game).await;
             }
             None => {
-                user.respond("Unfortunately I don't know the game, sorry!");
+                user.respond("Unfortunately I don't know the game, sorry!")
+                    .await;
             }
         };
     }
@@ -143,14 +140,14 @@ impl command::Handler for Game {
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
         let rest = ctx.rest();
 
         if rest.is_empty() {
-            self.show(&ctx.user);
+            self.show(&ctx.user).await;
             return Ok(());
         }
 
@@ -169,7 +166,7 @@ impl command::Handler for Game {
             .refresh_channel(&twitch, ctx.user.streamer())
             .await?;
 
-        ctx.respond("Game updated!");
+        respond!(ctx, "Game updated!");
         Ok(())
     }
 }
@@ -196,7 +193,7 @@ impl super::Module for Module {
         handlers.insert(
             "title",
             Title {
-                enabled: settings.var("title/enabled", true)?,
+                enabled: settings.var("title/enabled", true).await?,
                 stream_info: stream_info.clone(),
                 twitch: streamer_twitch.clone(),
             },
@@ -205,7 +202,7 @@ impl super::Module for Module {
         handlers.insert(
             "game",
             Game {
-                enabled: settings.var("game/enabled", true)?,
+                enabled: settings.var("game/enabled", true).await?,
                 stream_info: stream_info.clone(),
                 twitch: streamer_twitch.clone(),
             },
@@ -214,7 +211,7 @@ impl super::Module for Module {
         handlers.insert(
             "uptime",
             Uptime {
-                enabled: settings.var("uptime/enabled", true)?,
+                enabled: settings.var("uptime/enabled", true).await?,
                 stream_info: stream_info.clone(),
             },
         );

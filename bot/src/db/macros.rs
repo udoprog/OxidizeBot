@@ -2,7 +2,7 @@
 macro_rules! database_group_fns {
     ($thing:ty, $key:ty) => {
         /// Set which group the thing belongs to.
-        pub fn edit_group(
+        pub async fn edit_group(
             &self,
             channel: &str,
             name: &str,
@@ -10,10 +10,10 @@ macro_rules! database_group_fns {
         ) -> Result<bool, anyhow::Error> {
             let key = <$key>::new(channel, name);
 
-            let mut inner = self.inner.write();
+            let mut inner = self.inner.write().await;
 
             if let Some(mut thing) = inner.get(&key).map(|v| (**v).clone()) {
-                self.db.edit_group(&key, group.clone())?;
+                self.db.edit_group(&key, group.clone()).await?;
                 thing.group = group;
                 inner.insert(key, Arc::new(thing));
                 return Ok(true);
@@ -23,26 +23,26 @@ macro_rules! database_group_fns {
         }
 
         /// Enable the given thing.
-        pub fn enable(&self, channel: &str, name: &str) -> Result<bool, anyhow::Error> {
+        pub async fn enable(&self, channel: &str, name: &str) -> Result<bool, anyhow::Error> {
             let key = <$key>::new(channel, name);
 
-            let thing = match self.db.fetch(&key)? {
+            let thing = match self.db.fetch(&key).await? {
                 Some(thing) => <$thing>::from_db(&thing)?,
                 None => return Ok(false),
             };
 
-            self.db.edit_disabled(&thing.key, false)?;
-            self.inner.write().insert(thing.key.clone(), Arc::new(thing));
+            self.db.edit_disabled(&thing.key, false).await?;
+            self.inner.write().await.insert(thing.key.clone(), Arc::new(thing));
             Ok(true)
         }
 
         /// Disable the given thing.
-        pub fn disable(&self, channel: &str, name: &str) -> Result<bool, anyhow::Error> {
+        pub async fn disable(&self, channel: &str, name: &str) -> Result<bool, anyhow::Error> {
             let key = <$key>::new(channel, name);
-            let mut inner = self.inner.write();
+            let mut inner = self.inner.write().await;
 
             if let Some(thing) = inner.remove(&key) {
-                self.db.edit_disabled(&thing.key, true)?;
+                self.db.edit_disabled(&thing.key, true).await?;
                 return Ok(true);
             }
 
@@ -50,12 +50,12 @@ macro_rules! database_group_fns {
         }
 
         /// Enable all things in the given group.
-        pub fn enable_group(&self, channel: &str, group: &str) -> Result<(), anyhow::Error> {
-            self.db.set_group_disabled(channel, group, false)?;
+        pub async fn enable_group(&self, channel: &str, group: &str) -> Result<(), anyhow::Error> {
+            self.db.set_group_disabled(channel, group, false).await?;
 
-            let mut inner = self.inner.write();
+            let mut inner = self.inner.write().await;
 
-            for thing in self.db.list_group(channel, group)? {
+            for thing in self.db.list_group(channel, group).await? {
                 let thing = <$thing>::from_db(&thing)?;
                 inner.insert(thing.key.clone(), Arc::new(thing));
             }
@@ -64,10 +64,10 @@ macro_rules! database_group_fns {
         }
 
         /// Disable all things in the given group.
-        pub fn disable_group(&self, channel: &str, group: &str) -> Result<(), anyhow::Error> {
-            self.db.set_group_disabled(channel, group, true)?;
+        pub async fn disable_group(&self, channel: &str, group: &str) -> Result<(), anyhow::Error> {
+            self.db.set_group_disabled(channel, group, true).await?;
 
-            let mut inner = self.inner.write();
+            let mut inner = self.inner.write().await;
 
             let mut to_delete = Vec::new();
 
@@ -85,10 +85,10 @@ macro_rules! database_group_fns {
         }
 
         /// Get a list of all members.
-        pub fn list_all(&self, channel: &str) -> Result<Vec<$thing>, anyhow::Error> {
+        pub async fn list_all(&self, channel: &str) -> Result<Vec<$thing>, anyhow::Error> {
             let mut out = Vec::new();
 
-            for p in self.db.list_all(channel)? {
+            for p in self.db.list_all(channel).await? {
                 out.push(<$thing>::from_db(&p)?);
             }
 
@@ -96,22 +96,22 @@ macro_rules! database_group_fns {
         }
 
         /// Remove thing.
-        pub fn delete(&self, channel: &str, name: &str) -> Result<bool, anyhow::Error> {
+        pub async fn delete(&self, channel: &str, name: &str) -> Result<bool, anyhow::Error> {
             let key = <$key>::new(channel, name);
 
-            if !self.db.delete(&key)? {
+            if !self.db.delete(&key).await? {
                 return Ok(false);
             }
 
-            self.inner.write().remove(&key);
+            self.inner.write().await.remove(&key);
             Ok(true)
         }
 
         /// Get the given thing by name.
-        pub fn get<'a>(&'a self, channel: &str, name: &str) -> Option<Arc<$thing>> {
+        pub async fn get(&self, channel: &str, name: &str) -> Option<Arc<$thing>> {
             let key = <$key>::new(channel, name);
 
-            let inner = self.inner.read();
+            let inner = self.inner.read().await;
 
             if let Some(thing) = inner.get(&key) {
                 return Some(Arc::clone(thing));
@@ -121,9 +121,9 @@ macro_rules! database_group_fns {
         }
 
         /// Get the given thing by name directly from the database.
-        pub fn get_any<'a>(&'a self, channel: &str, name: &str) -> Result<Option<$thing>, anyhow::Error> {
+        pub async fn get_any(&self, channel: &str, name: &str) -> Result<Option<$thing>, anyhow::Error> {
             let key = <$key>::new(channel, name);
-            let thing = match self.db.fetch(&key)? {
+            let thing = match self.db.fetch(&key).await? {
                 Some(thing) => thing,
                 None => return Ok(None),
             };
@@ -131,8 +131,8 @@ macro_rules! database_group_fns {
         }
 
         /// Get a list of all things.
-        pub fn list(&self, channel: &str) -> Vec<Arc<$thing>> {
-            let inner = self.inner.read();
+        pub async fn list(&self, channel: &str) -> Vec<Arc<$thing>> {
+            let inner = self.inner.read().await;
 
             let mut out = Vec::new();
 
@@ -148,11 +148,11 @@ macro_rules! database_group_fns {
         }
 
         /// Try to rename the thing.
-        pub fn rename(&self, channel: &str, from: &str, to: &str) -> Result<(), super::RenameError> {
+        pub async fn rename(&self, channel: &str, from: &str, to: &str) -> Result<(), super::RenameError> {
             let from_key = <$key>::new(channel, from);
             let to_key = <$key>::new(channel, to);
 
-            let mut inner = self.inner.write();
+            let mut inner = self.inner.write().await;
 
             if inner.contains_key(&to_key) {
                 return Err(super::RenameError::Conflict);
@@ -166,7 +166,7 @@ macro_rules! database_group_fns {
             let mut thing = (*thing).clone();
             thing.key = to_key.clone();
 
-            match self.db.rename(&from_key, &to_key) {
+            match self.db.rename(&from_key, &to_key).await {
                 Err(e) => {
                     log::error!("failed to rename {what} `{}` in database: {}", from, e, what = <$thing>::NAME);
                 }
@@ -186,117 +186,139 @@ macro_rules! database_group_fns {
 macro_rules! private_database_group_fns {
     ($module:ident, $thing:ident, $key:ty) => {
         /// List all members that are not disabled.
-        fn list(&self) -> Result<Vec<db::models::$thing>, anyhow::Error> {
+        async fn list(&self) -> Result<Vec<db::models::$thing>, anyhow::Error> {
             use db::schema::$module::dsl;
-            let c = self.0.pool.lock();
-            Ok(dsl::$module
-                .filter(dsl::disabled.eq(false))
-                .load::<db::models::$thing>(&*c)?)
+
+            self.0.asyncify(move |c| {
+                Ok(dsl::$module
+                    .filter(dsl::disabled.eq(false))
+                    .load::<db::models::$thing>(c)?)
+            }).await
         }
 
         /// List all members, including disabled ones.
-        fn list_all(&self, channel: &str) -> Result<Vec<db::models::$thing>, anyhow::Error> {
+        async fn list_all(&self, channel: &str) -> Result<Vec<db::models::$thing>, anyhow::Error> {
             use db::schema::$module::dsl;
-            let c = self.0.pool.lock();
-            Ok(dsl::$module
-                .filter(dsl::channel.eq(channel))
-                .load::<db::models::$thing>(&*c)?)
+            let channel = channel.to_string();
+
+            self.0.asyncify(move |c| {
+                Ok(dsl::$module
+                    .filter(dsl::channel.eq(channel))
+                    .load::<db::models::$thing>(c)?)
+            }).await
         }
 
         /// List all members of the given group.
-        fn list_group(
+        async fn list_group(
             &self,
             channel: &str,
             group: &str,
         ) -> Result<Vec<db::models::$thing>, anyhow::Error> {
             use db::schema::$module::dsl;
-            let c = self.0.pool.lock();
+            let channel = channel.to_string();
+            let group = group.to_string();
 
-            let filter = dsl::$module.filter(dsl::channel.eq(channel).and(dsl::group.eq(group)));
-            Ok(filter.load::<db::models::$thing>(&*c)?)
+            self.0.asyncify(move |c| {
+                let filter = dsl::$module.filter(dsl::channel.eq(channel).and(dsl::group.eq(group)));
+                Ok(filter.load::<db::models::$thing>(c)?)
+            }).await
         }
 
         /// Set if the given group is disabled or not.
-        fn set_group_disabled(
+        async fn set_group_disabled(
             &self,
             channel: &str,
             group: &str,
             disabled: bool,
         ) -> Result<(), anyhow::Error> {
             use db::schema::$module::dsl;
-            let c = self.0.pool.lock();
+            let channel = channel.to_string();
+            let group = group.to_string();
 
-            diesel::update(dsl::$module.filter(dsl::channel.eq(channel).and(dsl::group.eq(group))))
-                .set(dsl::disabled.eq(disabled))
-                .execute(&*c)?;
+            self.0.asyncify(move |c| {
+                diesel::update(dsl::$module.filter(dsl::channel.eq(channel).and(dsl::group.eq(group))))
+                    .set(dsl::disabled.eq(disabled))
+                    .execute(c)?;
 
-            Ok(())
+                Ok(())
+            }).await
         }
 
         /// Edit the group membership of the given thing.
-        fn edit_group(&self, key: &$key, group: Option<String>) -> Result<(), anyhow::Error> {
+        async fn edit_group(&self, key: &$key, group: Option<String>) -> Result<(), anyhow::Error> {
             use db::schema::$module::dsl;
-            let c = self.0.pool.lock();
+            let key = key.clone();
 
-            diesel::update(
-                dsl::$module.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
-            )
-            .set(dsl::group.eq(group))
-            .execute(&*c)?;
+            self.0.asyncify(move |c| {
+                diesel::update(
+                    dsl::$module.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+                )
+                .set(dsl::group.eq(group))
+                .execute(c)?;
 
-            Ok(())
+                Ok(())
+            }).await
         }
 
         /// Set the disabled state of the given command.
-        fn edit_disabled(&self, key: &$key, disabled: bool) -> Result<(), anyhow::Error> {
+        async fn edit_disabled(&self, key: &$key, disabled: bool) -> Result<(), anyhow::Error> {
             use db::schema::$module::dsl;
-            let c = self.0.pool.lock();
+            let key = key.clone();
 
-            diesel::update(
-                dsl::$module.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
-            )
-            .set(dsl::disabled.eq(disabled))
-            .execute(&*c)?;
+            self.0.asyncify(move |c| {
+                diesel::update(
+                    dsl::$module.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+                )
+                .set(dsl::disabled.eq(disabled))
+                .execute(c)?;
 
-            Ok(())
+                Ok(())
+            }).await
         }
 
         /// Fetch a single entity.
-        fn fetch(&self, key: &$key) -> Result<Option<db::models::$thing>, anyhow::Error> {
+        async fn fetch(&self, key: &$key) -> Result<Option<db::models::$thing>, anyhow::Error> {
             use db::schema::$module::dsl;
-            let c = self.0.pool.lock();
+            let key = key.clone();
 
-            let thing = dsl::$module.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)))
-                .first::<db::models::$thing>(&*c)
-                .optional()?;
+            self.0.asyncify(move |c| {
+                let thing = dsl::$module.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)))
+                    .first::<db::models::$thing>(c)
+                    .optional()?;
 
-            Ok(thing)
+                Ok(thing)
+            }).await
         }
 
         /// Delete a single thing.
-        fn delete(&self, key: &$key) -> Result<bool, anyhow::Error> {
+        async fn delete(&self, key: &$key) -> Result<bool, anyhow::Error> {
             use db::schema::$module::dsl;
+            let key = key.clone();
 
-            let c = self.0.pool.lock();
-            let count = diesel::delete(
-                dsl::$module.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
-            )
-            .execute(&*c)?;
-            Ok(count == 1)
+            self.0.asyncify(move |c| {
+                let count = diesel::delete(
+                    dsl::$module.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+                )
+                .execute(c)?;
+                Ok(count == 1)
+            }).await
         }
 
         /// Rename one thing to another.
-        fn rename(&self, from: &$key, to: &$key) -> Result<bool, anyhow::Error> {
+        async fn rename(&self, from: &$key, to: &$key) -> Result<bool, anyhow::Error> {
             use db::schema::$module::dsl;
+            let from = from.clone();
+            let to = to.clone();
 
-            let c = self.0.pool.lock();
-            let count = diesel::update(
-                dsl::$module.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
-            )
-            .set((dsl::channel.eq(&to.channel), dsl::name.eq(&to.name)))
-            .execute(&*c)?;
+            self.0.asyncify(move |c| {
+                let count = diesel::update(
+                    dsl::$module.filter(dsl::channel.eq(&from.channel).and(dsl::name.eq(&from.name))),
+                )
+                .set((dsl::channel.eq(&to.channel), dsl::name.eq(&to.name)))
+                .execute(c)?;
 
-            Ok(count == 1)
+                Ok(count == 1)
+            }).await
         }
     }
 }

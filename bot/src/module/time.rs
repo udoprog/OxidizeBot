@@ -5,14 +5,12 @@ use chrono::{
     Datelike as _, Timelike as _, Utc,
 };
 use chrono_tz::{Etc, Tz};
-use parking_lot::RwLock;
-use std::sync::Arc;
 
 /// Handler for the !8ball command.
 pub struct Time {
-    enabled: Arc<RwLock<bool>>,
-    timezone: Arc<RwLock<Tz>>,
-    template: Arc<RwLock<Template>>,
+    enabled: settings::Var<bool>,
+    timezone: settings::Var<Tz>,
+    template: settings::Var<Template>,
 }
 
 #[async_trait]
@@ -22,11 +20,11 @@ impl command::Handler for Time {
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
-        let tz = *self.timezone.read();
+        let tz = self.timezone.load().await;
         let now = Utc::now();
 
         let offset = tz.offset_from_utc_datetime(&now.naive_utc());
@@ -45,7 +43,7 @@ impl command::Handler for Time {
 
         let rfc2822 = now.to_rfc2822();
 
-        let response = self.template.read().render_to_string(Vars {
+        let response = self.template.load().await.render_to_string(Vars {
             day: now.day(),
             month: now.month(),
             year: now.year(),
@@ -54,7 +52,7 @@ impl command::Handler for Time {
             rfc2822: &rfc2822,
         })?;
 
-        ctx.respond(response);
+        respond!(ctx, response);
         return Ok(());
 
         #[derive(serde::Serialize)]
@@ -108,9 +106,9 @@ impl super::Module for Module {
         handlers.insert(
             "time",
             Time {
-                enabled: settings.var("time/enabled", true)?,
-                timezone: settings.var("time/timezone", Etc::UTC)?,
-                template: settings.var("time/template", default_template)?,
+                enabled: settings.var("time/enabled", true).await?,
+                timezone: settings.var("time/timezone", Etc::UTC).await?,
+                template: settings.var("time/template", default_template).await?,
             },
         );
 

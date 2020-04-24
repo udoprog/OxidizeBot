@@ -7,13 +7,13 @@ use crate::{
 };
 use anyhow::Error;
 use futures_cache as cache;
-use parking_lot::RwLock;
 use smallvec::SmallVec;
 use std::{
     collections::{HashMap, HashSet},
     mem,
     sync::Arc,
 };
+use tokio::sync::RwLock;
 
 /// Number of badges inlined for performance reasons.
 /// Should be a value larger than the typical number of badges you'd see.
@@ -529,7 +529,7 @@ impl Emotes {
     ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
         let mut out = SmallVec::new();
 
-        if let Some(d) = self.inner.tduva_data.read().as_ref() {
+        if let Some(d) = &*self.inner.tduva_data.read().await {
             let entry = self.inner.cache.test(Key::TduvaBadges)?;
 
             if let cache::State::Fresh(..) = entry {
@@ -578,7 +578,7 @@ impl Emotes {
             }
         }
 
-        *self.inner.tduva_data.write() = Some(d);
+        *self.inner.tduva_data.write().await = Some(d);
         Ok(out)
     }
 

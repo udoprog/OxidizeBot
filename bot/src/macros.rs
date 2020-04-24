@@ -62,16 +62,21 @@ macro_rules! try_infinite_empty {
     };
 }
 
-/// Handle a context argument result.
-///
-/// Returns Ok(()) in case a context argument result is `None`.
-#[macro_export]
-macro_rules! ctx_try {
-    ($expr:expr) => {
-        match $expr {
-            Some(value) => value,
-            None => return Ok(()),
-        }
+/// Helper macro to generate a respond error.
+macro_rules! respond_err {
+    ($m:expr) => {
+        crate::command::Respond(std::borrow::Cow::Borrowed($m))
+    };
+
+    ($($t:tt)*) => {
+        crate::command::Respond(std::borrow::Cow::Owned(format!($($t)*)))
+    };
+}
+
+/// Helper macro to bail with a respond error.
+macro_rules! respond_bail {
+    ($($t:tt)*) => {
+        return Err(respond_err!($($t)*).into());
     };
 }
 
@@ -85,7 +90,11 @@ macro_rules! ctx_try {
 /// ```
 #[macro_export]
 macro_rules! respond {
+    ($ctx:expr, $argument:expr) => {{
+        $ctx.respond($argument).await;
+    }};
+
     ($ctx:expr, $($t:tt)*) => {{
-        $ctx.respond(&format!($($t)*));
-    }}
+        $ctx.respond(&format!($($t)*)).await;
+    }};
 }

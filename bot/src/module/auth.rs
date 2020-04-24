@@ -18,7 +18,7 @@ impl command::Handler for Handler {
                 let user = match ctx.user.real() {
                     Some(user) => user,
                     None => {
-                        ctx.respond("Can only get scopes for real users");
+                        respond!(ctx, "Can only get scopes for real users");
                         return Ok(());
                     }
                 };
@@ -31,7 +31,7 @@ impl command::Handler for Handler {
                         .collect::<Vec<_>>()
                 };
 
-                let by_user = filter(self.auth.scopes_for_user(user.name()));
+                let by_user = filter(self.auth.scopes_for_user(user.name()).await);
 
                 let mut result = Vec::new();
 
@@ -44,7 +44,7 @@ impl command::Handler for Handler {
                 }
 
                 for role in user.roles() {
-                    let by_role = filter(self.auth.scopes_for_role(role));
+                    let by_role = filter(self.auth.scopes_for_role(role).await);
 
                     if !by_role.is_empty() {
                         result.push(format!("{}: {}", role, by_role.join(", ")));
@@ -52,52 +52,45 @@ impl command::Handler for Handler {
                 }
 
                 if result.is_empty() {
-                    ctx.respond("*no scopes*");
+                    respond!(ctx, "*no scopes*");
                     return Ok(());
                 }
 
-                ctx.respond(format!("{}.", result.join("; ")));
+                respond!(ctx, format!("{}.", result.join("; ")));
             }
             Some("permit") => {
                 ctx.check_scope(auth::Scope::AuthPermit).await?;
 
-                let duration: Duration = match ctx.next_parse("<duration> <principal> <scope>") {
-                    Some(duration) => duration,
-                    None => return Ok(()),
-                };
+                let duration: Duration = ctx.next_parse("<duration> <principal> <scope>")?;
+                let principal = ctx.next_parse("<duration> <principal> <scope>")?;
+                let scope = ctx.next_parse("<duration> <principal> <scope>")?;
 
-                let principal = match ctx.next_parse("<duration> <principal> <scope>") {
-                    Some(principal) => principal,
-                    None => return Ok(()),
-                };
-
-                let scope = match ctx.next_parse("<duration> <principal> <scope>") {
-                    Some(scope) => scope,
-                    None => return Ok(()),
-                };
-
-                if !ctx.user.has_scope(scope) {
-                    ctx.respond(format!(
+                if !ctx.user.has_scope(scope).await {
+                    respond!(
+                        ctx,
                         "Trying to grant scope `{}` that you don't have :(",
                         scope
-                    ));
+                    );
                     return Ok(());
                 }
 
                 let now = Utc::now();
                 let expires_at = now + duration.as_chrono();
 
-                ctx.respond(format!(
+                respond!(
+                    ctx,
                     "Gave: {scope} to {principal} for {duration}",
                     duration = duration,
                     principal = principal,
                     scope = scope
-                ));
+                );
 
-                self.auth.insert_temporary(scope, principal, expires_at);
+                self.auth
+                    .insert_temporary(scope, principal, expires_at)
+                    .await;
             }
             _ => {
-                ctx.respond("Expected: permit");
+                respond!(ctx, "Expected: permit");
             }
         }
 

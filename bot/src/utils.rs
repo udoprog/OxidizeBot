@@ -1,7 +1,7 @@
 use crate::{api, prelude::*};
-use parking_lot::Mutex;
 use percent_encoding::PercentDecode;
 use std::{borrow::Cow, fmt, mem, ops, sync::Arc, time};
+use tokio::sync::Mutex;
 
 mod duration;
 
@@ -715,8 +715,8 @@ impl Shutdown {
     }
 
     /// Execute the shutdown handler.
-    pub fn shutdown(&self) -> bool {
-        if let Some(sender) = self.sender.lock().take() {
+    pub async fn shutdown(&self) -> bool {
+        if let Some(sender) = self.sender.lock().await.take() {
             sender.send(()).expect("no listener");
             return true;
         }

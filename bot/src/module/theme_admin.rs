@@ -1,15 +1,13 @@
 use crate::{auth, command, db, module, prelude::*};
-use parking_lot::RwLock;
-use std::sync::Arc;
 
 pub struct Handler {
-    pub themes: Arc<RwLock<Option<db::Themes>>>,
+    pub themes: injector::Var<Option<db::Themes>>,
 }
 
 #[async_trait]
 impl command::Handler for Handler {
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
-        let themes = match self.themes.read().clone() {
+        let themes = match self.themes.load().await {
             Some(themes) => themes,
             None => return Ok(()),
         };
@@ -20,24 +18,27 @@ impl command::Handler for Handler {
             Some("edit") => {
                 ctx.check_scope(auth::Scope::ThemeEdit).await?;
 
-                let name = ctx_try!(ctx.next_str("<name> <track-id>"));
-                let track_id = ctx_try!(ctx.next_parse("<name> <track-id>"));
+                let name = ctx.next_str("<name> <track-id>")?;
+                let track_id = ctx.next_parse("<name> <track-id>")?;
 
-                themes.edit(ctx.channel(), &name, track_id)?;
-                ctx.respond("Edited theme.");
+                themes.edit(ctx.channel(), &name, track_id).await?;
+                respond!(ctx, "Edited theme.");
             }
             Some("edit-duration") => {
                 ctx.check_scope(auth::Scope::ThemeEdit).await?;
 
-                let name = ctx_try!(ctx.next_str("<name> <start> <end>"));
-                let start = ctx_try!(ctx.next_parse("<name> <start> <end>"));
-                let end = ctx_try!(ctx.next_parse_optional());
+                let name = ctx.next_str("<name> <start> <end>")?;
+                let start = ctx.next_parse("<name> <start> <end>")?;
+                let end = ctx.next_parse_optional()?;
 
-                themes.edit_duration(ctx.channel(), &name, start, end)?;
-                ctx.respond("Edited theme.");
+                themes
+                    .edit_duration(ctx.channel(), &name, start, end)
+                    .await?;
+                respond!(ctx, "Edited theme.");
             }
             None | Some(..) => {
-                ctx.respond(
+                respond!(
+                    ctx,
                     "Expected: show, list, edit, edit-duration, delete, enable, disable, or group.",
                 );
             }
@@ -64,7 +65,7 @@ impl super::Module for Module {
         handlers.insert(
             "theme",
             Handler {
-                themes: injector.var()?,
+                themes: injector.var().await?,
             },
         );
         Ok(())

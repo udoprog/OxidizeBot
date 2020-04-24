@@ -1,37 +1,36 @@
 use crate::{command, module, prelude::*};
 use anyhow::Error;
-use parking_lot::RwLock;
-use std::sync::Arc;
 use url::Url;
 
 const DEFAULT_URL: &str = "https://setbac.tv/help";
 
 /// Handler for the !help command.
 pub struct Help {
-    enabled: Arc<RwLock<bool>>,
-    url: Arc<RwLock<Url>>,
+    enabled: settings::Var<bool>,
+    url: settings::Var<Url>,
 }
 
 #[async_trait]
 impl command::Handler for Help {
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
         let next = ctx.next();
-        let mut url = self.url.read().clone();
+        let mut url = self.url.load().await;
 
         match next.as_deref() {
             None => {
-                ctx.respond(format!(
+                respond!(
+                    ctx,
                     "You can find documentation for each command at {}",
                     url
-                ));
+                );
             }
             Some(command) => {
                 url.query_pairs_mut().append_pair("q", command);
-                ctx.respond(format!("For help on that, go to {}", url));
+                respond!(ctx, format!("For help on that, go to {}", url));
             }
         }
 
@@ -58,8 +57,8 @@ impl super::Module for Module {
         handlers.insert(
             "help",
             Help {
-                enabled: settings.var("help/enabled", true)?,
-                url: settings.var("help/url", default_url)?,
+                enabled: settings.var("help/enabled", true).await?,
+                url: settings.var("help/url", default_url).await?,
             },
         );
 

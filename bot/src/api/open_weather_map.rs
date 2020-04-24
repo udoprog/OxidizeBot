@@ -15,27 +15,45 @@ pub struct OpenWeatherMap {
     api_key: Arc<String>,
 }
 
-/// Hook up open weather api if all necessary settings are available.
-pub fn setup(
-    settings: Settings,
+struct Builder {
     injector: Injector,
-) -> Result<impl Future<Output = Result<(), Error>>, Error> {
-    let (mut api_key_stream, api_key) = settings.stream::<String>("weather/api-key").optional()?;
+    pub api_key: Option<String>,
+}
 
-    let build = move |api_key: Option<String>| -> Result<(), Error> {
-        match api_key {
-            Some(api_key) => injector.update(OpenWeatherMap::new(api_key)?),
-            None => injector.clear::<OpenWeatherMap>(),
+impl Builder {
+    /// Inject a newly build value.
+    pub async fn build_and_inject(&self) -> Result<(), Error> {
+        match &self.api_key {
+            Some(api_key) => {
+                self.injector
+                    .update(OpenWeatherMap::new(api_key.to_string())?)
+                    .await
+            }
+            None => self.injector.clear::<OpenWeatherMap>().await,
         }
 
         Ok(())
-    };
+    }
+}
+
+/// Hook up open weather api if all necessary settings are available.
+pub async fn setup(
+    settings: Settings,
+    injector: Injector,
+) -> Result<impl Future<Output = Result<(), Error>>, Error> {
+    let (mut api_key_stream, api_key) = settings
+        .stream::<String>("weather/api-key")
+        .optional()
+        .await?;
+
+    let mut builder = Builder { injector, api_key };
+
+    builder.build_and_inject().await?;
 
     Ok(async move {
-        build(api_key)?;
-
-        while let Some(update) = api_key_stream.next().await {
-            build(update)?;
+        while let Some(api_key) = api_key_stream.next().await {
+            builder.api_key = api_key;
+            builder.build_and_inject().await?;
         }
 
         Err(anyhow!("api-key stream ended"))

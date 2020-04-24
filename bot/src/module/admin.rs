@@ -1,23 +1,25 @@
 use crate::{auth, command, db, module, prelude::*, settings};
 use anyhow::Error;
-use parking_lot::RwLock;
-use std::sync::Arc;
 
 /// Handler for the !admin command.
 pub struct Handler {
     settings: settings::Settings,
-    aliases: Arc<RwLock<Option<db::Aliases>>>,
-    commands: Arc<RwLock<Option<db::Commands>>>,
-    promotions: Arc<RwLock<Option<db::Promotions>>>,
-    themes: Arc<RwLock<Option<db::Themes>>>,
+    aliases: injector::Var<Option<db::Aliases>>,
+    commands: injector::Var<Option<db::Commands>>,
+    promotions: injector::Var<Option<db::Promotions>>,
+    themes: injector::Var<Option<db::Themes>>,
 }
 
 impl Handler {
     /// List settings by prefix.
-    fn list_settings_by_prefix(&self, ctx: &mut command::Context, key: &str) -> Result<(), Error> {
+    async fn list_settings_by_prefix(
+        &self,
+        ctx: &mut command::Context,
+        key: &str,
+    ) -> Result<(), Error> {
         let mut results = Vec::new();
 
-        let settings = self.settings.list_by_prefix(key)?;
+        let settings = self.settings.list_by_prefix(key).await?;
 
         for setting in settings.iter().take(10) {
             // NB: security issue if this was present.
@@ -50,7 +52,7 @@ impl Handler {
                 response = format!("{} .. and {} more", response, more);
             }
 
-            ctx.respond(response);
+            ctx.respond(response).await;
         }
 
         Ok(())
@@ -66,183 +68,155 @@ impl command::Handler for Handler {
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
         match ctx.next().as_deref() {
             Some("refresh-mods") => {
-                ctx.privmsg("/mods");
-                ctx.respond("Refreshed information on mods");
+                ctx.privmsg("/mods").await;
+                respond!(ctx, "Refreshed information on mods");
             }
             Some("refresh-vips") => {
-                ctx.privmsg("/vips");
-                ctx.respond("Refreshed information on vips");
+                ctx.privmsg("/vips").await;
+                respond!(ctx, "Refreshed information on vips");
             }
             Some("refresh") => {
-                ctx.privmsg("/mods");
-                ctx.privmsg("/vips");
-                ctx.respond("Refreshed information on mods and vips");
+                ctx.privmsg("/mods").await;
+                ctx.privmsg("/vips").await;
+                respond!(ctx, "Refreshed information on mods and vips");
             }
             Some("version") => {
                 respond!(ctx, "OxidizeBot Version {}", crate::VERSION);
             }
             Some("shutdown") | Some("restart") => {
-                if ctx.shutdown() {
-                    ctx.respond("Restarting...");
+                if ctx.shutdown().await {
+                    respond!(ctx, "Restarting...");
                 } else {
-                    ctx.respond("Already restarting...");
+                    respond!(ctx, "Already restarting...");
                 }
             }
             // Insert a value into a setting.
             Some("push") => {
-                let key = match key(ctx) {
-                    Some(key) => key,
-                    None => return Ok(()),
-                };
-
-                let value = match self.edit_value_in_set(ctx, &key) {
-                    Some(ty) => ty,
-                    None => return Ok(()),
-                };
+                let key = key(ctx)?;
+                let value = self.edit_value_in_set(ctx, &key).await?;
 
                 let mut values = self
                     .settings
-                    .get::<Vec<serde_json::Value>>(&key)?
+                    .get::<Vec<serde_json::Value>>(&key)
+                    .await?
                     .unwrap_or_default();
 
                 values.push(value);
-                self.settings.set(&key, values)?;
+                self.settings.set(&key, values).await?;
                 respond!(ctx, "Updated the {} setting", key);
             }
             // Delete a value from a setting.
             Some("delete") => {
-                let key = match key(ctx) {
-                    Some(key) => key,
-                    None => return Ok(()),
-                };
-
-                let value = match self.edit_value_in_set(ctx, &key) {
-                    Some(ty) => ty,
-                    None => return Ok(()),
-                };
+                let key = key(ctx)?;
+                let value = self.edit_value_in_set(ctx, &key).await?;
 
                 let mut values = self
                     .settings
-                    .get::<Vec<serde_json::Value>>(&key)?
+                    .get::<Vec<serde_json::Value>>(&key)
+                    .await?
                     .unwrap_or_default();
 
                 values.retain(|v| v != &value);
-                self.settings.set(&key, values)?;
+                self.settings.set(&key, values).await?;
                 respond!(ctx, "Updated the {} setting", key);
             }
             Some("toggle") => {
                 self.toggle(ctx).await?;
             }
             Some("enable-group") => {
-                let group = match ctx.next() {
-                    Some(group) => group,
-                    None => {
-                        ctx.respond("Expected <group> to enable");
-                        return Ok(());
-                    }
-                };
+                let group = ctx
+                    .next()
+                    .ok_or_else(|| respond_err!("Expected <group> to enable"))?;
 
-                if let Some(aliases) = self.aliases.read().as_ref() {
-                    aliases.enable_group(ctx.channel(), &group)?;
+                if let Some(aliases) = &*self.aliases.read().await {
+                    aliases.enable_group(ctx.channel(), &group).await?;
                 }
 
-                if let Some(commands) = self.commands.read().as_ref() {
-                    commands.enable_group(ctx.channel(), &group)?;
+                if let Some(commands) = &*self.commands.read().await {
+                    commands.enable_group(ctx.channel(), &group).await?;
                 }
 
-                if let Some(promotions) = self.promotions.read().as_ref() {
-                    promotions.enable_group(ctx.channel(), &group)?;
+                if let Some(promotions) = &*self.promotions.read().await {
+                    promotions.enable_group(ctx.channel(), &group).await?;
                 }
 
-                if let Some(themes) = self.themes.read().as_ref() {
-                    themes.enable_group(ctx.channel(), &group)?;
+                if let Some(themes) = &*self.themes.read().await {
+                    themes.enable_group(ctx.channel(), &group).await?;
                 }
 
                 respond!(ctx, "Enabled group {}", group);
             }
             Some("disable-group") => {
-                let group = match ctx.next() {
-                    Some(group) => group,
-                    None => {
-                        ctx.respond("Expected <group> to disable");
-                        return Ok(());
-                    }
-                };
+                let group = ctx
+                    .next()
+                    .ok_or_else(|| respond_err!("Expected <group> to disable"))?;
 
-                if let Some(aliases) = self.aliases.read().as_ref() {
-                    aliases.disable_group(ctx.channel(), &group)?;
+                if let Some(aliases) = &*self.aliases.read().await {
+                    aliases.disable_group(ctx.channel(), &group).await?;
                 }
 
-                if let Some(commands) = self.commands.read().as_ref() {
-                    commands.disable_group(ctx.channel(), &group)?;
+                if let Some(commands) = &*self.commands.read().await {
+                    commands.disable_group(ctx.channel(), &group).await?;
                 }
 
-                if let Some(promotions) = self.promotions.read().as_ref() {
-                    promotions.disable_group(ctx.channel(), &group)?;
+                if let Some(promotions) = &*self.promotions.read().await {
+                    promotions.disable_group(ctx.channel(), &group).await?;
                 }
 
-                if let Some(themes) = self.themes.read().as_ref() {
-                    themes.disable_group(ctx.channel(), &group)?;
+                if let Some(themes) = &*self.themes.read().await {
+                    themes.disable_group(ctx.channel(), &group).await?;
                 }
 
                 respond!(ctx, "Disabled group {}", group);
             }
             // Get or set settings.
             Some("settings") => {
-                let key = match key(ctx) {
-                    Some(key) => key,
-                    None => return Ok(()),
-                };
+                let key = key(ctx)?;
 
                 match ctx.rest().trim() {
                     "" => {
-                        let setting =
-                            match self.settings.setting::<Option<serde_json::Value>>(&key)? {
-                                Some(value) => value,
-                                None => return self.list_settings_by_prefix(ctx, &key),
-                            };
+                        let setting = match self
+                            .settings
+                            .setting::<Option<serde_json::Value>>(&key)
+                            .await?
+                        {
+                            Some(value) => value,
+                            None => return self.list_settings_by_prefix(ctx, &key).await,
+                        };
 
                         if setting.schema.secret {
-                            respond!(ctx, "Cannot show secret setting `{}`", key);
-                            return Ok(());
+                            respond_bail!("Cannot show secret setting `{}`", key);
                         }
 
                         respond!(ctx, "{} = {}", key, serde_json::to_string(&setting.value)?);
                     }
                     value => {
-                        let schema = match self.settings.lookup(&key) {
-                            Some(schema) => schema,
-                            None => {
-                                ctx.respond("No such setting");
-                                return Ok(());
-                            }
-                        };
+                        let schema = self
+                            .settings
+                            .lookup(&key)
+                            .ok_or_else(|| respond_err!("No such setting"))?;
 
-                        let value = match schema.ty.parse_as_json(value) {
-                            Ok(value) => value,
-                            Err(e) => {
-                                respond!(ctx, "Value is not a valid {} type: {}", schema.ty, e);
-                                return Ok(());
-                            }
-                        };
+                        let value = schema.ty.parse_as_json(value).map_err(|e| {
+                            respond_err!("Value is not a valid {} type: {}", schema.ty, e)
+                        })?;
 
                         if let Some(scope) = schema.scope {
-                            if !ctx.user.has_scope(scope) {
-                                ctx.respond(
+                            if !ctx.user.has_scope(scope).await {
+                                respond_bail!(
                                     "You are not permitted to modify that setting, sorry :(",
                                 );
-                                return Ok(());
                             }
                         }
 
                         let value_string = serde_json::to_string(&value)?;
-                        self.settings.set_json(&key, value)?;
+                        self.settings.set_json(&key, value).await?;
                         respond!(ctx, "Updated setting {} = {}", key, value_string);
                     }
                 }
             }
             _ => {
-                ctx.respond(
+                respond!(
+                    ctx,
                     "Expected one of: \
                      refresh-mods, \
                      refresh-vips, \
@@ -260,25 +234,20 @@ impl command::Handler for Handler {
 impl Handler {
     /// Handler for the toggle command.
     async fn toggle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
-        let key = match key(ctx) {
-            Some(key) => key,
-            None => {
-                ctx.respond("Expected: toggle <key>");
-                return Ok(());
-            }
-        };
+        let key = key(ctx)?;
 
-        let setting = match self.settings.setting::<serde_json::Value>(&key)? {
-            Some(value) => value,
-            None => {
-                respond!(ctx, "No setting matching key: {}", key);
-                return Ok(());
-            }
-        };
+        let setting = self
+            .settings
+            .setting::<serde_json::Value>(&key)
+            .await?
+            .ok_or_else(|| respond_err!("No setting matching key: {}", key))?;
 
         if let Some(scope) = setting.schema.scope {
-            if !ctx.user.has_scope(scope) {
-                ctx.respond("You are not permitted to modify that setting, sorry :(");
+            if !ctx.user.has_scope(scope).await {
+                respond!(
+                    ctx,
+                    "You are not permitted to modify that setting, sorry :("
+                );
                 return Ok(());
             }
         }
@@ -305,7 +274,7 @@ impl Handler {
         };
 
         let value_string = serde_json::to_string(&toggled)?;
-        self.settings.set_json(&key, toggled)?;
+        self.settings.set_json(&key, toggled).await?;
         respond!(ctx, "Updated setting {} = {}", key, value_string);
         Ok(())
     }
@@ -313,24 +282,22 @@ impl Handler {
     /// Parse the rest of the context as a value corresponding to the given set.
     ///
     /// Also tests that we have the permission to modify the specified setting.
-    fn edit_value_in_set(
+    async fn edit_value_in_set(
         &self,
         ctx: &mut command::Context,
         key: &str,
-    ) -> Option<serde_json::Value> {
-        let schema = match self.settings.lookup(key) {
-            Some(schema) => schema,
-            None => {
-                ctx.respond("No such setting");
-                return None;
-            }
-        };
+    ) -> Result<serde_json::Value, Error> {
+        let schema = self
+            .settings
+            .lookup(key)
+            .ok_or_else(|| respond_err!("No such setting"))?;
 
         // Test schema permissions.
         if let Some(scope) = schema.scope {
-            if !ctx.user.has_scope(scope) {
-                ctx.respond("You are not permitted to modify that setting, sorry :(");
-                return None;
+            if !ctx.user.has_scope(scope).await {
+                return Err(
+                    respond_err!("You are not permitted to modify that setting, sorry :(").into(),
+                );
             }
         }
 
@@ -340,39 +307,29 @@ impl Handler {
                 ..
             } => value,
             ref other => {
-                respond!(ctx, "Configuration is a {}, but expected a set", other);
-                return None;
+                return Err(
+                    respond_err!("Configuration is a {}, but expected a set", other).into(),
+                );
             }
         };
 
-        let value = match ty.parse_as_json(ctx.rest()) {
-            Ok(value) => value,
-            Err(e) => {
-                respond!(ctx, "Value is not a valid {} type: {}", ty, e);
-                return None;
-            }
-        };
+        let value = ty
+            .parse_as_json(ctx.rest())
+            .map_err(|e| respond_err!("Value is not a valid {} type: {}", ty, e))?;
 
-        Some(value)
+        Ok(value)
     }
 }
 
 /// Extract a settings key from the context.
-fn key(ctx: &mut command::Context) -> Option<String> {
-    let key = match ctx.next() {
-        Some(key) => key,
-        None => {
-            ctx.respond("Expected <key>");
-            return None;
-        }
-    };
+fn key(ctx: &mut command::Context) -> Result<String, Error> {
+    let key = ctx.next().ok_or_else(|| respond_err!("Expected <key>"))?;
 
     if key.starts_with("secrets/") {
-        ctx.respond("Cannot access secrets through chat!");
-        return None;
+        respond_bail!("Cannot access secrets through chat!");
     }
 
-    Some(key)
+    Ok(key)
 }
 
 pub struct Module;
@@ -396,10 +353,10 @@ impl super::Module for Module {
             "admin",
             Handler {
                 settings: settings.clone(),
-                aliases: injector.var()?,
-                commands: injector.var()?,
-                promotions: injector.var()?,
-                themes: injector.var()?,
+                aliases: injector.var().await?,
+                commands: injector.var().await?,
+                promotions: injector.var().await?,
+                themes: injector.var().await?,
             },
         );
 

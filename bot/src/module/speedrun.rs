@@ -12,14 +12,13 @@ use crate::{
     utils,
 };
 use anyhow::{anyhow, Error};
-use parking_lot::RwLock;
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 /// Handler for the !speedrun command.
 pub struct Speedrun {
     speedrun: CachedSpeedrun,
-    enabled: Arc<RwLock<bool>>,
-    top: Arc<RwLock<u32>>,
+    enabled: settings::Var<bool>,
+    top: settings::Var<u32>,
 }
 
 impl Speedrun {
@@ -38,7 +37,7 @@ impl Speedrun {
                 "--game" => match ctx.next() {
                     Some(g) => games.push(g.to_lowercase()),
                     None => {
-                        ctx.respond("Expected argument to `--game`");
+                        respond!(ctx, "Expected argument to `--game`");
                         return Ok(());
                     }
                 },
@@ -49,7 +48,7 @@ impl Speedrun {
                         category_filter.ty = Some(CategoryType::PerLevel)
                     }
                     None => {
-                        ctx.respond("Expected argument to `--level`");
+                        respond!(ctx, "Expected argument to `--level`");
                         return Ok(());
                     }
                 },
@@ -60,7 +59,7 @@ impl Speedrun {
                         category_filter.misc = true;
                     }
                     None => {
-                        ctx.respond("Expected argument to `--category`");
+                        respond!(ctx, "Expected argument to `--category`");
                         return Ok(());
                     }
                 },
@@ -71,7 +70,7 @@ impl Speedrun {
                         category_filter.misc = true;
                     }
                     None => {
-                        ctx.respond("Expected argument to `--sub-category`");
+                        respond!(ctx, "Expected argument to `--sub-category`");
                         return Ok(());
                     }
                 },
@@ -82,14 +81,14 @@ impl Speedrun {
                 }
                 "--abbrev" => abbrev = true,
                 other if other.starts_with("--") => {
-                    ctx.respond(format!("`{}` is not a valid parameter", other));
+                    respond!(ctx, format!("`{}` is not a valid parameter", other));
                     return Ok(());
                 }
                 other if query_user.is_none() => {
                     query_user = Some(other.to_lowercase());
                 }
                 _ => {
-                    ctx.respond("did not expect more arguments");
+                    respond!(ctx, "did not expect more arguments");
                     return Ok(());
                 }
             }
@@ -100,7 +99,7 @@ impl Speedrun {
         let query_user = match query_user {
             Some(query_user) => query_user,
             None => {
-                ctx.respond("No user in query");
+                respond!(ctx, "No user in query");
                 return Ok(());
             }
         };
@@ -110,7 +109,10 @@ impl Speedrun {
         let u = match self.speedrun.user_by_id(&query_user).await? {
             Some(u) => u,
             None => {
-                ctx.respond(format!("No user on speedrun.com named `{}`", query_user));
+                respond!(
+                    ctx,
+                    format!("No user on speedrun.com named `{}`", query_user)
+                );
                 return Ok(());
             }
         };
@@ -123,7 +125,7 @@ impl Speedrun {
         let personal_bests = match personal_bests {
             Some(personal_bests) => personal_bests,
             None => {
-                ctx.respond("No personal bests found");
+                respond!(ctx, "No personal bests found");
                 return Ok(());
             }
         };
@@ -221,7 +223,7 @@ impl Speedrun {
             ));
         }
 
-        ctx.user.respond_lines(results, "*no runs*");
+        ctx.user.respond_lines(results, "*no runs*").await;
         return Ok(());
 
         /// Runs per game.
@@ -247,12 +249,9 @@ impl Speedrun {
 
     /// Query a game.
     async fn query_game(&self, ctx: &mut command::Context) -> Result<(), Error> {
-        let top = *self.top.read();
+        let top = self.top.load().await;
 
-        let game_query = match ctx.next_str("<game> [options]") {
-            Some(game_query) => game_query,
-            None => return Ok(()),
-        };
+        let game_query = ctx.next_str("<game> [options]")?;
 
         let mut match_user = None;
         let mut category_filter = CategoryFilter::default();
@@ -265,7 +264,7 @@ impl Speedrun {
                 "--user" => match ctx.next() {
                     Some(u) => match_user = Some(u.to_lowercase()),
                     None => {
-                        ctx.respond("Expected argument to `--user`");
+                        respond!(ctx, "Expected argument to `--user`");
                         return Ok(());
                     }
                 },
@@ -276,7 +275,7 @@ impl Speedrun {
                         category_filter.misc = true;
                     }
                     None => {
-                        ctx.respond("Expected argument to `--category`");
+                        respond!(ctx, "Expected argument to `--category`");
                         return Ok(());
                     }
                 },
@@ -287,7 +286,7 @@ impl Speedrun {
                         category_filter.misc = true;
                     }
                     None => {
-                        ctx.respond("Expected argument to `--sub-category`");
+                        respond!(ctx, "Expected argument to `--sub-category`");
                         return Ok(());
                     }
                 },
@@ -298,7 +297,7 @@ impl Speedrun {
                 }
                 "--abbrev" => abbrev = true,
                 other => {
-                    ctx.respond(format!("`{}` is not a valid parameter", other));
+                    respond!(ctx, format!("`{}` is not a valid parameter", other));
                     return Ok(());
                 }
             }
@@ -311,7 +310,7 @@ impl Speedrun {
         let game = match game {
             Some(game) => game,
             None => {
-                ctx.respond(format!("No game matching `{}`", game_query));
+                respond!(ctx, "No game matching `{}`", game_query);
                 return Ok::<(), Error>(());
             }
         };
@@ -327,7 +326,7 @@ impl Speedrun {
         let categories = match categories {
             Some(categories) => categories,
             None => {
-                ctx.respond("No categories for that game");
+                respond!(ctx, "No categories for that game");
                 return Ok(());
             }
         };
@@ -439,7 +438,7 @@ impl Speedrun {
             results.push(format!("{} -> {}", name, runs));
         }
 
-        ctx.user.respond_lines(results, "*no runs*");
+        ctx.user.respond_lines(results, "*no runs*").await;
         Ok(())
     }
 
@@ -488,7 +487,7 @@ impl command::Handler for Speedrun {
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
@@ -500,7 +499,7 @@ impl command::Handler for Speedrun {
                 self.query_game(ctx).await?;
             }
             _ => {
-                ctx.respond("Expected argument: record, personal-bests.");
+                respond!(ctx, "Expected argument: record, personal-bests.");
             }
         }
 
@@ -715,9 +714,14 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), Error> {
-        let cache: Cache = injector.get().ok_or_else(|| anyhow!("missing cache"))?;
+        let cache: Cache = injector
+            .get()
+            .await
+            .ok_or_else(|| anyhow!("missing cache"))?;
+
         let speedrun = injector
             .get()
+            .await
             .ok_or_else(|| anyhow!("missing speedrun api"))?;
 
         let speedrun = CachedSpeedrun {
@@ -729,8 +733,8 @@ impl super::Module for Module {
             "speedrun",
             Speedrun {
                 speedrun,
-                enabled: settings.var("speedrun/enabled", false)?,
-                top: settings.var("speedrun/top", 20)?,
+                enabled: settings.var("speedrun/enabled", false).await?,
+                top: settings.var("speedrun/top", 20).await?,
             },
         );
 

@@ -1,18 +1,16 @@
-use crate::{api, injector::Injector, prelude::*, storage::Cache, utils::Duration};
+use crate::{api, injector, prelude::*, storage::Cache, utils::Duration};
 use anyhow::Error;
-use parking_lot::RwLock;
-use std::sync::Arc;
 
 const USER: &str = "udoprog";
 const REPO: &str = "OxidizeBot";
 
 pub fn run(
-    injector: &Injector,
+    injector: &injector::Injector,
 ) -> (
-    Arc<RwLock<Option<api::github::Release>>>,
+    injector::Var<Option<api::github::Release>>,
     impl Future<Output = Result<(), Error>>,
 ) {
-    let latest = Arc::new(RwLock::new(None));
+    let latest = injector::Var::new(None);
     let returned_latest = latest.clone();
     let injector = injector.clone();
 
@@ -20,7 +18,7 @@ pub fn run(
         let github = api::GitHub::new()?;
         let mut interval = tokio::time::interval(Duration::hours(6).as_std()).fuse();
 
-        let (mut cache_stream, mut cache) = injector.stream::<Cache>();
+        let (mut cache_stream, mut cache) = injector.stream::<Cache>().await;
 
         loop {
             futures::select! {
@@ -44,7 +42,7 @@ pub fn run(
                         None => continue,
                     };
 
-                    *latest.write() = Some(release);
+                    *latest.write().await = Some(release);
                 }
             }
         }

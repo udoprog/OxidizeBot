@@ -3,7 +3,6 @@
 use crate::{
     currency::{BalanceOf, BalanceTransferError},
     db::{models, schema, user_id, Database},
-    task,
 };
 
 use anyhow::Error;
@@ -35,89 +34,81 @@ impl Backend {
         let taker = taker.to_string();
         let taker = user_id(&taker);
         let giver = user_id(&giver);
-        let pool = self.db.pool.clone();
 
-        task::asyncify(move || {
-            let c = pool.lock();
-            let c = &*c;
+        self.db
+            .asyncify(move |c| {
+                c.transaction(move || {
+                    let giver_filter = dsl::balances
+                        .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&giver)));
 
-            c.transaction(move || {
-                let giver_filter = dsl::balances
-                    .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&giver)));
+                    let balance = giver_filter
+                        .select(dsl::amount)
+                        .first::<i64>(&*c)
+                        .optional()?
+                        .unwrap_or_default();
 
-                let balance = giver_filter
-                    .select(dsl::amount)
-                    .first::<i64>(&*c)
-                    .optional()?
-                    .unwrap_or_default();
+                    if balance < amount && !override_balance {
+                        return Err(BalanceTransferError::NoBalance);
+                    }
 
-                if balance < amount && !override_balance {
-                    return Err(BalanceTransferError::NoBalance);
-                }
-
-                modify_balance(c, &channel, &taker, amount)?;
-                modify_balance(c, &channel, &giver, -amount)?;
-                Ok(())
+                    modify_balance(c, &channel, &taker, amount)?;
+                    modify_balance(c, &channel, &giver, -amount)?;
+                    Ok(())
+                })
             })
-        })
-        .await
+            .await
     }
 
     /// Get balances for all users.
     pub async fn export_balances(&self) -> Result<Vec<models::Balance>, Error> {
         use self::schema::balances::dsl;
 
-        let pool = self.db.pool.clone();
-
-        task::asyncify(move || {
-            let c = pool.lock();
-            let balances = dsl::balances.load::<models::Balance>(&*c)?;
-            Ok(balances)
-        })
-        .await
+        self.db
+            .asyncify(move |c| {
+                let balances = dsl::balances.load::<models::Balance>(&*c)?;
+                Ok(balances)
+            })
+            .await
     }
 
     /// Import balances for all users.
     pub async fn import_balances(&self, balances: Vec<models::Balance>) -> Result<(), Error> {
         use self::schema::balances::dsl;
 
-        let pool = self.db.pool.clone();
+        self.db
+            .asyncify(move |c| {
+                for balance in balances {
+                    let balance = balance.checked();
+                    let channel = channel_id(&balance.channel);
 
-        task::asyncify(move || {
-            let c = pool.lock();
+                    let filter = dsl::balances.filter(
+                        dsl::channel
+                            .eq(channel.as_str())
+                            .and(dsl::user.eq(&balance.user)),
+                    );
 
-            for balance in balances {
-                let balance = balance.checked();
-                let channel = channel_id(&balance.channel);
+                    let b = filter.clone().first::<models::Balance>(&*c).optional()?;
 
-                let filter = dsl::balances.filter(
-                    dsl::channel
-                        .eq(channel.as_str())
-                        .and(dsl::user.eq(&balance.user)),
-                );
-
-                let b = filter.clone().first::<models::Balance>(&*c).optional()?;
-
-                match b {
-                    None => {
-                        diesel::insert_into(dsl::balances)
-                            .values(&balance)
-                            .execute(&*c)?;
-                    }
-                    Some(_) => {
-                        diesel::update(filter)
-                            .set((
-                                dsl::amount.eq(balance.amount),
-                                dsl::watch_time.eq(balance.watch_time),
-                            ))
-                            .execute(&*c)?;
+                    match b {
+                        None => {
+                            diesel::insert_into(dsl::balances)
+                                .values(&balance)
+                                .execute(&*c)?;
+                        }
+                        Some(_) => {
+                            diesel::update(filter)
+                                .set((
+                                    dsl::amount.eq(balance.amount),
+                                    dsl::watch_time.eq(balance.watch_time),
+                                ))
+                                .execute(&*c)?;
+                        }
                     }
                 }
-            }
 
-            Ok(())
-        })
-        .await
+                Ok(())
+            })
+            .await
     }
 
     /// Find user balance.
@@ -126,41 +117,36 @@ impl Backend {
 
         let channel = channel_id(channel);
         let user = user_id(&user);
-        let pool = self.db.pool.clone();
 
-        task::asyncify(move || {
-            let c = pool.lock();
+        self.db
+            .asyncify(move |c| {
+                let result = dsl::balances
+                    .select((dsl::amount, dsl::watch_time))
+                    .filter(dsl::channel.eq(channel).and(dsl::user.eq(user)))
+                    .first::<(i64, i64)>(&*c)
+                    .optional()?;
 
-            let result = dsl::balances
-                .select((dsl::amount, dsl::watch_time))
-                .filter(dsl::channel.eq(channel).and(dsl::user.eq(user)))
-                .first::<(i64, i64)>(&*c)
-                .optional()?;
+                let (balance, watch_time) = match result {
+                    Some((balance, watch_time)) => (balance, watch_time),
+                    None => return Ok(None),
+                };
 
-            let (balance, watch_time) = match result {
-                Some((balance, watch_time)) => (balance, watch_time),
-                None => return Ok(None),
-            };
-
-            Ok(Some(BalanceOf {
-                balance,
-                watch_time,
-            }))
-        })
-        .await
+                Ok(Some(BalanceOf {
+                    balance,
+                    watch_time,
+                }))
+            })
+            .await
     }
 
     /// Add (or subtract) from the balance for a single user.
     pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<(), Error> {
         let channel = channel_id(channel);
         let user = user_id(user);
-        let pool = self.db.pool.clone();
 
-        task::asyncify(move || {
-            let c = pool.lock();
-            modify_balance(&*c, &channel, &user, amount)
-        })
-        .await
+        self.db
+            .asyncify(move |c| modify_balance(&*c, &channel, &user, amount))
+            .await
     }
 
     /// Add balance to users.
@@ -175,46 +161,44 @@ impl Backend {
 
         // NB: for legacy reasons, channel is stored with a hash.
         let channel = format!("#{}", channel);
-        let pool = self.db.pool.clone();
 
-        task::asyncify(move || {
-            let c = pool.lock();
+        self.db
+            .asyncify(move |c| {
+                for user in users {
+                    let user = user_id(&user);
 
-            for user in users {
-                let user = user_id(&user);
+                    let filter = dsl::balances
+                        .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&user)));
 
-                let filter = dsl::balances
-                    .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&user)));
+                    let b = filter.clone().first::<models::Balance>(&*c).optional()?;
 
-                let b = filter.clone().first::<models::Balance>(&*c).optional()?;
+                    match b {
+                        None => {
+                            let balance = models::Balance {
+                                channel: channel.to_string(),
+                                user: user.clone(),
+                                amount,
+                                watch_time,
+                            };
 
-                match b {
-                    None => {
-                        let balance = models::Balance {
-                            channel: channel.to_string(),
-                            user: user.clone(),
-                            amount,
-                            watch_time,
-                        };
+                            diesel::insert_into(dsl::balances)
+                                .values(&balance)
+                                .execute(&*c)?;
+                        }
+                        Some(b) => {
+                            let value = b.amount.saturating_add(amount);
+                            let watch_time = b.watch_time.saturating_add(watch_time);
 
-                        diesel::insert_into(dsl::balances)
-                            .values(&balance)
-                            .execute(&*c)?;
-                    }
-                    Some(b) => {
-                        let value = b.amount.saturating_add(amount);
-                        let watch_time = b.watch_time.saturating_add(watch_time);
-
-                        diesel::update(filter)
-                            .set((dsl::amount.eq(value), dsl::watch_time.eq(watch_time)))
-                            .execute(&*c)?;
+                            diesel::update(filter)
+                                .set((dsl::amount.eq(value), dsl::watch_time.eq(watch_time)))
+                                .execute(&*c)?;
+                        }
                     }
                 }
-            }
 
-            Ok(())
-        })
-        .await
+                Ok(())
+            })
+            .await
     }
 }
 

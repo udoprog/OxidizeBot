@@ -1,17 +1,13 @@
 use crate::{auth, command, irc, module, prelude::*, utils};
 use anyhow::Error;
 use chrono::{DateTime, Utc};
-use parking_lot::RwLock;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 
 /// Handler for the !poll command.
 pub struct Poll {
-    enabled: Arc<RwLock<bool>>,
-    polls: Mutex<HashMap<String, ActivePoll>>,
+    enabled: settings::Var<bool>,
+    polls: Mutex<HashMap<command::HookId, ActivePoll>>,
 }
 
 #[async_trait]
@@ -21,13 +17,13 @@ impl command::Handler for Poll {
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
         match ctx.next().as_deref() {
             Some("run") => {
-                let question = ctx_try!(ctx.next_str("<question> <options...>"));
+                let question = ctx.next_str("<question> <options...>")?;
 
                 let mut options = HashMap::new();
 
@@ -44,47 +40,41 @@ impl command::Handler for Poll {
                 }
 
                 let poll = ActivePoll {
-                    inner: Arc::new(RwLock::new(Inner {
+                    question: question.clone(),
+                    created_at: Utc::now(),
+                    options,
+                    inner: settings::Var::new(Inner {
                         voted: Default::default(),
                         votes: Default::default(),
-                        options,
-                        created_at: Utc::now(),
-                    })),
+                    }),
                 };
 
-                ctx.insert_hook(&format!("poll/{}", question), poll.clone())
+                let hook_id = ctx.insert_hook(poll.clone()).await;
+                self.polls.lock().await.insert(hook_id, poll);
+                ctx.respond(format!("Started poll `{}` (id: {})", question, hook_id))
                     .await;
-                self.polls.lock().await.insert(question.clone(), poll);
-                ctx.respond(format!("Started poll `{}`", question));
             }
             Some("close") => {
                 let mut polls = self.polls.lock().await;
 
-                let question = match ctx.next() {
-                    Some(question) => question,
+                let id = match ctx.next() {
+                    Some(id) => str::parse::<command::HookId>(&id)
+                        .map_err(|_| respond_err!("Bad id `{}`", id))?,
                     None => {
-                        let latest = polls.iter().max_by_key(|e| e.1.inner.read().created_at);
-
-                        match latest {
-                            Some((question, _)) => question.to_string(),
-                            None => {
-                                ctx.respond("No running polls");
-                                return Ok(());
-                            }
-                        }
+                        *polls
+                            .iter()
+                            .max_by_key(|e| e.1.created_at)
+                            .ok_or_else(|| respond_err!("No running polls"))?
+                            .0
                     }
                 };
 
-                let poll = match polls.remove(&question) {
-                    Some(poll) => poll,
-                    None => {
-                        ctx.respond(format!("No poll named `{}`!", question));
-                        return Ok(());
-                    }
-                };
+                let poll = polls
+                    .remove(&id)
+                    .ok_or_else(|| respond_err!("No poll with id `{}`!", id))?;
 
-                ctx.remove_hook(&format!("poll/{}", question)).await;
-                let results = poll.close();
+                ctx.remove_hook(id).await;
+                let results = poll.close().await;
 
                 let total = results.iter().map(|(_, c)| c).sum::<u32>();
 
@@ -102,9 +92,11 @@ impl command::Handler for Poll {
                     formatted.push(format!("{} = {} ({})", key, votes, p));
                 }
 
-                ctx.respond(format!("{} -> {}.", question, formatted.join(", ")));
+                respond!(ctx, "{} -> {}.", poll.question, formatted.join(", "));
             }
-            _ => ctx.respond("Expected: run, close."),
+            _ => {
+                ctx.respond("Expected: run, close.").await;
+            }
         }
 
         Ok(())
@@ -114,23 +106,24 @@ impl command::Handler for Poll {
 struct Inner {
     voted: HashSet<String>,
     votes: HashMap<String, u32>,
-    options: HashMap<String, Option<String>>,
-    created_at: DateTime<Utc>,
 }
 
 #[derive(Clone)]
 struct ActivePoll {
-    inner: Arc<RwLock<Inner>>,
+    question: String,
+    created_at: DateTime<Utc>,
+    options: HashMap<String, Option<String>>,
+    inner: settings::Var<Inner>,
 }
 
 impl ActivePoll {
     /// Close the poll.
-    pub fn close(&self) -> Vec<(String, u32)> {
-        let inner = self.inner.read();
+    pub async fn close(&self) -> Vec<(String, u32)> {
+        let inner = self.inner.read().await;
 
         let mut results = Vec::new();
 
-        for (o, description) in &inner.options {
+        for (o, description) in &self.options {
             results.push((
                 description.clone().unwrap_or_else(|| o.to_string()),
                 inner.votes.get(o).cloned().unwrap_or_default(),
@@ -144,8 +137,8 @@ impl ActivePoll {
 
 #[async_trait]
 impl command::MessageHook for ActivePoll {
-    async fn peek(&mut self, user: &irc::User, m: &str) -> Result<(), Error> {
-        let mut inner = self.inner.write();
+    async fn peek(&self, user: &irc::User, m: &str) -> Result<(), Error> {
+        let mut inner = self.inner.write().await;
 
         let user = match user.real() {
             Some(user) => user,
@@ -157,7 +150,7 @@ impl command::MessageHook for ActivePoll {
         }
 
         for word in utils::TrimmedWords::new(m) {
-            if inner.options.get(&word.to_lowercase()).is_none() {
+            if self.options.get(&word.to_lowercase()).is_none() {
                 continue;
             }
 
@@ -189,7 +182,7 @@ impl super::Module for Module {
             "poll",
             Poll {
                 polls: Mutex::new(Default::default()),
-                enabled: settings.var("poll/enabled", false)?,
+                enabled: settings.var("poll/enabled", false).await?,
             },
         );
 

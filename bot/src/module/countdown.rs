@@ -27,30 +27,33 @@ impl command::Handler for Handler {
 
         match ctx.next().as_deref() {
             Some("set") => {
-                let duration = ctx_try!(ctx.next_parse("<duration> <template>"));
-                let template = ctx_try!(ctx.rest_parse("<duration> <template>"));
+                let duration = ctx.next_parse("<duration> <template>")?;
+                let template = ctx.rest_parse("<duration> <template>")?;
 
                 match self.sender.unbounded_send(Event::Set(duration, template)) {
                     Ok(()) => {
-                        ctx.respond("Countdown set!");
+                        respond!(ctx, "Countdown set!");
                     }
                     Err(_) => {
-                        ctx.respond("Could not set countdown :(");
+                        respond!(ctx, "Could not set countdown :(");
                         return Ok(());
                     }
                 }
             }
             Some("clear") => match self.sender.unbounded_send(Event::Clear) {
                 Ok(()) => {
-                    ctx.respond("Countdown cleared!");
+                    respond!(ctx, "Countdown cleared!");
                 }
                 Err(_) => {
-                    ctx.respond("Could not clear countdown :(");
+                    respond!(ctx, "Could not clear countdown :(");
                     return Ok(());
                 }
             },
             _ => {
-                ctx.respond("Expected: !countdown set <duration> <template>, or !countdown clear");
+                respond!(
+                    ctx,
+                    "Expected: !countdown set <duration> <template>, or !countdown clear"
+                );
                 return Ok(());
             }
         }
@@ -79,10 +82,10 @@ impl super::Module for Module {
     ) -> Result<(), anyhow::Error> {
         let settings = settings.scoped("countdown");
 
-        let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(true)?;
+        let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(true).await?;
         let enabled = Arc::new(RwLock::new(enabled));
 
-        let (mut path_stream, path) = settings.stream::<PathBuf>("path").optional()?;
+        let (mut path_stream, path) = settings.stream::<PathBuf>("path").optional().await?;
 
         let mut writer = FileWriter::default();
         writer.path = path;

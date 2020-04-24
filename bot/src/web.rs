@@ -4,8 +4,8 @@ use crate::{
     player, prelude::*, template, track_id::TrackId, utils,
 };
 use anyhow::bail;
-use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use std::{borrow::Cow, collections::HashMap, fmt, net::SocketAddr, sync::Arc};
+use tokio::sync::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use warp::{body, filters, path, Filter as _};
 
 mod cache;
@@ -81,11 +81,11 @@ pub struct DisabledBody {
 
 /// Aliases endpoint.
 #[derive(Clone)]
-struct Aliases(Arc<RwLock<Option<db::Aliases>>>);
+struct Aliases(injector::Var<Option<db::Aliases>>);
 
 impl Aliases {
     fn route(
-        aliases: Arc<RwLock<Option<db::Aliases>>>,
+        aliases: injector::Var<Option<db::Aliases>>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Aliases(aliases);
 
@@ -95,7 +95,7 @@ impl Aliases {
                 let api = api.clone();
                 move |channel: Fragment| {
                     let api = api.clone();
-                    async move { api.list(channel.as_str()).map_err(custom_reject) }
+                    async move { api.list(channel.as_str()).await.map_err(custom_reject) }
                 }
             });
 
@@ -107,6 +107,7 @@ impl Aliases {
                     let api = api.clone();
                     async move {
                         api.delete(channel.as_str(), name.as_str())
+                            .await
                             .map_err(custom_reject)
                     }
                 }
@@ -121,6 +122,7 @@ impl Aliases {
                     let api = api.clone();
                     async move {
                         api.edit(channel.as_str(), name.as_str(), body.template)
+                            .await
                             .map_err(custom_reject)
                     }
                 }
@@ -134,6 +136,7 @@ impl Aliases {
                     let api = api.clone();
                     async move {
                         api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
+                            .await
                             .map_err(custom_reject)
                     }
                 }
@@ -148,60 +151,62 @@ impl Aliases {
     }
 
     /// Access underlying aliases abstraction.
-    fn aliases(&self) -> Result<MappedRwLockReadGuard<'_, db::Aliases>, anyhow::Error> {
-        match RwLockReadGuard::try_map(self.0.read(), |c| c.as_ref()) {
+    async fn aliases(&self) -> Result<MappedRwLockReadGuard<'_, db::Aliases>, anyhow::Error> {
+        match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("aliases not configured"),
         }
     }
 
     /// Get the list of all aliases.
-    fn list(&self, channel: &str) -> Result<impl warp::Reply, anyhow::Error> {
-        let aliases = self.aliases()?.list_all(channel)?;
+    async fn list(&self, channel: &str) -> Result<impl warp::Reply, anyhow::Error> {
+        let aliases = self.aliases().await?.list_all(channel).await?;
         Ok(warp::reply::json(&aliases))
     }
 
     /// Edit the given alias by key.
-    fn edit(
+    async fn edit(
         &self,
         channel: &str,
         name: &str,
         template: template::Template,
     ) -> Result<impl warp::Reply, anyhow::Error> {
-        self.aliases()?.edit(channel, name, template)?;
+        self.aliases().await?.edit(channel, name, template).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Set the given alias's disabled status.
-    fn edit_disabled(
+    async fn edit_disabled(
         &self,
         channel: &str,
         name: &str,
         disabled: bool,
     ) -> Result<impl warp::Reply, anyhow::Error> {
+        let aliases = self.aliases().await?;
+
         if disabled {
-            self.aliases()?.disable(channel, name)?;
+            aliases.disable(channel, name).await?;
         } else {
-            self.aliases()?.enable(channel, name)?;
+            aliases.enable(channel, name).await?;
         }
 
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Delete the given alias by key.
-    fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, anyhow::Error> {
-        self.aliases()?.delete(channel, name)?;
+    async fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, anyhow::Error> {
+        self.aliases().await?.delete(channel, name).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 }
 
 /// Commands endpoint.
 #[derive(Clone)]
-struct Commands(Arc<RwLock<Option<db::Commands>>>);
+struct Commands(injector::Var<Option<db::Commands>>);
 
 impl Commands {
     fn route(
-        commands: Arc<RwLock<Option<db::Commands>>>,
+        commands: injector::Var<Option<db::Commands>>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Commands(commands);
 
@@ -211,7 +216,7 @@ impl Commands {
                 let api = api.clone();
                 move |channel: Fragment| {
                     let api = api.clone();
-                    async move { api.list(channel.as_str()).map_err(custom_reject) }
+                    async move { api.list(channel.as_str()).await.map_err(custom_reject) }
                 }
             });
 
@@ -223,6 +228,7 @@ impl Commands {
                     let api = api.clone();
                     async move {
                         api.delete(channel.as_str(), name.as_str())
+                            .await
                             .map_err(custom_reject)
                     }
                 }
@@ -238,6 +244,7 @@ impl Commands {
 
                     async move {
                         api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
+                            .await
                             .map_err(custom_reject)
                     }
                 }
@@ -251,6 +258,7 @@ impl Commands {
                     let api = api.clone();
                     async move {
                         api.edit(channel.as_str(), name.as_str(), body.template)
+                            .await
                             .map_err(custom_reject)
                     }
                 }
@@ -265,60 +273,62 @@ impl Commands {
     }
 
     /// Access underlying commands abstraction.
-    fn commands(&self) -> Result<MappedRwLockReadGuard<'_, db::Commands>, anyhow::Error> {
-        match RwLockReadGuard::try_map(self.0.read(), |c| c.as_ref()) {
+    async fn commands(&self) -> Result<MappedRwLockReadGuard<'_, db::Commands>, anyhow::Error> {
+        match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("commands not configured"),
         }
     }
 
     /// Get the list of all commands.
-    fn list(&self, channel: &str) -> Result<impl warp::Reply, anyhow::Error> {
-        let commands = self.commands()?.list_all(channel)?;
+    async fn list(&self, channel: &str) -> Result<impl warp::Reply, anyhow::Error> {
+        let commands = self.commands().await?.list_all(channel).await?;
         Ok(warp::reply::json(&commands))
     }
 
     /// Edit the given command by key.
-    fn edit(
+    async fn edit(
         &self,
         channel: &str,
         name: &str,
         template: template::Template,
     ) -> Result<impl warp::Reply, anyhow::Error> {
-        self.commands()?.edit(channel, name, template)?;
+        self.commands().await?.edit(channel, name, template).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Set the given command's disabled status.
-    fn edit_disabled(
+    async fn edit_disabled(
         &self,
         channel: &str,
         name: &str,
         disabled: bool,
     ) -> Result<impl warp::Reply, anyhow::Error> {
+        let commands = self.commands().await?;
+
         if disabled {
-            self.commands()?.disable(channel, name)?;
+            commands.disable(channel, name).await?;
         } else {
-            self.commands()?.enable(channel, name)?;
+            commands.enable(channel, name).await?;
         }
 
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Delete the given command by key.
-    fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, anyhow::Error> {
-        self.commands()?.delete(channel, name)?;
+    async fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, anyhow::Error> {
+        self.commands().await?.delete(channel, name).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 }
 
 /// Promotions endpoint.
 #[derive(Clone)]
-struct Promotions(Arc<RwLock<Option<db::Promotions>>>);
+struct Promotions(injector::Var<Option<db::Promotions>>);
 
 impl Promotions {
     fn route(
-        promotions: Arc<RwLock<Option<db::Promotions>>>,
+        promotions: injector::Var<Option<db::Promotions>>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Promotions(promotions);
 
@@ -328,7 +338,7 @@ impl Promotions {
                 let api = api.clone();
                 move |channel: Fragment| {
                     let api = api.clone();
-                    async move { api.list(channel.as_str()).map_err(custom_reject) }
+                    async move { api.list(channel.as_str()).await.map_err(custom_reject) }
                 }
             });
 
@@ -341,6 +351,7 @@ impl Promotions {
 
                     async move {
                         api.delete(channel.as_str(), name.as_str())
+                            .await
                             .map_err(custom_reject)
                     }
                 }
@@ -361,6 +372,7 @@ impl Promotions {
                             body.frequency,
                             body.template,
                         )
+                        .await
                         .map_err(custom_reject)
                     }
                 }
@@ -375,6 +387,7 @@ impl Promotions {
 
                     async move {
                         api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
+                            .await
                             .map_err(custom_reject)
                     }
                 }
@@ -390,61 +403,67 @@ impl Promotions {
     }
 
     /// Access underlying promotions abstraction.
-    fn promotions(&self) -> Result<MappedRwLockReadGuard<'_, db::Promotions>, anyhow::Error> {
-        match RwLockReadGuard::try_map(self.0.read(), |c| c.as_ref()) {
+    async fn promotions(&self) -> Result<MappedRwLockReadGuard<'_, db::Promotions>, anyhow::Error> {
+        match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("promotions not configured"),
         }
     }
 
     /// Get the list of all promotions.
-    fn list(&self, channel: &str) -> Result<impl warp::Reply, anyhow::Error> {
-        let promotions = self.promotions()?.list_all(channel)?;
+    async fn list(&self, channel: &str) -> Result<impl warp::Reply, anyhow::Error> {
+        let promotions = self.promotions().await?.list_all(channel).await?;
         Ok(warp::reply::json(&promotions))
     }
 
     /// Edit the given promotion by key.
-    fn edit(
+    async fn edit(
         &self,
         channel: &str,
         name: &str,
         frequency: utils::Duration,
         template: template::Template,
     ) -> Result<impl warp::Reply, anyhow::Error> {
-        self.promotions()?
-            .edit(channel, name, frequency, template)?;
+        self.promotions()
+            .await?
+            .edit(channel, name, frequency, template)
+            .await?;
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Set the given promotion's disabled status.
-    fn edit_disabled(
+    async fn edit_disabled(
         &self,
         channel: &str,
         name: &str,
         disabled: bool,
     ) -> Result<impl warp::Reply, anyhow::Error> {
+        let promotions = self.promotions().await?;
+
         if disabled {
-            self.promotions()?.disable(channel, name)?;
+            promotions.disable(channel, name).await?;
         } else {
-            self.promotions()?.enable(channel, name)?;
+            promotions.enable(channel, name).await?;
         }
 
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Delete the given promotion by key.
-    fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, anyhow::Error> {
-        self.promotions()?.delete(channel, name)?;
+    async fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, anyhow::Error> {
+        self.promotions().await?.delete(channel, name).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 }
 
 /// Themes endpoint.
 #[derive(Clone)]
-struct Themes(Arc<RwLock<Option<db::Themes>>>);
+struct Themes(injector::Var<Option<db::Themes>>);
 
 impl Themes {
-    fn route(themes: Arc<RwLock<Option<db::Themes>>>) -> filters::BoxedFilter<(impl warp::Reply,)> {
+    fn route(
+        themes: injector::Var<Option<db::Themes>>,
+    ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Themes(themes);
 
         let list = warp::get()
@@ -453,7 +472,7 @@ impl Themes {
                 let api = api.clone();
                 move |channel: Fragment| {
                     let api = api.clone();
-                    async move { api.list(channel.as_str()).map_err(custom_reject) }
+                    async move { api.list(channel.as_str()).await.map_err(custom_reject) }
                 }
             });
 
@@ -466,6 +485,7 @@ impl Themes {
 
                     async move {
                         api.delete(channel.as_str(), name.as_str())
+                            .await
                             .map_err(custom_reject)
                     }
                 }
@@ -481,6 +501,7 @@ impl Themes {
 
                     async move {
                         api.edit(channel.as_str(), name.as_str(), body.track_id)
+                            .await
                             .map_err(custom_reject)
                     }
                 }
@@ -495,6 +516,7 @@ impl Themes {
 
                     async move {
                         api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
+                            .await
                             .map_err(custom_reject)
                     }
                 }
@@ -509,49 +531,51 @@ impl Themes {
     }
 
     /// Access underlying themes abstraction.
-    fn themes(&self) -> Result<MappedRwLockReadGuard<'_, db::Themes>, anyhow::Error> {
-        match RwLockReadGuard::try_map(self.0.read(), |c| c.as_ref()) {
+    async fn themes(&self) -> Result<MappedRwLockReadGuard<'_, db::Themes>, anyhow::Error> {
+        match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("themes not configured"),
         }
     }
 
     /// Get the list of all promotions.
-    fn list(&self, channel: &str) -> Result<impl warp::Reply, anyhow::Error> {
-        let promotions = self.themes()?.list_all(channel)?;
+    async fn list(&self, channel: &str) -> Result<impl warp::Reply, anyhow::Error> {
+        let promotions = self.themes().await?.list_all(channel).await?;
         Ok(warp::reply::json(&promotions))
     }
 
     /// Edit the given promotion by key.
-    fn edit(
+    async fn edit(
         &self,
         channel: &str,
         name: &str,
         track_id: TrackId,
     ) -> Result<impl warp::Reply, anyhow::Error> {
-        self.themes()?.edit(channel, name, track_id)?;
+        self.themes().await?.edit(channel, name, track_id).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Set the given promotion's disabled status.
-    fn edit_disabled(
+    async fn edit_disabled(
         &self,
         channel: &str,
         name: &str,
         disabled: bool,
     ) -> Result<impl warp::Reply, anyhow::Error> {
+        let themes = self.themes().await?;
+
         if disabled {
-            self.themes()?.disable(channel, name)?;
+            themes.disable(channel, name).await?;
         } else {
-            self.themes()?.enable(channel, name)?;
+            themes.enable(channel, name).await?;
         }
 
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Delete the given promotion by key.
-    fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, anyhow::Error> {
-        self.themes()?.delete(channel, name)?;
+    async fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply, anyhow::Error> {
+        self.themes().await?.delete(channel, name).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 }
@@ -561,7 +585,7 @@ impl Themes {
 struct Auth {
     active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
     auth: auth::Auth,
-    settings: Arc<RwLock<Option<crate::settings::Settings>>>,
+    settings: injector::Var<Option<crate::settings::Settings>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -574,7 +598,7 @@ impl Auth {
     fn route(
         auth: auth::Auth,
         active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
-        settings: Arc<RwLock<Option<crate::settings::Settings>>>,
+        settings: injector::Var<Option<crate::settings::Settings>>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Auth {
             auth,
@@ -588,7 +612,7 @@ impl Auth {
                 let api = api.clone();
                 move || {
                     let api = api.clone();
-                    async move { api.connections().map_err(custom_reject) }
+                    async move { api.connections().await.map_err(custom_reject) }
                 }
             })
             .boxed();
@@ -624,7 +648,7 @@ impl Auth {
                     let api = api.clone();
                     move || {
                         let api = api.clone();
-                        async move { api.grants().map_err(custom_reject) }
+                        async move { api.grants().await.map_err(custom_reject) }
                     }
                 }))
             .boxed();
@@ -639,6 +663,7 @@ impl Auth {
                         let api = api.clone();
                         async move {
                             api.insert_grant(body.scope, body.role)
+                                .await
                                 .map_err(custom_reject)
                         }
                     }
@@ -654,6 +679,7 @@ impl Auth {
                         let api = api.clone();
                         async move {
                             api.delete_grant(scope.as_str(), role.as_str())
+                                .await
                                 .map_err(custom_reject)
                         }
                     }
@@ -670,7 +696,7 @@ impl Auth {
                 .and_then({
                     move |query: AuthKeyQuery| {
                         let api = api.clone();
-                        async move { api.set_key(query).map_err(custom_reject) }
+                        async move { api.set_key(query).await.map_err(custom_reject) }
                     }
                 }))
             .boxed();
@@ -685,8 +711,8 @@ impl Auth {
     }
 
     /// Get a list of things that need authentication.
-    fn connections(&self) -> Result<impl warp::Reply, Error> {
-        let active_connections = self.active_connections.read();
+    async fn connections(&self) -> Result<impl warp::Reply, Error> {
+        let active_connections = self.active_connections.read().await;
         let mut out = Vec::new();
 
         for c in active_connections.values() {
@@ -710,34 +736,38 @@ impl Auth {
     }
 
     /// Get the list of all auth in the bot.
-    fn grants(&self) -> Result<impl warp::Reply, anyhow::Error> {
-        let auth = self.auth.list();
+    async fn grants(&self) -> Result<impl warp::Reply, anyhow::Error> {
+        let auth = self.auth.list().await;
         Ok(warp::reply::json(&auth))
     }
 
     /// Delete a single scope assignment.
-    fn delete_grant(&self, scope: &str, role: &str) -> Result<impl warp::Reply, anyhow::Error> {
+    async fn delete_grant(
+        &self,
+        scope: &str,
+        role: &str,
+    ) -> Result<impl warp::Reply, anyhow::Error> {
         let scope = str::parse(scope)?;
         let role = str::parse(role)?;
-        self.auth.delete(scope, role)?;
+        self.auth.delete(scope, role).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Insert a single scope assignment.
-    fn insert_grant(
+    async fn insert_grant(
         &self,
         scope: auth::Scope,
         role: auth::Role,
     ) -> Result<impl warp::Reply, anyhow::Error> {
-        self.auth.insert(scope, role)?;
+        self.auth.insert(scope, role).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 
-    fn set_key(&self, key: AuthKeyQuery) -> Result<impl warp::Reply, anyhow::Error> {
-        let settings = self.settings.read();
+    async fn set_key(&self, key: AuthKeyQuery) -> Result<impl warp::Reply, anyhow::Error> {
+        let settings = self.settings.read().await;
 
         if let (Some(settings), Some(key)) = (settings.as_ref(), key.key) {
-            settings.set("remote/secret-key", key.as_str())?;
+            settings.set("remote/secret-key", key.as_str()).await?;
         }
 
         let mut parts = URL.parse::<warp::http::Uri>()?.into_parts();
@@ -753,11 +783,10 @@ impl Auth {
 /// API to manage device.
 #[derive(Clone)]
 struct Api {
-    player: Arc<RwLock<Option<player::Player>>>,
-    after_streams: Arc<RwLock<Option<db::AfterStreams>>>,
-    db: db::Database,
-    currency: Arc<RwLock<Option<Currency>>>,
-    latest: Arc<RwLock<Option<api::github::Release>>>,
+    player: injector::Var<Option<player::Player>>,
+    after_streams: injector::Var<Option<db::AfterStreams>>,
+    currency: injector::Var<Option<Currency>>,
+    latest: injector::Var<Option<api::github::Release>>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -772,7 +801,9 @@ pub struct Balance {
 impl Api {
     /// Handle request to set device.
     async fn set_device(self, id: String) -> Result<impl warp::Reply, Error> {
-        let player = match self.player.read().clone() {
+        let player = self.player.read().await;
+
+        let player = match &*player {
             Some(player) => player,
             None => return Err(Error::BadRequest),
         };
@@ -780,7 +811,7 @@ impl Api {
         let devices = player.list_devices().await?;
 
         if let Some(device) = devices.iter().find(|d| d.id == id) {
-            player.set_device(device.id.clone())?;
+            player.set_device(device.id.clone()).await?;
             return Ok(warp::reply::json(&EMPTY));
         }
 
@@ -789,7 +820,9 @@ impl Api {
 
     /// Get a list of things that need authentication.
     async fn devices(self) -> Result<impl warp::Reply, Error> {
-        let player = match self.player.read().clone() {
+        let player = self.player.read().await;
+
+        let player = match &*player {
             Some(player) => player,
             None => {
                 let data = Devices::default();
@@ -797,7 +830,7 @@ impl Api {
             }
         };
 
-        let c = player.current_device();
+        let c = player.current_device().await;
         let data = player.list_devices().await?;
 
         let mut devices = Vec::new();
@@ -842,22 +875,24 @@ impl Api {
     }
 
     /// Access underlying after streams abstraction.
-    fn after_streams(&self) -> Result<MappedRwLockReadGuard<'_, db::AfterStreams>, anyhow::Error> {
-        match RwLockReadGuard::try_map(self.after_streams.read(), |c| c.as_ref()) {
+    async fn after_streams(
+        &self,
+    ) -> Result<MappedRwLockReadGuard<'_, db::AfterStreams>, anyhow::Error> {
+        match RwLockReadGuard::try_map(self.after_streams.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("after streams not configured"),
         }
     }
 
     /// Get the list of available after streams.
-    fn get_after_streams(&self) -> Result<impl warp::Reply, anyhow::Error> {
-        let after_streams = self.after_streams()?.list()?;
+    async fn get_after_streams(&self) -> Result<impl warp::Reply, anyhow::Error> {
+        let after_streams = self.after_streams().await?.list().await?;
         Ok(warp::reply::json(&after_streams))
     }
 
     /// Get the list of available after streams.
-    fn delete_after_stream(&self, id: i32) -> Result<impl warp::Reply, anyhow::Error> {
-        self.after_streams()?.delete(id)?;
+    async fn delete_after_stream(&self, id: i32) -> Result<impl warp::Reply, anyhow::Error> {
+        self.after_streams().await?.delete(id).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 
@@ -866,33 +901,36 @@ impl Api {
         self,
         balances: Vec<db::models::Balance>,
     ) -> Result<impl warp::Reply, Error> {
-        let currency = self.currency.read().as_ref().cloned();
-
-        match currency {
-            Some(currency) => currency.import_balances(balances).await?,
-            None => return Err(Error::NotFound),
-        }
+        self.currency
+            .read()
+            .await
+            .as_ref()
+            .ok_or_else(|| Error::NotFound)?
+            .import_balances(balances)
+            .await?;
 
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Export balances.
     async fn export_balances(self) -> Result<impl warp::Reply, Error> {
-        let currency = self.currency.read().as_ref().cloned();
-
-        let balances = match currency {
-            Some(currency) => currency.export_balances().await?,
-            None => return Err(Error::NotFound),
-        };
+        let balances = self
+            .currency
+            .read()
+            .await
+            .as_ref()
+            .ok_or_else(|| Error::NotFound)?
+            .export_balances()
+            .await?;
 
         Ok(warp::reply::json(&balances))
     }
 
     /// Get version information.
-    fn version(&self) -> Result<impl warp::Reply, Error> {
+    async fn version(&self) -> Result<impl warp::Reply, Error> {
         let info = Version {
             version: crate::VERSION,
-            latest: self.latest.read().clone().map(to_latest),
+            latest: self.latest.load().await.map(to_latest),
         };
 
         return Ok(warp::reply::json(&info));
@@ -942,21 +980,19 @@ pub async fn setup(
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     command_bus: Arc<bus::Bus<bus::Command>>,
-    db: db::Database,
     auth: auth::Auth,
-    channel: Arc<RwLock<Option<String>>>,
-    latest: Arc<RwLock<Option<api::github::Release>>>,
+    channel: injector::Var<Option<String>>,
+    latest: injector::Var<Option<api::github::Release>>,
 ) -> Result<(Server, impl Future<Output = ()>), anyhow::Error> {
     let addr: SocketAddr = str::parse("0.0.0.0:12345")?;
 
-    let player = Arc::new(RwLock::new(None));
+    let player = injector::Var::new(None);
     let active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>> = Default::default();
 
     let api = Api {
         player: player.clone(),
-        after_streams: injector.var()?,
-        db,
-        currency: injector.var()?,
+        after_streams: injector.var().await?,
+        currency: injector.var().await?,
         latest,
     };
 
@@ -977,7 +1013,7 @@ pub async fn setup(
                 let api = api.clone();
                 move || {
                     let api = api.clone();
-                    async move { api.version().map_err(custom_reject) }
+                    async move { api.version().await.map_err(custom_reject) }
                 }
             }))
             .boxed();
@@ -997,7 +1033,7 @@ pub async fn setup(
                 let api = api.clone();
                 move |id| {
                     let api = api.clone();
-                    async move { api.delete_after_stream(id).map_err(custom_reject) }
+                    async move { api.delete_after_stream(id).await.map_err(custom_reject) }
                 }
             }))
             .boxed();
@@ -1007,7 +1043,7 @@ pub async fn setup(
                 let api = api.clone();
                 move || {
                     let api = api.clone();
-                    async move { api.get_after_streams().map_err(custom_reject) }
+                    async move { api.get_after_streams().await.map_err(custom_reject) }
                 }
             }))
             .boxed();
@@ -1045,15 +1081,15 @@ pub async fn setup(
             .and(Auth::route(
                 auth,
                 active_connections.clone(),
-                injector.var()?,
+                injector.var().await?,
             ))
             .boxed());
-        let route = route.or(Aliases::route(injector.var()?));
-        let route = route.or(Commands::route(injector.var()?));
-        let route = route.or(Promotions::route(injector.var()?));
-        let route = route.or(Themes::route(injector.var()?));
-        let route = route.or(Settings::route(injector.var()?));
-        let route = route.or(Cache::route(injector.var()?));
+        let route = route.or(Aliases::route(injector.var().await?));
+        let route = route.or(Commands::route(injector.var().await?));
+        let route = route.or(Promotions::route(injector.var().await?));
+        let route = route.or(Themes::route(injector.var().await?));
+        let route = route.or(Settings::route(injector.var().await?));
+        let route = route.or(Cache::route(injector.var().await?));
         let route = route.or(Chat::route(command_bus, message_log));
 
         // TODO: move endpoint into abstraction thingie.
@@ -1063,15 +1099,9 @@ pub async fn setup(
                     let channel = channel.clone();
 
                     async move {
-                        let channel = channel.read();
-
-                        let channel = match channel.as_ref() {
-                            Some(channel) => Some(channel.to_string()),
-                            None => None,
+                        let current = Current {
+                            channel: channel.read().await.clone(),
                         };
-
-                        let current = Current { channel };
-
                         Ok::<_, warp::Rejection>(warp::reply::json(&current))
                     }
                 })),
@@ -1216,25 +1246,26 @@ struct ErrorMessage {
 /// Interface to the server.
 #[derive(Clone)]
 pub struct Server {
-    player: Arc<RwLock<Option<player::Player>>>,
+    player: injector::Var<Option<player::Player>>,
     /// Callbacks for when we have received a token.
     active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
 }
 
 impl Server {
     /// Set the player interface.
-    pub fn set_player(&self, player: player::Player) {
-        *self.player.write() = Some(player);
+    pub async fn set_player(&self, player: player::Player) {
+        *self.player.write().await = Some(player);
     }
 
-    pub fn update_connection(&self, id: &str, connection: ConnectionMeta) {
+    pub async fn update_connection(&self, id: &str, connection: ConnectionMeta) {
         self.active_connections
             .write()
+            .await
             .insert(id.to_string(), connection);
     }
 
-    pub fn clear_connection(&self, id: &str) {
-        let _ = self.active_connections.write().remove(id);
+    pub async fn clear_connection(&self, id: &str) {
+        let _ = self.active_connections.write().await.remove(id);
     }
 }
 

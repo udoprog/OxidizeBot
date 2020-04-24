@@ -1,10 +1,8 @@
 use crate::{auth, command, db, module, prelude::*};
-use parking_lot::RwLock;
-use std::sync::Arc;
 
 pub struct Handler {
-    pub enabled: Arc<RwLock<bool>>,
-    pub commands: Arc<RwLock<Option<db::Commands>>>,
+    pub enabled: settings::Var<bool>,
+    pub commands: injector::Var<Option<db::Commands>>,
 }
 
 #[async_trait]
@@ -14,11 +12,11 @@ impl command::Handler for Handler {
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
-        let commands = match self.commands.read().clone() {
+        let commands = match self.commands.load().await {
             Some(commands) => commands,
             None => return Ok(()),
         };
@@ -29,37 +27,42 @@ impl command::Handler for Handler {
             Some("edit") => {
                 ctx.check_scope(auth::Scope::CommandEdit).await?;
 
-                let name = ctx_try!(ctx.next_str("<name>"));
-                let template = ctx_try!(ctx.rest_parse("<name> <template>"));
-                commands.edit(ctx.channel(), &name, template)?;
+                let name = ctx.next_str("<name>")?;
+                let template = ctx.rest_parse("<name> <template>")?;
+                commands.edit(ctx.channel(), &name, template).await?;
 
-                ctx.respond("Edited command.");
+                respond!(ctx, "Edited command.");
             }
             Some("pattern") => {
                 ctx.check_scope(auth::Scope::CommandEdit).await?;
 
-                let name = ctx_try!(ctx.next_str("<name> [pattern]"));
+                let name = ctx.next_str("<name> [pattern]")?;
 
                 let pattern = match ctx.rest() {
                     pattern if pattern.trim().is_empty() => None,
                     pattern => match regex::Regex::new(pattern) {
                         Ok(pattern) => Some(pattern),
                         Err(e) => {
-                            ctx.user.respond(format!("Bad pattern provided: {}", e));
+                            ctx.user
+                                .respond(format!("Bad pattern provided: {}", e))
+                                .await;
                             return Ok(());
                         }
                     },
                 };
 
-                if !commands.edit_pattern(ctx.channel(), &name, pattern)? {
-                    ctx.respond(format!("No such command: `{}`", name));
+                if !commands.edit_pattern(ctx.channel(), &name, pattern).await? {
+                    respond!(ctx, format!("No such command: `{}`", name));
                     return Ok(());
                 }
 
-                ctx.respond("Edited pattern for command.");
+                respond!(ctx, "Edited pattern for command.");
             }
             None | Some(..) => {
-                ctx.respond("Expected: show, list, edit, delete, enable, disable, or group.");
+                respond!(
+                    ctx,
+                    "Expected: show, list, edit, delete, enable, disable, or group."
+                );
             }
         }
 
@@ -84,8 +87,8 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), anyhow::Error> {
-        let enabled = settings.var("command/enabled", true)?;
-        let commands = injector.var()?;
+        let enabled = settings.var("command/enabled", true).await?;
+        let commands = injector.var().await?;
         handlers.insert("command", Handler { enabled, commands });
         Ok(())
     }

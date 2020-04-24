@@ -1,6 +1,6 @@
 //! Idle detection for incoming messages.
 
-use parking_lot::RwLock;
+use crate::settings;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -12,12 +12,12 @@ pub struct Idle {
     seen: Arc<AtomicUsize>,
     /// Last time we saw enough messages to not be considered idle.
     last: Arc<AtomicUsize>,
-    threshold: Arc<RwLock<u32>>,
+    threshold: settings::Var<u32>,
 }
 
 impl Idle {
     /// Construct a new idle detector.
-    pub fn new(threshold: Arc<RwLock<u32>>) -> Self {
+    pub fn new(threshold: settings::Var<u32>) -> Self {
         Idle {
             seen: Arc::new(AtomicUsize::new(0)),
             last: Arc::new(AtomicUsize::new(0)),
@@ -31,10 +31,10 @@ impl Idle {
     }
 
     /// Test if there is enough messages to not bee considered "idle".
-    pub fn is_idle(&self) -> bool {
+    pub async fn is_idle(&self) -> bool {
         let seen = self.seen.load(Ordering::SeqCst);
 
-        if seen >= *self.threshold.read() as usize {
+        if seen >= self.threshold.load().await as usize {
             self.seen.store(0, Ordering::SeqCst);
             return false;
         }

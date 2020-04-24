@@ -1,21 +1,19 @@
 use crate::{auth, command, db, irc, module, prelude::*, utils};
 use chrono::Utc;
-use parking_lot::RwLock;
-use std::sync::Arc;
 
 pub struct Handler {
-    enabled: Arc<RwLock<bool>>,
-    promotions: Arc<RwLock<Option<db::Promotions>>>,
+    enabled: settings::Var<bool>,
+    promotions: injector::Var<Option<db::Promotions>>,
 }
 
 #[async_trait]
 impl command::Handler for Handler {
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
-        let promotions = match self.promotions.read().clone() {
+        let promotions = match self.promotions.load().await {
             Some(promotions) => promotions,
             None => return Ok(()),
         };
@@ -26,15 +24,20 @@ impl command::Handler for Handler {
             Some("edit") => {
                 ctx.check_scope(auth::Scope::PromoEdit).await?;
 
-                let name = ctx_try!(ctx.next_str("<name> <frequency> <template..>"));
-                let frequency = ctx_try!(ctx.next_parse("<name> <frequency> <template..>"));
-                let template = ctx_try!(ctx.rest_parse("<name> <frequency> <template..>"));
+                let name = ctx.next_str("<name> <frequency> <template..>")?;
+                let frequency = ctx.next_parse("<name> <frequency> <template..>")?;
+                let template = ctx.rest_parse("<name> <frequency> <template..>")?;
 
-                promotions.edit(ctx.channel(), &name, frequency, template)?;
-                ctx.respond("Edited promo.");
+                promotions
+                    .edit(ctx.channel(), &name, frequency, template)
+                    .await?;
+                respond!(ctx, "Edited promo.");
             }
             None | Some(..) => {
-                ctx.respond("Expected: show, list, edit, delete, enable, disable, or group.");
+                respond!(
+                    ctx,
+                    "Expected: show, list, edit, delete, enable, disable, or group."
+                );
             }
         }
 
@@ -63,21 +66,22 @@ impl super::Module for Module {
         }: module::HookContext<'_>,
     ) -> Result<(), anyhow::Error> {
         let settings = settings.scoped("promotions");
-        let enabled = settings.var("enabled", false)?;
+        let enabled = settings.var("enabled", false).await?;
 
         let (mut setting, frequency) = settings
             .stream("frequency")
-            .or_with_else(|| utils::Duration::seconds(5 * 60))?;
+            .or_with_else(|| utils::Duration::seconds(5 * 60))
+            .await?;
 
         handlers.insert(
             "promo",
             Handler {
                 enabled: enabled.clone(),
-                promotions: injector.var()?,
+                promotions: injector.var().await?,
             },
         );
 
-        let (mut promotions_stream, mut promotions) = injector.stream::<db::Promotions>();
+        let (mut promotions_stream, mut promotions) = injector.stream::<db::Promotions>().await;
         let sender = sender.clone();
         let mut interval = tokio::time::interval(frequency.as_std()).fuse();
         let idle = idle.clone();
@@ -95,7 +99,7 @@ impl super::Module for Module {
                         }
                     }
                     _ = interval.select_next_some() => {
-                        if !*enabled.read() {
+                        if !enabled.load().await {
                             continue;
                         }
 
@@ -104,13 +108,13 @@ impl super::Module for Module {
                             None => continue,
                         };
 
-                        if idle.is_idle() {
+                        if idle.is_idle().await {
                             log::trace!("channel is too idle to send a promotion");
                         } else {
                             let promotions = promotions.clone();
                             let sender = sender.clone();
 
-                            if let Err(e) = promote(promotions, sender) {
+                            if let Err(e) = promote(promotions, sender).await {
                                 log::error!("failed to send promotion: {}", e);
                             }
                         }
@@ -125,13 +129,13 @@ impl super::Module for Module {
 }
 
 /// Run the next promotion.
-fn promote(promotions: db::Promotions, sender: irc::Sender) -> Result<(), anyhow::Error> {
+async fn promote(promotions: db::Promotions, sender: irc::Sender) -> Result<(), anyhow::Error> {
     let channel = sender.channel();
 
-    if let Some(p) = pick(promotions.list(channel)) {
+    if let Some(p) = pick(promotions.list(channel).await) {
         let text = p.render(&PromoData { channel })?;
-        promotions.bump_promoted_at(&*p)?;
-        sender.privmsg(text);
+        promotions.bump_promoted_at(&*p).await?;
+        sender.privmsg(text).await;
     }
 
     Ok(())

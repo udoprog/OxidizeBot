@@ -1,7 +1,10 @@
-use crate::web::{Fragment, EMPTY};
+use crate::{
+    injector,
+    web::{Fragment, EMPTY},
+};
 use anyhow::bail;
-use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
+use tokio::sync::{MappedRwLockReadGuard, RwLockReadGuard};
 use warp::{body, filters, path, Filter as _};
 
 #[derive(serde::Deserialize)]
@@ -21,11 +24,11 @@ struct SettingsQuery {
 
 /// Settings endpoint.
 #[derive(Clone)]
-pub struct Settings(Arc<RwLock<Option<crate::settings::Settings>>>);
+pub struct Settings(injector::Var<Option<crate::settings::Settings>>);
 
 impl Settings {
     pub fn route(
-        settings: Arc<RwLock<Option<crate::settings::Settings>>>,
+        settings: injector::Var<Option<crate::settings::Settings>>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Settings(settings);
 
@@ -36,7 +39,7 @@ impl Settings {
                 move |query: SettingsQuery| {
                     let api = api.clone();
 
-                    async move { api.get_settings(query).map_err(super::custom_reject) }
+                    async move { api.get_settings(query).await.map_err(super::custom_reject) }
                 }
             })
             .boxed();
@@ -50,7 +53,9 @@ impl Settings {
                     async move {
                         let key =
                             str::parse::<Fragment>(key.as_str()).map_err(super::custom_reject)?;
-                        api.get_setting(key.as_str()).map_err(super::custom_reject)
+                        api.get_setting(key.as_str())
+                            .await
+                            .map_err(super::custom_reject)
                     }
                 }
             }))
@@ -67,6 +72,7 @@ impl Settings {
                         let key =
                             str::parse::<Fragment>(key.as_str()).map_err(super::custom_reject)?;
                         api.delete_setting(key.as_str())
+                            .await
                             .map_err(super::custom_reject)
                     }
                 }
@@ -85,6 +91,7 @@ impl Settings {
                                 let key = str::parse::<Fragment>(key.as_str())
                                     .map_err(super::custom_reject)?;
                                 api.edit_setting(key.as_str(), body.value)
+                                    .await
                                     .map_err(super::custom_reject)
                             }
                         }
@@ -96,28 +103,29 @@ impl Settings {
     }
 
     /// Access underlying settings abstraction.
-    fn settings(
+    async fn settings(
         &self,
     ) -> Result<MappedRwLockReadGuard<'_, crate::settings::Settings>, anyhow::Error> {
-        match RwLockReadGuard::try_map(self.0.read(), |c| c.as_ref()) {
+        match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("settings not configured"),
         }
     }
 
     /// Get the list of all settings in the bot.
-    fn get_settings(&self, query: SettingsQuery) -> Result<impl warp::Reply, anyhow::Error> {
+    async fn get_settings(&self, query: SettingsQuery) -> Result<impl warp::Reply, anyhow::Error> {
         let mut settings = match query.prefix {
             Some(prefix) => {
                 let mut out = Vec::new();
+                let settings = self.settings().await?;
 
                 for prefix in prefix.split(',') {
-                    out.extend(self.settings()?.list_by_prefix(&prefix)?);
+                    out.extend(settings.list_by_prefix(&prefix).await?);
                 }
 
                 out
             }
-            None => self.settings()?.list()?,
+            None => self.settings().await?.list().await?,
         };
 
         if let Some(key) = query.key {
@@ -153,27 +161,30 @@ impl Settings {
     }
 
     /// Delete the given setting by key.
-    fn delete_setting(&self, key: &str) -> Result<impl warp::Reply, anyhow::Error> {
-        self.settings()?.clear(key)?;
+    async fn delete_setting(&self, key: &str) -> Result<impl warp::Reply, anyhow::Error> {
+        let settings = self.settings().await?;
+        settings.clear(key).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Get the given setting by key.
-    fn get_setting(&self, key: &str) -> Result<impl warp::Reply, anyhow::Error> {
-        let setting: Option<crate::settings::Setting> = self
-            .settings()?
-            .setting::<serde_json::Value>(key)?
+    async fn get_setting(&self, key: &str) -> Result<impl warp::Reply, anyhow::Error> {
+        let settings = self.settings().await?;
+        let setting: Option<crate::settings::Setting> = settings
+            .setting::<serde_json::Value>(key)
+            .await?
             .map(|s| s.to_setting());
         Ok(warp::reply::json(&setting))
     }
 
     /// Delete the given setting by key.
-    fn edit_setting(
+    async fn edit_setting(
         &self,
         key: &str,
         value: serde_json::Value,
     ) -> Result<impl warp::Reply, anyhow::Error> {
-        self.settings()?.set_json(key, value)?;
+        let settings = self.settings().await?;
+        settings.set_json(key, value).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 }

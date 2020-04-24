@@ -10,42 +10,57 @@ pub struct AfterStreams {
 
 impl AfterStreams {
     /// Open the after streams database.
-    pub fn load(db: db::Database) -> Result<Self, anyhow::Error> {
+    pub async fn load(db: db::Database) -> Result<Self, anyhow::Error> {
         Ok(AfterStreams { db })
     }
 
     /// Push the given afterstream message.
-    pub fn push(&self, channel: &str, user: &str, text: &str) -> Result<(), anyhow::Error> {
+    pub async fn push(&self, channel: &str, user: &str, text: &str) -> Result<(), anyhow::Error> {
         use self::schema::after_streams::dsl;
-        let c = self.db.pool.lock();
 
-        let after_stream = models::InsertAfterStream {
-            channel: Some(String::from(channel)),
-            user: String::from(user),
-            text: String::from(text),
-        };
+        let channel = channel.to_string();
+        let user = user.to_string();
+        let text = text.to_string();
 
-        diesel::insert_into(dsl::after_streams)
-            .values(&after_stream)
-            .execute(&*c)?;
+        self.db
+            .asyncify(move |c| {
+                let after_stream = models::InsertAfterStream {
+                    channel: Some(String::from(channel)),
+                    user: String::from(user),
+                    text: String::from(text),
+                };
 
-        Ok(())
+                diesel::insert_into(dsl::after_streams)
+                    .values(&after_stream)
+                    .execute(c)?;
+
+                Ok(())
+            })
+            .await
     }
 
     /// Delete the after stream with the given id.
-    pub fn delete(&self, id: i32) -> Result<bool, anyhow::Error> {
+    pub async fn delete(&self, id: i32) -> Result<bool, anyhow::Error> {
         use self::schema::after_streams::dsl;
-        let c = self.db.pool.lock();
-        let count = diesel::delete(dsl::after_streams.filter(dsl::id.eq(id))).execute(&*c)?;
-        Ok(count == 1)
+
+        self.db
+            .asyncify(move |c| {
+                let count = diesel::delete(dsl::after_streams.filter(dsl::id.eq(id))).execute(c)?;
+                Ok(count == 1)
+            })
+            .await
     }
 
     /// List all available after streams.
-    pub fn list(&self) -> Result<Vec<AfterStream>, anyhow::Error> {
+    pub async fn list(&self) -> Result<Vec<AfterStream>, anyhow::Error> {
         use self::schema::after_streams::dsl;
-        let c = self.db.pool.lock();
-        Ok(dsl::after_streams
-            .order(dsl::added_at.asc())
-            .load::<models::AfterStream>(&*c)?)
+
+        self.db
+            .asyncify(move |c| {
+                Ok(dsl::after_streams
+                    .order(dsl::added_at.asc())
+                    .load::<models::AfterStream>(c)?)
+            })
+            .await
     }
 }

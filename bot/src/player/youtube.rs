@@ -1,18 +1,17 @@
 use crate::{bus, player, prelude::*, settings::Settings};
 use anyhow::Error;
-use parking_lot::RwLock;
 use std::{sync::Arc, time::Duration};
 
 /// Setup a player.
-pub fn setup(
+pub async fn setup(
     bus: Arc<bus::Bus<bus::YouTube>>,
     settings: Settings,
 ) -> Result<(YouTubePlayer, impl Future<Output = Result<(), Error>>), anyhow::Error> {
     let (mut volume_scale_stream, mut volume_scale) =
-        settings.stream("volume-scale").or_with(100)?;
-    let (mut volume_stream, volume) = settings.stream("volume").or_with(50)?;
+        settings.stream("volume-scale").or_with(100).await?;
+    let (mut volume_stream, volume) = settings.stream("volume").or_with(50).await?;
     let mut scaled_volume = (volume * volume_scale) / 100u32;
-    let volume = Arc::new(RwLock::new(volume));
+    let volume = injector::Var::new(volume);
 
     let player = YouTubePlayer {
         bus,
@@ -29,12 +28,12 @@ pub fn setup(
             futures::select! {
                 update = volume_scale_stream.select_next_some() => {
                     volume_scale = update;
-                    scaled_volume = (*volume.read() * volume_scale) / 100u32;
+                    scaled_volume = (volume.load().await * volume_scale) / 100u32;
                     player.volume_update(scaled_volume);
                 }
                 update = volume_stream.select_next_some() => {
-                    *volume.write() = update;
-                    scaled_volume = (*volume.read() * volume_scale) / 100u32;
+                    *volume.write().await = update;
+                    scaled_volume = (volume.load().await * volume_scale) / 100u32;
                     player.volume_update(scaled_volume);
                 }
             }
@@ -48,7 +47,7 @@ pub fn setup(
 pub struct YouTubePlayer {
     bus: Arc<bus::Bus<bus::YouTube>>,
     settings: Settings,
-    volume: Arc<RwLock<u32>>,
+    volume: injector::Var<u32>,
 }
 
 impl YouTubePlayer {
@@ -83,16 +82,16 @@ impl YouTubePlayer {
         self.bus.send(bus::YouTube::YouTubeCurrent { event });
     }
 
-    pub fn volume(&self, modify: player::ModifyVolume) -> Result<u32, Error> {
-        let mut volume = self.volume.write();
+    pub async fn volume(&self, modify: player::ModifyVolume) -> Result<u32, Error> {
+        let mut volume = self.volume.write().await;
         let update = modify.apply(*volume);
         *volume = update;
-        self.settings.set("volume", update)?;
+        self.settings.set("volume", update).await?;
         Ok(update)
     }
 
-    pub fn current_volume(&self) -> u32 {
-        *self.volume.read()
+    pub async fn current_volume(&self) -> u32 {
+        self.volume.load().await
     }
 
     fn volume_update(&self, volume: u32) {

@@ -5,15 +5,11 @@ use crate::{
     utils::{compact_duration, Cooldown, Duration},
 };
 use anyhow::{bail, Error};
-use parking_lot::RwLock;
 use std::{
     collections::{hash_map, HashMap},
     fmt,
     net::SocketAddr,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicUsize, Ordering},
     time,
 };
 use tokio::{net::UdpSocket, sync::Mutex};
@@ -41,14 +37,15 @@ macro_rules! vehicle {
                     .collect::<Vec<String>>()
                     .join(", ");
 
-                $ctx.respond(format!(
+                respond!(
+                    $ctx,
                     "You give the streamer a vehicle using for example `random`. \
                      You can pick a vehicle by its name or a category. \
                      Available names are listed here: {url} - \
                      Available categories are: {vehicles}. ",
                     url = VEHICLE_URL,
                     vehicles = vehicles,
-                ));
+                );
 
                 return Ok(None);
             }
@@ -73,7 +70,7 @@ struct CommandsConfig(Vec<CommandConfig>);
 #[derive(Debug)]
 struct CommandSetting {
     enabled: bool,
-    cooldown: Option<Arc<RwLock<Cooldown>>>,
+    cooldown: Option<settings::Var<Cooldown>>,
     cost: Option<u32>,
 }
 
@@ -96,7 +93,7 @@ impl CommandsConfig {
                 enabled: c.enabled.unwrap_or(true),
                 cooldown: c
                     .cooldown
-                    .map(|c| Arc::new(RwLock::new(Cooldown::from_duration(c)))),
+                    .map(|c| settings::Var::new(Cooldown::from_duration(c))),
                 cost: c.cost,
             };
 
@@ -545,30 +542,30 @@ pub struct Reward {
 }
 
 pub struct Handler {
-    enabled: Arc<RwLock<bool>>,
-    player: Arc<RwLock<Option<player::Player>>>,
-    currency: Arc<RwLock<Option<currency::Currency>>>,
-    cooldown: Arc<RwLock<Cooldown>>,
-    reward_cooldown: Arc<RwLock<Cooldown>>,
-    punish_cooldown: Arc<RwLock<Cooldown>>,
-    per_user_cooldown: Arc<RwLock<Cooldown>>,
-    per_command_cooldown: Arc<RwLock<Cooldown>>,
-    prefix: Arc<RwLock<String>>,
-    other_percentage: Arc<RwLock<u32>>,
-    punish_percentage: Arc<RwLock<u32>>,
-    reward_percentage: Arc<RwLock<u32>>,
-    success_feedback: Arc<RwLock<bool>>,
+    enabled: settings::Var<bool>,
+    player: injector::Var<Option<player::Player>>,
+    currency: injector::Var<Option<currency::Currency>>,
+    cooldown: settings::Var<Cooldown>,
+    reward_cooldown: settings::Var<Cooldown>,
+    punish_cooldown: settings::Var<Cooldown>,
+    per_user_cooldown: settings::Var<Cooldown>,
+    per_command_cooldown: settings::Var<Cooldown>,
+    prefix: settings::Var<String>,
+    other_percentage: settings::Var<u32>,
+    punish_percentage: settings::Var<u32>,
+    reward_percentage: settings::Var<u32>,
+    success_feedback: settings::Var<bool>,
     id_counter: AtomicUsize,
     tx: mpsc::UnboundedSender<(irc::User, usize, Command)>,
     per_user_cooldowns: Mutex<HashMap<String, Cooldown>>,
     per_command_cooldowns: Mutex<HashMap<&'static str, Cooldown>>,
-    per_command_configs: Arc<RwLock<HashMap<String, CommandSetting>>>,
+    per_command_configs: settings::Var<HashMap<String, CommandSetting>>,
 }
 
 impl Handler {
     /// Play the specified theme song.
     async fn play_theme_song(&self, ctx: &command::Context, id: &str) {
-        let player = self.player.read().clone();
+        let player = self.player.load().await;
 
         if let Some(player) = player {
             let target = ctx.channel().to_string();
@@ -597,12 +594,12 @@ impl Handler {
         &self,
         ctx: &command::Context,
         command: &Command,
-        category_cooldown: Option<Arc<RwLock<Cooldown>>>,
+        category_cooldown: Option<settings::Var<Cooldown>>,
     ) -> Option<(&'static str, time::Duration)> {
         let mut per_user_cooldowns = self.per_user_cooldowns.lock().await;
         let mut per_command_cooldowns = self.per_command_cooldowns.lock().await;
 
-        let per_user_cooldown = self.per_user_cooldown.read().clone();
+        let per_user_cooldown = self.per_user_cooldown.load().await;
 
         // NB: only real users are subject to cooldown.
         let mut user_cooldown = {
@@ -623,7 +620,7 @@ impl Handler {
             }
         };
 
-        let per_command_cooldown = self.per_command_cooldown.read().clone();
+        let per_command_cooldown = self.per_command_cooldown.load().await;
 
         let command_cooldown = {
             match per_command_cooldowns.entry(command.command_name()) {
@@ -640,15 +637,22 @@ impl Handler {
             }
         };
 
-        let per_command_configs = self.per_command_configs.read();
-        let command_specific = match per_command_configs.get(command.command_name()) {
-            Some(setting) => setting.cooldown.clone(),
-            None => None,
+        let command_specific = {
+            match self
+                .per_command_configs
+                .read()
+                .await
+                .get(command.command_name())
+                .clone()
+            {
+                Some(setting) => setting.cooldown.clone(),
+                None => None,
+            }
         };
 
         let now = time::Instant::now();
 
-        let mut cooldown = self.cooldown.write();
+        let mut cooldown = self.cooldown.write().await;
 
         let mut remaining = smallvec::SmallVec::<[_; 4]>::new();
 
@@ -657,7 +661,7 @@ impl Handler {
         }
 
         if let Some(command_specific) = command_specific.as_ref() {
-            let mut cooldown = command_specific.write();
+            let mut cooldown = command_specific.write().await;
 
             remaining.extend(cooldown.check(now.clone()).map(|d| ("Command specific", d)));
         } else {
@@ -665,8 +669,7 @@ impl Handler {
             remaining.extend(command_cooldown.check(now.clone()).map(|d| ("Command", d)));
 
             if let Some(category_cooldown) = category_cooldown.as_ref() {
-                let mut cooldown = category_cooldown.write();
-
+                let mut cooldown = category_cooldown.write().await;
                 remaining.extend(cooldown.check(now.clone()).map(|d| ("Category", d)));
             }
         }
@@ -685,11 +688,11 @@ impl Handler {
                 command_cooldown.poke(now);
 
                 if let Some(category_cooldown) = category_cooldown.as_ref() {
-                    category_cooldown.write().poke(now);
+                    category_cooldown.write().await.poke(now);
                 }
 
                 if let Some(command_specific) = command_specific.as_ref() {
-                    command_specific.write().poke(now);
+                    command_specific.write().await.poke(now);
                 }
 
                 None
@@ -707,7 +710,7 @@ impl Handler {
             Some("randomize-weather") => Command::RandomizeWeather,
             Some("randomize-character") => Command::RandomizeCharacter,
             Some("randomize-doors") => Command::RandomizeDoors,
-            Some("license") => match license(ctx.rest(), &ctx) {
+            Some("license") => match license(ctx.rest(), &ctx).await {
                 Some(license) => Command::License(license),
                 None => return Ok(None),
             },
@@ -716,7 +719,8 @@ impl Handler {
                 Command::Raw(ctx.rest().to_string())
             }
             Some(..) | None => {
-                ctx.respond(
+                respond!(
+                    ctx,
                     "Available mods are: \
                      randomize-color, \
                      randomize-weather, \
@@ -729,7 +733,7 @@ impl Handler {
             }
         };
 
-        Ok(Some((command, *self.other_percentage.read())))
+        Ok(Some((command, self.other_percentage.load().await)))
     }
 
     /// Handle the punish command.
@@ -748,7 +752,7 @@ impl Handler {
             Some("wanted") => match ctx.next().map(|s| str::parse(&s)) {
                 Some(Ok(n)) if n >= 1 && n <= 5 => Command::Wanted(n),
                 _ => {
-                    ctx.respond("Expected number between 1 and 5");
+                    respond!(ctx, "Expected number between 1 and 5");
                     return Ok(None);
                 }
             },
@@ -758,15 +762,15 @@ impl Handler {
                 None => Command::SpawnEnemy(1),
                 Some(Ok(n)) if n > 0 && n <= 5 => Command::SpawnEnemy(n),
                 Some(Ok(0)) => {
-                    ctx.respond("Please specify more than 0 enemies to spawn.");
+                    respond!(ctx, "Please specify more than 0 enemies to spawn.");
                     return Ok(None);
                 }
                 Some(Ok(_)) => {
-                    ctx.respond("Cannot spawn more than 5 enemies.");
+                    respond!(ctx, "Cannot spawn more than 5 enemies.");
                     return Ok(None);
                 }
                 Some(Err(_)) => {
-                    ctx.respond("Expected <number>");
+                    respond!(ctx, "Expected <number>");
                     return Ok(None);
                 }
             },
@@ -786,11 +790,12 @@ impl Handler {
                             .collect::<Vec<String>>()
                             .join(", ");
 
-                        ctx.respond(format!(
+                        respond!(
+                            ctx,
                             "You disable controls like `steering`. \
                              Available controls to disable are: {controls}. ",
                             controls = controls,
-                        ));
+                        );
 
                         return Ok(None);
                     }
@@ -803,13 +808,13 @@ impl Handler {
             Some("taze") => Command::Taze,
             Some("taze-others") => Command::TazeOthers,
             _ => {
-                ctx.respond("See !chaos% for available punishments.");
+                respond!(ctx, "See !chaos% for available punishments.");
 
                 return Ok(None);
             }
         };
 
-        Ok(Some((command, *self.punish_percentage.read())))
+        Ok(Some((command, self.punish_percentage.load().await)))
     }
 
     /// Handle the reward command.
@@ -830,7 +835,7 @@ impl Handler {
                 let weapon = match ctx.next().and_then(Weapon::from_id) {
                     Some(weapon) => weapon,
                     None => {
-                        ctx.respond("No such weapon, sorry :(.");
+                        respond!(ctx, "No such weapon, sorry :(.");
 
                         return Ok(None);
                     }
@@ -867,11 +872,12 @@ impl Handler {
                             .collect::<Vec<String>>()
                             .join(", ");
 
-                        ctx.respond(format!(
+                        respond!(
+                            ctx,
                             "You give the streamer vehicle mods using for example `random`. \
                              Available mods are: {mods}. ",
                             mods = mods,
-                        ));
+                        );
 
                         return Ok(None);
                     }
@@ -890,30 +896,27 @@ impl Handler {
             Some("skyfall") => Command::Skyfall,
             Some("reduce-gravity") => Command::ReduceGravity,
             _ => {
-                ctx.respond("See !chaos% for available rewards.");
+                respond!(ctx, "See !chaos% for available rewards.");
                 return Ok(None);
             }
         };
 
-        Ok(Some((command, *self.reward_percentage.read())))
+        Ok(Some((command, self.reward_percentage.load().await)))
     }
 }
 
 #[async_trait]
 impl command::Handler for Handler {
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
-        let currency = self.currency.read().as_ref().cloned();
-        let currency = match currency {
-            Some(currency) => currency,
-            None => {
-                ctx.respond("No currency configured for stream, sorry :(");
-                return Ok(());
-            }
-        };
+        let currency = self
+            .currency
+            .load()
+            .await
+            .ok_or_else(|| respond_err!("No currency configured for stream, sorry :("))?;
 
         let (result, category_cooldown) = match ctx.next().as_deref() {
             Some("other") => {
@@ -931,7 +934,8 @@ impl command::Handler for Handler {
                 (command, Some(cooldown))
             }
             _ => {
-                ctx.respond(
+                respond!(
+                    ctx,
                     "You have the following actions available: \
                     reward - To reward the streamer, \
                     punish - To punish the streamer,
@@ -950,7 +954,7 @@ impl command::Handler for Handler {
         let mut cost = command.cost();
 
         {
-            let per_command_configs = self.per_command_configs.read();
+            let per_command_configs = self.per_command_configs.read().await;
 
             if let Some(setting) = per_command_configs.get(command.command_name()) {
                 if !setting.enabled {
@@ -963,17 +967,18 @@ impl command::Handler for Handler {
             }
         }
 
-        let bypass_cooldown = ctx.user.has_scope(Scope::GtavBypassCooldown);
+        let bypass_cooldown = ctx.user.has_scope(Scope::GtavBypassCooldown).await;
 
         if !bypass_cooldown {
             if let Some((what, remaining)) =
                 self.check_cooldown(&ctx, &command, category_cooldown).await
             {
-                ctx.respond(format!(
+                respond!(
+                    ctx,
                     "{} cooldown in effect, please wait at least {}!",
                     what,
                     compact_duration(&remaining),
-                ));
+                );
 
                 return Ok(());
             }
@@ -982,14 +987,13 @@ impl command::Handler for Handler {
         let id = self.id_counter.fetch_add(1, Ordering::SeqCst);
 
         let cost = cost * percentage / 100;
-        let user = ctx.user.clone();
         let sender = ctx.inner.sender.clone();
-        let prefix = self.prefix.read().clone();
+        let prefix = self.prefix.load().await;
         let tx = self.tx.clone();
 
-        if let Some(real) = user.real() {
+        if let Some(real) = ctx.user.real() {
             let balance = currency
-                .balance_of(user.channel(), real.name())
+                .balance_of(ctx.user.channel(), real.name())
                 .await?
                 .unwrap_or_default();
 
@@ -1000,7 +1004,8 @@ impl command::Handler for Handler {
             };
 
             if balance < cost {
-                user.respond(format!(
+                respond!(
+                    ctx,
                     "{prefix}\
                         You need at least {limit} {currency} to reward the streamer, \
                         you currently have {balance} {currency}. \
@@ -1009,34 +1014,36 @@ impl command::Handler for Handler {
                     limit = cost,
                     currency = currency.name,
                     balance = balance,
-                ));
+                );
 
                 return Ok(());
             }
 
             currency
-                .balance_add(user.channel(), real.name(), -(cost as i64))
+                .balance_add(ctx.user.channel(), real.name(), -(cost as i64))
                 .await?;
         }
 
-        if *self.success_feedback.read() {
-            let who = match user.display_name() {
+        if self.success_feedback.load().await {
+            let who = match ctx.user.display_name() {
                 Some(name) => name,
                 None => "Someone",
             };
 
-            sender.privmsg(format!(
-                "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
-                prefix = prefix,
-                user = who,
-                what = command.what(),
-                command = command,
-                cost = cost,
-                currency = currency.name,
-            ));
+            sender
+                .privmsg(format!(
+                    "{prefix}{user} {what} the streamer for {cost} {currency} by {command}",
+                    prefix = prefix,
+                    user = who,
+                    what = command.what(),
+                    command = command,
+                    cost = cost,
+                    currency = currency.name,
+                ))
+                .await;
         }
 
-        if tx.unbounded_send((user, id, command)).is_err() {
+        if tx.unbounded_send((ctx.user.clone(), id, command)).is_err() {
             bail!("failed to send event");
         }
 
@@ -1045,15 +1052,15 @@ impl command::Handler for Handler {
 }
 
 /// Parse a license plate.Arc
-fn license(input: &str, ctx: &command::Context) -> Option<String> {
+async fn license(input: &str, ctx: &command::Context) -> Option<String> {
     match input {
         "" => None,
         license if license.len() > 8 => {
-            ctx.respond("License plates only support up to 8 characters.");
+            respond!(ctx, "License plates only support up to 8 characters.");
             None
         }
         license if !license.is_ascii() => {
-            ctx.respond("License plate can only contain ASCII characters.");
+            respond!(ctx, "License plate can only contain ASCII characters.");
             None
         }
         license => Some(license.to_string()),
@@ -1079,7 +1086,7 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<(), Error> {
-        let currency = injector.var()?;
+        let currency = injector.var().await?;
         let settings = settings.scoped("gtav");
 
         let default_reward_cooldown = Cooldown::from_duration(Duration::seconds(60));
@@ -1087,29 +1094,41 @@ impl super::Module for Module {
         let default_per_user_cooldown = Cooldown::from_duration(Duration::seconds(60));
         let default_per_command_cooldown = Cooldown::from_duration(Duration::seconds(5));
 
-        let (mut enabled_stream, enabled) = settings.stream("enabled").or_default()?;
-        let enabled = Arc::new(RwLock::new(enabled));
+        let (mut enabled_stream, enabled) = settings.stream("enabled").or_default().await?;
+        let enabled = settings::Var::new(enabled);
 
-        let cooldown = settings.var("cooldown", Cooldown::from_duration(Duration::seconds(1)))?;
-        let reward_cooldown = settings.var("reward-cooldown", default_reward_cooldown)?;
-        let punish_cooldown = settings.var("punish-cooldown", default_punish_cooldown)?;
-        let per_user_cooldown = settings.var("per-user-cooldown", default_per_user_cooldown)?;
-        let per_command_cooldown =
-            settings.var("per-command-cooldown", default_per_command_cooldown)?;
-        let prefix = settings.var("chat-prefix", String::from("ChaosMod: "))?;
-        let other_percentage = settings.var("other%", 100)?;
-        let punish_percentage = settings.var("punish%", 100)?;
-        let reward_percentage = settings.var("reward%", 100)?;
-        let success_feedback = settings.var("success-feedback", false)?;
+        let cooldown = settings
+            .var("cooldown", Cooldown::from_duration(Duration::seconds(1)))
+            .await?;
+        let reward_cooldown = settings
+            .var("reward-cooldown", default_reward_cooldown)
+            .await?;
+        let punish_cooldown = settings
+            .var("punish-cooldown", default_punish_cooldown)
+            .await?;
+        let per_user_cooldown = settings
+            .var("per-user-cooldown", default_per_user_cooldown)
+            .await?;
+        let per_command_cooldown = settings
+            .var("per-command-cooldown", default_per_command_cooldown)
+            .await?;
+        let prefix = settings
+            .var("chat-prefix", String::from("ChaosMod: "))
+            .await?;
+        let other_percentage = settings.var("other%", 100).await?;
+        let punish_percentage = settings.var("punish%", 100).await?;
+        let reward_percentage = settings.var("reward%", 100).await?;
+        let success_feedback = settings.var("success-feedback", false).await?;
 
         let (mut commands_config_stream, commands_config) = settings
             .stream::<CommandsConfig>("command-configs")
-            .or_default()?;
+            .or_default()
+            .await?;
 
-        let per_command_configs = Arc::new(RwLock::new(HashMap::new()));
-        *per_command_configs.write() = commands_config.into_map();
+        let per_command_configs = settings::Var::new(HashMap::new());
+        *per_command_configs.write().await = commands_config.into_map();
 
-        let player = injector.var()?;
+        let player = injector.var().await?;
 
         let (tx, mut rx) = mpsc::unbounded();
 
@@ -1143,12 +1162,16 @@ impl super::Module for Module {
             .await?;
 
         let future = async move {
-            let mut receiver = if *enabled.read() { Some(&mut rx) } else { None };
+            let mut receiver = if enabled.load().await {
+                Some(&mut rx)
+            } else {
+                None
+            };
 
             loop {
                 futures::select! {
                     update = commands_config_stream.select_next_some() => {
-                        *per_command_configs.write() = update.into_map();
+                        *per_command_configs.write().await = update.into_map();
                     }
                     update = enabled_stream.select_next_some() => {
                         receiver = match update {
@@ -1156,7 +1179,7 @@ impl super::Module for Module {
                             false => None,
                         };
 
-                        *enabled.write() = update;
+                        *enabled.write().await = update;
                     }
                     command = receiver.next() => {
                         if let Some((user, id, command)) = command {

@@ -5,14 +5,12 @@ use crate::{
     utils::{Cooldown, Duration},
 };
 use anyhow::Error;
-use parking_lot::RwLock;
-use std::sync::Arc;
 
 /// Handler for the `!clip` command.
 pub struct Clip {
-    pub enabled: Arc<RwLock<bool>>,
+    pub enabled: settings::Var<bool>,
     pub stream_info: stream_info::StreamInfo,
-    pub clip_cooldown: Arc<RwLock<Cooldown>>,
+    pub clip_cooldown: settings::Var<Cooldown>,
     pub twitch: api::Twitch,
 }
 
@@ -23,12 +21,12 @@ impl command::Handler for Clip {
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
-        if !self.clip_cooldown.write().is_open() {
-            ctx.respond("A clip was already created recently");
+        if !self.clip_cooldown.write().await.is_open() {
+            respond!(ctx, "A clip was already created recently");
             return Ok(());
         }
 
@@ -40,27 +38,23 @@ impl command::Handler for Clip {
         };
 
         let twitch = self.twitch.clone();
-        let user = ctx.user.clone();
 
-        match twitch.create_clip(&stream_user.id).await {
-            Ok(Some(clip)) => {
-                user.respond(format!(
+        match twitch.create_clip(&stream_user.id).await? {
+            Some(clip) => {
+                respond!(
+                    ctx,
                     "Created clip at {}/{}",
                     api::twitch::CLIPS_URL,
                     clip.id
-                ));
+                );
 
                 if let Some(_title) = title {
                     log::warn!("Title was requested, but it can't be set (right now)")
                 }
             }
-            Ok(None) => {
-                user.respond("Failed to create clip, sorry :(");
+            None => {
+                respond!(ctx, "Failed to create clip, sorry :(");
                 log::error!("created clip, but API returned nothing");
-            }
-            Err(e) => {
-                user.respond("Failed to create clip, sorry :(");
-                log_error!(e, "error when posting clip");
             }
         }
 
@@ -92,10 +86,11 @@ impl super::Module for Module {
         handlers.insert(
             "clip",
             Clip {
-                enabled: settings.var("enabled", true)?,
+                enabled: settings.var("enabled", true).await?,
                 stream_info: stream_info.clone(),
                 clip_cooldown: settings
-                    .var("cooldown", Cooldown::from_duration(Duration::seconds(30)))?,
+                    .var("cooldown", Cooldown::from_duration(Duration::seconds(30)))
+                    .await?,
                 twitch: twitch.clone(),
             },
         );

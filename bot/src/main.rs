@@ -8,7 +8,6 @@ use oxidize::{
     api, auth, bus, db, injector, irc, message_log, module, oauth2, player, prelude::*, settings,
     storage, stream_info, sys, tracing_utils, updater, utils, web,
 };
-use parking_lot::RwLock;
 use std::{
     env,
     path::{Path, PathBuf},
@@ -399,10 +398,10 @@ async fn try_main(
 
     let db = db::Database::open(&database_path)
         .with_context(|| anyhow!("failed to open database at: {}", database_path.display()))?;
-    injector.update(db.clone());
+    injector.update(db.clone()).await;
 
     let scopes_schema = auth::Schema::load_static()?;
-    let auth = db.auth(scopes_schema)?;
+    let auth = db.auth(scopes_schema).await?;
 
     let settings_schema = settings::Schema::load_static()?;
     let settings = db.settings(settings_schema)?;
@@ -418,22 +417,27 @@ async fn try_main(
 
     settings
         .run_migrations()
+        .await
         .context("failed to run settings migrations")?;
 
-    injector.update(settings.clone());
+    injector.update(settings.clone()).await;
 
-    let bad_words = db::Words::load(db.clone())?;
+    let bad_words = db::Words::load(db.clone()).await?;
 
-    injector.update(db::AfterStreams::load(db.clone())?);
-    injector.update(db::Commands::load(db.clone())?);
-    injector.update(db::Aliases::load(db.clone())?);
-    injector.update(db::Promotions::load(db.clone())?);
-    injector.update(db::Themes::load(db.clone())?);
+    injector
+        .update(db::AfterStreams::load(db.clone()).await?)
+        .await;
+    injector.update(db::Commands::load(db.clone()).await?).await;
+    injector.update(db::Aliases::load(db.clone()).await?).await;
+    injector
+        .update(db::Promotions::load(db.clone()).await?)
+        .await;
+    injector.update(db::Themes::load(db.clone()).await?).await;
 
     let message_bus = Arc::new(bus::Bus::new());
     let global_bus = Arc::new(bus::Bus::new());
     let youtube_bus = Arc::new(bus::Bus::new());
-    let global_channel = Arc::new(RwLock::new(None));
+    let global_channel = injector::Var::new(None);
     let command_bus = Arc::new(bus::Bus::new());
 
     futures.push(
@@ -451,7 +455,7 @@ async fn try_main(
     );
 
     let storage = storage::Storage::open(&root.join("storage"))?;
-    injector.update(storage.cache()?);
+    injector.update(storage.cache()?).await;
 
     let (latest, future) = updater::run(&injector);
     futures.push(
@@ -472,7 +476,6 @@ async fn try_main(
         global_bus.clone(),
         youtube_bus.clone(),
         command_bus.clone(),
-        db.clone(),
         auth.clone(),
         global_channel.clone(),
         latest.clone(),
@@ -486,14 +489,14 @@ async fn try_main(
             .instrument(trace_span!(target: "futures", "web")),
     );
 
-    if settings.get::<bool>("first-run")?.unwrap_or(true) {
+    if settings.get::<bool>("first-run").await?.unwrap_or(true) {
         log::info!("Opening {} for the first time", web::URL);
 
         if let Err(e) = webbrowser::open(web::URL) {
             log::error!("failed to open browser: {}", e);
         }
 
-        settings.set("first-run", false)?;
+        settings.set("first-run", false).await?;
     }
 
     log::info!("Listening on: {}", web::URL);
@@ -615,7 +618,8 @@ async fn try_main(
     );
 
     futures.push(
-        api::open_weather_map::setup(settings.clone(), injector.clone())?
+        api::open_weather_map::setup(settings.clone(), injector.clone())
+            .await?
             .boxed()
             .instrument(trace_span!(target: "futures", "open-weather-map",)),
     );
@@ -624,12 +628,12 @@ async fn try_main(
 
     let spotify = Arc::new(api::Spotify::new(spotify_token.clone())?);
     let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
-    injector.update(youtube.clone());
+    injector.update(youtube.clone()).await;
 
     let nightbot = Arc::new(api::NightBot::new(nightbot_token.clone())?);
 
-    injector.update(nightbot.clone());
-    injector.update(api::Speedrun::new()?);
+    injector.update(nightbot.clone()).await;
+    injector.update(api::Speedrun::new()?).await;
 
     let (player, future) = player::run(
         &injector,
@@ -639,7 +643,8 @@ async fn try_main(
         global_bus.clone(),
         youtube_bus.clone(),
         settings.clone(),
-    )?;
+    )
+    .await?;
 
     futures.push(
         future
@@ -647,10 +652,10 @@ async fn try_main(
             .instrument(trace_span!(target: "futures", "player",)),
     );
 
-    web.set_player(player.clone());
+    web.set_player(player.clone()).await;
 
     // load the song module if we have a player configuration.
-    injector.update(player);
+    injector.update(player).await;
 
     futures.push(
         api::setbac::run(
@@ -658,7 +663,8 @@ async fn try_main(
             &injector,
             streamer_token.clone(),
             global_bus.clone(),
-        )?
+        )
+        .await?
         .boxed()
         .instrument(trace_span!(target: "futures", "setbac.tv",)),
     );
@@ -753,7 +759,7 @@ async fn notify_after_streams(
     mut rx: mpsc::Receiver<stream_info::StreamState>,
     system: sys::System,
 ) -> Result<(), Error> {
-    let (mut after_streams_stream, mut after_streams) = injector.stream::<db::AfterStreams>();
+    let (mut after_streams_stream, mut after_streams) = injector.stream::<db::AfterStreams>().await;
 
     loop {
         futures::select! {
@@ -771,7 +777,7 @@ async fn notify_after_streams(
                             None => continue,
                         };
 
-                        let list = after_streams.list()?;
+                        let list = after_streams.list().await?;
 
                         if list.len() > 0 {
                             let reminder = sys::Notification::new(format!(
@@ -795,9 +801,11 @@ async fn notify_after_streams(
 
 /// Run the loop that handles installing this as a service.
 async fn system_loop(settings: settings::Settings, system: sys::System) -> Result<(), Error> {
-    settings.set("run-on-startup", system.is_installed()?)?;
+    settings
+        .set("run-on-startup", system.is_installed()?)
+        .await?;
 
-    let (mut run_on_startup_stream, _) = settings.stream("run-on-startup").or_with(false)?;
+    let (mut run_on_startup_stream, _) = settings.stream("run-on-startup").or_with(false).await?;
 
     let build = move |run_on_startup: bool| match (run_on_startup, system.is_installed()?) {
         (true, true) | (false, false) => Ok(()),

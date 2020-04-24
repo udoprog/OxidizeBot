@@ -1,11 +1,11 @@
 use crate::{db, track_id::TrackId, utils};
 use diesel::prelude::*;
-use parking_lot::RwLock;
 use std::{
     collections::{hash_map, HashMap},
     fmt,
     sync::Arc,
 };
+use tokio::sync::RwLock;
 
 /// Local database wrapper.
 #[derive(Clone)]
@@ -14,68 +14,78 @@ struct Database(db::Database);
 impl Database {
     private_database_group_fns!(themes, Theme, Key);
 
-    fn edit(
+    async fn edit(
         &self,
         key: &Key,
         track_id: &TrackId,
     ) -> Result<Option<db::models::Theme>, anyhow::Error> {
         use db::schema::themes::dsl;
-        let c = self.0.pool.lock();
 
-        let filter = dsl::themes.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
+        let key = key.clone();
+        let track_id = track_id.clone();
 
-        let first = filter.clone().first::<db::models::Theme>(&*c).optional()?;
+        self.0
+            .asyncify(move |c| {
+                let filter =
+                    dsl::themes.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
 
-        match first {
-            None => {
-                let theme = db::models::Theme {
-                    channel: key.channel.to_string(),
-                    name: key.name.to_string(),
-                    track_id: track_id.clone(),
-                    start: Default::default(),
-                    end: None,
-                    group: None,
-                    disabled: false,
-                };
+                let first = filter.clone().first::<db::models::Theme>(c).optional()?;
 
-                diesel::insert_into(dsl::themes)
-                    .values(&theme)
-                    .execute(&*c)?;
-                Ok(Some(theme))
-            }
-            Some(theme) => {
-                let mut set = db::models::UpdateTheme::default();
-                set.track_id = Some(track_id);
-                diesel::update(filter).set(&set).execute(&*c)?;
+                match first {
+                    None => {
+                        let theme = db::models::Theme {
+                            channel: key.channel.to_string(),
+                            name: key.name.to_string(),
+                            track_id,
+                            start: Default::default(),
+                            end: None,
+                            group: None,
+                            disabled: false,
+                        };
 
-                if theme.disabled {
-                    return Ok(None);
+                        diesel::insert_into(dsl::themes).values(&theme).execute(c)?;
+                        Ok(Some(theme))
+                    }
+                    Some(theme) => {
+                        let mut set = db::models::UpdateTheme::default();
+                        set.track_id = Some(&track_id);
+                        diesel::update(filter).set(&set).execute(c)?;
+
+                        if theme.disabled {
+                            return Ok(None);
+                        }
+
+                        Ok(Some(theme))
+                    }
                 }
-
-                Ok(Some(theme))
-            }
-        }
+            })
+            .await
     }
 
-    fn edit_duration(
+    async fn edit_duration(
         &self,
         key: &Key,
         start: utils::Offset,
         end: Option<utils::Offset>,
     ) -> Result<(), anyhow::Error> {
         use db::schema::themes::dsl;
-        let c = self.0.pool.lock();
 
-        let start = start.as_milliseconds() as i32;
-        let end = end.map(|s| s.as_milliseconds() as i32);
+        let key = key.clone();
 
-        diesel::update(
-            dsl::themes.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
-        )
-        .set((dsl::start.eq(start), dsl::end.eq(end)))
-        .execute(&*c)?;
+        self.0
+            .asyncify(move |c| {
+                let start = start.as_milliseconds() as i32;
+                let end = end.map(|s| s.as_milliseconds() as i32);
 
-        Ok(())
+                diesel::update(
+                    dsl::themes.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+                )
+                .set((dsl::start.eq(start), dsl::end.eq(end)))
+                .execute(c)?;
+
+                Ok(())
+            })
+            .await
     }
 }
 
@@ -89,12 +99,12 @@ impl Themes {
     database_group_fns!(Theme, Key);
 
     /// Construct a new commands store with a db.
-    pub fn load(db: db::Database) -> Result<Themes, anyhow::Error> {
+    pub async fn load(db: db::Database) -> Result<Themes, anyhow::Error> {
         let mut inner = HashMap::new();
 
         let db = Database(db);
 
-        for theme in db.list()? {
+        for theme in db.list().await? {
             let theme = Theme::from_db(&theme)?;
             inner.insert(theme.key.clone(), Arc::new(theme));
         }
@@ -106,12 +116,17 @@ impl Themes {
     }
 
     /// Insert a word into the bad words list.
-    pub fn edit(&self, channel: &str, name: &str, track_id: TrackId) -> Result<(), anyhow::Error> {
+    pub async fn edit(
+        &self,
+        channel: &str,
+        name: &str,
+        track_id: TrackId,
+    ) -> Result<(), anyhow::Error> {
         let key = Key::new(channel, name);
 
-        let mut inner = self.inner.write();
+        let mut inner = self.inner.write().await;
 
-        if let Some(theme) = self.db.edit(&key, &track_id)? {
+        if let Some(theme) = self.db.edit(&key, &track_id).await? {
             let start = utils::Offset::milliseconds(theme.start as u32);
             let end = theme.end.map(|s| utils::Offset::milliseconds(s as u32));
 
@@ -134,7 +149,7 @@ impl Themes {
     }
 
     /// Edit the duration of the given theme.
-    pub fn edit_duration(
+    pub async fn edit_duration(
         &self,
         channel: &str,
         name: &str,
@@ -142,9 +157,11 @@ impl Themes {
         end: Option<utils::Offset>,
     ) -> Result<(), anyhow::Error> {
         let key = Key::new(channel, name);
-        self.db.edit_duration(&key, start.clone(), end.clone())?;
+        self.db
+            .edit_duration(&key, start.clone(), end.clone())
+            .await?;
 
-        let mut inner = self.inner.write();
+        let mut inner = self.inner.write().await;
 
         if let hash_map::Entry::Occupied(mut e) = inner.entry(key) {
             let mut update = (**e.get()).clone();

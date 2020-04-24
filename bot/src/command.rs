@@ -2,8 +2,31 @@
 
 use crate::{auth::Scope, irc, prelude::*, utils};
 use anyhow::{bail, Error};
-use std::{collections::HashMap, fmt, sync::Arc, time::Instant};
-use tokio::sync::Mutex;
+use std::{borrow::Cow, collections::HashMap, fmt, num, str, sync::Arc, time::Instant};
+use thiserror::Error;
+use tokio::sync;
+
+#[derive(Debug, Error)]
+#[error("Command failed with: {0}")]
+pub struct Respond(pub(crate) Cow<'static, str>);
+
+/// An opaque identifier for a hook that has been inserted.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HookId(usize);
+
+impl fmt::Display for HookId {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(fmt)
+    }
+}
+
+impl str::FromStr for HookId {
+    type Err = num::ParseIntError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(HookId(str::parse::<usize>(s)?))
+    }
+}
 
 #[async_trait]
 /// The handler trait for a given command.
@@ -24,16 +47,16 @@ where
 /// A trait for peeking into chat messages.
 pub trait MessageHook: std::any::Any + Send + Sync {
     /// Peek the given message.
-    async fn peek(&mut self, user: &irc::User, m: &str) -> Result<(), Error>;
+    async fn peek(&self, user: &irc::User, m: &str) -> Result<(), Error>;
 }
 
 pub(crate) struct ContextInner {
     /// Sender associated with the command.
     pub(crate) sender: irc::Sender,
     /// Active scope cooldowns.
-    pub(crate) scope_cooldowns: Mutex<HashMap<Scope, utils::Cooldown>>,
+    pub(crate) scope_cooldowns: sync::Mutex<HashMap<Scope, utils::Cooldown>>,
     /// A hook that can be installed to peek at all incoming messages.
-    pub(crate) message_hooks: Mutex<HashMap<String, Box<dyn MessageHook>>>,
+    pub(crate) message_hooks: sync::RwLock<slab::Slab<Box<dyn MessageHook>>>,
     /// Shutdown handler.
     pub(crate) shutdown: utils::Shutdown,
 }
@@ -58,33 +81,38 @@ impl Context {
     }
 
     /// Signal that the bot should try to shut down.
-    pub fn shutdown(&self) -> bool {
-        self.inner.shutdown.shutdown()
+    pub async fn shutdown(&self) -> bool {
+        self.inner.shutdown.shutdown().await
     }
 
     /// Setup the specified hook.
-    pub async fn insert_hook<H>(&self, id: &str, hook: H)
+    pub async fn insert_hook<H>(&self, hook: H) -> HookId
     where
         H: MessageHook,
     {
-        let mut hooks = self.inner.message_hooks.lock().await;
-        hooks.insert(id.to_string(), Box::new(hook));
+        let mut hooks = self.inner.message_hooks.write().await;
+        let len = hooks.insert(Box::new(hook));
+        HookId(len)
     }
 
     /// Setup the specified hook.
-    pub async fn remove_hook(&self, id: &str) {
-        let mut hooks = self.inner.message_hooks.lock().await;
-        let _ = hooks.remove(id);
+    pub async fn remove_hook(&self, id: HookId) {
+        let mut hooks = self.inner.message_hooks.write().await;
+
+        if hooks.contains(id.0) {
+            let _ = hooks.remove(id.0);
+        }
     }
 
     /// Verify that the current user has the associated scope.
     pub async fn check_scope(&self, scope: Scope) -> Result<(), Error> {
-        if !self.user.has_scope(scope) {
+        if !self.user.has_scope(scope).await {
             if let Some(name) = self.user.display_name() {
                 self.privmsg(format!(
                     "Do you think this is a democracy {name}? LUL",
                     name = name,
-                ));
+                ))
+                .await;
             }
 
             bail!(
@@ -94,7 +122,7 @@ impl Context {
             );
         }
 
-        if self.user.has_scope(Scope::BypassCooldowns) {
+        if self.user.has_scope(Scope::BypassCooldowns).await {
             return Ok(());
         }
 
@@ -107,7 +135,8 @@ impl Context {
                 self.respond(format!(
                     "Cooldown in effect for {}",
                     utils::compact_duration(&duration),
-                ));
+                ))
+                .await;
 
                 bail!("Scope `{}` is in cooldown", scope);
             }
@@ -119,13 +148,13 @@ impl Context {
     }
 
     /// Respond to the user with a message.
-    pub fn respond(&self, m: impl fmt::Display) {
-        self.user.respond(m);
+    pub async fn respond(&self, m: impl fmt::Display) {
+        self.user.respond(m).await;
     }
 
     /// Send a privmsg to the channel.
-    pub fn privmsg(&self, m: impl fmt::Display) {
-        self.inner.sender.privmsg(m);
+    pub async fn privmsg(&self, m: impl fmt::Display) {
+        self.inner.sender.privmsg(m).await;
     }
 
     /// Get the next argument.
@@ -139,72 +168,59 @@ impl Context {
     }
 
     /// Take the next parameter and parse as the given type.
-    pub fn next_parse_optional<T>(&mut self) -> Option<Option<T>>
+    pub fn next_parse_optional<T>(&mut self) -> Result<Option<T>, Error>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
     {
-        match self.next() {
+        Ok(match self.next() {
             Some(s) => match str::parse(&s) {
-                Ok(v) => Some(Some(v)),
+                Ok(v) => Some(v),
                 Err(e) => {
-                    self.respond(format!("Bad argument: {}: {}", s, e));
-                    None
+                    respond_bail!("Bad argument: {}: {}", s, e);
                 }
             },
-            None => Some(None),
-        }
+            None => None,
+        })
     }
 
     /// Take the next parameter and parse as the given type.
-    pub fn next_parse<T, M>(&mut self, m: M) -> Option<T>
+    pub fn next_parse<T, M>(&mut self, m: M) -> Result<T, Error>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
         M: fmt::Display,
     {
-        match self.next_parse_optional()? {
-            Some(value) => Some(value),
-            None => {
-                self.respond(format!("Expected {m}", m = m));
-                None
-            }
-        }
+        Ok(self
+            .next_parse_optional()?
+            .ok_or_else(|| respond_err!("Expected {}", m))?)
     }
 
     /// Take the rest and parse as the given type.
-    pub fn rest_parse<T, M>(&mut self, m: M) -> Option<T>
+    pub fn rest_parse<T, M>(&mut self, m: M) -> Result<T, Error>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
         M: fmt::Display,
     {
-        match self.rest().trim() {
+        Ok(match self.rest().trim() {
             "" => {
-                self.respond(format!("Expected {m}", m = m));
-                None
+                respond_bail!("Expected {m}", m = m);
             }
             s => match str::parse(s) {
-                Ok(v) => Some(v),
+                Ok(v) => v,
                 Err(e) => {
-                    self.respond(format!("Bad argument: {}: {}", s, e));
-                    None
+                    respond_bail!("Bad argument: {}: {}", s, e);
                 }
             },
-        }
+        })
     }
 
     /// Take the next parameter.
-    pub fn next_str<M>(&mut self, m: M) -> Option<String>
+    pub fn next_str<M>(&mut self, m: M) -> Result<String, Error>
     where
         M: fmt::Display,
     {
-        match self.next() {
-            Some(s) => Some(s),
-            None => {
-                self.respond(format!("Expected {m}", m = m));
-                None
-            }
-        }
+        Ok(self.next().ok_or_else(|| respond_err!("Expected {}", m))?)
     }
 }

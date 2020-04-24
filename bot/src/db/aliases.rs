@@ -1,7 +1,7 @@
 use crate::{db, template, utils};
 use diesel::prelude::*;
-use parking_lot::RwLock;
 use std::{fmt, sync::Arc};
+use tokio::sync::RwLock;
 
 /// Local database wrapper.
 #[derive(Clone)]
@@ -10,58 +10,70 @@ struct Database(db::Database);
 impl Database {
     private_database_group_fns!(aliases, Alias, db::Key);
 
-    fn edit(&self, key: &db::Key, text: &str) -> Result<db::models::Alias, anyhow::Error> {
+    async fn edit(&self, key: &db::Key, text: &str) -> Result<db::models::Alias, anyhow::Error> {
         use db::schema::aliases::dsl;
-        let c = self.0.pool.lock();
 
-        let filter =
-            dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
+        let key = key.clone();
+        let text = text.to_string();
 
-        let first = filter.clone().first::<db::models::Alias>(&*c).optional()?;
+        self.0
+            .asyncify(move |c| {
+                let filter =
+                    dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
 
-        match first {
-            None => {
-                let alias = db::models::Alias {
-                    channel: key.channel.to_string(),
-                    pattern: None,
-                    name: key.name.to_string(),
-                    text: text.to_string(),
-                    group: None,
-                    disabled: false,
-                };
+                let first = filter.clone().first::<db::models::Alias>(c).optional()?;
 
-                diesel::insert_into(dsl::aliases)
-                    .values(&alias)
-                    .execute(&*c)?;
-                Ok(alias)
-            }
-            Some(alias) => {
-                let mut set = db::models::UpdateAlias::default();
-                set.text = Some(text);
-                diesel::update(filter).set(&set).execute(&*c)?;
-                Ok(alias)
-            }
-        }
+                match first {
+                    None => {
+                        let alias = db::models::Alias {
+                            channel: key.channel.to_string(),
+                            pattern: None,
+                            name: key.name.to_string(),
+                            text: text.to_string(),
+                            group: None,
+                            disabled: false,
+                        };
+
+                        diesel::insert_into(dsl::aliases)
+                            .values(&alias)
+                            .execute(c)?;
+                        Ok(alias)
+                    }
+                    Some(alias) => {
+                        let mut set = db::models::UpdateAlias::default();
+                        set.text = Some(&text);
+                        diesel::update(filter).set(&set).execute(c)?;
+                        Ok(alias)
+                    }
+                }
+            })
+            .await
     }
 
     /// Edit the pattern of an alias.
-    fn edit_pattern(
+    async fn edit_pattern(
         &self,
         key: &db::Key,
         pattern: Option<&regex::Regex>,
     ) -> Result<(), anyhow::Error> {
         use db::schema::aliases::dsl;
-        let c = self.0.pool.lock();
 
-        let pattern = pattern.map(|p| p.as_str());
+        let key = key.clone();
+        let pattern = pattern.cloned();
 
-        diesel::update(
-            dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
-        )
-        .set(dsl::pattern.eq(pattern))
-        .execute(&*c)?;
+        self.0
+            .asyncify(move |c| {
+                let pattern = pattern.as_ref().map(|p| p.as_str());
 
-        Ok(())
+                diesel::update(
+                    dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+                )
+                .set(dsl::pattern.eq(pattern))
+                .execute(c)?;
+
+                Ok(())
+            })
+            .await
     }
 }
 
@@ -75,12 +87,12 @@ impl Aliases {
     database_group_fns!(Alias, db::Key);
 
     /// Construct a new commands store with a db.
-    pub fn load(db: db::Database) -> Result<Aliases, anyhow::Error> {
+    pub async fn load(db: db::Database) -> Result<Aliases, anyhow::Error> {
         let mut inner = db::Matcher::new();
 
         let db = Database(db);
 
-        for alias in db.list()? {
+        for alias in db.list().await? {
             let alias = Alias::from_db(&alias)?;
             inner.insert(alias.key.clone(), Arc::new(alias));
         }
@@ -92,11 +104,16 @@ impl Aliases {
     }
 
     /// Resolve the given command.
-    pub fn resolve(&self, channel: &str, message: Arc<String>) -> Option<(db::Key, String)> {
+    pub async fn resolve(&self, channel: &str, message: Arc<String>) -> Option<(db::Key, String)> {
         let mut it = utils::Words::new(message);
         let first = it.next();
 
-        if let Some((alias, captures)) = self.inner.read().resolve(channel, first.as_deref(), &it) {
+        if let Some((alias, captures)) =
+            self.inner
+                .read()
+                .await
+                .resolve(channel, first.as_deref(), &it)
+        {
             let key = alias.key.clone();
 
             match alias.template.render_to_string(&captures) {
@@ -111,7 +128,7 @@ impl Aliases {
     }
 
     /// Insert a word into the bad words list.
-    pub fn edit(
+    pub async fn edit(
         &self,
         channel: &str,
         name: &str,
@@ -119,10 +136,10 @@ impl Aliases {
     ) -> Result<(), anyhow::Error> {
         let key = db::Key::new(channel, name);
 
-        let alias = self.db.edit(&key, template.source())?;
+        let alias = self.db.edit(&key, template.source()).await?;
 
         if alias.disabled {
-            self.inner.write().remove(&key);
+            self.inner.write().await.remove(&key);
         } else {
             let pattern = db::Pattern::from_db(alias.pattern.as_ref())?;
 
@@ -134,23 +151,23 @@ impl Aliases {
                 disabled: alias.disabled,
             };
 
-            self.inner.write().insert(key, Arc::new(alias));
+            self.inner.write().await.insert(key, Arc::new(alias));
         }
 
         Ok(())
     }
 
     /// Edit the pattern for the given command.
-    pub fn edit_pattern(
+    pub async fn edit_pattern(
         &self,
         channel: &str,
         name: &str,
         pattern: Option<regex::Regex>,
     ) -> Result<bool, anyhow::Error> {
         let key = db::Key::new(channel, name);
-        self.db.edit_pattern(&key, pattern.as_ref())?;
+        self.db.edit_pattern(&key, pattern.as_ref()).await?;
 
-        Ok(self.inner.write().modify(key, |alias| {
+        Ok(self.inner.write().await.modify(key, |alias| {
             alias.pattern = pattern.map(db::Pattern::regex).unwrap_or_default();
         }))
     }

@@ -1,6 +1,7 @@
 use crate::{db, template};
-use parking_lot::{RwLock, RwLockReadGuard};
+use diesel::prelude::*;
 use std::{collections::HashMap, sync::Arc};
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 /// Tokenize the given word.
 pub fn tokenize(word: &str) -> String {
@@ -39,30 +40,83 @@ impl Inner {
     }
 }
 
-/// The backend of a words store.
-pub trait Backend: Clone + Send + Sync {
+#[derive(Clone)]
+struct Database(db::Database);
+
+impl Database {
     /// List all words in backend.
-    fn list(&self) -> Result<Vec<db::models::BadWord>, anyhow::Error>;
+    async fn list(&self) -> Result<Vec<db::models::BadWord>, anyhow::Error> {
+        use db::schema::bad_words::dsl;
+
+        self.0
+            .asyncify(move |c| Ok(dsl::bad_words.load::<db::models::BadWord>(c)?))
+            .await
+    }
 
     /// Insert or update an existing word.
-    fn edit(&self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error>;
+    async fn edit(&self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error> {
+        use db::schema::bad_words::dsl;
+
+        let word = word.to_string();
+        let why = why.map(|w| w.to_string());
+
+        self.0
+            .asyncify(move |c| {
+                let filter = dsl::bad_words.filter(dsl::word.eq(&word));
+                let b = filter.clone().first::<db::models::BadWord>(c).optional()?;
+
+                match b {
+                    None => {
+                        let bad_word = db::models::BadWord {
+                            word,
+                            why: why.map(|s| s.to_string()),
+                        };
+
+                        diesel::insert_into(dsl::bad_words)
+                            .values(&bad_word)
+                            .execute(c)?;
+                    }
+                    Some(_) => {
+                        diesel::update(filter)
+                            .set(why.map(|w| dsl::why.eq(w)))
+                            .execute(c)?;
+                    }
+                }
+
+                Ok(())
+            })
+            .await
+    }
 
     /// Delete the given word from the backend.
-    fn delete(&self, word: &str) -> Result<bool, anyhow::Error>;
+    async fn delete(&self, word: &str) -> Result<bool, anyhow::Error> {
+        use db::schema::bad_words::dsl;
+
+        let word = word.to_string();
+
+        self.0
+            .asyncify(move |c| {
+                let count =
+                    diesel::delete(dsl::bad_words.filter(dsl::word.eq(&word))).execute(c)?;
+                Ok(count == 1)
+            })
+            .await
+    }
 }
 
 #[derive(Clone)]
 pub struct Words {
     inner: Arc<RwLock<Inner>>,
-    db: db::Database,
+    db: Database,
 }
 
 impl Words {
     /// Load all words from the backend.
-    pub fn load(db: db::Database) -> Result<Words, anyhow::Error> {
+    pub async fn load(db: db::Database) -> Result<Words, anyhow::Error> {
+        let db = Database(db);
         let mut inner = Inner::default();
 
-        for word in db.list()? {
+        for word in db.list().await? {
             inner.insert(&word.word, word.why.as_deref())?;
         }
 
@@ -73,27 +127,27 @@ impl Words {
     }
 
     /// Insert a word into the bad words list.
-    pub fn edit(&self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error> {
-        self.db.edit(word, why)?;
-        let mut inner = self.inner.write();
+    pub async fn edit(&self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error> {
+        self.db.edit(word, why).await?;
+        let mut inner = self.inner.write().await;
         inner.insert(word, why)?;
         Ok(())
     }
 
     /// Remove a word from the bad words list.
-    pub fn delete(&self, word: &str) -> Result<bool, anyhow::Error> {
-        if !self.db.delete(word)? {
+    pub async fn delete(&self, word: &str) -> Result<bool, anyhow::Error> {
+        if !self.db.delete(word).await? {
             return Ok(false);
         }
 
-        let mut inner = self.inner.write();
+        let mut inner = self.inner.write().await;
         inner.remove(word);
         Ok(true)
     }
 
     /// Build a tester.
-    pub fn tester(&self) -> Tester<'_> {
-        let inner = self.inner.read();
+    pub async fn tester(&self) -> Tester<'_> {
+        let inner = self.inner.read().await;
 
         Tester { inner }
     }

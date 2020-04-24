@@ -1,7 +1,6 @@
 use crate::{db, template, utils};
 use anyhow::{anyhow, Context as _, Error};
 use diesel::prelude::*;
-use parking_lot::RwLock;
 use std::{
     collections::HashSet,
     fmt,
@@ -10,6 +9,7 @@ use std::{
         Arc,
     },
 };
+use tokio::sync::RwLock;
 
 /// Local database wrapper.
 #[derive(Clone)]
@@ -19,74 +19,89 @@ impl Database {
     private_database_group_fns!(commands, Command, db::Key);
 
     /// Edit the text for the given key.
-    fn edit(&self, key: &db::Key, text: &str) -> Result<db::models::Command, Error> {
+    async fn edit(&self, key: &db::Key, text: &str) -> Result<db::models::Command, Error> {
         use db::schema::commands::dsl;
-        let c = self.0.pool.lock();
 
-        let filter =
-            dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
+        let key = key.clone();
+        let text = text.to_string();
 
-        match filter
-            .clone()
-            .first::<db::models::Command>(&*c)
-            .optional()?
-        {
-            None => {
-                let command = db::models::Command {
-                    channel: key.channel.to_string(),
-                    pattern: None,
-                    name: key.name.to_string(),
-                    count: 0,
-                    text: text.to_string(),
-                    group: None,
-                    disabled: false,
-                };
+        self.0
+            .asyncify(move |c| {
+                let filter = dsl::commands
+                    .filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
 
-                diesel::insert_into(dsl::commands)
-                    .values(&command)
-                    .execute(&*c)?;
-                Ok(command)
-            }
-            Some(command) => {
-                let mut set = db::models::UpdateCommand::default();
-                set.text = Some(text);
-                diesel::update(filter).set(&set).execute(&*c)?;
-                Ok(command)
-            }
-        }
+                match filter.clone().first::<db::models::Command>(c).optional()? {
+                    None => {
+                        let command = db::models::Command {
+                            channel: key.channel.to_string(),
+                            pattern: None,
+                            name: key.name.to_string(),
+                            count: 0,
+                            text: text.to_string(),
+                            group: None,
+                            disabled: false,
+                        };
+
+                        diesel::insert_into(dsl::commands)
+                            .values(&command)
+                            .execute(c)?;
+                        Ok(command)
+                    }
+                    Some(command) => {
+                        let mut set = db::models::UpdateCommand::default();
+                        set.text = Some(&text);
+                        diesel::update(filter).set(&set).execute(c)?;
+                        Ok(command)
+                    }
+                }
+            })
+            .await
     }
 
     /// Edit the pattern of a command.
-    fn edit_pattern(
+    async fn edit_pattern(
         &self,
         key: &db::Key,
         pattern: Option<&regex::Regex>,
     ) -> Result<(), anyhow::Error> {
         use db::schema::commands::dsl;
-        let c = self.0.pool.lock();
 
-        let pattern = pattern.map(|p| p.as_str());
+        let key = key.clone();
+        let pattern = pattern.cloned();
 
-        diesel::update(
-            dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
-        )
-        .set(dsl::pattern.eq(pattern))
-        .execute(&*c)?;
+        self.0
+            .asyncify(move |c| {
+                let pattern = pattern.as_ref().map(|p| p.as_str());
 
-        Ok(())
+                diesel::update(
+                    dsl::commands
+                        .filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+                )
+                .set(dsl::pattern.eq(pattern))
+                .execute(c)?;
+
+                Ok(())
+            })
+            .await
     }
 
     /// Increment the given key.
-    fn increment(&self, key: &db::Key) -> Result<bool, Error> {
+    async fn increment(&self, key: &db::Key) -> Result<bool, Error> {
         use db::schema::commands::dsl;
 
-        let c = self.0.pool.lock();
-        let count = diesel::update(
-            dsl::commands.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
-        )
-        .set(dsl::count.eq(dsl::count + 1))
-        .execute(&*c)?;
-        Ok(count == 1)
+        let key = key.clone();
+
+        self.0
+            .asyncify(move |c| {
+                let count = diesel::update(
+                    dsl::commands
+                        .filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name))),
+                )
+                .set(dsl::count.eq(dsl::count + 1))
+                .execute(c)?;
+                Ok(count == 1)
+            })
+            .await
     }
 }
 
@@ -100,12 +115,12 @@ impl Commands {
     database_group_fns!(Command, db::Key);
 
     /// Construct a new commands store with a db.
-    pub fn load(db: db::Database) -> Result<Commands, Error> {
+    pub async fn load(db: db::Database) -> Result<Commands, Error> {
         let db = Database(db);
 
         let mut matcher = db::Matcher::new();
 
-        for command in db.list()? {
+        for command in db.list().await? {
             let command = Command::from_db(&command)?;
             matcher.insert(command.key.clone(), Arc::new(command));
         }
@@ -117,7 +132,7 @@ impl Commands {
     }
 
     /// Insert a word into the bad words list.
-    pub fn edit(
+    pub async fn edit(
         &self,
         channel: &str,
         name: &str,
@@ -125,10 +140,11 @@ impl Commands {
     ) -> Result<(), Error> {
         let key = db::Key::new(channel, name);
 
-        let command = self.db.edit(&key, template.source())?;
+        let mut inner = self.inner.write().await;
+        let command = self.db.edit(&key, template.source()).await?;
 
         if command.disabled {
-            self.inner.write().remove(&key);
+            inner.remove(&key);
         } else {
             let vars = template.vars();
 
@@ -142,36 +158,36 @@ impl Commands {
                 disabled: command.disabled,
             });
 
-            self.inner.write().insert(key, command);
+            inner.insert(key, command);
         }
 
         Ok(())
     }
 
     /// Edit the pattern for the given command.
-    pub fn edit_pattern(
+    pub async fn edit_pattern(
         &self,
         channel: &str,
         name: &str,
         pattern: Option<regex::Regex>,
     ) -> Result<bool, anyhow::Error> {
         let key = db::Key::new(channel, name);
-        self.db.edit_pattern(&key, pattern.as_ref())?;
+        self.db.edit_pattern(&key, pattern.as_ref()).await?;
 
-        Ok(self.inner.write().modify(key, |command| {
+        Ok(self.inner.write().await.modify(key, |command| {
             command.pattern = pattern.map(db::Pattern::regex).unwrap_or_default();
         }))
     }
 
     /// Increment the specified command.
-    pub fn increment(&self, command: &Command) -> Result<(), Error> {
-        self.db.increment(&command.key)?;
+    pub async fn increment(&self, command: &Command) -> Result<(), Error> {
+        self.db.increment(&command.key).await?;
         command.count.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
     /// Resolve the given command.
-    pub fn resolve<'a>(
+    pub async fn resolve<'a>(
         &self,
         channel: &str,
         first: Option<&'a str>,
@@ -179,6 +195,7 @@ impl Commands {
     ) -> Option<(Arc<Command>, db::Captures<'a>)> {
         self.inner
             .read()
+            .await
             .resolve(channel, first, it)
             .map(|(command, captures)| (command.clone(), captures))
     }

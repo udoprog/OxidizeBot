@@ -126,7 +126,7 @@ struct RemoteBuilder {
 }
 
 impl RemoteBuilder {
-    fn init(&self, remote: &mut Remote) {
+    async fn init(&self, remote: &mut Remote) {
         if self.enabled {
             remote.rx = Some(self.global_bus.add_rx());
 
@@ -144,11 +144,11 @@ impl RemoteBuilder {
                 let setbac =
                     Setbac::new(self.token.clone(), self.secret_key.clone(), api_url.clone());
 
-                self.injector.update(setbac.clone());
+                self.injector.update(setbac.clone()).await;
                 Some(setbac)
             }
             None => {
-                self.injector.clear::<Setbac>();
+                self.injector.clear::<Setbac>().await;
                 None
             }
         };
@@ -163,7 +163,7 @@ struct Remote {
 }
 
 /// Run update loop shipping information to the remote server.
-pub fn run(
+pub async fn run(
     settings: &Settings,
     injector: &Injector,
     token: oauth2::SyncToken,
@@ -174,13 +174,12 @@ pub fn run(
     let (mut api_url_stream, api_url) = settings
         .stream("api-url")
         .or(Some(String::from(DEFAULT_API_URL)))
-        .optional()?;
+        .optional()
+        .await?;
 
-    let (mut secret_key_stream, secret_key) = settings.stream("secret-key").optional()?;
-
-    let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(false)?;
-
-    let (mut player_stream, player) = injector.stream::<Player>();
+    let (mut secret_key_stream, secret_key) = settings.stream("secret-key").optional().await?;
+    let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(false).await?;
+    let (mut player_stream, player) = injector.stream::<Player>().await;
 
     let mut remote_builder = RemoteBuilder {
         token,
@@ -200,18 +199,18 @@ pub fn run(
     };
 
     let mut remote = Remote::default();
-    remote_builder.init(&mut remote);
+    remote_builder.init(&mut remote).await;
 
     Ok(async move {
         loop {
             futures::select! {
                 update = secret_key_stream.select_next_some() => {
                     remote_builder.secret_key = update;
-                    remote_builder.init(&mut remote);
+                    remote_builder.init(&mut remote).await;
                 }
                 update = player_stream.select_next_some() => {
                     remote_builder.player = update;
-                    remote_builder.init(&mut remote);
+                    remote_builder.init(&mut remote).await;
                 }
                 update = api_url_stream.select_next_some() => {
                     remote_builder.api_url = match update.and_then(|s| parse_url(&s)) {
@@ -219,11 +218,11 @@ pub fn run(
                         None => None,
                     };
 
-                    remote_builder.init(&mut remote);
+                    remote_builder.init(&mut remote).await;
                 }
                 update = enabled_stream.select_next_some() => {
                     remote_builder.enabled = update;
-                    remote_builder.init(&mut remote);
+                    remote_builder.init(&mut remote).await;
                 }
                 event = remote.rx.select_next_some() => {
                     /// Only update on switches to current song.
@@ -246,9 +245,9 @@ pub fn run(
 
                     let mut update = PlayerUpdate::default();
 
-                    update.current = player.current().map(|c| c.item.into());
+                    update.current = player.current().await.map(|c| c.item.into());
 
-                    for i in player.list() {
+                    for i in player.list().await {
                         update.items.push(i.into());
                     }
 

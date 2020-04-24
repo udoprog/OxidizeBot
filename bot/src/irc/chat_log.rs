@@ -17,18 +17,18 @@ pub struct Builder {
 }
 
 impl Builder {
-    pub fn new(
+    pub async fn new(
         twitch: Twitch,
         injector: &injector::Injector,
         message_log: message_log::MessageLog,
         settings: settings::Settings,
     ) -> Result<Self, Error> {
-        let (cache_stream, cache) = injector.stream::<Cache>();
+        let (cache_stream, cache) = injector.stream::<Cache>().await;
 
-        let (enabled_stream, enabled) = settings.stream("enabled").or_default()?;
+        let (enabled_stream, enabled) = settings.stream("enabled").or_default().await?;
 
         let (emotes_enabled_stream, emotes_enabled) =
-            settings.stream("emotes-enabled").or_default()?;
+            settings.stream("emotes-enabled").or_default().await?;
 
         message_log.enabled(enabled);
 

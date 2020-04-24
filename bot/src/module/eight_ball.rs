@@ -1,6 +1,4 @@
 use crate::{auth, command, module, prelude::*};
-use parking_lot::RwLock;
-use std::sync::Arc;
 
 static MAGIC_8BALL_ANSWER: &[&str] = &[
     "It is certain.",
@@ -27,7 +25,7 @@ static MAGIC_8BALL_ANSWER: &[&str] = &[
 
 /// Handler for the !8ball command.
 pub struct EightBall {
-    enabled: Arc<RwLock<bool>>,
+    enabled: settings::Var<bool>,
 }
 
 #[async_trait]
@@ -39,22 +37,21 @@ impl command::Handler for EightBall {
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
         use rand::Rng as _;
 
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
         let rest = ctx.rest();
 
         if rest.trim().is_empty() {
-            ctx.respond("Ask a question.");
+            respond!(ctx, "Ask a question.");
             return Ok(());
         }
 
-        let mut rng = rand::thread_rng();
-        let index = rng.gen_range(0, MAGIC_8BALL_ANSWER.len());
+        let index = rand::thread_rng().gen_range(0, MAGIC_8BALL_ANSWER.len());
 
         if let Some(answer) = MAGIC_8BALL_ANSWER.get(index) {
-            ctx.respond(answer);
+            respond!(ctx, answer);
         }
 
         Ok(())
@@ -79,7 +76,7 @@ impl super::Module for Module {
         handlers.insert(
             "8ball",
             EightBall {
-                enabled: settings.var("8ball/enabled", true)?,
+                enabled: settings.var("8ball/enabled", true).await?,
             },
         );
 

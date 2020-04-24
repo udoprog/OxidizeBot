@@ -5,12 +5,12 @@ use crate::{
 use anyhow::{Context as _, Error};
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
-use parking_lot::RwLock;
 use std::{
     collections::{HashMap, HashSet},
     fmt, iter,
     sync::Arc,
 };
+use tokio::sync::RwLock;
 
 const SCHEMA: &[u8] = include_bytes!("auth.yaml");
 
@@ -83,14 +83,19 @@ pub struct Auth {
 }
 
 impl Auth {
-    pub fn new(db: db::Database, schema: Schema) -> Result<Self, Error> {
+    pub async fn new(db: db::Database, schema: Schema) -> Result<Self, Error> {
         use db::schema::grants::dsl;
 
-        let grants = dsl::grants
-            .select((dsl::scope, dsl::role))
-            .load::<(Scope, Role)>(&*db.pool.lock())?
-            .into_iter()
-            .collect::<HashSet<_>>();
+        let grants = db
+            .asyncify(move |c| {
+                let grants = dsl::grants
+                    .select((dsl::scope, dsl::role))
+                    .load::<(Scope, Role)>(c)?
+                    .into_iter()
+                    .collect::<HashSet<_>>();
+                Ok::<_, Error>(grants)
+            })
+            .await?;
 
         let auth = Self {
             db,
@@ -100,15 +105,15 @@ impl Auth {
         };
 
         // perform default initialization based on auth.yaml
-        auth.insert_default_grants()?;
+        auth.insert_default_grants().await?;
         Ok(auth)
     }
 
     /// Return all temporary scopes belonging to the specified user.
-    fn temporary_scopes(&self, now: &DateTime<Utc>, principal: RoleOrUser) -> Vec<Scope> {
+    async fn temporary_scopes(&self, now: &DateTime<Utc>, principal: RoleOrUser) -> Vec<Scope> {
         let mut out = Vec::new();
 
-        let grants = self.temporary_grants.read();
+        let grants = self.temporary_grants.read().await;
 
         for grant in grants.iter() {
             if grant.principal == principal && !grant.is_expired(now) {
@@ -120,17 +125,18 @@ impl Auth {
     }
 
     /// Return all temporary scopes belonging to the specified user.
-    pub fn scopes_for_user(&self, user: &str) -> Vec<Scope> {
+    pub async fn scopes_for_user(&self, user: &str) -> Vec<Scope> {
         let now = Utc::now();
         self.temporary_scopes(&now, RoleOrUser::User(user.to_string()))
+            .await
     }
 
     /// Return all temporary scopes belonging to the specified user.
-    pub fn scopes_for_role(&self, needle: Role) -> Vec<Scope> {
+    pub async fn scopes_for_role(&self, needle: Role) -> Vec<Scope> {
         let now = Utc::now();
-        let mut out = self.temporary_scopes(&now, RoleOrUser::Role(needle));
+        let mut out = self.temporary_scopes(&now, RoleOrUser::Role(needle)).await;
 
-        let grants = self.grants.read();
+        let grants = self.grants.read().await;
 
         for (scope, role) in grants.iter() {
             if needle == *role {
@@ -155,14 +161,20 @@ impl Auth {
     }
 
     /// Insert default grants for non-initialized grants.
-    fn insert_default_grants(&self) -> Result<(), Error> {
+    async fn insert_default_grants(&self) -> Result<(), Error> {
         use db::schema::initialized_grants::dsl;
 
-        let grants = dsl::initialized_grants
-            .select((dsl::scope, dsl::version))
-            .load::<(Scope, String)>(&*self.db.pool.lock())?
-            .into_iter()
-            .collect::<HashMap<Scope, String>>();
+        let grants = self
+            .db
+            .asyncify(move |c| {
+                let grants = dsl::initialized_grants
+                    .select((dsl::scope, dsl::version))
+                    .load::<(Scope, String)>(c)?
+                    .into_iter()
+                    .collect::<HashMap<Scope, String>>();
+                Ok::<_, Error>(grants)
+            })
+            .await?;
 
         let mut to_insert = Vec::new();
 
@@ -182,20 +194,32 @@ impl Auth {
 
         for (key, data) in to_insert {
             for allow in &data.allow {
-                self.insert(key, *allow)?;
+                self.insert(key, *allow).await?;
             }
 
-            diesel::insert_into(dsl::initialized_grants)
-                .values((dsl::scope.eq(key), dsl::version.eq(&data.version)))
-                .execute(&*self.db.pool.lock())?;
+            let version = data.version.clone();
+
+            self.db
+                .asyncify(move |c| {
+                    diesel::insert_into(dsl::initialized_grants)
+                        .values((dsl::scope.eq(key), dsl::version.eq(version)))
+                        .execute(c)?;
+                    Ok::<_, Error>(())
+                })
+                .await?;
         }
 
         Ok(())
     }
 
     /// Insert a temporary grant.
-    pub fn insert_temporary(&self, scope: Scope, principal: RoleOrUser, expires_at: DateTime<Utc>) {
-        self.temporary_grants.write().push(TemporaryGrant {
+    pub async fn insert_temporary(
+        &self,
+        scope: Scope,
+        principal: RoleOrUser,
+        expires_at: DateTime<Utc>,
+    ) {
+        self.temporary_grants.write().await.push(TemporaryGrant {
             scope,
             principal,
             expires_at,
@@ -203,38 +227,49 @@ impl Auth {
     }
 
     /// Insert an assignment.
-    pub fn insert(&self, scope: Scope, role: Role) -> Result<(), Error> {
+    pub async fn insert(&self, scope: Scope, role: Role) -> Result<(), Error> {
         use db::schema::grants::dsl;
 
-        diesel::insert_into(dsl::grants)
-            .values((dsl::scope.eq(scope), dsl::role.eq(role)))
-            .execute(&*self.db.pool.lock())?;
+        self.db
+            .asyncify(move |c| {
+                diesel::insert_into(dsl::grants)
+                    .values((dsl::scope.eq(scope), dsl::role.eq(role)))
+                    .execute(c)?;
+                Ok::<_, Error>(())
+            })
+            .await?;
 
-        self.grants.write().insert((scope, role));
+        self.grants.write().await.insert((scope, role));
         Ok(())
     }
 
     /// Delete an assignment.
-    pub fn delete(&self, scope: Scope, role: Role) -> Result<(), Error> {
+    pub async fn delete(&self, scope: Scope, role: Role) -> Result<(), Error> {
         use db::schema::grants::dsl;
 
-        if self.grants.write().remove(&(scope, role)) {
-            let _ =
-                diesel::delete(dsl::grants.filter(dsl::scope.eq(scope).and(dsl::role.eq(role))))
-                    .execute(&*self.db.pool.lock())?;
+        if self.grants.write().await.remove(&(scope, role)) {
+            self.db
+                .asyncify(move |c| {
+                    let _ = diesel::delete(
+                        dsl::grants.filter(dsl::scope.eq(scope).and(dsl::role.eq(role))),
+                    )
+                    .execute(c)?;
+                    Ok::<_, Error>(())
+                })
+                .await?;
         }
 
         Ok(())
     }
 
     /// Test if there are any temporary grants matching the given user or role.
-    fn test_temporary(
+    async fn test_temporary(
         &self,
         now: &DateTime<Utc>,
         scope: Scope,
         against: impl IntoIterator<Item = RoleOrUser>,
     ) -> (bool, bool) {
-        let temporary = self.temporary_grants.read();
+        let temporary = self.temporary_grants.read().await;
 
         if temporary.is_empty() {
             return (false, false);
@@ -263,8 +298,8 @@ impl Auth {
     }
 
     /// Test if the given assignment exists.
-    pub fn test(&self, scope: Scope, user: &str, role: Role) -> bool {
-        if self.grants.read().contains(&(scope, role)) {
+    pub async fn test(&self, scope: Scope, user: &str, role: Role) -> bool {
+        if self.grants.read().await.contains(&(scope, role)) {
             return true;
         }
 
@@ -273,12 +308,13 @@ impl Auth {
         let against = iter::once(RoleOrUser::User(user.to_string()))
             .chain(iter::once(RoleOrUser::Role(role)));
 
-        let (granted, expired) = self.test_temporary(&now, scope, against);
+        let (granted, expired) = self.test_temporary(&now, scope, against).await;
 
         // Delete temporary grants that has expired.
         if expired {
             self.temporary_grants
                 .write()
+                .await
                 .retain(|g| !g.is_expired(&now));
         }
 
@@ -286,7 +322,7 @@ impl Auth {
     }
 
     /// Test if the given assignment exists.
-    pub fn test_any(
+    pub async fn test_any(
         &self,
         scope: Scope,
         user: &str,
@@ -295,7 +331,7 @@ impl Auth {
         let roles = roles.into_iter().collect::<HashSet<_>>();
 
         {
-            let grants = self.grants.read();
+            let grants = self.grants.read().await;
 
             if roles.iter().any(|r| grants.contains(&(scope, *r))) {
                 return true;
@@ -307,12 +343,13 @@ impl Auth {
         let against = iter::once(RoleOrUser::User(user.to_string()))
             .chain(roles.into_iter().map(RoleOrUser::Role));
 
-        let (granted, expired) = self.test_temporary(&now, scope, against);
+        let (granted, expired) = self.test_temporary(&now, scope, against).await;
 
         // Delete temporary grants that has expired.
         if expired {
             self.temporary_grants
                 .write()
+                .await
                 .retain(|g| !g.is_expired(&now));
         }
 
@@ -358,8 +395,8 @@ impl Auth {
     }
 
     /// Get a list of all grants.
-    pub fn list(&self) -> Vec<(Scope, Role)> {
-        self.grants.read().iter().cloned().collect()
+    pub async fn list(&self) -> Vec<(Scope, Role)> {
+        self.grants.read().await.iter().cloned().collect()
     }
 }
 
