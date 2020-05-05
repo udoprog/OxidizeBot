@@ -1130,13 +1130,12 @@ pub async fn setup(
 
     let fallback = Asset::get("index.html");
 
-    let routes =
-        routes.or(warp::get()
-            .and(warp::path::tail())
-            .and_then(move |tail: path::Tail| {
-                let fallback = fallback.clone();
-                async move { serve(tail.as_str(), fallback) }
-            }));
+    let routes = routes.or(warp::get()
+        .and(warp::path::tail())
+        .and_then(move |tail: path::Tail| {
+            let fallback = fallback.clone();
+            async move { serve(tail.as_str(), fallback) }
+        }));
 
     let routes = routes.recover(recover);
     let service = warp::serve(routes);

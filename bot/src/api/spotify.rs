@@ -137,6 +137,33 @@ impl Spotify {
         }
     }
 
+    /// Enqueue the specified track.
+    pub async fn me_player_queue(
+        &self,
+        device_id: Option<String>,
+        track_uri: String,
+    ) -> Result<bool, Error> {
+        let r = self
+            .request(Method::POST, &["me", "player", "queue"])
+            .query_param("uri", &track_uri)
+            .optional_query_param("device_id", device_id)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::ACCEPT, "application/json");
+
+        r.json_map(device_control).await
+    }
+
+    /// Skip to the next song.
+    pub async fn me_player_next(&self, device_id: Option<String>) -> Result<bool, Error> {
+        let r = self
+            .request(Method::POST, &["me", "player", "next"])
+            .optional_query_param("device_id", device_id)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::ACCEPT, "application/json");
+
+        r.json_map(device_control).await
+    }
+
     /// Get my playlists.
     pub async fn my_playlists(&self) -> Result<Page<SimplifiedPlaylist>, Error> {
         let req = self.request(Method::GET, &["me", "playlists"]);

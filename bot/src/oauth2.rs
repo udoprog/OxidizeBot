@@ -10,12 +10,12 @@ use crate::{
     web,
 };
 use anyhow::Error;
-use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::fmt;
 use std::{sync::Arc, time};
 use thiserror::Error;
+use tokio::sync::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 
 /// Connection identifier used for dependency injection.
 #[derive(Debug, Clone, Serialize)]
@@ -66,8 +66,8 @@ impl SyncToken {
     }
 
     /// Set the connection and notify all waiters.
-    pub fn update(&self, update: Connection) {
-        let mut lock = self.inner.write();
+    pub async fn update(&self, update: Connection) {
+        let mut lock = self.inner.write().await;
 
         let InnerSyncToken {
             ref mut connection,
@@ -85,27 +85,27 @@ impl SyncToken {
     }
 
     /// Clear the current connection.
-    pub fn clear(&self) {
-        self.inner.write().connection = None;
+    pub async fn clear(&self) {
+        self.inner.write().await.connection = None;
     }
 
     /// Force a connection refresh.
-    pub fn force_refresh(&self) -> Result<(), Error> {
+    pub async fn force_refresh(&self) -> Result<(), Error> {
         log::warn!("Forcing connection refresh for: {}", self.what);
-        let connection = self.inner.write().connection.take();
+        let connection = self.inner.write().await.connection.take();
         self.force_refresh.unbounded_send(connection)?;
         Ok(())
     }
 
     /// Check if connection is ready.
-    pub fn is_ready(&self) -> bool {
-        self.inner.read().connection.is_some()
+    pub async fn is_ready(&self) -> bool {
+        self.inner.read().await.connection.is_some()
     }
 
     /// Wait until an underlying connection is available.
     pub async fn wait_until_ready(&self) -> Result<(), CancelledToken> {
         let rx = {
-            let mut lock = self.inner.write();
+            let mut lock = self.inner.write().await;
 
             let InnerSyncToken {
                 ref connection,
@@ -132,8 +132,8 @@ impl SyncToken {
     /// Read the synchronized connection.
     ///
     /// This results in an error if there is no connection to read.
-    pub fn read(&self) -> Result<MappedRwLockReadGuard<'_, Token>, MissingTokenError> {
-        match RwLockReadGuard::try_map(self.inner.read(), |i| {
+    pub async fn read(&self) -> Result<MappedRwLockReadGuard<'_, Token>, MissingTokenError> {
+        match RwLockReadGuard::try_map(self.inner.read().await, |i| {
             i.connection.as_ref().map(|c| &c.token)
         }) {
             Ok(guard) => Ok(guard),
@@ -175,7 +175,7 @@ impl ConnectionFactory {
                 self.settings
                     .set_silent("connection", None::<Connection>)
                     .await?;
-                self.sync_token.clear();
+                self.sync_token.clear().await;
 
                 if self.current_hash.is_some() {
                     self.injector.clear_key(&self.key).await;
@@ -188,7 +188,7 @@ impl ConnectionFactory {
                 self.settings
                     .set_silent("connection", Some(&connection))
                     .await?;
-                self.sync_token.update(connection);
+                self.sync_token.update(connection).await;
 
                 if self.current_hash.as_ref() != Some(&meta.hash) {
                     self.injector
@@ -227,7 +227,7 @@ impl ConnectionFactory {
 
         if let Some(connection) = connection {
             let meta = connection.as_meta();
-            self.sync_token.update(connection);
+            self.sync_token.update(connection).await;
 
             if self.current_hash.as_ref() != Some(&meta.hash) {
                 self.injector
@@ -238,7 +238,7 @@ impl ConnectionFactory {
 
             self.server.update_connection(&self.flow_id, meta).await;
         } else {
-            self.sync_token.clear();
+            self.sync_token.clear().await;
 
             if self.current_hash.is_some() {
                 self.injector.clear_key(&self.key).await;
