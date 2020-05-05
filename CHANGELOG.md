@@ -6,7 +6,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/1.0.1...master
+[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/1.0.2...master
+
+## [1.0.2]
+
+### Changed
+- Project now properly builds on Stable Rust.
+- Switch away from [failure] to [anywhow] and [thiserror] for error handling.
+- Commands are now run on separate tasks, leading to better performance and
+  unlocking the ability to write them in a different language in the future.
+- Git version now runs properly. It used to report a User-Agent which caused
+  header parsing to crash since it included a newline ([e2745e]).
+- Bumped the version of _a lot_ of dependencies.
+- Fixed a bug that causes the bot to crash when it's being restarted and
+  improperly using backoff ([c0178f]).
+
+### Added
+- More commands are [now documented (with examples)].
+- Added `player/playback-mode` with support for an alternative, queue-native
+  playback mode ([#66]).
+
+[failure]: https://crates.io/crates/failure
+[anyhow]: https://crates.io/crates/anyhow
+[thiserror]: https://crates.io/crates/thiserror
+[#66]: https://github.com/udoprog/OxidizeBot/pull/66
+[c0178f]: https://github.com/udoprog/OxidizeBot/commit/c0178f8e1bc9019568e23be6c4ce3bc041c96d32
+[e2745e]: https://github.com/udoprog/OxidizeBot/commit/e2745ead5242ff192cdcdfda0939abbf244e1f4b
+[now documented (with examples)]: https://setbac.tv/help
+
+[1.0.2]: https://github.com/udoprog/OxidizeBot/compare/1.0.1...1.0.2
 
 ## [1.0.1]
 
