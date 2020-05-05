@@ -123,8 +123,10 @@ impl command::Handler for Handler {
                     }),
                 ));
 
-                respond!(ctx,
-                    "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.", streamer = ctx.user.streamer().display_name,
+                respond!(
+                    ctx,
+                    "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.",
+                    streamer = ctx.user.streamer().display_name,
                     user = user.display_name(),
                     amount = amount,
                     currency = currency.name

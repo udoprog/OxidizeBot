@@ -193,9 +193,9 @@ impl Commands {
         first: Option<&'a str>,
         it: &'a utils::Words,
     ) -> Option<(Arc<Command>, db::Captures<'a>)> {
-        self.inner
-            .read()
-            .await
+        let inner = self.inner.read().await;
+
+        inner
             .resolve(channel, first, it)
             .map(|(command, captures)| (command.clone(), captures))
     }

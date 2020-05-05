@@ -153,12 +153,13 @@ impl Handler {
                         .unwrap_or_default();
 
                     if balance.balance < min_currency {
-                        respond!(user,
-                                "You don't have enough {currency} to request songs. Need {required}, but you have {balance}, sorry :(",
-                                currency = currency.name,
-                                required = min_currency,
-                                balance = balance.balance,
-                            );
+                        respond!(
+                            user,
+                            "You don't have enough {currency} to request songs. Need {required}, but you have {balance}, sorry :(",
+                            currency = currency.name,
+                            required = min_currency,
+                            balance = balance.balance,
+                        );
 
                         return Ok(());
                     }
@@ -174,6 +175,14 @@ impl Handler {
 
         let (pos, item) = match result {
             Ok((pos, item)) => (pos, item),
+            Err(AddTrackError::UnsupportedPlaybackMode) => {
+                respond!(
+                    user,
+                    "Playback mode not supported for the given track type, sorry :("
+                );
+
+                return Ok(());
+            }
             Err(AddTrackError::PlayerClosed(reason)) => {
                 match reason {
                     Some(reason) => {
@@ -254,9 +263,10 @@ impl Handler {
                 return Ok(());
             }
             Err(AddTrackError::MissingAuth) => {
-                respond!(user,
-                        "Cannot add the given song because the service has not been authenticated by the streamer!",
-                    );
+                respond!(
+                    user,
+                    "Cannot add the given song because the service has not been authenticated by the streamer!",
+                );
 
                 return Ok(());
             }
@@ -268,12 +278,16 @@ impl Handler {
         let currency = match currency.as_ref() {
             Some(currency) if request_reward > 0 => currency,
             _ => {
-                respond!(
-                    user,
-                    "Added {what} at position #{pos}!",
-                    what = item.what(),
-                    pos = pos + 1
-                );
+                if let Some(pos) = pos {
+                    respond!(
+                        user,
+                        "Added {what} at position #{pos}!",
+                        what = item.what(),
+                        pos = pos + 1
+                    );
+                } else {
+                    respond!(user, "Added {what}!", what = item.what());
+                }
 
                 return Ok(());
             }
@@ -284,14 +298,24 @@ impl Handler {
             .await
         {
             Ok(()) => {
-                respond!(
-                    user,
-                    "Added {what} at position #{pos}, here's your {amount} {currency}!",
-                    what = item.what(),
-                    pos = pos + 1,
-                    amount = request_reward,
-                    currency = currency.name,
-                );
+                if let Some(pos) = pos {
+                    respond!(
+                        user,
+                        "Added {what} at position #{pos}, here's your {amount} {currency}!",
+                        what = item.what(),
+                        pos = pos + 1,
+                        amount = request_reward,
+                        currency = currency.name,
+                    );
+                } else {
+                    respond!(
+                        user,
+                        "Added {what}, here's your {amount} {currency}!",
+                        what = item.what(),
+                        amount = request_reward,
+                        currency = currency.name,
+                    );
+                }
             }
             Err(e) => {
                 log_error!(e, "failed to reward user for song request");
@@ -873,12 +897,21 @@ async fn feedback(
                     continue;
                 }
 
-                let message = match item.user.as_ref() {
-                    Some(user) => format!("Now playing: {}, requested by {}.", item.what(), user),
-                    None => format!("Now playing: {}.", item.what(),),
-                };
+                if let Some(item) = item {
+                    let message = match item.user.as_ref() {
+                        Some(user) => {
+                            format!("Now playing: {}, requested by {}.", item.what(), user)
+                        }
+                        None => format!("Now playing: {}.", item.what(),),
+                    };
 
-                sender.privmsg(message).await;
+                    sender.privmsg(message).await;
+                } else {
+                    sender.privmsg("Now playing.").await;
+                }
+            }
+            Event::Skip => {
+                sender.privmsg("Skipping song.").await;
             }
             Event::Pausing => {
                 if !chat_feedback.load().await {

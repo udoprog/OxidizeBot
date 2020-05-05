@@ -198,7 +198,7 @@ impl Global {
                     track_id: None,
                     elapsed: 0,
                     duration: 0,
-                }
+                };
             }
         };
 
@@ -221,7 +221,7 @@ impl Global {
                     is_playing: false,
                     elapsed: 0,
                     duration: 0,
-                })
+                });
             }
         };
 

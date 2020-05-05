@@ -262,6 +262,28 @@ types:
   player/song-file/stopped-template:
     doc: Template to use when the player doesn't have any songs loaded.
     type: {id: text, optional: true}
+  player/playback-mode:
+    doc: >
+      How playback is performed.
+
+      The available modes are:
+        * **Default** - Where the player uses the default method of playback.
+        * **Queue** - The player tries to use the Spotify queue instead of the
+          internal one. This has some limitations documented below.
+
+      **Queue** has the following limitations:
+        * Remote song updates will not be sent.
+        * We will not be able to maintain queue-based request limits, like
+          limiting a user to only be allowed to have a certain number of songs
+          in the queue.
+        * Fallback songs will not be used, instead it will use whatever is in
+          the player queue.
+    type:
+      id: select
+      value: {id: string}
+      options:
+        - {title: "Default", value: "default"}
+        - {title: "Queue (Spotify playback only)", value: "queue"}
   promotions/enabled:
     title: Promotions
     feature: true

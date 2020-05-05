@@ -121,16 +121,37 @@ pub struct ConnectPlayer {
 
 impl ConnectPlayer {
     /// Play the specified song.
-    pub async fn play(&self, elapsed: Duration, id: SpotifyId) -> Result<(), CommandError> {
-        let track_uri = format!("spotify:track:{}", id.to_base62());
+    pub async fn play(
+        &self,
+        id: Option<SpotifyId>,
+        elapsed: Option<Duration>,
+    ) -> Result<(), CommandError> {
+        let track_uri = id.map(|id| format!("spotify:track:{}", id.to_base62()));
+        let elapsed = elapsed.map(|elapsed| elapsed.as_millis() as u64);
         let device_id = self.device.read().await.clone();
 
         let result = self
             .spotify
-            .me_player_play(device_id, Some(track_uri), Some(elapsed.as_millis() as u64))
+            .me_player_play(device_id, track_uri, elapsed)
             .await;
 
         CommandError::handle(result, "play")
+    }
+
+    /// Enqueue the specified song to play next.
+    pub async fn queue(&self, id: SpotifyId) -> Result<(), CommandError> {
+        let track_uri = format!("spotify:track:{}", id.to_base62());
+        let device_id = self.device.read().await.clone();
+
+        let result = self.spotify.me_player_queue(device_id, track_uri).await;
+
+        CommandError::handle(result, "queue")
+    }
+
+    pub async fn next(&self) -> Result<(), CommandError> {
+        let device_id = self.device.read().await.clone();
+        let result = self.spotify.me_player_next(device_id).await;
+        CommandError::handle(result, "skip")
     }
 
     pub async fn pause(&self) -> Result<(), CommandError> {

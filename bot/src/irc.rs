@@ -83,7 +83,7 @@ impl TwitchSetup {
                 match streamer_twitch.user().await {
                     Ok(user) => Ok::<_, Error>(Some(user)),
                     Err(e) => {
-                        streamer_twitch.token.force_refresh()?;
+                        streamer_twitch.token.force_refresh().await?;
                         log_warn!(e, "Failed to get streamer information");
                         Ok(None)
                     }
@@ -94,7 +94,7 @@ impl TwitchSetup {
                 match bot_twitch.user().await {
                     Ok(user) => Ok::<_, Error>(Some(user)),
                     Err(e) => {
-                        bot_twitch.token.force_refresh()?;
+                        bot_twitch.token.force_refresh().await?;
                         log_warn!(e, "Failed to get bot information");
                         Ok(None)
                     }
@@ -226,7 +226,7 @@ impl Irc {
             let chat_channel = format!("#{}", channel.name);
             *global_channel.write().await = Some(chat_channel.clone());
 
-            let access_token = bot_twitch.token.read()?.access_token().to_string();
+            let access_token = bot_twitch.token.read().await?.access_token().to_string();
 
             let irc_client_config = client::data::config::Config {
                 nickname: Some(bot.name.to_string()),
@@ -1108,7 +1108,7 @@ impl<'a> Handler<'a> {
 
                 match tags.msg_id.as_deref() {
                     _ if message == "Login authentication failed" => {
-                        self.token.force_refresh()?;
+                        self.token.force_refresh().await?;
                         self.handler_shutdown = true;
                     }
                     Some("no_mods") => {

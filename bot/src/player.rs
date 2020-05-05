@@ -220,6 +220,10 @@ pub async fn run(
         .or_with(utils::Duration::seconds(1))
         .await?;
 
+    let playback_mode = settings
+        .var("playback-mode", PlaybackMode::default())
+        .await?;
+
     let song_update_interval = if song_update_interval.is_empty() {
         None
     } else {
@@ -253,6 +257,7 @@ pub async fn run(
             song: song.clone(),
             themes: injector.var().await?,
             closed,
+            playback_mode: playback_mode.clone(),
         }),
     };
 
@@ -271,9 +276,9 @@ pub async fn run(
                     &song.track_id,
                     None,
                 )
-                .await?;
+                .await;
 
-                if let Some(item) = item {
+                if let Ok(Some(item)) = item {
                     queue.push_back_queue(Arc::new(item)).await;
                 } else {
                     log::warn!("failed to convert db item: {:?}", song);
@@ -288,6 +293,11 @@ pub async fn run(
             fallback_queue: Default::default(),
         };
 
+        let (playback_mode_stream, playback_mode) = settings
+            .stream("playback-mode")
+            .or_with_else(PlaybackMode::default)
+            .await?;
+
         let playback = PlaybackFuture {
             spotify: spotify.clone(),
             connect_stream,
@@ -298,6 +308,8 @@ pub async fn run(
             mixer,
             state: State::None,
             player: PlayerKind::None,
+            playback_mode,
+            playback_mode_stream,
             detached,
             detached_stream,
             song: song.clone(),
@@ -324,8 +336,11 @@ pub async fn run(
 pub enum Event {
     /// Player is empty.
     Empty,
-    /// Player is playing the given song.
-    Playing(bool, Arc<Item>),
+    /// Player is playing a song. If the song is known, it's provided.
+    Playing(bool, Option<Arc<Item>>),
+    /// The current song was skipped, and we don't know which song is playing
+    /// next.
+    Skip,
     /// Player is pausing.
     Pausing,
     /// queue was modified in some way.
@@ -454,7 +469,7 @@ impl Song {
             })
             .unwrap_or_default();
 
-        when.checked_add(self.elapsed.clone()).unwrap_or_default()
+        when.checked_add(self.elapsed).unwrap_or_default()
     }
 
     /// Remaining time of the current song.
@@ -558,6 +573,8 @@ pub struct PlayerInner {
     themes: injector::Var<Option<db::Themes>>,
     /// Player is closed for more requests.
     closed: injector::Var<Option<Option<Arc<String>>>>,
+    /// The current playback mode.
+    playback_mode: settings::Var<PlaybackMode>,
 }
 
 /// All parts of a Player that can be shared between threads.
@@ -575,7 +592,7 @@ impl Player {
 
     /// Try to sync Spotify playback.
     pub async fn sync_spotify_playback(&self) -> Result<(), Error> {
-        if !self.inner.spotify.token.is_ready() {
+        if !self.inner.spotify.token.is_ready().await {
             return Ok(());
         }
 
@@ -685,7 +702,7 @@ impl Player {
 
     /// Pause playback.
     pub fn pause(&self) -> Result<(), Error> {
-        self.pause_with_source(Source::Manual)
+        self.send(Command::Pause(Source::Manual))
     }
 
     /// Pause playback.
@@ -821,7 +838,27 @@ impl Player {
         track_id: TrackId,
         bypass_constraints: bool,
         max_duration: Option<utils::Duration>,
-    ) -> Result<(usize, Arc<Item>), AddTrackError> {
+    ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
+        match self.inner.playback_mode.load().await {
+            PlaybackMode::Default => {
+                self.default_add_track(user, track_id, bypass_constraints, max_duration)
+                    .await
+            }
+            PlaybackMode::Queue => {
+                self.queue_add_track(user, track_id, bypass_constraints, max_duration)
+                    .await
+            }
+        }
+    }
+
+    /// Default method for adding a track.
+    async fn default_add_track(
+        &self,
+        user: &str,
+        track_id: TrackId,
+        bypass_constraints: bool,
+        max_duration: Option<utils::Duration>,
+    ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
         let (user_count, len) = {
             let queue_inner = self.inner.queue.queue.read().await;
             let len = queue_inner.len();
@@ -917,7 +954,46 @@ impl Player {
             .unbounded_send(Command::Modified(Source::Manual))
             .map_err(|e| AddTrackError::Error(e.into()))?;
 
-        Ok((len, item))
+        Ok((Some(len), item))
+    }
+
+    /// Try to queue up a track.
+    async fn queue_add_track(
+        &self,
+        user: &str,
+        track_id: TrackId,
+        _bypass_constraints: bool,
+        _max_duration: Option<utils::Duration>,
+    ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
+        let item = convert_item(
+            &*self.inner.spotify,
+            &*self.inner.youtube,
+            Some(user),
+            &track_id,
+            None,
+        )
+        .await
+        .map_err(AddTrackError::Error)?;
+
+        let item = match item {
+            Some(item) => item,
+            None => return Err(AddTrackError::MissingAuth),
+        };
+
+        match track_id {
+            TrackId::Spotify(id) => {
+                self.inner
+                    .connect_player
+                    .queue(id)
+                    .await
+                    .map_err(|e| AddTrackError::Error(e.into()))?;
+            }
+            TrackId::YouTube(..) => {
+                return Err(AddTrackError::UnsupportedPlaybackMode);
+            }
+        }
+
+        Ok((None, Arc::new(item)))
     }
 
     /// Remove the first track in the queue.
@@ -1059,6 +1135,8 @@ pub enum AddTrackError {
     Duplicate(DateTime<Utc>, Option<String>, Duration),
     /// Authentication missing for adding the given track.
     MissingAuth,
+    /// Playback mode is not supported for the given track.
+    UnsupportedPlaybackMode,
     /// Other generic error happened.
     Error(Error),
 }
@@ -1296,6 +1374,24 @@ pub enum PlayerKind {
     None,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum PlaybackMode {
+    /// The default playback mode.
+    #[serde(rename = "default")]
+    Default,
+    /// Enqueue the next song instead of playing it.
+    ///
+    /// Only valid for the Spotify player.
+    #[serde(rename = "queue")]
+    Queue,
+}
+
+impl Default for PlaybackMode {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
     Playing,
@@ -1313,10 +1409,17 @@ pub struct PlaybackFuture {
     commands: mpsc::UnboundedReceiver<Command>,
     bus: bus::Bus<Event>,
     mixer: Mixer,
-    /// We are currently playing.
+    /// The current state of the player.
     state: State,
     /// Current player kind.
     player: PlayerKind,
+    /// The mode of the player.
+    ///
+    /// The mode determines if the player is enqueueing songs or immediately
+    /// playing them.
+    playback_mode: PlaybackMode,
+    /// Updated to the current playback mode.
+    playback_mode_stream: settings::Stream<PlaybackMode>,
     /// Player is detached.
     detached: bool,
     /// Stream of settings if the player is detached.
@@ -1338,6 +1441,15 @@ pub struct PlaybackFuture {
 }
 
 impl PlaybackFuture {
+    /// Check if the player is detached.
+    fn is_unmanaged(&self) -> bool {
+        if self.detached {
+            return true;
+        }
+
+        self.playback_mode == PlaybackMode::Queue
+    }
+
     /// Run the playback future.
     pub async fn run(mut self, settings: settings::Settings) -> Result<(), Error> {
         let song_file = settings.scoped("song-file");
@@ -1429,6 +1541,17 @@ impl PlaybackFuture {
                     }
 
                     self.detached = update;
+                }
+                update = self.playback_mode_stream.select_next_some() => {
+                    self.playback_mode = update;
+
+                    match update {
+                        PlaybackMode::Queue => {
+                            self.detach().await?;
+                        }
+                        _ => {
+                        },
+                    }
                 }
                 value = self.song_update_interval_stream.select_next_some() => {
                     self.song_update_interval = match value.is_empty() {
@@ -1669,15 +1792,19 @@ impl PlaybackFuture {
     async fn send_play_command(&mut self, song: Song) {
         match song.item.track_id.clone() {
             TrackId::Spotify(id) => {
-                let result = self.connect_player.play(song.elapsed(), id).await;
+                let result = self
+                    .connect_player
+                    .play(Some(id), Some(song.elapsed()))
+                    .await;
 
                 if let Err(self::connect::CommandError::NoDevice) = result {
                     self.bus.send_sync(Event::NotConfigured);
                 }
             }
-            TrackId::YouTube(id) => self
-                .youtube_player
-                .play(song.elapsed(), song.duration(), id),
+            TrackId::YouTube(id) => {
+                self.youtube_player
+                    .play(song.elapsed(), song.duration(), id);
+            }
         }
     }
 
@@ -1708,7 +1835,7 @@ impl PlaybackFuture {
         if let Source::Manual = source {
             let feedback = self.song_switch_feedback.load().await;
             self.bus
-                .send_sync(Event::Playing(feedback, song.item.clone()));
+                .send_sync(Event::Playing(feedback, Some(song.item.clone())));
         }
 
         self.state = State::Playing;
@@ -1726,7 +1853,7 @@ impl PlaybackFuture {
         if let Source::Manual = source {
             let feedback = self.song_switch_feedback.load().await;
             self.bus
-                .send_sync(Event::Playing(feedback, song.item.clone()));
+                .send_sync(Event::Playing(feedback, Some(song.item.clone())));
         }
 
         self.state = State::Playing;
@@ -1766,6 +1893,112 @@ impl PlaybackFuture {
 
             return Ok(());
         }
+
+        let command = match (command, self.state) {
+            (Toggle(source), State::Paused) | (Toggle(source), State::None) => Play(source),
+            (Toggle(source), State::Playing) => Pause(source),
+            (command, _) => command,
+        };
+
+        match self.playback_mode {
+            PlaybackMode::Default => {
+                self.default_playback_command(command).await?;
+            }
+            PlaybackMode::Queue => {
+                self.queue_playback_command(command).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handle the default playback command.
+    async fn queue_playback_command(&mut self, command: Command) -> Result<(), Error> {
+        use self::Command::*;
+
+        log::trace!(
+            "Processing: Command = {:?}, State = {:?}, Player = {:?}",
+            command,
+            self.state,
+            self.player,
+        );
+
+        match (command, self.state) {
+            (Skip(source), _) => {
+                log::trace!("Skipping song");
+
+                let result = self.connect_player.next().await;
+
+                if let Err(self::connect::CommandError::NoDevice) = result {
+                    self.bus.send_sync(Event::NotConfigured);
+                }
+
+                if let Source::Manual = source {
+                    self.bus.send_sync(Event::Skip);
+                }
+            }
+            // initial pause
+            (Pause(source), State::Playing) => {
+                log::trace!("Pausing player");
+
+                let result = self.connect_player.pause().await;
+
+                if let Err(self::connect::CommandError::NoDevice) = result {
+                    self.bus.send_sync(Event::NotConfigured);
+                }
+
+                if let Source::Manual = source {
+                    self.bus.send_sync(Event::Pausing);
+                }
+
+                self.state = State::Paused;
+            }
+            (Play(source), State::Paused) | (Play(source), State::None) => {
+                log::trace!("Starting player");
+
+                let result = self.connect_player.play(None, None).await;
+
+                if let Err(self::connect::CommandError::NoDevice) = result {
+                    self.bus.send_sync(Event::NotConfigured);
+                }
+
+                if let Source::Manual = source {
+                    let feedback = self.song_switch_feedback.load().await;
+                    self.bus.send_sync(Event::Playing(feedback, None));
+                }
+
+                self.state = State::Playing;
+            }
+            (Sync { .. }, _) => {
+                log::info!("Synchronization not supported with the current playback mode");
+            }
+            // queue was modified in some way
+            (Modified(..), State::Playing) => {
+                log::info!("Song modifications are not supported with the current playback mode");
+            }
+            (Inject(_, item, offset), State::Playing) => match &item.track_id {
+                &TrackId::Spotify(id) => {
+                    let result = self.connect_player.play(Some(id), Some(offset)).await;
+
+                    if let Err(self::connect::CommandError::NoDevice) = result {
+                        self.bus.send_sync(Event::NotConfigured);
+                    }
+
+                    self.state = State::Playing;
+                }
+                _ => {
+                    log::info!("Can't inject playback of a non-spotify song.");
+                }
+            },
+            _ => (),
+        }
+
+        Ok(())
+    }
+
+    /// Handle the default playback command.
+    async fn default_playback_command(&mut self, command: Command) -> Result<(), Error> {
+        use self::Command::*;
 
         log::trace!(
             "Processing: Command = {:?}, State = {:?}, Player = {:?}",
@@ -1902,8 +2135,8 @@ impl PlaybackFuture {
 
     /// We've reached the end of a track.
     async fn end_of_track(&mut self) -> Result<(), Error> {
-        if self.detached {
-            log::warn!("End of track called even though we are detached");
+        if self.is_unmanaged() {
+            log::warn!("End of track called even though we are no longer managing the player");
             return Ok(());
         }
 
@@ -1925,7 +2158,7 @@ impl PlaybackFuture {
 
         if self.detached {
             log::trace!(
-                "Ignoring: IntegrationEvent = {:?}, State = {:?}, Player = {:?}",
+                "Ignoring (Detached): IntegrationEvent = {:?}, State = {:?}, Player = {:?}",
                 e,
                 self.state,
                 self.player,
@@ -1960,9 +2193,10 @@ impl PlaybackFuture {
                     (song.elapsed(), song.duration(), song.item.track_id.clone())
                 };
 
+                // TODO: how do we deal with playback mode on a device transfer?
                 match track_id {
                     TrackId::Spotify(id) => {
-                        let result = self.connect_player.play(elapsed, id).await;
+                        let result = self.connect_player.play(Some(id), Some(elapsed)).await;
 
                         if let Err(self::connect::CommandError::NoDevice) = result {
                             self.bus.send_sync(Event::NotConfigured);
@@ -1997,36 +2231,22 @@ async fn convert_item(
 ) -> Result<Option<Item>, Error> {
     let (track, duration) = match track_id {
         TrackId::Spotify(id) => {
-            if !spotify.token.is_ready() {
+            if !spotify.token.is_ready().await {
                 return Ok(None);
             }
 
             let track_id_string = id.to_base62();
-
-            let track = match spotify.track(track_id_string).await {
-                Ok(track) => track,
-                Err(e) => {
-                    log::warn!("Failed to convert Spotify track: {}: {}", id, e);
-                    return Ok(None);
-                }
-            };
-
+            let track = spotify.track(track_id_string).await?;
             let duration = Duration::from_millis(track.duration_ms.into());
 
             (Track::Spotify { track }, duration)
         }
         TrackId::YouTube(id) => {
-            if !youtube.token.is_ready() {
+            if !youtube.token.is_ready().await {
                 return Ok(None);
             }
 
-            let video = match youtube.videos_by_id(id, "contentDetails,snippet").await {
-                Ok(video) => video,
-                Err(e) => {
-                    log::warn!("Failed to convert YouTube video: {}: {}", id, e);
-                    return Ok(None);
-                }
-            };
+            let video = youtube.videos_by_id(id, "contentDetails,snippet").await?;
 
             let video = match video {
                 Some(video) => video,

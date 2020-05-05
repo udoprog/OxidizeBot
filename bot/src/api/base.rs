@@ -47,7 +47,7 @@ pub struct RequestBuilder {
     url: Url,
     method: Method,
     headers: Vec<(header::HeaderName, String)>,
-    body: Option<Bytes>,
+    body: Bytes,
     /// Use Bearer header instead of OAuth for access tokens.
     use_bearer: bool,
     /// Add the client id to the specified header if configured.
@@ -63,7 +63,7 @@ impl RequestBuilder {
             url,
             method,
             headers: Vec::new(),
-            body: None,
+            body: Bytes::new(),
             use_bearer: true,
             client_id_header: None,
         }
@@ -91,7 +91,7 @@ impl RequestBuilder {
 
     /// Change the body of the request.
     pub fn body(mut self, body: impl Into<Bytes>) -> Self {
-        self.body = Some(body.into());
+        self.body = body.into();
         self
     }
 
@@ -124,7 +124,13 @@ impl RequestBuilder {
     where
         T: serde::de::DeserializeOwned,
     {
-        let Response { status, body, .. } = self.execute().await?;
+        let Response {
+            method,
+            url,
+            status,
+            body,
+            ..
+        } = self.execute().await?;
 
         if let Some(output) = m(status, &body)? {
             return Ok(output);
@@ -132,49 +138,43 @@ impl RequestBuilder {
 
         let body = String::from_utf8_lossy(body.as_ref());
 
-        bail!(
-            "Bad response: {}: {}: {}: {}",
-            self.method,
-            self.url,
-            status,
-            body
-        );
+        bail!("Bad response: {}: {}: {}: {}", method, url, status, body);
     }
 
     /// Execute the request.
-    pub async fn execute(&self) -> Result<Response<'_, Bytes>, Error> {
+    pub async fn execute(self) -> Result<Response<Bytes>, Error> {
         // NB: scope to only lock the token over the request setup.
-        let req = {
-            log::trace!("Request: {}: {}", self.method, self.url);
-            let mut req = self.client.request(self.method.clone(), self.url.clone());
+        log::trace!("Request: {}: {}", self.method, self.url);
+        let mut req = self.client.request(self.method.clone(), self.url.clone());
 
-            if let Some(body) = self.body.as_ref() {
-                req = req.body(body.clone());
-            }
-
-            for (key, value) in &self.headers {
-                req = req.header(key.clone(), value.clone());
-            }
-
-            if let Some(token) = self.token.as_ref() {
-                let token = token.read()?;
-                let access_token = token.access_token().to_string();
-
-                if self.use_bearer {
-                    req = req.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
-                } else {
-                    req = req.header(header::AUTHORIZATION, format!("OAuth {}", access_token));
-                }
-
-                if let Some(client_id_header) = self.client_id_header {
-                    req = req.header(client_id_header, token.client_id())
-                }
-            }
-
-            req = req.header(header::USER_AGENT, USER_AGENT);
-
-            req
+        req = match &self.method {
+            &Method::GET => req,
+            &Method::HEAD => req,
+            _ => req
+                .header(header::CONTENT_LENGTH, self.body.len())
+                .body(self.body.clone()),
         };
+
+        for (key, value) in &self.headers {
+            req = req.header(key.clone(), value.clone());
+        }
+
+        if let Some(token) = self.token.as_ref() {
+            let token = token.read().await?;
+            let access_token = token.access_token().to_string();
+
+            if self.use_bearer {
+                req = req.header(header::AUTHORIZATION, format!("Bearer {}", access_token));
+            } else {
+                req = req.header(header::AUTHORIZATION, format!("OAuth {}", access_token));
+            }
+
+            if let Some(client_id_header) = self.client_id_header {
+                req = req.header(client_id_header, token.client_id())
+            }
+        }
+
+        req = req.header(header::USER_AGENT, USER_AGENT);
 
         let res = req.send().await.map_err(SendRequestError)?;
         let status = res.status();
@@ -193,27 +193,27 @@ impl RequestBuilder {
 
         if let Some(token) = self.token.as_ref() {
             if status == StatusCode::UNAUTHORIZED {
-                token.force_refresh()?;
+                token.force_refresh().await?;
             }
         }
 
         Ok(Response {
-            method: &self.method,
-            url: &self.url,
+            method: self.method,
+            url: self.url,
             status,
             body,
         })
     }
 }
 
-pub struct Response<'a, B> {
-    method: &'a Method,
-    url: &'a Url,
+pub struct Response<B> {
+    method: Method,
+    url: Url,
     status: StatusCode,
     body: B,
 }
 
-impl Response<'_, Bytes> {
+impl Response<Bytes> {
     /// Expect a successful response.
     pub fn ok(self) -> Result<(), Error> {
         if self.status.is_success() {
@@ -264,7 +264,7 @@ impl Response<'_, Bytes> {
     }
 }
 
-impl Response<'_, Option<Bytes>> {
+impl Response<Option<Bytes>> {
     /// Expect a JSON response of the given type.
     pub fn json<T>(self) -> Result<Option<T>, Error>
     where
@@ -324,12 +324,12 @@ impl Response<'_, Option<Bytes>> {
     }
 }
 
-impl<'a, B> Response<'a, B>
+impl<B> Response<B>
 where
     B: BodyHelper,
 {
     /// Handle as empty if we encounter the given status code.
-    pub fn empty_on_status(self, status: StatusCode) -> Response<'a, Option<B::Value>> {
+    pub fn empty_on_status(self, status: StatusCode) -> Response<Option<B::Value>> {
         let body = if self.status == status {
             None
         } else {
@@ -345,7 +345,7 @@ where
     }
 
     /// Test if the underlying status is not found.
-    pub fn not_found(self) -> Response<'a, Option<B::Value>> {
+    pub fn not_found(self) -> Response<Option<B::Value>> {
         self.empty_on_status(StatusCode::NOT_FOUND)
     }
 }

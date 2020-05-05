@@ -262,10 +262,12 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
         Ok::<_, Error>(())
     };
 
-    let thread = thread::spawn(move || match futures::executor::block_on(window_loop) {
-        Ok(()) => (),
-        Err(e) => {
-            log_error!(e, "Windows system tray errored");
+    let thread = thread::spawn(move || {
+        match futures::executor::block_on(window_loop) {
+            Ok(()) => (),
+            Err(e) => {
+                log_error!(e, "Windows system tray errored");
+            }
         }
     });
 
