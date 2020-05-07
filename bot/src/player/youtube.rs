@@ -3,7 +3,7 @@ use anyhow::Error;
 use std::{sync::Arc, time::Duration};
 
 /// Setup a player.
-pub async fn setup(
+pub(super) async fn setup(
     bus: Arc<bus::Bus<bus::YouTube>>,
     settings: Settings,
 ) -> Result<(YouTubePlayer, impl Future<Output = Result<(), Error>>), anyhow::Error> {
@@ -44,7 +44,7 @@ pub async fn setup(
 }
 
 #[derive(Clone)]
-pub struct YouTubePlayer {
+pub(super) struct YouTubePlayer {
     bus: Arc<bus::Bus<bus::YouTube>>,
     settings: Settings,
     volume: injector::Var<u32>,
@@ -52,7 +52,7 @@ pub struct YouTubePlayer {
 
 impl YouTubePlayer {
     /// Update playback information.
-    pub fn tick(&self, elapsed: Duration, duration: Duration, video_id: String) {
+    pub(super) fn tick(&self, elapsed: Duration, duration: Duration, video_id: String) {
         let event = bus::YouTubeEvent::Play {
             video_id,
             elapsed: elapsed.as_secs(),
@@ -62,7 +62,7 @@ impl YouTubePlayer {
         self.bus.send(bus::YouTube::YouTubeCurrent { event });
     }
 
-    pub fn play(&self, elapsed: Duration, duration: Duration, video_id: String) {
+    pub(super) fn play(&self, elapsed: Duration, duration: Duration, video_id: String) {
         let event = bus::YouTubeEvent::Play {
             video_id,
             elapsed: elapsed.as_secs(),
@@ -72,17 +72,17 @@ impl YouTubePlayer {
         self.bus.send(bus::YouTube::YouTubeCurrent { event });
     }
 
-    pub fn pause(&self) {
+    pub(super) fn pause(&self) {
         let event = bus::YouTubeEvent::Pause;
         self.bus.send(bus::YouTube::YouTubeCurrent { event });
     }
 
-    pub fn stop(&self) {
+    pub(super) fn stop(&self) {
         let event = bus::YouTubeEvent::Stop;
         self.bus.send(bus::YouTube::YouTubeCurrent { event });
     }
 
-    pub async fn volume(&self, modify: player::ModifyVolume) -> Result<u32, Error> {
+    pub(super) async fn volume(&self, modify: player::ModifyVolume) -> Result<u32, Error> {
         let mut volume = self.volume.write().await;
         let update = modify.apply(*volume);
         *volume = update;
@@ -90,7 +90,7 @@ impl YouTubePlayer {
         Ok(update)
     }
 
-    pub async fn current_volume(&self) -> u32 {
+    pub(super) async fn current_volume(&self) -> u32 {
         self.volume.load().await
     }
 

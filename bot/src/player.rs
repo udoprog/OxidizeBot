@@ -1,37 +1,51 @@
 use crate::{
-    api, bus, db, injector, settings,
-    song_file::{SongFile, SongFileBuilder},
-    spotify_id::SpotifyId,
-    template::Template,
-    track_id::TrackId,
-    utils::{self, PtDuration},
-    Uri,
+    api, bus, db, injector, prelude::*, settings, spotify_id::SpotifyId, track_id::TrackId, utils,
 };
 
-use anyhow::{anyhow, bail, Error};
-use chrono::{DateTime, Utc};
-use futures::{channel::mpsc, prelude::*};
-use futures_option::OptionExt as _;
-use std::{
-    collections::VecDeque,
-    future::Future,
-    sync::Arc,
-    time::{Duration, Instant},
+pub(self) use self::{
+    connect::{ConnectDevice, ConnectError, ConnectPlayer, ConnectStream},
+    mixer::Mixer,
+    playback_future::PlaybackFuture,
+    queue::Queue,
+    youtube::YouTubePlayer,
 };
+pub use self::{item::Item, song::Song, track::Track};
+use anyhow::{anyhow, bail, Result};
+use chrono::{DateTime, Utc};
+use futures::channel::mpsc;
+use std::{future::Future, sync::Arc, time::Duration};
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
 
 mod connect;
+mod item;
+mod mixer;
+mod playback_future;
+mod queue;
+mod song;
+mod track;
 mod youtube;
 
-static DEFAULT_CURRENT_SONG_TEMPLATE: &str = "Song: {{name}}{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})\n{{#if user~}}Request by: @{{user~}}{{/if}}";
-static DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE: &str = "Not Playing";
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum State {
+    Playing,
+    Paused,
+    // initial undefined state.
+    None,
+}
 
 /// Event used by player integrations.
 #[derive(Debug)]
 pub enum IntegrationEvent {
     /// Indicate that the current device changed.
     DeviceChanged,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayerKind {
+    Spotify,
+    YouTube,
+    None,
 }
 
 /// The source of action.
@@ -43,81 +57,21 @@ pub enum Source {
     Manual,
 }
 
-/// Information on a single track.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-#[serde(tag = "type")]
-pub enum Track {
-    #[serde(rename = "spotify")]
-    Spotify { track: api::spotify::FullTrack },
-    #[serde(rename = "youtube")]
-    YouTube { video: api::youtube::Video },
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(self) enum PlaybackMode {
+    /// The default playback mode.
+    #[serde(rename = "default")]
+    Default,
+    /// Enqueue the next song instead of playing it.
+    ///
+    /// Only valid for the Spotify player.
+    #[serde(rename = "queue")]
+    Queue,
 }
 
-impl Track {
-    /// Get artists involved as a string.
-    pub fn artists(&self) -> Option<String> {
-        match *self {
-            Track::Spotify { ref track } => utils::human_artists(&track.artists),
-            Track::YouTube { ref video } => {
-                video.snippet.as_ref().and_then(|s| s.channel_title.clone())
-            }
-        }
-    }
-
-    /// Get name of the track.
-    pub fn name(&self) -> String {
-        match *self {
-            Track::Spotify { ref track } => track.name.to_string(),
-            Track::YouTube { ref video } => video
-                .snippet
-                .as_ref()
-                .map(|s| s.title.as_str())
-                .unwrap_or("no name")
-                .to_string(),
-        }
-    }
-
-    /// Convert into JSON.
-    /// TODO: this is a hack to avoid breaking web API.
-    pub fn to_json(&self) -> Result<serde_json::Value, Error> {
-        let json = match *self {
-            Track::Spotify { ref track } => serde_json::to_value(&track)?,
-            Track::YouTube { ref video } => serde_json::to_value(&video)?,
-        };
-
-        Ok(json)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Item {
-    pub track_id: TrackId,
-    pub track: Track,
-    pub user: Option<String>,
-    pub duration: Duration,
-}
-
-impl Item {
-    /// Human readable version of playback item.
-    pub fn what(&self) -> String {
-        match self.track {
-            Track::Spotify { ref track } => {
-                if let Some(artists) = utils::human_artists(&track.artists) {
-                    format!("\"{}\" by {}", track.name, artists)
-                } else {
-                    format!("\"{}\"", track.name)
-                }
-            }
-            Track::YouTube { ref video } => match video.snippet.as_ref() {
-                Some(snippet) => match snippet.channel_title.as_ref() {
-                    Some(channel_title) => {
-                        format!("\"{}\" from \"{}\"", snippet.title, channel_title)
-                    }
-                    None => format!("\"{}\"", snippet.title),
-                },
-                None => String::from("*Some YouTube Video*"),
-            },
-        }
+impl Default for PlaybackMode {
+    fn default() -> Self {
+        Self::Default
     }
 }
 
@@ -130,7 +84,7 @@ pub enum ModifyVolume {
 
 impl ModifyVolume {
     /// Apply the given modification.
-    pub fn apply(self, v: u32) -> u32 {
+    pub(self) fn apply(self, v: u32) -> u32 {
         use self::ModifyVolume::*;
 
         let v = match self {
@@ -144,7 +98,7 @@ impl ModifyVolume {
 }
 
 #[derive(Debug)]
-pub enum Command {
+pub(self) enum Command {
     /// Skip the current song.
     Skip(Source),
     /// Toggle playback.
@@ -163,7 +117,7 @@ pub enum Command {
 
 impl Command {
     /// Get the source of a command.
-    pub fn source(&self) -> Source {
+    pub(self) fn source(&self) -> Source {
         use self::Command::*;
 
         match *self {
@@ -178,6 +132,64 @@ impl Command {
     }
 }
 
+/// Converts a track into an Item.
+///
+/// Returns `None` if the service required to convert the item is not
+/// authenticated.
+async fn convert_item(
+    spotify: &api::Spotify,
+    youtube: &api::YouTube,
+    user: Option<&str>,
+    track_id: &TrackId,
+    duration_override: Option<Duration>,
+) -> Result<Option<Item>> {
+    let (track, duration) = match track_id {
+        TrackId::Spotify(id) => {
+            if !spotify.token.is_ready().await {
+                return Ok(None);
+            }
+
+            let track_id_string = id.to_base62();
+            let track = spotify.track(track_id_string).await?;
+            let duration = Duration::from_millis(track.duration_ms.into());
+
+            (Track::Spotify { track }, duration)
+        }
+        TrackId::YouTube(id) => {
+            if !youtube.token.is_ready().await {
+                return Ok(None);
+            }
+
+            let video = youtube.videos_by_id(id, "contentDetails,snippet").await?;
+
+            let video = match video {
+                Some(video) => video,
+                None => bail!("no video found for id `{}`", id),
+            };
+
+            let content_details = video
+                .content_details
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("video does not have content details"))?;
+
+            let duration = str::parse::<utils::PtDuration>(&content_details.duration)?;
+            (Track::YouTube { video }, duration.into_std())
+        }
+    };
+
+    let duration = match duration_override {
+        Some(duration) => duration,
+        None => duration,
+    };
+
+    Ok(Some(Item {
+        track_id: track_id.clone(),
+        track,
+        user: user.map(|user| user.to_string()),
+        duration,
+    }))
+}
+
 /// Run the player.
 pub async fn run(
     injector: &injector::Injector,
@@ -187,13 +199,13 @@ pub async fn run(
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     settings: settings::Settings,
-) -> Result<(Player, impl Future<Output = Result<(), Error>>), Error> {
+) -> Result<(Player, impl Future<Output = Result<()>>)> {
     let settings = settings.scoped("player");
 
     let mut futures = utils::Futures::default();
 
     let (connect_stream, connect_player, device, future) =
-        connect::setup(spotify.clone(), settings.scoped("spotify")).await?;
+        self::connect::setup(spotify.clone(), settings.scoped("spotify")).await?;
 
     futures.push(
         future
@@ -201,7 +213,8 @@ pub async fn run(
             .boxed(),
     );
 
-    let (youtube_player, future) = youtube::setup(youtube_bus, settings.scoped("youtube")).await?;
+    let (youtube_player, future) =
+        self::youtube::setup(youtube_bus, settings.scoped("youtube")).await?;
 
     futures.push(
         future
@@ -286,12 +299,7 @@ pub async fn run(
             }
         }
 
-        let mixer = Mixer {
-            queue,
-            sidelined: Default::default(),
-            fallback_items: Default::default(),
-            fallback_queue: Default::default(),
-        };
+        let mixer = Mixer::new(queue);
 
         let (playback_mode_stream, playback_mode) = settings
             .stream("playback-mode")
@@ -351,215 +359,12 @@ pub enum Event {
     Detached,
 }
 
-/// Information on current song.
-#[derive(Debug, Clone)]
-pub struct Song {
-    pub item: Arc<Item>,
-    /// Since the last time it was unpaused, what was the initial elapsed duration.
-    elapsed: Duration,
-    /// When the current song started playing.
-    started_at: Option<Instant>,
-}
-
-impl Song {
-    /// Create a new current song.
-    pub fn new(item: Arc<Item>, elapsed: Duration) -> Self {
-        Song {
-            item,
-            elapsed,
-            started_at: None,
-        }
-    }
-
-    /// Test if the two songs reference roughly the same song.
-    pub fn is_same(&self, song: &Song) -> bool {
-        if self.item.track_id != song.item.track_id {
-            return false;
-        }
-
-        let a = self.elapsed();
-        let b = song.elapsed();
-        let diff = if a > b { a - b } else { b - a };
-
-        if diff.as_secs() > 5 {
-            return false;
-        }
-
-        true
-    }
-
-    /// Convert a playback information into a Song struct.
-    pub fn from_playback(playback: &api::spotify::FullPlayingContext) -> Option<Self> {
-        let progress_ms = playback.progress_ms.unwrap_or_default();
-
-        let track = match playback.item.clone() {
-            Some(track) => track,
-            _ => {
-                log::warn!("No playback item in current playback");
-                return None;
-            }
-        };
-
-        let track_id = match &track.id {
-            Some(track_id) => track_id,
-            None => {
-                log::warn!("Current playback doesn't have a track id");
-                return None;
-            }
-        };
-
-        let track_id = match SpotifyId::from_base62(&track_id) {
-            Ok(spotify_id) => TrackId::Spotify(spotify_id),
-            Err(e) => {
-                log::warn!(
-                    "Failed to parse track id from current playback: {}: {}",
-                    track_id,
-                    e
-                );
-                return None;
-            }
-        };
-
-        let elapsed = Duration::from_millis(progress_ms as u64);
-        let duration = Duration::from_millis(track.duration_ms.into());
-
-        let item = Arc::new(Item {
-            track_id,
-            track: Track::Spotify { track },
-            user: None,
-            duration,
-        });
-
-        let mut song = Song::new(item, elapsed);
-
-        if playback.is_playing {
-            song.play();
-        } else {
-            song.pause();
-        }
-
-        Some(song)
-    }
-
-    /// Get the deadline for when this song will end, assuming it is currently playing.
-    pub fn deadline(&self) -> Instant {
-        Instant::now() + self.remaining()
-    }
-
-    /// Duration of the current song.
-    pub fn duration(&self) -> Duration {
-        self.item.duration
-    }
-
-    /// Elapsed time on current song.
-    ///
-    /// Elapsed need to take started at into account.
-    pub fn elapsed(&self) -> Duration {
-        let when = self
-            .started_at
-            .as_ref()
-            .and_then(|started_at| {
-                let now = Instant::now();
-
-                if now > *started_at {
-                    Some(now - *started_at)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
-
-        when.checked_add(self.elapsed).unwrap_or_default()
-    }
-
-    /// Remaining time of the current song.
-    pub fn remaining(&self) -> Duration {
-        self.item
-            .duration
-            .checked_sub(self.elapsed())
-            .unwrap_or_default()
-    }
-
-    /// Get serializable data for this item.
-    pub fn data(&self, state: State) -> Result<CurrentData<'_>, Error> {
-        let artists = self.item.track.artists();
-
-        Ok(CurrentData {
-            paused: state != State::Playing,
-            track_id: &self.item.track_id,
-            name: self.item.track.name(),
-            artists,
-            user: self.item.user.as_deref(),
-            duration: utils::digital_duration(&self.item.duration),
-            elapsed: utils::digital_duration(&self.elapsed()),
-        })
-    }
-
-    /// Check if the song is currently playing.
-    pub fn state(&self) -> State {
-        if self.started_at.is_some() {
-            State::Playing
-        } else {
-            State::Paused
-        }
-    }
-
-    /// Get the player kind for the current song.
-    pub fn player(&self) -> PlayerKind {
-        match self.item.track_id {
-            TrackId::Spotify(..) => PlayerKind::Spotify,
-            TrackId::YouTube(..) => PlayerKind::YouTube,
-        }
-    }
-
-    /// Set the started_at time to now.
-    /// For safety, update the current `elapsed` time based on any prior `started_at`.
-    pub fn play(&mut self) {
-        let duration = self.take_started_at();
-        self.elapsed += duration;
-        self.started_at = Some(Instant::now());
-    }
-
-    /// Update the elapsed time based on when this song was started.
-    pub fn pause(&mut self) {
-        let duration = self.take_started_at();
-        self.elapsed += duration;
-    }
-
-    /// Take the current started_at as a duration and leave it as None.
-    fn take_started_at(&mut self) -> Duration {
-        let started_at = match self.started_at.take() {
-            Some(started_at) => started_at,
-            None => return Default::default(),
-        };
-
-        let now = Instant::now();
-
-        if now < started_at {
-            return Default::default();
-        }
-
-        now - started_at
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct CurrentData<'a> {
-    paused: bool,
-    track_id: &'a TrackId,
-    name: String,
-    artists: Option<String>,
-    user: Option<&'a str>,
-    duration: String,
-    elapsed: String,
-}
-
 /// Internal of the player.
 pub struct PlayerInner {
-    device: self::connect::ConnectDevice,
+    device: ConnectDevice,
     queue: Queue,
-    connect_player: self::connect::ConnectPlayer,
-    youtube_player: self::youtube::YouTubePlayer,
+    connect_player: ConnectPlayer,
+    youtube_player: YouTubePlayer,
     max_queue_length: settings::Var<u32>,
     max_songs_per_user: settings::Var<u32>,
     duplicate_duration: settings::Var<utils::Duration>,
@@ -591,7 +396,7 @@ impl Player {
     }
 
     /// Try to sync Spotify playback.
-    pub async fn sync_spotify_playback(&self) -> Result<(), Error> {
+    pub async fn sync_spotify_playback(&self) -> Result<()> {
         if !self.inner.spotify.token.is_ready().await {
             return Ok(());
         }
@@ -629,7 +434,7 @@ impl Player {
     }
 
     /// Synchronize playback with the given song.
-    fn play_sync(&self, song: Song) -> Result<(), Error> {
+    fn play_sync(&self, song: Song) -> Result<()> {
         self.send(Command::Sync { song })
     }
 
@@ -639,24 +444,24 @@ impl Player {
     }
 
     /// List all available devices.
-    pub async fn list_devices(&self) -> Result<Vec<api::spotify::Device>, Error> {
+    pub async fn list_devices(&self) -> Result<Vec<api::spotify::Device>> {
         self.inner.device.list_devices().await
     }
 
     /// External call to set device.
     ///
     /// Should always notify the player to change.
-    pub async fn set_device(&self, device: String) -> Result<(), Error> {
+    pub async fn set_device(&self, device: String) -> Result<()> {
         self.inner.device.set_device(Some(device)).await
     }
 
     /// Clear the current device.
-    pub async fn clear_device(&self) -> Result<(), Error> {
+    pub async fn clear_device(&self) -> Result<()> {
         self.inner.device.set_device(None).await
     }
 
     /// Send the given command.
-    fn send(&self, command: Command) -> Result<(), Error> {
+    fn send(&self, command: Command) -> Result<()> {
         self.inner
             .commands_tx
             .unbounded_send(command)
@@ -676,11 +481,7 @@ impl Player {
     }
 
     /// Promote the given song to the head of the queue.
-    pub async fn promote_song(
-        &self,
-        user: Option<&str>,
-        n: usize,
-    ) -> Result<Option<Arc<Item>>, Error> {
+    pub async fn promote_song(&self, user: Option<&str>, n: usize) -> Result<Option<Arc<Item>>> {
         let promoted = self.inner.queue.promote_song(user, n).await?;
 
         if promoted.is_some() {
@@ -691,32 +492,32 @@ impl Player {
     }
 
     /// Toggle playback.
-    pub fn toggle(&self) -> Result<(), Error> {
+    pub fn toggle(&self) -> Result<()> {
         self.send(Command::Toggle(Source::Manual))
     }
 
     /// Start playback.
-    pub fn play(&self) -> Result<(), Error> {
+    pub fn play(&self) -> Result<()> {
         self.send(Command::Play(Source::Manual))
     }
 
     /// Pause playback.
-    pub fn pause(&self) -> Result<(), Error> {
+    pub fn pause(&self) -> Result<()> {
         self.send(Command::Pause(Source::Manual))
     }
 
     /// Pause playback.
-    pub fn pause_with_source(&self, source: Source) -> Result<(), Error> {
+    pub fn pause_with_source(&self, source: Source) -> Result<()> {
         self.send(Command::Pause(source))
     }
 
     /// Skip the current song.
-    pub fn skip(&self) -> Result<(), Error> {
+    pub fn skip(&self) -> Result<()> {
         self.send(Command::Skip(Source::Manual))
     }
 
     /// Update volume of the player.
-    pub async fn volume(&self, modify: ModifyVolume) -> Result<Option<u32>, Error> {
+    pub async fn volume(&self, modify: ModifyVolume) -> Result<Option<u32>> {
         let track_id = match &*self.inner.song.read().await {
             Some(song) => song.item.track_id.clone(),
             None => {
@@ -726,7 +527,7 @@ impl Player {
 
         match track_id {
             TrackId::Spotify(..) => match self.inner.connect_player.volume(modify).await {
-                Err(self::connect::CommandError::NoDevice) => {
+                Err(ConnectError::NoDevice) => {
                     self.inner.bus.send_sync(Event::NotConfigured);
                     Ok(None)
                 }
@@ -758,7 +559,7 @@ impl Player {
     }
 
     /// Search for a track.
-    pub async fn search_track(&self, q: &str) -> Result<Option<TrackId>, Error> {
+    pub async fn search_track(&self, q: &str) -> Result<Option<TrackId>> {
         if q.starts_with("youtube:") {
             let q = q.trim_start_matches("youtube:");
             let results = self.inner.youtube.search(q).await?;
@@ -997,11 +798,11 @@ impl Player {
     }
 
     /// Remove the first track in the queue.
-    pub fn remove_first(&self) -> Result<Option<Arc<Item>>, Error> {
+    pub fn remove_first(&self) -> Result<Option<Arc<Item>>> {
         Ok(None)
     }
 
-    pub async fn purge(&self) -> Result<Vec<Arc<Item>>, Error> {
+    pub async fn purge(&self) -> Result<Vec<Arc<Item>>> {
         let purged = self.inner.queue.purge().await?;
 
         if !purged.is_empty() {
@@ -1012,7 +813,7 @@ impl Player {
     }
 
     /// Remove the item at the given position.
-    pub async fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, Error> {
+    pub async fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>> {
         let removed = self.inner.queue.remove_at(n).await?;
 
         if removed.is_some() {
@@ -1023,7 +824,7 @@ impl Player {
     }
 
     /// Remove the first track in the queue.
-    pub async fn remove_last(&self) -> Result<Option<Arc<Item>>, Error> {
+    pub async fn remove_last(&self) -> Result<Option<Arc<Item>>> {
         let removed = self.inner.queue.remove_last().await?;
 
         if removed.is_some() {
@@ -1034,7 +835,7 @@ impl Player {
     }
 
     /// Remove the last track by the given user.
-    pub async fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, Error> {
+    pub async fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>> {
         let removed = self.inner.queue.remove_last_by_user(user).await?;
 
         if removed.is_some() {
@@ -1118,7 +919,7 @@ pub enum PlayThemeError {
     /// Authentication missing to play the given theme.
     MissingAuth,
     /// Other generic error happened.
-    Error(Error),
+    Error(anyhow::Error),
 }
 
 /// Error raised when trying to add track.
@@ -1138,1140 +939,5 @@ pub enum AddTrackError {
     /// Playback mode is not supported for the given track.
     UnsupportedPlaybackMode,
     /// Other generic error happened.
-    Error(Error),
-}
-
-/// The playback queue.
-#[derive(Clone)]
-struct Queue {
-    db: db::Database,
-    queue: settings::Var<VecDeque<Arc<Item>>>,
-}
-
-impl Queue {
-    /// Construct a new queue.
-    pub fn new(db: db::Database) -> Self {
-        Self {
-            db,
-            queue: settings::Var::new(Default::default()),
-        }
-    }
-
-    /// Check ifa song has been queued within the specified period of time.
-    pub async fn last_song_within(
-        &self,
-        track_id: &TrackId,
-        duration: utils::Duration,
-    ) -> Result<Option<db::models::Song>, Error> {
-        self.db.player_last_song_within(track_id, duration).await
-    }
-
-    /// Get the front of the queue.
-    pub async fn front(&self) -> Option<Arc<Item>> {
-        self.queue.read().await.front().cloned()
-    }
-
-    /// Pop the front of the queue.
-    pub async fn pop_front(&self) -> Result<Option<Arc<Item>>, Error> {
-        let db = self.db.clone();
-        // NB: hold the lock over the database modification.
-        let mut queue = self.queue.write().await;
-
-        if let Some(item) = queue.pop_front() {
-            db.player_remove_song(&item.track_id).await?;
-            Ok(Some(item))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Push item to back of queue.
-    pub async fn push_back(&self, item: Arc<Item>) -> Result<(), Error> {
-        // NB: hold the lock over the database modification.
-        let mut queue = self.queue.write().await;
-
-        self.db
-            .player_push_back(&db::models::AddSong {
-                track_id: item.track_id.clone(),
-                added_at: Utc::now().naive_utc(),
-                user: item.user.clone(),
-            })
-            .await?;
-
-        queue.push_back(item);
-        Ok(())
-    }
-
-    /// Purge the song queue.
-    pub async fn purge(&self) -> Result<Vec<Arc<Item>>, Error> {
-        let mut q = self.queue.write().await;
-
-        if q.is_empty() {
-            return Ok(vec![]);
-        }
-
-        let purged = std::mem::replace(&mut *q, VecDeque::new())
-            .into_iter()
-            .collect();
-
-        self.db.player_song_purge().await?;
-        Ok(purged)
-    }
-
-    /// Remove the item at the given position.
-    pub async fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>, Error> {
-        let mut q = self.queue.write().await;
-
-        if q.is_empty() {
-            return Ok(None);
-        }
-
-        if let Some(item) = q.remove(n) {
-            self.db.player_remove_song(&item.track_id).await?;
-            return Ok(Some(item));
-        }
-
-        Ok(None)
-    }
-
-    /// Remove the last element.
-    pub async fn remove_last(&self) -> Result<Option<Arc<Item>>, Error> {
-        let mut q = self.queue.write().await;
-
-        if q.is_empty() {
-            return Ok(None);
-        }
-
-        if let Some(item) = q.pop_back() {
-            self.db.player_remove_song(&item.track_id).await?;
-            return Ok(Some(item));
-        }
-
-        Ok(None)
-    }
-
-    /// Remove the last element by user.
-    pub async fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>, Error> {
-        let mut q = self.queue.write().await;
-
-        if q.is_empty() {
-            return Ok(None);
-        }
-
-        if let Some(position) = q
-            .iter()
-            .rposition(|i| i.user.as_ref().map(|u| u == user).unwrap_or_default())
-        {
-            if let Some(item) = q.remove(position) {
-                self.db.player_remove_song(&item.track_id).await?;
-                return Ok(Some(item));
-            }
-        }
-
-        Ok(None)
-    }
-
-    /// Promote the given song.
-    pub async fn promote_song(
-        &self,
-        user: Option<&str>,
-        n: usize,
-    ) -> Result<Option<Arc<Item>>, Error> {
-        let mut q = self.queue.write().await;
-
-        // OK, but song doesn't exist or index is out of bound.
-        if q.is_empty() || n >= q.len() {
-            return Ok(None);
-        }
-
-        if let Some(removed) = q.remove(n) {
-            q.push_front(removed);
-        }
-
-        if let Some(item) = q.get(0).cloned() {
-            self.db.player_promote_song(user, &item.track_id).await?;
-            return Ok(Some(item));
-        }
-
-        Ok(None)
-    }
-
-    /// Push item to back of queue without going through the database.
-    async fn push_back_queue(&self, item: Arc<Item>) {
-        self.queue.write().await.push_back(item);
-    }
-}
-
-/// Mixer decides what song to play next.
-pub struct Mixer {
-    /// Persistent queue to take songs from.
-    queue: Queue,
-    /// A song that has been sidelined by another song.
-    sidelined: VecDeque<Song>,
-    /// Currently loaded fallback items.
-    fallback_items: Vec<Arc<Item>>,
-    /// Items ordered in the reverse way they are meant to be played.
-    fallback_queue: VecDeque<Arc<Item>>,
-}
-
-impl Mixer {
-    /// The minimum size of the fallback queue.
-    const FALLBACK_QUEUE_SIZE: usize = 10;
-    /// Get next song to play.
-    ///
-    /// Will shuffle all fallback items and add them to a queue to avoid playing the same song twice.
-    fn next_fallback_item(&mut self) -> Option<Song> {
-        use rand::seq::SliceRandom;
-
-        if self.fallback_items.is_empty() {
-            return None;
-        }
-
-        let mut rng = rand::thread_rng();
-
-        while self.fallback_queue.len() < Self::FALLBACK_QUEUE_SIZE {
-            let mut extension = self.fallback_items.clone();
-            extension.shuffle(&mut rng);
-            self.fallback_queue.extend(extension);
-        }
-
-        let item = self.fallback_queue.pop_front()?;
-        Some(Song::new(item, Default::default()))
-    }
-
-    /// Get the next song that should be played.
-    ///
-    /// This takes into account:
-    /// If there are any songs to be injected (e.g. theme songs).
-    /// If there are any songs that have been sidelines by injected songs.
-    /// If there are any songs in the queue.
-    ///
-    /// Finally, if there are any songs to fall back to.
-    async fn next_song(&mut self) -> Result<Option<Song>, Error> {
-        if let Some(song) = self.sidelined.pop_front() {
-            return Ok(Some(song));
-        }
-
-        // Take next from queue.
-        if let Some(item) = self.queue.front().await {
-            let _ = self.queue.pop_front().await?;
-            return Ok(Some(Song::new(item, Default::default())));
-        }
-
-        if self.fallback_items.is_empty() {
-            log::warn!("there are no fallback songs available");
-            return Ok(None);
-        }
-
-        Ok(self.next_fallback_item())
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlayerKind {
-    Spotify,
-    YouTube,
-    None,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum PlaybackMode {
-    /// The default playback mode.
-    #[serde(rename = "default")]
-    Default,
-    /// Enqueue the next song instead of playing it.
-    ///
-    /// Only valid for the Spotify player.
-    #[serde(rename = "queue")]
-    Queue,
-}
-
-impl Default for PlaybackMode {
-    fn default() -> Self {
-        Self::Default
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum State {
-    Playing,
-    Paused,
-    // initial undefined state.
-    None,
-}
-
-/// Future associated with driving audio playback.
-pub struct PlaybackFuture {
-    spotify: Arc<api::Spotify>,
-    connect_stream: self::connect::ConnectStream,
-    connect_player: self::connect::ConnectPlayer,
-    youtube_player: self::youtube::YouTubePlayer,
-    commands: mpsc::UnboundedReceiver<Command>,
-    bus: bus::Bus<Event>,
-    mixer: Mixer,
-    /// The current state of the player.
-    state: State,
-    /// Current player kind.
-    player: PlayerKind,
-    /// The mode of the player.
-    ///
-    /// The mode determines if the player is enqueueing songs or immediately
-    /// playing them.
-    playback_mode: PlaybackMode,
-    /// Updated to the current playback mode.
-    playback_mode_stream: settings::Stream<PlaybackMode>,
-    /// Player is detached.
-    detached: bool,
-    /// Stream of settings if the player is detached.
-    detached_stream: settings::Stream<bool>,
-    /// Song that is currently loaded.
-    song: injector::Var<Option<Song>>,
-    /// Path to write current song.
-    song_file: Option<SongFile>,
-    /// Song config.
-    song_switch_feedback: settings::Var<bool>,
-    /// Optional stream indicating that we want to send a song update on the global bus.
-    song_update_interval: Option<tokio::time::Interval>,
-    /// Stream for when song update interval is updated.
-    song_update_interval_stream: settings::Stream<utils::Duration>,
-    /// Notifier to use when sending song updates.
-    global_bus: Arc<bus::Bus<bus::Global>>,
-    /// Timeout for end of song.
-    timeout: Option<tokio::time::Delay>,
-}
-
-impl PlaybackFuture {
-    /// Check if the player is detached.
-    fn is_unmanaged(&self) -> bool {
-        if self.detached {
-            return true;
-        }
-
-        self.playback_mode == PlaybackMode::Queue
-    }
-
-    /// Run the playback future.
-    pub async fn run(mut self, settings: settings::Settings) -> Result<(), Error> {
-        let song_file = settings.scoped("song-file");
-
-        let (mut path_stream, path) = song_file.stream("path").optional().await?;
-
-        let (mut template_stream, template) = song_file
-            .stream("template")
-            .or(Some(Template::compile(DEFAULT_CURRENT_SONG_TEMPLATE)?))
-            .optional()
-            .await?;
-
-        let (mut stopped_template_stream, stopped_template) = song_file
-            .stream("stopped-template")
-            .or(Some(Template::compile(
-                DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE,
-            )?))
-            .optional()
-            .await?;
-
-        let (mut update_interval_stream, update_interval) = song_file
-            .stream("update-interval")
-            .or_with(utils::Duration::seconds(1))
-            .await?;
-
-        let (mut enabled_stream, enabled) = song_file.stream("enabled").or_default().await?;
-
-        // TODO: Remove fallback-uri migration next major release.
-        if let Some(fallback_uri) = settings.get::<String>("fallback-uri").await? {
-            if str::parse::<Uri>(&fallback_uri).is_err() {
-                if let Ok(id) = SpotifyId::from_base62(&fallback_uri) {
-                    settings
-                        .set("fallback-uri", Uri::SpotifyPlaylist(id))
-                        .await?;
-                }
-            }
-        }
-
-        let (mut fallback_stream, fallback) = settings.stream("fallback-uri").optional().await?;
-        self.update_fallback_items(fallback.clone()).await;
-
-        let mut song_file = SongFileBuilder::default();
-        song_file.enabled = enabled;
-        song_file.path = path;
-        song_file.template = template;
-        song_file.stopped_template = stopped_template;
-        song_file.update_interval = update_interval;
-        song_file.init(&mut self.song_file);
-
-        loop {
-            let mut song_file_update = self.song_file.as_mut().map(|u| &mut u.update_interval);
-
-            futures::select! {
-                fallback = fallback_stream.select_next_some() => {
-                    self.update_fallback_items(fallback).await;
-                }
-                /* current song */
-                update = enabled_stream.select_next_some() => {
-                    song_file.enabled = update;
-                    song_file.init(&mut self.song_file);
-                }
-                update = path_stream.select_next_some() => {
-                    song_file.path = update;
-                    song_file.init(&mut self.song_file);
-                }
-                update = template_stream.select_next_some() => {
-                    song_file.template = update;
-                    song_file.init(&mut self.song_file);
-                }
-                update = stopped_template_stream.select_next_some() => {
-                    song_file.stopped_template = update;
-                    song_file.init(&mut self.song_file);
-                }
-                update = update_interval_stream.select_next_some() => {
-                    song_file.update_interval = update;
-                    song_file.init(&mut self.song_file);
-                }
-                _ = song_file_update.select_next_some() => {
-                    let song = self.song.read().await;
-                    self.update_song_file(song.as_ref());
-                }
-                /* player */
-                _ = self.timeout.current() => {
-                    self.end_of_track().await?;
-                }
-                update = self.detached_stream.select_next_some() => {
-                    if update {
-                        self.detach().await?;
-                    }
-
-                    self.detached = update;
-                }
-                update = self.playback_mode_stream.select_next_some() => {
-                    self.playback_mode = update;
-
-                    match update {
-                        PlaybackMode::Queue => {
-                            self.detach().await?;
-                        }
-                        _ => {
-                        },
-                    }
-                }
-                value = self.song_update_interval_stream.select_next_some() => {
-                    self.song_update_interval = match value.is_empty() {
-                        true => None,
-                        false => Some(tokio::time::interval(value.as_std())),
-                    };
-                }
-                _ = self.song_update_interval.select_next_some() => {
-                    let song = self.song.read().await;
-
-                    if let State::Playing = self.state {
-                        self.global_bus
-                            .send(bus::Global::song_progress(song.as_ref()));
-
-                        if let Some(song) = song.as_ref() {
-                            if let TrackId::YouTube(ref id) = song.item.track_id {
-                                self.youtube_player.tick(song.elapsed(), song.duration(), id.to_string());
-                            }
-                        }
-                    }
-                }
-                event = self.connect_stream.select_next_some() => {
-                    self.handle_player_event(event?).await?;
-                }
-                command = self.commands.select_next_some() => {
-                    self.command(command).await?;
-                }
-            }
-        }
-    }
-
-    /// Update fallback items based on an URI.
-    async fn update_fallback_items(&mut self, uri: Option<Uri>) {
-        let result = match uri.as_ref() {
-            Some(uri) => {
-                let id = match uri {
-                    Uri::SpotifyPlaylist(id) => id,
-                    uri => {
-                        log::warn!("Bad fallback URI `{}`, expected Spotify Playlist", uri);
-                        return;
-                    }
-                };
-
-                let result = Self::playlist_to_items(&self.spotify, id.to_string()).await;
-
-                match result {
-                    Ok((name, items)) => Ok((Some(name), items)),
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to load playlist `{}`, \
-                             falling back to library: {}",
-                            uri,
-                            e
-                        );
-                        Self::songs_to_items(&self.spotify)
-                            .await
-                            .map(|items| (None, items))
-                    }
-                }
-            }
-            None => Self::songs_to_items(&self.spotify)
-                .await
-                .map(|items| (None, items)),
-        };
-
-        let (what, items) = match result {
-            Ok(result) => result,
-            Err(e) => {
-                log_error!(e, "Failed to configure fallback items");
-                return;
-            }
-        };
-
-        let what = what
-            .as_ref()
-            .map(|u| format!("\"{}\" playlist", u))
-            .unwrap_or_else(|| String::from("your library"));
-
-        log::info!(
-            "Updated fallback queue with {} items from {}.",
-            items.len(),
-            what
-        );
-
-        self.mixer.fallback_items = items;
-        self.mixer.fallback_queue.clear();
-    }
-
-    /// Convert a playlist into items.
-    async fn playlist_to_items(
-        spotify: &Arc<api::Spotify>,
-        playlist: String,
-    ) -> Result<(String, Vec<Arc<Item>>), Error> {
-        let mut items = Vec::new();
-
-        let playlist = spotify.playlist(playlist).await?;
-        let name = playlist.name.to_string();
-
-        for playlist_track in spotify.page_as_stream(playlist.tracks).try_concat().await? {
-            let track = playlist_track.track;
-
-            let track_id = match &track.id {
-                Some(track_id) => track_id,
-                None => {
-                    continue;
-                }
-            };
-
-            let track_id = TrackId::Spotify(
-                SpotifyId::from_base62(&track_id)
-                    .map_err(|_| anyhow!("bad spotify id: {}", track_id))?,
-            );
-
-            let duration = Duration::from_millis(track.duration_ms.into());
-
-            items.push(Arc::new(Item {
-                track_id,
-                track: Track::Spotify { track },
-                user: None,
-                duration,
-            }));
-        }
-
-        Ok((name, items))
-    }
-
-    /// Convert all songs of a user into items.
-    async fn songs_to_items(spotify: &Arc<api::Spotify>) -> Result<Vec<Arc<Item>>, Error> {
-        let mut items = Vec::new();
-
-        for added_song in spotify.my_tracks_stream().try_concat().await? {
-            let track = added_song.track;
-
-            let track_id = match &track.id {
-                Some(track_id) => track_id,
-                None => {
-                    continue;
-                }
-            };
-
-            let track_id = TrackId::Spotify(
-                SpotifyId::from_base62(&track_id)
-                    .map_err(|_| anyhow!("bad spotify id: {}", track_id))?,
-            );
-
-            let duration = Duration::from_millis(track.duration_ms.into());
-
-            items.push(Arc::new(Item {
-                track_id,
-                track: Track::Spotify { track },
-                user: None,
-                duration,
-            }));
-        }
-
-        Ok(items)
-    }
-
-    /// Notify a change in the current song.
-    fn notify_song_change(&self, song: Option<&Song>) -> Result<(), Error> {
-        self.global_bus.send(bus::Global::song(song)?);
-        self.global_bus.send(bus::Global::SongModified);
-        self.update_song_file(song);
-        Ok(())
-    }
-
-    /// Write the current song.
-    async fn write_song(&self, song: Option<Song>) -> Result<(), Error> {
-        *self.song.write().await = song;
-        Ok(())
-    }
-
-    /// Write current song. Log any errors.
-    ///
-    /// MUST NOT be called when self.song is locked.
-    fn update_song_file(&self, song: Option<&Song>) {
-        let current_song = match self.song_file.as_ref() {
-            Some(current_song) => current_song,
-            None => return,
-        };
-
-        let result = match song {
-            Some(song) => current_song.write(song, self.state),
-            None => current_song.blank(),
-        };
-
-        if let Err(e) = result {
-            log::warn!(
-                "failed to write current song: {}: {}",
-                current_song.path.display(),
-                e
-            );
-        }
-    }
-
-    /// Switch the current player and send the appropriate play commands.
-    async fn switch_current_player(&mut self, player: PlayerKind) {
-        use self::PlayerKind::*;
-
-        match (self.player, player) {
-            (Spotify, Spotify) => (),
-            (YouTube, YouTube) => (),
-            (Spotify, _) | (None, YouTube) => {
-                let result = self.connect_player.stop().await;
-
-                if let Err(self::connect::CommandError::NoDevice) = result {
-                    self.bus.send_sync(Event::NotConfigured);
-                }
-            }
-            (YouTube, _) | (None, Spotify) => self.youtube_player.stop(),
-            (None, None) => (),
-        }
-
-        self.player = player;
-    }
-
-    /// Send a pause command to the appropriate player.
-    async fn send_pause_command(&mut self) {
-        match self.player {
-            PlayerKind::Spotify => {
-                log::trace!("pausing spotify player");
-
-                let result = self.connect_player.pause().await;
-
-                if let Err(self::connect::CommandError::NoDevice) = result {
-                    self.bus.send_sync(Event::NotConfigured);
-                }
-            }
-            PlayerKind::YouTube => {
-                log::trace!("pausing youtube player");
-                self.youtube_player.pause();
-            }
-            _ => (),
-        }
-    }
-
-    /// Play the given song.
-    async fn send_play_command(&mut self, song: Song) {
-        match song.item.track_id.clone() {
-            TrackId::Spotify(id) => {
-                let result = self
-                    .connect_player
-                    .play(Some(id), Some(song.elapsed()))
-                    .await;
-
-                if let Err(self::connect::CommandError::NoDevice) = result {
-                    self.bus.send_sync(Event::NotConfigured);
-                }
-            }
-            TrackId::YouTube(id) => {
-                self.youtube_player
-                    .play(song.elapsed(), song.duration(), id);
-            }
-        }
-    }
-
-    /// Switch the player to the specified song without changing its state.
-    async fn switch_to_song(&mut self, mut song: Option<Song>) -> Result<(), Error> {
-        if let Some(song) = song.as_mut() {
-            song.pause();
-            self.switch_current_player(song.player()).await;
-        } else {
-            self.switch_current_player(PlayerKind::None).await;
-        }
-
-        self.write_song(song).await?;
-        Ok(())
-    }
-
-    /// Switch current song to the specified song.
-    async fn play_song(&mut self, source: Source, mut song: Song) -> Result<(), Error> {
-        song.play();
-
-        self.timeout = Some(tokio::time::delay_until(song.deadline().into()));
-
-        self.send_play_command(song.clone()).await;
-        self.switch_current_player(song.player()).await;
-        self.write_song(Some(song.clone())).await?;
-        self.notify_song_change(Some(&song))?;
-
-        if let Source::Manual = source {
-            let feedback = self.song_switch_feedback.load().await;
-            self.bus
-                .send_sync(Event::Playing(feedback, Some(song.item.clone())));
-        }
-
-        self.state = State::Playing;
-        Ok(())
-    }
-
-    /// Resume playing a specific song.
-    async fn resume_song(&mut self, source: Source, song: Song) -> Result<(), Error> {
-        self.timeout = Some(tokio::time::delay_until(song.deadline().into()));
-
-        self.send_play_command(song.clone()).await;
-        self.switch_current_player(song.player()).await;
-        self.notify_song_change(Some(&song))?;
-
-        if let Source::Manual = source {
-            let feedback = self.song_switch_feedback.load().await;
-            self.bus
-                .send_sync(Event::Playing(feedback, Some(song.item.clone())));
-        }
-
-        self.state = State::Playing;
-        Ok(())
-    }
-
-    /// Detach the player.
-    async fn detach(&mut self) -> Result<(), Error> {
-        // store the currently playing song in the sidelined slot.
-        if let Some(mut song) = self.song.write().await.take() {
-            song.pause();
-            self.mixer.sidelined.push_back(song);
-        }
-
-        self.write_song(None).await?;
-        self.player = PlayerKind::None;
-        self.state = State::None;
-        self.timeout = None;
-        Ok(())
-    }
-
-    /// Handle incoming command.
-    async fn command(&mut self, command: Command) -> Result<(), Error> {
-        use self::Command::*;
-
-        if self.detached {
-            log::trace!(
-                "Ignoring: Command = {:?}, State = {:?}, Player = {:?}",
-                command,
-                self.state,
-                self.player,
-            );
-
-            if let Source::Manual = command.source() {
-                self.bus.send_sync(Event::Detached);
-            }
-
-            return Ok(());
-        }
-
-        let command = match (command, self.state) {
-            (Toggle(source), State::Paused) | (Toggle(source), State::None) => Play(source),
-            (Toggle(source), State::Playing) => Pause(source),
-            (command, _) => command,
-        };
-
-        match self.playback_mode {
-            PlaybackMode::Default => {
-                self.default_playback_command(command).await?;
-            }
-            PlaybackMode::Queue => {
-                self.queue_playback_command(command).await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Handle the default playback command.
-    async fn queue_playback_command(&mut self, command: Command) -> Result<(), Error> {
-        use self::Command::*;
-
-        log::trace!(
-            "Processing: Command = {:?}, State = {:?}, Player = {:?}",
-            command,
-            self.state,
-            self.player,
-        );
-
-        match (command, self.state) {
-            (Skip(source), _) => {
-                log::trace!("Skipping song");
-
-                let result = self.connect_player.next().await;
-
-                if let Err(self::connect::CommandError::NoDevice) = result {
-                    self.bus.send_sync(Event::NotConfigured);
-                }
-
-                if let Source::Manual = source {
-                    self.bus.send_sync(Event::Skip);
-                }
-            }
-            // initial pause
-            (Pause(source), State::Playing) => {
-                log::trace!("Pausing player");
-
-                let result = self.connect_player.pause().await;
-
-                if let Err(self::connect::CommandError::NoDevice) = result {
-                    self.bus.send_sync(Event::NotConfigured);
-                }
-
-                if let Source::Manual = source {
-                    self.bus.send_sync(Event::Pausing);
-                }
-
-                self.state = State::Paused;
-            }
-            (Play(source), State::Paused) | (Play(source), State::None) => {
-                log::trace!("Starting player");
-
-                let result = self.connect_player.play(None, None).await;
-
-                if let Err(self::connect::CommandError::NoDevice) = result {
-                    self.bus.send_sync(Event::NotConfigured);
-                }
-
-                if let Source::Manual = source {
-                    let feedback = self.song_switch_feedback.load().await;
-                    self.bus.send_sync(Event::Playing(feedback, None));
-                }
-
-                self.state = State::Playing;
-            }
-            (Sync { .. }, _) => {
-                log::info!("Synchronization not supported with the current playback mode");
-            }
-            // queue was modified in some way
-            (Modified(..), State::Playing) => {
-                log::info!("Song modifications are not supported with the current playback mode");
-            }
-            (Inject(_, item, offset), State::Playing) => match &item.track_id {
-                &TrackId::Spotify(id) => {
-                    let result = self.connect_player.play(Some(id), Some(offset)).await;
-
-                    if let Err(self::connect::CommandError::NoDevice) = result {
-                        self.bus.send_sync(Event::NotConfigured);
-                    }
-
-                    self.state = State::Playing;
-                }
-                _ => {
-                    log::info!("Can't inject playback of a non-spotify song.");
-                }
-            },
-            _ => (),
-        }
-
-        Ok(())
-    }
-
-    /// Handle the default playback command.
-    async fn default_playback_command(&mut self, command: Command) -> Result<(), Error> {
-        use self::Command::*;
-
-        log::trace!(
-            "Processing: Command = {:?}, State = {:?}, Player = {:?}",
-            command,
-            self.state,
-            self.player,
-        );
-
-        let command = match (command, self.state) {
-            (Toggle(source), State::Paused) | (Toggle(source), State::None) => Play(source),
-            (Toggle(source), State::Playing) => Pause(source),
-            (command, _) => command,
-        };
-
-        match (command, self.state) {
-            (Skip(source), _) => {
-                log::trace!("Skipping song");
-
-                let song = self.mixer.next_song().await?;
-
-                match (song, self.state) {
-                    (Some(song), State::Playing) => {
-                        self.play_song(source, song).await?;
-                    }
-                    (Some(song), _) => {
-                        self.switch_to_song(Some(song.clone())).await?;
-                        self.notify_song_change(Some(&song))?;
-                    }
-                    (None, _) => {
-                        if let Source::Manual = source {
-                            self.bus.send_sync(Event::Empty);
-                        }
-
-                        self.switch_to_song(None).await?;
-                        self.notify_song_change(None)?;
-                        self.state = State::Paused;
-                    }
-                }
-            }
-            // initial pause
-            (Pause(source), State::Playing) => {
-                log::trace!("Pausing player");
-
-                self.send_pause_command().await;
-                self.timeout = None;
-                self.state = State::Paused;
-
-                let mut song = self.song.write().await;
-
-                if let Some(song) = song.as_mut() {
-                    song.pause();
-                }
-
-                if let Source::Manual = source {
-                    self.bus.send_sync(Event::Pausing);
-                }
-
-                self.notify_song_change(song.as_ref())?;
-            }
-            (Play(source), State::Paused) | (Play(source), State::None) => {
-                log::trace!("Starting player");
-
-                let song = {
-                    match self.song.write().await.as_mut() {
-                        Some(song) => {
-                            song.play();
-                            Some(song.clone())
-                        }
-                        None => None,
-                    }
-                };
-
-                // resume an existing song
-                if let Some(song) = song {
-                    self.resume_song(source, song.clone()).await?;
-                    return Ok(());
-                }
-
-                // play the next song in queue.
-                if let Some(song) = self.mixer.next_song().await? {
-                    self.play_song(source, song).await?;
-                } else {
-                    if let Source::Manual = source {
-                        self.bus.send_sync(Event::Empty);
-                    }
-
-                    self.write_song(None).await?;
-                    self.state = State::Paused;
-                }
-            }
-            (Sync { song }, _) => {
-                log::trace!("Synchronize the state of the player with the given song");
-
-                self.switch_current_player(song.player()).await;
-
-                self.state = song.state();
-
-                if let State::Playing = self.state {
-                    self.timeout = Some(tokio::time::delay_until(song.deadline().into()));
-                } else {
-                    self.timeout = None;
-                }
-
-                self.notify_song_change(Some(&song))?;
-                self.write_song(Some(song)).await?;
-            }
-            // queue was modified in some way
-            (Modified(source), State::Playing) => {
-                if self.song.read().await.is_none() {
-                    if let Some(song) = self.mixer.next_song().await? {
-                        self.play_song(source, song).await?;
-                    }
-                }
-
-                self.global_bus.send(bus::Global::SongModified);
-                self.bus.send_sync(Event::Modified);
-            }
-            (Inject(source, item, offset), State::Playing) => {
-                {
-                    // store the currently playing song in the sidelined slot.
-                    if let Some(mut song) = self.song.write().await.take() {
-                        song.pause();
-                        self.mixer.sidelined.push_back(song);
-                    }
-                }
-
-                self.play_song(source, Song::new(item, offset)).await?;
-            }
-            _ => (),
-        }
-
-        Ok(())
-    }
-
-    /// We've reached the end of a track.
-    async fn end_of_track(&mut self) -> Result<(), Error> {
-        if self.is_unmanaged() {
-            log::warn!("End of track called even though we are no longer managing the player");
-            return Ok(());
-        }
-
-        log::trace!("Song ended, loading next song...");
-
-        if let Some(song) = self.mixer.next_song().await? {
-            self.play_song(Source::Manual, song).await?;
-        } else {
-            self.bus.send_sync(Event::Empty);
-            self.notify_song_change(None)?;
-        }
-
-        Ok(())
-    }
-
-    /// Handle an event from the connect integration.
-    async fn handle_player_event(&mut self, e: IntegrationEvent) -> Result<(), Error> {
-        use self::IntegrationEvent::*;
-
-        if self.detached {
-            log::trace!(
-                "Ignoring (Detached): IntegrationEvent = {:?}, State = {:?}, Player = {:?}",
-                e,
-                self.state,
-                self.player,
-            );
-
-            return Ok(());
-        }
-
-        log::trace!(
-            "Processing: IntegrationEvent = {:?}, State = {:?}, Player = {:?}",
-            e,
-            self.state,
-            self.player,
-        );
-
-        match e {
-            DeviceChanged => {
-                if self.state != State::Playing {
-                    return Ok(());
-                }
-
-                let (elapsed, duration, track_id) = {
-                    let mut song = self.song.write().await;
-
-                    let song = match song.as_mut() {
-                        Some(song) => song,
-                        None => return Ok(()),
-                    };
-
-                    // pause so that it can get unpaused later.
-                    song.pause();
-                    (song.elapsed(), song.duration(), song.item.track_id.clone())
-                };
-
-                // TODO: how do we deal with playback mode on a device transfer?
-                match track_id {
-                    TrackId::Spotify(id) => {
-                        let result = self.connect_player.play(Some(id), Some(elapsed)).await;
-
-                        if let Err(self::connect::CommandError::NoDevice) = result {
-                            self.bus.send_sync(Event::NotConfigured);
-                        }
-
-                        self.switch_current_player(PlayerKind::Spotify).await;
-                        self.state = State::Playing;
-                    }
-                    TrackId::YouTube(id) => {
-                        self.youtube_player.play(elapsed, duration, id);
-                        self.switch_current_player(PlayerKind::YouTube).await;
-                        self.state = State::Playing;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
-/// Converts a track into an Item.
-///
-/// Returns `None` if the service required to convert the item is not
-/// authenticated.
-async fn convert_item(
-    spotify: &api::Spotify,
-    youtube: &api::YouTube,
-    user: Option<&str>,
-    track_id: &TrackId,
-    duration_override: Option<Duration>,
-) -> Result<Option<Item>, Error> {
-    let (track, duration) = match track_id {
-        TrackId::Spotify(id) => {
-            if !spotify.token.is_ready().await {
-                return Ok(None);
-            }
-
-            let track_id_string = id.to_base62();
-            let track = spotify.track(track_id_string).await?;
-            let duration = Duration::from_millis(track.duration_ms.into());
-
-            (Track::Spotify { track }, duration)
-        }
-        TrackId::YouTube(id) => {
-            if !youtube.token.is_ready().await {
-                return Ok(None);
-            }
-
-            let video = youtube.videos_by_id(id, "contentDetails,snippet").await?;
-
-            let video = match video {
-                Some(video) => video,
-                None => bail!("no video found for id `{}`", id),
-            };
-
-            let content_details = video
-                .content_details
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("video does not have content details"))?;
-
-            let duration = str::parse::<PtDuration>(&content_details.duration)?;
-            (Track::YouTube { video }, duration.into_std())
-        }
-    };
-
-    let duration = match duration_override {
-        Some(duration) => duration,
-        None => duration,
-    };
-
-    Ok(Some(Item {
-        track_id: track_id.clone(),
-        track,
-        user: user.map(|user| user.to_string()),
-        duration,
-    }))
+    Error(anyhow::Error),
 }
