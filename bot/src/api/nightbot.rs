@@ -1,6 +1,10 @@
 //! nightbot.tv API helpers.
 
-use crate::{api::base::RequestBuilder, oauth2};
+use crate::{
+    api::base::RequestBuilder,
+    injector::{Injector, Provider},
+    oauth2,
+};
 use anyhow::Error;
 use reqwest::{header, Client, Method, Url};
 
@@ -14,6 +18,19 @@ pub enum RequestError {
 impl From<Error> for RequestError {
     fn from(value: Error) -> Self {
         RequestError::Other(value)
+    }
+}
+
+#[derive(Provider)]
+#[provider(build = "Builder::build", output = "NightBot")]
+struct Builder {
+    #[dependency(tag = "oauth2::TokenId::NightBot")]
+    token: oauth2::SyncToken,
+}
+
+impl Builder {
+    pub async fn build(self) -> Option<NightBot> {
+        NightBot::new(self.token).ok()
     }
 }
 
@@ -33,6 +50,12 @@ impl NightBot {
             api_url: str::parse(NIGHTBOT_URL_V1)?,
             token,
         })
+    }
+
+    /// Run the stream that updates the nightbot client.
+    pub async fn run(injector: Injector) -> Result<(), Error> {
+        Builder::run(&injector).await?;
+        Ok(())
     }
 
     /// Get request against API.

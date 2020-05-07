@@ -3,7 +3,7 @@
 use crate::{
     api::base::RequestBuilder,
     bus,
-    injector::Injector,
+    injector::{Injector, Key},
     oauth2,
     player::{self, Player},
     prelude::*,
@@ -116,7 +116,7 @@ fn parse_url(url: &str) -> Option<Url> {
 }
 
 struct RemoteBuilder {
-    token: oauth2::SyncToken,
+    streamer_token: Option<oauth2::SyncToken>,
     injector: Injector,
     global_bus: Arc<bus::Bus<bus::Global>>,
     player: Option<Player>,
@@ -141,8 +141,11 @@ impl RemoteBuilder {
 
         remote.setbac = match self.api_url.as_ref() {
             Some(api_url) => {
-                let setbac =
-                    Setbac::new(self.token.clone(), self.secret_key.clone(), api_url.clone());
+                let setbac = Setbac::new(
+                    self.streamer_token.clone(),
+                    self.secret_key.clone(),
+                    api_url.clone(),
+                );
 
                 self.injector.update(setbac.clone()).await;
                 Some(setbac)
@@ -166,7 +169,6 @@ struct Remote {
 pub async fn run(
     settings: &Settings,
     injector: &Injector,
-    token: oauth2::SyncToken,
     global_bus: Arc<bus::Bus<bus::Global>>,
 ) -> Result<impl Future<Output = Result<(), Error>>, Error> {
     let settings = settings.scoped("remote");
@@ -180,19 +182,22 @@ pub async fn run(
     let (mut secret_key_stream, secret_key) = settings.stream("secret-key").optional().await?;
     let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(false).await?;
     let (mut player_stream, player) = injector.stream::<Player>().await;
+    let (mut streamer_token_stream, streamer_token) = injector
+        .stream_key(Key::<oauth2::SyncToken>::tagged(
+            oauth2::TokenId::TwitchStreamer,
+        )?)
+        .await;
 
     let mut remote_builder = RemoteBuilder {
-        token,
+        streamer_token,
         injector: injector.clone(),
         global_bus,
-        player: None,
-        enabled: false,
+        player,
+        enabled,
         api_url: None,
         secret_key,
     };
 
-    remote_builder.enabled = enabled;
-    remote_builder.player = player;
     remote_builder.api_url = match api_url.and_then(|s| parse_url(&s)) {
         Some(api_url) => Some(api_url),
         None => None,
@@ -204,6 +209,10 @@ pub async fn run(
     Ok(async move {
         loop {
             futures::select! {
+                update = streamer_token_stream.select_next_some() => {
+                    remote_builder.streamer_token = update;
+                    remote_builder.init(&mut remote).await;
+                }
                 update = secret_key_stream.select_next_some() => {
                     remote_builder.secret_key = update;
                     remote_builder.init(&mut remote).await;
@@ -263,7 +272,7 @@ pub async fn run(
 pub struct Inner {
     client: Client,
     api_url: Url,
-    token: oauth2::SyncToken,
+    streamer_token: Option<oauth2::SyncToken>,
     secret_key: Option<String>,
 }
 
@@ -275,12 +284,16 @@ pub struct Setbac {
 
 impl Setbac {
     /// Create a new API integration.
-    pub fn new(token: oauth2::SyncToken, secret_key: Option<String>, api_url: Url) -> Self {
+    pub fn new(
+        streamer_token: Option<oauth2::SyncToken>,
+        secret_key: Option<String>,
+        api_url: Url,
+    ) -> Self {
         Setbac {
             inner: Arc::new(Inner {
                 client: Client::new(),
                 api_url,
-                token,
+                streamer_token,
                 secret_key,
             }),
         }
@@ -295,8 +308,8 @@ impl Setbac {
 
         if let Some(secret_key) = self.inner.secret_key.as_ref() {
             builder = builder.header(header::AUTHORIZATION, &format!("key:{}", secret_key));
-        } else {
-            builder = builder.token(self.inner.token.clone()).use_oauth2_header();
+        } else if let Some(streamer_token) = self.inner.streamer_token.as_ref() {
+            builder = builder.token(streamer_token.clone()).use_oauth2_header();
         }
 
         builder
@@ -337,6 +350,17 @@ impl Setbac {
 
         let token = req.execute().await?.json::<Data<ConnectionMeta>>()?;
         Ok(token.data)
+    }
+
+    /// Get meta for all available connections.
+    pub async fn get_connections_meta(&self) -> Result<Vec<ConnectionMeta>, Error> {
+        let req = self
+            .request(Method::GET, &["api", "connections"])
+            .query_param("format", "meta")
+            .header(header::CONTENT_TYPE, "application/json");
+
+        let data = req.execute().await?.json::<Vec<ConnectionMeta>>()?;
+        Ok(data)
     }
 
     /// Refresh the token corresponding to the given flow.

@@ -249,7 +249,7 @@ impl Irc {
             let threshold = chat_settings.var("idle-detection/threshold", 5).await?;
             let idle = idle::Idle::new(threshold);
 
-            let nightbot = injector.var::<Arc<api::NightBot>>().await?;
+            let nightbot = injector.var::<api::NightBot>().await?;
 
             let mut buckets = LeakyBuckets::new();
 

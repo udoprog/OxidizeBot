@@ -576,8 +576,8 @@ async fn try_main(
     let (
         (spotify_token, spotify_future),
         (youtube_token, youtube_future),
-        (nightbot_token, nightbot_future),
-        (streamer_token, streamer_future),
+        (_, nightbot_future),
+        (_, streamer_future),
         (_, bot_future),
     ) = futures::try_join!(
         spotify_setup,
@@ -630,9 +630,12 @@ async fn try_main(
     let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
     injector.update(youtube.clone()).await;
 
-    let nightbot = Arc::new(api::NightBot::new(nightbot_token.clone())?);
+    futures.push(
+        api::NightBot::run(injector.clone())
+            .boxed()
+            .instrument(trace_span!(target: "futures", "nightbot-client")),
+    );
 
-    injector.update(nightbot.clone()).await;
     injector.update(api::Speedrun::new()?).await;
 
     let (player, future) = player::run(
@@ -658,15 +661,10 @@ async fn try_main(
     injector.update(player).await;
 
     futures.push(
-        api::setbac::run(
-            &settings,
-            &injector,
-            streamer_token.clone(),
-            global_bus.clone(),
-        )
-        .await?
-        .boxed()
-        .instrument(trace_span!(target: "futures", "setbac.tv",)),
+        api::setbac::run(&settings, &injector, global_bus.clone())
+            .await?
+            .boxed()
+            .instrument(trace_span!(target: "futures", "setbac.tv",)),
     );
 
     modules.push(Box::new(module::time::Module));
