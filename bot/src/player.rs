@@ -1,11 +1,13 @@
 use crate::{
-    api, bus, db, injector, prelude::*, settings, spotify_id::SpotifyId, track_id::TrackId, utils,
+    api, bus, db, injector, prelude::*, settings, song_file::SongFile, spotify_id::SpotifyId,
+    track_id::TrackId, utils,
 };
 
 pub(self) use self::{
     connect::{ConnectDevice, ConnectError, ConnectPlayer, ConnectStream},
     mixer::Mixer,
     playback_future::PlaybackFuture,
+    player_internal::PlayerInternal,
     queue::Queue,
     youtube::YouTubePlayer,
 };
@@ -14,6 +16,7 @@ use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Utc};
 use futures::channel::mpsc;
 use std::{future::Future, sync::Arc, time::Duration};
+use tokio::sync::RwLock;
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
 
@@ -21,6 +24,7 @@ mod connect;
 mod item;
 mod mixer;
 mod playback_future;
+mod player_internal;
 mod queue;
 mod song;
 mod track;
@@ -32,6 +36,12 @@ pub enum State {
     Paused,
     // initial undefined state.
     None,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self::None
+    }
 }
 
 /// Event used by player integrations.
@@ -192,7 +202,7 @@ async fn convert_item(
 
 /// Run the player.
 pub async fn run(
-    injector: &injector::Injector,
+    injector: injector::Injector,
     db: db::Database,
     spotify: Arc<api::Spotify>,
     youtube: Arc<api::YouTube>,
@@ -225,7 +235,6 @@ pub async fn run(
     let bus = bus::Bus::new();
     let queue = Queue::new(db.clone());
 
-    let song = injector::Var::new(None);
     let closed = injector::Var::new(None);
 
     let (song_update_interval_stream, song_update_interval) = settings
@@ -256,6 +265,7 @@ pub async fn run(
 
     let parent_player = Player {
         inner: Arc::new(PlayerInner {
+            injector: injector.clone(),
             device,
             queue: queue.clone(),
             connect_player: connect_player.clone(),
@@ -267,7 +277,6 @@ pub async fn run(
             youtube: youtube.clone(),
             commands_tx,
             bus: bus.clone(),
-            song: song.clone(),
             themes: injector.var().await?,
             closed,
             playback_mode: playback_mode.clone(),
@@ -306,33 +315,47 @@ pub async fn run(
             .or_with_else(PlaybackMode::default)
             .await?;
 
-        let playback = PlaybackFuture {
+        let internal = Arc::new(RwLock::new(PlayerInternal {
+            injector: injector.clone(),
+            player: PlayerKind::None,
+            detached,
             spotify: spotify.clone(),
-            connect_stream,
             connect_player: connect_player.clone(),
             youtube_player,
-            commands,
-            bus,
-            mixer,
-            state: State::None,
-            player: PlayerKind::None,
             playback_mode,
-            playback_mode_stream,
-            detached,
-            detached_stream,
-            song: song.clone(),
-            song_file: None,
+            mixer,
+            bus,
+            global_bus,
             song_switch_feedback,
+            song_timeout_at: None,
+        }));
+
+        let playback = PlaybackFuture {
+            internal: internal.clone(),
+            connect_stream,
+            commands,
+            playback_mode_stream,
+            detached_stream,
             song_update_interval,
             song_update_interval_stream,
-            global_bus,
-            timeout: None,
         };
 
         player.sync_spotify_playback().await?;
 
-        let _ =
-            futures::future::try_join(playback.run(settings), futures.select_next_some()).await?;
+        futures.push(
+            SongFile::run(injector.clone(), settings.scoped("song-file"))
+                .instrument(trace_span!(target: "futures", "song-file"))
+                .boxed(),
+        );
+
+        futures.push(
+            playback
+                .run(settings)
+                .instrument(trace_span!(target: "futures", "playback"))
+                .boxed(),
+        );
+
+        futures.select_next_some().await?;
         Ok(())
     };
 
@@ -361,6 +384,7 @@ pub enum Event {
 
 /// Internal of the player.
 pub struct PlayerInner {
+    injector: injector::Injector,
     device: ConnectDevice,
     queue: Queue,
     connect_player: ConnectPlayer,
@@ -372,8 +396,6 @@ pub struct PlayerInner {
     youtube: Arc<api::YouTube>,
     commands_tx: mpsc::UnboundedSender<Command>,
     bus: bus::Bus<Event>,
-    /// Song song that is loaded.
-    song: injector::Var<Option<Song>>,
     /// Theme songs.
     themes: injector::Var<Option<db::Themes>>,
     /// Player is closed for more requests.
@@ -471,7 +493,7 @@ impl Player {
     /// Get the next N songs in queue.
     pub async fn list(&self) -> Vec<Arc<Item>> {
         let queue = self.inner.queue.queue.read().await;
-        let song = self.inner.song.read().await;
+        let song = self.inner.injector.get::<Song>().await;
 
         song.as_ref()
             .map(|c| c.item.clone())
@@ -518,7 +540,7 @@ impl Player {
 
     /// Update volume of the player.
     pub async fn volume(&self, modify: ModifyVolume) -> Result<Option<u32>> {
-        let track_id = match &*self.inner.song.read().await {
+        let track_id = match self.inner.injector.get::<Song>().await {
             Some(song) => song.item.track_id.clone(),
             None => {
                 return Ok(None);
@@ -540,7 +562,15 @@ impl Player {
 
     /// Get the current volume.
     pub async fn current_volume(&self) -> Option<u32> {
-        let track_id = self.inner.song.read().await.as_ref()?.item.track_id.clone();
+        let track_id = self
+            .inner
+            .injector
+            .get::<Song>()
+            .await
+            .as_ref()?
+            .item
+            .track_id
+            .clone();
 
         match track_id {
             TrackId::Spotify(..) => Some(self.inner.connect_player.current_volume().await),
@@ -852,7 +882,7 @@ impl Player {
     ) -> Option<(Duration, Arc<Item>)> {
         let mut duration = Duration::default();
 
-        if let Some(c) = self.inner.song.read().await.as_ref() {
+        if let Some(c) = self.inner.injector.get::<Song>().await {
             if predicate(&c.item) {
                 return Some((Default::default(), c.item.clone()));
             }
@@ -878,8 +908,8 @@ impl Player {
         let mut count = 0;
         let mut duration = Duration::default();
 
-        if let Some(item) = self.inner.song.read().await.as_ref() {
-            duration += item.remaining();
+        if let Some(song) = self.inner.injector.get::<Song>().await.as_ref() {
+            duration += song.remaining();
             count += 1;
         }
 
@@ -895,7 +925,7 @@ impl Player {
 
     /// Get the current song, if it is set.
     pub async fn current(&self) -> Option<Song> {
-        self.inner.song.load().await
+        self.inner.injector.get::<Song>().await
     }
 
     /// Indicate that the queue has been modified.

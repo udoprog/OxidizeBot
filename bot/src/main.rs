@@ -639,7 +639,7 @@ async fn try_main(
     injector.update(api::Speedrun::new()?).await;
 
     let (player, future) = player::run(
-        &injector,
+        injector.clone(),
         db.clone(),
         spotify.clone(),
         youtube.clone(),

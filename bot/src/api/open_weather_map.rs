@@ -27,9 +27,11 @@ impl Builder {
             Some(api_key) => {
                 self.injector
                     .update(OpenWeatherMap::new(api_key.to_string())?)
-                    .await
+                    .await;
             }
-            None => self.injector.clear::<OpenWeatherMap>().await,
+            None => {
+                let _ = self.injector.clear::<OpenWeatherMap>().await;
+            }
         }
 
         Ok(())

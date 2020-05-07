@@ -55,7 +55,7 @@ futures-option = "0.2.0"
 futures-cache = "0.9.0"
 anyhow = "1.0.28"
 thiserror = "1.0.15"
-async-injector = "0.9.1"
+async-injector = { version = "0.10.0", path = "../../async-injector" }
 async-trait = "0.1.30"
 leaky-bucket = "0.7.3"
 regex = "1.3.7"

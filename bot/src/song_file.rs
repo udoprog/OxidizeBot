@@ -1,5 +1,9 @@
-use crate::{player, template::Template, utils};
+use crate::{player, prelude::*, template::Template, utils};
+use anyhow::Result;
 use std::{fs::File, path::PathBuf};
+
+static DEFAULT_CURRENT_SONG_TEMPLATE: &str = "Song: {{name}}{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})\n{{#if user~}}Request by: @{{user~}}{{/if}}";
+static DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE: &str = "Not Playing";
 
 #[derive(Debug, Clone, Default)]
 pub struct SongFileBuilder {
@@ -45,16 +49,114 @@ impl SongFileBuilder {
 
 pub struct SongFile {
     /// Path to render current song at.
-    pub path: PathBuf,
+    path: PathBuf,
     /// Message to render when a song is playing.
     template: Template,
     /// Message to show when no song is playing.
     stopped_template: Option<Template>,
     /// Update frequency.
-    pub update_interval: tokio::time::Interval,
+    update_interval: tokio::time::Interval,
 }
 
 impl SongFile {
+    pub(crate) async fn run(
+        injector: injector::Injector,
+        settings: settings::Settings,
+    ) -> Result<()> {
+        let (mut song_stream, mut song) = injector.stream::<player::Song>().await;
+        let (mut state_stream, mut state) = injector.stream::<player::State>().await;
+        let (mut path_stream, path) = settings.stream("path").optional().await?;
+
+        let (mut template_stream, template) = settings
+            .stream("template")
+            .or(Some(Template::compile(DEFAULT_CURRENT_SONG_TEMPLATE)?))
+            .optional()
+            .await?;
+
+        let (mut stopped_template_stream, stopped_template) = settings
+            .stream("stopped-template")
+            .or(Some(Template::compile(
+                DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE,
+            )?))
+            .optional()
+            .await?;
+
+        let (mut update_interval_stream, update_interval) = settings
+            .stream("update-interval")
+            .or_with(utils::Duration::seconds(1))
+            .await?;
+
+        let (mut enabled_stream, enabled) = settings.stream("enabled").or_default().await?;
+
+        let mut song_file = None;
+
+        let mut builder = SongFileBuilder::default();
+        builder.enabled = enabled;
+        builder.path = path;
+        builder.template = template;
+        builder.stopped_template = stopped_template;
+        builder.update_interval = update_interval;
+        builder.init(&mut song_file);
+
+        loop {
+            let mut song_file_update = song_file.as_mut().map(|u| &mut u.update_interval);
+
+            futures::select! {
+                /* current song */
+                update = enabled_stream.select_next_some() => {
+                    builder.enabled = update;
+                    builder.init(&mut song_file);
+                }
+                update = path_stream.select_next_some() => {
+                    builder.path = update;
+                    builder.init(&mut song_file);
+                }
+                update = template_stream.select_next_some() => {
+                    builder.template = update;
+                    builder.init(&mut song_file);
+                }
+                update = stopped_template_stream.select_next_some() => {
+                    builder.stopped_template = update;
+                    builder.init(&mut song_file);
+                }
+                update = update_interval_stream.select_next_some() => {
+                    builder.update_interval = update;
+                    builder.init(&mut song_file);
+                }
+                _ = song_file_update.select_next_some() => {
+                }
+                update = song_stream.select_next_some() => {
+                    song = update;
+                }
+                update = state_stream.select_next_some() => {
+                    state = update;
+                }
+            }
+
+            if let Some(song_file) = &mut song_file {
+                song_file.update_song(song.as_ref(), state).await;
+            }
+        }
+    }
+
+    /// Write current song. Log any errors.
+    async fn update_song(&self, song: Option<&player::Song>, state: Option<player::State>) {
+        let state = state.unwrap_or_default();
+
+        let result = match song {
+            Some(song) => self.write(song, state),
+            None => self.blank(),
+        };
+
+        if let Err(e) = result {
+            log::warn!(
+                "failed to write current song: {}: {}",
+                self.path.display(),
+                e
+            );
+        }
+    }
+
     /// Either creates or truncates the current song file.
     fn create_or_truncate(&self) -> Result<File, anyhow::Error> {
         File::create(&self.path).map_err(Into::into)
