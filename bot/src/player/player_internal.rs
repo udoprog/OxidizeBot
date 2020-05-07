@@ -1,11 +1,14 @@
 use super::{
-    Command, ConnectError, ConnectPlayer, Event, IntegrationEvent, Item, Mixer, PlaybackMode,
-    PlayerKind, Song, Source, State, Track, YouTubePlayer,
+    convert_item, AddTrackError, Command, ConnectDevice, ConnectError, ConnectPlayer, Event,
+    IntegrationEvent, Item, Mixer, PlaybackMode, PlayerKind, Song, Source, State, Track,
+    YouTubePlayer,
 };
 use crate::{
-    api, bus, injector, prelude::*, settings, spotify_id::SpotifyId, track_id::TrackId, Uri,
+    api, bus, db, injector, prelude::*, settings, spotify_id::SpotifyId, track_id::TrackId, utils,
+    Uri,
 };
 use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
 use std::{sync::Arc, time::Duration, time::Instant};
 
 pub(super) struct PlayerInternal {
@@ -17,6 +20,7 @@ pub(super) struct PlayerInternal {
     pub(super) detached: bool,
     /// API clients and streams.
     pub(super) spotify: Arc<api::Spotify>,
+    pub(super) youtube: Arc<api::YouTube>,
     pub(super) connect_player: ConnectPlayer,
     pub(super) youtube_player: YouTubePlayer,
     /// The mode of the player.
@@ -34,9 +38,82 @@ pub(super) struct PlayerInternal {
     pub(super) song_switch_feedback: settings::Var<bool>,
     /// The next song timeout.
     pub(super) song_timeout_at: Option<Instant>,
+    pub(super) device: ConnectDevice,
+    pub(super) max_queue_length: settings::Var<u32>,
+    pub(super) max_songs_per_user: settings::Var<u32>,
+    pub(super) duplicate_duration: settings::Var<utils::Duration>,
+    pub(super) commands_tx: mpsc::UnboundedSender<Command>,
+    /// Theme songs.
+    pub(super) themes: injector::Var<Option<db::Themes>>,
+    /// Player is closed for more requests.
+    pub(super) closed: Option<Option<Arc<String>>>,
 }
 
 impl PlayerInternal {
+    /// Send the given command.
+    pub(super) fn send(&self, command: Command) -> Result<()> {
+        self.commands_tx
+            .unbounded_send(command)
+            .map_err(|_| anyhow!("failed to send command"))
+    }
+
+    /// Synchronize playback with the given song.
+    pub(super) fn play_sync(&self, song: Song) -> Result<()> {
+        self.send(Command::Sync { song })
+    }
+
+    /// Pause playback with the specified Source.
+    pub(super) fn pause_with_source(&self, source: Source) -> Result<()> {
+        self.send(Command::Pause(source))
+    }
+
+    /// Indicate that the queue has been modified.
+    pub(super) async fn modified(&self) {
+        if let Err(e) = self
+            .commands_tx
+            .unbounded_send(Command::Modified(Source::Manual))
+        {
+            log::error!("failed to send queue modified notification: {}", e);
+        }
+    }
+
+    /// Try to sync Spotify playback.
+    pub async fn sync_spotify_playback(&self) -> Result<()> {
+        if !self.spotify.token.is_ready().await {
+            return Ok(());
+        }
+
+        let p = match self.spotify.me_player().await {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("Failed to sync playback: {}", e);
+                return Ok(());
+            }
+        };
+
+        if let Some(p) = p {
+            log::trace!("Detected playback: {:?}", p);
+
+            match Song::from_playback(&p) {
+                Some(song) => {
+                    log::trace!("Syncing playback");
+                    let volume_percent = p.device.volume_percent;
+                    self.device.sync_device(Some(p.device)).await?;
+                    self.connect_player
+                        .set_scaled_volume(volume_percent)
+                        .await?;
+                    self.play_sync(song)?;
+                }
+                None => {
+                    log::trace!("Pausing playback since item is missing");
+                    self.pause_with_source(Source::Automatic)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Check if the player is unmanaged.
     ///
     /// An unmanaged player doesn't process default commands that deal with the
@@ -710,5 +787,158 @@ impl PlayerInternal {
         }
 
         Ok(())
+    }
+
+    /// Add the given track to the queue.
+    ///
+    /// Returns the item added.
+    pub(super) async fn add_track(
+        &self,
+        user: &str,
+        track_id: TrackId,
+        bypass_constraints: bool,
+        max_duration: Option<utils::Duration>,
+    ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
+        match self.playback_mode {
+            PlaybackMode::Default => {
+                self.default_add_track(user, track_id, bypass_constraints, max_duration)
+                    .await
+            }
+            PlaybackMode::Queue => {
+                self.queue_add_track(user, track_id, bypass_constraints, max_duration)
+                    .await
+            }
+        }
+    }
+
+    /// Default method for adding a track.
+    async fn default_add_track(
+        &self,
+        user: &str,
+        track_id: TrackId,
+        bypass_constraints: bool,
+        max_duration: Option<utils::Duration>,
+    ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
+        let (user_count, len) = {
+            let queue_inner = self.mixer.queue.queue.read().await;
+            let len = queue_inner.len();
+
+            if !bypass_constraints {
+                if let Some(reason) = &self.closed {
+                    return Err(AddTrackError::PlayerClosed(reason.clone()));
+                }
+
+                let max_queue_length = self.max_queue_length.load().await;
+
+                // NB: moderator is allowed to violate max queue length.
+                if len >= max_queue_length as usize {
+                    return Err(AddTrackError::QueueFull);
+                }
+
+                let duplicate_duration = self.duplicate_duration.load().await;
+
+                if !duplicate_duration.is_empty() {
+                    if let Some(last) = self
+                        .mixer
+                        .queue
+                        .last_song_within(&track_id, duplicate_duration.clone())
+                        .await
+                        .map_err(AddTrackError::Error)?
+                    {
+                        let added_at = DateTime::from_utc(last.added_at, Utc);
+
+                        return Err(AddTrackError::Duplicate(
+                            added_at,
+                            last.user,
+                            duplicate_duration.as_std(),
+                        ));
+                    }
+                }
+            }
+
+            let mut user_count = 0;
+
+            for (index, i) in queue_inner.iter().enumerate() {
+                if i.track_id == track_id {
+                    return Err(AddTrackError::QueueContainsTrack(index));
+                }
+
+                if i.user.as_ref().map(|u| *u == user).unwrap_or_default() {
+                    user_count += 1;
+                }
+            }
+
+            (user_count, len)
+        };
+
+        let max_songs_per_user = self.max_songs_per_user.load().await;
+
+        // NB: moderator is allowed to add more songs.
+        if !bypass_constraints && user_count >= max_songs_per_user {
+            return Err(AddTrackError::TooManyUserTracks(max_songs_per_user));
+        }
+
+        let item = convert_item(&*self.spotify, &*self.youtube, Some(user), &track_id, None)
+            .await
+            .map_err(AddTrackError::Error)?;
+
+        let mut item = match item {
+            Some(item) => item,
+            None => return Err(AddTrackError::MissingAuth),
+        };
+
+        if let Some(max_duration) = max_duration {
+            let max_duration = max_duration.as_std();
+
+            if item.duration > max_duration {
+                item.duration = max_duration;
+            }
+        }
+
+        let item = Arc::new(item);
+
+        self.mixer
+            .queue
+            .push_back(item.clone())
+            .await
+            .map_err(AddTrackError::Error)?;
+
+        self.commands_tx
+            .unbounded_send(Command::Modified(Source::Manual))
+            .map_err(|e| AddTrackError::Error(e.into()))?;
+
+        Ok((Some(len), item))
+    }
+
+    /// Try to queue up a track.
+    async fn queue_add_track(
+        &self,
+        user: &str,
+        track_id: TrackId,
+        _bypass_constraints: bool,
+        _max_duration: Option<utils::Duration>,
+    ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
+        let item = convert_item(&*self.spotify, &*self.youtube, Some(user), &track_id, None)
+            .await
+            .map_err(AddTrackError::Error)?;
+
+        let item = match item {
+            Some(item) => item,
+            None => return Err(AddTrackError::MissingAuth),
+        };
+
+        match track_id {
+            TrackId::Spotify(id) => {
+                self.connect_player
+                    .queue(id)
+                    .await
+                    .map_err(|e| AddTrackError::Error(e.into()))?;
+            }
+            TrackId::YouTube(..) => {
+                return Err(AddTrackError::UnsupportedPlaybackMode);
+            }
+        }
+
+        Ok((None, Arc::new(item)))
     }
 }

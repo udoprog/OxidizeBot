@@ -5,7 +5,7 @@ use std::{collections::VecDeque, sync::Arc};
 /// Mixer decides what song to play next.
 pub(super) struct Mixer {
     /// Persistent queue to take songs from.
-    queue: Queue,
+    pub(super) queue: Queue,
     /// A song that has been sidelined by another song.
     sidelined: VecDeque<Song>,
     /// Currently loaded fallback items.

@@ -91,6 +91,7 @@ checksum = "eab1c04a571841102f5345a8fc0f6bb3d31c315dec879b5c6e42e40ce7ffa34e"
 [[package]]
 name = "async-injector"
 version = "0.10.0"
+source = "git+https://github.com/udoprog/async-injector?branch=mutation-apis#649e788f90183d4843d13ce3efff2dc80fbfea89"
 dependencies = [
  "async-injector-derive",
  "async-trait",
@@ -106,6 +107,7 @@ dependencies = [
 [[package]]
 name = "async-injector-derive"
 version = "0.10.0"
+source = "git+https://github.com/udoprog/async-injector?branch=mutation-apis#649e788f90183d4843d13ce3efff2dc80fbfea89"
 dependencies = [
  "darling",
  "proc-macro2",

@@ -6,8 +6,8 @@ use tokio::sync::RwLock;
 
 /// Future associated with driving audio playback.
 pub(super) struct PlaybackFuture {
-    pub(super) connect_stream: ConnectStream,
     pub(super) internal: Arc<RwLock<PlayerInternal>>,
+    pub(super) connect_stream: ConnectStream,
     pub(super) commands: mpsc::UnboundedReceiver<Command>,
     pub(super) playback_mode_stream: settings::Stream<PlaybackMode>,
     /// Stream of settings if the player is detached.
@@ -39,6 +39,13 @@ impl PlaybackFuture {
             .update_fallback_items(fallback)
             .await;
 
+        let mut spotify_token_ready = Some({
+            let internal = self.internal.read().await;
+            let spotify_token = internal.spotify.token.clone();
+
+            Box::pin(async move { spotify_token.wait_until_ready().await })
+        });
+
         loop {
             let mut song_timeout = self
                 .internal
@@ -50,6 +57,10 @@ impl PlaybackFuture {
             futures::select! {
                 fallback = fallback_stream.select_next_some() => {
                     self.internal.write().await.update_fallback_items(fallback).await;
+                }
+                _ = spotify_token_ready.current() => {
+                    log::info!("Synchronizing Spotify Playback");
+                    self.internal.read().await.sync_spotify_playback().await?;
                 }
                 /* player */
                 _ = song_timeout.current() => {

@@ -633,22 +633,22 @@ impl command::Handler for Handler {
             }
             Some("skip") => {
                 ctx.check_scope(Scope::SongPlaybackControl).await?;
-                player.skip()?;
+                player.skip().await?;
             }
             Some("request") => {
                 self.handle_request(ctx, player).await?;
             }
             Some("toggle") => {
                 ctx.check_scope(Scope::SongPlaybackControl).await?;
-                player.toggle()?;
+                player.toggle().await?;
             }
             Some("play") => {
                 ctx.check_scope(Scope::SongPlaybackControl).await?;
-                player.play()?;
+                player.play().await?;
             }
             Some("pause") => {
                 ctx.check_scope(Scope::SongPlaybackControl).await?;
-                player.pause()?;
+                player.pause().await?;
             }
             Some("length") => {
                 let (count, duration) = player.length().await;
@@ -882,7 +882,7 @@ async fn feedback(
     chat_feedback: settings::Var<bool>,
 ) -> Result<(), Error> {
     let mut configured_cooldown = Cooldown::from_duration(Duration::seconds(10));
-    let mut rx = player.add_rx();
+    let mut rx = player.add_rx().await;
 
     loop {
         let e = rx.select_next_some().await;
