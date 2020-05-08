@@ -2,10 +2,10 @@ use anyhow::Error;
 use std::{fmt, time::Duration};
 
 #[cfg(target_os = "windows")]
-#[path = "sys/windows.rs"]
+#[path = "windows.rs"]
 mod imp;
 #[cfg(not(target_os = "windows"))]
-#[path = "sys/noop.rs"]
+#[path = "noop.rs"]
 mod imp;
 
 #[derive(Debug, Clone, Copy)]
