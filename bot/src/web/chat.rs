@@ -27,7 +27,7 @@ impl Chat {
                 let api = api.clone();
                 move |query: CommandQuery| {
                     let api = api.clone();
-                    async move { api.command(query).map_err(super::custom_reject) }
+                    async move { api.command(query).await.map_err(super::custom_reject) }
                 }
             })
             .boxed();
@@ -37,7 +37,7 @@ impl Chat {
             .and_then({
                 move || {
                     let api = api.clone();
-                    async move { api.messages().map_err(super::custom_reject) }
+                    async move { api.messages().await.map_err(super::custom_reject) }
                 }
             })
             .boxed();
@@ -46,17 +46,19 @@ impl Chat {
     }
 
     /// Run a command.
-    fn command(&self, query: CommandQuery) -> Result<impl warp::Reply, anyhow::Error> {
-        self.bus.send(bus::Command::Raw {
-            command: query.command,
-        });
+    async fn command(&self, query: CommandQuery) -> Result<impl warp::Reply, anyhow::Error> {
+        self.bus
+            .send(bus::Command::Raw {
+                command: query.command,
+            })
+            .await;
 
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Get all stored messages.
-    fn messages(&self) -> Result<impl warp::Reply, anyhow::Error> {
-        let messages = self.message_log.messages();
+    async fn messages(&self) -> Result<impl warp::Reply, anyhow::Error> {
+        let messages = self.message_log.messages().await;
         Ok(warp::reply::json(&*messages))
     }
 }

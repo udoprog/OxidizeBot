@@ -260,8 +260,8 @@ fn main() -> Result<(), Error> {
     let system = sys::setup(&root, &default_log_file)?;
 
     let mut error_backoff = backoff::ExponentialBackoff::default();
-    error_backoff.current_interval = time::Duration::from_secs(30);
-    error_backoff.initial_interval = time::Duration::from_secs(30);
+    error_backoff.current_interval = time::Duration::from_secs(5);
+    error_backoff.initial_interval = time::Duration::from_secs(5);
     error_backoff.max_elapsed_time = None;
 
     let mut current_backoff;

@@ -313,8 +313,8 @@ pub struct Player {
 
 impl Player {
     /// Get a receiver for player events.
-    pub async fn add_rx(&self) -> bus::Reader<Event> {
-        self.inner.read().await.bus.add_rx()
+    pub async fn subscribe(&self) -> bus::Reader<Event> {
+        self.inner.read().await.bus.subscribe()
     }
 
     /// Get the current device.

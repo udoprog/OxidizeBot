@@ -9,7 +9,7 @@ use crate::{
     track_id::TrackId,
     utils::{self, Cooldown, Duration},
 };
-use anyhow::{Context as _, Error};
+use anyhow::{Context as _, Result};
 use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -28,11 +28,7 @@ pub struct Handler {
 }
 
 impl Handler {
-    async fn handle_request(
-        &self,
-        ctx: &mut command::Context,
-        player: Player,
-    ) -> Result<(), Error> {
+    async fn handle_request(&self, ctx: &mut command::Context, player: Player) -> Result<()> {
         let q = ctx.rest().trim().to_string();
 
         if q.is_empty() {
@@ -355,7 +351,7 @@ impl command::Handler for Handler {
         Some(Scope::Song)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -742,7 +738,7 @@ impl module::Module for Module {
             injector,
             ..
         }: module::HookContext<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let currency = injector.var().await?;
         let settings = settings.scoped("song");
 
@@ -820,7 +816,7 @@ impl Constraint {
         vars: &mut settings::Settings,
         enabled: bool,
         min_currency: i64,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self> {
         let enabled = vars.var("enabled", enabled).await?;
         let max_duration = vars.optional("max-duration").await?;
         let min_currency = vars.var("min-currency", min_currency).await?;
@@ -834,7 +830,7 @@ impl Constraint {
 }
 
 /// Parse a queue position.
-async fn parse_queue_position(n: &str) -> Result<usize, Error> {
+async fn parse_queue_position(n: &str) -> Result<usize> {
     match str::parse::<usize>(n) {
         Ok(0) => respond_bail!("Can't mess with the current song :("),
         Ok(n) => Ok(n.saturating_sub(1)),
@@ -880,12 +876,12 @@ async fn feedback(
     player: Player,
     sender: irc::Sender,
     chat_feedback: settings::Var<bool>,
-) -> Result<(), Error> {
+) -> Result<()> {
     let mut configured_cooldown = Cooldown::from_duration(Duration::seconds(10));
-    let mut rx = player.add_rx().await;
+    let mut rx = player.subscribe().await.fuse();
 
     loop {
-        let e = rx.select_next_some().await;
+        let e = rx.select_next_some().await?;
         log::trace!("Player event: {:?}", e);
 
         match e {

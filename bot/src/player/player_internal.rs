@@ -115,16 +115,16 @@ impl PlayerInternal {
             self.play_song(Source::Manual, song).await?;
         } else {
             self.bus.send_sync(Event::Empty);
-            self.notify_song_change(None)?;
+            self.notify_song_change(None).await?;
         }
 
         Ok(())
     }
 
     /// Notify a change in the current song.
-    fn notify_song_change(&self, song: Option<&Song>) -> Result<()> {
-        self.global_bus.send(bus::Global::song(song)?);
-        self.global_bus.send(bus::Global::SongModified);
+    async fn notify_song_change(&self, song: Option<&Song>) -> Result<()> {
+        self.global_bus.send(bus::Global::song(song)?).await;
+        self.global_bus.send(bus::Global::SongModified).await;
         Ok(())
     }
 
@@ -170,7 +170,7 @@ impl PlayerInternal {
             (Spotify, _) | (None, YouTube) => {
                 self.connect_player.stop().await?;
             }
-            (YouTube, _) | (None, Spotify) => self.youtube_player.stop(),
+            (YouTube, _) | (None, Spotify) => self.youtube_player.stop().await,
             (None, None) => (),
         }
 
@@ -187,7 +187,7 @@ impl PlayerInternal {
             }
             PlayerKind::YouTube => {
                 log::trace!("pausing youtube player");
-                self.youtube_player.pause();
+                self.youtube_player.pause().await;
             }
             _ => (),
         }
@@ -205,7 +205,8 @@ impl PlayerInternal {
             }
             TrackId::YouTube(id) => {
                 self.youtube_player
-                    .play(song.elapsed(), song.duration(), id);
+                    .play(song.elapsed(), song.duration(), id)
+                    .await;
             }
         }
 
@@ -236,7 +237,7 @@ impl PlayerInternal {
 
         self.send_play_command(&song).await?;
         self.switch_current_player(song.player()).await?;
-        self.notify_song_change(Some(&song))?;
+        self.notify_song_change(Some(&song)).await?;
 
         if let Source::Manual = source {
             let feedback = self.song_switch_feedback.load().await;
@@ -253,7 +254,7 @@ impl PlayerInternal {
     async fn resume_song(&mut self, source: Source, song: Song) -> Result<()> {
         self.send_play_command(&song).await?;
         self.switch_current_player(song.player()).await?;
-        self.notify_song_change(Some(&song))?;
+        self.notify_song_change(Some(&song)).await?;
 
         if let Source::Manual = source {
             let feedback = self.song_switch_feedback.load().await;
@@ -376,7 +377,7 @@ impl PlayerInternal {
                     self.bus.send_sync(Event::Pausing);
                 }
 
-                self.notify_song_change(song.as_ref())?;
+                self.notify_song_change(song.as_ref()).await?;
             }
             PlaybackMode::Queue => {
                 self.connect_player.pause().await?;
@@ -414,7 +415,7 @@ impl PlayerInternal {
                     }
                     (Some(song), _) => {
                         self.switch_to_song(Some(song.clone())).await?;
-                        self.notify_song_change(Some(&song))?;
+                        self.notify_song_change(Some(&song)).await?;
                     }
                     (None, _) => {
                         if let Source::Manual = source {
@@ -422,7 +423,7 @@ impl PlayerInternal {
                         }
 
                         self.switch_to_song(None).await?;
-                        self.notify_song_change(None)?;
+                        self.notify_song_change(None).await?;
                         self.injector.update(State::Paused).await;
                     }
                 }
@@ -446,7 +447,7 @@ impl PlayerInternal {
         self.switch_current_player(song.player()).await?;
 
         let state = song.state();
-        self.notify_song_change(Some(&song))?;
+        self.notify_song_change(Some(&song)).await?;
         self.injector.update(song).await;
         self.injector.update(state).await;
         Ok(())
@@ -472,7 +473,7 @@ impl PlayerInternal {
                     }
                 }
 
-                self.global_bus.send(bus::Global::SongModified);
+                self.global_bus.send(bus::Global::SongModified).await;
                 self.bus.send_sync(Event::Modified);
             }
             _ => (),
@@ -670,7 +671,7 @@ impl PlayerInternal {
                         self.injector.update(State::Playing).await;
                     }
                     TrackId::YouTube(id) => {
-                        self.youtube_player.play(elapsed, duration, id);
+                        self.youtube_player.play(elapsed, duration, id).await;
                         self.switch_current_player(PlayerKind::YouTube).await?;
                         self.injector.update(State::Playing).await;
                     }
@@ -686,12 +687,13 @@ impl PlayerInternal {
         if let State::Playing = self.injector.get::<State>().await.unwrap_or_default() {
             let song = self.injector.get::<Song>().await;
             let song = song.as_ref();
-            self.global_bus.send(bus::Global::song_progress(song));
+            self.global_bus.send(bus::Global::song_progress(song)).await;
 
             if let Some(song) = song {
                 if let TrackId::YouTube(ref id) = song.item.track_id {
                     self.youtube_player
-                        .tick(song.elapsed(), song.duration(), id.to_string());
+                        .tick(song.elapsed(), song.duration(), id.to_string())
+                        .await;
                 }
             }
         }

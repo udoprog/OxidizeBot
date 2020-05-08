@@ -30,7 +30,7 @@ impl Builder {
         let (emotes_enabled_stream, emotes_enabled) =
             settings.stream("emotes-enabled").or_default().await?;
 
-        message_log.enabled(enabled);
+        message_log.enabled(enabled).await;
 
         Ok(Self {
             twitch,
@@ -83,6 +83,8 @@ impl ChatLog {
             None => None,
         };
 
-        self.message_log.push_back(&tags, &name, message, rendered);
+        self.message_log
+            .push_back(&tags, &name, message, rendered)
+            .await;
     }
 }

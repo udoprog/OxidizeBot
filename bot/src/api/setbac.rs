@@ -128,7 +128,7 @@ struct RemoteBuilder {
 impl RemoteBuilder {
     async fn init(&self, remote: &mut Remote) {
         if self.enabled {
-            remote.rx = Some(self.global_bus.add_rx());
+            remote.rx = Some(self.global_bus.subscribe());
 
             remote.player = match self.player.as_ref() {
                 Some(player) => Some(player.clone()),
@@ -234,6 +234,8 @@ pub async fn run(
                     remote_builder.init(&mut remote).await;
                 }
                 event = remote.rx.select_next_some() => {
+                    let event = event?;
+
                     /// Only update on switches to current song.
                     match event {
                         bus::Global::SongModified => (),

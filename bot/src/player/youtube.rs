@@ -22,19 +22,19 @@ pub(super) async fn setup(
     let returned_player = player.clone();
 
     let future = async move {
-        player.volume_update(scaled_volume);
+        player.volume_update(scaled_volume).await;
 
         loop {
             futures::select! {
                 update = volume_scale_stream.select_next_some() => {
                     volume_scale = update;
                     scaled_volume = (volume.load().await * volume_scale) / 100u32;
-                    player.volume_update(scaled_volume);
+                    player.volume_update(scaled_volume).await;
                 }
                 update = volume_stream.select_next_some() => {
                     *volume.write().await = update;
                     scaled_volume = (volume.load().await * volume_scale) / 100u32;
-                    player.volume_update(scaled_volume);
+                    player.volume_update(scaled_volume).await;
                 }
             }
         }
@@ -52,34 +52,34 @@ pub(super) struct YouTubePlayer {
 
 impl YouTubePlayer {
     /// Update playback information.
-    pub(super) fn tick(&self, elapsed: Duration, duration: Duration, video_id: String) {
+    pub(super) async fn tick(&self, elapsed: Duration, duration: Duration, video_id: String) {
         let event = bus::YouTubeEvent::Play {
             video_id,
             elapsed: elapsed.as_secs(),
             duration: duration.as_secs(),
         };
 
-        self.bus.send(bus::YouTube::YouTubeCurrent { event });
+        self.bus.send(bus::YouTube::YouTubeCurrent { event }).await;
     }
 
-    pub(super) fn play(&self, elapsed: Duration, duration: Duration, video_id: String) {
+    pub(super) async fn play(&self, elapsed: Duration, duration: Duration, video_id: String) {
         let event = bus::YouTubeEvent::Play {
             video_id,
             elapsed: elapsed.as_secs(),
             duration: duration.as_secs(),
         };
 
-        self.bus.send(bus::YouTube::YouTubeCurrent { event });
+        self.bus.send(bus::YouTube::YouTubeCurrent { event }).await;
     }
 
-    pub(super) fn pause(&self) {
+    pub(super) async fn pause(&self) {
         let event = bus::YouTubeEvent::Pause;
-        self.bus.send(bus::YouTube::YouTubeCurrent { event });
+        self.bus.send(bus::YouTube::YouTubeCurrent { event }).await;
     }
 
-    pub(super) fn stop(&self) {
+    pub(super) async fn stop(&self) {
         let event = bus::YouTubeEvent::Stop;
-        self.bus.send(bus::YouTube::YouTubeCurrent { event });
+        self.bus.send(bus::YouTube::YouTubeCurrent { event }).await;
     }
 
     pub(super) async fn volume(&self, modify: player::ModifyVolume) -> Result<u32, Error> {
@@ -94,7 +94,7 @@ impl YouTubePlayer {
         self.volume.load().await
     }
 
-    fn volume_update(&self, volume: u32) {
-        self.bus.send(bus::YouTube::YouTubeVolume { volume });
+    async fn volume_update(&self, volume: u32) {
+        self.bus.send(bus::YouTube::YouTubeVolume { volume }).await;
     }
 }

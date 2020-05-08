@@ -1,7 +1,7 @@
 use crate::{bus, emotes, irc};
 use chrono::{DateTime, Utc};
-use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 use std::{collections::VecDeque, sync::Arc};
+use tokio::sync::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
@@ -90,20 +90,20 @@ impl MessageLog {
     }
 
     /// Get a copy of all the messages.
-    pub fn messages(&self) -> MappedRwLockReadGuard<'_, VecDeque<Message>> {
-        RwLockReadGuard::map(self.inner.read(), |i| &i.messages)
+    pub async fn messages(&self) -> MappedRwLockReadGuard<'_, VecDeque<Message>> {
+        RwLockReadGuard::map(self.inner.read().await, |i| &i.messages)
     }
 
     /// Indicate if the log is enabled or not.
-    pub fn enabled(&self, enabled: bool) {
-        if let Some(bus) = self.inner.read().bus.as_ref() {
-            bus.send(Event::Enabled { enabled });
+    pub async fn enabled(&self, enabled: bool) {
+        if let Some(bus) = self.inner.read().await.bus.as_ref() {
+            bus.send(Event::Enabled { enabled }).await;
         }
     }
 
     /// Mark the given message as deleted.
-    pub fn delete_by_id(&self, id: &str) {
-        let mut inner = self.inner.write();
+    pub async fn delete_by_id(&self, id: &str) {
+        let mut inner = self.inner.write().await;
 
         for m in &mut inner.messages {
             if m.id == id {
@@ -112,13 +112,13 @@ impl MessageLog {
         }
 
         if let Some(bus) = inner.bus.as_ref() {
-            bus.send(Event::DeleteById { id: id.to_string() });
+            bus.send(Event::DeleteById { id: id.to_string() }).await;
         }
     }
 
     /// Mark all messages by the given user as deleted.
-    pub fn delete_by_user(&self, name: &str) {
-        let mut inner = self.inner.write();
+    pub async fn delete_by_user(&self, name: &str) {
+        let mut inner = self.inner.write().await;
 
         for m in &mut inner.messages {
             if m.user.name == name {
@@ -129,32 +129,33 @@ impl MessageLog {
         if let Some(bus) = inner.bus.as_ref() {
             bus.send(Event::DeleteByUser {
                 name: name.to_string(),
-            });
+            })
+            .await;
         }
     }
 
     /// Delete all messages in chat.
-    pub fn delete_all(&self) {
-        let mut inner = self.inner.write();
+    pub async fn delete_all(&self) {
+        let mut inner = self.inner.write().await;
 
         for m in &mut inner.messages {
             m.deleted = true;
         }
 
         if let Some(bus) = inner.bus.as_ref() {
-            bus.send(Event::DeleteAll);
+            bus.send(Event::DeleteAll).await;
         }
     }
 
     /// Push a message to the back of the log.
-    pub fn push_back(
+    pub async fn push_back(
         &self,
         tags: &irc::Tags,
         name: &str,
         text: &str,
         rendered: Option<emotes::Rendered>,
     ) {
-        let mut inner = self.inner.write();
+        let mut inner = self.inner.write().await;
 
         if !inner.enabled {
             return;
@@ -198,7 +199,7 @@ impl MessageLog {
         };
 
         if let Some(bus) = inner.bus.as_ref() {
-            bus.send(Event::Message(m.clone()));
+            bus.send(Event::Message(m.clone())).await;
         }
 
         inner.messages.push_back(m);

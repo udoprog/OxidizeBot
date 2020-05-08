@@ -52,6 +52,7 @@ pub struct RequestBuilder {
     use_bearer: bool,
     /// Add the client id to the specified header if configured.
     client_id_header: Option<&'static str>,
+    absent_body: bool,
 }
 
 impl RequestBuilder {
@@ -66,12 +67,19 @@ impl RequestBuilder {
             body: Bytes::new(),
             use_bearer: true,
             client_id_header: None,
+            absent_body: false,
         }
     }
 
     /// Use the OAuth2 header instead of Bearer when sending authentication.
     pub fn use_oauth2_header(mut self) -> Self {
         self.use_bearer = false;
+        self
+    }
+
+    /// Configure if empty bodies should have a Content-Type or not.
+    pub fn absent_body(mut self, absent_body: bool) -> Self {
+        self.absent_body = absent_body;
         self
     }
 
@@ -150,9 +158,14 @@ impl RequestBuilder {
         req = match &self.method {
             &Method::GET => req,
             &Method::HEAD => req,
-            _ => req
-                .header(header::CONTENT_LENGTH, self.body.len())
-                .body(self.body.clone()),
+            _ => {
+                if self.body.is_empty() && self.absent_body {
+                    req
+                } else {
+                    req.header(header::CONTENT_LENGTH, self.body.len())
+                        .body(self.body.clone())
+                }
+            }
         };
 
         for (key, value) in &self.headers {

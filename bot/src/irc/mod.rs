@@ -428,7 +428,7 @@ impl Irc {
             let mut client_stream = client.stream()?;
 
             let mut ping_interval = tokio::time::interval(time::Duration::from_secs(10)).fuse();
-            let mut commands = command_bus.add_rx();
+            let mut commands = command_bus.subscribe().fuse();
 
             let mut leave = None;
 
@@ -452,6 +452,8 @@ impl Irc {
                         log::trace!("Done sending capabilities request and join message");
                     }
                     command = commands.select_next_some() => {
+                        let command = command?;
+
                         match command {
                             bus::Command::Raw { command } => {
                                 log::trace!("Raw command: {}", command);
@@ -497,7 +499,7 @@ impl Irc {
                     }
                     update = chat_log_builder.enabled_stream.select_next_some() => {
                         chat_log_builder.enabled = update;
-                        chat_log_builder.message_log.enabled(update);
+                        chat_log_builder.message_log.enabled(update).await;
                         handler.chat_log = chat_log_builder.build()?;
                     }
                     update = chat_log_builder.emotes_enabled_stream.select_next_some() => {
@@ -755,7 +757,7 @@ pub async fn process_command(
     match command {
         "ping" => {
             respond!(ctx, "What do you want?");
-            global_bus.send(bus::Global::Ping);
+            global_bus.send(bus::Global::Ping).await;
         }
         other => {
             log::trace!("Testing command: {}", other);
@@ -1137,7 +1139,7 @@ impl<'a> Handler<'a> {
                 "CLEARMSG" => {
                     if let Some(chat_log) = self.chat_log.as_ref() {
                         if let Some(tags) = ClearMsgTags::from_tags(m.tags) {
-                            chat_log.message_log.delete_by_id(&tags.target_msg_id);
+                            chat_log.message_log.delete_by_id(&tags.target_msg_id).await;
                         }
                     }
                 }
@@ -1145,10 +1147,10 @@ impl<'a> Handler<'a> {
                     if let Some(chat_log) = self.chat_log.as_ref() {
                         match tail.first() {
                             Some(user) => {
-                                chat_log.message_log.delete_by_user(user);
+                                chat_log.message_log.delete_by_user(user).await;
                             }
                             None => {
-                                chat_log.message_log.delete_all();
+                                chat_log.message_log.delete_all().await;
                             }
                         }
                     }
