@@ -1341,7 +1341,8 @@ dependencies = [
 [[package]]
 name = "irc"
 version = "0.14.0"
-source = "git+https://github.com/aatxe/irc.git?branch=develop#0f675e7c277480de60a70d64af1cca12513b72ef"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "245071fa25b5ca1a9995cbc18a5f0bf64e514590525ae96e7d626fe40498440d"
 dependencies = [
  "bufstream",
  "bytes",
@@ -1366,7 +1367,8 @@ dependencies = [
 [[package]]
 name = "irc-proto"
 version = "0.14.0"
-source = "git+https://github.com/aatxe/irc.git?branch=develop#0f675e7c277480de60a70d64af1cca12513b72ef"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "415bc6a653abe785aaf37fc2097551a2562498b7aa18599cdd528e93e100e039"
 dependencies = [
  "bytes",
  "encoding",

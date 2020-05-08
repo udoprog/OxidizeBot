@@ -234,7 +234,7 @@ impl Irc {
                 password: Some(format!("oauth:{}", access_token)),
                 server: Some(String::from(SERVER)),
                 port: Some(6697),
-                use_ssl: Some(true),
+                use_tls: Some(true),
                 ..client::data::config::Config::default()
             };
 

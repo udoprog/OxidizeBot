@@ -1,7 +1,6 @@
 use super::{
-    convert_item, AddTrackError, Command, ConnectDevice, ConnectError, ConnectPlayer, Event,
-    IntegrationEvent, Item, Mixer, PlaybackMode, PlayerKind, Song, Source, State, Track,
-    YouTubePlayer,
+    convert_item, AddTrackError, ConnectDevice, ConnectPlayer, Event, IntegrationEvent, Item,
+    Mixer, PlaybackMode, PlayerKind, Song, Source, State, Track, YouTubePlayer,
 };
 use crate::{
     api, bus, db, injector, prelude::*, settings, spotify_id::SpotifyId, track_id::TrackId, utils,
@@ -42,7 +41,6 @@ pub(super) struct PlayerInternal {
     pub(super) max_queue_length: settings::Var<u32>,
     pub(super) max_songs_per_user: settings::Var<u32>,
     pub(super) duplicate_duration: settings::Var<utils::Duration>,
-    pub(super) commands_tx: mpsc::UnboundedSender<Command>,
     /// Theme songs.
     pub(super) themes: injector::Var<Option<db::Themes>>,
     /// Player is closed for more requests.
@@ -50,35 +48,8 @@ pub(super) struct PlayerInternal {
 }
 
 impl PlayerInternal {
-    /// Send the given command.
-    pub(super) fn send(&self, command: Command) -> Result<()> {
-        self.commands_tx
-            .unbounded_send(command)
-            .map_err(|_| anyhow!("failed to send command"))
-    }
-
-    /// Synchronize playback with the given song.
-    pub(super) fn play_sync(&self, song: Song) -> Result<()> {
-        self.send(Command::Sync { song })
-    }
-
-    /// Pause playback with the specified Source.
-    pub(super) fn pause_with_source(&self, source: Source) -> Result<()> {
-        self.send(Command::Pause(source))
-    }
-
-    /// Indicate that the queue has been modified.
-    pub(super) async fn modified(&self) {
-        if let Err(e) = self
-            .commands_tx
-            .unbounded_send(Command::Modified(Source::Manual))
-        {
-            log::error!("failed to send queue modified notification: {}", e);
-        }
-    }
-
     /// Try to sync Spotify playback.
-    pub async fn sync_spotify_playback(&self) -> Result<()> {
+    pub async fn sync_spotify_playback(&mut self) -> Result<()> {
         if !self.spotify.token.is_ready().await {
             return Ok(());
         }
@@ -102,11 +73,11 @@ impl PlayerInternal {
                     self.connect_player
                         .set_scaled_volume(volume_percent)
                         .await?;
-                    self.play_sync(song)?;
+                    self.sync(song).await?;
                 }
                 None => {
                     log::trace!("Pausing playback since item is missing");
-                    self.pause_with_source(Source::Automatic)?;
+                    self.pause(Source::Automatic).await?;
                 }
             }
         }
@@ -185,37 +156,29 @@ impl PlayerInternal {
     }
 
     /// Switch the current player and send the appropriate play commands.
-    async fn switch_current_player(&mut self, player: PlayerKind) {
+    async fn switch_current_player(&mut self, player: PlayerKind) -> Result<()> {
         use self::PlayerKind::*;
 
         match (self.player, player) {
             (Spotify, Spotify) => (),
             (YouTube, YouTube) => (),
             (Spotify, _) | (None, YouTube) => {
-                let result = self.connect_player.stop().await;
-
-                if let Err(ConnectError::NoDevice) = result {
-                    self.bus.send_sync(Event::NotConfigured);
-                }
+                self.connect_player.stop().await?;
             }
             (YouTube, _) | (None, Spotify) => self.youtube_player.stop(),
             (None, None) => (),
         }
 
         self.player = player;
+        Ok(())
     }
 
     /// Send a pause command to the appropriate player.
-    async fn send_pause_command(&mut self) {
+    async fn send_pause_command(&mut self) -> Result<()> {
         match self.player {
             PlayerKind::Spotify => {
                 log::trace!("pausing spotify player");
-
-                let result = self.connect_player.pause().await;
-
-                if let Err(ConnectError::NoDevice) = result {
-                    self.bus.send_sync(Event::NotConfigured);
-                }
+                self.connect_player.pause().await?;
             }
             PlayerKind::YouTube => {
                 log::trace!("pausing youtube player");
@@ -223,35 +186,34 @@ impl PlayerInternal {
             }
             _ => (),
         }
+
+        Ok(())
     }
 
     /// Play the given song.
-    async fn send_play_command(&mut self, song: &Song) {
+    async fn send_play_command(&mut self, song: &Song) -> Result<()> {
         match song.item.track_id.clone() {
             TrackId::Spotify(id) => {
-                let result = self
-                    .connect_player
+                self.connect_player
                     .play(Some(id), Some(song.elapsed()))
-                    .await;
-
-                if let Err(ConnectError::NoDevice) = result {
-                    self.bus.send_sync(Event::NotConfigured);
-                }
+                    .await?;
             }
             TrackId::YouTube(id) => {
                 self.youtube_player
                     .play(song.elapsed(), song.duration(), id);
             }
         }
+
+        Ok(())
     }
 
     /// Switch the player to the specified song without changing its state.
     async fn switch_to_song(&mut self, mut song: Option<Song>) -> Result<()> {
         if let Some(song) = song.as_mut() {
             song.pause();
-            self.switch_current_player(song.player()).await;
+            self.switch_current_player(song.player()).await?;
         } else {
-            self.switch_current_player(PlayerKind::None).await;
+            self.switch_current_player(PlayerKind::None).await?;
         }
 
         if let Some(song) = song {
@@ -269,8 +231,8 @@ impl PlayerInternal {
 
         self.song_timeout_at = Some(song.deadline());
 
-        self.send_play_command(&song).await;
-        self.switch_current_player(song.player()).await;
+        self.send_play_command(&song).await?;
+        self.switch_current_player(song.player()).await?;
         self.notify_song_change(Some(&song))?;
 
         if let Source::Manual = source {
@@ -288,8 +250,8 @@ impl PlayerInternal {
     async fn resume_song(&mut self, source: Source, song: Song) -> Result<()> {
         self.song_timeout_at = Some(song.deadline().into());
 
-        self.send_play_command(&song).await;
-        self.switch_current_player(song.player()).await;
+        self.send_play_command(&song).await?;
+        self.switch_current_player(song.player()).await?;
         self.notify_song_change(Some(&song))?;
 
         if let Source::Manual = source {
@@ -318,200 +280,30 @@ impl PlayerInternal {
         Ok(())
     }
 
-    /// Handle incoming command.
-    pub(super) async fn command(&mut self, command: Command) -> Result<()> {
-        use self::Command::*;
-
+    pub(super) async fn toggle(&mut self, source: Source) -> Result<()> {
         let state = self.injector.get::<State>().await.unwrap_or_default();
 
-        if self.detached {
-            log::trace!(
-                "Ignoring: Command = {:?}, State = {:?}, Player = {:?}",
-                command,
-                state,
-                self.player,
-            );
+        match state {
+            State::Paused | State::None => self.play(source).await?,
+            State::Playing => self.pause(source).await?,
+        }
 
-            if let Source::Manual = command.source() {
+        Ok(())
+    }
+
+    pub(super) async fn play(&mut self, source: Source) -> Result<()> {
+        if self.detached {
+            if let Source::Manual = source {
                 self.bus.send_sync(Event::Detached);
             }
 
             return Ok(());
         }
 
-        let command = match (command, state) {
-            (Toggle(source), State::Paused) | (Toggle(source), State::None) => Play(source),
-            (Toggle(source), State::Playing) => Pause(source),
-            (command, _) => command,
-        };
+        log::trace!("Starting Player");
 
         match self.playback_mode {
             PlaybackMode::Default => {
-                self.default_playback_command(command).await?;
-            }
-            PlaybackMode::Queue => {
-                self.queue_playback_command(command).await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Handle the default playback command.
-    async fn queue_playback_command(&mut self, command: Command) -> Result<()> {
-        use self::Command::*;
-
-        let state = self.injector.get::<State>().await.unwrap_or_default();
-
-        log::trace!(
-            "Processing: Command = {:?}, State = {:?}, Player = {:?}",
-            command,
-            state,
-            self.player,
-        );
-
-        match (command, state) {
-            (Skip(source), _) => {
-                log::trace!("Skipping song");
-
-                let result = self.connect_player.next().await;
-
-                if let Err(ConnectError::NoDevice) = result {
-                    self.bus.send_sync(Event::NotConfigured);
-                }
-
-                if let Source::Manual = source {
-                    self.bus.send_sync(Event::Skip);
-                }
-            }
-            // initial pause
-            (Pause(source), State::Playing) => {
-                log::trace!("Pausing player");
-
-                let result = self.connect_player.pause().await;
-
-                if let Err(ConnectError::NoDevice) = result {
-                    self.bus.send_sync(Event::NotConfigured);
-                }
-
-                if let Source::Manual = source {
-                    self.bus.send_sync(Event::Pausing);
-                }
-
-                self.injector.update(State::Paused).await;
-            }
-            (Play(source), State::Paused) | (Play(source), State::None) => {
-                log::trace!("Starting player");
-
-                let result = self.connect_player.play(None, None).await;
-
-                if let Err(ConnectError::NoDevice) = result {
-                    self.bus.send_sync(Event::NotConfigured);
-                }
-
-                if let Source::Manual = source {
-                    let feedback = self.song_switch_feedback.load().await;
-                    self.bus.send_sync(Event::Playing(feedback, None));
-                }
-
-                self.injector.update(State::Playing).await;
-            }
-            (Sync { .. }, _) => {
-                log::info!("Synchronization not supported with the current playback mode");
-            }
-            // queue was modified in some way
-            (Modified(..), State::Playing) => {
-                log::info!("Song modifications are not supported with the current playback mode");
-            }
-            (Inject(_, item, offset), State::Playing) => match &item.track_id {
-                &TrackId::Spotify(id) => {
-                    let result = self.connect_player.play(Some(id), Some(offset)).await;
-
-                    if let Err(ConnectError::NoDevice) = result {
-                        self.bus.send_sync(Event::NotConfigured);
-                    }
-
-                    self.injector.update(State::Playing).await;
-                }
-                _ => {
-                    log::info!("Can't inject playback of a non-spotify song.");
-                }
-            },
-            _ => (),
-        }
-
-        Ok(())
-    }
-
-    /// Handle the default playback command.
-    async fn default_playback_command(&mut self, command: Command) -> Result<()> {
-        use self::Command::*;
-
-        let state = self.injector.get::<State>().await.unwrap_or_default();
-
-        log::trace!(
-            "Processing: Command = {:?}, State = {:?}, Player = {:?}",
-            command,
-            state,
-            self.player,
-        );
-
-        let command = match (command, state) {
-            (Toggle(source), State::Paused) | (Toggle(source), State::None) => Play(source),
-            (Toggle(source), State::Playing) => Pause(source),
-            (command, _) => command,
-        };
-
-        match (command, state) {
-            (Skip(source), _) => {
-                log::trace!("Skipping song");
-
-                let song = self.mixer.next_song().await?;
-
-                match (song, state) {
-                    (Some(song), State::Playing) => {
-                        self.play_song(source, song).await?;
-                    }
-                    (Some(song), _) => {
-                        self.switch_to_song(Some(song.clone())).await?;
-                        self.notify_song_change(Some(&song))?;
-                    }
-                    (None, _) => {
-                        if let Source::Manual = source {
-                            self.bus.send_sync(Event::Empty);
-                        }
-
-                        self.switch_to_song(None).await?;
-                        self.notify_song_change(None)?;
-                        self.injector.update(State::Paused).await;
-                    }
-                }
-            }
-            // initial pause
-            (Pause(source), State::Playing) => {
-                log::trace!("Pausing player");
-
-                self.send_pause_command().await;
-                self.song_timeout_at = None;
-                self.injector.update(State::Paused).await;
-
-                let song = self
-                    .injector
-                    .mutate(|song: &mut Song| {
-                        song.pause();
-                        song.clone()
-                    })
-                    .await;
-
-                if let Source::Manual = source {
-                    self.bus.send_sync(Event::Pausing);
-                }
-
-                self.notify_song_change(song.as_ref())?;
-            }
-            (Play(source), State::Paused) | (Play(source), State::None) => {
-                log::trace!("Starting player");
-
                 let song = {
                     match self.injector.get::<Song>().await {
                         Some(mut song) => {
@@ -540,25 +332,148 @@ impl PlayerInternal {
                     self.injector.update(State::Paused).await;
                 }
             }
-            (Sync { song }, _) => {
-                log::trace!("Synchronize the state of the player with the given song");
+            PlaybackMode::Queue => {
+                self.connect_player.play(None, None).await?;
 
-                self.switch_current_player(song.player()).await;
-
-                let state = song.state();
-
-                if let State::Playing = state {
-                    self.song_timeout_at = Some(song.deadline());
-                } else {
-                    self.song_timeout_at = None;
+                if let Source::Manual = source {
+                    let feedback = self.song_switch_feedback.load().await;
+                    self.bus.send_sync(Event::Playing(feedback, None));
                 }
 
-                self.notify_song_change(Some(&song))?;
-                self.injector.update(song).await;
-                self.injector.update(state).await;
+                self.injector.update(State::Playing).await;
             }
-            // queue was modified in some way
-            (Modified(source), State::Playing) => {
+        }
+
+        Ok(())
+    }
+
+    /// Pause playback.
+    pub(super) async fn pause(&mut self, source: Source) -> Result<()> {
+        if self.detached {
+            if let Source::Manual = source {
+                self.bus.send_sync(Event::Detached);
+            }
+
+            return Ok(());
+        }
+
+        log::trace!("Pausing Player");
+
+        match self.playback_mode {
+            PlaybackMode::Default => {
+                self.send_pause_command().await?;
+                self.song_timeout_at = None;
+                self.injector.update(State::Paused).await;
+
+                let song = self
+                    .injector
+                    .mutate(|song: &mut Song| {
+                        song.pause();
+                        song.clone()
+                    })
+                    .await;
+
+                if let Source::Manual = source {
+                    self.bus.send_sync(Event::Pausing);
+                }
+
+                self.notify_song_change(song.as_ref())?;
+            }
+            PlaybackMode::Queue => {
+                self.connect_player.pause().await?;
+
+                if let Source::Manual = source {
+                    self.bus.send_sync(Event::Pausing);
+                }
+
+                self.injector.update(State::Paused).await;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(super) async fn skip(&mut self, source: Source) -> Result<()> {
+        if self.detached {
+            if let Source::Manual = source {
+                self.bus.send_sync(Event::Detached);
+            }
+
+            return Ok(());
+        }
+
+        log::trace!("Skipping Song");
+
+        match self.playback_mode {
+            PlaybackMode::Default => {
+                let state = self.injector.get::<State>().await.unwrap_or_default();
+                let song = self.mixer.next_song().await?;
+
+                match (song, state) {
+                    (Some(song), State::Playing) => {
+                        self.play_song(source, song).await?;
+                    }
+                    (Some(song), _) => {
+                        self.switch_to_song(Some(song.clone())).await?;
+                        self.notify_song_change(Some(&song))?;
+                    }
+                    (None, _) => {
+                        if let Source::Manual = source {
+                            self.bus.send_sync(Event::Empty);
+                        }
+
+                        self.switch_to_song(None).await?;
+                        self.notify_song_change(None)?;
+                        self.injector.update(State::Paused).await;
+                    }
+                }
+            }
+            PlaybackMode::Queue => {
+                self.connect_player.next().await?;
+
+                if let Source::Manual = source {
+                    self.bus.send_sync(Event::Skip);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Start playback on a specific song state.
+    pub(super) async fn sync(&mut self, song: Song) -> Result<()> {
+        log::trace!("Syncing Song");
+
+        self.switch_current_player(song.player()).await?;
+
+        let state = song.state();
+
+        if let State::Playing = state {
+            self.song_timeout_at = Some(song.deadline());
+        } else {
+            self.song_timeout_at = None;
+        }
+
+        self.notify_song_change(Some(&song))?;
+        self.injector.update(song).await;
+        self.injector.update(state).await;
+        Ok(())
+    }
+
+    /// Mark the queue as modified and load and notify resources appropriately.
+    pub(super) async fn modified(&mut self, source: Source) -> Result<()> {
+        if self.detached {
+            if let Source::Manual = source {
+                self.bus.send_sync(Event::Detached);
+            }
+
+            return Ok(());
+        }
+
+        log::trace!("Pausing player");
+
+        match self.playback_mode {
+            PlaybackMode::Default => {
                 if !self.injector.exists::<Song>().await {
                     if let Some(song) = self.mixer.next_song().await? {
                         self.play_song(source, song).await?;
@@ -568,7 +483,31 @@ impl PlayerInternal {
                 self.global_bus.send(bus::Global::SongModified);
                 self.bus.send_sync(Event::Modified);
             }
-            (Inject(source, item, offset), State::Playing) => {
+            _ => (),
+        }
+
+        Ok(())
+    }
+
+    /// Inject the given item to start playing _immediately_.
+    pub(super) async fn inject(
+        &mut self,
+        source: Source,
+        item: Arc<Item>,
+        offset: Duration,
+    ) -> Result<()> {
+        if self.detached {
+            if let Source::Manual = source {
+                self.bus.send_sync(Event::Detached);
+            }
+
+            return Ok(());
+        }
+
+        log::trace!("Pausing player");
+
+        match self.playback_mode {
+            PlaybackMode::Default => {
                 {
                     // store the currently playing song in the sidelined slot.
                     if let Some(mut song) = self.injector.clear::<Song>().await {
@@ -579,7 +518,15 @@ impl PlayerInternal {
 
                 self.play_song(source, Song::new(item, offset)).await?;
             }
-            _ => (),
+            PlaybackMode::Queue => match &item.track_id {
+                &TrackId::Spotify(id) => {
+                    self.connect_player.play(Some(id), Some(offset)).await?;
+                    self.injector.update(State::Playing).await;
+                }
+                _ => {
+                    log::info!("Can't inject playback of a non-spotify song.");
+                }
+            },
         }
 
         Ok(())
@@ -728,18 +675,13 @@ impl PlayerInternal {
                 // TODO: how do we deal with playback mode on a device transfer?
                 match track_id {
                     TrackId::Spotify(id) => {
-                        let result = self.connect_player.play(Some(id), Some(elapsed)).await;
-
-                        if let Err(ConnectError::NoDevice) = result {
-                            self.bus.send_sync(Event::NotConfigured);
-                        }
-
-                        self.switch_current_player(PlayerKind::Spotify).await;
+                        self.connect_player.play(Some(id), Some(elapsed)).await?;
+                        self.switch_current_player(PlayerKind::Spotify).await?;
                         self.injector.update(State::Playing).await;
                     }
                     TrackId::YouTube(id) => {
                         self.youtube_player.play(elapsed, duration, id);
-                        self.switch_current_player(PlayerKind::YouTube).await;
+                        self.switch_current_player(PlayerKind::YouTube).await?;
                         self.injector.update(State::Playing).await;
                     }
                 }
@@ -793,7 +735,7 @@ impl PlayerInternal {
     ///
     /// Returns the item added.
     pub(super) async fn add_track(
-        &self,
+        &mut self,
         user: &str,
         track_id: TrackId,
         bypass_constraints: bool,
@@ -813,7 +755,7 @@ impl PlayerInternal {
 
     /// Default method for adding a track.
     async fn default_add_track(
-        &self,
+        &mut self,
         user: &str,
         track_id: TrackId,
         bypass_constraints: bool,
@@ -903,16 +845,16 @@ impl PlayerInternal {
             .await
             .map_err(AddTrackError::Error)?;
 
-        self.commands_tx
-            .unbounded_send(Command::Modified(Source::Manual))
-            .map_err(|e| AddTrackError::Error(e.into()))?;
+        self.modified(Source::Manual)
+            .await
+            .map_err(AddTrackError::Error)?;
 
         Ok((Some(len), item))
     }
 
     /// Try to queue up a track.
     async fn queue_add_track(
-        &self,
+        &mut self,
         user: &str,
         track_id: TrackId,
         _bypass_constraints: bool,

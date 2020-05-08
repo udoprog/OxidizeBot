@@ -1,4 +1,4 @@
-use super::{Command, ConnectStream, PlaybackMode, PlayerInternal};
+use super::{ConnectStream, PlaybackMode, PlayerInternal};
 use crate::{prelude::*, settings, spotify_id::SpotifyId, utils, Uri};
 use anyhow::Result;
 use std::sync::Arc;
@@ -8,7 +8,6 @@ use tokio::sync::RwLock;
 pub(super) struct PlaybackFuture {
     pub(super) internal: Arc<RwLock<PlayerInternal>>,
     pub(super) connect_stream: ConnectStream,
-    pub(super) commands: mpsc::UnboundedReceiver<Command>,
     pub(super) playback_mode_stream: settings::Stream<PlaybackMode>,
     /// Stream of settings if the player is detached.
     pub(super) detached_stream: settings::Stream<bool>,
@@ -60,11 +59,13 @@ impl PlaybackFuture {
                 }
                 _ = spotify_token_ready.current() => {
                     log::info!("Synchronizing Spotify Playback");
-                    self.internal.read().await.sync_spotify_playback().await?;
+                    self.internal.write().await.sync_spotify_playback().await?;
                 }
                 /* player */
                 _ = song_timeout.current() => {
-                    self.internal.write().await.end_of_track().await?;
+                    let mut internal = self.internal.write().await;
+                    internal.song_timeout_at = None;
+                    internal.end_of_track().await?;
                 }
                 update = self.detached_stream.select_next_some() => {
                     self.internal.write().await.update_detached(update).await?;
@@ -83,9 +84,6 @@ impl PlaybackFuture {
                 }
                 event = self.connect_stream.select_next_some() => {
                     self.internal.write().await.handle_player_event(event?).await?;
-                }
-                command = self.commands.select_next_some() => {
-                    self.internal.write().await.command(command).await?;
                 }
             }
         }

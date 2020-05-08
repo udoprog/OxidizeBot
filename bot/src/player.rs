@@ -4,7 +4,7 @@ use crate::{
 };
 
 pub(self) use self::{
-    connect::{ConnectDevice, ConnectError, ConnectPlayer, ConnectStream},
+    connect::{ConnectDevice, ConnectPlayer, ConnectStream},
     mixer::Mixer,
     playback_future::PlaybackFuture,
     player_internal::PlayerInternal,
@@ -14,7 +14,6 @@ pub(self) use self::{
 pub use self::{item::Item, song::Song, track::Track};
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
-use futures::channel::mpsc;
 use std::{future::Future, sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 use tracing::trace_span;
@@ -104,41 +103,6 @@ impl ModifyVolume {
         };
 
         u32::min(100, v)
-    }
-}
-
-#[derive(Debug)]
-pub(self) enum Command {
-    /// Skip the current song.
-    Skip(Source),
-    /// Toggle playback.
-    Toggle(Source),
-    /// Pause playback.
-    Pause(Source),
-    /// Start playback.
-    Play(Source),
-    /// Start playback on a specific song state.
-    Sync { song: Song },
-    /// The queue was modified.
-    Modified(Source),
-    /// Play the given item as a theme at the given offset.
-    Inject(Source, Arc<Item>, Duration),
-}
-
-impl Command {
-    /// Get the source of a command.
-    pub(self) fn source(&self) -> Source {
-        use self::Command::*;
-
-        match *self {
-            Skip(source)
-            | Toggle(source)
-            | Pause(source)
-            | Play(source)
-            | Modified(source)
-            | Inject(source, ..) => source,
-            Sync { .. } => Source::Automatic,
-        }
     }
 }
 
@@ -246,8 +210,6 @@ pub async fn run(
         Some(tokio::time::interval(song_update_interval.as_std()))
     };
 
-    let (commands_tx, commands) = mpsc::unbounded();
-
     let (detached_stream, detached) = settings.stream("detached").or_default().await?;
 
     let duplicate_duration = settings
@@ -284,7 +246,6 @@ pub async fn run(
         max_songs_per_user,
         duplicate_duration,
 
-        commands_tx,
         themes: injector.var().await?,
         closed: None,
     }));
@@ -321,7 +282,6 @@ pub async fn run(
         let playback = PlaybackFuture {
             internal: internal.clone(),
             connect_stream,
-            commands,
             playback_mode_stream,
             detached_stream,
             song_update_interval,
@@ -422,11 +382,11 @@ impl Player {
 
     /// Promote the given song to the head of the queue.
     pub async fn promote_song(&self, user: Option<&str>, n: usize) -> Result<Option<Arc<Item>>> {
-        let inner = self.inner.read().await;
+        let mut inner = self.inner.write().await;
         let promoted = inner.mixer.queue.promote_song(user, n).await?;
 
         if promoted.is_some() {
-            inner.modified().await;
+            inner.modified(Source::Manual).await?;
         }
 
         Ok(promoted)
@@ -434,26 +394,30 @@ impl Player {
 
     /// Toggle playback.
     pub async fn toggle(&self) -> Result<()> {
-        let inner = self.inner.read().await;
-        inner.send(Command::Toggle(Source::Manual))
+        let mut inner = self.inner.write().await;
+        inner.toggle(Source::Manual).await?;
+        Ok(())
     }
 
     /// Start playback.
     pub async fn play(&self) -> Result<()> {
-        let inner = self.inner.read().await;
-        inner.send(Command::Play(Source::Manual))
+        let mut inner = self.inner.write().await;
+        inner.play(Source::Manual).await?;
+        Ok(())
     }
 
     /// Pause playback.
     pub async fn pause(&self) -> Result<()> {
-        let inner = self.inner.read().await;
-        inner.send(Command::Pause(Source::Manual))
+        let mut inner = self.inner.write().await;
+        inner.pause(Source::Manual).await?;
+        Ok(())
     }
 
     /// Skip the current song.
     pub async fn skip(&self) -> Result<()> {
-        let inner = self.inner.read().await;
-        inner.send(Command::Skip(Source::Manual))
+        let mut inner = self.inner.write().await;
+        inner.skip(Source::Manual).await?;
+        Ok(())
     }
 
     /// Update volume of the player.
@@ -467,17 +431,10 @@ impl Player {
             }
         };
 
-        match track_id {
-            TrackId::Spotify(..) => match inner.connect_player.volume(modify).await {
-                Err(ConnectError::NoDevice) => {
-                    inner.bus.send_sync(Event::NotConfigured);
-                    Ok(None)
-                }
-                Err(e) => Err(e.into()),
-                Ok(volume) => Ok(Some(volume)),
-            },
-            TrackId::YouTube(..) => Ok(Some(inner.youtube_player.volume(modify).await?)),
-        }
+        Ok(match track_id {
+            TrackId::Spotify(..) => Some(inner.connect_player.volume(modify).await?),
+            TrackId::YouTube(..) => Some(inner.youtube_player.volume(modify).await?),
+        })
     }
 
     /// Get the current volume.
@@ -545,7 +502,7 @@ impl Player {
 
     /// Play a theme track.
     pub async fn play_theme(&self, channel: &str, name: &str) -> Result<(), PlayThemeError> {
-        let inner = self.inner.read().await;
+        let mut inner = self.inner.write().await;
 
         let themes = match inner.themes.load().await {
             Some(themes) => themes,
@@ -578,10 +535,9 @@ impl Player {
         let duration = theme.start.as_duration();
 
         inner
-            .commands_tx
-            .unbounded_send(Command::Inject(Source::Manual, item, duration))
-            .map_err(|e| PlayThemeError::Error(e.into()))?;
-
+            .inject(Source::Manual, item, duration)
+            .await
+            .map_err(PlayThemeError::Error)?;
         Ok(())
     }
 
@@ -595,23 +551,18 @@ impl Player {
         bypass_constraints: bool,
         max_duration: Option<utils::Duration>,
     ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
-        let inner = self.inner.read().await;
+        let mut inner = self.inner.write().await;
         inner
             .add_track(user, track_id, bypass_constraints, max_duration)
             .await
     }
 
-    /// Remove the first track in the queue.
-    pub fn remove_first(&self) -> Result<Option<Arc<Item>>> {
-        Ok(None)
-    }
-
     pub async fn purge(&self) -> Result<Vec<Arc<Item>>> {
-        let inner = self.inner.read().await;
+        let mut inner = self.inner.write().await;
         let purged = inner.mixer.queue.purge().await?;
 
         if !purged.is_empty() {
-            inner.modified().await;
+            inner.modified(Source::Manual).await?;
         }
 
         Ok(purged)
@@ -619,11 +570,11 @@ impl Player {
 
     /// Remove the item at the given position.
     pub async fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>> {
-        let inner = self.inner.read().await;
+        let mut inner = self.inner.write().await;
         let removed = inner.mixer.queue.remove_at(n).await?;
 
         if removed.is_some() {
-            inner.modified().await;
+            inner.modified(Source::Manual).await?;
         }
 
         Ok(removed)
@@ -631,11 +582,11 @@ impl Player {
 
     /// Remove the first track in the queue.
     pub async fn remove_last(&self) -> Result<Option<Arc<Item>>> {
-        let inner = self.inner.read().await;
+        let mut inner = self.inner.write().await;
         let removed = inner.mixer.queue.remove_last().await?;
 
         if removed.is_some() {
-            inner.modified().await;
+            inner.modified(Source::Manual).await?;
         }
 
         Ok(removed)
@@ -643,11 +594,11 @@ impl Player {
 
     /// Remove the last track by the given user.
     pub async fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>> {
-        let inner = self.inner.read().await;
+        let mut inner = self.inner.write().await;
         let removed = inner.mixer.queue.remove_last_by_user(user).await?;
 
         if removed.is_some() {
-            inner.modified().await;
+            inner.modified(Source::Manual).await?;
         }
 
         Ok(removed)
