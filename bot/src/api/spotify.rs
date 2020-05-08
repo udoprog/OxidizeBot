@@ -81,6 +81,7 @@ impl Spotify {
             .query_param("volume_percent", &volume)
             .header(header::ACCEPT, "application/json")
             .header(header::CONTENT_LENGTH, "0")
+            .absent_body(true)
             .json_map(device_control)
             .await
     }
@@ -91,6 +92,7 @@ impl Spotify {
             .optional_query_param("device_id", device_id)
             .header(header::CONTENT_LENGTH, "0")
             .header(header::ACCEPT, "application/json")
+            .absent_body(true)
             .json_map(device_control)
             .await
     }
@@ -124,6 +126,7 @@ impl Spotify {
             .optional_query_param("device_id", device_id)
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json")
+            .absent_body(true)
             .body(body);
 
         return r.json_map(device_control).await;

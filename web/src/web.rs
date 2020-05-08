@@ -634,7 +634,7 @@ impl Handler {
                 return Err(Error::bad_request(format!(
                     "unsupported connection: {}",
                     id
-                )))
+                )));
             }
         };
 
@@ -746,7 +746,7 @@ impl Handler {
             None => {
                 return Err(Error::bad_request(
                     "no such session waiting to be authenticated",
-                ))
+                ));
             }
         };
 

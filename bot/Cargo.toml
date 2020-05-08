@@ -65,11 +65,7 @@ tracing = "0.1.13"
 tracing-core = "0.1.10"
 tracing-futures = { version = "0.2.3", default-features = false, features = ["std-future"] }
 slab = "0.4.2"
-
-[dependencies.irc]
-version = "0.13.6"
-git = "https://github.com/aatxe/irc.git"
-branch = "develop"
+irc = "0.14.0"
 
 [build-dependencies]
 winres = "0.1.11"
