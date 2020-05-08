@@ -8,7 +8,7 @@ use crate::{
 };
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use std::{sync::Arc, time::Duration, time::Instant};
+use std::{sync::Arc, time::Duration};
 
 pub(super) struct PlayerInternal {
     pub(super) injector: injector::Injector,
@@ -35,8 +35,6 @@ pub(super) struct PlayerInternal {
     pub(super) global_bus: Arc<bus::Bus<bus::Global>>,
     /// Song config.
     pub(super) song_switch_feedback: settings::Var<bool>,
-    /// The next song timeout.
-    pub(super) song_timeout_at: Option<Instant>,
     pub(super) device: ConnectDevice,
     pub(super) max_queue_length: settings::Var<u32>,
     pub(super) max_songs_per_user: settings::Var<u32>,
@@ -229,8 +227,6 @@ impl PlayerInternal {
     async fn play_song(&mut self, source: Source, mut song: Song) -> Result<()> {
         song.play();
 
-        self.song_timeout_at = Some(song.deadline());
-
         self.send_play_command(&song).await?;
         self.switch_current_player(song.player()).await?;
         self.notify_song_change(Some(&song))?;
@@ -248,8 +244,6 @@ impl PlayerInternal {
 
     /// Resume playing a specific song.
     async fn resume_song(&mut self, source: Source, song: Song) -> Result<()> {
-        self.song_timeout_at = Some(song.deadline().into());
-
         self.send_play_command(&song).await?;
         self.switch_current_player(song.player()).await?;
         self.notify_song_change(Some(&song))?;
@@ -268,7 +262,6 @@ impl PlayerInternal {
     /// Detach the player.
     async fn detach(&mut self) -> Result<()> {
         self.player = PlayerKind::None;
-        self.song_timeout_at = None;
         self.injector.update(State::None).await;
 
         // store the currently playing song in the sidelined slot.
@@ -362,7 +355,6 @@ impl PlayerInternal {
         match self.playback_mode {
             PlaybackMode::Default => {
                 self.send_pause_command().await?;
-                self.song_timeout_at = None;
                 self.injector.update(State::Paused).await;
 
                 let song = self
@@ -447,13 +439,6 @@ impl PlayerInternal {
         self.switch_current_player(song.player()).await?;
 
         let state = song.state();
-
-        if let State::Playing = state {
-            self.song_timeout_at = Some(song.deadline());
-        } else {
-            self.song_timeout_at = None;
-        }
-
         self.notify_song_change(Some(&song))?;
         self.injector.update(song).await;
         self.injector.update(state).await;
@@ -508,12 +493,10 @@ impl PlayerInternal {
 
         match self.playback_mode {
             PlaybackMode::Default => {
-                {
-                    // store the currently playing song in the sidelined slot.
-                    if let Some(mut song) = self.injector.clear::<Song>().await {
-                        song.pause();
-                        self.mixer.push_sidelined(song);
-                    }
+                // store the currently playing song in the sidelined slot.
+                if let Some(mut song) = self.injector.clear::<Song>().await {
+                    song.pause();
+                    self.mixer.push_sidelined(song);
                 }
 
                 self.play_song(source, Song::new(item, offset)).await?;

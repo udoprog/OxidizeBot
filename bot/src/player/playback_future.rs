@@ -1,4 +1,4 @@
-use super::{ConnectStream, PlaybackMode, PlayerInternal};
+use super::{ConnectStream, PlaybackMode, PlayerInternal, Song};
 use crate::{prelude::*, settings, spotify_id::SpotifyId, utils, Uri};
 use anyhow::Result;
 use std::sync::Arc;
@@ -19,7 +19,11 @@ pub(super) struct PlaybackFuture {
 
 impl PlaybackFuture {
     /// Run the playback future.
-    pub(super) async fn run(mut self, settings: settings::Settings) -> Result<()> {
+    pub(super) async fn run(
+        mut self,
+        injector: injector::Injector,
+        settings: settings::Settings,
+    ) -> Result<()> {
         // TODO: Remove fallback-uri migration next major release.
         if let Some(fallback_uri) = settings.get::<String>("fallback-uri").await? {
             if str::parse::<Uri>(&fallback_uri).is_err() {
@@ -45,15 +49,14 @@ impl PlaybackFuture {
             Box::pin(async move { spotify_token.wait_until_ready().await })
         });
 
-        loop {
-            let mut song_timeout = self
-                .internal
-                .read()
-                .await
-                .song_timeout_at
-                .map(|when| tokio::time::delay_until(when.into()));
+        let (mut song_stream, song) = injector.stream::<Song>().await;
+        let mut song_timeout = song.map(|s| tokio::time::delay_until(s.deadline().into()));
 
+        loop {
             futures::select! {
+                song = song_stream.select_next_some() => {
+                    song_timeout = song.map(|s| tokio::time::delay_until(s.deadline().into()));
+                }
                 fallback = fallback_stream.select_next_some() => {
                     self.internal.write().await.update_fallback_items(fallback).await;
                 }
@@ -64,7 +67,6 @@ impl PlaybackFuture {
                 /* player */
                 _ = song_timeout.current() => {
                     let mut internal = self.internal.write().await;
-                    internal.song_timeout_at = None;
                     internal.end_of_track().await?;
                 }
                 update = self.detached_stream.select_next_some() => {

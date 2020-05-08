@@ -85,21 +85,16 @@ pub(super) async fn setup(
 
 #[derive(Debug, Error)]
 pub(super) enum ConnectError {
-    #[error("error when issuing {} command", _0)]
-    Error(&'static str),
     #[error("no device configured or available")]
     NoDevice,
-    #[error("other error")]
-    Other(#[source] Error),
+    #[error("error when issuing {0} command")]
+    Error(&'static str, #[source] Error),
 }
 
 impl ConnectError {
     fn handle(result: Result<bool, Error>, what: &'static str) -> Result<(), ConnectError> {
         match result {
-            Err(e) => {
-                log_error!(e, "failed to issue {} command", what);
-                Err(ConnectError::Error(what))
-            }
+            Err(e) => Err(ConnectError::Error(what, e.into())),
             Ok(true) => Ok(()),
             Ok(false) => Err(ConnectError::NoDevice),
         }
@@ -128,7 +123,7 @@ impl ConnectPlayer {
     ) -> Result<(), ConnectError> {
         let track_uri = id.map(|id| format!("spotify:track:{}", id.to_base62()));
         let elapsed = elapsed.map(|elapsed| elapsed.as_millis() as u64);
-        let device_id = self.device.read().await.clone();
+        let device_id = self.device.load().await;
 
         let result = self
             .spotify
@@ -141,7 +136,7 @@ impl ConnectPlayer {
     /// Enqueue the specified song to play next.
     pub(super) async fn queue(&self, id: SpotifyId) -> Result<(), ConnectError> {
         let track_uri = format!("spotify:track:{}", id.to_base62());
-        let device_id = self.device.read().await.clone();
+        let device_id = self.device.load().await;
 
         let result = self.spotify.me_player_queue(device_id, track_uri).await;
 
@@ -149,18 +144,18 @@ impl ConnectPlayer {
     }
 
     pub(super) async fn next(&self) -> Result<(), ConnectError> {
-        let device_id = self.device.read().await.clone();
+        let device_id = self.device.load().await;
         let result = self.spotify.me_player_next(device_id).await;
         ConnectError::handle(result, "skip")
     }
 
     pub(super) async fn pause(&self) -> Result<(), ConnectError> {
-        let device_id = self.device.read().await.clone();
+        let device_id = self.device.load().await;
         ConnectError::handle(self.spotify.me_player_pause(device_id).await, "pause")
     }
 
     pub(super) async fn stop(&self) -> Result<(), ConnectError> {
-        let device_id = self.device.read().await.clone();
+        let device_id = self.device.load().await;
         ConnectError::handle(self.spotify.me_player_pause(device_id).await, "stop")
     }
 
@@ -177,7 +172,7 @@ impl ConnectPlayer {
         *volume = update;
         self.settings
             .set("volume", update)
-            .map_err(|e| ConnectError::Other(e.into()))
+            .map_err(|e| ConnectError::Error("update volume settings", e.into()))
             .await?;
         Ok(update)
     }
@@ -262,7 +257,7 @@ impl ConnectDevice {
 
     /// Get the current device.
     pub(super) async fn current_device(&self) -> Option<String> {
-        self.device.read().await.clone()
+        self.device.load().await
     }
 
     /// List all available devices.

@@ -112,12 +112,11 @@ impl Song {
     pub fn elapsed(&self) -> Duration {
         let when = self
             .started_at
-            .as_ref()
             .and_then(|started_at| {
                 let now = Instant::now();
 
-                if now > *started_at {
-                    Some(now - *started_at)
+                if now > started_at {
+                    Some(now - started_at)
                 } else {
                     None
                 }

@@ -239,7 +239,6 @@ pub async fn run(
         bus,
         global_bus,
         song_switch_feedback,
-        song_timeout_at: None,
 
         device,
         max_queue_length,
@@ -296,7 +295,7 @@ pub async fn run(
 
         futures.push(
             playback
-                .run(settings)
+                .run(injector.clone(), settings)
                 .instrument(trace_span!(target: "futures", "playback"))
                 .boxed(),
         );
