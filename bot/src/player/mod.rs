@@ -8,7 +8,6 @@ pub(self) use self::{
     mixer::Mixer,
     playback_future::PlaybackFuture,
     player_internal::PlayerInternal,
-    queue::Queue,
     youtube::YouTubePlayer,
 };
 pub use self::{item::Item, song::Song, track::Track};
@@ -24,7 +23,6 @@ mod item;
 mod mixer;
 mod playback_future;
 mod player_internal;
-mod queue;
 mod song;
 mod track;
 mod youtube;
@@ -197,7 +195,6 @@ pub async fn run(
     );
 
     let bus = bus::Bus::new();
-    let queue = Queue::new(db.clone());
 
     let (song_update_interval_stream, song_update_interval) = settings
         .stream("song-update-interval")
@@ -219,7 +216,7 @@ pub async fn run(
     let max_songs_per_user = settings.var("max-songs-per-user", 2).await?;
     let max_queue_length = settings.var("max-queue-length", 30).await?;
 
-    let mixer = Mixer::new(queue.clone());
+    let mixer = Mixer::new(db.clone());
 
     let (playback_mode_stream, playback_mode) = settings
         .stream("playback-mode")
@@ -256,27 +253,7 @@ pub async fn run(
     // future to initialize the player future.
     // Yeah, I know....
     let future = async move {
-        // TODO: Move somewhere else and we no longer need to keep Queue storage
-        // behind its own lock.
-        {
-            // Add tracks from database.
-            for song in db.player_list().await? {
-                let item = convert_item(
-                    &*spotify,
-                    &*youtube,
-                    song.user.as_deref(),
-                    &song.track_id,
-                    None,
-                )
-                .await;
-
-                if let Ok(Some(item)) = item {
-                    queue.push_back_queue(Arc::new(item)).await;
-                } else {
-                    log::warn!("failed to convert db item: {:?}", song);
-                }
-            }
-        }
+        internal.write().await.initialize_queue().await?;
 
         let playback = PlaybackFuture {
             internal: internal.clone(),
@@ -369,20 +346,20 @@ impl Player {
     /// Get the next N songs in queue.
     pub async fn list(&self) -> Vec<Arc<Item>> {
         let inner = self.inner.read().await;
-        let queue = inner.mixer.queue.queue.read().await;
+        let items = inner.mixer.list();
         let song = inner.injector.get::<Song>().await;
 
         song.as_ref()
             .map(|c| c.item.clone())
             .into_iter()
-            .chain(queue.iter().cloned())
+            .chain(items.cloned())
             .collect()
     }
 
     /// Promote the given song to the head of the queue.
     pub async fn promote_song(&self, user: Option<&str>, n: usize) -> Result<Option<Arc<Item>>> {
         let mut inner = self.inner.write().await;
-        let promoted = inner.mixer.queue.promote_song(user, n).await?;
+        let promoted = inner.mixer.promote_song(user, n).await?;
 
         if promoted.is_some() {
             inner.modified(Source::Manual).await?;
@@ -558,7 +535,7 @@ impl Player {
 
     pub async fn purge(&self) -> Result<Vec<Arc<Item>>> {
         let mut inner = self.inner.write().await;
-        let purged = inner.mixer.queue.purge().await?;
+        let purged = inner.mixer.purge().await?;
 
         if !purged.is_empty() {
             inner.modified(Source::Manual).await?;
@@ -570,7 +547,7 @@ impl Player {
     /// Remove the item at the given position.
     pub async fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>> {
         let mut inner = self.inner.write().await;
-        let removed = inner.mixer.queue.remove_at(n).await?;
+        let removed = inner.mixer.remove_at(n).await?;
 
         if removed.is_some() {
             inner.modified(Source::Manual).await?;
@@ -582,7 +559,7 @@ impl Player {
     /// Remove the first track in the queue.
     pub async fn remove_last(&self) -> Result<Option<Arc<Item>>> {
         let mut inner = self.inner.write().await;
-        let removed = inner.mixer.queue.remove_last().await?;
+        let removed = inner.mixer.remove_last().await?;
 
         if removed.is_some() {
             inner.modified(Source::Manual).await?;
@@ -594,7 +571,7 @@ impl Player {
     /// Remove the last track by the given user.
     pub async fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>> {
         let mut inner = self.inner.write().await;
-        let removed = inner.mixer.queue.remove_last_by_user(user).await?;
+        let removed = inner.mixer.remove_last_by_user(user).await?;
 
         if removed.is_some() {
             inner.modified(Source::Manual).await?;
@@ -620,9 +597,7 @@ impl Player {
             duration += c.remaining();
         }
 
-        let queue = inner.mixer.queue.queue.read().await;
-
-        for item in &*queue {
+        for item in inner.mixer.list() {
             if predicate(item) {
                 return Some((duration, item.clone()));
             }
@@ -645,13 +620,11 @@ impl Player {
             count += 1;
         }
 
-        let queue = inner.mixer.queue.queue.read().await;
-
-        for item in &*queue {
+        for item in inner.mixer.list() {
             duration += item.duration;
+            count += 1;
         }
 
-        count += queue.len();
         (count, duration)
     }
 

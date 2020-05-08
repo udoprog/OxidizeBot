@@ -46,6 +46,13 @@ pub(super) struct PlayerInternal {
 }
 
 impl PlayerInternal {
+    /// Initialize the queue from the database.
+    pub async fn initialize_queue(&mut self) -> Result<()> {
+        self.mixer
+            .initialize_queue(&*self.spotify, &*self.youtube)
+            .await
+    }
+
     /// Try to sync Spotify playback.
     pub async fn sync_spotify_playback(&mut self) -> Result<()> {
         if !self.spotify.token.is_ready().await {
@@ -745,9 +752,6 @@ impl PlayerInternal {
         max_duration: Option<utils::Duration>,
     ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
         let (user_count, len) = {
-            let queue_inner = self.mixer.queue.queue.read().await;
-            let len = queue_inner.len();
-
             if !bypass_constraints {
                 if let Some(reason) = &self.closed {
                     return Err(AddTrackError::PlayerClosed(reason.clone()));
@@ -756,7 +760,7 @@ impl PlayerInternal {
                 let max_queue_length = self.max_queue_length.load().await;
 
                 // NB: moderator is allowed to violate max queue length.
-                if len >= max_queue_length as usize {
+                if self.mixer.len() >= max_queue_length as usize {
                     return Err(AddTrackError::QueueFull);
                 }
 
@@ -765,7 +769,6 @@ impl PlayerInternal {
                 if !duplicate_duration.is_empty() {
                     if let Some(last) = self
                         .mixer
-                        .queue
                         .last_song_within(&track_id, duplicate_duration.clone())
                         .await
                         .map_err(AddTrackError::Error)?
@@ -782,8 +785,11 @@ impl PlayerInternal {
             }
 
             let mut user_count = 0;
+            let mut len = 0;
 
-            for (index, i) in queue_inner.iter().enumerate() {
+            for (index, i) in self.mixer.list().enumerate() {
+                len += 1;
+
                 if i.track_id == track_id {
                     return Err(AddTrackError::QueueContainsTrack(index));
                 }
@@ -823,7 +829,6 @@ impl PlayerInternal {
         let item = Arc::new(item);
 
         self.mixer
-            .queue
             .push_back(item.clone())
             .await
             .map_err(AddTrackError::Error)?;
