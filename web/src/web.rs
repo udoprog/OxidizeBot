@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use futures::prelude::*;
 use hyper::{
     body::Body,
-    error, header,
+    header,
     server::{conn::AddrStream, Server},
     service, Request, Response, StatusCode,
 };
@@ -13,8 +13,25 @@ use parking_lot::Mutex;
 use relative_path::RelativePathBuf;
 use serde::{de, Deserialize, Serialize};
 use smallvec::SmallVec;
-use std::{borrow::Cow, collections::HashMap, fmt, net::SocketAddr, sync::Arc, time};
+use std::{
+    borrow::Cow, collections::HashMap, error::Error as _, fmt, net::SocketAddr, sync::Arc, time,
+};
+use thiserror::Error;
 use url::Url;
+
+macro_rules! log_error {
+    ($e:expr, $fmt:expr $(, $($tt:tt)*)?) => {{
+        log::error!($fmt $(, $($tt)*)*);
+        log::error!("caused by: {}", $e);
+
+        let mut last = $e.source();
+
+        while let Some(e) = last {
+            log::error!("caused by: {}", e);
+            last = e.source();
+        }
+    }}
+}
 
 static SPOTIFY_TRACK_URL: &str = "https://open.spotify.com/track";
 
@@ -40,7 +57,7 @@ pub fn setup(
     host: String,
     port: u32,
     config: Config,
-) -> Result<impl Future<Output = Result<(), error::Error>>, anyhow::Error> {
+) -> Result<impl Future<Output = Result<(), hyper::error::Error>>, anyhow::Error> {
     let fallback =
         assets::Asset::get("index.html").ok_or_else(|| anyhow!("missing index.html in assets"))?;
 
@@ -100,15 +117,20 @@ pub fn setup(
     Ok(future)
 }
 
+#[derive(Debug, Error)]
 pub enum Error {
     /// Client performed a bad request.
+    #[error("bad request")]
     BadRequest(String),
     /// The resource could not be found.
+    #[error("not found")]
     NotFound,
     /// User unauthorized to perform the given request.
+    #[error("unauthorized")]
     Unauthorized,
     /// Generic error.
-    Error(anyhow::Error),
+    #[error("other error")]
+    Error(#[source] anyhow::Error),
 }
 
 impl Error {
@@ -313,7 +335,7 @@ impl Handler {
                     Error::NotFound => http_error(StatusCode::NOT_FOUND, "Not Found"),
                     Error::Unauthorized => http_error(StatusCode::UNAUTHORIZED, "Unauthorized"),
                     Error::Error(e) => {
-                        log::error!("Internal Server Error: {}", e);
+                        log_error!(e, "internal server error");
                         http_error(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
                     }
                 };
@@ -321,13 +343,13 @@ impl Handler {
                 match result {
                     Ok(result) => result,
                     Err(Error::Error(e)) => {
-                        log::error!("error: {}", e);
+                        log_error!(e, "failed to build error response");
                         let mut r = Response::new(Body::from("Internal Server Error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         r
                     }
-                    Err(_) => {
-                        log::error!("unknown error :(");
+                    Err(e) => {
+                        log::error!("failed to build response: {}", e);
                         let mut r = Response::new(Body::from("Internal Server Error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         r
@@ -518,7 +540,25 @@ impl Handler {
             None => return json_ok(Data::empty()),
         };
 
-        let token = flow.refresh_token(&c.token.refresh_token).await?;
+        let token = flow.refresh_token(&c.token.refresh_token).await;
+
+        let token = match token {
+            Ok(token) => token,
+            Err(e) => match e.status() {
+                Some(status) if status.is_client_error() => {
+                    self.db.delete_connection(&user.user_id, id)?;
+
+                    log_error!(e, "failed to refresh token");
+
+                    return Ok(http_error(
+                        StatusCode::BAD_REQUEST,
+                        "Token refresh failed, server responded with client error",
+                    )?);
+                }
+                _ => return Err(Error::Error(e.into())),
+            },
+        };
+
         let meta = self.token_meta(&*flow, &token).await?;
 
         self.db.add_connection(

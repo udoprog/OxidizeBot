@@ -275,13 +275,18 @@ impl Flow {
 
         let token_response = match token_response {
             Ok(t) => t,
-            Err(RequestTokenError::Parse(e, res)) => {
-                log::error!(
-                    "bad token response: {}: {}",
-                    e,
-                    String::from_utf8_lossy(&res)
-                );
-                return Err(anyhow!("bad response from server"));
+            Err(RequestTokenError::BadResponse {
+                status,
+                body,
+                error,
+            }) => {
+                return Err(Error::from(error).context({
+                    anyhow!(
+                        "bad token response: {}: {}",
+                        status,
+                        String::from_utf8_lossy(body.as_ref())
+                    )
+                }));
             }
             Err(e) => return Err(Error::from(e)),
         };
@@ -307,7 +312,10 @@ impl Flow {
     }
 
     /// Refresh the specified token.
-    pub async fn refresh_token(&self, refresh_token: &RefreshToken) -> Result<SavedToken, Error> {
+    pub async fn refresh_token(
+        &self,
+        refresh_token: &RefreshToken,
+    ) -> Result<SavedToken, RequestTokenError> {
         match self.config.ty {
             FlowType::Twitch => self.refresh_token_inner::<TwitchToken>(refresh_token).await,
             FlowType::YouTube => {
@@ -329,7 +337,7 @@ impl Flow {
     async fn refresh_token_inner<T>(
         &self,
         refresh_token: &RefreshToken,
-    ) -> Result<SavedToken, Error>
+    ) -> Result<SavedToken, RequestTokenError>
     where
         T: Token,
     {
@@ -340,16 +348,7 @@ impl Flow {
             .param("client_secret", &self.config.client_secret)
             .with_client(&self.http_client)
             .execute::<T>()
-            .await;
-
-        let token_response = match token_response {
-            Ok(t) => t,
-            Err(RequestTokenError::Parse(_, res)) => {
-                log::error!("bad token response: {}", String::from_utf8_lossy(&res));
-                return Err(anyhow!("bad response from server"));
-            }
-            Err(e) => return Err(Error::from(e)),
-        };
+            .await?;
 
         let refresh_token = token_response
             .refresh_token()
