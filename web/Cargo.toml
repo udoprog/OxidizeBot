@@ -8,7 +8,7 @@ license = "MIT/Apache-2.0"
 [dependencies]
 bytes = "0.5.4"
 hyper = "0.13.5"
-tokio = { version = "0.2.20", features = ["full"] }
+tokio = { version = "0.2.21", features = ["full"] }
 anyhow = "1.0.28"
 thiserror = "1.0.16"
 serde = { version = "1.0.106", features = ["rc", "derive"] }
