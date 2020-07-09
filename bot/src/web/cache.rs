@@ -1,5 +1,5 @@
 use crate::{injector, web::EMPTY};
-use anyhow::bail;
+use anyhow::{bail, Result};
 use tokio::sync::{MappedRwLockReadGuard, RwLockReadGuard};
 use warp::{body, filters, path, Filter as _};
 
@@ -42,9 +42,7 @@ impl Cache {
     }
 
     /// Access underlying cache abstraction.
-    async fn cache(
-        &self,
-    ) -> Result<MappedRwLockReadGuard<'_, crate::storage::Cache>, anyhow::Error> {
+    async fn cache(&self) -> Result<MappedRwLockReadGuard<'_, crate::storage::Cache>> {
         match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("cache not configured"),
@@ -52,13 +50,13 @@ impl Cache {
     }
 
     /// List all cache entries.
-    async fn list(&self) -> Result<impl warp::Reply, anyhow::Error> {
+    async fn list(&self) -> Result<impl warp::Reply> {
         let entries = self.cache().await?.list_json()?;
         Ok(warp::reply::json(&entries))
     }
 
     /// Delete a cache entry.
-    async fn delete(&self, request: DeleteRequest) -> Result<impl warp::Reply, anyhow::Error> {
+    async fn delete(&self, request: DeleteRequest) -> Result<impl warp::Reply> {
         self.cache()
             .await?
             .delete_with_ns(request.ns.as_ref(), &request.key)?;

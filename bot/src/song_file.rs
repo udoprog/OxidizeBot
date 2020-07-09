@@ -18,14 +18,16 @@ impl SongFileBuilder {
     /// Construct a new SongFile handler if all the necessary options are available.
     pub fn build(&self) -> Option<SongFile> {
         if !self.enabled {
+            log::trace!("not enabled");
             return None;
         }
 
         let path = self.path.as_ref()?;
         let template = self.template.as_ref()?;
-        let update_interval = if self.update_interval.is_empty() {
-            &self.update_interval
+        let update_interval = if !self.update_interval.is_empty() {
+            self.update_interval
         } else {
+            log::trace!("no update interval configured");
             return None;
         };
 
@@ -141,6 +143,8 @@ impl SongFile {
 
     /// Write current song. Log any errors.
     async fn update_song(&self, song: Option<&player::Song>, state: Option<player::State>) {
+        log::trace!("updating song: {:?} {:?}", song, state);
+
         let state = state.unwrap_or_default();
 
         let result = match song {
