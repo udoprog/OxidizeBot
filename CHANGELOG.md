@@ -6,7 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/1.0.2...master
+[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/1.0.4...master
+
+## [1.0.4]
+
+### Fixed
+- Fixed bug with reading update-interval, preventing song files from being used ([#72]).
+
+### Changed
+- Changed more internals to use async locking.
+- Rewrote internal player to use much cleaner abstractions ([#67]).
+
+[#72]: https://github.com/udoprog/OxidizeBot/issues/72
+[#67]: https://github.com/udoprog/OxidizeBot/issues/67
+[1.0.4]: https://github.com/udoprog/OxidizeBot/compare/1.0.3...1.0.4
+
+## [1.0.3]
+
+### Changed
+- Updated version of `irc` crate we use to no longer build from master.
+
+[1.0.3]: https://github.com/udoprog/OxidizeBot/compare/1.0.2...1.0.3
 
 ## [1.0.2]
 

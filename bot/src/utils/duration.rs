@@ -5,7 +5,7 @@ use std::{fmt, time};
 /// A duration with second precision.
 ///
 /// Stored field is in seconds.
-#[derive(Debug, Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Duration(u64);
 
 impl Duration {
