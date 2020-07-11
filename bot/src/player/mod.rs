@@ -662,6 +662,8 @@ pub enum AddTrackError {
     MissingAuth,
     /// Playback mode is not supported for the given track.
     UnsupportedPlaybackMode,
+    /// Song cannot be played in the streamer's region
+    NotPlayable,
     /// Other generic error happened.
     Error(anyhow::Error),
 }

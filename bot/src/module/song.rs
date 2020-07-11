@@ -266,6 +266,14 @@ impl Handler {
 
                 return Ok(());
             }
+            Err(AddTrackError::NotPlayable) => {
+                respond!(
+                    user,
+                    "This song is not available in the streamer's region :("
+                );
+    
+                return Ok(());
+            }
             Err(AddTrackError::Error(e)) => {
                 return Err(e);
             }

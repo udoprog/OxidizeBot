@@ -9,6 +9,7 @@ pub use self::model::{
     search::SearchTracks,
     senum::DeviceType,
     track::{FullTrack, SavedTrack},
+    user::PrivateUser,
 };
 use crate::{api::RequestBuilder, oauth2, prelude::*};
 use anyhow::Error;
@@ -47,6 +48,13 @@ impl Spotify {
         let mut url = self.api_url.clone();
         url.path_segments_mut().expect("bad base").extend(path);
         RequestBuilder::new(self.client.clone(), method, url).token(self.token.clone())
+    }
+
+    /// Get user info.
+    async fn me(&self) -> Result<PrivateUser, Error> {
+        let req: RequestBuilder = self.request(Method::GET, &["me"]);
+
+        req.execute().await?.json()
     }
 
     /// Get my playlists.
@@ -187,7 +195,13 @@ impl Spotify {
 
     /// Get the full track by ID.
     pub async fn track(&self, id: String) -> Result<FullTrack, Error> {
-        let req = self.request(Method::GET, &["tracks", id.as_str()]);
+        // TODO: cache this value
+        let streamer: PrivateUser = self.me().await.unwrap();
+        let country = streamer.country.unwrap();
+
+        let req = self
+            .request(Method::GET, &["tracks", id.as_str()])
+            .query_param("market", &country);
 
         req.execute().await?.json()
     }
