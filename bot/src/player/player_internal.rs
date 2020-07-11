@@ -820,18 +820,8 @@ impl PlayerInternal {
             None => return Err(AddTrackError::MissingAuth),
         };
 
-        match item.clone().track {
-            Track::Spotify{track} => {
-                match track.is_playable {
-                    Some(is_playable) => {
-                        if !is_playable {
-                            return Err(AddTrackError::NotPlayable)
-                        }
-                    },
-                    None => return Err(AddTrackError::NotPlayable)
-                };                
-            }
-            Track::YouTube{video: _} => {}
+        if !item.spotify_playable() {
+            return Err(AddTrackError::NotPlayable)
         }
 
         if let Some(max_duration) = max_duration {
