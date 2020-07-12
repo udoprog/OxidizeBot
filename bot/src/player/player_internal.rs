@@ -606,12 +606,16 @@ impl PlayerInternal {
 
             let duration = Duration::from_millis(track.duration_ms.into());
 
-            items.push(Arc::new(Item {
+            let item = Item {
                 track_id,
                 track: Track::Spotify { track },
                 user: None,
                 duration,
-            }));
+            };
+
+            if item.spotify_playable() {
+                items.push(Arc::new(item));
+            }
         }
 
         Ok((name, items))

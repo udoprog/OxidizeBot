@@ -59,7 +59,13 @@ impl Spotify {
 
     /// Get my playlists.
     pub async fn playlist(&self, id: String) -> Result<FullPlaylist, Error> {
-        let req = self.request(Method::GET, &["playlists", id.as_str()]);
+        // TODO: cache this value
+        let streamer: PrivateUser = self.me().await.unwrap();
+        let country = streamer.country.unwrap();
+
+        let req = self
+            .request(Method::GET, &["playlists", id.as_str()])
+            .query_param("market", &country);
 
         req.execute().await?.json()
     }
