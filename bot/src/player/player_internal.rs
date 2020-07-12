@@ -613,7 +613,7 @@ impl PlayerInternal {
                 duration,
             };
 
-            if item.spotify_playable() {
+            if item.is_playable() {
                 items.push(Arc::new(item));
             }
         }
@@ -824,7 +824,7 @@ impl PlayerInternal {
             None => return Err(AddTrackError::MissingAuth),
         };
 
-        if !item.spotify_playable() {
+        if !item.is_playable() {
             return Err(AddTrackError::NotPlayable)
         }
 

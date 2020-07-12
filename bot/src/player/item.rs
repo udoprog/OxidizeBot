@@ -33,7 +33,7 @@ impl Item {
         }
     }
 
-    pub fn spotify_playable(&self) -> bool {
+    pub fn is_playable(&self) -> bool {
         match self.track {
             Track::Spotify{ ref track} => {
                 match track.is_playable {
