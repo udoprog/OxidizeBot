@@ -75,5 +75,5 @@ anyhow = "1.0.28"
 winapi = { version = "0.3.8", features = ["shellapi", "impl-default"] }
 
 [features]
-default = ["windows"]
+default = []
 windows = []

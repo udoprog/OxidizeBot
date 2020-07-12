@@ -68,24 +68,21 @@ You'll need Rust and a working compiler: https://rustup.rs/
 
 After this, you build the project using cargo:
 
-```
-cargo --manifest-path=bot/Cargo.toml build --release
+```bash
+cargo build --bin oxidize
 ```
 
 If you want to run it directly from the project directory, you can do:
 
+```bash
+cargo run --bin oxidize
 ```
-cargo --manifest-path=bot/Cargo.toml run --release --no-default-features
-```
-
-Note: `--no-default-features` disables the windows_subsystem configuration on
-Windows, allowing you to run the project in the terminal.
 
 If you want to run the bot with the most amount of diagnostics possible, you can
 do the following:
 
-```
-cargo +nightly --manifest-path=bot/Cargo.toml run --release --no-default-features --features nightly -- --log oxidize=trace
+```bash
+env RUST_BACKTRACE=1 cargo +nightly run --bin oxidize -- --log oxidize=trace
 ```
 
 This will include backtraces on errors, which is currently an [unstable feature].

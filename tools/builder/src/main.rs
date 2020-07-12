@@ -352,7 +352,15 @@ fn windows_build(root: &Path) -> Result<()> {
 
     if !exe.is_file() {
         println!("building: {}", exe.display());
-        cargo(&["build", "--release", "--bin", "oxidize"])?;
+        cargo(&[
+            "build",
+            "--manifest-path=bot/Cargo.toml",
+            "--release",
+            "--bin",
+            "oxidize",
+            "--features",
+            "windows"
+        ])?;
     }
 
     if let Some(signer) = signer.as_ref() {
@@ -394,8 +402,6 @@ fn linux_build(root: &Path) -> Result<()> {
             "oxidize",
             "--deb-version",
             &version.to_string(),
-            "--",
-            "--no-default-features",
         ])?;
     }
 
@@ -409,7 +415,6 @@ fn linux_build(root: &Path) -> Result<()> {
             "--release",
             "--bin",
             "oxidize",
-            "--no-default-features",
         ])?;
     }
 
@@ -453,7 +458,6 @@ fn macos_build(root: &Path) -> Result<()> {
             "--release",
             "--bin",
             "oxidize",
-            "--no-default-features",
         ])?;
     }
 
