@@ -41,7 +41,7 @@ impl Item {
                     None => return false
                 };                
             }
-            Track::YouTube{ ref video} => {
+            Track::YouTube{ video: _ } => {
                 return true;
             }
         }
