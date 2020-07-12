@@ -51,21 +51,17 @@ impl Spotify {
     }
 
     /// Get user info.
-    async fn me(&self) -> Result<PrivateUser, Error> {
+    pub async fn me(&self) -> Result<PrivateUser, Error> {
         let req: RequestBuilder = self.request(Method::GET, &["me"]);
 
         req.execute().await?.json()
     }
 
     /// Get my playlists.
-    pub async fn playlist(&self, id: String) -> Result<FullPlaylist, Error> {
-        // TODO: cache this value
-        let streamer: PrivateUser = self.me().await.unwrap();
-        let country = streamer.country.unwrap();
-
+    pub async fn playlist(&self, id: String, market: Option<String>) -> Result<FullPlaylist, Error> {
         let req = self
             .request(Method::GET, &["playlists", id.as_str()])
-            .query_param("market", &country);
+            .optional_query_param("market", market);
 
         req.execute().await?.json()
     }
@@ -200,14 +196,10 @@ impl Spotify {
     }
 
     /// Get the full track by ID.
-    pub async fn track(&self, id: String) -> Result<FullTrack, Error> {
-        // TODO: cache this value
-        let streamer: PrivateUser = self.me().await.unwrap();
-        let country = streamer.country.unwrap();
-
+    pub async fn track(&self, id: String, market: Option<String>) -> Result<FullTrack, Error> {
         let req = self
             .request(Method::GET, &["tracks", id.as_str()])
-            .query_param("market", &country);
+            .optional_query_param("market", market);
 
         req.execute().await?.json()
     }

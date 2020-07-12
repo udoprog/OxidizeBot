@@ -3,8 +3,8 @@ use super::{
     Mixer, PlaybackMode, PlayerKind, Song, Source, State, Track, YouTubePlayer,
 };
 use crate::{
-    api, bus, db, injector, prelude::*, settings, spotify_id::SpotifyId, track_id::TrackId, utils,
-    Uri,
+    api, api::spotify::PrivateUser, bus, db, injector, prelude::*, settings,
+    spotify_id::SpotifyId, track_id::TrackId, utils, Uri,
 };
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
@@ -586,7 +586,10 @@ impl PlayerInternal {
     ) -> Result<(String, Vec<Arc<Item>>)> {
         let mut items = Vec::new();
 
-        let playlist = spotify.playlist(playlist).await?;
+        // TODO: cache this value
+        let streamer: PrivateUser = spotify.me().await?;
+
+        let playlist = spotify.playlist(playlist, streamer.country).await?;
         let name = playlist.name.to_string();
 
         for playlist_track in spotify.page_as_stream(playlist.tracks).try_concat().await? {

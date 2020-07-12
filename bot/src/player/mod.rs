@@ -1,6 +1,6 @@
 use crate::{
-    api, bus, db, injector, prelude::*, settings, song_file::SongFile, spotify_id::SpotifyId,
-    track_id::TrackId, utils,
+    api, api::spotify::PrivateUser, bus, db, injector, prelude::*, settings,
+    song_file::SongFile, spotify_id::SpotifyId, track_id::TrackId, utils,
 };
 
 pub(self) use self::{
@@ -121,8 +121,11 @@ pub(self) async fn convert_item(
                 return Ok(None);
             }
 
+            // TODO: cache this value
+            let streamer: PrivateUser = spotify.me().await?;
+
             let track_id_string = id.to_base62();
-            let track = spotify.track(track_id_string).await?;
+            let track = spotify.track(track_id_string, streamer.country).await?;
             let duration = Duration::from_millis(track.duration_ms.into());
 
             (Track::Spotify { track }, duration)
