@@ -3,8 +3,8 @@ use super::{
     Mixer, PlaybackMode, PlayerKind, Song, Source, State, Track, YouTubePlayer,
 };
 use crate::{
-    api, bus, db, injector, prelude::*, settings, spotify_id::SpotifyId, track_id::TrackId, utils,
-    Uri,
+    api, api::spotify::PrivateUser, bus, db, injector, prelude::*, settings,
+    spotify_id::SpotifyId, track_id::TrackId, utils, Uri,
 };
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
@@ -586,7 +586,10 @@ impl PlayerInternal {
     ) -> Result<(String, Vec<Arc<Item>>)> {
         let mut items = Vec::new();
 
-        let playlist = spotify.playlist(playlist).await?;
+        // TODO: cache this value
+        let streamer: PrivateUser = spotify.me().await?;
+
+        let playlist = spotify.playlist(playlist, streamer.country).await?;
         let name = playlist.name.to_string();
 
         for playlist_track in spotify.page_as_stream(playlist.tracks).try_concat().await? {
@@ -606,12 +609,16 @@ impl PlayerInternal {
 
             let duration = Duration::from_millis(track.duration_ms.into());
 
-            items.push(Arc::new(Item {
+            let item = Item {
                 track_id,
                 track: Track::Spotify { track },
                 user: None,
                 duration,
-            }));
+            };
+
+            if item.is_playable() {
+                items.push(Arc::new(item));
+            }
         }
 
         Ok((name, items))
@@ -733,13 +740,17 @@ impl PlayerInternal {
         bypass_constraints: bool,
         max_duration: Option<utils::Duration>,
     ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
+        // TODO: cache this value
+        let streamer: PrivateUser = self.spotify.me().await.map_err(AddTrackError::Error)?;
+        let market = streamer.country.as_deref();
+
         match self.playback_mode {
             PlaybackMode::Default => {
-                self.default_add_track(user, track_id, bypass_constraints, max_duration)
+                self.default_add_track(user, track_id, bypass_constraints, max_duration, market)
                     .await
             }
             PlaybackMode::Queue => {
-                self.queue_add_track(user, track_id, bypass_constraints, max_duration)
+                self.queue_add_track(user, track_id, bypass_constraints, max_duration, market)
                     .await
             }
         }
@@ -752,6 +763,7 @@ impl PlayerInternal {
         track_id: TrackId,
         bypass_constraints: bool,
         max_duration: Option<utils::Duration>,
+        market: Option<&str>,
     ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
         let (user_count, len) = {
             if !bypass_constraints {
@@ -811,7 +823,7 @@ impl PlayerInternal {
             return Err(AddTrackError::TooManyUserTracks(max_songs_per_user));
         }
 
-        let item = convert_item(&*self.spotify, &*self.youtube, Some(user), &track_id, None)
+        let item = convert_item(&*self.spotify, &*self.youtube, Some(user), &track_id, None, market)
             .await
             .map_err(AddTrackError::Error)?;
 
@@ -819,6 +831,10 @@ impl PlayerInternal {
             Some(item) => item,
             None => return Err(AddTrackError::MissingAuth),
         };
+
+        if !item.is_playable() {
+            return Err(AddTrackError::NotPlayable)
+        }
 
         if let Some(max_duration) = max_duration {
             let max_duration = max_duration.as_std();
@@ -849,8 +865,9 @@ impl PlayerInternal {
         track_id: TrackId,
         _bypass_constraints: bool,
         _max_duration: Option<utils::Duration>,
+        market: Option<&str>,
     ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
-        let item = convert_item(&*self.spotify, &*self.youtube, Some(user), &track_id, None)
+        let item = convert_item(&*self.spotify, &*self.youtube, Some(user), &track_id, None, market)
             .await
             .map_err(AddTrackError::Error)?;
 
