@@ -1,5 +1,5 @@
 use crate::{
-    api, api::spotify::PrivateUser, bus, db, injector, prelude::*, settings,
+    api, bus, db, injector, prelude::*, settings,
     song_file::SongFile, spotify_id::SpotifyId, track_id::TrackId, utils,
 };
 
@@ -114,6 +114,7 @@ pub(self) async fn convert_item(
     user: Option<&str>,
     track_id: &TrackId,
     duration_override: Option<Duration>,
+    market: Option<&str>,
 ) -> Result<Option<Item>> {
     let (track, duration) = match track_id {
         TrackId::Spotify(id) => {
@@ -121,11 +122,8 @@ pub(self) async fn convert_item(
                 return Ok(None);
             }
 
-            // TODO: cache this value
-            let streamer: PrivateUser = spotify.me().await?;
-
             let track_id_string = id.to_base62();
-            let track = spotify.track(track_id_string, streamer.country).await?;
+            let track = spotify.track(track_id_string, market.map(String::from)).await?;
             let duration = Duration::from_millis(track.duration_ms.into());
 
             (Track::Spotify { track }, duration)
@@ -501,6 +499,7 @@ impl Player {
             None,
             &theme.track_id,
             duration,
+            None
         )
         .await
         .map_err(PlayThemeError::Error)?;

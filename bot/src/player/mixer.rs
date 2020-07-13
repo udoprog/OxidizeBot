@@ -1,5 +1,5 @@
 use super::{api, convert_item, utils, Item, Song};
-use crate::{db, track_id::TrackId};
+use crate::{api::spotify::PrivateUser, db, track_id::TrackId};
 use anyhow::Result;
 use chrono::Utc;
 use std::{collections::VecDeque, sync::Arc};
@@ -39,10 +39,14 @@ impl Mixer {
         spotify: &api::Spotify,
         youtube: &api::YouTube,
     ) -> Result<()> {
+        // TODO: cache this value
+        let streamer: PrivateUser = spotify.me().await?;
+        let market = streamer.country.as_deref();
+
         // Add tracks from database.
         for song in self.db.player_list().await? {
             let item =
-                convert_item(spotify, youtube, song.user.as_deref(), &song.track_id, None).await;
+                convert_item(spotify, youtube, song.user.as_deref(), &song.track_id, None, market).await;
 
             if let Ok(Some(item)) = item {
                 self.queue.push_back(Arc::new(item));
