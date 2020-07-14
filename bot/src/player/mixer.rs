@@ -45,8 +45,15 @@ impl Mixer {
 
         // Add tracks from database.
         for song in self.db.player_list().await? {
-            let item =
-                convert_item(spotify, youtube, song.user.as_deref(), &song.track_id, None, market).await;
+            let item = convert_item(
+                spotify,
+                youtube,
+                song.user.as_deref(),
+                &song.track_id,
+                None,
+                market,
+            )
+            .await;
 
             if let Ok(Some(item)) = item {
                 self.queue.push_back(Arc::new(item));

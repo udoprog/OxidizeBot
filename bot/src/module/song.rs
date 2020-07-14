@@ -271,7 +271,7 @@ impl Handler {
                     user,
                     "This song is not available in the streamer's region :("
                 );
-    
+
                 return Ok(());
             }
             Err(AddTrackError::Error(e)) => {

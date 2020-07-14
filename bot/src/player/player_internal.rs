@@ -3,8 +3,8 @@ use super::{
     Mixer, PlaybackMode, PlayerKind, Song, Source, State, Track, YouTubePlayer,
 };
 use crate::{
-    api, api::spotify::PrivateUser, bus, db, injector, prelude::*, settings,
-    spotify_id::SpotifyId, track_id::TrackId, utils, Uri,
+    api, api::spotify::PrivateUser, bus, db, injector, prelude::*, settings, spotify_id::SpotifyId,
+    track_id::TrackId, utils, Uri,
 };
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
@@ -589,7 +589,9 @@ impl PlayerInternal {
         // TODO: cache this value
         let streamer: PrivateUser = spotify.me().await?;
 
-        let playlist = spotify.playlist(playlist, streamer.country).await?;
+        let playlist = spotify
+            .playlist(playlist, streamer.country.as_deref())
+            .await?;
         let name = playlist.name.to_string();
 
         for playlist_track in spotify.page_as_stream(playlist.tracks).try_concat().await? {
@@ -823,9 +825,16 @@ impl PlayerInternal {
             return Err(AddTrackError::TooManyUserTracks(max_songs_per_user));
         }
 
-        let item = convert_item(&*self.spotify, &*self.youtube, Some(user), &track_id, None, market)
-            .await
-            .map_err(AddTrackError::Error)?;
+        let item = convert_item(
+            &*self.spotify,
+            &*self.youtube,
+            Some(user),
+            &track_id,
+            None,
+            market,
+        )
+        .await
+        .map_err(AddTrackError::Error)?;
 
         let mut item = match item {
             Some(item) => item,
@@ -833,7 +842,7 @@ impl PlayerInternal {
         };
 
         if !item.is_playable() {
-            return Err(AddTrackError::NotPlayable)
+            return Err(AddTrackError::NotPlayable);
         }
 
         if let Some(max_duration) = max_duration {
@@ -867,9 +876,16 @@ impl PlayerInternal {
         _max_duration: Option<utils::Duration>,
         market: Option<&str>,
     ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
-        let item = convert_item(&*self.spotify, &*self.youtube, Some(user), &track_id, None, market)
-            .await
-            .map_err(AddTrackError::Error)?;
+        let item = convert_item(
+            &*self.spotify,
+            &*self.youtube,
+            Some(user),
+            &track_id,
+            None,
+            market,
+        )
+        .await
+        .map_err(AddTrackError::Error)?;
 
         let item = match item {
             Some(item) => item,

@@ -127,7 +127,7 @@ impl ConnectPlayer {
 
         let result = self
             .spotify
-            .me_player_play(device_id, track_uri, elapsed)
+            .me_player_play(device_id.as_deref(), track_uri.as_deref(), elapsed)
             .await;
 
         ConnectError::handle(result, "play")
@@ -138,25 +138,34 @@ impl ConnectPlayer {
         let track_uri = format!("spotify:track:{}", id.to_base62());
         let device_id = self.device.load().await;
 
-        let result = self.spotify.me_player_queue(device_id, track_uri).await;
+        let result = self
+            .spotify
+            .me_player_queue(device_id.as_deref(), &track_uri)
+            .await;
 
         ConnectError::handle(result, "queue")
     }
 
     pub(super) async fn next(&self) -> Result<(), ConnectError> {
         let device_id = self.device.load().await;
-        let result = self.spotify.me_player_next(device_id).await;
+        let result = self.spotify.me_player_next(device_id.as_deref()).await;
         ConnectError::handle(result, "skip")
     }
 
     pub(super) async fn pause(&self) -> Result<(), ConnectError> {
         let device_id = self.device.load().await;
-        ConnectError::handle(self.spotify.me_player_pause(device_id).await, "pause")
+        ConnectError::handle(
+            self.spotify.me_player_pause(device_id.as_deref()).await,
+            "pause",
+        )
     }
 
     pub(super) async fn stop(&self) -> Result<(), ConnectError> {
         let device_id = self.device.load().await;
-        ConnectError::handle(self.spotify.me_player_pause(device_id).await, "stop")
+        ConnectError::handle(
+            self.spotify.me_player_pause(device_id.as_deref()).await,
+            "stop",
+        )
     }
 
     /// Update an unscaled volume.
@@ -185,7 +194,9 @@ impl ConnectPlayer {
         let volume = (volume as f32) / 100f32;
         let device_id = self.device.load().await;
         ConnectError::handle(
-            self.spotify.me_player_volume(device_id, volume).await,
+            self.spotify
+                .me_player_volume(device_id.as_deref(), volume)
+                .await,
             "volume",
         )
     }

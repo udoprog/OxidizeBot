@@ -137,8 +137,8 @@ impl Twitch {
             .new_api(Method::GET, &["subscriptions"])
             .query_param("broadcaster_id", broadcaster_id);
 
-        for user_id in user_ids {
-            request = request.query_param("user_id", &user_id);
+        for user_id in &user_ids {
+            request = request.query_param("user_id", user_id);
         }
 
         let req = request.clone();

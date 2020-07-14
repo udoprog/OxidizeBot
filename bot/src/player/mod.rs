@@ -1,6 +1,6 @@
 use crate::{
-    api, bus, db, injector, prelude::*, settings,
-    song_file::SongFile, spotify_id::SpotifyId, track_id::TrackId, utils,
+    api, bus, db, injector, prelude::*, settings, song_file::SongFile, spotify_id::SpotifyId,
+    track_id::TrackId, utils,
 };
 
 pub(self) use self::{
@@ -123,7 +123,7 @@ pub(self) async fn convert_item(
             }
 
             let track_id_string = id.to_base62();
-            let track = spotify.track(track_id_string, market.map(String::from)).await?;
+            let track = spotify.track(track_id_string, market).await?;
             let duration = Duration::from_millis(track.duration_ms.into());
 
             (Track::Spotify { track }, duration)
@@ -499,7 +499,7 @@ impl Player {
             None,
             &theme.track_id,
             duration,
-            None
+            None,
         )
         .await
         .map_err(PlayThemeError::Error)?;

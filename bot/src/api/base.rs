@@ -57,8 +57,8 @@ pub struct RequestBuilder {
 
 impl RequestBuilder {
     /// Construct a new request builder.
-    pub fn new(client: Client, method: Method, url: Url) -> RequestBuilder {
-        RequestBuilder {
+    pub fn new(client: Client, method: Method, url: Url) -> Self {
+        Self {
             token: None,
             client,
             url,
@@ -105,7 +105,7 @@ impl RequestBuilder {
 
     /// Push a header.
     pub fn header(mut self, key: header::HeaderName, value: &str) -> Self {
-        self.headers.push((key, value.to_string()));
+        self.headers.push((key, value.to_owned()));
         self
     }
 
@@ -115,10 +115,10 @@ impl RequestBuilder {
         self
     }
 
-    /// Add a query parameter.
-    pub fn optional_query_param(mut self, key: &str, value: Option<String>) -> Self {
+    /// Add an optional query parameter.
+    pub fn optional_query_param(mut self, key: &str, value: Option<&str>) -> Self {
         if let Some(value) = value {
-            self.url.query_pairs_mut().append_pair(key, value.as_str());
+            self.url.query_pairs_mut().append_pair(key, value);
         }
 
         self
@@ -150,7 +150,7 @@ impl RequestBuilder {
     }
 
     /// Execute the request.
-    pub async fn execute(self) -> Result<Response<Bytes>, Error> {
+    pub async fn execute(&self) -> Result<Response<Bytes>, Error> {
         // NB: scope to only lock the token over the request setup.
         log::trace!("Request: {}: {}", self.method, self.url);
         let mut req = self.client.request(self.method.clone(), self.url.clone());
@@ -169,7 +169,7 @@ impl RequestBuilder {
         };
 
         for (key, value) in &self.headers {
-            req = req.header(key.clone(), value.clone());
+            req = req.header(key.clone(), value);
         }
 
         if let Some(token) = self.token.as_ref() {
@@ -211,8 +211,8 @@ impl RequestBuilder {
         }
 
         Ok(Response {
-            method: self.method,
-            url: self.url,
+            method: self.method.clone(),
+            url: self.url.clone(),
             status,
             body,
         })

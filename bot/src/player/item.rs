@@ -35,13 +35,13 @@ impl Item {
 
     pub fn is_playable(&self) -> bool {
         match self.track {
-            Track::Spotify{ ref track} => {
+            Track::Spotify { ref track } => {
                 match track.is_playable {
                     Some(is_playable) => return is_playable,
-                    None => return false
-                };                
+                    None => return false,
+                };
             }
-            Track::YouTube{ video: _ } => {
+            Track::YouTube { video: _ } => {
                 return true;
             }
         }

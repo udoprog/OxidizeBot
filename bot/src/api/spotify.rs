@@ -52,13 +52,13 @@ impl Spotify {
 
     /// Get user info.
     pub async fn me(&self) -> Result<PrivateUser, Error> {
-        let req: RequestBuilder = self.request(Method::GET, &["me"]);
+        let req = self.request(Method::GET, &["me"]);
 
         req.execute().await?.json()
     }
 
     /// Get my playlists.
-    pub async fn playlist(&self, id: String, market: Option<String>) -> Result<FullPlaylist, Error> {
+    pub async fn playlist(&self, id: String, market: Option<&str>) -> Result<FullPlaylist, Error> {
         let req = self
             .request(Method::GET, &["playlists", id.as_str()])
             .optional_query_param("market", market);
@@ -81,7 +81,7 @@ impl Spotify {
     /// Set player volume.
     pub async fn me_player_volume(
         &self,
-        device_id: Option<String>,
+        device_id: Option<&str>,
         volume: f32,
     ) -> Result<bool, Error> {
         let volume = u32::min(100, (volume * 100f32).round() as u32).to_string();
@@ -97,7 +97,7 @@ impl Spotify {
     }
 
     /// Start playing a track.
-    pub async fn me_player_pause(&self, device_id: Option<String>) -> Result<bool, Error> {
+    pub async fn me_player_pause(&self, device_id: Option<&str>) -> Result<bool, Error> {
         self.request(Method::PUT, &["me", "player", "pause"])
             .optional_query_param("device_id", device_id)
             .header(header::CONTENT_LENGTH, "0")
@@ -120,12 +120,12 @@ impl Spotify {
     /// Start playing a track.
     pub async fn me_player_play(
         &self,
-        device_id: Option<String>,
-        track_uri: Option<String>,
+        device_id: Option<&str>,
+        track_uri: Option<&str>,
         position_ms: Option<u64>,
     ) -> Result<bool, Error> {
         let request = Request {
-            uris: track_uri.into_iter().collect(),
+            uris: track_uri,
             position_ms,
         };
 
@@ -142,19 +142,34 @@ impl Spotify {
         return r.json_map(device_control).await;
 
         #[derive(serde::Serialize)]
-        struct Request {
-            #[serde(skip_serializing_if = "Vec::is_empty")]
-            uris: Vec<String>,
+        struct Request<'a> {
+            #[serde(
+                skip_serializing_if = "Option::is_none",
+                serialize_with = "option_sequence"
+            )]
+            uris: Option<&'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
             position_ms: Option<u64>,
+        }
+
+        fn option_sequence<T, S>(value: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            T: serde::Serialize,
+            S: serde::Serializer,
+        {
+            if let Some(value) = value {
+                return serde::Serialize::serialize(&[value], serializer);
+            }
+
+            serializer.serialize_none()
         }
     }
 
     /// Enqueue the specified track.
     pub async fn me_player_queue(
         &self,
-        device_id: Option<String>,
-        track_uri: String,
+        device_id: Option<&str>,
+        track_uri: &str,
     ) -> Result<bool, Error> {
         let r = self
             .request(Method::POST, &["me", "player", "queue"])
@@ -167,7 +182,7 @@ impl Spotify {
     }
 
     /// Skip to the next song.
-    pub async fn me_player_next(&self, device_id: Option<String>) -> Result<bool, Error> {
+    pub async fn me_player_next(&self, device_id: Option<&str>) -> Result<bool, Error> {
         let r = self
             .request(Method::POST, &["me", "player", "next"])
             .optional_query_param("device_id", device_id)
@@ -196,7 +211,7 @@ impl Spotify {
     }
 
     /// Get the full track by ID.
-    pub async fn track(&self, id: String, market: Option<String>) -> Result<FullTrack, Error> {
+    pub async fn track(&self, id: String, market: Option<&str>) -> Result<FullTrack, Error> {
         let req = self
             .request(Method::GET, &["tracks", id.as_str()])
             .optional_query_param("market", market);
@@ -226,7 +241,7 @@ impl Spotify {
     }
 
     /// Create a streamed page request.
-    fn page_stream<T>(
+    fn page_stream<'a, T>(
         &self,
         future: impl Future<Output = Result<Page<T>, Error>> + Send + 'static,
     ) -> PageStream<T> {
