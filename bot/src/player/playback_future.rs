@@ -42,13 +42,6 @@ impl PlaybackFuture {
             .update_fallback_items(fallback)
             .await;
 
-        let mut spotify_token_ready = Some({
-            let internal = self.internal.read().await;
-            let spotify_token = internal.spotify.token.clone();
-
-            Box::pin(async move { spotify_token.wait_until_ready().await })
-        });
-
         let (mut song_stream, song) = injector.stream::<Song>().await;
         let mut song_timeout = song.map(|s| tokio::time::delay_until(s.deadline().into()));
 
@@ -59,10 +52,6 @@ impl PlaybackFuture {
                 }
                 fallback = fallback_stream.select_next_some() => {
                     self.internal.write().await.update_fallback_items(fallback).await;
-                }
-                _ = spotify_token_ready.current() => {
-                    log::info!("Synchronizing Spotify Playback");
-                    self.internal.write().await.sync_spotify_playback().await?;
                 }
                 /* player */
                 _ = song_timeout.current() => {

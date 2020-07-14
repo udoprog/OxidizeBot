@@ -10,7 +10,14 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use std::{sync::Arc, time::Duration};
 
+#[derive(Default)]
+pub(super) struct Initialized {
+    queue: bool,
+    playback_state: bool,
+}
+
 pub(super) struct PlayerInternal {
+    pub(super) initialized: Initialized,
     pub(super) injector: injector::Injector,
     /// Current player kind.
     pub(super) player: PlayerKind,
@@ -46,45 +53,40 @@ pub(super) struct PlayerInternal {
 }
 
 impl PlayerInternal {
-    /// Initialize the queue from the database.
-    pub async fn initialize_queue(&mut self) -> Result<()> {
-        self.mixer
-            .initialize_queue(&*self.spotify, &*self.youtube)
-            .await
-    }
+    /// Initialize the internal player if necessary.
+    pub async fn initialize(&mut self) -> Result<()> {
+        if !self.initialized.playback_state {
+            let p = self.spotify.me_player().await?;
 
-    /// Try to sync Spotify playback.
-    pub async fn sync_spotify_playback(&mut self) -> Result<()> {
-        if !self.spotify.token.is_ready().await {
-            return Ok(());
+            if let Some(p) = p {
+                log::trace!("Detected Spotify playback: {:?}", p);
+
+                match Song::from_playback(&p) {
+                    Some(song) => {
+                        log::trace!("Syncing playback");
+                        let volume_percent = p.device.volume_percent;
+                        self.device.sync_device(Some(p.device)).await?;
+                        self.connect_player
+                            .set_scaled_volume(volume_percent)
+                            .await?;
+                        self.sync(song).await?;
+                    }
+                    None => {
+                        log::trace!("Pausing playback since item is missing");
+                        self.pause(Source::Automatic).await?;
+                    }
+                }
+            }
+
+            self.initialized.playback_state = true;
         }
 
-        let p = match self.spotify.me_player().await {
-            Ok(p) => p,
-            Err(e) => {
-                log::warn!("Failed to sync playback: {}", e);
-                return Ok(());
-            }
-        };
+        if !self.initialized.queue {
+            self.mixer
+                .initialize_queue(&*self.spotify, &*self.youtube)
+                .await?;
 
-        if let Some(p) = p {
-            log::trace!("Detected playback: {:?}", p);
-
-            match Song::from_playback(&p) {
-                Some(song) => {
-                    log::trace!("Syncing playback");
-                    let volume_percent = p.device.volume_percent;
-                    self.device.sync_device(Some(p.device)).await?;
-                    self.connect_player
-                        .set_scaled_volume(volume_percent)
-                        .await?;
-                    self.sync(song).await?;
-                }
-                None => {
-                    log::trace!("Pausing playback since item is missing");
-                    self.pause(Source::Automatic).await?;
-                }
-            }
+            self.initialized.queue = true;
         }
 
         Ok(())

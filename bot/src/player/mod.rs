@@ -195,6 +195,12 @@ pub async fn run(
             .boxed(),
     );
 
+    futures.push(
+        SongFile::run(injector.clone(), settings.scoped("song-file"))
+            .instrument(trace_span!(target: "futures", "song-file"))
+            .boxed(),
+    );
+
     let bus = bus::Bus::new();
 
     let (song_update_interval_stream, song_update_interval) = settings
@@ -225,6 +231,7 @@ pub async fn run(
         .await?;
 
     let internal = Arc::new(RwLock::new(PlayerInternal {
+        initialized: Default::default(),
         injector: injector.clone(),
         player: PlayerKind::None,
         detached,
@@ -247,6 +254,22 @@ pub async fn run(
         closed: None,
     }));
 
+    let playback = PlaybackFuture {
+        internal: internal.clone(),
+        connect_stream,
+        playback_mode_stream,
+        detached_stream,
+        song_update_interval,
+        song_update_interval_stream,
+    };
+
+    futures.push(
+        playback
+            .run(injector.clone(), settings)
+            .instrument(trace_span!(target: "futures", "playback"))
+            .boxed(),
+    );
+
     let parent_player = Player {
         inner: internal.clone(),
     };
@@ -254,32 +277,17 @@ pub async fn run(
     // future to initialize the player future.
     // Yeah, I know....
     let future = async move {
-        internal.write().await.initialize_queue().await?;
+        // Note: these tasks might fail sporadically, since we need to perform external
+        // API calls to initialize metadata for playback items.
+        retry_until_ok!("Initialize Player", {
+            internal.write().await.initialize().await
+        })
+        .await;
 
-        let playback = PlaybackFuture {
-            internal: internal.clone(),
-            connect_stream,
-            playback_mode_stream,
-            detached_stream,
-            song_update_interval,
-            song_update_interval_stream,
-        };
+        log::info!("Player is up and running!");
 
-        futures.push(
-            SongFile::run(injector.clone(), settings.scoped("song-file"))
-                .instrument(trace_span!(target: "futures", "song-file"))
-                .boxed(),
-        );
-
-        futures.push(
-            playback
-                .run(injector.clone(), settings)
-                .instrument(trace_span!(target: "futures", "playback"))
-                .boxed(),
-        );
-
-        futures.select_next_some().await?;
-        Ok(())
+        // Drive child futures now that initialization is done.
+        futures.select_next_some().await
     };
 
     Ok((parent_player, future.boxed()))
