@@ -30,6 +30,7 @@ pub const VERSION: &str = version_str!();
 mod macros;
 pub mod api;
 pub mod auth;
+mod backoff;
 pub mod bus;
 mod command;
 pub mod currency;

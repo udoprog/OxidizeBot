@@ -98,3 +98,27 @@ macro_rules! respond {
         $ctx.respond(&format!($($t)*)).await;
     }};
 }
+
+/// Backoff and retry until the given action has been successfully executed.
+#[macro_export]
+macro_rules! retry_until_ok {
+    ($id:expr, { $($f:tt)* }) => {
+        async {
+            let mut backoff = $crate::backoff::Exponential::new(std::time::Duration::from_secs(2));
+
+            loop {
+                log::info!("{}", $id);
+                let res = async { $($f)* }.await;
+
+                match res {
+                    Ok(output) => break output,
+                    Err(e) => {
+                        let duration = backoff.next();
+                        log_warn!(e, "\"{}\" failed, trying again in {:?}", $id, duration);
+                        tokio::time::delay_for(duration).await;
+                    }
+                }
+            }
+        }
+    };
+}
