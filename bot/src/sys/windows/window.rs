@@ -1,35 +1,31 @@
 #![allow(unused)]
 
 use super::convert::{FromWide as _, ToWide as _};
-use crate::{prelude::*, sys::Notification};
+use crate::prelude::*;
+use crate::sys::Notification;
 use anyhow::{anyhow, Context as _, Error};
-use std::{
-    cell::RefCell,
-    ffi::OsStr,
-    future::Future,
-    io,
-    os::windows::ffi::OsStrExt,
-    pin::Pin,
-    task::{Context, Poll},
-    thread,
-    time::Duration,
+use std::cell::RefCell;
+use std::ffi::OsStr;
+use std::future::Future;
+use std::io;
+use std::os::windows::ffi::OsStrExt;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::thread;
+use std::time::Duration;
+use winapi::shared::basetsd::ULONG_PTR;
+use winapi::shared::minwindef::{
+    DWORD, FALSE, HINSTANCE, LPARAM, LRESULT, PBYTE, TRUE, UINT, WPARAM,
 };
-use winapi::{
-    shared::{
-        basetsd::ULONG_PTR,
-        minwindef::{DWORD, FALSE, HINSTANCE, LPARAM, LRESULT, PBYTE, TRUE, UINT, WPARAM},
-        ntdef::LPCWSTR,
-        windef::{HBRUSH, HICON, HMENU, HWND, POINT},
-    },
-    um::{
-        libloaderapi, shellapi,
-        winuser::{
-            self, IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, MENUINFO, MENUITEMINFOW,
-            MFS_DEFAULT, MFT_SEPARATOR, MFT_STRING, MIIM_FTYPE, MIIM_ID, MIIM_STATE, MIIM_STRING,
-            MIM_APPLYTOSUBMENUS, MIM_STYLE, MNS_NOTIFYBYPOS, WM_DESTROY, WM_USER, WNDCLASSW,
-            WS_OVERLAPPEDWINDOW,
-        },
-    },
+use winapi::shared::ntdef::LPCWSTR;
+use winapi::shared::windef::{HBRUSH, HICON, HMENU, HWND, POINT};
+use winapi::um::libloaderapi;
+use winapi::um::shellapi;
+use winapi::um::winuser;
+use winapi::um::winuser::{
+    IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, MENUINFO, MENUITEMINFOW, MFS_DEFAULT,
+    MFT_SEPARATOR, MFT_STRING, MIIM_FTYPE, MIIM_ID, MIIM_STATE, MIIM_STRING, MIM_APPLYTOSUBMENUS,
+    MIM_STYLE, MNS_NOTIFYBYPOS, WM_DESTROY, WM_USER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
 
 const ICON_MSG_ID: UINT = WM_USER + 1;

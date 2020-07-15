@@ -1,18 +1,19 @@
-use crate::{
-    auth::Scope,
-    command, currency, irc, module, player,
-    prelude::*,
-    utils::{compact_duration, Cooldown, Duration},
-};
-use anyhow::{bail, Error};
-use std::{
-    collections::{hash_map, HashMap},
-    fmt,
-    net::SocketAddr,
-    sync::atomic::{AtomicUsize, Ordering},
-    time,
-};
-use tokio::{net::UdpSocket, sync::Mutex};
+use crate::auth::Scope;
+use crate::command;
+use crate::currency;
+use crate::irc;
+use crate::module;
+use crate::player;
+use crate::prelude::*;
+use crate::utils::{compact_duration, Cooldown, Duration};
+use anyhow::{bail, Result};
+use std::collections::{hash_map, HashMap};
+use std::fmt;
+use std::net::SocketAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time;
+use tokio::net::UdpSocket;
+use tokio::sync::Mutex;
 
 const VEHICLE_URL: &str = "http://bit.ly/gtavvehicles";
 
@@ -701,10 +702,7 @@ impl Handler {
     }
 
     /// Handle the other commands.
-    async fn handle_other(
-        &self,
-        ctx: &mut command::Context,
-    ) -> Result<Option<(Command, u32)>, Error> {
+    async fn handle_other(&self, ctx: &mut command::Context) -> Result<Option<(Command, u32)>> {
         let command = match ctx.next().as_deref() {
             Some("randomize-color") => Command::RandomizeColor,
             Some("randomize-weather") => Command::RandomizeWeather,
@@ -737,10 +735,7 @@ impl Handler {
     }
 
     /// Handle the punish command.
-    async fn handle_punish(
-        &self,
-        ctx: &mut command::Context,
-    ) -> Result<Option<(Command, u32)>, Error> {
+    async fn handle_punish(&self, ctx: &mut command::Context) -> Result<Option<(Command, u32)>> {
         let command = match ctx.next().as_deref() {
             Some("stumble") => Command::Stumble,
             Some("fall") => Command::Fall,
@@ -818,10 +813,7 @@ impl Handler {
     }
 
     /// Handle the reward command.
-    async fn handle_reward(
-        &self,
-        ctx: &mut command::Context,
-    ) -> Result<Option<(Command, u32)>, Error> {
+    async fn handle_reward(&self, ctx: &mut command::Context) -> Result<Option<(Command, u32)>> {
         let command = match ctx.next().as_deref() {
             Some("car") => Command::SpawnRandomVehicle(Vehicle::random_car()),
             Some("vehicle") => {
@@ -1085,7 +1077,7 @@ impl super::Module for Module {
             injector,
             ..
         }: module::HookContext<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let currency = injector.var().await?;
         let settings = settings.scoped("gtav");
 

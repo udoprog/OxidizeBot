@@ -1,5 +1,9 @@
-use crate::{api::OpenWeatherMap, auth, command, module, prelude::*};
-use anyhow::Error;
+use crate::api::OpenWeatherMap;
+use crate::auth;
+use crate::command;
+use crate::module;
+use crate::prelude::*;
+use anyhow::Result;
 use uom::si::{
     f32::ThermodynamicTemperature,
     thermodynamic_temperature::{degree_celsius, degree_fahrenheit, kelvin},
@@ -51,7 +55,7 @@ impl command::Handler for Weather {
         Some(auth::Scope::Weather)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -145,7 +149,7 @@ impl super::Module for Module {
             injector,
             ..
         }: module::HookContext<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         handlers.insert(
             "weather",
             Weather {

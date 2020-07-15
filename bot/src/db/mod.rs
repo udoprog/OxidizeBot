@@ -10,20 +10,20 @@ pub(crate) mod schema;
 mod themes;
 mod words;
 
-use crate::{task, track_id::TrackId, utils};
+use crate::task;
+use crate::track_id::TrackId;
+use crate::utils;
 use anyhow::bail;
 use std::path::Path;
 use thiserror::Error;
 
-pub use self::{
-    after_streams::{AfterStream, AfterStreams},
-    aliases::{Alias, Aliases},
-    commands::{Command, Commands},
-    matcher::Captures,
-    promotions::{Promotion, Promotions},
-    themes::{Theme, Themes},
-    words::{Word, Words},
-};
+pub use self::after_streams::{AfterStream, AfterStreams};
+pub use self::aliases::{Alias, Aliases};
+pub use self::commands::{Command, Commands};
+pub use self::matcher::Captures;
+pub use self::promotions::{Promotion, Promotions};
+pub use self::themes::{Theme, Themes};
+pub use self::words::{Word, Words};
 
 pub use self::matcher::Key;
 pub(crate) use self::matcher::{Matchable, Matcher, Pattern};

@@ -1,7 +1,9 @@
 //! Twitch API helpers.
 
-use crate::{api::RequestBuilder, oauth2, prelude::*};
-use anyhow::{Context as _, Error};
+use crate::api::RequestBuilder;
+use crate::oauth2;
+use crate::prelude::*;
+use anyhow::{Context as _, Result};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use reqwest::{header, Client, Method, StatusCode, Url};
@@ -31,8 +33,8 @@ pub struct Twitch {
 
 impl Twitch {
     /// Create a new API integration.
-    pub fn new(token: oauth2::SyncToken) -> Result<Twitch, Error> {
-        Ok(Twitch {
+    pub fn new(token: oauth2::SyncToken) -> Result<Self> {
+        Ok(Self {
             client: Client::new(),
             api_url: str::parse::<Url>(API_TWITCH_URL)?,
             id_url: str::parse::<Url>(ID_TWITCH_URL)?,
@@ -88,7 +90,7 @@ impl Twitch {
     }
 
     /// Access GQL client.
-    fn gql(&self) -> Result<RequestBuilder, Error> {
+    fn gql(&self) -> Result<RequestBuilder> {
         let req = RequestBuilder::new(self.client.clone(), Method::POST, self.gql_url.clone())
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json")
@@ -105,7 +107,7 @@ impl Twitch {
         &self,
         channel_id: &str,
         request: UpdateChannelRequest,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let body = Bytes::from(serde_json::to_vec(&request)?);
 
         let req = self
@@ -117,7 +119,7 @@ impl Twitch {
     }
 
     /// Get information on a user.
-    pub async fn user_by_login(&self, login: &str) -> Result<Option<NewUser>, Error> {
+    pub async fn user_by_login(&self, login: &str) -> Result<Option<NewUser>> {
         let req = self
             .new_api(Method::GET, &["users"])
             .query_param("login", login);
@@ -152,7 +154,7 @@ impl Twitch {
     }
 
     /// Create a clip for the given broadcaster.
-    pub async fn create_clip(&self, broadcaster_id: &str) -> Result<Option<Clip>, Error> {
+    pub async fn create_clip(&self, broadcaster_id: &str) -> Result<Option<Clip>> {
         let req = self
             .new_api(Method::POST, &["clips"])
             .query_param("broadcaster_id", broadcaster_id);
@@ -163,26 +165,26 @@ impl Twitch {
     }
 
     /// Get the channela associated with the current authentication.
-    pub async fn user(&self) -> Result<User, Error> {
+    pub async fn user(&self) -> Result<User> {
         let req = self.v5(Method::GET, &["user"]);
         req.execute().await?.json()
     }
 
     /// Get the channela associated with the current authentication.
-    pub async fn channel(&self) -> Result<Channel, Error> {
+    pub async fn channel(&self) -> Result<Channel> {
         let req = self.v5(Method::GET, &["channel"]);
 
         req.execute().await?.json::<Channel>()
     }
 
     /// Get the channela associated with the current authentication.
-    pub async fn channel_by_id(&self, channel_id: &str) -> Result<Channel, Error> {
+    pub async fn channel_by_id(&self, channel_id: &str) -> Result<Channel> {
         let req = self.v5(Method::GET, &["channels", channel_id]);
         req.execute().await?.json::<Channel>()
     }
 
     /// Get stream information.
-    pub async fn stream_by_id(&self, id: &str) -> Result<Option<Stream>, Error> {
+    pub async fn stream_by_id(&self, id: &str) -> Result<Option<Stream>> {
         let req = self
             .new_api(Method::GET, &["streams"])
             .query_param("user_id", id);
@@ -193,7 +195,7 @@ impl Twitch {
     }
 
     /// Get emotes by sets.
-    pub async fn chat_emoticon_images(&self, emote_sets: &str) -> Result<EmoticonSets, Error> {
+    pub async fn chat_emoticon_images(&self, emote_sets: &str) -> Result<EmoticonSets> {
         let req = self
             .v5(Method::GET, &["chat", "emoticon_images"])
             .query_param("emotesets", emote_sets);
@@ -201,7 +203,7 @@ impl Twitch {
     }
 
     /// Get chatters for the given channel using TMI.
-    pub async fn chatters(&self, channel: &str) -> Result<Chatters, Error> {
+    pub async fn chatters(&self, channel: &str) -> Result<Chatters> {
         let channel = channel.trim_start_matches('#');
 
         let url = Url::parse(&format!(
@@ -223,7 +225,7 @@ impl Twitch {
     }
 
     // Validate the specified token through twitch validation API.
-    pub async fn validate_token(&self) -> Result<Option<ValidateToken>, Error> {
+    pub async fn validate_token(&self) -> Result<Option<ValidateToken>> {
         let mut url = self.id_url.clone();
 
         url.path_segments_mut()
@@ -244,7 +246,7 @@ impl Twitch {
     }
 
     /// Get badge URLs for the specified channel.
-    pub async fn badges_display(&self, channel_id: &str) -> Result<Option<BadgesDisplay>, Error> {
+    pub async fn badges_display(&self, channel_id: &str) -> Result<Option<BadgesDisplay>> {
         let req = self.badges_v1(Method::GET, &["badges", "channels", &channel_id, "display"]);
 
         Ok(req
@@ -256,7 +258,7 @@ impl Twitch {
     }
 
     /// Get all badge URLs for the given chat.
-    pub async fn chat_badges(&self, channel_id: &str) -> Result<Option<ChatBadges>, Error> {
+    pub async fn chat_badges(&self, channel_id: &str) -> Result<Option<ChatBadges>> {
         let req = self.v5(Method::GET, &["chat", &channel_id, "badges"]);
 
         Ok(req
@@ -272,7 +274,7 @@ impl Twitch {
         &self,
         login: &str,
         channel: &str,
-    ) -> Result<Option<self::gql::badges::ResponseData>, Error> {
+    ) -> Result<Option<self::gql::badges::ResponseData>> {
         use graphql_client::{GraphQLQuery as _, Response};
 
         let body = self::gql::Badges::build_query(self::gql::badges::Variables {
@@ -295,14 +297,14 @@ impl Twitch {
 /// A response that is paged as a stream of requests.
 pub struct Paged<T> {
     request: RequestBuilder,
-    page: Option<future::BoxFuture<'static, Result<Page<T>, Error>>>,
+    page: Option<future::BoxFuture<'static, Result<Page<T>>>>,
 }
 
 impl<T> futures::Stream for Paged<T>
 where
     T: 'static + Send + serde::de::DeserializeOwned,
 {
-    type Item = Result<Vec<T>, Error>;
+    type Item = Result<Vec<T>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         if let Some(page) = self.as_mut().page.as_mut() {

@@ -1,11 +1,9 @@
 //! nightbot.tv API helpers.
 
-use crate::{
-    api::base::RequestBuilder,
-    injector::{Injector, Provider},
-    oauth2,
-};
-use anyhow::Error;
+use crate::api::base::RequestBuilder;
+use crate::injector::{Injector, Provider};
+use crate::oauth2;
+use anyhow::{Error, Result};
 use reqwest::{header, Client, Method, Url};
 
 static NIGHTBOT_URL_V1: &str = "https://api.nightbot.tv/1";
@@ -44,8 +42,8 @@ pub struct NightBot {
 
 impl NightBot {
     /// Create a new API integration.
-    pub fn new(token: oauth2::SyncToken) -> Result<Self, Error> {
-        Ok(NightBot {
+    pub fn new(token: oauth2::SyncToken) -> Result<Self> {
+        Ok(Self {
             client: Client::new(),
             api_url: str::parse(NIGHTBOT_URL_V1)?,
             token,
@@ -53,7 +51,7 @@ impl NightBot {
     }
 
     /// Run the stream that updates the nightbot client.
-    pub async fn run(injector: Injector) -> Result<(), Error> {
+    pub async fn run(injector: Injector) -> Result<()> {
         Builder::run(&injector).await?;
         Ok(())
     }

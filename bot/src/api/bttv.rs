@@ -1,7 +1,7 @@
 //! BetterTTV API Client.
 
 use crate::api::RequestBuilder;
-use anyhow::Error;
+use anyhow::Result;
 use reqwest::{header, Client, Method, Url};
 use std::collections::HashSet;
 
@@ -16,8 +16,8 @@ pub struct BetterTTV {
 
 impl BetterTTV {
     /// Create a new API integration.
-    pub fn new() -> Result<BetterTTV, Error> {
-        Ok(BetterTTV {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
             client: Client::new(),
             v2_url: str::parse::<Url>(V2_URL)?,
         })
@@ -37,13 +37,13 @@ impl BetterTTV {
     }
 
     /// Get the set associated with the room.
-    pub async fn channels(&self, channel: &str) -> Result<Option<Channel>, Error> {
+    pub async fn channels(&self, channel: &str) -> Result<Option<Channel>> {
         let req = self.v2(Method::GET, &["channels", channel]);
         let data = req.execute().await?.not_found().json()?;
         Ok(data)
     }
 
-    pub async fn emotes(&self) -> Result<Emotes, Error> {
+    pub async fn emotes(&self) -> Result<Emotes> {
         let req = self.v2(Method::GET, &["emotes"]);
         let data = req.execute().await?.json()?;
         Ok(data)

@@ -1,18 +1,14 @@
-use crate::{
-    api::{bttv, ffz, twitch::Channel, BetterTTV, FrankerFaceZ, Tduva, Twitch},
-    irc,
-    prelude::*,
-    storage::Cache,
-    template,
-};
+use crate::api::{bttv, ffz, twitch::Channel, BetterTTV, FrankerFaceZ, Tduva, Twitch};
+use crate::irc;
+use crate::prelude::*;
+use crate::storage::Cache;
+use crate::template;
 use anyhow::Error;
 use futures_cache as cache;
 use smallvec::SmallVec;
-use std::{
-    collections::{HashMap, HashSet},
-    mem,
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
+use std::mem;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Number of badges inlined for performance reasons.

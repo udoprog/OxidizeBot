@@ -1,4 +1,9 @@
-use crate::{auth, command, db, module, prelude::*, utils};
+use crate::auth;
+use crate::command;
+use crate::db;
+use crate::module;
+use crate::prelude::*;
+use crate::utils;
 
 /// Handler for the `!afterstream` command.
 pub struct AfterStream {

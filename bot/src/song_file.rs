@@ -1,6 +1,10 @@
-use crate::{player, prelude::*, template::Template, utils};
+use crate::player;
+use crate::prelude::*;
+use crate::template::Template;
+use crate::utils;
 use anyhow::Result;
-use std::{fs::File, path::PathBuf};
+use std::fs::File;
+use std::path::PathBuf;
 
 static DEFAULT_CURRENT_SONG_TEMPLATE: &str = "Song: {{name}}{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})\n{{#if user~}}Request by: @{{user~}}{{/if}}";
 static DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE: &str = "Not Playing";

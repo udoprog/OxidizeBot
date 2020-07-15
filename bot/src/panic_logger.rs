@@ -1,5 +1,6 @@
 use backtrace::Backtrace;
-use std::{panic, thread};
+use std::panic;
+use std::thread;
 
 /// Install a panic handler which logs panics on errors.
 /// Adapted from: https://github.com/sfackler/rust-log-panics/blob/master/src/lib.rs

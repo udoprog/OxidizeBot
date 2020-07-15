@@ -1,7 +1,7 @@
 //! FrankerFaceZ API Client.
 
 use crate::api::RequestBuilder;
-use anyhow::Error;
+use anyhow::Result;
 use reqwest::{header, Client, Method, Url};
 use std::collections::HashMap;
 
@@ -16,7 +16,7 @@ pub struct FrankerFaceZ {
 
 impl FrankerFaceZ {
     /// Create a new API integration.
-    pub fn new() -> Result<FrankerFaceZ, Error> {
+    pub fn new() -> Result<FrankerFaceZ> {
         Ok(FrankerFaceZ {
             client: Client::new(),
             v1_url: str::parse::<Url>(V1_URL)?,
@@ -37,21 +37,21 @@ impl FrankerFaceZ {
     }
 
     /// Get information on a single user.
-    pub async fn user(&self, user: &str) -> Result<Option<UserInfo>, Error> {
+    pub async fn user(&self, user: &str) -> Result<Option<UserInfo>> {
         let req = self.v1(Method::GET, &["user", user]);
         let data = req.execute().await?.not_found().json()?;
         Ok(data)
     }
 
     /// Get the set associated with the room.
-    pub async fn room(&self, room: &str) -> Result<Option<Room>, Error> {
+    pub async fn room(&self, room: &str) -> Result<Option<Room>> {
         let req = self.v1(Method::GET, &["room", room]);
         let data = req.execute().await?.not_found().json()?;
         Ok(data)
     }
 
     /// Get the global set.
-    pub async fn set_global(&self) -> Result<Sets, Error> {
+    pub async fn set_global(&self) -> Result<Sets> {
         let req = self.v1(Method::GET, &["set", "global"]);
         let data = req.execute().await?.json()?;
         Ok(data)

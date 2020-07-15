@@ -1,9 +1,8 @@
 use anyhow::{anyhow, Context as _, Result};
-use std::{
-    env, fs,
-    path::{Path, PathBuf},
-    process::{Command, ExitStatus},
-};
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitStatus};
 
 const URL: &str = "https://setbac.tv";
 

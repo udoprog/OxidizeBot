@@ -1,9 +1,13 @@
 //! Twitch API helpers.
 
-use crate::{api::RequestBuilder, injector::Injector, prelude::*, settings::Settings};
-use anyhow::{anyhow, Error};
+use crate::api::RequestBuilder;
+use crate::injector::Injector;
+use crate::prelude::*;
+use crate::settings::Settings;
+use anyhow::{anyhow, Result};
 use reqwest::{header, Client, Method, Url};
-use std::{fmt, sync::Arc};
+use std::fmt;
+use std::sync::Arc;
 
 const V2_URL: &str = "http://api.openweathermap.org/data/2.5";
 
@@ -22,7 +26,7 @@ struct Builder {
 
 impl Builder {
     /// Inject a newly build value.
-    pub async fn build_and_inject(&self) -> Result<(), Error> {
+    pub async fn build_and_inject(&self) -> Result<()> {
         match &self.api_key {
             Some(api_key) => {
                 self.injector
@@ -42,7 +46,7 @@ impl Builder {
 pub async fn setup(
     settings: Settings,
     injector: Injector,
-) -> Result<impl Future<Output = Result<(), Error>>, Error> {
+) -> Result<impl Future<Output = Result<()>>> {
     let (mut api_key_stream, api_key) = settings
         .stream::<String>("weather/api-key")
         .optional()
@@ -64,7 +68,7 @@ pub async fn setup(
 
 impl OpenWeatherMap {
     /// Create a new API integration.
-    pub fn new(api_key: String) -> Result<OpenWeatherMap, Error> {
+    pub fn new(api_key: String) -> Result<OpenWeatherMap> {
         Ok(OpenWeatherMap {
             client: Client::new(),
             v2_url: str::parse::<Url>(V2_URL)?,
@@ -86,7 +90,7 @@ impl OpenWeatherMap {
         req.header(header::ACCEPT, "application/json")
     }
 
-    pub async fn current(&self, q: String) -> Result<Option<Current>, Error> {
+    pub async fn current(&self, q: String) -> Result<Option<Current>> {
         let req = self.v2(Method::GET, &["weather"]).query_param("q", &q);
         Ok(req.execute().await?.not_found().json()?)
     }

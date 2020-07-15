@@ -1,14 +1,22 @@
-use super::{
+use crate::api;
+use crate::api::spotify::PrivateUser;
+use crate::bus;
+use crate::db;
+use crate::injector;
+use crate::player::{
     convert_item, AddTrackError, ConnectDevice, ConnectPlayer, Event, IntegrationEvent, Item,
     Mixer, PlaybackMode, PlayerKind, Song, Source, State, Track, YouTubePlayer,
 };
-use crate::{
-    api, api::spotify::PrivateUser, bus, db, injector, prelude::*, settings, spotify_id::SpotifyId,
-    track_id::TrackId, utils, Uri,
-};
+use crate::prelude::*;
+use crate::settings;
+use crate::spotify_id::SpotifyId;
+use crate::track_id::TrackId;
+use crate::utils;
+use crate::Uri;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Default)]
 pub(super) struct Initialized {

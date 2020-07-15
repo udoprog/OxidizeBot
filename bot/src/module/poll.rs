@@ -1,4 +1,9 @@
-use crate::{auth, command, irc, module, prelude::*, utils};
+use crate::auth;
+use crate::command;
+use crate::irc;
+use crate::module;
+use crate::prelude::*;
+use crate::utils;
 use anyhow::Error;
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};

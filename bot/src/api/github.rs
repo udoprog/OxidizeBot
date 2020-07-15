@@ -1,7 +1,7 @@
 //! Twitch API helpers.
 
 use crate::api::RequestBuilder;
-use anyhow::Error;
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use reqwest::{Client, Method, Url};
 
@@ -16,8 +16,8 @@ pub struct GitHub {
 
 impl GitHub {
     /// Create a new API integration.
-    pub fn new() -> Result<GitHub, Error> {
-        Ok(GitHub {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
             client: Client::new(),
             api_url: str::parse::<Url>(API_URL)?,
         })
@@ -36,7 +36,7 @@ impl GitHub {
     }
 
     /// Get all releases for the given repo.
-    pub async fn releases(&self, user: String, repo: String) -> Result<Vec<Release>, Error> {
+    pub async fn releases(&self, user: String, repo: String) -> Result<Vec<Release>> {
         let req = self.request(
             Method::GET,
             &["repos", user.as_str(), repo.as_str(), "releases"],
@@ -46,11 +46,7 @@ impl GitHub {
     }
 
     /// Get all releases for the given repo.
-    pub async fn releases_latest(
-        &self,
-        user: String,
-        repo: String,
-    ) -> Result<Option<Release>, Error> {
+    pub async fn releases_latest(&self, user: String, repo: String) -> Result<Option<Release>> {
         let req = self.request(
             Method::GET,
             &["repos", user.as_str(), repo.as_str(), "releases", "latest"],

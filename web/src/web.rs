@@ -1,21 +1,28 @@
-use crate::{api, db, oauth2, session};
+use crate::api;
+use crate::db;
+use crate::oauth2;
+use crate::session;
 use ::oauth2::State;
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
 use futures::prelude::*;
-use hyper::{
-    body::Body,
-    header,
-    server::{conn::AddrStream, Server},
-    service, Request, Response, StatusCode,
-};
+use hyper::body::Body;
+use hyper::header;
+use hyper::server::conn::AddrStream;
+use hyper::server::Server;
+use hyper::service;
+use hyper::{Request, Response, StatusCode};
 use parking_lot::Mutex;
 use relative_path::RelativePathBuf;
 use serde::{de, Deserialize, Serialize};
 use smallvec::SmallVec;
-use std::{
-    borrow::Cow, collections::HashMap, error::Error as _, fmt, net::SocketAddr, sync::Arc, time,
-};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::error::Error as _;
+use std::fmt;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time;
 use thiserror::Error;
 use url::Url;
 

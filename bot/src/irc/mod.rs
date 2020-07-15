@@ -1,27 +1,29 @@
-use crate::{
-    api::{self, twitch},
-    auth::{Auth, Role, Scope},
-    bus, command,
-    currency::CurrencyBuilder,
-    db, idle,
-    injector::{self, Injector, Key},
-    message_log::MessageLog,
-    module, oauth2,
-    prelude::*,
-    stream_info, task,
-    utils::{self, Cooldown, Duration},
-};
-use anyhow::{anyhow, bail, Context as _, Error};
-use irc::{
-    client::{self, Client},
-    proto::{
-        command::{CapSubCommand, Command},
-        message::{Message, Tag},
-    },
-};
+use crate::api::{self, twitch};
+use crate::auth::{Auth, Role, Scope};
+use crate::bus;
+use crate::command;
+use crate::currency::CurrencyBuilder;
+use crate::db;
+use crate::idle;
+use crate::injector::{self, Injector, Key};
+use crate::message_log::MessageLog;
+use crate::module;
+use crate::oauth2;
+use crate::prelude::*;
+use crate::stream_info;
+use crate::task;
+use crate::utils::{self, Cooldown, Duration};
+use anyhow::{anyhow, bail, Context as _, Error, Result};
+use irc::client::{self, Client};
+use irc::proto::command::{CapSubCommand, Command};
+use irc::proto::message::{Message, Tag};
 use leaky_bucket::LeakyBuckets;
 use parking_lot::RwLock;
-use std::{collections::HashSet, fmt, mem, sync::Arc, time};
+use std::collections::HashSet;
+use std::fmt;
+use std::mem;
+use std::sync::Arc;
+use std::time;
 use tokio::sync;
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
@@ -49,15 +51,12 @@ struct TwitchSetup {
 impl TwitchSetup {
     pub async fn setup(
         &mut self,
-    ) -> Result<
-        (
-            Arc<twitch::User>,
-            api::Twitch,
-            Arc<twitch::User>,
-            api::Twitch,
-        ),
-        Error,
-    > {
+    ) -> Result<(
+        Arc<twitch::User>,
+        api::Twitch,
+        Arc<twitch::User>,
+        api::Twitch,
+    )> {
         // loop to setup all necessary twitch authentication.
         loop {
             let (streamer_twitch, bot_twitch) = match (self.streamer.as_ref(), self.bot.as_ref()) {
@@ -131,7 +130,7 @@ impl TwitchSetup {
         token_update: &mut Option<oauth2::SyncToken>,
         existing_user: Option<&Arc<twitch::User>>,
         token: Option<oauth2::SyncToken>,
-    ) -> Result<bool, Error> {
+    ) -> Result<bool> {
         *token_update = token;
 
         let token = match token_update.as_ref() {
@@ -149,15 +148,12 @@ impl TwitchSetup {
     }
 
     /// Update the bot token and force a restart in case it has changed.
-    pub async fn update_streamer(
-        &mut self,
-        token: Option<oauth2::SyncToken>,
-    ) -> Result<bool, Error> {
+    pub async fn update_streamer(&mut self, token: Option<oauth2::SyncToken>) -> Result<bool> {
         Self::update_token_for(&mut self.streamer, self.streamer_user.as_ref(), token).await
     }
 
     /// Update the bot token and force a restart in case it has changed.
-    pub async fn update_bot(&mut self, token: Option<oauth2::SyncToken>) -> Result<bool, Error> {
+    pub async fn update_bot(&mut self, token: Option<oauth2::SyncToken>) -> Result<bool> {
         Self::update_token_for(&mut self.bot, self.bot_user.as_ref(), token).await
     }
 }
@@ -178,7 +174,7 @@ pub struct Irc {
 }
 
 impl Irc {
-    pub async fn run(self) -> Result<(), Error> {
+    pub async fn run(self) -> Result<()> {
         let Irc {
             bad_words,
             global_bus,
@@ -571,7 +567,7 @@ async fn currency_loop(
     injector: Injector,
     chat_settings: settings::Settings,
     settings: settings::Settings,
-) -> Result<impl Future<Output = Result<(), Error>>, Error> {
+) -> Result<impl Future<Output = Result<()>>> {
     log::trace!("Setting up currency loop");
 
     let reward = 10;
@@ -753,7 +749,7 @@ pub async fn process_command(
     global_bus: &Arc<bus::Bus<bus::Global>>,
     currency_handler: &Arc<currency_admin::Handler>,
     handlers: &module::Handlers,
-) -> Result<(), Error> {
+) -> Result<()> {
     match command {
         "ping" => {
             respond!(ctx, "What do you want?");
@@ -818,7 +814,7 @@ pub async fn process_command(
 
 impl<'a> Handler<'a> {
     /// Delete the given message.
-    fn delete_message(&self, user: &User) -> Result<(), Error> {
+    fn delete_message(&self, user: &User) -> Result<()> {
         let id = match &user.inner.tags.id {
             Some(id) => id,
             None => return Ok(()),
@@ -899,7 +895,7 @@ impl<'a> Handler<'a> {
     }
 
     /// Send a ping to the remote server.
-    fn send_ping(&mut self) -> Result<(), Error> {
+    fn send_ping(&mut self) -> Result<()> {
         self.sender
             .send_immediate(Command::PING(String::from(SERVER), None));
 
@@ -909,11 +905,7 @@ impl<'a> Handler<'a> {
     }
 
     /// Process the given command.
-    pub async fn process_message(
-        &mut self,
-        user: &User,
-        mut message: Arc<String>,
-    ) -> Result<(), Error> {
+    pub async fn process_message(&mut self, user: &User, mut message: Arc<String>) -> Result<()> {
         // Run message hooks.
         let _ = task::spawn({
             let user = user.clone();
@@ -1014,7 +1006,7 @@ impl<'a> Handler<'a> {
     }
 
     /// Run the given raw command.
-    pub async fn raw(&mut self, message: String) -> Result<(), Error> {
+    pub async fn raw(&mut self, message: String) -> Result<()> {
         let tags = Tags::default();
 
         let user = User {
@@ -1034,7 +1026,7 @@ impl<'a> Handler<'a> {
     }
 
     /// Handle the given command.
-    pub async fn handle(&mut self, mut m: Message) -> Result<(), Error> {
+    pub async fn handle(&mut self, mut m: Message) -> Result<()> {
         match m.command {
             Command::PRIVMSG(_, ref mut message) => {
                 let message = Arc::new(mem::replace(message, String::new()));
@@ -1614,7 +1606,7 @@ pub struct CommandVars<'a> {
 }
 
 // Future to refresh moderators every 5 minutes.
-async fn refresh_mods_future(sender: Sender) -> Result<(), Error> {
+async fn refresh_mods_future(sender: Sender) -> Result<()> {
     let mut interval = tokio::time::interval(time::Duration::from_secs(60 * 5));
 
     while let Some(_) = interval.next().await {

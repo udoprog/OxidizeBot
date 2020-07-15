@@ -1,15 +1,12 @@
-use crate::{
-    db,
-    utils::{Cooldown, Duration},
-};
+use crate::db;
+use crate::utils::{Cooldown, Duration};
 use anyhow::{Context as _, Error};
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
-use std::{
-    collections::{HashMap, HashSet},
-    fmt, iter,
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::iter;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 const SCHEMA: &[u8] = include_bytes!("auth.yaml");

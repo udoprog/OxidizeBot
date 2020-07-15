@@ -1,21 +1,20 @@
-use crate::{
-    api::{
-        setbac::{Connection, ConnectionMeta, Token},
-        Setbac,
-    },
-    injector::{Injector, Key},
-    prelude::*,
-    settings::Settings,
-    utils::Duration,
-    web,
+use crate::api::{
+    setbac::{Connection, ConnectionMeta, Token},
+    Setbac,
 };
+use crate::injector::{Injector, Key};
+use crate::prelude::*;
+use crate::settings::Settings;
+use crate::utils::Duration;
+use crate::web;
 use anyhow::Error;
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::fmt;
-use std::{sync::Arc, time};
+use std::sync::Arc;
+use std::time;
 use thiserror::Error;
-use tokio::sync::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 /// Connection identifier used for dependency injection.
 #[derive(Debug, Clone, Serialize)]
@@ -132,7 +131,7 @@ impl SyncToken {
     /// Read the synchronized connection.
     ///
     /// This results in an error if there is no connection to read.
-    pub async fn read(&self) -> Result<MappedRwLockReadGuard<'_, Token>, MissingTokenError> {
+    pub async fn read(&self) -> Result<RwLockReadGuard<'_, Token>, MissingTokenError> {
         match RwLockReadGuard::try_map(self.inner.read().await, |i| {
             i.connection.as_ref().map(|c| &c.token)
         }) {

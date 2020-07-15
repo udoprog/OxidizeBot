@@ -1,5 +1,13 @@
-use crate::{api, command, idle, injector, irc, settings, stream_info, utils};
-use std::{collections::HashMap, sync::Arc};
+use crate::api;
+use crate::command;
+use crate::idle;
+use crate::injector;
+use crate::irc;
+use crate::settings;
+use crate::stream_info;
+use crate::utils;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 #[macro_use]
 mod macros;

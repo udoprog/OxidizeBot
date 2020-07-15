@@ -1,12 +1,10 @@
-use crate::{
-    auth::Scope,
-    command,
-    currency::{BalanceTransferError, Currency},
-    db,
-    injector::Injector,
-    prelude::*,
-    utils,
-};
+use crate::auth::Scope;
+use crate::command;
+use crate::currency::{BalanceTransferError, Currency};
+use crate::db;
+use crate::injector::Injector;
+use crate::prelude::*;
+use crate::utils;
 use anyhow::Error;
 use std::sync::Arc;
 

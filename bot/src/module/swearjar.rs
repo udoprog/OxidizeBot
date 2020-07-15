@@ -1,13 +1,11 @@
-use crate::{
-    api,
-    auth::Scope,
-    command,
-    currency::Currency,
-    module,
-    prelude::*,
-    utils::{Cooldown, Duration},
-};
-use anyhow::{bail, Error};
+use crate::api;
+use crate::auth::Scope;
+use crate::command;
+use crate::currency::Currency;
+use crate::module;
+use crate::prelude::*;
+use crate::utils::{Cooldown, Duration};
+use anyhow::{bail, Result};
 use std::collections::HashSet;
 
 pub struct Handler {
@@ -24,7 +22,7 @@ impl command::Handler for Handler {
         Some(Scope::SwearJar)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -96,7 +94,7 @@ impl super::Module for Module {
             settings,
             ..
         }: module::HookContext<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let enabled = settings.var("swearjar/enabled", false).await?;
         let reward = settings.var("swearjar/reward", 10).await?;
 

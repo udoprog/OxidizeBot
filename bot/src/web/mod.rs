@@ -1,11 +1,24 @@
 use self::assets::Asset;
-use crate::{
-    api, api::setbac::ConnectionMeta, auth, bus, currency::Currency, db, injector, message_log,
-    player, prelude::*, template, track_id::TrackId, utils,
-};
+use crate::api;
+use crate::api::setbac::ConnectionMeta;
+use crate::auth;
+use crate::bus;
+use crate::currency::Currency;
+use crate::db;
+use crate::injector;
+use crate::message_log;
+use crate::player;
+use crate::prelude::*;
+use crate::template;
+use crate::track_id::TrackId;
+use crate::utils;
 use anyhow::{bail, Result};
-use std::{borrow::Cow, collections::HashMap, fmt, net::SocketAddr, sync::Arc};
-use tokio::sync::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::fmt;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::sync::{RwLock, RwLockReadGuard};
 use warp::{body, filters, path, Filter as _};
 
 mod cache;
@@ -151,7 +164,7 @@ impl Aliases {
     }
 
     /// Access underlying aliases abstraction.
-    async fn aliases(&self) -> Result<MappedRwLockReadGuard<'_, db::Aliases>> {
+    async fn aliases(&self) -> Result<RwLockReadGuard<'_, db::Aliases>> {
         match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("aliases not configured"),
@@ -273,7 +286,7 @@ impl Commands {
     }
 
     /// Access underlying commands abstraction.
-    async fn commands(&self) -> Result<MappedRwLockReadGuard<'_, db::Commands>> {
+    async fn commands(&self) -> Result<RwLockReadGuard<'_, db::Commands>> {
         match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("commands not configured"),
@@ -403,7 +416,7 @@ impl Promotions {
     }
 
     /// Access underlying promotions abstraction.
-    async fn promotions(&self) -> Result<MappedRwLockReadGuard<'_, db::Promotions>> {
+    async fn promotions(&self) -> Result<RwLockReadGuard<'_, db::Promotions>> {
         match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("promotions not configured"),
@@ -531,7 +544,7 @@ impl Themes {
     }
 
     /// Access underlying themes abstraction.
-    async fn themes(&self) -> Result<MappedRwLockReadGuard<'_, db::Themes>> {
+    async fn themes(&self) -> Result<RwLockReadGuard<'_, db::Themes>> {
         match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("themes not configured"),
@@ -862,7 +875,7 @@ impl Api {
     }
 
     /// Access underlying after streams abstraction.
-    async fn after_streams(&self) -> Result<MappedRwLockReadGuard<'_, db::AfterStreams>> {
+    async fn after_streams(&self) -> Result<RwLockReadGuard<'_, db::AfterStreams>> {
         match RwLockReadGuard::try_map(self.after_streams.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("after streams not configured"),

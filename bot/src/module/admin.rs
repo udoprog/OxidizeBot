@@ -1,5 +1,10 @@
-use crate::{auth, command, db, module, prelude::*, settings};
-use anyhow::Error;
+use crate::auth;
+use crate::command;
+use crate::db;
+use crate::module;
+use crate::prelude::*;
+use crate::settings;
+use anyhow::Result;
 
 /// Handler for the !admin command.
 pub struct Handler {
@@ -12,11 +17,7 @@ pub struct Handler {
 
 impl Handler {
     /// List settings by prefix.
-    async fn list_settings_by_prefix(
-        &self,
-        ctx: &mut command::Context,
-        key: &str,
-    ) -> Result<(), Error> {
+    async fn list_settings_by_prefix(&self, ctx: &mut command::Context, key: &str) -> Result<()> {
         let mut results = Vec::new();
 
         let settings = self.settings.list_by_prefix(key).await?;
@@ -286,7 +287,7 @@ impl Handler {
         &self,
         ctx: &mut command::Context,
         key: &str,
-    ) -> Result<serde_json::Value, Error> {
+    ) -> Result<serde_json::Value> {
         let schema = self
             .settings
             .lookup(key)
@@ -322,7 +323,7 @@ impl Handler {
 }
 
 /// Extract a settings key from the context.
-fn key(ctx: &mut command::Context) -> Result<String, Error> {
+fn key(ctx: &mut command::Context) -> Result<String> {
     let key = ctx.next().ok_or_else(|| respond_err!("Expected <key>"))?;
 
     if key.starts_with("secrets/") {
@@ -348,7 +349,7 @@ impl super::Module for Module {
             settings,
             ..
         }: module::HookContext<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         handlers.insert(
             "admin",
             Handler {

@@ -1,5 +1,7 @@
-use crate::{command, module, prelude::*};
-use anyhow::Error;
+use crate::command;
+use crate::module;
+use crate::prelude::*;
+use anyhow::Result;
 use url::Url;
 
 const DEFAULT_URL: &str = "https://setbac.tv/help";
@@ -12,7 +14,7 @@ pub struct Help {
 
 #[async_trait]
 impl command::Handler for Help {
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -51,7 +53,7 @@ impl super::Module for Module {
         module::HookContext {
             handlers, settings, ..
         }: module::HookContext<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let default_url = Url::parse(DEFAULT_URL)?;
 
         handlers.insert(

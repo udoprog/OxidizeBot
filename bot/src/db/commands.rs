@@ -1,14 +1,12 @@
-use crate::{db, template, utils};
+use crate::db;
+use crate::template;
+use crate::utils;
 use anyhow::{anyhow, Context as _, Error};
 use diesel::prelude::*;
-use std::{
-    collections::HashSet,
-    fmt,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-};
+use std::collections::HashSet;
+use std::fmt;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Local database wrapper.

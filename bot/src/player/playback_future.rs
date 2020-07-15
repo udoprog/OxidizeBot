@@ -1,5 +1,9 @@
-use super::{ConnectStream, PlaybackMode, PlayerInternal, Song};
-use crate::{prelude::*, settings, spotify_id::SpotifyId, utils, Uri};
+use crate::player::{ConnectStream, PlaybackMode, PlayerInternal, Song};
+use crate::prelude::*;
+use crate::settings;
+use crate::spotify_id::SpotifyId;
+use crate::utils;
+use crate::Uri;
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::RwLock;

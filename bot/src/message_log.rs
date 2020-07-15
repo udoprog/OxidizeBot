@@ -1,7 +1,10 @@
-use crate::{bus, emotes, irc};
+use crate::bus;
+use crate::emotes;
+use crate::irc;
 use chrono::{DateTime, Utc};
-use std::{collections::VecDeque, sync::Arc};
-use tokio::sync::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
+use std::collections::VecDeque;
+use std::sync::Arc;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
@@ -90,7 +93,7 @@ impl MessageLog {
     }
 
     /// Get a copy of all the messages.
-    pub async fn messages(&self) -> MappedRwLockReadGuard<'_, VecDeque<Message>> {
+    pub async fn messages(&self) -> RwLockReadGuard<'_, VecDeque<Message>> {
         RwLockReadGuard::map(self.inner.read().await, |i| &i.messages)
     }
 

@@ -5,11 +5,9 @@ use ::oauth2::{
 use anyhow::{anyhow, bail, Error};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::Duration;
 use url::Url;
 
 /// The configuration for a single flow.

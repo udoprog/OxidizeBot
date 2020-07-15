@@ -1,5 +1,6 @@
-use crate::{api, oauth2};
-use anyhow::Error;
+use crate::api;
+use crate::oauth2;
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sled31 as sled;
@@ -97,12 +98,12 @@ pub enum Key {
 
 impl Key {
     /// Serialize the current key.
-    pub fn serialize(&self) -> Result<Vec<u8>, Error> {
+    pub fn serialize(&self) -> Result<Vec<u8>> {
         Ok(serde_cbor::to_vec(self)?)
     }
 
     /// Deserialize a key.
-    pub fn deserialize(bytes: &[u8]) -> Result<Key, Error> {
+    pub fn deserialize(bytes: &[u8]) -> Result<Key> {
         Ok(serde_cbor::from_slice(bytes)?)
     }
 }
@@ -267,12 +268,12 @@ pub struct Database {
 
 impl Database {
     /// Open a new database instance.
-    pub fn load(tree: sled::Tree) -> Result<Database, Error> {
+    pub fn load(tree: sled::Tree) -> Result<Database> {
         Ok(Self { tree })
     }
 
     /// Get information on the given user.
-    pub fn list_players(&self) -> Result<Vec<PlayerEntry>, Error> {
+    pub fn list_players(&self) -> Result<Vec<PlayerEntry>> {
         let key = Key::Players.serialize()?;
         let prefix = &key[..(key.len() - 1)];
 
@@ -303,7 +304,7 @@ impl Database {
     }
 
     /// Get data for a single player.
-    pub fn get_player(&self, user_login: &str) -> Result<Option<Player>, Error> {
+    pub fn get_player(&self, user_login: &str) -> Result<Option<Player>> {
         let key = Key::Player {
             user_login: user_login.to_string(),
         };
@@ -312,7 +313,7 @@ impl Database {
     }
 
     /// Get data for a single player.
-    pub fn insert_player(&self, user_login: &str, player: Player) -> Result<(), Error> {
+    pub fn insert_player(&self, user_login: &str, player: Player) -> Result<()> {
         let key = Key::Player {
             user_login: user_login.to_string(),
         };
@@ -321,7 +322,7 @@ impl Database {
     }
 
     /// Get information on the given user.
-    pub fn insert_user(&self, user_id: &str, user: User) -> Result<(), Error> {
+    pub fn insert_user(&self, user_id: &str, user: User) -> Result<()> {
         let key = Key::User {
             user_id: user_id.to_string(),
         };
@@ -330,7 +331,7 @@ impl Database {
     }
 
     /// Get information on the given user.
-    pub fn get_user(&self, user_id: &str) -> Result<Option<User>, Error> {
+    pub fn get_user(&self, user_id: &str) -> Result<Option<User>> {
         let key = Key::User {
             user_id: user_id.to_string(),
         };
@@ -339,7 +340,7 @@ impl Database {
     }
 
     /// Get the current key by the specified user.
-    pub fn get_key(&self, user_id: &str) -> Result<Option<String>, Error> {
+    pub fn get_key(&self, user_id: &str) -> Result<Option<String>> {
         let key = Key::UserIdToKey {
             user_id: user_id.to_string(),
         };
@@ -348,7 +349,7 @@ impl Database {
     }
 
     /// Get the user that corresponds to the given key.
-    pub fn get_user_by_key(&self, key: &str) -> Result<Option<User>, Error> {
+    pub fn get_user_by_key(&self, key: &str) -> Result<Option<User>> {
         let key = Key::KeyToUserId {
             key: key.to_string(),
         };
@@ -364,7 +365,7 @@ impl Database {
     }
 
     /// Store the given key.
-    pub fn insert_key(&self, user_id: &str, key: &str) -> Result<(), Error> {
+    pub fn insert_key(&self, user_id: &str, key: &str) -> Result<()> {
         let user_to_key = Key::UserIdToKey {
             user_id: user_id.to_string(),
         };
@@ -381,7 +382,7 @@ impl Database {
     }
 
     /// Delete the key associated with the specified user.
-    pub fn delete_key(&self, user_id: &str) -> Result<(), Error> {
+    pub fn delete_key(&self, user_id: &str) -> Result<()> {
         let user_to_key = Key::UserIdToKey {
             user_id: user_id.to_string(),
         };
@@ -399,7 +400,7 @@ impl Database {
     }
 
     /// Get the connection with the specified ID.
-    pub fn get_connection(&self, user_id: &str, id: &str) -> Result<Option<Connection>, Error> {
+    pub fn get_connection(&self, user_id: &str, id: &str) -> Result<Option<Connection>> {
         let key = Key::Connection {
             user_id: user_id.to_string(),
             id: id.to_string(),
@@ -409,7 +410,7 @@ impl Database {
     }
 
     /// Add the specified connection.
-    pub fn add_connection(&self, user_id: &str, connection: &Connection) -> Result<(), Error> {
+    pub fn add_connection(&self, user_id: &str, connection: &Connection) -> Result<()> {
         let key = Key::Connection {
             user_id: user_id.to_string(),
             id: connection.id.clone(),
@@ -419,7 +420,7 @@ impl Database {
     }
 
     /// Delete the specified connection.
-    pub fn delete_connection(&self, user_id: &str, id: &str) -> Result<(), Error> {
+    pub fn delete_connection(&self, user_id: &str, id: &str) -> Result<()> {
         let key = Key::Connection {
             user_id: user_id.to_string(),
             id: id.to_string(),
@@ -429,7 +430,7 @@ impl Database {
     }
 
     /// Get all connections for the specified user.
-    pub fn connections_by_user(&self, needle_user_id: &str) -> Result<Vec<Connection>, Error> {
+    pub fn connections_by_user(&self, needle_user_id: &str) -> Result<Vec<Connection>> {
         let key = Key::ConnectionsByUserId {
             user_id: needle_user_id.to_string(),
         };
@@ -473,7 +474,7 @@ impl Database {
         &self,
         user: &str,
         repo: &str,
-    ) -> Result<Option<Vec<api::github::Release>>, Error> {
+    ) -> Result<Option<Vec<api::github::Release>>> {
         let key = Key::GithubReleases {
             user: user.to_string(),
             repo: repo.to_string(),
@@ -488,7 +489,7 @@ impl Database {
         user: &str,
         repo: &str,
         releases: Vec<api::github::Release>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let key = Key::GithubReleases {
             user: user.to_string(),
             repo: repo.to_string(),
@@ -506,7 +507,7 @@ impl Database {
     }
 
     /// Insert the given key and value.
-    fn insert<T>(&self, key: &Key, value: T) -> Result<(), Error>
+    fn insert<T>(&self, key: &Key, value: T) -> Result<()>
     where
         T: Serialize,
     {
@@ -517,14 +518,14 @@ impl Database {
     }
 
     /// Delete the given key.
-    fn remove(&self, key: &Key) -> Result<(), Error> {
+    fn remove(&self, key: &Key) -> Result<()> {
         let key = key.serialize()?;
         self.tree.remove(key)?;
         Ok(())
     }
 
     /// Get the value for the given key.
-    fn get<T>(&self, key: &Key) -> Result<Option<T>, Error>
+    fn get<T>(&self, key: &Key) -> Result<Option<T>>
     where
         T: DeserializeOwned,
     {
@@ -567,7 +568,7 @@ struct Transaction<'a> {
 
 impl Transaction<'_> {
     /// Insert the given key and value.
-    pub fn insert<T>(&mut self, key: &Key, value: &T) -> Result<(), Error>
+    pub fn insert<T>(&mut self, key: &Key, value: &T) -> Result<()>
     where
         T: Serialize,
     {
@@ -578,7 +579,7 @@ impl Transaction<'_> {
     }
 
     /// Delete the given key.
-    pub fn remove(&mut self, key: &Key) -> Result<(), Error> {
+    pub fn remove(&mut self, key: &Key) -> Result<()> {
         let key = key.serialize()?;
         self.ops.push(Operation::Remove(key));
         Ok(())
@@ -608,10 +609,10 @@ impl Transaction<'_> {
 #[cfg(test)]
 mod tests {
     use super::Key;
-    use anyhow::Error;
+    use anyhow::Result;
 
     #[test]
-    fn test_subset() -> Result<(), Error> {
+    fn test_subset() -> Result<()> {
         let a = Key::Connection {
             user_id: "100292".to_string(),
             id: "twitch".to_string(),

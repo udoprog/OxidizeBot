@@ -1,12 +1,16 @@
-use crate::{bus, player, prelude::*, settings::Settings};
-use anyhow::Error;
-use std::{sync::Arc, time::Duration};
+use crate::bus;
+use crate::player;
+use crate::prelude::*;
+use crate::settings::Settings;
+use anyhow::Result;
+use std::sync::Arc;
+use std::time::Duration;
 
 /// Setup a player.
 pub(super) async fn setup(
     bus: Arc<bus::Bus<bus::YouTube>>,
     settings: Settings,
-) -> Result<(YouTubePlayer, impl Future<Output = Result<(), Error>>), anyhow::Error> {
+) -> Result<(YouTubePlayer, impl Future<Output = Result<()>>)> {
     let (mut volume_scale_stream, mut volume_scale) =
         settings.stream("volume-scale").or_with(100).await?;
     let (mut volume_stream, volume) = settings.stream("volume").or_with(50).await?;
@@ -82,7 +86,7 @@ impl YouTubePlayer {
         self.bus.send(bus::YouTube::YouTubeCurrent { event }).await;
     }
 
-    pub(super) async fn volume(&self, modify: player::ModifyVolume) -> Result<u32, Error> {
+    pub(super) async fn volume(&self, modify: player::ModifyVolume) -> Result<u32> {
         let mut volume = self.volume.write().await;
         let update = modify.apply(*volume);
         *volume = update;

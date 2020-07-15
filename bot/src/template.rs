@@ -1,4 +1,7 @@
-use std::{collections::HashSet, fmt, io, string};
+use std::collections::HashSet;
+use std::fmt;
+use std::io;
+use std::string;
 
 lazy_static::lazy_static! {
     static ref REGISTRY: handlebars::Handlebars<'static> = {

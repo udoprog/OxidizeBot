@@ -1,11 +1,8 @@
-use std::{
-    ffi::{OsStr, OsString},
-    io, ptr,
-};
-use winapi::{
-    shared::{minwindef::HKEY, winerror},
-    um::{winnt, winreg},
-};
+use std::ffi::{OsStr, OsString};
+use std::io;
+use std::ptr;
+use winapi::shared::{minwindef::HKEY, winerror};
+use winapi::um::{winnt, winreg};
 
 use super::convert::{FromWide as _, ToWide as _};
 

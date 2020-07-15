@@ -1,10 +1,10 @@
-use crate::{db, track_id::TrackId, utils};
+use crate::db;
+use crate::track_id::TrackId;
+use crate::utils;
 use diesel::prelude::*;
-use std::{
-    collections::{hash_map, HashMap},
-    fmt,
-    sync::Arc,
-};
+use std::collections::{hash_map, HashMap};
+use std::fmt;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Local database wrapper.

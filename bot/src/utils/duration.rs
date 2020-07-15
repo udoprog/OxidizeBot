@@ -1,6 +1,7 @@
 use crate::utils;
 use anyhow::bail;
-use std::{fmt, time};
+use std::fmt;
+use std::time;
 
 /// A duration with second precision.
 ///

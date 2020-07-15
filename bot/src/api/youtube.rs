@@ -1,7 +1,8 @@
 //! Twitch API helpers.
 
-use crate::{api::RequestBuilder, oauth2};
-use anyhow::bail;
+use crate::api::RequestBuilder;
+use crate::oauth2;
+use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
 use reqwest::{Client, Method, Url};
 use std::collections::HashMap;
@@ -20,8 +21,8 @@ pub struct YouTube {
 
 impl YouTube {
     /// Create a new API integration.
-    pub fn new(token: oauth2::SyncToken) -> Result<YouTube, anyhow::Error> {
-        Ok(YouTube {
+    pub fn new(token: oauth2::SyncToken) -> Result<Self> {
+        Ok(Self {
             client: Client::new(),
             v3_url: str::parse::<Url>(V3_URL)?,
             get_video_info_url: str::parse::<Url>(GET_VIDEO_INFO_URL)?,
@@ -42,11 +43,7 @@ impl YouTube {
     }
 
     /// Update the channel information.
-    pub async fn videos_by_id(
-        &self,
-        video_id: &str,
-        part: &str,
-    ) -> Result<Option<Video>, anyhow::Error> {
+    pub async fn videos_by_id(&self, video_id: &str, part: &str) -> Result<Option<Video>> {
         let req = self
             .v3(Method::GET, &["videos"])
             .query_param("part", part)
@@ -61,7 +58,7 @@ impl YouTube {
     }
 
     /// Search YouTube.
-    pub async fn search(&self, q: &str) -> Result<SearchResults, anyhow::Error> {
+    pub async fn search(&self, q: &str) -> Result<SearchResults> {
         let req = self
             .v3(Method::GET, &["search"])
             .query_param("part", "snippet")
@@ -74,10 +71,7 @@ impl YouTube {
     }
 
     /// Get video info of a video.
-    pub async fn get_video_info(
-        &self,
-        video_id: String,
-    ) -> Result<Option<VideoInfo>, anyhow::Error> {
+    pub async fn get_video_info(&self, video_id: String) -> Result<Option<VideoInfo>> {
         let mut url = self.get_video_info_url.clone();
         url.query_pairs_mut()
             .append_pair("video_id", video_id.as_str());
@@ -261,7 +255,7 @@ pub struct VideoInfo {
 
 impl RawVideoInfo {
     /// Convert into a decoded version.
-    pub fn into_decoded(self) -> Result<VideoInfo, anyhow::Error> {
+    pub fn into_decoded(self) -> Result<VideoInfo> {
         let player_response = match self.player_response.as_ref() {
             Some(player_response) => Some(serde_json::from_str(player_response)?),
             None => None,

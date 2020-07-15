@@ -1,5 +1,6 @@
-use super::track::Track;
-use crate::{track_id::TrackId, utils};
+use crate::player::track::Track;
+use crate::track_id::TrackId;
+use crate::utils;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]

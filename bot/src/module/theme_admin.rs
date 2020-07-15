@@ -1,4 +1,8 @@
-use crate::{auth, command, db, module, prelude::*};
+use crate::auth;
+use crate::command;
+use crate::db;
+use crate::module;
+use crate::prelude::*;
 
 pub struct Handler {
     pub themes: injector::Var<Option<db::Themes>>,

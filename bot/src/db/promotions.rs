@@ -1,8 +1,12 @@
-use crate::{db, template, utils};
+use crate::db;
+use crate::template;
+use crate::utils;
 use anyhow::{anyhow, Context as _};
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::collections::HashMap;
+use std::fmt;
+use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
 

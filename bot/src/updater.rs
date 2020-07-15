@@ -1,5 +1,9 @@
-use crate::{api, injector, prelude::*, storage::Cache, utils::Duration};
-use anyhow::Error;
+use crate::api;
+use crate::injector;
+use crate::prelude::*;
+use crate::storage::Cache;
+use crate::utils::Duration;
+use anyhow::Result;
 
 const USER: &str = "udoprog";
 const REPO: &str = "OxidizeBot";
@@ -8,7 +12,7 @@ pub fn run(
     injector: &injector::Injector,
 ) -> (
     injector::Var<Option<api::github::Release>>,
-    impl Future<Output = Result<(), Error>>,
+    impl Future<Output = Result<()>>,
 ) {
     let latest = injector::Var::new(None);
     let returned_latest = latest.clone();

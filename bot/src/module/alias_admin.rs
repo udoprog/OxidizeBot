@@ -1,5 +1,9 @@
-use crate::{auth, command, db, module, prelude::*};
-use anyhow::Error;
+use crate::auth;
+use crate::command;
+use crate::db;
+use crate::module;
+use crate::prelude::*;
+use anyhow::Result;
 
 /// Handler for the !alias command.
 pub struct Handler {
@@ -8,7 +12,7 @@ pub struct Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         let aliases = match self.aliases.load().await {
             Some(aliases) => aliases,
             None => return Ok(()),
@@ -76,7 +80,7 @@ impl super::Module for Module {
         module::HookContext {
             injector, handlers, ..
         }: module::HookContext<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         handlers.insert(
             "alias",
             Handler {

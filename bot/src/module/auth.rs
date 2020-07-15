@@ -1,5 +1,9 @@
-use crate::{auth, command, module, prelude::*, utils::Duration};
-use anyhow::Error;
+use crate::auth;
+use crate::command;
+use crate::module;
+use crate::prelude::*;
+use crate::utils::Duration;
+use anyhow::Result;
 use chrono::Utc;
 
 /// Handler for the !auth command.
@@ -9,7 +13,7 @@ pub struct Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         match ctx.next().as_deref() {
             Some("scopes") => {
                 let filter = ctx.next();
@@ -115,7 +119,7 @@ impl super::Module for Module {
     async fn hook(
         &self,
         module::HookContext { handlers, auth, .. }: module::HookContext<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         handlers.insert("auth", Handler { auth: auth.clone() });
         Ok(())
     }

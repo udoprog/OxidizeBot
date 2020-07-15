@@ -1,17 +1,17 @@
-use crate::{
-    api::{
-        self,
-        speedrun::{
-            Category, CategoryType, Embed, Embeds, Game, GameRecord, Level, Page, Players,
-            RelatedPlayer, Run, RunInfo, User, Variable, Variables,
-        },
+use crate::api::{
+    self,
+    speedrun::{
+        Category, CategoryType, Embed, Embeds, Game, GameRecord, Level, Page, Players,
+        RelatedPlayer, Run, RunInfo, User, Variable, Variables,
     },
-    auth, command, module,
-    prelude::*,
-    storage::Cache,
-    utils,
 };
-use anyhow::{anyhow, Error};
+use crate::auth;
+use crate::command;
+use crate::module;
+use crate::prelude::*;
+use crate::storage::Cache;
+use crate::utils;
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 
 /// Handler for the !speedrun command.
@@ -23,7 +23,7 @@ pub struct Speedrun {
 
 impl Speedrun {
     /// Query a user.
-    async fn query_personal_bests(&self, ctx: &mut command::Context) -> Result<(), Error> {
+    async fn query_personal_bests(&self, ctx: &mut command::Context) -> Result<()> {
         let mut query_user = None;
         let mut category_filter = CategoryFilter::default();
         let mut games = Vec::new();
@@ -248,7 +248,7 @@ impl Speedrun {
     }
 
     /// Query a game.
-    async fn query_game(&self, ctx: &mut command::Context) -> Result<(), Error> {
+    async fn query_game(&self, ctx: &mut command::Context) -> Result<()> {
         let top = self.top.load().await;
 
         let game_query = ctx.next_str("<game> [options]")?;
@@ -311,7 +311,7 @@ impl Speedrun {
             Some(game) => game,
             None => {
                 respond!(ctx, "No game matching `{}`", game_query);
-                return Ok::<(), Error>(());
+                return Result::Ok(());
             }
         };
 
@@ -448,7 +448,7 @@ impl Speedrun {
         player: &'a RelatedPlayer,
         match_user: Option<&'a str>,
         embedded_players: &'a HashMap<String, User>,
-    ) -> Result<Option<String>, Error> {
+    ) -> Result<Option<String>> {
         match *player {
             RelatedPlayer::Player(ref player) => {
                 let user = match embedded_players.get(&player.id) {
@@ -486,7 +486,7 @@ impl command::Handler for Speedrun {
         Some(auth::Scope::Speedrun)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -551,7 +551,7 @@ struct CachedSpeedrun {
 
 impl CachedSpeedrun {
     /// Get cached user information by ID.
-    pub async fn user_by_id(&self, user: &str) -> Result<Option<User>, Error> {
+    pub async fn user_by_id(&self, user: &str) -> Result<Option<User>> {
         let result = self
             .cache
             .wrap(
@@ -569,7 +569,7 @@ impl CachedSpeedrun {
         &self,
         user_id: &str,
         embeds: &Embeds,
-    ) -> Result<Option<Vec<Run>>, Error> {
+    ) -> Result<Option<Vec<Run>>> {
         let result = self
             .cache
             .wrap(
@@ -586,10 +586,7 @@ impl CachedSpeedrun {
     }
 
     /// Get the variables of a category.
-    pub async fn category_variables(
-        &self,
-        category_id: &str,
-    ) -> Result<Option<Vec<Variable>>, Error> {
+    pub async fn category_variables(&self, category_id: &str) -> Result<Option<Vec<Variable>>> {
         let result = self
             .cache
             .wrap(
@@ -608,7 +605,7 @@ impl CachedSpeedrun {
         &self,
         category_id: &str,
         top: u32,
-    ) -> Result<Option<Page<GameRecord>>, Error> {
+    ) -> Result<Option<Page<GameRecord>>> {
         let result = self
             .cache
             .wrap(
@@ -622,7 +619,7 @@ impl CachedSpeedrun {
     }
 
     /// Get cached game record by ID.
-    pub async fn game_by_id(&self, game_id: &str) -> Result<Option<Game>, Error> {
+    pub async fn game_by_id(&self, game_id: &str) -> Result<Option<Game>> {
         let result = self
             .cache
             .wrap(
@@ -640,7 +637,7 @@ impl CachedSpeedrun {
         &self,
         game_id: &str,
         embeds: &Embeds,
-    ) -> Result<Option<Vec<Category>>, Error> {
+    ) -> Result<Option<Vec<Category>>> {
         let result = self
             .cache
             .wrap(
@@ -654,7 +651,7 @@ impl CachedSpeedrun {
     }
 
     /// Get cached game levels by ID.
-    pub async fn game_levels(&self, game_id: &str) -> Result<Option<Vec<Level>>, Error> {
+    pub async fn game_levels(&self, game_id: &str) -> Result<Option<Vec<Level>>> {
         let result = self
             .cache
             .wrap(
@@ -675,7 +672,7 @@ impl CachedSpeedrun {
         top: u32,
         variables: &Variables,
         embeds: &Embeds,
-    ) -> Result<Option<GameRecord>, Error> {
+    ) -> Result<Option<GameRecord>> {
         let result = self
             .cache
             .wrap(
@@ -713,7 +710,7 @@ impl super::Module for Module {
             injector,
             ..
         }: module::HookContext<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let cache: Cache = injector
             .get()
             .await

@@ -1,7 +1,11 @@
-use anyhow::{bail, Error};
+use anyhow::{bail, Result};
 use futures::prelude::*;
-use oxidize_web::{api, db, web};
-use std::{fs, path::Path, time};
+use oxidize_web::api;
+use oxidize_web::db;
+use oxidize_web::web;
+use std::fs;
+use std::path::Path;
+use std::time;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -25,7 +29,7 @@ fn opts() -> clap::App<'static, 'static> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<()> {
     pretty_env_logger::init();
 
     let opts = opts();
@@ -105,7 +109,7 @@ async fn main() -> Result<(), Error> {
                 let future = async move {
                     let releases = github.releases("udoprog", "OxidizeBot").await?;
                     db.write_github_releases("udoprog", "OxidizeBot", releases)?;
-                    Ok::<_, Error>(())
+                    Ok::<_, anyhow::Error>(())
                 };
 
                 tokio::spawn(async move {

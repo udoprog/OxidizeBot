@@ -1,22 +1,28 @@
-use crate::{
-    api, bus, db, injector, prelude::*, settings, song_file::SongFile, spotify_id::SpotifyId,
-    track_id::TrackId, utils,
-};
-
-pub(self) use self::{
-    connect::{ConnectDevice, ConnectPlayer, ConnectStream},
-    mixer::Mixer,
-    playback_future::PlaybackFuture,
-    player_internal::PlayerInternal,
-    youtube::YouTubePlayer,
-};
-pub use self::{item::Item, song::Song, track::Track};
+use crate::api;
+use crate::bus;
+use crate::db;
+use crate::injector;
+use crate::prelude::*;
+use crate::settings;
+use crate::song_file::SongFile;
+use crate::spotify_id::SpotifyId;
+use crate::track_id::TrackId;
+use crate::utils;
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
-use std::{future::Future, sync::Arc, time::Duration};
+use std::future::Future;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
+
+pub(self) use self::connect::{ConnectDevice, ConnectPlayer, ConnectStream};
+pub(self) use self::mixer::Mixer;
+pub(self) use self::playback_future::PlaybackFuture;
+pub(self) use self::player_internal::PlayerInternal;
+pub(self) use self::youtube::YouTubePlayer;
+pub use self::{item::Item, song::Song, track::Track};
 
 mod connect;
 mod item;

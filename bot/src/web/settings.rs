@@ -1,10 +1,8 @@
-use crate::{
-    injector,
-    web::{Fragment, EMPTY},
-};
-use anyhow::bail;
+use crate::injector;
+use crate::web::{Fragment, EMPTY};
+use anyhow::{bail, Result};
 use std::collections::HashSet;
-use tokio::sync::{MappedRwLockReadGuard, RwLockReadGuard};
+use tokio::sync::RwLockReadGuard;
 use warp::{body, filters, path, Filter as _};
 
 #[derive(serde::Deserialize)]
@@ -103,9 +101,7 @@ impl Settings {
     }
 
     /// Access underlying settings abstraction.
-    async fn settings(
-        &self,
-    ) -> Result<MappedRwLockReadGuard<'_, crate::settings::Settings>, anyhow::Error> {
+    async fn settings(&self) -> Result<RwLockReadGuard<'_, crate::settings::Settings>> {
         match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("settings not configured"),
@@ -113,7 +109,7 @@ impl Settings {
     }
 
     /// Get the list of all settings in the bot.
-    async fn get_settings(&self, query: SettingsQuery) -> Result<impl warp::Reply, anyhow::Error> {
+    async fn get_settings(&self, query: SettingsQuery) -> Result<impl warp::Reply> {
         let mut settings = match query.prefix {
             Some(prefix) => {
                 let mut out = Vec::new();
@@ -161,14 +157,14 @@ impl Settings {
     }
 
     /// Delete the given setting by key.
-    async fn delete_setting(&self, key: &str) -> Result<impl warp::Reply, anyhow::Error> {
+    async fn delete_setting(&self, key: &str) -> Result<impl warp::Reply> {
         let settings = self.settings().await?;
         settings.clear(key).await?;
         Ok(warp::reply::json(&EMPTY))
     }
 
     /// Get the given setting by key.
-    async fn get_setting(&self, key: &str) -> Result<impl warp::Reply, anyhow::Error> {
+    async fn get_setting(&self, key: &str) -> Result<impl warp::Reply> {
         let settings = self.settings().await?;
         let setting: Option<crate::settings::Setting> = settings
             .setting::<serde_json::Value>(key)
@@ -178,11 +174,7 @@ impl Settings {
     }
 
     /// Delete the given setting by key.
-    async fn edit_setting(
-        &self,
-        key: &str,
-        value: serde_json::Value,
-    ) -> Result<impl warp::Reply, anyhow::Error> {
+    async fn edit_setting(&self, key: &str, value: serde_json::Value) -> Result<impl warp::Reply> {
         let settings = self.settings().await?;
         settings.set_json(key, value).await?;
         Ok(warp::reply::json(&EMPTY))

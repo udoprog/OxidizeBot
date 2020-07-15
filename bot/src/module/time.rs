@@ -1,9 +1,11 @@
-use crate::{auth, command, module, prelude::*, template::Template};
-use anyhow::Error;
-use chrono::{
-    offset::{Offset as _, TimeZone as _},
-    Datelike as _, Timelike as _, Utc,
-};
+use crate::auth;
+use crate::command;
+use crate::module;
+use crate::prelude::*;
+use crate::template::Template;
+use anyhow::Result;
+use chrono::prelude::*;
+use chrono::Utc;
 use chrono_tz::{Etc, Tz};
 
 /// Handler for the !8ball command.
@@ -19,7 +21,7 @@ impl command::Handler for Time {
         Some(auth::Scope::Time)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -100,7 +102,7 @@ impl super::Module for Module {
         module::HookContext {
             handlers, settings, ..
         }: module::HookContext<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let default_template = Template::compile("The streamer's time is {{time}}{{offset}}")?;
 
         handlers.insert(

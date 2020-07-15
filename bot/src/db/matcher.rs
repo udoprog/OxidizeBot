@@ -1,10 +1,8 @@
 use crate::utils;
 use anyhow::Error;
-use std::{
-    collections::{hash_map, HashMap, HashSet},
-    fmt,
-    sync::Arc,
-};
+use std::collections::{hash_map, HashMap, HashSet};
+use std::fmt;
+use std::sync::Arc;
 
 /// Trait over something that has a matchable pattern.
 pub trait Matchable {

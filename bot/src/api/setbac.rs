@@ -1,20 +1,19 @@
 //! setbac.tv API helpers.
 
-use crate::{
-    api::base::RequestBuilder,
-    bus,
-    injector::{Injector, Key},
-    oauth2,
-    player::{self, Player},
-    prelude::*,
-    settings::Settings,
-    utils,
-};
-use anyhow::Error;
+use crate::api::base::RequestBuilder;
+use crate::bus;
+use crate::injector::{Injector, Key};
+use crate::oauth2;
+use crate::player::{self, Player};
+use crate::prelude::*;
+use crate::settings::Settings;
+use crate::utils;
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use reqwest::{header, Client, Method, Url};
 use serde::{Deserialize, Serialize};
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 const DEFAULT_API_URL: &str = "https://setbac.tv";
 
@@ -75,7 +74,7 @@ impl Token {
     }
 
     /// Return `true` if the token expires within 30 minutes.
-    pub fn expires_within(&self, within: Duration) -> Result<bool, Error> {
+    pub fn expires_within(&self, within: Duration) -> Result<bool> {
         let out = match self.expires_in {
             Some(expires_in) => {
                 let expires_in = chrono::Duration::seconds(expires_in as i64);
@@ -170,7 +169,7 @@ pub async fn run(
     settings: &Settings,
     injector: &Injector,
     global_bus: Arc<bus::Bus<bus::Global>>,
-) -> Result<impl Future<Output = Result<(), Error>>, Error> {
+) -> Result<impl Future<Output = Result<()>>> {
     let settings = settings.scoped("remote");
 
     let (mut api_url_stream, api_url) = settings
@@ -318,7 +317,7 @@ impl Setbac {
     }
 
     /// Update the channel information.
-    pub async fn player_update(&self, request: PlayerUpdate) -> Result<(), Error> {
+    pub async fn player_update(&self, request: PlayerUpdate) -> Result<()> {
         let body = serde_json::to_vec(&request)?;
 
         let req = self
@@ -331,7 +330,7 @@ impl Setbac {
     }
 
     /// Get the token corresponding to the given flow.
-    pub async fn get_connection(&self, id: &str) -> Result<Option<Connection>, Error> {
+    pub async fn get_connection(&self, id: &str) -> Result<Option<Connection>> {
         let req = self
             .request(Method::GET, &["api", "connections", id])
             .header(header::CONTENT_TYPE, "application/json");
@@ -341,10 +340,7 @@ impl Setbac {
     }
 
     /// Get the token corresponding to the given flow.
-    pub async fn get_connection_meta(
-        &self,
-        flow_id: &str,
-    ) -> Result<Option<ConnectionMeta>, Error> {
+    pub async fn get_connection_meta(&self, flow_id: &str) -> Result<Option<ConnectionMeta>> {
         let req = self
             .request(Method::GET, &["api", "connections", flow_id])
             .query_param("format", "meta")
@@ -355,7 +351,7 @@ impl Setbac {
     }
 
     /// Get meta for all available connections.
-    pub async fn get_connections_meta(&self) -> Result<Vec<ConnectionMeta>, Error> {
+    pub async fn get_connections_meta(&self) -> Result<Vec<ConnectionMeta>> {
         let req = self
             .request(Method::GET, &["api", "connections"])
             .query_param("format", "meta")
@@ -366,7 +362,7 @@ impl Setbac {
     }
 
     /// Refresh the token corresponding to the given flow.
-    pub async fn refresh_connection(&self, id: &str) -> Result<Option<Connection>, Error> {
+    pub async fn refresh_connection(&self, id: &str) -> Result<Option<Connection>> {
         let req = self
             .request(Method::POST, &["api", "connections", id, "refresh"])
             .header(header::CONTENT_TYPE, "application/json");

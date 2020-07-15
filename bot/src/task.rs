@@ -1,9 +1,7 @@
-use anyhow::Error;
-use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use anyhow::Result;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 /// Asyncify the given task.
 pub async fn asyncify<F, T, E>(task: F) -> Result<T, E>
@@ -24,7 +22,7 @@ pub struct Handle<T> {
 }
 
 impl<T> Future for Handle<T> {
-    type Output = Result<T, Error>;
+    type Output = Result<T>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         Poll::Ready(Ok(futures::ready!(Pin::new(&mut self.handle).poll(cx))?))

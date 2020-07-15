@@ -1,4 +1,10 @@
-use crate::{auth, command, db, irc, module, prelude::*, utils};
+use crate::auth;
+use crate::command;
+use crate::db;
+use crate::irc;
+use crate::module;
+use crate::prelude::*;
+use crate::utils;
 use chrono::Utc;
 
 pub struct Handler {

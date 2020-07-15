@@ -1,14 +1,14 @@
-use crate::{api, injector, settings};
-use anyhow::Error;
-use irc::{
-    client,
-    proto::{
-        command::{CapSubCommand, Command},
-        message::Message,
-    },
-};
+use crate::api;
+use crate::injector;
+use crate::settings;
+use anyhow::Result;
+use irc::client;
+use irc::proto::command::{CapSubCommand, Command};
+use irc::proto::message::Message;
 use leaky_bucket::{LeakyBucket, LeakyBuckets};
-use std::{fmt, sync::Arc, time};
+use std::fmt;
+use std::sync::Arc;
+use std::time;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub enum Type {
@@ -46,7 +46,7 @@ impl Sender {
         sender: client::Sender,
         nightbot: injector::Var<Option<api::NightBot>>,
         buckets: &LeakyBuckets,
-    ) -> Result<Sender, Error> {
+    ) -> Result<Sender> {
         // limiter to use for IRC chat messages.
         let limiter = buckets
             .rate_limiter()

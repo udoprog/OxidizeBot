@@ -1,8 +1,17 @@
 //! Traits and shared plumbing for bot commands (e.g. `!uptime`)
 
-use crate::{auth::Scope, irc, prelude::*, utils};
-use anyhow::{bail, Error};
-use std::{borrow::Cow, collections::HashMap, fmt, num, str, sync::Arc, time::Instant};
+use crate::auth::Scope;
+use crate::irc;
+use crate::prelude::*;
+use crate::utils;
+use anyhow::{bail, Result};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::fmt;
+use std::num;
+use std::str;
+use std::sync::Arc;
+use std::time::Instant;
 use thiserror::Error;
 use tokio::sync;
 
@@ -40,14 +49,14 @@ where
     }
 
     /// Handle the command.
-    async fn handle(&self, ctx: &mut Context) -> Result<(), Error>;
+    async fn handle(&self, ctx: &mut Context) -> Result<()>;
 }
 
 #[async_trait]
 /// A trait for peeking into chat messages.
 pub trait MessageHook: std::any::Any + Send + Sync {
     /// Peek the given message.
-    async fn peek(&self, user: &irc::User, m: &str) -> Result<(), Error>;
+    async fn peek(&self, user: &irc::User, m: &str) -> Result<()>;
 }
 
 pub(crate) struct ContextInner {
@@ -105,7 +114,7 @@ impl Context {
     }
 
     /// Verify that the current user has the associated scope.
-    pub async fn check_scope(&self, scope: Scope) -> Result<(), Error> {
+    pub async fn check_scope(&self, scope: Scope) -> Result<()> {
         if !self.user.has_scope(scope).await {
             if let Some(name) = self.user.display_name() {
                 self.privmsg(format!(
@@ -168,7 +177,7 @@ impl Context {
     }
 
     /// Take the next parameter and parse as the given type.
-    pub fn next_parse_optional<T>(&mut self) -> Result<Option<T>, Error>
+    pub fn next_parse_optional<T>(&mut self) -> Result<Option<T>>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
@@ -185,7 +194,7 @@ impl Context {
     }
 
     /// Take the next parameter and parse as the given type.
-    pub fn next_parse<T, M>(&mut self, m: M) -> Result<T, Error>
+    pub fn next_parse<T, M>(&mut self, m: M) -> Result<T>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
@@ -197,7 +206,7 @@ impl Context {
     }
 
     /// Take the rest and parse as the given type.
-    pub fn rest_parse<T, M>(&mut self, m: M) -> Result<T, Error>
+    pub fn rest_parse<T, M>(&mut self, m: M) -> Result<T>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
@@ -217,7 +226,7 @@ impl Context {
     }
 
     /// Take the next parameter.
-    pub fn next_str<M>(&mut self, m: M) -> Result<String, Error>
+    pub fn next_str<M>(&mut self, m: M) -> Result<String>
     where
         M: fmt::Display,
     {

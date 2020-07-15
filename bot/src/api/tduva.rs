@@ -1,7 +1,7 @@
 //! tduva API Client.
 
 use crate::api::RequestBuilder;
-use anyhow::Error;
+use anyhow::Result;
 use reqwest::{header, Client, Method, Url};
 
 const URL: &str = "https://tduva.com";
@@ -15,8 +15,8 @@ pub struct Tduva {
 
 impl Tduva {
     /// Create a new API integration.
-    pub fn new() -> Result<Tduva, Error> {
-        Ok(Tduva {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
             client: Client::new(),
             url: str::parse::<Url>(URL)?,
         })
@@ -36,7 +36,7 @@ impl Tduva {
     }
 
     /// Access resource badges.
-    pub async fn res_badges(&self) -> Result<Vec<Badge>, Error> {
+    pub async fn res_badges(&self) -> Result<Vec<Badge>> {
         let req = self.request(Method::GET, &["res", "badges"]);
 
         req.execute().await?.json()

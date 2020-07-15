@@ -1,10 +1,11 @@
-use super::{Item, PlayerKind, State, Track};
-use crate::{api, spotify_id::SpotifyId, track_id::TrackId, utils};
+use crate::api;
+use crate::player::{Item, PlayerKind, State, Track};
+use crate::spotify_id::SpotifyId;
+use crate::track_id::TrackId;
+use crate::utils;
 use anyhow::Result;
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// Information on current song.
 #[derive(Debug, Clone)]

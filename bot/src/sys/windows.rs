@@ -1,17 +1,15 @@
-use crate::{prelude::*, sys::Notification, web};
+use crate::prelude::*;
+use crate::sys::Notification;
+use crate::web;
 use anyhow::{anyhow, bail, Context as _, Error};
 use parking_lot::Mutex;
 use std::collections::VecDeque;
-use std::{
-    io,
-    path::Path,
-    ptr,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    thread,
-};
+use std::io;
+use std::path::Path;
+use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
 use winapi::um::{shellapi, winuser::SW_SHOW};
 
 #[path = "windows/convert.rs"]

@@ -1,6 +1,8 @@
-use crate::{db, template};
+use crate::db;
+use crate::template;
 use diesel::prelude::*;
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::{RwLock, RwLockReadGuard};
 
 /// Tokenize the given word.

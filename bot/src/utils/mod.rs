@@ -1,6 +1,12 @@
-use crate::{api, prelude::*};
+use crate::api;
+use crate::prelude::*;
 use percent_encoding::PercentDecode;
-use std::{borrow::Cow, fmt, mem, ops, sync::Arc, time};
+use std::borrow::Cow;
+use std::fmt;
+use std::mem;
+use std::ops;
+use std::sync::Arc;
+use std::time;
 use tokio::sync::Mutex;
 
 mod duration;

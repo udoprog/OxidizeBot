@@ -1,8 +1,12 @@
-use super::{api, convert_item, utils, Item, Song};
-use crate::{db, track_id::TrackId};
+use crate::api;
+use crate::db;
+use crate::player::{convert_item, Item, Song};
+use crate::track_id::TrackId;
+use crate::utils;
 use anyhow::Result;
 use chrono::Utc;
-use std::{collections::VecDeque, sync::Arc};
+use std::collections::VecDeque;
+use std::sync::Arc;
 
 /// Mixer decides what song to play next.
 pub(super) struct Mixer {

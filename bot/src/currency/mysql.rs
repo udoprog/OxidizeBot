@@ -7,14 +7,13 @@
 //! 1) Name the table to use.
 //! 2) Name the fields holding channel, user, and amount.
 
-use crate::{
-    currency::{BalanceOf, BalanceTransferError},
-    db::{models::Balance, user_id},
-};
+use crate::currency::{BalanceOf, BalanceTransferError};
+use crate::db::{models::Balance, user_id};
 
-use anyhow::Error;
+use anyhow::Result;
 use mysql_async as mysql;
-use std::{convert::TryInto as _, sync::Arc};
+use std::convert::TryInto as _;
+use std::sync::Arc;
 
 use mysql::prelude::*;
 
@@ -41,7 +40,7 @@ struct Queries {
 
 impl Queries {
     /// Select all balances.
-    async fn select_balances<Tx>(&self, tx: Tx) -> Result<(Tx, Vec<(String, i32)>), Error>
+    async fn select_balances<Tx>(&self, tx: Tx) -> Result<(Tx, Vec<(String, i32)>)>
     where
         Tx: Queryable,
     {
@@ -62,7 +61,7 @@ impl Queries {
     }
 
     /// Select the given balance.
-    async fn select_balance<Tx>(&self, tx: Tx, user: &str) -> Result<(Tx, Option<i32>), Error>
+    async fn select_balance<Tx>(&self, tx: Tx, user: &str) -> Result<(Tx, Option<i32>)>
     where
         Tx: Queryable,
     {
@@ -89,7 +88,7 @@ impl Queries {
     }
 
     /// Helper to insert or update a single balance.
-    async fn modify_balance<Tx>(&self, tx: Tx, user: &str, amount: i32) -> Result<Tx, Error>
+    async fn modify_balance<Tx>(&self, tx: Tx, user: &str, amount: i32) -> Result<Tx>
     where
         Tx: Queryable,
     {
@@ -99,7 +98,7 @@ impl Queries {
     }
 
     /// Update or insert a batch of balances.
-    async fn upsert_balances<Tx, I>(&self, tx: Tx, users: I, amount: i32) -> Result<Tx, Error>
+    async fn upsert_balances<Tx, I>(&self, tx: Tx, users: I, amount: i32) -> Result<Tx>
     where
         Tx: Queryable,
         I: IntoIterator<Item = String> + Send + 'static,
@@ -126,7 +125,7 @@ impl Queries {
     }
 
     /// Insert the given balance.
-    async fn insert_balance<Tx>(&self, tx: Tx, user: &str, balance: i32) -> Result<Tx, Error>
+    async fn insert_balance<Tx>(&self, tx: Tx, user: &str, balance: i32) -> Result<Tx>
     where
         Tx: Queryable,
     {
@@ -148,7 +147,7 @@ impl Queries {
     }
 
     /// Update the given balance.
-    async fn update_balance<Tx>(&self, tx: Tx, user: &str, balance: i32) -> Result<Tx, Error>
+    async fn update_balance<Tx>(&self, tx: Tx, user: &str, balance: i32) -> Result<Tx>
     where
         Tx: Queryable,
     {
@@ -177,7 +176,7 @@ pub struct Backend {
 
 impl Backend {
     /// Construct a new built-in backend.
-    pub fn connect(channel: String, url: String, schema: Schema) -> Result<Self, Error> {
+    pub fn connect(channel: String, url: String, schema: Schema) -> Result<Self> {
         let channel = Arc::new(channel);
         let pool = mysql::Pool::new(url);
         let queries = Arc::new(Queries { schema });
@@ -221,7 +220,7 @@ impl Backend {
     }
 
     /// Get balances for all users.
-    pub async fn export_balances(&self) -> Result<Vec<Balance>, Error> {
+    pub async fn export_balances(&self) -> Result<Vec<Balance>> {
         let channel = self.channel.to_string();
         let mut output = Vec::new();
 
@@ -243,7 +242,7 @@ impl Backend {
     }
 
     /// Import balances for all users.
-    pub async fn import_balances(&self, balances: Vec<Balance>) -> Result<(), Error> {
+    pub async fn import_balances(&self, balances: Vec<Balance>) -> Result<()> {
         let opts = mysql::TransactionOptions::new();
         let mut tx = self.pool.start_transaction(opts).await?;
 
@@ -264,7 +263,7 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, _channel: &str, user: &str) -> Result<Option<BalanceOf>, Error> {
+    pub async fn balance_of(&self, _channel: &str, user: &str) -> Result<Option<BalanceOf>> {
         let user = user_id(&user);
         let opts = mysql::TransactionOptions::new();
         let tx = self.pool.start_transaction(opts).await?;
@@ -283,7 +282,7 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(&self, _channel: &str, user: &str, amount: i64) -> Result<(), Error> {
+    pub async fn balance_add(&self, _channel: &str, user: &str, amount: i64) -> Result<()> {
         let user = user_id(&user);
         let amount = amount.try_into()?;
 
@@ -297,12 +296,7 @@ impl Backend {
     }
 
     /// Add balance to users.
-    pub async fn balances_increment<I>(
-        &self,
-        _channel: &str,
-        users: I,
-        amount: i64,
-    ) -> Result<(), Error>
+    pub async fn balances_increment<I>(&self, _channel: &str, users: I, amount: i64) -> Result<()>
     where
         I: IntoIterator<Item = String> + Send + 'static,
         I::IntoIter: Send + 'static,

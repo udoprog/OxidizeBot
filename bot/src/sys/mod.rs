@@ -1,5 +1,6 @@
 use anyhow::Error;
-use std::{fmt, time::Duration};
+use std::fmt;
+use std::time::Duration;
 
 #[cfg(target_os = "windows")]
 #[path = "windows.rs"]

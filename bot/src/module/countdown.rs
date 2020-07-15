@@ -1,6 +1,14 @@
-use crate::{auth, command, module, prelude::*, template, utils};
+use crate::auth;
+use crate::command;
+use crate::module;
+use crate::prelude::*;
+use crate::template;
+use crate::utils;
 use parking_lot::RwLock;
-use std::{fs, path::PathBuf, sync::Arc, time};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time;
 
 enum Event {
     /// Set the countdown.

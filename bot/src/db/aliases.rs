@@ -1,6 +1,9 @@
-use crate::{db, template, utils};
+use crate::db;
+use crate::template;
+use crate::utils;
 use diesel::prelude::*;
-use std::{fmt, sync::Arc};
+use std::fmt;
+use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Local database wrapper.

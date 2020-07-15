@@ -1,8 +1,12 @@
 //! Stream currency configuration.
-use crate::{api, db::Database};
-pub use crate::{db::models::Balance, injector, utils::Duration};
-use anyhow::Error;
-use std::{collections::HashSet, sync::Arc};
+use crate::api;
+pub use crate::db::models::Balance;
+use crate::db::Database;
+pub use crate::injector;
+pub use crate::utils::Duration;
+use anyhow::{Error, Result};
+use std::collections::HashSet;
+use std::sync::Arc;
 use thiserror::Error;
 
 mod builtin;
@@ -183,7 +187,7 @@ impl Backend {
     }
 
     /// Get balances for all users.
-    pub async fn export_balances(&self) -> Result<Vec<Balance>, Error> {
+    pub async fn export_balances(&self) -> Result<Vec<Balance>> {
         use self::Backend::*;
 
         match *self {
@@ -193,7 +197,7 @@ impl Backend {
     }
 
     /// Import balances for all users.
-    pub async fn import_balances(&self, balances: Vec<Balance>) -> Result<(), Error> {
+    pub async fn import_balances(&self, balances: Vec<Balance>) -> Result<()> {
         use self::Backend::*;
 
         match *self {
@@ -203,7 +207,7 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>, Error> {
+    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>> {
         use self::Backend::*;
 
         match *self {
@@ -213,7 +217,7 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<(), Error> {
+    pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<()> {
         use self::Backend::*;
 
         match *self {
@@ -229,7 +233,7 @@ impl Backend {
         users: I,
         amount: i64,
         watch_time: i64,
-    ) -> Result<(), Error>
+    ) -> Result<()>
     where
         I: IntoIterator<Item = String> + Send + 'static,
         I::IntoIter: Send + 'static,
@@ -301,22 +305,22 @@ impl Currency {
     }
 
     /// Get balances for all users.
-    pub async fn export_balances(&self) -> Result<Vec<Balance>, Error> {
+    pub async fn export_balances(&self) -> Result<Vec<Balance>> {
         self.inner.backend.export_balances().await
     }
 
     /// Import balances for all users.
-    pub async fn import_balances(&self, balances: Vec<Balance>) -> Result<(), Error> {
+    pub async fn import_balances(&self, balances: Vec<Balance>) -> Result<()> {
         self.inner.backend.import_balances(balances).await
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>, Error> {
+    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>> {
         self.inner.backend.balance_of(channel, user).await
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<(), Error> {
+    pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<()> {
         self.inner.backend.balance_add(channel, user, amount).await
     }
 
@@ -327,7 +331,7 @@ impl Currency {
         users: I,
         amount: i64,
         watch_time: i64,
-    ) -> Result<(), Error>
+    ) -> Result<()>
     where
         I: IntoIterator<Item = String> + Send + 'static,
         I::IntoIter: Send + 'static,

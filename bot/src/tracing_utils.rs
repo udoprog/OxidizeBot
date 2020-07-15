@@ -3,13 +3,11 @@
 //! Adds tracing for entering and exiting spans.
 
 use parking_lot::RwLock;
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    sync::atomic::{AtomicUsize, Ordering},
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tracing_core::{
     span::{self, Id},
     Event, Metadata,

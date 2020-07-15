@@ -1,11 +1,9 @@
 //! Module for the built-in currency which uses the regular databse support.
 
-use crate::{
-    currency::{BalanceOf, BalanceTransferError},
-    db::{models, schema, user_id, Database},
-};
+use crate::currency::{BalanceOf, BalanceTransferError};
+use crate::db::{models, schema, user_id, Database};
 
-use anyhow::Error;
+use anyhow::Result;
 use diesel::prelude::*;
 
 pub struct Backend {
@@ -15,7 +13,7 @@ pub struct Backend {
 impl Backend {
     /// Construct a new built-in backend.
     pub fn new(db: Database) -> Self {
-        Backend { db }
+        Self { db }
     }
 
     /// Add (or subtract) from the balance for a single user.
@@ -60,7 +58,7 @@ impl Backend {
     }
 
     /// Get balances for all users.
-    pub async fn export_balances(&self) -> Result<Vec<models::Balance>, Error> {
+    pub async fn export_balances(&self) -> Result<Vec<models::Balance>> {
         use self::schema::balances::dsl;
 
         self.db
@@ -72,7 +70,7 @@ impl Backend {
     }
 
     /// Import balances for all users.
-    pub async fn import_balances(&self, balances: Vec<models::Balance>) -> Result<(), Error> {
+    pub async fn import_balances(&self, balances: Vec<models::Balance>) -> Result<()> {
         use self::schema::balances::dsl;
 
         self.db
@@ -112,7 +110,7 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>, Error> {
+    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>> {
         use self::schema::balances::dsl;
 
         let channel = channel_id(channel);
@@ -140,7 +138,7 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<(), Error> {
+    pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<()> {
         let channel = channel_id(channel);
         let user = user_id(user);
 
@@ -156,7 +154,7 @@ impl Backend {
         users: impl IntoIterator<Item = String> + Send + 'static,
         amount: i64,
         watch_time: i64,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         use self::schema::balances::dsl;
 
         // NB: for legacy reasons, channel is stored with a hash.
@@ -203,12 +201,7 @@ impl Backend {
 }
 
 /// Common function to modify the balance for the given user.
-fn modify_balance(
-    c: &SqliteConnection,
-    channel: &str,
-    user: &str,
-    amount: i64,
-) -> Result<(), Error> {
+fn modify_balance(c: &SqliteConnection, channel: &str, user: &str, amount: i64) -> Result<()> {
     use self::schema::balances::dsl;
 
     let filter = dsl::balances.filter(dsl::channel.eq(channel).and(dsl::user.eq(user)));

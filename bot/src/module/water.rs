@@ -1,5 +1,11 @@
-use crate::{auth, command, currency::Currency, module, prelude::*, stream_info, utils};
-use anyhow::Error;
+use crate::auth;
+use crate::command;
+use crate::currency::Currency;
+use crate::module;
+use crate::prelude::*;
+use crate::stream_info;
+use crate::utils;
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use tokio::sync::Mutex;
 
@@ -22,7 +28,7 @@ impl Handler {
     async fn check_waters(
         &self,
         waters: &mut Vec<(DateTime<Utc>, Option<Reward>)>,
-    ) -> Result<(DateTime<Utc>, Option<Reward>), Error> {
+    ) -> Result<(DateTime<Utc>, Option<Reward>)> {
         if let Some((when, user)) = waters.last() {
             return Ok((*when, user.clone()));
         }
@@ -46,7 +52,7 @@ impl Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -166,7 +172,7 @@ impl super::Module for Module {
             injector,
             ..
         }: module::HookContext<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let enabled = settings.var("water/enabled", false).await?;
         let cooldown = settings
             .var(

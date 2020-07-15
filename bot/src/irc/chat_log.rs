@@ -1,9 +1,11 @@
-use crate::{
-    api::{twitch::Channel, Twitch},
-    emotes, injector, irc, message_log, settings,
-    storage::Cache,
-};
-use anyhow::Error;
+use crate::api::{twitch::Channel, Twitch};
+use crate::emotes;
+use crate::injector;
+use crate::irc;
+use crate::message_log;
+use crate::settings;
+use crate::storage::Cache;
+use anyhow::Result;
 
 pub struct Builder {
     twitch: Twitch,
@@ -22,7 +24,7 @@ impl Builder {
         injector: &injector::Injector,
         message_log: message_log::MessageLog,
         settings: settings::Settings,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self> {
         let (cache_stream, cache) = injector.stream::<Cache>().await;
 
         let (enabled_stream, enabled) = settings.stream("enabled").or_default().await?;
@@ -45,7 +47,7 @@ impl Builder {
     }
 
     /// Construct a new chat log with the specified configuration.
-    pub fn build(&self) -> Result<Option<ChatLog>, Error> {
+    pub fn build(&self) -> Result<Option<ChatLog>> {
         if !self.enabled {
             return Ok(None);
         }

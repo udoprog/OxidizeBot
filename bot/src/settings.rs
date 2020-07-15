@@ -1,10 +1,19 @@
 //! Utilities for dealing with dynamic configuration and settings.
 
-use crate::{auth::Scope, db, prelude::*, utils};
+use crate::auth::Scope;
+use crate::db;
+use crate::prelude::*;
+use crate::utils;
 use chrono_tz::Tz;
 use diesel::prelude::*;
 use futures::ready;
-use std::{borrow::Cow, collections::HashMap, error, fmt, marker, pin::Pin, sync::Arc};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::error;
+use std::fmt;
+use std::marker;
+use std::pin::Pin;
+use std::sync::Arc;
 use tokio::{
     sync::{Mutex, RwLock},
     task::JoinError,

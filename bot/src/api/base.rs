@@ -1,5 +1,5 @@
 use crate::oauth2;
-use anyhow::{bail, Error};
+use anyhow::{bail, Result};
 use bytes::Bytes;
 use reqwest::{header, Client, Method, StatusCode, Url};
 use thiserror::Error;
@@ -127,8 +127,8 @@ impl RequestBuilder {
     /// Send request and only return status.
     pub async fn json_map<T>(
         self,
-        m: impl FnOnce(StatusCode, &Bytes) -> Result<Option<T>, Error>,
-    ) -> Result<T, Error>
+        m: impl FnOnce(StatusCode, &Bytes) -> Result<Option<T>>,
+    ) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -150,7 +150,7 @@ impl RequestBuilder {
     }
 
     /// Execute the request.
-    pub async fn execute(&self) -> Result<Response<Bytes>, Error> {
+    pub async fn execute(&self) -> Result<Response<Bytes>> {
         // NB: scope to only lock the token over the request setup.
         log::trace!("Request: {}: {}", self.method, self.url);
         let mut req = self.client.request(self.method.clone(), self.url.clone());
@@ -228,7 +228,7 @@ pub struct Response<B> {
 
 impl Response<Bytes> {
     /// Expect a successful response.
-    pub fn ok(self) -> Result<(), Error> {
+    pub fn ok(self) -> Result<()> {
         if self.status.is_success() {
             return Ok(());
         }
@@ -245,7 +245,7 @@ impl Response<Bytes> {
     }
 
     /// Expect a JSON response of the given type.
-    pub fn json<T>(self) -> Result<T, Error>
+    pub fn json<T>(self) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -279,7 +279,7 @@ impl Response<Bytes> {
 
 impl Response<Option<Bytes>> {
     /// Expect a JSON response of the given type.
-    pub fn json<T>(self) -> Result<Option<T>, Error>
+    pub fn json<T>(self) -> Result<Option<T>>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -316,7 +316,7 @@ impl Response<Option<Bytes>> {
     }
 
     /// Access the underlying raw body.
-    pub fn body(self) -> Result<Option<Bytes>, Error> {
+    pub fn body(self) -> Result<Option<Bytes>> {
         let body = match self.body {
             Some(body) => body,
             None => return Ok(None),

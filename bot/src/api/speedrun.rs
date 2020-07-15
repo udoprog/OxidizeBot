@@ -1,7 +1,8 @@
 //! speedrun.com API client.
 
-use crate::{api::RequestBuilder, utils::PtDuration};
-use anyhow::Error;
+use crate::api::RequestBuilder;
+use crate::utils::PtDuration;
+use anyhow::Result;
 use chrono::{DateTime, NaiveDate, Utc};
 use reqwest::{header, Client, Method, StatusCode, Url};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -17,7 +18,7 @@ pub struct Speedrun {
 
 impl Speedrun {
     /// Create a new API integration.
-    pub fn new() -> Result<Speedrun, Error> {
+    pub fn new() -> Result<Speedrun> {
         Ok(Speedrun {
             client: Client::new(),
             v1_url: str::parse::<Url>(V1_URL)?,
@@ -38,7 +39,7 @@ impl Speedrun {
     }
 
     /// Fetch the user by id.
-    pub async fn user_by_id(&self, user: &str) -> Result<Option<User>, Error> {
+    pub async fn user_by_id(&self, user: &str) -> Result<Option<User>> {
         let req = self.v1(Method::GET, &["users", user]);
         let data: Option<Data<User>> = req
             .execute()
@@ -53,7 +54,7 @@ impl Speedrun {
         &self,
         user_id: &str,
         embeds: &Embeds,
-    ) -> Result<Option<Vec<Run>>, Error> {
+    ) -> Result<Option<Vec<Run>>> {
         let mut request = self.v1(Method::GET, &["users", user_id, "personal-bests"]);
 
         if let Some(q) = embeds.to_query() {
@@ -69,7 +70,7 @@ impl Speedrun {
     }
 
     /// Get a game by id.
-    pub async fn game_by_id(&self, game: &str) -> Result<Option<Game>, Error> {
+    pub async fn game_by_id(&self, game: &str) -> Result<Option<Game>> {
         let req = self.v1(Method::GET, &["games", game]);
         let data: Option<Data<Game>> = req
             .execute()
@@ -84,7 +85,7 @@ impl Speedrun {
         &self,
         game_id: &str,
         embeds: &Embeds,
-    ) -> Result<Option<Vec<Category>>, Error> {
+    ) -> Result<Option<Vec<Category>>> {
         let mut request = self.v1(Method::GET, &["games", game_id, "categories"]);
 
         if let Some(q) = embeds.to_query() {
@@ -100,7 +101,7 @@ impl Speedrun {
     }
 
     /// Get game levels.
-    pub async fn game_levels(&self, game_id: &str) -> Result<Option<Vec<Level>>, Error> {
+    pub async fn game_levels(&self, game_id: &str) -> Result<Option<Vec<Level>>> {
         let request = self.v1(Method::GET, &["games", game_id, "levels"]);
         let data: Option<Data<Vec<Level>>> = request
             .execute()
@@ -111,7 +112,7 @@ impl Speedrun {
     }
 
     /// Get all variables associated with a category.
-    pub async fn category_variables(&self, category: &str) -> Result<Option<Vec<Variable>>, Error> {
+    pub async fn category_variables(&self, category: &str) -> Result<Option<Vec<Variable>>> {
         let req = self.v1(Method::GET, &["categories", category, "variables"]);
         let data: Option<Data<Vec<Variable>>> = req
             .execute()
@@ -126,7 +127,7 @@ impl Speedrun {
         &self,
         category_id: &str,
         top: u32,
-    ) -> Result<Option<Page<GameRecord>>, Error> {
+    ) -> Result<Option<Page<GameRecord>>> {
         let req = self
             .v1(Method::GET, &["categories", category_id, "records"])
             .query_param("top", top.to_string().as_str());
@@ -146,7 +147,7 @@ impl Speedrun {
         top: u32,
         variables: &Variables,
         embeds: &Embeds,
-    ) -> Result<Option<GameRecord>, Error> {
+    ) -> Result<Option<GameRecord>> {
         let mut request = self
             .v1(
                 Method::GET,

@@ -1,7 +1,5 @@
-use std::{
-    ffi::{OsStr, OsString},
-    os::windows::ffi::{OsStrExt as _, OsStringExt},
-};
+use std::ffi::{OsStr, OsString};
+use std::os::windows::ffi::{OsStrExt as _, OsStringExt};
 
 pub trait ToWide {
     /// Encode into a wide string.

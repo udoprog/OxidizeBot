@@ -1,14 +1,14 @@
-use crate::{
-    auth::Scope,
-    command,
-    currency::Currency,
-    irc, module, player,
-    player::{AddTrackError, Event, Item, PlayThemeError, Player},
-    prelude::*,
-    settings, track_id,
-    track_id::TrackId,
-    utils::{self, Cooldown, Duration},
-};
+use crate::auth::Scope;
+use crate::command;
+use crate::currency::Currency;
+use crate::irc;
+use crate::module;
+use crate::player;
+use crate::player::{AddTrackError, Event, Item, PlayThemeError, Player};
+use crate::prelude::*;
+use crate::settings;
+use crate::track_id::{self, TrackId};
+use crate::utils::{self, Cooldown, Duration};
 use anyhow::{Context as _, Result};
 use chrono::Utc;
 use std::sync::Arc;

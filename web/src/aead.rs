@@ -1,8 +1,7 @@
 use anyhow::{anyhow, Error};
-use ring::{
-    aead, pbkdf2,
-    rand::{SecureRandom as _, SystemRandom},
-};
+use ring::aead;
+use ring::pbkdf2;
+use ring::rand::{SecureRandom as _, SystemRandom};
 use std::num;
 
 /// A helper type to seal and unseal messages using AEAD.

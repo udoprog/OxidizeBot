@@ -2,7 +2,8 @@
 ///
 /// URIs are strings that identify a single resource, like a track or a playlist.
 use crate::spotify_id::SpotifyId;
-use std::{fmt, str::FromStr as _};
+use std::fmt;
+use std::str::FromStr as _;
 use thiserror::Error;
 
 #[derive(

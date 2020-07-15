@@ -1,10 +1,11 @@
-use crate::{
-    api, auth, command, module,
-    prelude::*,
-    stream_info,
-    utils::{Cooldown, Duration},
-};
-use anyhow::Error;
+use crate::api;
+use crate::auth;
+use crate::command;
+use crate::module;
+use crate::prelude::*;
+use crate::stream_info;
+use crate::utils::{Cooldown, Duration};
+use anyhow::Result;
 
 /// Handler for the `!clip` command.
 pub struct Clip {
@@ -20,7 +21,7 @@ impl command::Handler for Clip {
         Some(auth::Scope::Clip)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -80,7 +81,7 @@ impl super::Module for Module {
             twitch,
             ..
         }: module::HookContext<'_>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let settings = settings.scoped("clip");
 
         handlers.insert(

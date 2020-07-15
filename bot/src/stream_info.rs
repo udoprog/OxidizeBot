@@ -1,10 +1,11 @@
-use crate::{
-    api::{self, twitch},
-    prelude::*,
-};
-use anyhow::{anyhow, Error};
+use crate::api;
+use crate::api::twitch;
+use crate::prelude::*;
+use anyhow::{anyhow, Result};
 use parking_lot::RwLock;
-use std::{collections::HashSet, sync::Arc, time};
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::time;
 
 #[derive(Debug, Default)]
 pub struct Data {
@@ -61,7 +62,7 @@ impl StreamInfo {
         &'a self,
         twitch: &'a api::Twitch,
         streamer: &'a twitch::User,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let channel = match twitch.channel_by_id(&streamer.id).await {
             Ok(channel) => channel,
             Err(e) => {
@@ -82,7 +83,7 @@ impl StreamInfo {
         twitch: &'a api::Twitch,
         streamer: &'a twitch::User,
         stream_state_tx: &'a mut mpsc::Sender<StreamState>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let stream = match twitch.stream_by_id(&streamer.id).await {
             Ok(stream) => stream,
             Err(e) => {
@@ -119,7 +120,7 @@ pub fn setup(
 ) -> (
     StreamInfo,
     mpsc::Receiver<StreamState>,
-    impl Future<Output = Result<(), Error>>,
+    impl Future<Output = Result<()>>,
 ) {
     let (mut stream_state_tx, stream_state_rx) = mpsc::channel(64);
 

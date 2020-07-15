@@ -1,6 +1,9 @@
-use crate::{player, track_id::TrackId};
-use std::{collections::HashMap, sync::Arc};
-use tokio::sync::{broadcast, RwLock};
+use crate::player;
+use crate::track_id::TrackId;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::broadcast;
+use tokio::sync::RwLock;
 
 pub trait Message: 'static + Clone + Send + Sync + serde::Serialize {
     /// The ID of a bussed message.

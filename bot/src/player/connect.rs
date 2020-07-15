@@ -1,26 +1,25 @@
-use crate::{api, player, prelude::*, settings::Settings, track_id::SpotifyId};
-use anyhow::{bail, Error};
+use crate::api;
+use crate::player;
+use crate::prelude::*;
+use crate::settings::Settings;
+use crate::track_id::SpotifyId;
+use anyhow::{bail, Error, Result};
+use std::pin::Pin;
 use std::sync::Arc;
-use std::{
-    pin::Pin,
-    task::{Context, Poll},
-    time::Duration,
-};
+use std::task::{Context, Poll};
+use std::time::Duration;
 use thiserror::Error;
 
 /// Setup a player.
 pub(super) async fn setup(
     spotify: Arc<api::Spotify>,
     settings: Settings,
-) -> Result<
-    (
-        ConnectStream,
-        ConnectPlayer,
-        ConnectDevice,
-        impl Future<Output = Result<(), Error>>,
-    ),
-    Error,
-> {
+) -> Result<(
+    ConnectStream,
+    ConnectPlayer,
+    ConnectDevice,
+    impl Future<Output = Result<()>>,
+)> {
     let (mut volume_stream, volume) = settings.stream("volume").or_with(50).await?;
     let (mut volume_scale_stream, volume_scale) =
         settings.stream("volume-scale").or_with(100).await?;
@@ -92,7 +91,7 @@ pub(super) enum ConnectError {
 }
 
 impl ConnectError {
-    fn handle(result: Result<bool, Error>, what: &'static str) -> Result<(), ConnectError> {
+    fn handle(result: Result<bool>, what: &'static str) -> Result<(), ConnectError> {
         match result {
             Err(e) => Err(ConnectError::Error(what, e.into())),
             Ok(true) => Ok(()),
@@ -252,10 +251,7 @@ pub(super) struct ConnectDevice {
 
 impl ConnectDevice {
     /// Synchronize the device.
-    pub(super) async fn sync_device(
-        &self,
-        device: Option<api::spotify::Device>,
-    ) -> Result<(), Error> {
+    pub(super) async fn sync_device(&self, device: Option<api::spotify::Device>) -> Result<()> {
         match (self.device.read().await.as_ref(), device.as_ref()) {
             (None, None) => return Ok(()),
             (Some(a), Some(b)) if *a == b.id => return Ok(()),
@@ -272,12 +268,12 @@ impl ConnectDevice {
     }
 
     /// List all available devices.
-    pub(super) async fn list_devices(&self) -> Result<Vec<api::spotify::Device>, Error> {
+    pub(super) async fn list_devices(&self) -> Result<Vec<api::spotify::Device>> {
         self.spotify.my_player_devices().await
     }
 
     /// Set which device to perform playback from.
-    pub(super) async fn set_device(&self, device: Option<String>) -> Result<(), Error> {
+    pub(super) async fn set_device(&self, device: Option<String>) -> Result<()> {
         self.settings.set("device", device).await?;
         Ok(())
     }

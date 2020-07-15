@@ -1,7 +1,11 @@
-use crate::{injector, web::EMPTY};
+use crate::injector;
+use crate::web::EMPTY;
 use anyhow::{bail, Result};
-use tokio::sync::{MappedRwLockReadGuard, RwLockReadGuard};
-use warp::{body, filters, path, Filter as _};
+use tokio::sync::RwLockReadGuard;
+use warp::body;
+use warp::filters;
+use warp::path;
+use warp::Filter as _;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct DeleteRequest {
@@ -42,7 +46,7 @@ impl Cache {
     }
 
     /// Access underlying cache abstraction.
-    async fn cache(&self) -> Result<MappedRwLockReadGuard<'_, crate::storage::Cache>> {
+    async fn cache(&self) -> Result<RwLockReadGuard<'_, crate::storage::Cache>> {
         match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
             Ok(out) => Ok(out),
             Err(_) => bail!("cache not configured"),

@@ -1,4 +1,7 @@
-use crate::{auth, command, module, prelude::*};
+use crate::auth;
+use crate::command;
+use crate::module;
+use crate::prelude::*;
 
 static MAGIC_8BALL_ANSWER: &[&str] = &[
     "It is certain.",

@@ -1,12 +1,13 @@
 use anyhow::{anyhow, bail, Result};
 use regex::Regex;
-use std::{
-    env::{self, consts},
-    ffi::OsStr,
-    fmt, fs, io,
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::env;
+use std::env::consts;
+use std::ffi::OsStr;
+use std::fmt;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use walkdir::WalkDir;
 
 pub struct SignTool {
