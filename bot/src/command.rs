@@ -161,6 +161,15 @@ impl Context {
         self.user.respond(m).await;
     }
 
+    /// Render an iterable of results, that implements display.
+    pub async fn respond_lines<I>(&self, results: I, empty: &str)
+    where
+        I: IntoIterator,
+        I::Item: fmt::Display,
+    {
+        self.user.respond_lines(results, empty).await
+    }
+
     /// Send a privmsg to the channel.
     pub async fn privmsg(&self, m: impl fmt::Display) {
         self.inner.sender.privmsg(m).await;

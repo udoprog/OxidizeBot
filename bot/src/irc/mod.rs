@@ -1363,10 +1363,11 @@ impl User {
         }
     }
 
-    /// Pretty render the results.
-    pub async fn respond_lines<F>(&self, results: impl IntoIterator<Item = F>, empty: &str)
+    /// Render an iterable of results, that implements display.
+    pub async fn respond_lines<I>(&self, results: I, empty: &str)
     where
-        F: fmt::Display,
+        I: IntoIterator,
+        I::Item: fmt::Display,
     {
         let mut output = partition_response(results, 360, " | ");
 
@@ -1420,10 +1421,10 @@ struct PartitionResponse<'a, I> {
     item_buf: String,
 }
 
-impl<F, I> Iterator for PartitionResponse<'_, I>
+impl<I> Iterator for PartitionResponse<'_, I>
 where
-    I: Iterator<Item = F>,
-    F: fmt::Display,
+    I: Iterator,
+    I::Item: fmt::Display,
 {
     type Item = String;
 
@@ -1480,10 +1481,10 @@ where
 }
 
 /// Partition the results to fit the given width, using a separator defined in `part`.
-fn partition_response<I, F>(iter: I, width: usize, sep: &str) -> PartitionResponse<'_, I::IntoIter>
+fn partition_response<I>(iter: I, width: usize, sep: &str) -> PartitionResponse<'_, I::IntoIter>
 where
-    I: IntoIterator<Item = F>,
-    F: fmt::Display,
+    I: IntoIterator,
+    I::Item: fmt::Display,
 {
     PartitionResponse {
         iter: iter.into_iter(),

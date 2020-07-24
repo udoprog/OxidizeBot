@@ -55,12 +55,7 @@ impl command::Handler for Handler {
                     }
                 }
 
-                if result.is_empty() {
-                    respond!(ctx, "*no scopes*");
-                    return Ok(());
-                }
-
-                respond!(ctx, format!("{}.", result.join("; ")));
+                ctx.respond_lines(result, "*no scopes*").await;
             }
             Some("permit") => {
                 ctx.check_scope(auth::Scope::AuthPermit).await?;
@@ -94,7 +89,7 @@ impl command::Handler for Handler {
                     .await;
             }
             _ => {
-                respond!(ctx, "Expected: permit");
+                respond!(ctx, "Expected: scopes, permit");
             }
         }
 
