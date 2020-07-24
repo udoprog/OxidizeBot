@@ -105,3 +105,11 @@ table! {
         role -> Text,
     }
 }
+
+table! {
+    script_keys (channel, key) {
+        channel -> Text,
+        key -> Binary,
+        value -> Binary,
+    }
+}

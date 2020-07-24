@@ -10,6 +10,7 @@ use crate::message_log::MessageLog;
 use crate::module;
 use crate::oauth2;
 use crate::prelude::*;
+use crate::script;
 use crate::stream_info;
 use crate::task;
 use crate::utils::{self, Cooldown, Duration};
@@ -18,10 +19,12 @@ use irc::client::{self, Client};
 use irc::proto::command::{CapSubCommand, Command};
 use irc::proto::message::{Message, Tag};
 use leaky_bucket::LeakyBuckets;
+use notify::{RecommendedWatcher, Watcher};
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::fmt;
 use std::mem;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time;
 use tokio::sync;
@@ -160,6 +163,7 @@ impl TwitchSetup {
 
 /// Helper struct to construct IRC integration.
 pub struct Irc {
+    pub db: db::Database,
     pub bad_words: db::Words,
     pub global_bus: Arc<bus::Bus<bus::Global>>,
     pub command_bus: Arc<bus::Bus<bus::Command>>,
@@ -171,11 +175,13 @@ pub struct Irc {
     pub injector: Injector,
     pub stream_state_tx: mpsc::Sender<stream_info::StreamState>,
     pub message_log: MessageLog,
+    pub script_dirs: Vec<PathBuf>,
 }
 
 impl Irc {
     pub async fn run(self) -> Result<()> {
         let Irc {
+            db,
             bad_words,
             global_bus,
             command_bus,
@@ -187,6 +193,7 @@ impl Irc {
             injector,
             stream_state_tx,
             message_log,
+            script_dirs,
         } = self;
 
         let (streamer_stream, streamer) = injector
@@ -310,6 +317,27 @@ impl Irc {
 
             let mut handlers = module::Handlers::default();
 
+            let scripts = script::load_dir(channel.name.clone(), db.clone(), &script_dirs).await?;
+
+            let (scripts_watch_tx, scripts_watch_rx) = sync::mpsc::unbounded_channel();
+            let mut scripts_watch_rx = scripts_watch_rx.fuse();
+
+            let _watcher = if !script_dirs.is_empty() {
+                let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |e| {
+                    let _ = scripts_watch_tx.send(e);
+                })?;
+
+                for d in &script_dirs {
+                    if d.is_dir() {
+                        watcher.watch(d, notify::RecursiveMode::Recursive)?;
+                    }
+                }
+
+                Some(watcher)
+            } else {
+                None
+            };
+
             for module in modules.iter() {
                 if log::log_enabled!(log::Level::Trace) {
                     log::trace!("initializing module: {}", module.ty());
@@ -398,6 +426,7 @@ impl Irc {
                 api_url: Arc::new(api_url),
                 moderator_cooldown,
                 handlers,
+                scripts,
                 idle: &idle,
                 pong_timeout: &mut pong_timeout,
                 token: &bot_twitch.token,
@@ -446,6 +475,13 @@ impl Irc {
                 futures::select! {
                     _ = join_task.current() => {
                         log::trace!("Done sending capabilities request and join message");
+                    }
+                    ev = scripts_watch_rx.select_next_some() => {
+                        if let Ok(ev) = ev {
+                            if let Err(e) = handler.handle_script_filesystem_event(ev) {
+                                log_error!(e, "failed to handle script filesystem event");
+                            }
+                        }
                     }
                     command = commands.select_next_some() => {
                         let command = command?;
@@ -718,6 +754,8 @@ struct Handler<'a> {
     moderator_cooldown: Option<Cooldown>,
     /// Handlers for specific commands like `!skip`.
     handlers: module::Handlers,
+    /// Dynamic handlers.
+    scripts: script::Scripts,
     /// Build idle detection.
     idle: &'a idle::Idle,
     /// Pong timeout currently running.
@@ -742,13 +780,65 @@ struct Handler<'a> {
     context_inner: Arc<command::ContextInner>,
 }
 
+impl Handler<'_> {
+    /// Handle filesystem event.
+    fn handle_script_filesystem_event(&mut self, ev: notify::Event) -> Result<()> {
+        use notify::event::{CreateKind, EventKind::*, ModifyKind, RemoveKind, RenameMode};
+
+        log::trace!("filesystem event: {:?}", ev);
+
+        let kind = match ev.kind {
+            Create(CreateKind::File) => Kind::Load,
+            Create(CreateKind::Any) => Kind::Load,
+            Modify(ModifyKind::Data(..)) => Kind::Load,
+            Modify(ModifyKind::Name(RenameMode::From)) => Kind::Remove,
+            Modify(ModifyKind::Name(RenameMode::To)) => Kind::Load,
+            Modify(ModifyKind::Any) => Kind::Load,
+            Remove(RemoveKind::File) => Kind::Remove,
+            Remove(RemoveKind::Any) => Kind::Remove,
+            _ => return Ok(()),
+        };
+
+        match kind {
+            Kind::Load => {
+                for p in &ev.paths {
+                    log::info!("loading script: {}", p.display());
+
+                    let p = p.canonicalize()?;
+
+                    if let Err(e) = self.scripts.reload(&p) {
+                        log_error!(e, "failed to reload: {}", p.display());
+                    }
+                }
+            }
+            Kind::Remove => {
+                for p in &ev.paths {
+                    log::info!("unloading script: {}", p.display());
+
+                    let p = p.canonicalize()?;
+                    self.scripts.unload(&p);
+                }
+            }
+        }
+
+        return Ok(());
+
+        #[derive(Debug, Clone, Copy)]
+        enum Kind {
+            Load,
+            Remove,
+        }
+    }
+}
+
 /// Handle a command.
-pub async fn process_command(
+async fn process_command(
     command: &str,
     mut ctx: command::Context,
     global_bus: &Arc<bus::Bus<bus::Global>>,
     currency_handler: &Arc<currency_admin::Handler>,
     handlers: &module::Handlers,
+    scripts: &script::Scripts,
 ) -> Result<()> {
     match command {
         "ping" => {
@@ -799,6 +889,15 @@ pub async fn process_command(
                         }
                     }
                 });
+
+                return Ok(());
+            }
+
+            if let Some(handler) = scripts.get(other) {
+                if let Err(e) = handler.call(ctx.clone()).await {
+                    ctx.respond("Sorry, something went wrong :(").await;
+                    log_error!(e, "Error when processing command");
+                }
 
                 return Ok(());
             }
@@ -986,6 +1085,7 @@ impl<'a> Handler<'a> {
                     &self.global_bus,
                     &self.currency_handler,
                     &self.handlers,
+                    &self.scripts,
                 );
 
                 if let Err(e) = result.await {

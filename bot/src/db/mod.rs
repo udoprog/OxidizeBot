@@ -7,6 +7,7 @@ mod matcher;
 pub(crate) mod models;
 mod promotions;
 pub(crate) mod schema;
+mod script_storage;
 mod themes;
 mod words;
 
@@ -22,6 +23,7 @@ pub use self::aliases::{Alias, Aliases};
 pub use self::commands::{Command, Commands};
 pub use self::matcher::Captures;
 pub use self::promotions::{Promotion, Promotions};
+pub use self::script_storage::ScriptStorage;
 pub use self::themes::{Theme, Themes};
 pub use self::words::{Word, Words};
 

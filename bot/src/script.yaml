@@ -1,0 +1,26 @@
+type: Context
+functions:
+  - name: "user() -> Option<String>"
+    doc: >
+      You can access the current user with `ctx.user()`.
+  - name: "respond(message: &str)"
+    doc: >
+      Responds to the user who sent the command with the given message.
+      Has the format:
+
+      ```
+      <user> -> <message>
+      ```
+  - name: "privmsg(message: &str)"
+    doc: >
+      Sends a message directly to the channel, without prefixing with the user
+      who invoked the command.
+---
+type: Option<String>
+functions:
+  - name: "is_some() -> bool"
+    doc: Test if the string is set.
+  - name: "is_none() -> bool"
+    doc: Test if the string is not set.
+  - name: "unwrap() -> Dynamic"
+    doc: Unwrap the string. Will be unwrapped to the string if set, otherwise `()`.

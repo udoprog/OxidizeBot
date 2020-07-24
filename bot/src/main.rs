@@ -1,5 +1,5 @@
 #![recursion_limit = "256"]
-#![type_length_limit="4194304"]
+#![type_length_limit = "4194304"]
 #![cfg_attr(feature = "windows", windows_subsystem = "windows")]
 #![cfg_attr(backtrace, feature(backtrace))]
 
@@ -316,6 +316,10 @@ fn main() -> Result<()> {
 
     let storage = storage::Storage::open(&root.join("storage"))?;
 
+    let mut script_dirs = Vec::new();
+    script_dirs.push(root.join("scripts"));
+    script_dirs.push(PathBuf::from("scripts"));
+
     loop {
         let mut runtime = tokio::runtime::Builder::new()
             .threaded_scheduler()
@@ -323,7 +327,7 @@ fn main() -> Result<()> {
             .build()?;
 
         let future = {
-            try_main(&system, &root, &db, &storage)
+            try_main(&system, &root, &script_dirs, &db, &storage)
                 .instrument(trace_span!(target: "futures", "main",))
         };
 
@@ -396,6 +400,7 @@ fn main() -> Result<()> {
 async fn try_main(
     system: &sys::System,
     root: &Path,
+    script_dirs: &Vec<PathBuf>,
     db: &db::Database,
     storage: &storage::Storage,
 ) -> Result<Intent> {
@@ -710,6 +715,7 @@ async fn try_main(
     );
 
     let irc = irc::Irc {
+        db: db.clone(),
         bad_words,
         global_bus,
         command_bus,
@@ -721,6 +727,7 @@ async fn try_main(
         injector: injector.clone(),
         stream_state_tx,
         message_log,
+        script_dirs: script_dirs.clone(),
     };
 
     futures.push(
