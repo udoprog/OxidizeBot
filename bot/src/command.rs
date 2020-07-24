@@ -71,6 +71,7 @@ pub(crate) struct ContextInner {
 }
 
 /// Context for a single command invocation.
+#[derive(Clone)]
 pub struct Context {
     pub(crate) api_url: Arc<Option<String>>,
     pub(crate) user: irc::User,

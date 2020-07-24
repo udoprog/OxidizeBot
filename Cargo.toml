@@ -13,3 +13,5 @@ debug = true
 
 [patch.crates-io]
 tokio = { git = "https://github.com/udoprog/tokio", branch = "rwlock-map" }
+rhai = { path = "../rhai" }
+# rhai = { git = "https://github.com/jonathandturner/rhai" }

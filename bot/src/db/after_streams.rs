@@ -1,4 +1,7 @@
-use crate::db::{self, models, schema};
+use crate::db;
+use crate::db::models;
+use crate::db::schema;
+use anyhow::Result;
 use diesel::prelude::*;
 
 pub use self::models::AfterStream;
@@ -10,12 +13,12 @@ pub struct AfterStreams {
 
 impl AfterStreams {
     /// Open the after streams database.
-    pub async fn load(db: db::Database) -> Result<Self, anyhow::Error> {
-        Ok(AfterStreams { db })
+    pub async fn load(db: db::Database) -> Result<Self> {
+        Ok(Self { db })
     }
 
     /// Push the given afterstream message.
-    pub async fn push(&self, channel: &str, user: &str, text: &str) -> Result<(), anyhow::Error> {
+    pub async fn push(&self, channel: &str, user: &str, text: &str) -> Result<()> {
         use self::schema::after_streams::dsl;
 
         let channel = channel.to_string();
@@ -40,7 +43,7 @@ impl AfterStreams {
     }
 
     /// Delete the after stream with the given id.
-    pub async fn delete(&self, id: i32) -> Result<bool, anyhow::Error> {
+    pub async fn delete(&self, id: i32) -> Result<bool> {
         use self::schema::after_streams::dsl;
 
         self.db
@@ -52,7 +55,7 @@ impl AfterStreams {
     }
 
     /// List all available after streams.
-    pub async fn list(&self) -> Result<Vec<AfterStream>, anyhow::Error> {
+    pub async fn list(&self) -> Result<Vec<AfterStream>> {
         use self::schema::after_streams::dsl;
 
         self.db

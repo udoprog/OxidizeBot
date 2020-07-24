@@ -66,6 +66,9 @@ tracing-core = "0.1.10"
 tracing-futures = { version = "0.2.3", default-features = false, features = ["std-future"] }
 slab = "0.4.2"
 irc = "0.14.0"
+rhai = {version = "0.18.0", features = ["sync", "serde"]}
+ignore = "0.4.16"
+notify = "5.0.0-pre.3"
 
 [build-dependencies]
 winres = "0.1.11"
