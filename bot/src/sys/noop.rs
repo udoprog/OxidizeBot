@@ -7,11 +7,11 @@ use std::path::Path;
 pub struct System;
 
 impl System {
-    pub async fn wait_for_shutdown(&self) -> Result<(), oneshot::Canceled> {
+    pub async fn wait_for_shutdown(&self) {
         future::pending().await
     }
 
-    pub async fn wait_for_restart(&self) -> Result<(), oneshot::Canceled> {
+    pub async fn wait_for_restart(&self) {
         future::pending().await
     }
 
@@ -20,10 +20,6 @@ impl System {
     pub fn error(&self, _error: String) {}
 
     pub fn notification(&self, _: Notification) {}
-
-    pub fn is_running(&self) -> bool {
-        true
-    }
 
     pub fn join(&self) -> Result<(), Error> {
         Ok(())

@@ -327,7 +327,7 @@ struct DurationParts {
 
 /// Partition the given duration into time components.
 #[inline(always)]
-fn partition(duration: &time::Duration) -> DurationParts {
+fn partition(duration: time::Duration) -> DurationParts {
     let rest = duration.as_millis() as u64;
 
     let days = rest / (3600 * 24 * 1000);
@@ -378,7 +378,7 @@ impl fmt::Display for Percentage {
 }
 
 /// Format the given number of seconds as a compact human time.
-pub fn compact_duration(duration: &time::Duration) -> String {
+pub fn compact_duration(duration: time::Duration) -> String {
     let mut parts = Vec::new();
 
     let p = partition(duration);
@@ -415,7 +415,7 @@ pub fn compact_duration(duration: &time::Duration) -> String {
 }
 
 /// Format the given number of seconds as a long human time.
-pub fn long_duration(duration: &time::Duration) -> String {
+pub fn long_duration(duration: time::Duration) -> String {
     let mut parts = Vec::new();
 
     let p = partition(duration);
@@ -446,7 +446,7 @@ pub fn long_duration(duration: &time::Duration) -> String {
 }
 
 /// Format the given number of seconds as a digital duration.
-pub fn digital_duration(duration: &time::Duration) -> String {
+pub fn digital_duration(duration: time::Duration) -> String {
     let mut parts = Vec::new();
 
     let p = partition(duration);
@@ -738,8 +738,8 @@ pub struct PtDuration(time::Duration);
 
 impl PtDuration {
     /// Access the inner duration.
-    pub fn as_std(&self) -> &time::Duration {
-        &self.0
+    pub fn as_std(&self) -> time::Duration {
+        self.0
     }
 
     /// Convert into inner duration.
@@ -801,7 +801,7 @@ impl std::str::FromStr for PtDuration {
 
 impl fmt::Display for PtDuration {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let p = partition(&self.0);
+        let p = partition(self.0);
 
         write!(fmt, "PT")?;
 

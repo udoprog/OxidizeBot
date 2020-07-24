@@ -145,8 +145,8 @@ impl Song {
             name: self.item.track.name(),
             artists,
             user: self.item.user.as_deref(),
-            duration: utils::digital_duration(&self.item.duration),
-            elapsed: utils::digital_duration(&self.elapsed()),
+            duration: utils::digital_duration(self.item.duration),
+            elapsed: utils::digital_duration(self.elapsed()),
         })
     }
 

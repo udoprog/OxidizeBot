@@ -419,7 +419,7 @@ impl From<Arc<player::Item>> for Item {
             track_id: i.track_id.to_string(),
             track_url: i.track_id.url(),
             user: i.user.clone(),
-            duration: utils::compact_duration(&i.duration),
+            duration: utils::compact_duration(i.duration),
         }
     }
 }
