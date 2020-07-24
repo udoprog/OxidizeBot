@@ -50,7 +50,7 @@ impl Duration {
     pub fn as_digital(&self) -> String {
         let mut parts = Vec::new();
 
-        let p = utils::partition(&time::Duration::from_secs(self.0));
+        let p = utils::partition(time::Duration::from_secs(self.0));
 
         parts.extend(match p.days {
             0 => None,

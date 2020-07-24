@@ -143,7 +143,7 @@ impl Context {
             if let Some(duration) = cooldown.check(now.clone()) {
                 self.respond(format!(
                     "Cooldown in effect for {}",
-                    utils::compact_duration(&duration),
+                    utils::compact_duration(duration),
                 ))
                 .await;
 

@@ -231,10 +231,10 @@ impl Handler {
 
                 let duration = match duration.to_std() {
                     Err(_) => None,
-                    Ok(duration) => Some(utils::compact_duration(&duration)),
+                    Ok(duration) => Some(utils::compact_duration(duration)),
                 };
 
-                let limit = utils::compact_duration(&limit);
+                let limit = utils::compact_duration(limit);
 
                 let who = match who {
                     Some(ref who) if who == user.name() => String::from(" by you"),
@@ -462,8 +462,8 @@ impl command::Handler for Handler {
             }
             Some("current") => match player.current().await {
                 Some(current) => {
-                    let elapsed = utils::digital_duration(&current.elapsed());
-                    let duration = utils::digital_duration(&current.duration());
+                    let elapsed = utils::digital_duration(current.elapsed());
+                    let duration = utils::digital_duration(current.duration());
 
                     if let Some(name) = current.item.user.as_ref() {
                         respond!(
@@ -529,7 +529,7 @@ impl command::Handler for Handler {
                         }
                     }
                     Some((when, item)) => {
-                        let when = utils::compact_duration(&when);
+                        let when = utils::compact_duration(when);
 
                         if your {
                             respond!(
@@ -660,12 +660,12 @@ impl command::Handler for Handler {
                 match count {
                     0 => ctx.respond("No songs in queue :(").await,
                     1 => {
-                        let length = utils::long_duration(&duration);
+                        let length = utils::long_duration(duration);
                         ctx.respond(format!("One song in queue with {} of play time.", length))
                             .await;
                     }
                     count => {
-                        let length = utils::long_duration(&duration);
+                        let length = utils::long_duration(duration);
                         ctx.respond(format!(
                             "{} songs in queue with {} of play time.",
                             count, length

@@ -2,7 +2,7 @@
 #![cfg_attr(feature = "windows", windows_subsystem = "windows")]
 #![cfg_attr(backtrace, feature(backtrace))]
 
-use anyhow::{anyhow, bail, Context, Error};
+use anyhow::{anyhow, bail, Context, Result};
 use backoff::backoff::Backoff as _;
 use oxidize::api;
 use oxidize::auth;
@@ -138,7 +138,7 @@ fn opts() -> clap::App<'static, 'static> {
 }
 
 /// Setup tracing.
-fn tracing_config() -> Result<(), Error> {
+fn tracing_config() -> Result<()> {
     tracing::subscriber::set_global_default(tracing_utils::Subscriber::new())?;
     Ok(())
 }
@@ -148,7 +148,7 @@ fn default_log_config(
     log_path: &Path,
     trace: bool,
     modules: &[&str],
-) -> Result<log4rs::config::Config, Error> {
+) -> Result<log4rs::config::Config> {
     use self::internal::{config_builder, logger_builder, root_builder};
     use log::LevelFilter;
     use log4rs::{append::file::FileAppender, config::Appender, encode::pattern::PatternEncoder};
@@ -221,7 +221,7 @@ fn setup_logs(
     default_log_file: &Path,
     trace: bool,
     modules: Vec<&str>,
-) -> Result<(), Error> {
+) -> Result<()> {
     let file = log_config.unwrap_or_else(|| root.join("log4rs.yaml"));
 
     if !file.is_file() {
@@ -235,7 +235,13 @@ fn setup_logs(
     Ok(())
 }
 
-fn main() -> Result<(), Error> {
+#[derive(Debug, Clone, Copy)]
+enum Intent {
+    Shutdown,
+    Restart,
+}
+
+fn main() -> Result<()> {
     let opts = opts();
     let m = opts.get_matches();
 
@@ -277,117 +283,12 @@ fn main() -> Result<(), Error> {
     error_backoff.initial_interval = time::Duration::from_secs(5);
     error_backoff.max_elapsed_time = None;
 
-    let mut current_backoff;
-    let mut errored = false;
+    let is_silent = !m.is_present("silent");
 
-    if !m.is_present("silent") {
+    if !is_silent {
         let startup = sys::Notification::new(format!("Started Oxidize {}", oxidize::VERSION));
         system.notification(startup);
     }
-
-    loop {
-        if !system.is_running() {
-            break;
-        }
-
-        if errored {
-            system.clear();
-            errored = false;
-        }
-
-        let future = {
-            let system = system.clone();
-            let old_root = old_root.clone();
-            let root = root.clone();
-
-            try_main(system, old_root, root).instrument(trace_span!(target: "futures", "main",))
-        };
-
-        let mut runtime = tokio::runtime::Builder::new()
-            .threaded_scheduler()
-            .enable_all()
-            .build()?;
-
-        let result = runtime.block_on(future);
-
-        match result {
-            Err(e) => {
-                let backoff = error_backoff.next_backoff().unwrap_or_default();
-                current_backoff = Some(backoff);
-                errored = true;
-
-                let message = format!(
-                    "Trying to restart in {}.\nSee log for more details.",
-                    utils::compact_duration(&backoff)
-                );
-
-                let n = sys::Notification::new(message)
-                    .title("Bot crashed!")
-                    .icon(sys::NotificationIcon::Error);
-
-                system.notification(n);
-                system.error(String::from("Bot crashed, see log for more details."));
-                oxidize::log_error!(e, "Bot crashed");
-            }
-            Ok(()) => {
-                error_backoff.reset();
-                current_backoff = None;
-                log::info!("Bot was shut down cleanly");
-            }
-        }
-
-        if !system.is_running() {
-            break;
-        }
-
-        if let Some(current_backoff) = current_backoff.clone() {
-            log::info!(
-                "Restarting in {}...",
-                utils::compact_duration(&current_backoff)
-            );
-
-            let system = system.clone();
-
-            runtime.block_on(async move {
-                tokio::select! {
-                    _ = system.wait_for_shutdown() => {
-                    }
-                    _ = system.wait_for_restart() => {
-                    }
-                    _ = tokio::time::delay_for(current_backoff) => {
-                    }
-                }
-            });
-        }
-
-        if !errored {
-            let n = sys::Notification::new("Restarted bot").icon(sys::NotificationIcon::Warning);
-            system.notification(n);
-        }
-    }
-
-    log::info!("Exiting...");
-    system.join()?;
-    Ok(())
-}
-
-/// Actual main function, running the application loop.
-async fn try_main(
-    system: sys::System,
-    old_root: Option<PathBuf>,
-    root: PathBuf,
-) -> Result<(), Error> {
-    log::info!("Starting Oxidize Bot Version {}", oxidize::VERSION);
-
-    if !root.is_dir() {
-        std::fs::create_dir_all(&root)
-            .with_context(|| anyhow!("failed to create root: {}", root.display()))?;
-    }
-
-    let injector = injector::Injector::new();
-
-    let mut modules = Vec::<Box<dyn module::Module>>::new();
-    let mut futures = futures::stream::FuturesUnordered::new();
 
     let database_path = {
         let new = root.join("oxidize.sql");
@@ -411,6 +312,102 @@ async fn try_main(
 
     let db = db::Database::open(&database_path)
         .with_context(|| anyhow!("failed to open database at: {}", database_path.display()))?;
+
+    let storage = storage::Storage::open(&root.join("storage"))?;
+
+    loop {
+        let mut runtime = tokio::runtime::Builder::new()
+            .threaded_scheduler()
+            .enable_all()
+            .build()?;
+
+        let future = {
+            try_main(&system, &root, &db, &storage)
+                .instrument(trace_span!(target: "futures", "main",))
+        };
+
+        let backoff = match runtime.block_on(future) {
+            Err(e) => {
+                let backoff = error_backoff.next_backoff().unwrap_or_default();
+                system.error(String::from("Bot crashed, see log for more details."));
+                oxidize::log_error!(e, "Bot crashed");
+                Some(backoff)
+            }
+            Ok(Intent::Shutdown) => {
+                break;
+            }
+            Ok(Intent::Restart) => {
+                error_backoff.reset();
+                None
+            }
+        };
+
+        if let Some(backoff) = backoff {
+            if !is_silent {
+                let message = format!(
+                    "Restart in {}.\nSee log for more details.",
+                    utils::compact_duration(backoff)
+                );
+
+                let n = sys::Notification::new(message)
+                    .title("Bot Crashed!")
+                    .icon(sys::NotificationIcon::Error);
+
+                system.notification(n);
+            }
+
+            log::info!("Restarting in {}...", utils::compact_duration(backoff));
+
+            let intent = runtime.block_on(async {
+                tokio::select! {
+                    _ = system.wait_for_shutdown() => Intent::Shutdown,
+                    _ = system.wait_for_restart() => Intent::Restart,
+                    _ = tokio::signal::ctrl_c() => Intent::Shutdown,
+                    _ = tokio::time::delay_for(backoff) => Intent::Restart,
+                }
+            });
+
+            if let Intent::Shutdown = intent {
+                break;
+            }
+        }
+
+        if !is_silent {
+            let n =
+                sys::Notification::new("Restarted OxidizeBot").icon(sys::NotificationIcon::Warning);
+            system.notification(n);
+        }
+    }
+
+    if !is_silent {
+        let shutdown = sys::Notification::new("Exiting OxidizeBot");
+        system.notification(shutdown);
+    }
+
+    log::info!("exiting...");
+    system.join()?;
+    Ok(())
+}
+
+/// Actual main function, running the application loop.
+async fn try_main(
+    system: &sys::System,
+    root: &Path,
+    db: &db::Database,
+    storage: &storage::Storage,
+) -> Result<Intent> {
+    log::info!("Starting Oxidize Bot Version {}", oxidize::VERSION);
+
+    if !root.is_dir() {
+        std::fs::create_dir_all(&root)
+            .with_context(|| anyhow!("failed to create root: {}", root.display()))?;
+    }
+
+    let injector = injector::Injector::new();
+
+    let mut modules = Vec::<Box<dyn module::Module>>::new();
+    let mut futures = futures::stream::FuturesUnordered::new();
+
     injector.update(db.clone()).await;
 
     let scopes_schema = auth::Schema::load_static()?;
@@ -467,7 +464,6 @@ async fn try_main(
             .instrument(trace_span!(target: "futures", "system-loop",)),
     );
 
-    let storage = storage::Storage::open(&root.join("storage"))?;
     injector.update(storage.cache()?).await;
 
     let (latest, future) = updater::run(&injector);
@@ -637,7 +633,7 @@ async fn try_main(
             .instrument(trace_span!(target: "futures", "open-weather-map",)),
     );
 
-    let (shutdown, shutdown_rx) = utils::Shutdown::new();
+    let (shutdown, internal_shutdown) = utils::Shutdown::new();
 
     let spotify = Arc::new(api::Spotify::new(spotify_token.clone())?);
     let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
@@ -730,35 +726,26 @@ async fn try_main(
             .instrument(trace_span!(target: "futures", "irc",)),
     );
 
-    let stuff = async move { futures.select_next_some().await.map_err(Some) };
-
-    let system_shutdown = system.wait_for_shutdown();
-    let system_restart = system.wait_for_restart();
-
-    let shutdown_rx = async move {
-        let futures = vec![
-            system_shutdown.boxed(),
-            system_restart.boxed(),
-            shutdown_rx.boxed(),
-        ];
-        let _ = future::select_all(futures).await;
-        Err::<(), _>(None::<Error>)
-    };
-
-    let result = future::try_join(
-        stuff.instrument(trace_span!(target: "futures", "core")),
-        shutdown_rx.instrument(trace_span!(target: "futures", "shutdown")),
-    )
-    .await;
-
-    match result {
-        Ok(_) => Ok(()),
-        Err(Some(e)) => Err(e),
-        // Shutting down cleanly.
-        Err(None) => {
-            log::info!("Shutting down...");
-            Ok(())
+    tokio::select! {
+        result = futures.select_next_some() => {
+            result.map(|_| Intent::Shutdown)
         }
+        _ = system.wait_for_shutdown() => {
+            log::info!("shutdown triggered by system");
+            Ok(Intent::Shutdown)
+        },
+        _ = system.wait_for_restart() => {
+            log::info!("restart triggered by system");
+            Ok(Intent::Restart)
+        },
+        _ = internal_shutdown => {
+            log::info!("shutdown triggered by bot");
+            Ok(Intent::Shutdown)
+        },
+        _ = tokio::signal::ctrl_c() => {
+            log::info!("shutdown triggered by signal");
+            Ok(Intent::Shutdown)
+        },
     }
 }
 
@@ -769,7 +756,7 @@ async fn notify_after_streams(
     injector: &injector::Injector,
     mut rx: mpsc::Receiver<stream_info::StreamState>,
     system: sys::System,
-) -> Result<(), Error> {
+) -> Result<()> {
     let (mut after_streams_stream, mut after_streams) = injector.stream::<db::AfterStreams>().await;
 
     loop {
@@ -811,7 +798,7 @@ async fn notify_after_streams(
 }
 
 /// Run the loop that handles installing this as a service.
-async fn system_loop(settings: settings::Settings, system: sys::System) -> Result<(), Error> {
+async fn system_loop(settings: settings::Settings, system: sys::System) -> Result<()> {
     settings
         .set("run-on-startup", system.is_installed()?)
         .await?;

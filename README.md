@@ -69,20 +69,20 @@ You'll need Rust and a working compiler: https://rustup.rs/
 After this, you build the project using cargo:
 
 ```bash
-cargo build --bin oxidize
+cargo build
 ```
 
 If you want to run it directly from the project directory, you can do:
 
 ```bash
-cargo run --bin oxidize
+cargo run
 ```
 
 If you want to run the bot with the most amount of diagnostics possible, you can
 do the following:
 
 ```bash
-env RUST_BACKTRACE=1 cargo +nightly run --bin oxidize -- --log oxidize=trace
+env RUST_BACKTRACE=1 cargo +nightly run -- --log oxidize=trace
 ```
 
 This will include backtraces on errors, which is currently an [unstable feature].

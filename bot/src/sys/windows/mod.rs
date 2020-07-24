@@ -7,20 +7,18 @@ use std::collections::VecDeque;
 use std::io;
 use std::path::Path;
 use std::ptr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
-use winapi::um::{shellapi, winuser::SW_SHOW};
+use tokio::sync::broadcast;
+use winapi::um::shellapi::ShellExecuteW;
+use winapi::um::winuser::SW_SHOW;
 
-#[path = "windows/convert.rs"]
 mod convert;
-#[path = "windows/registry.rs"]
 mod registry;
-#[path = "windows/window.rs"]
 mod window;
 
-const ICON: &[u8] = include_bytes!("../../res/icon.ico");
-const ICON_ERROR: &[u8] = include_bytes!("../../res/icon-error.ico");
+const ICON: &[u8] = include_bytes!("../../../res/icon.ico");
+const ICON_ERROR: &[u8] = include_bytes!("../../../res/icon-error.ico");
 
 #[derive(Debug)]
 pub enum Event {
@@ -32,28 +30,20 @@ pub enum Event {
 #[derive(Clone)]
 pub struct System {
     thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
-    shutdown_senders: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
-    restart_senders: Arc<Mutex<Vec<oneshot::Sender<()>>>>,
+    shutdown: broadcast::Sender<()>,
+    restart: broadcast::Sender<()>,
     events: mpsc::UnboundedSender<Event>,
-    stopped: Arc<AtomicBool>,
 }
 
 impl System {
     /// Wait for system shutdown signal.
-    pub async fn wait_for_shutdown(&self) -> Result<(), oneshot::Canceled> {
-        let (tx, rx) = oneshot::channel();
-        self.shutdown_senders.lock().push(tx);
-        rx.await?;
-        self.stopped.store(true, Ordering::SeqCst);
-        Ok(())
+    pub async fn wait_for_shutdown(&self) {
+        let _ = self.shutdown.subscribe().recv().await;
     }
 
     /// Wait for system restart signal.
-    pub async fn wait_for_restart(&self) -> Result<(), oneshot::Canceled> {
-        let (tx, rx) = oneshot::channel();
-        self.restart_senders.lock().push(tx);
-        rx.await?;
-        Ok(())
+    pub async fn wait_for_restart(&self) {
+        let _ = self.restart.subscribe().recv().await;
     }
 
     /// Clear the current state.
@@ -77,16 +67,10 @@ impl System {
         }
     }
 
-    /// Test if system is running.
-    pub fn is_running(&self) -> bool {
-        // NB: this side effect is a bit unintuitive, but we know that is_running will only be called by the main loop
-        // when the bot core has been shutdown, and any futures that have called wait_for_shutdown have been dropped.
-        self.shutdown_senders.lock().clear();
-        !self.stopped.load(Ordering::SeqCst)
-    }
-
     /// Join the current thread.
     pub fn join(&self) -> Result<(), Error> {
+        let _ = self.shutdown.send(());
+
         if let Some(thread) = self.thread.lock().take() {
             if thread.join().is_err() {
                 bail!("thread panicked");
@@ -148,7 +132,7 @@ fn open_dir(path: &Path) -> io::Result<bool> {
     let operation = "open".to_wide_null();
 
     let result = unsafe {
-        shellapi::ShellExecuteW(
+        ShellExecuteW(
             ptr::null_mut(),
             operation.as_ptr(),
             path.as_ptr(),
@@ -166,12 +150,12 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
     let log_file = log_file.to_owned();
 
     // all senders to notify when we are requesting a restart.
-    let restart_senders = Arc::new(Mutex::new(Vec::<oneshot::Sender<()>>::new()));
-    let restart_senders1 = restart_senders.clone();
+    let (restart, _) = broadcast::channel(1);
+    let restart1 = restart.clone();
 
     // all senders to notify when we are shutting down.
-    let shutdown_senders = Arc::new(Mutex::new(Vec::<oneshot::Sender<()>>::new()));
-    let shutdown_senders1 = shutdown_senders.clone();
+    let (shutdown, mut shutdown_rx) = broadcast::channel(1);
+    let shutdown1 = shutdown.clone();
 
     let (events, mut events_rx) = mpsc::unbounded::<Event>();
 
@@ -191,7 +175,10 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
         let mut notification_on_click = VecDeque::new();
 
         loop {
-            futures::select! {
+            tokio::select! {
+                _ = shutdown_rx.recv() => {
+                    window.quit();
+                }
                 event = events_rx.select_next_some() => {
                     log::trace!("Event: {:?}", event);
 
@@ -224,16 +211,11 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                                 let _ = open_dir(&root)?;
                             }
                             4 => {
-                                for tx in restart_senders1.lock().drain(..) {
-                                    let _ = tx.send(());
-                                }
+                                let _ = restart1.send(());
                             }
                             6 => {
                                 window.quit();
-
-                                for tx in shutdown_senders1.lock().drain(..) {
-                                    let _ = tx.send(());
-                                }
+                                let _ = shutdown1.send(());
                             }
                             _ => (),
                         },
@@ -253,10 +235,7 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
             }
         }
 
-        for tx in shutdown_senders1.lock().drain(..) {
-            let _ = tx.send(());
-        }
-
+        let _ = shutdown1.send(());
         Ok::<_, Error>(())
     };
 
@@ -269,10 +248,9 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
 
     let system = System {
         thread: Arc::new(Mutex::new(Some(thread))),
-        shutdown_senders,
-        restart_senders,
+        shutdown,
+        restart,
         events,
-        stopped: Arc::new(AtomicBool::new(false)),
     };
 
     Ok(system)

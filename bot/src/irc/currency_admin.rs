@@ -47,7 +47,7 @@ impl command::Handler for Handler {
                 match result {
                     Ok(balance) => {
                         let balance = balance.unwrap_or_default();
-                        let watch_time = utils::compact_duration(&balance.watch_time().as_std());
+                        let watch_time = utils::compact_duration(balance.watch_time().as_std());
 
                         respond!(
                             user,
@@ -70,7 +70,7 @@ impl command::Handler for Handler {
                 match currency.balance_of(ctx.channel(), to_show.as_str()).await {
                     Ok(balance) => {
                         let balance = balance.unwrap_or_default();
-                        let watch_time = utils::compact_duration(&balance.watch_time().as_std());
+                        let watch_time = utils::compact_duration(balance.watch_time().as_std());
 
                         respond!(
                             ctx,
