@@ -283,7 +283,7 @@ fn main() -> Result<()> {
     error_backoff.initial_interval = time::Duration::from_secs(5);
     error_backoff.max_elapsed_time = None;
 
-    let is_silent = !m.is_present("silent");
+    let is_silent = m.is_present("silent");
 
     if !is_silent {
         let startup = sys::Notification::new(format!("Started Oxidize {}", oxidize::VERSION));
