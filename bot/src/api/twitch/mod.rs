@@ -435,7 +435,7 @@ pub struct Stream {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct Channel {
     pub mature: bool,
-    pub status: String,
+    pub status: Option<String>,,
     #[serde(default)]
     pub broadcaster_language: Option<String>,
     #[serde(default)]
