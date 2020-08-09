@@ -72,7 +72,7 @@ impl StreamInfo {
         };
 
         let mut info = self.data.write();
-        info.title = Some(channel.status);
+        info.title = channel.status;
         info.game = channel.game;
         Ok(())
     }
