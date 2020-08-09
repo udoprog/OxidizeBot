@@ -223,7 +223,7 @@ impl command::Handler for Handler {
                      refresh-vips, \
                      version, \
                      shutdown, \
-                     setting.",
+                     settings.",
                 );
             }
         }
