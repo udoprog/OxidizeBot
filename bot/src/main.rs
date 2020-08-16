@@ -326,6 +326,8 @@ fn main() -> Result<()> {
                 .instrument(trace_span!(target: "futures", "main",))
         };
 
+        system.clear();
+
         let backoff = match runtime.block_on(future) {
             Err(e) => {
                 let backoff = error_backoff.next_backoff().unwrap_or_default();
