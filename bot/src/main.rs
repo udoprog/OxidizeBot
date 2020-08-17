@@ -741,7 +741,7 @@ async fn try_main(
             Ok(Intent::Restart)
         },
         _ = internal_restart => {
-            log::info!("shutdown triggered by bot");
+            log::info!("restart triggered by bot");
             Ok(Intent::Restart)
         },
         _ = tokio::signal::ctrl_c() => {
