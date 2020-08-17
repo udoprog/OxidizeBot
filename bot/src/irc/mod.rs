@@ -164,7 +164,7 @@ pub struct Irc {
     pub global_bus: Arc<bus::Bus<bus::Global>>,
     pub command_bus: Arc<bus::Bus<bus::Command>>,
     pub modules: Vec<Box<dyn module::Module>>,
-    pub shutdown: utils::Shutdown,
+    pub restart: utils::Restart,
     pub settings: settings::Settings,
     pub auth: Auth,
     pub global_channel: injector::Var<Option<String>>,
@@ -180,7 +180,7 @@ impl Irc {
             global_bus,
             command_bus,
             modules,
-            shutdown,
+            restart,
             settings,
             auth,
             global_channel,
@@ -413,7 +413,7 @@ impl Irc {
                     sender: sender.clone(),
                     scope_cooldowns: sync::Mutex::new(auth.scope_cooldowns()),
                     message_hooks: sync::RwLock::new(Default::default()),
-                    shutdown: shutdown.clone(),
+                    restart: restart.clone(),
                 }),
             };
 

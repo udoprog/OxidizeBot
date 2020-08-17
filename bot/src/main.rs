@@ -635,7 +635,7 @@ async fn try_main(
             .instrument(trace_span!(target: "futures", "open-weather-map",)),
     );
 
-    let (shutdown, internal_shutdown) = utils::Shutdown::new();
+    let (restart, internal_restart) = utils::Restart::new();
 
     let spotify = Arc::new(api::Spotify::new(spotify_token.clone())?);
     let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
@@ -713,7 +713,7 @@ async fn try_main(
         global_bus,
         command_bus,
         modules,
-        shutdown,
+        restart,
         settings,
         auth,
         global_channel,
@@ -740,9 +740,9 @@ async fn try_main(
             log::info!("restart triggered by system");
             Ok(Intent::Restart)
         },
-        _ = internal_shutdown => {
+        _ = internal_restart => {
             log::info!("shutdown triggered by bot");
-            Ok(Intent::Shutdown)
+            Ok(Intent::Restart)
         },
         _ = tokio::signal::ctrl_c() => {
             log::info!("shutdown triggered by signal");

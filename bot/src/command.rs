@@ -67,7 +67,7 @@ pub(crate) struct ContextInner {
     /// A hook that can be installed to peek at all incoming messages.
     pub(crate) message_hooks: sync::RwLock<slab::Slab<Box<dyn MessageHook>>>,
     /// Shutdown handler.
-    pub(crate) shutdown: utils::Shutdown,
+    pub(crate) restart: utils::Restart,
 }
 
 /// Context for a single command invocation.
@@ -90,8 +90,8 @@ impl Context {
     }
 
     /// Signal that the bot should try to shut down.
-    pub async fn shutdown(&self) -> bool {
-        self.inner.shutdown.shutdown().await
+    pub async fn restart(&self) -> bool {
+        self.inner.restart.restart().await
     }
 
     /// Setup the specified hook.

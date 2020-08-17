@@ -704,11 +704,11 @@ impl<'de> serde::Deserialize<'de> for Cooldown {
 
 /// Helper to handle shutdowns.
 #[derive(Clone)]
-pub struct Shutdown {
+pub struct Restart {
     sender: Arc<Mutex<Option<oneshot::Sender<()>>>>,
 }
 
-impl Shutdown {
+impl Restart {
     /// Construct a new shutdown handler.
     pub fn new() -> (Self, oneshot::Receiver<()>) {
         let (tx, rx) = oneshot::channel();
@@ -721,7 +721,7 @@ impl Shutdown {
     }
 
     /// Execute the shutdown handler.
-    pub async fn shutdown(&self) -> bool {
+    pub async fn restart(&self) -> bool {
         if let Some(sender) = self.sender.lock().await.take() {
             sender.send(()).expect("no listener");
             return true;
