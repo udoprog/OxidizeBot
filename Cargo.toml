@@ -12,4 +12,4 @@ panic = "abort"
 debug = true
 
 [patch.crates-io]
-tokio = { git = "https://github.com/udoprog/tokio", branch = "tokio2-rwlock-map" }
+tokio = { git = "https://github.com/tokio-rs/tokio", branch = "v0.2.x" }
