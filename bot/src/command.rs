@@ -116,19 +116,7 @@ impl Context {
     /// Verify that the current user has the associated scope.
     pub async fn check_scope(&self, scope: Scope) -> Result<()> {
         if !self.user.has_scope(scope).await {
-            if let Some(name) = self.user.display_name() {
-                self.privmsg(format!(
-                    "Do you think this is a democracy {name}? LUL",
-                    name = name,
-                ))
-                .await;
-            }
-
-            bail!(
-                "Scope `{}` not associated with user {:?}",
-                scope,
-                self.user.name()
-            );
+            respond_bail!("Do you think this is a democracy? LUL");
         }
 
         if self.user.has_scope(Scope::BypassCooldowns).await {
@@ -141,13 +129,10 @@ impl Context {
             let now = Instant::now();
 
             if let Some(duration) = cooldown.check(now.clone()) {
-                self.respond(format!(
+                respond_bail!(
                     "Cooldown in effect for {}",
                     utils::compact_duration(duration),
-                ))
-                .await;
-
-                bail!("Scope `{}` is in cooldown", scope);
+                )
             }
 
             cooldown.poke(now);

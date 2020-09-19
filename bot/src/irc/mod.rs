@@ -781,12 +781,8 @@ pub async fn process_command(
                     if !ctx.user.has_scope(scope).await {
                         if ctx.user.is_moderator() {
                             respond!(ctx, "You are not allowed to run that command");
-                        } else if let Some(display_name) = ctx.user.display_name() {
-                            ctx.privmsg(format!(
-                                "Do you think this is a democracy {name}? LUL",
-                                name = display_name
-                            ))
-                            .await;
+                        } else {
+                            respond!(ctx, "Do you think this is a democracy? LUL");
                         }
 
                         return Ok(());
