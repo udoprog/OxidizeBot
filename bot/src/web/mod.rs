@@ -831,7 +831,13 @@ impl Api {
         };
 
         let c = player.current_device().await;
-        let data = player.list_devices().await?;
+        let data = match player.list_devices().await {
+            Ok(data) => data,
+            Err(_) => {
+                let data = Devices::default();
+                return Ok(warp::reply::json(&data));
+            }
+        };
 
         let mut devices = Vec::new();
         let mut current = None;
@@ -1228,6 +1234,19 @@ async fn recover(err: warp::Rejection) -> Result<impl warp::Reply, warp::Rejecti
         });
 
         Ok(warp::reply::with_status(json, code))
+    } else if let Some(e) = err.find::<CustomReject>() {
+        // TODO: Also log which endpoint caused the error
+        log::error!("Endpoint error caused by: {}", e.0);
+
+        let json = warp::reply::json(&ErrorMessage {
+            code: 500,
+            message: e.0.to_string(),
+        });
+
+        Ok(warp::reply::with_status(
+            json,
+            warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+        ))
     } else {
         // Could be a NOT_FOUND, or METHOD_NOT_ALLOWED... here we just
         // let warp use its default rendering.
