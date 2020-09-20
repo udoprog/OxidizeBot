@@ -40,8 +40,11 @@ struct CustomReject(anyhow::Error);
 
 impl warp::reject::Reject for CustomReject {}
 
+// TODO: Also log which endpoint caused the error
 pub(crate) fn custom_reject(error: impl Into<anyhow::Error>) -> warp::Rejection {
-    warp::reject::custom(CustomReject(error.into()))
+    let error = error.into();
+    log::error!("Endpoint error caused by: {}", error);
+    warp::reject::custom(CustomReject(error))
 }
 
 #[derive(Debug)]
