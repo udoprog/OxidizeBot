@@ -831,7 +831,13 @@ impl Api {
         };
 
         let c = player.current_device().await;
-        let data = player.list_devices().await?;
+        let data = match player.list_devices().await {
+            Ok(data) => data,
+            Err(_) => {
+                let data = Devices::default();
+                return Ok(warp::reply::json(&data));
+            }
+        };
 
         let mut devices = Vec::new();
         let mut current = None;
