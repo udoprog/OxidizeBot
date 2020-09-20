@@ -1237,6 +1237,16 @@ async fn recover(err: warp::Rejection) -> Result<impl warp::Reply, warp::Rejecti
         });
 
         Ok(warp::reply::with_status(json, code))
+    } else if let Some(e) = err.find::<CustomReject>() {
+        let json = warp::reply::json(&ErrorMessage {
+            code: 500,
+            message: e.0.to_string(),
+        });
+
+        Ok(warp::reply::with_status(
+            json,
+            warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+        ))
     } else {
         // Could be a NOT_FOUND, or METHOD_NOT_ALLOWED... here we just
         // let warp use its default rendering.
