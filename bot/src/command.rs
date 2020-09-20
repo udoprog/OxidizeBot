@@ -4,7 +4,7 @@ use crate::auth::Scope;
 use crate::irc;
 use crate::prelude::*;
 use crate::utils;
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
