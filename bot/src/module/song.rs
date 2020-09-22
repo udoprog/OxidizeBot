@@ -57,7 +57,7 @@ impl Handler {
                     }
                 }
 
-                log::info!("Failed to parse as URL/URI: {}: {}", q, e);
+                log::trace!("Failed to parse as URL/URI: {}: {}", q, e);
                 None
             }
         };
