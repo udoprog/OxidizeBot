@@ -6,7 +6,7 @@ edition = "2018"
 license = "MIT/Apache-2.0"
 
 [dependencies]
-bytes = "0.6.0"
+bytes = "0.5.6"
 hyper = "0.13.8"
 tokio = { version = "0.2.22", features = ["full"] }
 anyhow = "1.0.33"
@@ -32,8 +32,8 @@ time = "0.2.22"
 async-oauth2 = "0.2.0"
 url = { version = "2.1.1", features = ["serde"] }
 parking_lot = "0.11.0"
-sled28 = { package = "sled", version = "0.34.4" }
-sled31 = { package = "sled", version = "0.34.4" }
+sled28 = { package = "sled", version = "0.28.0" }
+sled31 = { package = "sled", version = "0.31.0" }
 ring = "0.16.15"
 relative-path = { version = "1.3.2", features = ["serde"] }
 pin-utils = "0.1.0"
