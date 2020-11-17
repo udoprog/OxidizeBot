@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://setbac.tv">
-    <img src="https://raw.githubusercontent.com/udoprog/OxidizeBot/master/bot/res/icon48.png" title="Oxidize Bot">
+    <img src="https://raw.githubusercontent.com/udoprog/OxidizeBot/main/bot/res/icon48.png" title="Oxidize Bot">
   </a>
 </div>
 
@@ -33,14 +33,14 @@ If there's something you're missing, feel free to [open an issue].
 **Rust** &mdash; Written in [Rust], promoting high performance, low utilization, and reliability.
 
 <p>
-<img style="float: left;"  title="Rust" width="67" height="50" src="https://github.com/udoprog/OxidizeBot/raw/master/gfx/cuddlyferris.png" />
+<img style="float: left;"  title="Rust" width="67" height="50" src="https://github.com/udoprog/OxidizeBot/raw/main/gfx/cuddlyferris.png" />
 </p>
 
 **Configurable** &mdash; Everything is tweakable to suit your needs through a [hundred settings].
 Changes to settings applies immediately - no need to restart.
 
 <p>
-<img style="float: left;" title="Settings" width="140" height="50" src="https://github.com/udoprog/OxidizeBot/raw/master/gfx/setting.png" />
+<img style="float: left;" title="Settings" width="140" height="50" src="https://github.com/udoprog/OxidizeBot/raw/main/gfx/setting.png" />
 </p>
 
 **Integrated with Windows** &mdash; Runs in the background with a System Tray.
@@ -48,8 +48,8 @@ Notifies you on issues.
 Starts automatically with Windows if you want it to.
 
 <p>
-<img style="float: left;" title="Windows Systray" width="131" height="50" src="https://github.com/udoprog/OxidizeBot/raw/master/gfx/windows-systray.png" />
-<img style="float: left;" title="Reminder" width="120" height="50" src="https://github.com/udoprog/OxidizeBot/raw/master/gfx/windows-reminder.png" />
+<img style="float: left;" title="Windows Systray" width="131" height="50" src="https://github.com/udoprog/OxidizeBot/raw/main/gfx/windows-systray.png" />
+<img style="float: left;" title="Reminder" width="120" height="50" src="https://github.com/udoprog/OxidizeBot/raw/main/gfx/windows-reminder.png" />
 </p>
 
 [open an issue]: https://github.com/udoprog/OxidizeBot/issues

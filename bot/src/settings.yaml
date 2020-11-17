@@ -95,7 +95,7 @@ types:
     doc: >
       **Experimental** support for command-specific configuration overrides.
       An example override looks like this: `{"name": "Wanted", "enabled": true, "cost": 10000, "cooldown": "5m"}`.
-      [Available names](https://github.com/udoprog/OxidizeBot/blob/master/bot/src/module/gtav.rs#L208).
+      [Available names](https://github.com/udoprog/OxidizeBot/blob/main/bot/src/module/gtav.rs#L208).
     type:
       id: set
       value:
