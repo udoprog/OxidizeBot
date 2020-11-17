@@ -455,7 +455,7 @@ pub async fn build(
                     log::trace!("{}: New from settings", what);
                     builder.update_from_settings(connection).await?;
                 }
-                current = force_refresh_rx.select_next_some() => {
+                _ = force_refresh_rx.select_next_some() => {
                     log::trace!("{}: Forced refresh", what);
                     builder.force_refresh = true;
                     builder.update().await?;

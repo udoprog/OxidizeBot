@@ -12,7 +12,6 @@ panic = "abort"
 debug = true
 
 [patch.crates-io]
-tokio = { git = "https://github.com/tokio-rs/tokio", branch = "v0.2.x" }
 runestick = { git = "https://github.com/rune-rs/rune" }
 rune = { git = "https://github.com/rune-rs/rune" }
 rune-modules = { git = "https://github.com/rune-rs/rune" }

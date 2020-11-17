@@ -547,7 +547,7 @@ impl Irc {
                     _ = ping_interval.select_next_some() => {
                         handler.send_ping()?;
                     }
-                    timeout = handler.pong_timeout.current() => {
+                    _ = handler.pong_timeout.current() => {
                         bail!("server not responding");
                     }
                     update = whitelisted_hosts_stream.next() => {

@@ -137,7 +137,7 @@ impl super::Module for Module {
                     event = receiver.select_next_some() => {
                         match event {
                             Event::Set(duration, template) => {
-                                let mut t = Timer {
+                                let t = Timer {
                                     duration,
                                     elapsed: Default::default(),
                                     interval: tokio::time::interval(time::Duration::from_secs(1)),
