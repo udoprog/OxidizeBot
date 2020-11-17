@@ -1,5 +1,5 @@
 use super::schema::{
-    after_streams, aliases, bad_words, balances, commands, promotions, songs, themes,
+    after_streams, aliases, bad_words, balances, commands, promotions, script_keys, songs, themes,
 };
 use crate::track_id::TrackId;
 use chrono::NaiveDateTime;
@@ -198,4 +198,17 @@ pub struct UpdateTheme<'a> {
     pub end: i32,
     pub group: Option<&'a str>,
     pub disabled: Option<bool>,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
+pub struct ScriptKey {
+    pub channel: String,
+    pub key: Vec<u8>,
+    pub value: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Default, diesel::AsChangeset)]
+#[table_name = "script_keys"]
+pub struct SetScriptKeyValue<'a> {
+    pub value: &'a [u8],
 }

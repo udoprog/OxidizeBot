@@ -40,7 +40,7 @@ struct Queries {
 
 impl Queries {
     /// Select all balances.
-    async fn select_balances<Tx>(&self, tx: Tx) -> Result<(Tx, Vec<(String, i32)>)>
+    async fn select_balances<Tx>(&self, tx: &mut Tx) -> Result<Vec<(String, i32)>>
     where
         Tx: Queryable,
     {
@@ -52,16 +52,14 @@ impl Queries {
         );
 
         log::trace!("select_balances: {}", query);
-
-        let rows = tx.prep_exec(query, ()).await?;
-
-        let (tx, result) = rows.map_and_drop(mysql::from_row::<(String, i32)>).await?;
-
-        Ok((tx, result))
+        let results = tx
+            .exec_map(query.as_str(), (), mysql::from_row::<(String, i32)>)
+            .await?;
+        Ok(results)
     }
 
     /// Select the given balance.
-    async fn select_balance<Tx>(&self, tx: Tx, user: &str) -> Result<(Tx, Option<i32>)>
+    async fn select_balance<Tx>(&self, tx: &mut Tx, user: &str) -> Result<Option<i32>>
     where
         Tx: Queryable,
     {
@@ -80,25 +78,22 @@ impl Queries {
         };
 
         log::trace!("select_balance: {} {:?}", query, params);
-        let result = tx.prep_exec(query, params).await?;
-
-        let (tx, results) = result.map_and_drop(mysql::from_row::<(i32,)>).await?;
-
-        Ok((tx, results.into_iter().map(|(c, ..)| c).next()))
+        Ok(tx.exec_first(query.as_str(), params).await?)
     }
 
     /// Helper to insert or update a single balance.
-    async fn modify_balance<Tx>(&self, tx: Tx, user: &str, amount: i32) -> Result<Tx>
+    async fn modify_balance<Tx>(&self, tx: &mut Tx, user: &str, amount: i32) -> Result<()>
     where
         Tx: Queryable,
     {
         // TODO: when mysql_async moves to async/await we can probably remove this budged ownership.
         self.upsert_balances(tx, vec![user.to_string()], amount)
-            .await
+            .await?;
+        Ok(())
     }
 
     /// Update or insert a batch of balances.
-    async fn upsert_balances<Tx, I>(&self, tx: Tx, users: I, amount: i32) -> Result<Tx>
+    async fn upsert_balances<Tx, I>(&self, tx: &mut Tx, users: I, amount: i32) -> Result<()>
     where
         Tx: Queryable,
         I: IntoIterator<Item = String> + Send + 'static,
@@ -121,11 +116,12 @@ impl Queries {
         });
 
         log::trace!("upsert_balances: {}", query);
-        Ok(tx.batch_exec(query, params).await?)
+        tx.exec_batch(query.as_str(), params).await?;
+        Ok(())
     }
 
     /// Insert the given balance.
-    async fn insert_balance<Tx>(&self, tx: Tx, user: &str, balance: i32) -> Result<Tx>
+    async fn insert_balance<Tx>(&self, tx: &mut Tx, user: &str, balance: i32) -> Result<()>
     where
         Tx: Queryable,
     {
@@ -143,11 +139,12 @@ impl Queries {
         };
 
         log::trace!("insert_balance: {} {:?}", query, params);
-        Ok(tx.drop_exec(query, params).await?)
+        tx.exec_drop(query.as_str(), params).await?;
+        Ok(())
     }
 
     /// Update the given balance.
-    async fn update_balance<Tx>(&self, tx: Tx, user: &str, balance: i32) -> Result<Tx>
+    async fn update_balance<Tx>(&self, tx: &mut Tx, user: &str, balance: i32) -> Result<()>
     where
         Tx: Queryable,
     {
@@ -164,7 +161,8 @@ impl Queries {
         };
 
         log::trace!("update_balance: {} {:?}", query, params);
-        Ok(tx.drop_exec(query, params).await?)
+        tx.exec_drop(query.as_str(), params).await?;
+        Ok(())
     }
 }
 
@@ -201,10 +199,10 @@ impl Backend {
         let taker = user_id(taker);
         let giver = user_id(giver);
 
-        let opts = mysql::TransactionOptions::new();
-        let tx = self.pool.start_transaction(opts).await?;
+        let opts = mysql::TxOpts::new();
+        let mut tx = self.pool.start_transaction(opts).await?;
 
-        let (tx, balance) = self.queries.select_balance(tx, &giver).await?;
+        let balance = self.queries.select_balance(&mut tx, &giver).await?;
 
         let balance = balance.unwrap_or_default();
 
@@ -212,8 +210,10 @@ impl Backend {
             return Err(BalanceTransferError::NoBalance);
         }
 
-        let tx = self.queries.modify_balance(tx, &taker, amount).await?;
-        let tx = self.queries.modify_balance(tx, &giver, -amount).await?;
+        self.queries.modify_balance(&mut tx, &taker, amount).await?;
+        self.queries
+            .modify_balance(&mut tx, &giver, -amount)
+            .await?;
 
         tx.commit().await?;
         Ok(())
@@ -224,10 +224,10 @@ impl Backend {
         let channel = self.channel.to_string();
         let mut output = Vec::new();
 
-        let opts = mysql::TransactionOptions::new();
-        let tx = self.pool.start_transaction(opts).await?;
+        let opts = mysql::TxOpts::new();
+        let mut tx = self.pool.start_transaction(opts).await?;
 
-        let (_, balances) = self.queries.select_balances(tx).await?;
+        let balances = self.queries.select_balances(&mut tx).await?;
 
         for (user, balance) in balances {
             output.push(Balance {
@@ -243,18 +243,18 @@ impl Backend {
 
     /// Import balances for all users.
     pub async fn import_balances(&self, balances: Vec<Balance>) -> Result<()> {
-        let opts = mysql::TransactionOptions::new();
+        let opts = mysql::TxOpts::new();
         let mut tx = self.pool.start_transaction(opts).await?;
 
         for balance in balances {
             let amount: i32 = balance.amount.try_into()?;
             let user = user_id(&balance.user);
 
-            let (new_tx, results) = self.queries.select_balance(tx, &user).await?;
+            let balance = self.queries.select_balance(&mut tx, &user).await?;
 
-            tx = match results {
-                None => self.queries.insert_balance(new_tx, &user, 0).await?,
-                Some(_) => self.queries.update_balance(new_tx, &user, amount).await?,
+            match balance {
+                None => self.queries.insert_balance(&mut tx, &user, 0).await?,
+                Some(_) => self.queries.update_balance(&mut tx, &user, amount).await?,
             }
         }
 
@@ -265,10 +265,10 @@ impl Backend {
     /// Find user balance.
     pub async fn balance_of(&self, _channel: &str, user: &str) -> Result<Option<BalanceOf>> {
         let user = user_id(&user);
-        let opts = mysql::TransactionOptions::new();
-        let tx = self.pool.start_transaction(opts).await?;
+        let opts = mysql::TxOpts::new();
+        let mut tx = self.pool.start_transaction(opts).await?;
 
-        let (_, balance) = self.queries.select_balance(tx, &user).await?;
+        let balance = self.queries.select_balance(&mut tx, &user).await?;
 
         let balance = match balance {
             Some(b) => b.try_into()?,
@@ -286,11 +286,9 @@ impl Backend {
         let user = user_id(&user);
         let amount = amount.try_into()?;
 
-        let opts = mysql::TransactionOptions::new();
-        let tx = self.pool.start_transaction(opts).await?;
-
-        let tx = self.queries.modify_balance(tx, &user, amount).await?;
-
+        let opts = mysql::TxOpts::new();
+        let mut tx = self.pool.start_transaction(opts).await?;
+        self.queries.modify_balance(&mut tx, &user, amount).await?;
         tx.commit().await?;
         Ok(())
     }
@@ -302,12 +300,10 @@ impl Backend {
         I::IntoIter: Send + 'static,
     {
         let amount = amount.try_into()?;
-        let opts = mysql::TransactionOptions::new();
-        let tx = self.pool.start_transaction(opts).await?;
-
+        let opts = mysql::TxOpts::new();
+        let mut tx = self.pool.start_transaction(opts).await?;
         let users = users.into_iter().map(|u| user_id(&u));
-        let tx = self.queries.upsert_balances(tx, users, amount).await?;
-
+        self.queries.upsert_balances(&mut tx, users, amount).await?;
         tx.commit().await?;
         Ok(())
     }

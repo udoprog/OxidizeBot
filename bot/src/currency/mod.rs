@@ -375,8 +375,8 @@ impl From<std::num::TryFromIntError> for BalanceTransferError {
     }
 }
 
-impl From<mysql_async::error::Error> for BalanceTransferError {
-    fn from(value: mysql_async::error::Error) -> Self {
+impl From<mysql_async::Error> for BalanceTransferError {
+    fn from(value: mysql_async::Error) -> Self {
         BalanceTransferError::Other(value.into())
     }
 }

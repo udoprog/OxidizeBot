@@ -235,7 +235,7 @@ pub async fn run(
                 event = remote.rx.select_next_some() => {
                     let event = event?;
 
-                    /// Only update on switches to current song.
+                    // Only update on switches to current song.
                     match event {
                         bus::Global::SongModified => (),
                         _ => continue,

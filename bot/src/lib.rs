@@ -1,4 +1,4 @@
-#![recursion_limit = "512"]
+#![recursion_limit = "1024"]
 #![cfg_attr(backtrace, feature(backtrace))]
 
 #[macro_use]
@@ -44,6 +44,11 @@ pub mod oauth2;
 mod panic_logger;
 pub mod player;
 pub mod prelude;
+#[cfg(feature = "scripting")]
+mod script;
+#[cfg(not(feature = "scripting"))]
+#[path = "script/mock.rs"]
+mod script;
 pub mod settings;
 mod song_file;
 mod spotify_id;

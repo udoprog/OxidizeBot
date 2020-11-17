@@ -1,0 +1,20 @@
+const GREETING = "Howdy";
+
+pub fn main(reg) {
+    reg.register("dynamic", handler);
+}
+
+async fn handler(ctx) {
+    ctx.respond("Goodbye You");
+
+    let user = match ctx.user() {
+        Some(user) => user,
+        None => return,
+    };
+    
+    let count = ctx.db.get(["count", user.clone()]).await?.unwrap_or(0);
+    ctx.respond(format!("{greeting}, invocation count: {:?}", count, greeting = GREETING)).await;
+
+    ctx.db.set(["count", user.clone()], count + 1).await?;
+    Ok(())
+}
