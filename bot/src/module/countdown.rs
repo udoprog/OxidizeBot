@@ -38,7 +38,7 @@ impl command::Handler for Handler {
                 let duration = ctx.next_parse("<duration> <template>")?;
                 let template = ctx.rest_parse("<duration> <template>")?;
 
-                match self.sender.unbounded_send(Event::Set(duration, template)) {
+                match self.sender.send(Event::Set(duration, template)) {
                     Ok(()) => {
                         respond!(ctx, "Countdown set!");
                     }
@@ -48,7 +48,7 @@ impl command::Handler for Handler {
                     }
                 }
             }
-            Some("clear") => match self.sender.unbounded_send(Event::Clear) {
+            Some("clear") => match self.sender.send(Event::Clear) {
                 Ok(()) => {
                     respond!(ctx, "Countdown cleared!");
                 }
@@ -98,7 +98,7 @@ impl super::Module for Module {
         let mut writer = FileWriter::default();
         writer.path = path;
 
-        let (sender, mut receiver) = mpsc::unbounded();
+        let (sender, mut receiver) = mpsc::unbounded_channel();
 
         handlers.insert(
             "countdown",
@@ -109,24 +109,25 @@ impl super::Module for Module {
         );
 
         let future = async move {
-            let mut timer = Option::<Timer>::None;
+            let timer = Fuse::empty();
+            tokio::pin!(timer);
 
             loop {
-                futures::select! {
-                    update = path_stream.select_next_some() => {
+                tokio::select! {
+                    Some(update) = path_stream.next() => {
                         writer.path = update;
                     }
-                    update = enabled_stream.select_next_some() => {
+                    Some(update) = enabled_stream.next() => {
                         if (!update) {
-                            timer.take();
+                            timer.set(Fuse::empty());
                             writer.clear_log();
                         }
 
                         *enabled.write() = update;
                     }
-                    out = timer.next() => {
+                    out = timer.as_mut().poll_stream(Stream::poll_next) => {
                         match out {
-                            Some(()) => if let Some(timer) = timer.as_ref() {
+                            Some(()) => if let Some(timer) = timer.as_inner_ref() {
                                 writer.write_log(timer);
                             },
                             None => {
@@ -134,7 +135,7 @@ impl super::Module for Module {
                             },
                         }
                     },
-                    event = receiver.select_next_some() => {
+                    Some(event) = receiver.recv() => {
                         match event {
                             Event::Set(duration, template) => {
                                 let t = Timer {
@@ -145,10 +146,10 @@ impl super::Module for Module {
 
                                 writer.template = Some(template);
                                 writer.write_log(&t);
-                                timer = Some(t);
+                                timer.set(Fuse::new(t));
                             }
                             Event::Clear => {
-                                timer.take();
+                                timer.set(Fuse::empty());
                                 writer.clear_log();
                             }
                         }
@@ -157,7 +158,7 @@ impl super::Module for Module {
             }
         };
 
-        futures.push(future.boxed());
+        futures.push(Box::pin(future));
         Ok(())
     }
 }
@@ -248,22 +249,17 @@ impl Stream for Timer {
     type Item = ();
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        if let Poll::Ready(Some(_)) = Pin::new(&mut self.interval).poll_next(cx) {
-            self.as_mut().elapsed += utils::Duration::seconds(1);
-
-            if self.as_ref().elapsed >= self.as_ref().duration {
-                return Poll::Ready(None);
-            }
-
-            return Poll::Ready(Some(()));
+        match Pin::new(&mut self.as_mut().interval).poll_tick(cx) {
+            Poll::Pending => return Poll::Pending,
+            Poll::Ready(..) => (),
         }
 
-        Poll::Pending
-    }
-}
+        self.as_mut().elapsed += utils::Duration::seconds(1);
 
-impl stream::FusedStream for Timer {
-    fn is_terminated(&self) -> bool {
-        self.elapsed >= self.duration
+        if self.as_ref().elapsed >= self.as_ref().duration {
+            return Poll::Ready(None);
+        }
+
+        Poll::Ready(Some(()))
     }
 }

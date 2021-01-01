@@ -14,7 +14,10 @@ pub trait Message: 'static + Clone + Send + Sync + serde::Serialize {
 
 pub type Reader<T> = broadcast::Receiver<T>;
 
-struct Inner<T> {
+struct Inner<T>
+where
+    T: Clone,
+{
     subs: broadcast::Sender<T>,
     /// Latest instances of all messages.
     latest: RwLock<HashMap<&'static str, T>>,
@@ -22,11 +25,17 @@ struct Inner<T> {
 
 /// Bus system.
 #[derive(Clone)]
-pub struct Bus<T> {
+pub struct Bus<T>
+where
+    T: Clone,
+{
     inner: Arc<Inner<T>>,
 }
 
-impl<T> Bus<T> {
+impl<T> Bus<T>
+where
+    T: Clone,
+{
     /// Create a new notifier.
     pub fn new() -> Self {
         Self {
@@ -73,7 +82,10 @@ impl<T> Bus<T> {
     }
 }
 
-impl<T> Default for Bus<T> {
+impl<T> Default for Bus<T>
+where
+    T: Clone,
+{
     fn default() -> Self {
         Self::new()
     }

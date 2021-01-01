@@ -46,8 +46,13 @@ impl SongFileBuilder {
     }
 
     /// Initialize the given current song.
-    pub fn init(&self, option: &mut Option<SongFile>) {
-        if let Some(old) = std::mem::replace(option, self.build()) {
+    pub fn init(&self, value: &mut Fuse<SongFile>) {
+        let update = match self.build() {
+            Some(update) => Fuse::new(update),
+            None => Fuse::empty(),
+        };
+
+        if let Some(old) = std::mem::replace(value, update).as_inner_ref() {
             old.blank_log();
         }
     }
@@ -94,7 +99,7 @@ impl SongFile {
 
         let (mut enabled_stream, enabled) = settings.stream("enabled").or_default().await?;
 
-        let mut song_file = None;
+        let mut song_file = Fuse::empty();
 
         let mut builder = SongFileBuilder::default();
         builder.enabled = enabled;
@@ -105,41 +110,39 @@ impl SongFile {
         builder.init(&mut song_file);
 
         loop {
-            let mut song_file_update = song_file.as_mut().map(|u| &mut u.update_interval);
-
-            futures::select! {
+            tokio::select! {
                 /* current song */
-                update = enabled_stream.select_next_some() => {
+                Some(update) = enabled_stream.next() => {
                     builder.enabled = update;
                     builder.init(&mut song_file);
                 }
-                update = path_stream.select_next_some() => {
+                Some(update) = path_stream.next() => {
                     builder.path = update;
                     builder.init(&mut song_file);
                 }
-                update = template_stream.select_next_some() => {
+                Some(update) = template_stream.next() => {
                     builder.template = update;
                     builder.init(&mut song_file);
                 }
-                update = stopped_template_stream.select_next_some() => {
+                Some(update) = stopped_template_stream.next() => {
                     builder.stopped_template = update;
                     builder.init(&mut song_file);
                 }
-                update = update_interval_stream.select_next_some() => {
+                Some(update) = update_interval_stream.next() => {
                     builder.update_interval = update;
                     builder.init(&mut song_file);
                 }
-                _ = song_file_update.select_next_some() => {
+                _ = song_file.as_pin_mut().poll_inner(|mut f, cx| f.update_interval.poll_tick(cx)) => {
                 }
-                update = song_stream.select_next_some() => {
+                Some(update) = song_stream.next() => {
                     song = update;
                 }
-                update = state_stream.select_next_some() => {
+                Some(update) = state_stream.next() => {
                     state = update;
                 }
             }
 
-            if let Some(song_file) = &mut song_file {
+            if let Some(song_file) = song_file.as_inner_mut() {
                 song_file.update_song(song.as_ref(), state).await;
             }
         }

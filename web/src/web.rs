@@ -5,7 +5,6 @@ use crate::session;
 use ::oauth2::State;
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
-use futures::prelude::*;
 use hyper::body::Body;
 use hyper::header;
 use hyper::server::conn::AddrStream;
@@ -20,10 +19,12 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error as _;
 use std::fmt;
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time;
 use thiserror::Error;
+use tokio_stream::StreamExt as _;
 use url::Url;
 
 macro_rules! log_error {
@@ -64,7 +65,7 @@ pub fn setup(
     host: String,
     port: u32,
     config: Config,
-) -> Result<impl Future<Output = Result<(), hyper::error::Error>>, anyhow::Error> {
+) -> Result<impl Future<Output = Result<(), hyper::Error>>, anyhow::Error> {
     let fallback =
         assets::Asset::get("index.html").ok_or_else(|| anyhow!("missing index.html in assets"))?;
 
@@ -78,7 +79,7 @@ pub fn setup(
     let addr: SocketAddr = str::parse(&bind)?;
 
     // TODO: add graceful shutdown.
-    let server_future =
+    let mut server_future =
         Server::bind(&addr).serve(service::make_service_fn(move |s: &AddrStream| {
             let handler = handler.clone();
             let address = s.remote_addr();
@@ -87,18 +88,16 @@ pub fn setup(
         }));
 
     let future = async move {
-        let mut interval = tokio::time::interval(time::Duration::from_secs(30)).fuse();
+        let mut interval = tokio::time::interval(time::Duration::from_secs(30));
         let expires = chrono::Duration::minutes(5);
-
-        let mut server_future = server_future.fuse();
 
         #[allow(clippy::unnecessary_mut_passed)]
         loop {
-            futures::select! {
-                result = server_future => {
+            tokio::select! {
+                result = &mut server_future => {
                     return result;
                 }
-                _ = interval.select_next_some() => {
+                _ = interval.tick() => {
                     let now = Utc::now();
                     let mut tokens = pending_tokens.lock();
                     let mut to_remove = smallvec::SmallVec::<[State; 16]>::new();
@@ -924,8 +923,7 @@ impl Handler {
             Some(user) => (user.login, update.await?),
             None => {
                 let token = twitch_token.ok_or_else(|| Error::Unauthorized)?;
-                let (auth, update) =
-                    future::try_join(self.auth_twitch_token(&token), update).await?;
+                let (auth, update) = tokio::try_join!(self.auth_twitch_token(&token), update)?;
                 (auth.login, update)
             }
         };

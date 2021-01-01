@@ -1,6 +1,5 @@
 use crate::api::{bttv, ffz, twitch::Channel, BetterTTV, FrankerFaceZ, Tduva, Twitch};
 use crate::irc;
-use crate::prelude::*;
 use crate::storage::Cache;
 use crate::template;
 use anyhow::Error;
@@ -166,11 +165,10 @@ impl Emotes {
     async fn room_emotes_from_ffz(&self, channel: &Channel) -> Result<EmoteByCode, Error> {
         let mut emotes = EmoteByCode::default();
 
-        let (global, room) = future::try_join(
+        let (global, room) = tokio::try_join!(
             self.inner.ffz.set_global(),
             self.inner.ffz.room(&channel.name),
-        )
-        .await?;
+        )?;
 
         for (_, s) in global.sets {
             Self::extend_ffz_set(&mut emotes, s);
@@ -335,11 +333,10 @@ impl Emotes {
                 chrono::Duration::hours(6),
                 async move {
                     let mut emotes = EmoteByCode::default();
-                    let (a, b) = future::try_join(
+                    let (a, b) = tokio::try_join!(
                         self.room_emotes_from_ffz(channel),
                         self.room_emotes_from_bttv(channel),
-                    )
-                    .await?;
+                    )?;
                     emotes.extend(a);
                     emotes.extend(b);
                     Ok(Arc::new(emotes))
@@ -408,11 +405,10 @@ impl Emotes {
         self.inner
             .cache
             .wrap(Key::GlobalEmotes, chrono::Duration::hours(72), async move {
-                let (twitch, bttv) = future::try_join(
+                let (twitch, bttv) = tokio::try_join!(
                     self.emote_sets_from_twitch("0"),
                     self.emote_sets_from_bttv(),
-                )
-                .await?;
+                )?;
 
                 let mut emotes = EmoteByCode::default();
                 emotes.extend(twitch);
@@ -767,7 +763,7 @@ impl Emotes {
                     let tduva = self.tduva_chat_badges(name);
                     let bttv = self.bttv_bot_badge(channel, name);
 
-                    let (twitch, ffz, tduva, bttv) = future::join4(twitch, ffz, tduva, bttv).await;
+                    let (twitch, ffz, tduva, bttv) = tokio::join!(twitch, ffz, tduva, bttv);
 
                     match twitch {
                         Ok(badges) => out.extend(badges),
@@ -822,12 +818,11 @@ impl Emotes {
         name: &str,
         message: &str,
     ) -> Result<Rendered, Error> {
-        let (badges, room_emotes, global_emotes) = future::try_join3(
+        let (badges, room_emotes, global_emotes) = tokio::try_join!(
             self.room_badges(channel, name),
             self.room_emotes(channel),
             self.global_emotes(),
-        )
-        .await?;
+        )?;
         let message_emotes = self.message_emotes_twitch(tags, message)?;
 
         Ok(Rendered::render(

@@ -154,7 +154,7 @@ impl Speedrun {
             let levels = self.speedrun.game_levels(&game.id);
             let variables = self.speedrun.category_variables(&run.run.category);
 
-            let (levels, variables) = future::try_join(levels, variables).await?;
+            let (levels, variables) = tokio::try_join!(levels, variables)?;
 
             let variables = match variables {
                 Some(variables) => variables,

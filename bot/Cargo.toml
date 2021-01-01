@@ -7,75 +7,75 @@ license = "MIT/Apache-2.0"
 description = "High octane Twitch bot powered by Rust"
 
 [dependencies]
+argwerk = "0.20.0"
 eudex = "0.1.1"
 chrono = { version = "0.4.19", features = ["serde"] }
 chrono-tz = { version = "0.5.3", features = ["serde"] }
-clap = "2.33.3"
-mysql_async = "0.25.0"
+mysql_async = "0.26.0"
 diesel = { version = "1.4.5", features = ["sqlite", "chrono"] }
 diesel_migrations = "1.4.0"
 # set the bundled feature to use the bundled libsqlite3
 libsqlite3-sys = { version = "0.17.3", features = ["bundled", "unlock_notify"] }
-warp = "0.2.5"
 log = "0.4.11"
 relative-path = { version = "1.3.2", features = ["serde"] }
-reqwest = "0.10.8"
-serde = { version = "1.0.117", features = ["rc"] }
-serde_yaml = "0.8.14"
-serde_json = "1.0.59"
+serde = { version = "1.0.118", features = ["rc"] }
+serde_yaml = "0.8.15"
+serde_json = "1.0.61"
 serde_cbor = "0.11.1"
 serde_urlencoded = "0.7.0"
-tokio = { version = "0.2.23", features = ["full"] }
-url = { version = "2.2.0", features = ["serde"] }
+reqwest = "0.11.0"
 Inflector = "0.11.4"
-base64 = "0.13.0"
-rand = "0.7.3"
+warp = "0.3.0"
+tokio = { version = "1.0.1", features = ["full"] }
+url = { version = "2.2.0", features = ["serde"] }
+rand = "0.8.1"
 fixed-map = "0.7.1"
-log4rs = "0.13.0"
-handlebars = "3.5.1"
-htmlescape = "0.3.1"
+log4rs = "1.0.0"
+handlebars = "3.5.2"
 lazy_static = "1.4.0"
 webbrowser = "0.5.5"
-parking_lot = "0.11.0"
+parking_lot = "0.11.1"
 percent-encoding = "2.1.0"
-bytes = "0.5.6"
+bytes = "1.0.0"
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
 pin-utils = "0.1.0"
-smallvec = { version = "1.4.2", features = ["serde"] }
+smallvec = { version = "1.6.0", features = ["serde"] }
 dirs = "3.0.1"
 backoff = "0.2.1"
-rust-embed = { version = "5.6.0", features = ["interpolate-folder-path"] }
+rust-embed = { version = "5.7.0", features = ["interpolate-folder-path"] }
 mime = "0.3.16"
 mime_guess = "2.0.3"
-uom = "0.30.0"
+uom = "0.31.0"
 crossbeam = "0.8.0"
 hex = "0.4.2"
 graphql_client = { version = "0.9.0", default-features = false }
-futures-option = "0.2.0"
-futures-cache = "0.9.0"
-anyhow = "1.0.34"
-thiserror = "1.0.22"
-async-injector = "0.10.0"
-async-trait = "0.1.41"
-leaky-bucket = "0.8.0"
+async-fuse = "0.11.2"
+futures-cache = "0.10.0"
+anyhow = "1.0.37"
+thiserror = "1.0.23"
+async-injector = "0.13.1"
+async-trait = "0.1.42"
+leaky-bucket = "0.10.0"
 regex = "1.4.2"
-backtrace = "0.3.54"
-futures = { version = "0.3.8", features = ["async-await"] }
-tracing = "0.1.21"
+backtrace = "0.3.55"
+futures-util = "0.3.8"
+futures-core = "0.3.8"
+futures-executor = "0.3.8"
+tracing = "0.1.22"
 tracing-core = "0.1.17"
 tracing-futures = { version = "0.2.4", default-features = false, features = ["std-future"] }
 slab = "0.4.2"
 irc = "0.14.1"
-ignore = "0.4.16"
+ignore = "0.4.17"
 notify = "5.0.0-pre.4"
 
-runestick = { version = "0.7.0", optional = true }
-rune = { version = "0.7.0", features = ["diagnostics"], optional = true }
-rune-modules = { version = "0.7.0", features = ["full"], optional = true }
+runestick = { version = "0.8.0", optional = true }
+rune = { version = "0.8.0", features = ["diagnostics"], optional = true }
+rune-modules = { version = "0.8.0", features = ["full"], optional = true }
 
 [build-dependencies]
 winres = "0.1.11"
-anyhow = "1.0.34"
+anyhow = "1.0.37"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3.9", features = ["shellapi", "impl-default"] }

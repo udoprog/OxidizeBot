@@ -84,7 +84,7 @@ unsafe extern "system" fn window_proc(
 
                         stash
                             .events_tx
-                            .unbounded_send(Event::BalloonClicked)
+                            .send(Event::BalloonClicked)
                             .expect("events sender to be open");
                     });
                 }
@@ -96,7 +96,7 @@ unsafe extern "system" fn window_proc(
 
                         stash
                             .events_tx
-                            .unbounded_send(Event::BalloonTimeout)
+                            .send(Event::BalloonTimeout)
                             .expect("events sender to be open");
                     });
                 }
@@ -138,7 +138,7 @@ unsafe extern "system" fn window_proc(
                 if menu_id != -1 {
                     stash
                         .events_tx
-                        .unbounded_send(Event::MenuClicked(menu_id as u32))
+                        .send(Event::MenuClicked(menu_id as u32))
                         .expect("events sender to be open");
                 }
             });
@@ -264,7 +264,7 @@ unsafe fn run_loop() {
 /// A windows application window.
 pub struct Window {
     info: WindowInfo,
-    shutdown_rx: Option<oneshot::Receiver<()>>,
+    shutdown_rx: Fuse<oneshot::Receiver<()>>,
     events_rx: mpsc::UnboundedReceiver<Event>,
     thread: Option<thread::JoinHandle<()>>,
 }
@@ -274,7 +274,7 @@ impl Window {
     pub async fn new(name: String) -> Result<Window, io::Error> {
         let (tx, rx) = oneshot::channel();
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
-        let (events_tx, events_rx) = mpsc::unbounded();
+        let (events_tx, events_rx) = mpsc::unbounded_channel();
 
         let thread = thread::spawn(move || unsafe {
             let info = match init_window(name.as_str()) {
@@ -313,7 +313,7 @@ impl Window {
 
         let w = Window {
             info,
-            shutdown_rx: Some(shutdown_rx),
+            shutdown_rx: Fuse::new(shutdown_rx),
             events_rx,
             thread: Some(thread),
         };
@@ -615,22 +615,16 @@ pub struct TickFuture<'a> {
     window: &'a mut Window,
 }
 
-impl<'a> future::FusedFuture for TickFuture<'a> {
-    fn is_terminated(&self) -> bool {
-        false
-    }
-}
-
 impl<'a> Future for TickFuture<'a> {
     type Output = Event;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-        if let Poll::Ready(result) = Pin::new(&mut self.window.shutdown_rx.current()).poll(ctx) {
+        if let Poll::Ready(result) = Pin::new(&mut self.window.shutdown_rx).poll(ctx) {
             result.expect("shutdown receiver ended");
             return Poll::Ready(Event::Shutdown);
         }
 
-        if let Poll::Ready(Some(event)) = Pin::new(&mut self.window.events_rx).poll_next(ctx) {
+        if let Poll::Ready(Some(event)) = self.window.events_rx.poll_recv(ctx) {
             return Poll::Ready(event);
         }
 

@@ -1,6 +1,6 @@
 use crate::sys::Notification;
 use anyhow::Error;
-use futures::future;
+use std::future;
 use std::path::Path;
 
 #[derive(Clone)]

@@ -54,7 +54,7 @@ impl Handlers {
 pub struct HookContext<'a> {
     pub injector: &'a injector::Injector,
     pub handlers: &'a mut Handlers,
-    pub futures: &'a mut utils::Futures,
+    pub futures: &'a mut utils::Futures<'static>,
     pub stream_info: &'a stream_info::StreamInfo,
     pub idle: &'a idle::Idle,
     pub twitch: &'a api::Twitch,

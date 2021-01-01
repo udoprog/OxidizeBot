@@ -16,7 +16,7 @@ pub(super) struct PlaybackFuture {
     /// Stream of settings if the player is detached.
     pub(super) detached_stream: settings::Stream<bool>,
     /// Optional stream indicating that we want to send a song update on the global bus.
-    pub(super) song_update_interval: Option<tokio::time::Interval>,
+    pub(super) song_update_interval: Fuse<tokio::time::Interval>,
     /// Stream for when song update interval is updated.
     pub(super) song_update_interval_stream: settings::Stream<utils::Duration>,
 }
@@ -47,40 +47,51 @@ impl PlaybackFuture {
             .await;
 
         let (mut song_stream, song) = injector.stream::<Song>().await;
-        let mut song_timeout = song.map(|s| tokio::time::delay_until(s.deadline().into()));
+
+        let song_timeout = song
+            .and_then(|s| match s.state() {
+                State::Playing => Some(Fuse::new(tokio::time::sleep_until(s.deadline().into()))),
+                _ => None,
+            })
+            .unwrap_or_default();
+
+        tokio::pin!(song_timeout);
+
+        let mut song_update_interval = self.song_update_interval;
 
         loop {
-            futures::select! {
+            tokio::select! {
                 song = song_stream.select_next_some() => {
-                    song_timeout = song.and_then(|s| match s.state() {
-                        State::Playing => Some(tokio::time::delay_until(s.deadline().into())),
+                    song_timeout.set(song.and_then(|s| match s.state() {
+                        State::Playing => Some(Fuse::new(tokio::time::sleep_until(s.deadline().into()))),
                         _ => None,
-                    });
+                    }).unwrap_or_default());
                 }
-                fallback = fallback_stream.select_next_some() => {
+                Some(fallback) = fallback_stream.next() => {
                     self.internal.write().await.update_fallback_items(fallback).await;
                 }
                 /* player */
-                _ = song_timeout.current() => {
+                _ = &mut song_timeout => {
                     let mut internal = self.internal.write().await;
                     internal.end_of_track().await?;
                 }
-                update = self.detached_stream.select_next_some() => {
+                Some(update) = self.detached_stream.next() => {
                     self.internal.write().await.update_detached(update).await?;
                 }
-                update = self.playback_mode_stream.select_next_some() => {
+                Some(update) = self.playback_mode_stream.next() => {
                     self.internal.write().await.update_playback_mode(update).await?;
                 }
-                value = self.song_update_interval_stream.select_next_some() => {
-                    self.song_update_interval = match value.is_empty() {
-                        true => None,
-                        false => Some(tokio::time::interval(value.as_std())),
+                Some(value) = self.song_update_interval_stream.next() => {
+                    song_update_interval = if value.is_empty() {
+                        Fuse::empty()
+                    } else {
+                        Fuse::new(tokio::time::interval(value.as_std()))
                     };
                 }
-                _ = self.song_update_interval.select_next_some() => {
+                _ = song_update_interval.as_pin_mut().poll_inner(|mut i, cx| i.poll_tick(cx)) => {
                     self.internal.write().await.song_update().await;
                 }
-                event = self.connect_stream.select_next_some() => {
+                Some(event) = self.connect_stream.next() => {
                     self.internal.write().await.handle_player_event(event?).await?;
                 }
             }

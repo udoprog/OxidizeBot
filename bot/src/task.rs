@@ -25,7 +25,10 @@ impl<T> Future for Handle<T> {
     type Output = Result<T>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Poll::Ready(Ok(futures::ready!(Pin::new(&mut self.handle).poll(cx))?))
+        match Pin::new(&mut self.handle).poll(cx) {
+            Poll::Ready(output) => Poll::Ready(Ok(output?)),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 

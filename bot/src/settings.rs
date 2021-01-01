@@ -6,7 +6,6 @@ use crate::prelude::*;
 use crate::utils;
 use chrono_tz::Tz;
 use diesel::prelude::*;
-use futures::ready;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error;
@@ -307,7 +306,7 @@ pub struct Settings {
 impl Settings {
     pub fn new(db: db::Database, schema: Schema) -> Self {
         let prefixes = schema.as_prefixes();
-        let (drivers, drivers_rx) = mpsc::unbounded();
+        let (drivers, drivers_rx) = mpsc::unbounded_channel();
 
         Self {
             scope: String::from(""),
@@ -692,12 +691,10 @@ impl Settings {
             }
         });
 
-        let result = self.inner.drivers.unbounded_send(Driver { future });
+        let result = self.inner.drivers.send(Driver { future });
 
-        if let Err(e) = result {
-            if !e.is_disconnected() {
-                return Err(Error::Shutdown);
-            }
+        if result.is_err() {
+            return Err(Error::Shutdown);
         }
 
         Ok(var)
@@ -724,12 +721,10 @@ impl Settings {
             }
         });
 
-        let result = self.inner.drivers.unbounded_send(Driver { future });
+        let result = self.inner.drivers.send(Driver { future });
 
-        if let Err(e) = result {
-            if !e.is_disconnected() {
-                return Err(Error::Shutdown);
-            }
+        if result.is_err() {
+            return Err(Error::Shutdown);
         }
 
         Ok(value)
@@ -748,17 +743,19 @@ impl Settings {
             .take()
             .ok_or(Error::DriverAlreadyConfigured)?;
 
-        let mut drivers = stream::FuturesUnordered::new();
+        let mut drivers = ::futures_util::stream::FuturesUnordered::new();
 
         loop {
             while drivers.is_empty() {
-                drivers.push(rx.next().await.ok_or(Error::EndOfDriverStream)?);
+                drivers.push(rx.recv().await.ok_or(Error::EndOfDriverStream)?);
             }
 
             while !drivers.is_empty() {
-                futures::select! {
-                    driver = rx.next() => drivers.push(driver.ok_or(Error::EndOfDriverStream)?),
-                    () = drivers.select_next_some() => (),
+                tokio::select! {
+                    driver = rx.recv() => {
+                        drivers.push(driver.ok_or(Error::EndOfDriverStream)?);
+                    }
+                    Some(()) = drivers.next() => (),
                 }
             }
         }
@@ -826,7 +823,7 @@ impl Settings {
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        let (tx, rx) = mpsc::unbounded();
+        let (tx, rx) = mpsc::unbounded_channel();
 
         if !self.inner.schema.contains(key) {
             panic!("no schema registered for key `{}`", key);
@@ -865,7 +862,7 @@ impl Settings {
             log::trace!("{}: Updating {} subscriptions", key, subs.len());
 
             for sub in subs {
-                if let Err(e) = sub.unbounded_send(event.clone()) {
+                if let Err(e) = sub.send(event.clone()) {
                     log::error!("error when sending to sub: {}: {}", key, e);
                 }
             }
@@ -985,31 +982,25 @@ pub struct Stream<T> {
 
 impl<T> Unpin for Stream<T> {}
 
-impl<T> stream::FusedStream for Stream<T>
-where
-    T: fmt::Debug + Clone + serde::de::DeserializeOwned,
-{
-    fn is_terminated(&self) -> bool {
-        self.option_stream.is_terminated()
-    }
-}
-
-impl<T> futures::Stream for Stream<T>
+impl<T> futures_core::Stream for Stream<T>
 where
     T: fmt::Debug + Clone + serde::de::DeserializeOwned,
 {
     type Item = T;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        Poll::Ready(Some(
-            match ready!(Pin::new(&mut self.option_stream).poll_next(cx)) {
-                Some(update) => match update {
-                    Some(update) => update,
-                    None => self.as_ref().default.clone(),
-                },
-                None => return Poll::Ready(None),
+        let output = match Pin::new(&mut self.option_stream).poll_next(cx) {
+            Poll::Ready(output) => output,
+            Poll::Pending => return Poll::Pending,
+        };
+
+        Poll::Ready(Some(match output {
+            Some(update) => match update {
+                Some(update) => update,
+                None => self.as_ref().default.clone(),
             },
-        ))
+            None => return Poll::Ready(None),
+        }))
     }
 }
 
@@ -1022,23 +1013,19 @@ pub struct OptionStream<T> {
 
 impl<T> Unpin for OptionStream<T> {}
 
-impl<T> stream::FusedStream for OptionStream<T>
-where
-    T: fmt::Debug + serde::de::DeserializeOwned,
-{
-    fn is_terminated(&self) -> bool {
-        false
-    }
-}
-
-impl<T> futures::Stream for OptionStream<T>
+impl<T> futures_core::Stream for OptionStream<T>
 where
     T: fmt::Debug + serde::de::DeserializeOwned,
 {
     type Item = Option<T>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let update = match ready!(Pin::new(&mut self.rx).poll_next(cx)) {
+        let item = match self.rx.poll_recv(cx) {
+            Poll::Ready(item) => item,
+            Poll::Pending => return Poll::Pending,
+        };
+
+        let update = match item {
             Some(update) => update,
             None => return Poll::Ready(None),
         };

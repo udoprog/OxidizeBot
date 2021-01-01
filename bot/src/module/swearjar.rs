@@ -119,16 +119,14 @@ impl super::Module for Module {
         );
 
         let future = async move {
-            loop {
-                futures::select! {
-                    update = cooldown_stream.select_next_some() => {
-                        cooldown.write().await.cooldown = update;
-                    }
-                }
+            while let Some(update) = cooldown_stream.next().await {
+                cooldown.write().await.cooldown = update;
             }
+
+            Ok(())
         };
 
-        futures.push(future.boxed());
+        futures.push(Box::pin(future));
         Ok(())
     }
 }

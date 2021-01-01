@@ -32,7 +32,7 @@ pub(super) async fn setup(
     let volume = injector::Var::new(volume);
     let volume_scale = injector::Var::new(volume_scale);
 
-    let (config_tx, config_rx) = mpsc::unbounded();
+    let (config_tx, config_rx) = mpsc::unbounded_channel();
 
     let stream = ConnectStream { config_rx };
 
@@ -57,20 +57,20 @@ pub(super) async fn setup(
         player.volume_update_log(scaled_volume).await;
 
         loop {
-            futures::select! {
-                update = device_stream.select_next_some() => {
+            tokio::select! {
+                Some(update) = device_stream.next() => {
                     *device.write().await = update;
 
-                    if config_tx.unbounded_send(ConfigurationEvent::DeviceChanged).is_err() {
+                    if config_tx.send(ConfigurationEvent::DeviceChanged).is_err() {
                         bail!("failed to send configuration event");
                     }
                 }
-                update = volume_scale_stream.select_next_some() => {
+                Some(update) = volume_scale_stream.next() => {
                     *volume_scale.write().await = update;
                     scaled_volume = (volume.load().await * update) / 100u32;
                     player.volume_update_log(scaled_volume).await;
                 }
-                update = volume_stream.select_next_some() => {
+                Some(update) = volume_stream.next() => {
                     *volume.write().await = update;
                     scaled_volume = (update * volume_scale.load().await) / 100u32;
                     player.volume_update_log(scaled_volume).await;
@@ -180,8 +180,8 @@ impl ConnectPlayer {
         *volume = update;
         self.settings
             .set("volume", update)
-            .map_err(|e| ConnectError::Error("update volume settings", e.into()))
-            .await?;
+            .await
+            .map_err(|e| ConnectError::Error("update volume settings", e.into()))?;
         Ok(update)
     }
 
@@ -219,7 +219,7 @@ impl Stream for ConnectStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use self::player::IntegrationEvent::*;
 
-        if let Poll::Ready(Some(e)) = Pin::new(&mut self.config_rx).poll_next(cx) {
+        if let Poll::Ready(Some(e)) = self.config_rx.poll_recv(cx) {
             match e {
                 ConfigurationEvent::DeviceChanged => {
                     return Poll::Ready(Some(Ok(DeviceChanged)));
@@ -228,12 +228,6 @@ impl Stream for ConnectStream {
         }
 
         Poll::Pending
-    }
-}
-
-impl stream::FusedStream for ConnectStream {
-    fn is_terminated(&self) -> bool {
-        false
     }
 }
 

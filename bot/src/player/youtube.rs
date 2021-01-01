@@ -29,13 +29,13 @@ pub(super) async fn setup(
         player.volume_update(scaled_volume).await;
 
         loop {
-            futures::select! {
-                update = volume_scale_stream.select_next_some() => {
+            tokio::select! {
+                Some(update) = volume_scale_stream.next() => {
                     volume_scale = update;
                     scaled_volume = (volume.load().await * volume_scale) / 100u32;
                     player.volume_update(scaled_volume).await;
                 }
-                update = volume_stream.select_next_some() => {
+                Some(update) = volume_stream.next() => {
                     *volume.write().await = update;
                     scaled_volume = (volume.load().await * volume_scale) / 100u32;
                     player.volume_update(scaled_volume).await;

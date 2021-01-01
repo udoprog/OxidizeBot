@@ -207,20 +207,20 @@ pub async fn run(
 
     Ok(async move {
         loop {
-            futures::select! {
-                update = streamer_token_stream.select_next_some() => {
+            tokio::select! {
+                Some(update) = streamer_token_stream.next() => {
                     remote_builder.streamer_token = update;
                     remote_builder.init(&mut remote).await;
                 }
-                update = secret_key_stream.select_next_some() => {
+                Some(update) = secret_key_stream.next() => {
                     remote_builder.secret_key = update;
                     remote_builder.init(&mut remote).await;
                 }
-                update = player_stream.select_next_some() => {
+                Some(update) = player_stream.next() => {
                     remote_builder.player = update;
                     remote_builder.init(&mut remote).await;
                 }
-                update = api_url_stream.select_next_some() => {
+                Some(update) = api_url_stream.next() => {
                     remote_builder.api_url = match update.and_then(|s| parse_url(&s)) {
                         Some(api_url) => Some(api_url),
                         None => None,
@@ -228,11 +228,11 @@ pub async fn run(
 
                     remote_builder.init(&mut remote).await;
                 }
-                update = enabled_stream.select_next_some() => {
+                Some(update) = enabled_stream.next() => {
                     remote_builder.enabled = update;
                     remote_builder.init(&mut remote).await;
                 }
-                event = remote.rx.select_next_some() => {
+                event = async { remote.rx.as_mut().unwrap().recv().await }, if remote.rx.is_some() => {
                     let event = event?;
 
                     // Only update on switches to current song.
