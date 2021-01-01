@@ -149,7 +149,7 @@ impl Twitch {
 
         Paged {
             request,
-            page: Some(initial.boxed()),
+            page: Some(Box::pin(initial)),
         }
     }
 
@@ -297,10 +297,10 @@ impl Twitch {
 /// A response that is paged as a stream of requests.
 pub struct Paged<T> {
     request: RequestBuilder,
-    page: Option<future::BoxFuture<'static, Result<Page<T>>>>,
+    page: Option<BoxFuture<'static, Result<Page<T>>>>,
 }
 
-impl<T> futures::Stream for Paged<T>
+impl<T> futures_core::Stream for Paged<T>
 where
     T: 'static + Send + serde::de::DeserializeOwned,
 {
@@ -329,7 +329,7 @@ where
                             if let Some(cursor) = pagination.and_then(|p| p.cursor) {
                                 let req = self.request.clone().query_param("after", &cursor);
                                 self.as_mut().page =
-                                    Some(async move { req.execute().await?.json() }.boxed());
+                                    Some(Box::pin(async move { req.execute().await?.json() }));
                             }
 
                             return Poll::Ready(Some(Ok(data)));

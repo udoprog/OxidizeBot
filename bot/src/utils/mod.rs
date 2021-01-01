@@ -11,8 +11,9 @@ use tokio::sync::Mutex;
 
 mod duration;
 
-pub type Futures =
-    futures::stream::FuturesUnordered<future::BoxFuture<'static, Result<(), anyhow::Error>>>;
+/// Collection of boxed futures to drive.
+pub type Futures<'a> =
+    ::futures_util::stream::FuturesUnordered<BoxFuture<'a, Result<(), anyhow::Error>>>;
 
 pub trait Driver<'a> {
     /// Drive the given future.
@@ -21,12 +22,12 @@ pub trait Driver<'a> {
         F: 'a + Send + Future<Output = Result<(), anyhow::Error>>;
 }
 
-impl<'a> Driver<'a> for Vec<future::BoxFuture<'a, Result<(), anyhow::Error>>> {
+impl<'a> Driver<'a> for Vec<BoxFuture<'a, Result<(), anyhow::Error>>> {
     fn drive<F>(&mut self, future: F)
     where
         F: 'a + Send + Future<Output = Result<(), anyhow::Error>>,
     {
-        self.push(future.boxed());
+        self.push(Box::pin(future));
     }
 }
 

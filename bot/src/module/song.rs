@@ -767,21 +767,24 @@ impl module::Module for Module {
 
             async move {
                 let new_feedback_loop = move |new_player: Option<&Player>| match new_player {
-                    Some(new_player) => Some(
-                        feedback(new_player.clone(), sender.clone(), chat_feedback.clone()).boxed(),
-                    ),
-                    None => None,
+                    Some(new_player) => Fuse::pin(feedback(
+                        new_player.clone(),
+                        sender.clone(),
+                        chat_feedback.clone(),
+                    )),
+                    None => Default::default(),
                 };
 
-                let mut feedback_loop = new_feedback_loop(player.as_ref());
+                let feedback_loop = new_feedback_loop(player.as_ref());
+                tokio::pin!(feedback_loop);
 
                 loop {
-                    futures::select! {
+                    tokio::select! {
                         update = player_stream.select_next_some() => {
-                            feedback_loop = new_feedback_loop(update.as_ref());
+                            feedback_loop.set(new_feedback_loop(update.as_ref()));
                             *shared_player.write().await = update;
                         }
-                        result = feedback_loop.current() => {
+                        result = &mut feedback_loop => {
                             if let Err(e) = result.context("feedback loop errored") {
                                 return Err(e.into());
                             }
@@ -806,7 +809,7 @@ impl module::Module for Module {
             },
         );
 
-        futures.push(future.boxed());
+        futures.push(Box::pin(future));
         Ok(())
     }
 }
@@ -886,10 +889,10 @@ async fn feedback(
     chat_feedback: settings::Var<bool>,
 ) -> Result<()> {
     let mut configured_cooldown = Cooldown::from_duration(Duration::seconds(10));
-    let mut rx = player.subscribe().await.fuse();
+    let mut rx = player.subscribe().await;
 
     loop {
-        let e = rx.select_next_some().await?;
+        let e = rx.recv().await?;
         log::trace!("Player event: {:?}", e);
 
         match e {

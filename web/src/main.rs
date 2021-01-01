@@ -1,5 +1,4 @@
 use anyhow::{bail, Result};
-use futures::prelude::*;
 use oxidize_web::api;
 use oxidize_web::db;
 use oxidize_web::web;
@@ -87,19 +86,18 @@ async fn main() -> Result<()> {
 
     let github = api::GitHub::new()?;
 
-    let mut releases_interval = tokio::time::interval(time::Duration::from_secs(60 * 10)).fuse();
+    let mut releases_interval = tokio::time::interval(time::Duration::from_secs(60 * 10));
 
     let web = web::setup(db.clone(), host, port, config)?;
     pin_utils::pin_mut!(web);
-    let mut web = web.fuse();
 
     #[allow(clippy::unnecessary_mut_passed)]
     loop {
-        futures::select! {
-            _ = web => {
+        tokio::select! {
+            _ = web.as_mut() => {
                 bail!("web future ended unexpectedly");
             }
-            _ = releases_interval.select_next_some() => {
+            _ = releases_interval.tick() => {
                 log::info!("Check for new github releases");
 
                 let github = github.clone();

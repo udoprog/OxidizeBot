@@ -65,7 +65,7 @@ impl TwitchSetup {
             let (streamer_twitch, bot_twitch) = match (self.streamer.as_ref(), self.bot.as_ref()) {
                 (Some(streamer_twitch), Some(bot_twitch)) => (streamer_twitch, bot_twitch),
                 (_, _) => {
-                    futures::select! {
+                    tokio::select! {
                         update = self.streamer_stream.select_next_some() => {
                             self.streamer = update;
                         },
@@ -103,7 +103,7 @@ impl TwitchSetup {
                 }
             };
 
-            let (bot, streamer) = match future::try_join(bot, streamer).await? {
+            let (bot, streamer) = match tokio::try_join!(bot, streamer)? {
                 (Some(bot), Some(streamer)) => (bot, streamer),
                 (bot, streamer) => {
                     if bot.is_none() {
@@ -264,7 +264,7 @@ impl Irc {
                 &buckets,
             )?;
 
-            let mut futures = futures::stream::FuturesUnordered::new();
+            let mut futures = crate::utils::Futures::new();
 
             let coordinate = buckets.coordinate()?;
 
@@ -273,54 +273,47 @@ impl Irc {
                 Ok(())
             };
 
-            futures.push(
-                future
-                    .instrument(trace_span!(target: "futures", "buckets-coordinator",))
-                    .boxed(),
-            );
+            futures.push(Box::pin(
+                future.instrument(trace_span!(target: "futures", "buckets-coordinator",)),
+            ));
 
             let stream_info = {
                 let (stream_info, mut stream_state_rx, future) =
                     stream_info::setup(streamer.clone(), streamer_twitch.clone());
 
-                let mut stream_state_tx = stream_state_tx.clone();
+                let stream_state_tx = stream_state_tx.clone();
 
                 let forward = async move {
-                    loop {
-                        let m = stream_state_rx.select_next_some().await;
+                    while let Some(m) = stream_state_rx.recv().await {
                         stream_state_tx
                             .send(m)
                             .await
                             .map_err(|_| anyhow!("failed to send"))?;
                     }
+
+                    Ok(())
                 };
 
-                futures.push(
-                    forward
-                        .instrument(trace_span!(target: "futures", "stream-info-forward",))
-                        .boxed(),
-                );
-                futures.push(
-                    future
-                        .instrument(trace_span!(target: "futures", "stream-info-refresh",))
-                        .boxed(),
-                );
+                futures.push(Box::pin(
+                    forward.instrument(trace_span!(target: "futures", "stream-info-forward",)),
+                ));
+                futures.push(Box::pin(
+                    future.instrument(trace_span!(target: "futures", "stream-info-refresh",)),
+                ));
 
                 stream_info
             };
 
-            futures.push(
+            futures.push(Box::pin(
                 refresh_mods_future(sender.clone())
-                    .instrument(trace_span!(target: "futures", "refresh-mods",))
-                    .boxed(),
-            );
+                    .instrument(trace_span!(target: "futures", "refresh-mods",)),
+            ));
 
             let mut handlers = module::Handlers::default();
 
             let scripts = script::load_dir(channel.name.clone(), db.clone(), &script_dirs).await?;
 
-            let (scripts_watch_tx, scripts_watch_rx) = sync::mpsc::unbounded_channel();
-            let mut scripts_watch_rx = scripts_watch_rx.fuse();
+            let (scripts_watch_tx, mut scripts_watch_rx) = sync::mpsc::unbounded_channel();
 
             let _watcher = if !script_dirs.is_empty() {
                 let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |e| {
@@ -374,11 +367,9 @@ impl Irc {
             )
             .await?;
 
-            futures.push(
-                future
-                    .instrument(trace_span!(target: "futures", "currency-loop",))
-                    .boxed(),
-            );
+            futures.push(Box::pin(
+                future.instrument(trace_span!(target: "futures", "currency-loop",)),
+            ));
 
             let (mut whitelisted_hosts_stream, whitelisted_hosts) = chat_settings
                 .stream("whitelisted-hosts")
@@ -411,7 +402,7 @@ impl Irc {
             let (mut commands_stream, commands) = injector.stream().await;
             let (mut aliases_stream, aliases) = injector.stream().await;
 
-            let mut pong_timeout = None;
+            let mut pong_timeout = Fuse::empty();
 
             let mut handler = Handler {
                 streamer,
@@ -452,15 +443,16 @@ impl Irc {
 
             let mut client_stream = client.stream()?;
 
-            let mut ping_interval = tokio::time::interval(time::Duration::from_secs(10)).fuse();
-            let mut commands = command_bus.subscribe().fuse();
+            let mut ping_interval = tokio::time::interval(time::Duration::from_secs(10));
+            let mut commands = command_bus.subscribe();
 
-            let mut leave = None;
+            let leave = Fuse::empty();
+            tokio::pin!(leave);
 
             let sender = handler.sender.clone();
 
             // Things to do when joining.
-            let mut join_task = Some(Box::pin(async move {
+            let join_task = Fuse::new(async move {
                 sender.cap_req(TWITCH_TAGS_CAP).await;
                 sender.cap_req(TWITCH_COMMANDS_CAP).await;
 
@@ -468,22 +460,23 @@ impl Irc {
                     // greeting when bot joins.
                     sender.privmsg_immediate(join_message);
                 }
-            }));
+            });
+            tokio::pin!(join_task);
 
             #[allow(clippy::unnecessary_mut_passed)]
-            while leave.is_none() {
-                futures::select! {
-                    _ = join_task.current() => {
+            while leave.is_empty() {
+                tokio::select! {
+                    _ = &mut join_task => {
                         log::trace!("Done sending capabilities request and join message");
                     }
-                    ev = scripts_watch_rx.select_next_some() => {
+                    Some(ev) = scripts_watch_rx.recv() => {
                         if let Ok(ev) = ev {
                             if let Err(e) = handler.handle_script_filesystem_event(ev) {
                                 log_error!(e, "failed to handle script filesystem event");
                             }
                         }
                     }
-                    command = commands.select_next_some() => {
+                    command = commands.recv() => {
                         let command = command?;
 
                         match command {
@@ -496,7 +489,7 @@ impl Irc {
                             }
                         }
                     }
-                    future = futures.select_next_some() => {
+                    Some(future) = futures.next() => {
                         match future {
                             Ok(..) => {
                                 log::warn!("IRC component exited, exiting...");
@@ -504,50 +497,50 @@ impl Irc {
                             }
                             Err(e) => {
                                 log_warn!(e, "IRC component errored, restarting in 5 seconds");
-                                tokio::time::delay_for(time::Duration::from_secs(5)).await;
+                                tokio::time::sleep(time::Duration::from_secs(5)).await;
                                 continue 'outer;
                             }
                         }
                     }
-                    update = twitch_setup.streamer_stream.select_next_some() => {
+                    Some(update) = twitch_setup.streamer_stream.next() => {
                         if twitch_setup.update_streamer(update).await? {
-                            leave = Some(tokio::time::delay_for(time::Duration::from_secs(1)));
+                            leave.set(Fuse::new(tokio::time::sleep(time::Duration::from_secs(1))));
                         }
                     },
-                    update = twitch_setup.bot_stream.select_next_some() => {
+                    Some(update) = twitch_setup.bot_stream.next() => {
                         if twitch_setup.update_bot(update).await? {
-                            leave = Some(tokio::time::delay_for(time::Duration::from_secs(1)));
+                            leave.set(Fuse::new(tokio::time::sleep(time::Duration::from_secs(1))));
                         }
                     },
-                    update = commands_stream.select_next_some() => {
+                    Some(update) = commands_stream.next() => {
                         handler.commands = update;
                     }
-                    update = aliases_stream.select_next_some() => {
+                    Some(update) = aliases_stream.next() => {
                         handler.aliases = update;
                     }
-                    cache = chat_log_builder.cache_stream.select_next_some() => {
+                    Some(cache) = chat_log_builder.cache_stream.next() => {
                         chat_log_builder.cache = cache;
                         handler.chat_log = chat_log_builder.build()?;
                     }
-                    update = chat_log_builder.enabled_stream.select_next_some() => {
+                    Some(update) = chat_log_builder.enabled_stream.next() => {
                         chat_log_builder.enabled = update;
                         chat_log_builder.message_log.enabled(update).await;
                         handler.chat_log = chat_log_builder.build()?;
                     }
-                    update = chat_log_builder.emotes_enabled_stream.select_next_some() => {
+                    Some(update) = chat_log_builder.emotes_enabled_stream.next() => {
                         chat_log_builder.emotes_enabled = update;
                         handler.chat_log = chat_log_builder.build()?;
                     }
-                    update = api_url_stream.select_next_some() => {
+                    Some(update) = api_url_stream.next() => {
                         handler.api_url = Arc::new(update);
                     }
-                    update = moderator_cooldown_stream.select_next_some() => {
+                    Some(update) = moderator_cooldown_stream.next() => {
                         handler.moderator_cooldown = update;
                     }
-                    _ = ping_interval.select_next_some() => {
+                    _ = ping_interval.tick() => {
                         handler.send_ping()?;
                     }
-                    _ = handler.pong_timeout.current() => {
+                    _ = &mut *handler.pong_timeout => {
                         bail!("server not responding");
                     }
                     update = whitelisted_hosts_stream.next() => {
@@ -566,10 +559,10 @@ impl Irc {
                             bail!("handler forcibly shut down");
                         }
                     }
-                    _ = outgoing => {
+                    _ = &mut outgoing => {
                         bail!("outgoing future ended unexpectedly");
                     }
-                    _ = leave.current() => {
+                    _ = &mut leave => {
                         break;
                     }
                 }
@@ -579,11 +572,11 @@ impl Irc {
 
             #[allow(clippy::never_loop, clippy::unnecessary_mut_passed)]
             loop {
-                futures::select! {
-                    _ = outgoing => {
+                tokio::select! {
+                    _ = &mut outgoing => {
                         bail!("outgoing future ended unexpectedly");
                     }
-                    _ = leave.current() => {
+                    _ = &mut leave => {
                         break;
                     }
                 }
@@ -653,55 +646,55 @@ async fn currency_loop(
     Ok(async move {
         let new_timer = |interval: &Duration, viewer_reward: bool| {
             if viewer_reward && !interval.is_empty() {
-                Some(tokio::time::interval(interval.as_std()))
+                Fuse::new(tokio::time::interval(interval.as_std()))
             } else {
-                None
+                Fuse::empty()
             }
         };
 
         let mut timer = new_timer(&reward_interval, viewer_reward);
 
         loop {
-            futures::select! {
-                update = interval_stream.select_next_some() => {
+            tokio::select! {
+                Some(update) = interval_stream.next() => {
                     reward_interval = update;
                     timer = new_timer(&reward_interval, viewer_reward);
                 }
-                update = notify_rewards_stream.select_next_some() => {
+                Some(update) = notify_rewards_stream.next() => {
                     notify_rewards = update;
                 }
-                update = db_stream.select_next_some() => {
+                Some(update) = db_stream.next() => {
                     builder.db = update;
                     currency = builder.build_and_inject().await;
                 }
-                enabled = enabled_stream.select_next_some() => {
+                Some(enabled) = enabled_stream.next() => {
                     builder.enabled = enabled;
                     currency = builder.build_and_inject().await;
                 }
-                update = ty_stream.select_next_some() => {
+                Some(update) = ty_stream.next() => {
                     builder.ty = update;
                     currency = builder.build_and_inject().await;
                 }
-                name = name_stream.select_next_some() => {
+                Some(name) = name_stream.next() => {
                     builder.name = name.map(Arc::new);
                     currency = builder.build_and_inject().await;
                 }
-                mysql_url = mysql_url_stream.select_next_some() => {
+                Some(mysql_url) = mysql_url_stream.next() => {
                     builder.mysql_url = mysql_url;
                     currency = builder.build_and_inject().await;
                 }
-                update = mysql_schema_stream.select_next_some() => {
+                Some(update) = mysql_schema_stream.next() => {
                     builder.mysql_schema = update;
                     currency = builder.build_and_inject().await;
                 }
-                command_enabled = command_enabled_stream.select_next_some() => {
+                Some(command_enabled) = command_enabled_stream.next() => {
                     builder.command_enabled = command_enabled;
                     currency = builder.build_and_inject().await;
                 }
-                viewer_reward = viewer_reward_stream.select_next_some() => {
+                Some(viewer_reward) = viewer_reward_stream.next() => {
                     timer = new_timer(&reward_interval, viewer_reward);
                 }
-                _ = timer.select_next_some() => {
+                _ = timer.as_pin_mut().poll_inner(|mut i, cx| i.poll_tick(cx)) => {
                     let currency = match currency.as_ref() {
                         Some(currency) => currency,
                         None => continue,
@@ -759,7 +752,7 @@ struct Handler<'a> {
     /// Build idle detection.
     idle: &'a idle::Idle,
     /// Pong timeout currently running.
-    pong_timeout: &'a mut Option<tokio::time::Delay>,
+    pong_timeout: &'a mut Fuse<Pin<Box<tokio::time::Sleep>>>,
     /// OAuth 2.0 Token used to authenticate with IRC.
     token: &'a oauth2::SyncToken,
     /// Force a shutdown.
@@ -994,8 +987,8 @@ impl<'a> Handler<'a> {
         self.sender
             .send_immediate(Command::PING(String::from(SERVER), None));
 
-        *self.pong_timeout = Some(tokio::time::delay_for(time::Duration::from_secs(5)));
-
+        self.pong_timeout
+            .set(Box::pin(tokio::time::sleep(time::Duration::from_secs(5))));
         Ok(())
     }
 
@@ -1191,7 +1184,7 @@ impl<'a> Handler<'a> {
             }
             Command::PONG(..) => {
                 log::trace!("Received PONG, clearing PING timeout");
-                *self.pong_timeout = None;
+                self.pong_timeout.clear();
             }
             Command::NOTICE(_, ref message) => {
                 let tags = Tags::from_tags(m.tags.take());
@@ -1706,13 +1699,12 @@ pub struct CommandVars<'a> {
 async fn refresh_mods_future(sender: Sender) -> Result<()> {
     let mut interval = tokio::time::interval(time::Duration::from_secs(60 * 5));
 
-    while let Some(_) = interval.next().await {
+    loop {
+        interval.tick().await;
         log::trace!("refreshing mods and vips");
         sender.mods();
         sender.vips();
     }
-
-    Ok(())
 }
 
 /// Parse the `room_mods` message.

@@ -20,16 +20,16 @@ pub fn run(
 
     let future = async move {
         let github = api::GitHub::new()?;
-        let mut interval = tokio::time::interval(Duration::hours(6).as_std()).fuse();
+        let mut interval = tokio::time::interval(Duration::hours(6).as_std());
 
         let (mut cache_stream, mut cache) = injector.stream::<Cache>().await;
 
         loop {
-            futures::select! {
+            tokio::select! {
                 update = cache_stream.select_next_some() => {
                     cache = update;
                 }
-                _ = interval.select_next_some() => {
+                _ = interval.tick() => {
                     log::trace!("Looking for new release...");
 
                     let future = github.releases(String::from(USER), String::from(REPO));

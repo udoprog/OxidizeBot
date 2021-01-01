@@ -171,14 +171,14 @@ pub(self) async fn convert_item(
 
 /// Run the player.
 pub async fn run(
-    injector: injector::Injector,
+    injector: &injector::Injector,
     db: db::Database,
     spotify: Arc<api::Spotify>,
     youtube: Arc<api::YouTube>,
     global_bus: Arc<bus::Bus<bus::Global>>,
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     settings: settings::Settings,
-) -> Result<(Player, impl Future<Output = Result<()>>)> {
+) -> Result<impl Future<Output = Result<()>>> {
     let settings = settings.scoped("player");
 
     let mut futures = utils::Futures::default();
@@ -186,26 +186,21 @@ pub async fn run(
     let (connect_stream, connect_player, device, future) =
         self::connect::setup(spotify.clone(), settings.scoped("spotify")).await?;
 
-    futures.push(
-        future
-            .instrument(trace_span!(target: "futures", "spotify"))
-            .boxed(),
-    );
+    futures.push(Box::pin(
+        future.instrument(trace_span!(target: "futures", "spotify")),
+    ));
 
     let (youtube_player, future) =
         self::youtube::setup(youtube_bus, settings.scoped("youtube")).await?;
 
-    futures.push(
-        future
-            .instrument(trace_span!(target: "futures", "youtube"))
-            .boxed(),
-    );
+    futures.push(Box::pin(
+        future.instrument(trace_span!(target: "futures", "youtube")),
+    ));
 
-    futures.push(
+    futures.push(Box::pin(
         SongFile::run(injector.clone(), settings.scoped("song-file"))
-            .instrument(trace_span!(target: "futures", "song-file"))
-            .boxed(),
-    );
+            .instrument(trace_span!(target: "futures", "song-file")),
+    ));
 
     let bus = bus::Bus::new();
 
@@ -215,9 +210,9 @@ pub async fn run(
         .await?;
 
     let song_update_interval = if song_update_interval.is_empty() {
-        None
+        Fuse::empty()
     } else {
-        Some(tokio::time::interval(song_update_interval.as_std()))
+        Fuse::new(tokio::time::interval(song_update_interval.as_std()))
     };
 
     let (detached_stream, detached) = settings.stream("detached").or_default().await?;
@@ -269,20 +264,21 @@ pub async fn run(
         song_update_interval_stream,
     };
 
-    futures.push(
+    futures.push(Box::pin(
         playback
             .run(injector.clone(), settings)
-            .instrument(trace_span!(target: "futures", "playback"))
-            .boxed(),
-    );
+            .instrument(trace_span!(target: "futures", "playback")),
+    ));
 
-    let parent_player = Player {
-        inner: internal.clone(),
-    };
+    injector
+        .update(Player {
+            inner: internal.clone(),
+        })
+        .await;
 
     // future to initialize the player future.
     // Yeah, I know....
-    let future = async move {
+    Ok(async move {
         // Note: these tasks might fail sporadically, since we need to perform external
         // API calls to initialize metadata for playback items.
         retry_until_ok!("Initialize Player", {
@@ -294,9 +290,7 @@ pub async fn run(
 
         // Drive child futures now that initialization is done.
         futures.select_next_some().await
-    };
-
-    Ok((parent_player, future.boxed()))
+    })
 }
 
 /// Events emitted by the player.

@@ -51,7 +51,7 @@ impl command::Handler for EightBall {
             return Ok(());
         }
 
-        let index = rand::thread_rng().gen_range(0, MAGIC_8BALL_ANSWER.len());
+        let index = rand::thread_rng().gen_range(0..MAGIC_8BALL_ANSWER.len());
 
         if let Some(answer) = MAGIC_8BALL_ANSWER.get(index) {
             respond!(ctx, answer);

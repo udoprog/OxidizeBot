@@ -227,7 +227,7 @@ impl Spotify {
     where
         T: 'static + Send + serde::de::DeserializeOwned,
     {
-        self.page_stream(future::ok(page))
+        self.page_stream(std::future::ready(Ok(page)))
     }
 
     /// Create a streamed page request.
@@ -238,7 +238,7 @@ impl Spotify {
         PageStream {
             client: self.client.clone(),
             token: self.token.clone(),
-            next: Some(future.boxed()),
+            next: Some(Box::pin(future)),
         }
     }
 }
@@ -255,7 +255,7 @@ fn device_control<C>(status: StatusCode, _: &C) -> Result<Option<bool>> {
 pub struct PageStream<T> {
     client: Client,
     token: oauth2::SyncToken,
-    next: Option<future::BoxFuture<'static, Result<Page<T>>>>,
+    next: Option<BoxFuture<'static, Result<Page<T>>>>,
 }
 
 impl<T> PageStream<T>
@@ -285,7 +285,7 @@ where
 
         if let Poll::Ready(page) = future.as_mut().poll(cx)? {
             self.as_mut().next = match page.next.map(|s| str::parse(s.as_str())).transpose()? {
-                Some(next) => Some(self.next_page(next).boxed()),
+                Some(next) => Some(Box::pin(self.next_page(next))),
                 None => None,
             };
 

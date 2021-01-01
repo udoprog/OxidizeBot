@@ -990,7 +990,7 @@ pub async fn setup(
 ) -> Result<(Server, impl Future<Output = ()>)> {
     let addr: SocketAddr = str::parse("0.0.0.0:12345")?;
 
-    let player = injector::Var::new(None);
+    let player = injector.var().await?;
     let active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>> = Default::default();
 
     let api = Api {
@@ -1146,7 +1146,7 @@ pub async fn setup(
     let service = warp::serve(routes);
 
     // TODO: fix when this review is fixed: https://github.com/seanmonstar/warp/pull/265#pullrequestreview-294644379
-    let server_future = service.try_bind_ephemeral(addr)?.1.boxed();
+    let server_future = service.try_bind_ephemeral(addr)?.1;
 
     let server = Server {
         player,
@@ -1269,11 +1269,6 @@ pub struct Server {
 }
 
 impl Server {
-    /// Set the player interface.
-    pub async fn set_player(&self, player: player::Player) {
-        *self.player.write().await = Some(player);
-    }
-
     pub async fn update_connection(&self, id: &str, connection: ConnectionMeta) {
         self.active_connections
             .write()
@@ -1320,6 +1315,8 @@ async fn send_bus_forward<T>(
 where
     T: bus::Message,
 {
+    use futures_util::sink::SinkExt as _;
+
     let (mut tx, _) = websocket.split();
 
     // add a receiver and forward all new messages.
@@ -1331,11 +1328,9 @@ where
         tx.send(m).await?;
     }
 
-    while let Some(m) = rx.next().await {
-        let m = m?;
+    loop {
+        let m = rx.recv().await?;
         let m = filters::ws::Message::text(serde_json::to_string(&m)?);
         tx.send(m).await?;
     }
-
-    Ok(())
 }

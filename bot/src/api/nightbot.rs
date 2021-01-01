@@ -52,7 +52,7 @@ impl NightBot {
 
     /// Run the stream that updates the nightbot client.
     pub async fn run(injector: Injector) -> Result<()> {
-        Builder::run(&injector).await?;
+        Builder::run(injector).await?;
         Ok(())
     }
 

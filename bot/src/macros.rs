@@ -115,7 +115,7 @@ macro_rules! retry_until_ok {
                     Err(e) => {
                         let duration = backoff.next();
                         log_warn!(e, "\"{}\" failed, trying again in {:?}", $id, duration);
-                        tokio::time::delay_for(duration).await;
+                        tokio::time::sleep(duration).await;
                     }
                 }
             }

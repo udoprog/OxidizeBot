@@ -48,21 +48,21 @@ impl System {
 
     /// Clear the current state.
     pub fn clear(&self) {
-        if let Err(e) = self.events.unbounded_send(Event::Cleared) {
+        if let Err(e) = self.events.send(Event::Cleared) {
             log::error!("failed to send clear: {}", e);
         }
     }
 
     /// Set an error.
     pub fn error(&self, error: String) {
-        if let Err(e) = self.events.unbounded_send(Event::Errored(error)) {
+        if let Err(e) = self.events.send(Event::Errored(error)) {
             log::error!("failed to send clear: {}", e);
         }
     }
 
     /// Send the given notification.
     pub fn notification(&self, n: Notification) {
-        if let Err(e) = self.events.unbounded_send(Event::Notification(n)) {
+        if let Err(e) = self.events.send(Event::Notification(n)) {
             log::error!("failed to send notification: {}", e);
         }
     }
@@ -157,7 +157,7 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
     let (shutdown, mut shutdown_rx) = broadcast::channel(1);
     let shutdown1 = shutdown.clone();
 
-    let (events, mut events_rx) = mpsc::unbounded::<Event>();
+    let (events, mut events_rx) = mpsc::unbounded_channel::<Event>();
 
     let window_loop = async move {
         let mut window = window::Window::new(String::from("OxidizeBot")).await?;
@@ -179,7 +179,7 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                 _ = shutdown_rx.recv() => {
                     window.quit();
                 }
-                event = events_rx.select_next_some() => {
+                Some(event) = events_rx.recv() => {
                     log::trace!("Event: {:?}", event);
 
                     match event {
@@ -239,7 +239,7 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
         Ok::<_, Error>(())
     };
 
-    let thread = thread::spawn(move || match futures::executor::block_on(window_loop) {
+    let thread = thread::spawn(move || match futures_executor::block_on(window_loop) {
         Ok(()) => (),
         Err(e) => {
             log_error!(e, "Windows system tray errored");

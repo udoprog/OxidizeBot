@@ -99,7 +99,7 @@ macro_rules! vehicles {
                 use rand::Rng as _;
                 let mut rng = rand::thread_rng();
                 let cars = Self::cars();
-                cars[rng.gen_range(0, cars.len())]
+                cars[rng.gen_range(0..cars.len())]
             }
         }
 

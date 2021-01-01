@@ -129,8 +129,8 @@ pub fn setup(
         data: Default::default(),
     };
 
-    let mut stream_interval = tokio::time::interval(time::Duration::from_secs(30)).fuse();
-    let mut subs_interval = tokio::time::interval(time::Duration::from_secs(60 * 10)).fuse();
+    let mut stream_interval = tokio::time::interval(time::Duration::from_secs(30));
+    let mut subs_interval = tokio::time::interval(time::Duration::from_secs(60 * 10));
 
     let future_info = stream_info.clone();
 
@@ -138,18 +138,18 @@ pub fn setup(
         twitch.token.wait_until_ready().await?;
 
         loop {
-            futures::select! {
-                _ = subs_interval.select_next_some() => {
+            tokio::select! {
+                _ = subs_interval.tick() => {
                     future_info.refresh_subs(&twitch, &*streamer).await;
                 }
-                _ = stream_interval.select_next_some() => {
+                _ = stream_interval.tick() => {
                     let stream = future_info
                         .refresh_stream(&twitch, &*streamer, &mut stream_state_tx);
 
                     let channel = future_info
                         .refresh_channel(&twitch, &*streamer);
 
-                    future::try_join(stream, channel).await?;
+                    tokio::try_join!(stream, channel)?;
                 }
             }
         }

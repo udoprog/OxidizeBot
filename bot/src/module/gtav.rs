@@ -1035,7 +1035,7 @@ impl command::Handler for Handler {
                 .await;
         }
 
-        if tx.unbounded_send((ctx.user.clone(), id, command)).is_err() {
+        if tx.send((ctx.user.clone(), id, command)).is_err() {
             bail!("failed to send event");
         }
 
@@ -1122,7 +1122,7 @@ impl super::Module for Module {
 
         let player = injector.var().await?;
 
-        let (tx, mut rx) = mpsc::unbounded();
+        let (tx, mut rx) = mpsc::unbounded_channel();
 
         handlers.insert(
             "gtav",
@@ -1148,42 +1148,40 @@ impl super::Module for Module {
             },
         );
 
-        let mut socket = UdpSocket::bind(&str::parse::<SocketAddr>("127.0.0.1:0")?).await?;
+        let socket = UdpSocket::bind(&str::parse::<SocketAddr>("127.0.0.1:0")?).await?;
         socket
             .connect(&str::parse::<SocketAddr>("127.0.0.1:7291")?)
             .await?;
 
         let future = async move {
             let mut receiver = if enabled.load().await {
-                Some(&mut rx)
+                Fuse::new(&mut rx)
             } else {
-                None
+                Fuse::empty()
             };
 
             loop {
-                futures::select! {
-                    update = commands_config_stream.select_next_some() => {
+                tokio::select! {
+                    Some(update) = commands_config_stream.next() => {
                         *per_command_configs.write().await = update.into_map();
                     }
-                    update = enabled_stream.select_next_some() => {
+                    Some(update) = enabled_stream.next() => {
                         receiver = match update {
-                            true => Some(&mut rx),
-                            false => None,
+                            true => Fuse::new(&mut rx),
+                            false => Fuse::empty(),
                         };
 
                         *enabled.write().await = update;
                     }
-                    command = receiver.next() => {
-                        if let Some((user, id, command)) = command {
-                            let who = user.name().unwrap_or("unknown");
-                            let message = format!("{} {} {}", who, id, command.command());
-                            log::info!("sent: {}", message);
+                    Some((user, id, command)) = receiver.as_pin_mut().poll_stream(|mut r, cx| r.poll_recv(cx)) => {
+                        let who = user.name().unwrap_or("unknown");
+                        let message = format!("{} {} {}", who, id, command.command());
+                        log::info!("sent: {}", message);
 
-                            match socket.send(message.as_bytes()).await {
-                                Ok(_) => (),
-                                Err(e) => {
-                                    log::error!("failed to send message: {}", e);
-                                }
+                        match socket.send(message.as_bytes()).await {
+                            Ok(_) => (),
+                            Err(e) => {
+                                log::error!("failed to send message: {}", e);
                             }
                         }
                     }
@@ -1191,7 +1189,7 @@ impl super::Module for Module {
             }
         };
 
-        futures.push(future.boxed());
+        futures.push(Box::pin(future));
         Ok(())
     }
 }

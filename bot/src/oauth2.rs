@@ -92,7 +92,7 @@ impl SyncToken {
     pub async fn force_refresh(&self) -> Result<(), Error> {
         log::warn!("Forcing connection refresh for: {}", self.what);
         let connection = self.inner.write().await.connection.take();
-        self.force_refresh.unbounded_send(connection)?;
+        self.force_refresh.send(connection)?;
         Ok(())
     }
 
@@ -124,7 +124,7 @@ impl SyncToken {
 
         match rx.await {
             Ok(()) => Ok(()),
-            Err(oneshot::Canceled) => Err(CancelledToken(())),
+            Err(..) => Err(CancelledToken(())),
         }
     }
 
@@ -408,7 +408,7 @@ pub async fn build(
     let expires = time::Duration::from_secs(30 * 60);
 
     // queue used to force connection refreshes.
-    let (force_refresh, mut force_refresh_rx) = mpsc::unbounded();
+    let (force_refresh, mut force_refresh_rx) = mpsc::unbounded_channel();
 
     let (mut connection_stream, connection) = settings
         .stream::<Connection>("connection")
@@ -438,7 +438,7 @@ pub async fn build(
     };
 
     // check for expirations.
-    let mut check_interval = tokio::time::interval(check_interval.as_std()).fuse();
+    let mut check_interval = tokio::time::interval(check_interval.as_std());
 
     builder.update_from_settings(connection).await?;
 
@@ -446,30 +446,30 @@ pub async fn build(
         log::trace!("{}: Running loop", what);
 
         loop {
-            futures::select! {
-                setbac = setbac_stream.select_next_some() => {
+            tokio::select! {
+                Some(setbac) = setbac_stream.next() => {
                     builder.setbac = setbac;
                     builder.update().await?;
                 }
-                connection = connection_stream.select_next_some() => {
+                Some(connection) = connection_stream.next() => {
                     log::trace!("{}: New from settings", what);
                     builder.update_from_settings(connection).await?;
                 }
-                _ = force_refresh_rx.select_next_some() => {
+                _ = force_refresh_rx.recv() => {
                     log::trace!("{}: Forced refresh", what);
                     builder.force_refresh = true;
                     builder.update().await?;
                 }
-                _ = check_interval.select_next_some() => {
+                _ = check_interval.tick() => {
                     log::trace!("{}: Check for expiration", what);
                     builder.update().await?;
                 }
-                update = check_interval_stream.select_next_some() => {
-                    check_interval = tokio::time::interval(update.as_std()).fuse();
+                Some(update) = check_interval_stream.next() => {
+                    check_interval = tokio::time::interval(update.as_std());
                 }
             }
         }
     };
 
-    Ok((sync_token, future.boxed()))
+    Ok((sync_token, future))
 }

@@ -89,22 +89,22 @@ impl super::Module for Module {
 
         let (mut promotions_stream, mut promotions) = injector.stream::<db::Promotions>().await;
         let sender = sender.clone();
-        let mut interval = tokio::time::interval(frequency.as_std()).fuse();
+        let mut interval = tokio::time::interval(frequency.as_std());
         let idle = idle.clone();
 
         let future = async move {
             loop {
                 // TODO: check that this actually works.
-                futures::select! {
+                tokio::select! {
                     update = promotions_stream.select_next_some() => {
                         promotions = update;
                     }
                     duration = setting.next() => {
                         if let Some(duration) = duration {
-                            interval = tokio::time::interval(duration.as_std()).fuse();
+                            interval = tokio::time::interval(duration.as_std());
                         }
                     }
-                    _ = interval.select_next_some() => {
+                    _ = interval.tick() => {
                         if !enabled.load().await {
                             continue;
                         }
@@ -129,7 +129,7 @@ impl super::Module for Module {
             }
         };
 
-        futures.push(future.boxed());
+        futures.push(Box::pin(future));
         Ok(())
     }
 }
