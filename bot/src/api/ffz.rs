@@ -116,6 +116,7 @@ pub struct Set {
     pub id: u64,
     pub title: String,
     pub css: serde_json::Value,
+    #[serde(default)]
     pub description: serde_json::Value,
     pub emoticons: Vec<Emoticon>,
     pub icon: serde_json::Value,
