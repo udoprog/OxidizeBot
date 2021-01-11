@@ -49,7 +49,11 @@ impl std::str::FromStr for TrackId {
         }
 
         if s.starts_with("spotify:track:") {
-            let id = s.trim_start_matches("spotify:track:");
+            let mut id = s.trim_start_matches("spotify:track:");
+            //Trim parameters
+            if let Some(index) = id.find('?') {
+                id = &id[..index];
+            }
             let id = SpotifyId::from_base62(id)
                 .map_err(|_| ParseTrackIdError::BadBase62(id.to_string()))?;
             return Ok(TrackId::Spotify(id));
