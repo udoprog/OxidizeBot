@@ -1,7 +1,8 @@
 import React from "react";
 import {Form} from "react-bootstrap";
 import {Base} from "./Base";
-import YAML from 'yaml'
+// FIXME: yaml dependency just doesn't work for some reason.
+import YAML from "yaml";
 
 export class Raw extends Base {
   constructor(optional) {

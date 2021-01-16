@@ -1,30 +1,63 @@
+const path = require("path");
 const HtmlWebPackPlugin = require("html-webpack-plugin");
-const FaviconsWebpackPlugin = require('favicons-webpack-plugin')
+const TerserPlugin = require("terser-webpack-plugin");
+const devMode = process.env.NODE_ENV !== "production";
 
-const htmlPlugin = new HtmlWebPackPlugin({
-  template: "./src/index.html",
-  filename: "./index.html"
-});
-
-const faviconPlugin = new FaviconsWebpackPlugin("../bot/res/icon-local.png");
-
-module.exports = function(_, argv) {
+module.exports = function (_, argv) {
   return {
+    output: {
+      filename: '[name].[contenthash].js',
+      path: path.join(__dirname, 'dist')
+    },
+    optimization: {
+      splitChunks: { chunks: "all" },
+      minimize: !devMode,
+      minimizer: [
+        new TerserPlugin({
+          extractComments: false,
+        }),
+      ],
+    },
     module: {
       rules: [
         {
           test: /\.js$/,
+          include: /node_modules/,
+          type: 'javascript/auto'
+        },
+        {
+          test: /\.js$/,
           exclude: /node_modules/,
           use: {
-            loader: "babel-loader"
+            loader: "babel-loader",
+            options: {
+              presets: [
+                ['@babel/preset-env', {
+                  useBuiltIns: 'usage',
+                  corejs: "3",
+                  targets: {
+                    browsers: ['last 2 versions', 'ie >= 9'],
+                  },
+                }],
+                '@babel/react'
+              ]
+            }
           }
         },
         {
           test: /\.scss$/,
           use: [
-              "style-loader", // creates style nodes from JS strings
-              "css-loader", // translates CSS into CommonJS
-              "sass-loader" // compiles Sass to CSS, using Node Sass by default
+            "style-loader",
+            "css-loader",
+            {
+              loader: 'sass-loader',
+              options: {
+                implementation: require('sass'),
+                sassOptions: {
+                  fiber: false,
+                },
+              },
+            }
           ]
         },
         {
@@ -39,8 +72,11 @@ module.exports = function(_, argv) {
       ]
     },
     plugins: [
-      htmlPlugin,
-      faviconPlugin,
+      new HtmlWebPackPlugin({
+        favicon: "./static/favicon.ico",
+        template: "./src/index.html",
+        filename: "./index.html"
+      }),
     ],
     devServer: {
       historyApiFallback: true,
@@ -55,6 +91,6 @@ module.exports = function(_, argv) {
           secure: false,
         },
       },
-    },
+    }
   };
 };
