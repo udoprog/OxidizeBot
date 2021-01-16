@@ -1,7 +1,6 @@
 import React from "react";
 import {Form} from "react-bootstrap";
 import {Base} from "./Base";
-import YAML from 'yaml'
 
 export class Oauth2Config extends Base {
   constructor(optional) {

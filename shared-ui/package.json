@@ -6,11 +6,9 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "react": "^16.10.1",
-    "core-js": "^3.2.1"
-  },
-  "dependencies": {
-    "bootstrap": "^4.3.1",
-    "react-markdown": "^4.2.2"
+    "bootstrap": "^4.6.0",
+    "core-js": "^3.8.3",
+    "react": "^17.0.1",
+    "react-markdown": "^5.0.3"
   }
 }
