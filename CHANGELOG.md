@@ -6,12 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/1.0.4...master
+[Unreleased]: https://github.com/udoprog/OxidizeBot/compare/1.0.5...master
+
+## [1.0.5]
 
 ### Fixed
-* Fix issue where end-of-track is incorrectly signalled when paused [#100]
+* Fix issue where end-of-track is incorrectly signalled when paused [#100].
+* Unable to parse Spotify URIs with context parameter [#98].
+
+### Changed
+* Only log URL/URI parsing on tracing [#87].
 
 [#100]: https://github.com/udoprog/OxidizeBot/issues/100
+[#98]: https://github.com/udoprog/OxidizeBot/issues/98
+[#87]: https://github.com/udoprog/OxidizeBot/issues/87
+[1.0.5]: https://github.com/udoprog/OxidizeBot/compare/1.0.4...1.0.5
 
 ## [1.0.4]
 
