@@ -1,4 +1,4 @@
-use crate::player::{ConnectStream, PlaybackMode, PlayerInternal, Song};
+use crate::player::{ConnectStream, PlaybackMode, PlayerInternal, Song, State};
 use crate::prelude::*;
 use crate::settings;
 use crate::spotify_id::SpotifyId;
@@ -52,7 +52,10 @@ impl PlaybackFuture {
         loop {
             futures::select! {
                 song = song_stream.select_next_some() => {
-                    song_timeout = song.map(|s| tokio::time::delay_until(s.deadline().into()));
+                    song_timeout = song.and_then(|s| match s.state() {
+                        State::Playing => Some(tokio::time::delay_until(s.deadline().into())),
+                        _ => None,
+                    });
                 }
                 fallback = fallback_stream.select_next_some() => {
                     self.internal.write().await.update_fallback_items(fallback).await;
