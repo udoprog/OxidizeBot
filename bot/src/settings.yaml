@@ -67,6 +67,13 @@ gtav_options: &gtav-options
   - {title: "Raw", value: "Raw"}
 
 types:
+  pubsub/enabled:
+    doc: >
+      If Twitch Pub/Sub support is enabled or not.
+      
+      This is required to use points redemption features:
+        * `song/request-redemption`
+    type: {id: bool}
   system/run-on-startup:
     doc: >
       If SetMod should run on startup.
@@ -382,6 +389,11 @@ types:
       If only subscribers can request songs from YouTube.
       **Deprecated** in favor of `song/spotify` scope (see Authentication).
     type: {id: bool, optional: true}
+  song/request-redemption:
+    doc: >
+      The title of a points redemption that can be used to request songs.
+      Requires Twitch Pub/Sub support to be enbled through `pubsub/enabled`.
+    type: {id: string, optional: true}
   water/enabled:
     title: Water Reminders
     feature: true

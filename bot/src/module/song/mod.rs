@@ -4,15 +4,17 @@ use crate::currency::Currency;
 use crate::irc;
 use crate::module;
 use crate::player;
-use crate::player::{AddTrackError, Event, Item, PlayThemeError, Player};
+use crate::player::{AddTrackError, Item, PlayThemeError, Player};
 use crate::prelude::*;
 use crate::settings;
-use crate::track_id::{self, TrackId};
 use crate::utils::{self, Cooldown, Duration};
-use anyhow::{Context as _, Result};
-use chrono::Utc;
+use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+mod feedback;
+mod redemption;
+mod requester;
 
 const EXAMPLE_SEARCH: &str = "queen we will rock you";
 
@@ -21,310 +23,59 @@ pub struct Handler {
     enabled: settings::Var<bool>,
     player: injector::Var<Option<Player>>,
     request_help_cooldown: Mutex<Cooldown>,
-    request_reward: settings::Var<u32>,
     currency: injector::Var<Option<Currency>>,
-    spotify: Constraint,
-    youtube: Constraint,
+    requester: requester::SongRequester,
 }
 
 impl Handler {
-    async fn handle_request(&self, ctx: &mut command::Context, player: Player) -> Result<()> {
+    async fn handle_request(&self, ctx: &mut command::Context, player: &Player) -> Result<()> {
         let q = ctx.rest().trim().to_string();
 
-        if q.is_empty() {
-            self.request_help(ctx, None).await;
-            return Ok(());
-        }
-
         let currency: Option<Currency> = self.currency.load().await;
-        let request_reward = self.request_reward.load().await;
-        let spotify = self.spotify.clone();
-        let youtube = self.youtube.clone();
-        let user = ctx.user.clone();
 
-        let track_id = match TrackId::parse_with_urls(&q) {
-            Ok(track_id) => Some(track_id),
-            Err(e) => {
-                match e {
-                    // NB: fall back to searching.
-                    track_id::ParseTrackIdError::MissingUriPrefix => (),
-                    // show other errors.
-                    e => {
-                        log::warn!("bad song request: {}", e);
-                        let e = format!("{} :(", e);
-                        self.request_help(ctx, Some(e.as_str())).await;
-                        return Ok(());
-                    }
-                }
-
-                log::trace!("Failed to parse as URL/URI: {}: {}", q, e);
-                None
-            }
-        };
-
-        let user = match user.real() {
+        let user = match ctx.user.real() {
             Some(user) => user,
             None => {
-                user.respond("Only real users can request songs").await;
+                ctx.respond("Only real users can request songs").await;
                 return Ok(());
             }
         };
 
-        let track_id = match track_id {
-            Some(track_id) => Some(track_id),
-            None => player.search_track(q.as_str()).await?,
-        };
-
-        let track_id = match track_id {
-            Some(track_id) => track_id,
-            None => {
-                respond!(
-                    user,
-                    "Could not find a track matching your request, sorry :("
-                );
-                return Ok(());
-            }
-        };
-
-        let (what, has_scope, enabled) = match track_id {
-            TrackId::Spotify(..) => {
-                let enabled = spotify.enabled.load().await;
-                ("Spotify", user.has_scope(Scope::SongSpotify).await, enabled)
-            }
-            TrackId::YouTube(..) => {
-                let enabled = youtube.enabled.load().await;
-                ("YouTube", user.has_scope(Scope::SongYouTube).await, enabled)
-            }
-        };
-
-        if !enabled {
-            respond!(
-                user,
-                "{} song requests are currently not enabled, sorry :(",
-                what
-            );
-            return Ok(());
-        }
-
-        if !has_scope {
-            respond!(
-                user,
-                "You are not allowed to do {what} requests, sorry :(",
-                what = what
-            );
-            return Ok(());
-        }
-
-        let max_duration = match track_id {
-            TrackId::Spotify(_) => spotify.max_duration.load().await,
-            TrackId::YouTube(_) => youtube.max_duration.load().await,
-        };
-
-        let min_currency = match track_id {
-            TrackId::Spotify(_) => spotify.min_currency.load().await,
-            TrackId::YouTube(_) => youtube.min_currency.load().await,
-        };
-
-        let has_bypass_constraints = user.has_scope(Scope::SongBypassConstraints).await;
-
-        if !has_bypass_constraints {
-            match min_currency {
-                // don't test if min_currency is not defined.
-                0 => (),
-                min_currency => {
-                    let currency = match currency.as_ref() {
-                        Some(currency) => currency,
-                        None => {
-                            respond!(
-                                user,
-                                "No currency configured for stream, but it is required."
-                            );
-                            return Ok(());
-                        }
-                    };
-
-                    let balance = currency
-                        .balance_of(user.channel(), user.name())
-                        .await?
-                        .unwrap_or_default();
-
-                    if balance.balance < min_currency {
-                        respond!(
-                            user,
-                            "You don't have enough {currency} to request songs. Need {required}, but you have {balance}, sorry :(",
-                            currency = currency.name,
-                            required = min_currency,
-                            balance = balance.balance,
-                        );
-
-                        return Ok(());
-                    }
-                }
-            }
-        }
-
-        let result = player
-            .add_track(user.name(), track_id, has_bypass_constraints, max_duration)
-            .await;
-
-        // AFTER HERE
-
-        let (pos, item) = match result {
-            Ok((pos, item)) => (pos, item),
-            Err(AddTrackError::UnsupportedPlaybackMode) => {
-                respond!(
-                    user,
-                    "Playback mode not supported for the given track type, sorry :("
-                );
-
-                return Ok(());
-            }
-            Err(AddTrackError::PlayerClosed(reason)) => {
-                match reason {
-                    Some(reason) => {
-                        respond!(user, reason.as_str());
-                    }
-                    None => {
-                        respond!(user, "Player is closed from further requests, sorry :(");
-                    }
-                }
-
-                return Ok(());
-            }
-            Err(AddTrackError::QueueContainsTrack(pos)) => {
-                respond!(
-                    user,
-                    "Player already contains that track (position #{pos}).",
-                    pos = pos + 1,
-                );
-
-                return Ok(());
-            }
-            Err(AddTrackError::TooManyUserTracks(count)) => {
-                match count {
-                    0 => {
-                        respond!(user, "Unfortunately you are not allowed to add tracks :(");
-                    }
-                    1 => {
-                        respond!(
-                            user,
-                            "<3 your enthusiasm, but you already have a track in the queue.",
-                        );
-                    }
-                    count => {
-                        respond!(
-                            user,
-                            "<3 your enthusiasm, but you already have {count} tracks in the queue.",
-                            count = count,
-                        );
-                    }
-                }
-
-                return Ok(());
-            }
-            Err(AddTrackError::QueueFull) => {
-                respond!(user, "Player is full, try again later!");
-                return Ok(());
-            }
-            Err(AddTrackError::Duplicate(when, who, limit)) => {
-                let duration = Utc::now().signed_duration_since(when);
-
-                let duration = match duration.to_std() {
-                    Err(_) => None,
-                    Ok(duration) => Some(utils::compact_duration(duration)),
-                };
-
-                let limit = utils::compact_duration(limit);
-
-                let who = match who {
-                    Some(ref who) if who == user.name() => String::from(" by you"),
-                    Some(ref who) => format!(" by {}", who),
-                    None => String::from(""),
-                };
-
-                let duration = match duration {
-                    Some(duration) => format!(" {} ago", duration),
-                    None => String::from(" not too long ago"),
-                };
-
-                respond!(
-                    user,
-                    "That song was requested{who}{duration}, \
-                         you have to wait at least {limit} between duplicate requests!",
-                    who = who,
-                    duration = duration,
-                    limit = limit,
-                );
-
-                return Ok(());
-            }
-            Err(AddTrackError::MissingAuth) => {
-                respond!(
-                    user,
-                    "Cannot add the given song because the service has not been authenticated by the streamer!",
-                );
-
-                return Ok(());
-            }
-            Err(AddTrackError::NotPlayable) => {
-                respond!(
-                    user,
-                    "This song is not available in the streamer's region :("
-                );
-
-                return Ok(());
-            }
-            Err(AddTrackError::Error(e)) => {
-                return Err(e);
-            }
-        };
-
-        let currency = match currency.as_ref() {
-            Some(currency) if request_reward > 0 => currency,
-            _ => {
-                if let Some(pos) = pos {
-                    respond!(
-                        user,
-                        "Added {what} at position #{pos}!",
-                        what = item.what(),
-                        pos = pos + 1
-                    );
-                } else {
-                    respond!(user, "Added {what}!", what = item.what());
-                }
-
-                return Ok(());
-            }
-        };
-
-        match currency
-            .balance_add(user.channel(), user.name(), request_reward as i64)
+        match self
+            .requester
+            .request(
+                &q,
+                user.channel(),
+                user.name(),
+                Some(&user),
+                requester::RequestCurrency::BotCurrency(currency.as_ref()),
+                player,
+            )
             .await
         {
-            Ok(()) => {
-                if let Some(pos) = pos {
-                    respond!(
-                        user,
-                        "Added {what} at position #{pos}, here's your {amount} {currency}!",
-                        what = item.what(),
-                        pos = pos + 1,
-                        amount = request_reward,
-                        currency = currency.name,
-                    );
-                } else {
-                    respond!(
-                        user,
-                        "Added {what}, here's your {amount} {currency}!",
-                        what = item.what(),
-                        amount = request_reward,
-                        currency = currency.name,
-                    );
+            Ok(outcome) => {
+                respond!(user, "{}", outcome)
+            }
+            Err(e) => match e {
+                requester::RequestError::BadRequest(reason) => {
+                    self.request_help(ctx, reason.as_deref()).await;
                 }
-            }
-            Err(e) => {
-                log_error!(e, "failed to reward user for song request");
-            }
-        };
+                requester::RequestError::AddTrackError(e) => match e {
+                    AddTrackError::Error(e) => {
+                        return Err(e);
+                    }
+                    e => {
+                        respond!(user, "{}", e);
+                    }
+                },
+                requester::RequestError::Error(e) => {
+                    return Err(e);
+                }
+                e => {
+                    respond!(user, "{}", e);
+                }
+            },
+        }
 
         Ok(())
     }
@@ -640,7 +391,7 @@ impl command::Handler for Handler {
                 player.skip().await?;
             }
             Some("request") => {
-                self.handle_request(ctx, player).await?;
+                self.handle_request(ctx, &player).await?;
             }
             Some("toggle") => {
                 ctx.check_scope(Scope::SongPlaybackControl).await?;
@@ -744,6 +495,8 @@ impl module::Module for Module {
             sender,
             settings,
             injector,
+            streamer_twitch,
+            stream_info,
             ..
         }: module::HookContext<'_>,
     ) -> Result<()> {
@@ -757,73 +510,49 @@ impl module::Module for Module {
         let spotify = Constraint::build(&mut settings.scoped("spotify"), true, 0).await?;
         let youtube = Constraint::build(&mut settings.scoped("youtube"), false, 60).await?;
 
-        let (mut player_stream, player) = injector.stream().await;
-
-        let shared_player = injector::Var::new(player.clone());
-
-        let future = {
-            let sender = sender.clone();
-            let shared_player = shared_player.clone();
-
-            async move {
-                let new_feedback_loop = move |new_player: Option<&Player>| match new_player {
-                    Some(new_player) => Fuse::pin(feedback(
-                        new_player.clone(),
-                        sender.clone(),
-                        chat_feedback.clone(),
-                    )),
-                    None => Default::default(),
-                };
-
-                let feedback_loop = new_feedback_loop(player.as_ref());
-                tokio::pin!(feedback_loop);
-
-                loop {
-                    tokio::select! {
-                        update = player_stream.select_next_some() => {
-                            feedback_loop.set(new_feedback_loop(update.as_ref()));
-                            *shared_player.write().await = update;
-                        }
-                        result = &mut feedback_loop => {
-                            if let Err(e) = result.context("feedback loop errored") {
-                                return Err(e.into());
-                            }
-                        }
-                    }
-                }
-            }
-        };
-
         let help_cooldown = Cooldown::from_duration(Duration::seconds(5));
+        let requester = requester::SongRequester::new(request_reward, spotify, youtube);
 
         handlers.insert(
             "song",
             Handler {
                 enabled,
                 request_help_cooldown: Mutex::new(help_cooldown),
-                player: shared_player,
-                request_reward,
+                player: injector.var().await?,
                 currency,
-                spotify,
-                youtube,
+                requester: requester.clone(),
             },
         );
 
-        futures.push(Box::pin(future));
+        futures.push(Box::pin(feedback::task(
+            sender.clone(),
+            injector.clone(),
+            chat_feedback,
+        )));
+
+        futures.push(Box::pin(redemption::task(
+            sender.clone(),
+            injector.clone(),
+            settings,
+            requester,
+            streamer_twitch.clone(),
+            stream_info.clone(),
+        )));
+
         Ok(())
     }
 }
 
 /// Constraint for a single kind of track.
 #[derive(Debug, Clone)]
-struct Constraint {
+pub(crate) struct Constraint {
     enabled: settings::Var<bool>,
     max_duration: settings::Var<Option<Duration>>,
     min_currency: settings::Var<i64>,
 }
 
 impl Constraint {
-    async fn build(
+    pub(crate) async fn build(
         vars: &mut settings::Settings,
         enabled: bool,
         min_currency: i64,
@@ -880,65 +609,4 @@ async fn display_songs(
     }
 
     user.respond(format!("{}.", lines.join("; "))).await;
-}
-
-/// Notifications from the player.
-async fn feedback(
-    player: Player,
-    sender: irc::Sender,
-    chat_feedback: settings::Var<bool>,
-) -> Result<()> {
-    let mut configured_cooldown = Cooldown::from_duration(Duration::seconds(10));
-    let mut rx = player.subscribe().await;
-
-    loop {
-        let e = rx.recv().await?;
-        log::trace!("Player event: {:?}", e);
-
-        match e {
-            Event::Detached => {
-                sender.privmsg("Player is detached!").await;
-            }
-            Event::Playing(feedback, item) => {
-                if !feedback || !chat_feedback.load().await {
-                    continue;
-                }
-
-                if let Some(item) = item {
-                    let message = match item.user.as_ref() {
-                        Some(user) => {
-                            format!("Now playing: {}, requested by {}.", item.what(), user)
-                        }
-                        None => format!("Now playing: {}.", item.what(),),
-                    };
-
-                    sender.privmsg(message).await;
-                } else {
-                    sender.privmsg("Now playing.").await;
-                }
-            }
-            Event::Skip => {
-                sender.privmsg("Skipping song.").await;
-            }
-            Event::Pausing => {
-                if !chat_feedback.load().await {
-                    continue;
-                }
-
-                sender.privmsg("Pausing playback.").await;
-            }
-            Event::Empty => {
-                sender
-                    .privmsg("Song queue is empty (use !song request <spotify-id> to add more).")
-                    .await;
-            }
-            Event::NotConfigured => {
-                if configured_cooldown.is_open() {
-                    sender.privmsg("Player has not been configured!").await;
-                }
-            }
-            // other event we don't care about
-            _ => (),
-        }
-    }
 }

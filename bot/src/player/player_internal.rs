@@ -4,8 +4,9 @@ use crate::bus;
 use crate::db;
 use crate::injector;
 use crate::player::{
-    convert_item, AddTrackError, ConnectDevice, ConnectPlayer, Event, IntegrationEvent, Item,
-    Mixer, PlaybackMode, PlayerKind, Song, Source, State, Track, YouTubePlayer,
+    convert_item, AddTrackError, ConnectDevice, ConnectPlayer, DuplicateBy, Event,
+    IntegrationEvent, Item, Mixer, PlaybackMode, PlayerKind, Song, Source, State, Track,
+    YouTubePlayer,
 };
 use crate::prelude::*;
 use crate::settings;
@@ -799,13 +800,21 @@ impl PlayerInternal {
                         .await
                         .map_err(AddTrackError::Error)?
                     {
-                        let added_at = DateTime::from_utc(last.added_at, Utc);
+                        let added_at = DateTime::<Utc>::from_utc(last.added_at, Utc);
+                        let duration_since =
+                            Utc::now().signed_duration_since(added_at).to_std().ok();
 
-                        return Err(AddTrackError::Duplicate(
-                            added_at,
-                            last.user,
-                            duplicate_duration.as_std(),
-                        ));
+                        let duplicate_by = match last.user {
+                            Some(who) if who == user => DuplicateBy::Requester,
+                            Some(who) => DuplicateBy::Other(who),
+                            None => DuplicateBy::Unknown,
+                        };
+
+                        return Err(AddTrackError::Duplicate {
+                            duplicate_by,
+                            duration_since,
+                            duplicate_duration: duplicate_duration.as_std(),
+                        });
                     }
                 }
             }

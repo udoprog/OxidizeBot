@@ -55,6 +55,7 @@ mod spotify_id;
 pub mod storage;
 pub mod stream_info;
 pub mod sys;
+pub mod tags;
 mod task;
 pub mod template;
 pub mod tracing_utils;

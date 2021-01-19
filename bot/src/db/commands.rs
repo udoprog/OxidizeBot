@@ -187,7 +187,7 @@ impl Commands {
     /// Resolve the given command.
     pub async fn resolve<'a>(
         &self,
-        channel: &str,
+        channel: &'a str,
         first: Option<&'a str>,
         it: &'a utils::Words,
     ) -> Option<(Arc<Command>, db::Captures<'a>)> {

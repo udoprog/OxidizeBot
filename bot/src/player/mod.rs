@@ -9,7 +9,7 @@ use crate::spotify_id::SpotifyId;
 use crate::track_id::TrackId;
 use crate::utils;
 use anyhow::{bail, Result};
-use chrono::{DateTime, Utc};
+use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -667,7 +667,11 @@ pub enum AddTrackError {
     /// Player has been closed from adding more tracks to the queue with an optional reason.
     PlayerClosed(Option<Arc<String>>),
     /// Duplicate song that was added at the specified time by the specified user.
-    Duplicate(DateTime<Utc>, Option<String>, Duration),
+    Duplicate {
+        duplicate_by: DuplicateBy,
+        duration_since: Option<Duration>,
+        duplicate_duration: Duration,
+    },
     /// Authentication missing for adding the given track.
     MissingAuth,
     /// Playback mode is not supported for the given track.
@@ -676,4 +680,107 @@ pub enum AddTrackError {
     NotPlayable,
     /// Other generic error happened.
     Error(anyhow::Error),
+}
+
+impl fmt::Display for AddTrackError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AddTrackError::UnsupportedPlaybackMode => {
+                write!(
+                    f,
+                    "Playback mode not supported for the given track type, sorry :("
+                )
+            }
+            AddTrackError::PlayerClosed(reason) => match reason.as_deref() {
+                Some(reason) => {
+                    write!(f, "{}", reason)
+                }
+                None => {
+                    write!(f, "Player is closed from further requests, sorry :(")
+                }
+            },
+            AddTrackError::QueueContainsTrack(pos) => {
+                write!(
+                    f,
+                    "Player already contains that track (position #{pos}).",
+                    pos = pos + 1,
+                )
+            }
+            AddTrackError::TooManyUserTracks(count) => {
+                match count {
+                    0 => {
+                        write!(f, "Unfortunately you are not allowed to add tracks (track limit is zero) :(")
+                    }
+                    1 => {
+                        write!(
+                            f,
+                            "<3 your enthusiasm, but you already have a track in the queue.",
+                        )
+                    }
+                    count => {
+                        write!(
+                            f,
+                            "<3 your enthusiasm, but you already have {count} tracks in the queue.",
+                            count = count,
+                        )
+                    }
+                }
+            }
+            AddTrackError::QueueFull => {
+                write!(f, "Player is full, try again later!")
+            }
+            AddTrackError::Duplicate {
+                duplicate_by,
+                duration_since,
+                duplicate_duration,
+            } => {
+                let duration_since = match duration_since {
+                    Some(duration) => format!("{} ago", utils::compact_duration(*duration)),
+                    None => String::from("not too long ago"),
+                };
+
+                let duplicate_duration = utils::compact_duration(*duplicate_duration);
+
+                write!(
+                    f,
+                    "That song was requested by {who} {duration}, \
+                         you have to wait at least {limit} between duplicate requests!",
+                    who = duplicate_by,
+                    duration = duration_since,
+                    limit = duplicate_duration,
+                )
+            }
+            AddTrackError::MissingAuth => {
+                write!(
+                    f,
+                    "Cannot add the given song because the service has not been authenticated by the streamer!",
+                )
+            }
+            AddTrackError::NotPlayable => {
+                write!(f, "This song is not available in the streamer's region :(")
+            }
+            AddTrackError::Error(e) => {
+                write!(f, "{}", e)
+            }
+        }
+    }
+}
+
+pub enum DuplicateBy {
+    /// By the requester themselves.
+    Requester,
+    /// By other user.
+    Other(String),
+    /// By unknown user (requester not recorded in database).
+    Unknown,
+}
+
+impl fmt::Display for DuplicateBy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DuplicateBy::Requester => write!(f, "you"),
+            DuplicateBy::Other(other) => write!(f, "{}", other),
+            DuplicateBy::Unknown => write!(f, "an unknown user"),
+        }
+    }
 }
