@@ -20,6 +20,7 @@ use oxidize::settings;
 use oxidize::storage;
 use oxidize::stream_info;
 use oxidize::sys;
+use oxidize::tags;
 use oxidize::tracing_utils;
 use oxidize::updater;
 use oxidize::utils;
@@ -109,6 +110,7 @@ argwerk::define! {
         config: Option<PathBuf>,
         log: Vec<String>,
         log_config: Option<PathBuf>,
+        stack_size: Option<usize>,
     }
     /// Show this help.
     ["--help" | "-h"] => {
@@ -138,6 +140,10 @@ argwerk::define! {
     /// File to use for reading log configuration.
     ["--log-config", #[os] path] => {
         log_config = Some(PathBuf::from(path));
+    }
+    /// Configure a different stack size to use.
+    ["--stack-size", size] => {
+        stack_size = Some(str::parse(&size)?);
     }
 }
 
@@ -252,6 +258,18 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    if let Some(size) = args.stack_size {
+        let thread = std::thread::Builder::new()
+            .name(format!("main-with-stack-{}", size))
+            .spawn(move || inner_main(args))?;
+
+        thread.join().expect("thread shouldn't panic")
+    } else {
+        inner_main(args)
+    }
+}
+
+fn inner_main(args: Args) -> Result<()> {
     let (old_root, root) = match args.root {
         Some(root) => (None, root),
         None => {
@@ -323,9 +341,16 @@ fn main() -> Result<()> {
     script_dirs.push(PathBuf::from("scripts"));
 
     loop {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()?;
+        let runtime = {
+            let mut runtime = tokio::runtime::Builder::new_multi_thread();
+            runtime.enable_all();
+
+            if let Some(size) = args.stack_size {
+                runtime.thread_stack_size(size);
+            }
+
+            runtime.build()?
+        };
 
         let future = {
             try_main(&system, &root, &script_dirs, &db, &storage)
@@ -522,7 +547,7 @@ async fn try_main(
 
     let spotify_setup = {
         let s = token_settings.scoped("spotify");
-        let key = injector::Key::tagged(oauth2::TokenId::Spotify)?;
+        let key = injector::Key::tagged(tags::Token::Spotify)?;
         oauth2::build(
             "spotify",
             "Spotify",
@@ -536,7 +561,7 @@ async fn try_main(
 
     let youtube_setup = {
         let s = token_settings.scoped("youtube");
-        let key = injector::Key::tagged(oauth2::TokenId::YouTube)?;
+        let key = injector::Key::tagged(tags::Token::YouTube)?;
         oauth2::build(
             "youtube",
             "YouTube",
@@ -550,7 +575,7 @@ async fn try_main(
 
     let nightbot_setup = {
         let s = token_settings.scoped("nightbot");
-        let key = injector::Key::tagged(oauth2::TokenId::NightBot)?;
+        let key = injector::Key::tagged(tags::Token::NightBot)?;
         oauth2::build(
             "nightbot",
             "NightBot",
@@ -564,7 +589,7 @@ async fn try_main(
 
     let streamer_setup = {
         let s = token_settings.scoped("twitch-streamer");
-        let key = injector::Key::tagged(oauth2::TokenId::TwitchStreamer)?;
+        let key = injector::Key::tagged(tags::Token::Twitch(tags::Twitch::Streamer))?;
         oauth2::build(
             "twitch-streamer",
             "Twitch Streamer",
@@ -578,7 +603,7 @@ async fn try_main(
 
     let bot_setup = {
         let s = token_settings.scoped("twitch-bot");
-        let key = injector::Key::tagged(oauth2::TokenId::TwitchBot)?;
+        let key = injector::Key::tagged(tags::Token::Twitch(tags::Twitch::Bot))?;
         oauth2::build(
             "twitch-bot",
             "Twitch Bot",
@@ -603,6 +628,9 @@ async fn try_main(
         streamer_setup,
         bot_setup
     )?;
+
+    futures.push(Box::pin(api::twitch::pubsub::connect(&settings, &injector)));
+    futures.push(Box::pin(api::twitch_clients_task(injector.clone())));
 
     futures.push(Box::pin(
         spotify_future.instrument(trace_span!(target: "futures", "spotify-token",)),

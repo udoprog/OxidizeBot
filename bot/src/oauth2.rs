@@ -8,23 +8,12 @@ use crate::settings::Settings;
 use crate::utils::Duration;
 use crate::web;
 use anyhow::Error;
-use serde::Serialize;
 use std::collections::VecDeque;
 use std::fmt;
 use std::sync::Arc;
 use std::time;
 use thiserror::Error;
 use tokio::sync::{RwLock, RwLockReadGuard};
-
-/// Connection identifier used for dependency injection.
-#[derive(Debug, Clone, Serialize)]
-pub enum TokenId {
-    TwitchStreamer,
-    TwitchBot,
-    YouTube,
-    NightBot,
-    Spotify,
-}
 
 #[derive(Debug, Error)]
 #[error("Missing OAuth 2.0 Connection: {0}")]
@@ -90,7 +79,6 @@ impl SyncToken {
 
     /// Force a connection refresh.
     pub async fn force_refresh(&self) -> Result<(), Error> {
-        log::warn!("Forcing connection refresh for: {}", self.what);
         let connection = self.inner.write().await.connection.take();
         self.force_refresh.send(connection)?;
         Ok(())
@@ -457,8 +445,11 @@ pub async fn build(
                 }
                 _ = force_refresh_rx.recv() => {
                     log::trace!("{}: Forced refresh", what);
-                    builder.force_refresh = true;
-                    builder.update().await?;
+
+                    if !std::mem::take(&mut builder.force_refresh) {
+                        log::warn!("Forcing connection refresh for: {}", builder.what);
+                        builder.update().await?;
+                    }
                 }
                 _ = check_interval.tick() => {
                     log::trace!("{}: Check for expiration", what);

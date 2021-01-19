@@ -40,7 +40,7 @@ impl command::Handler for Clip {
 
         let twitch = self.twitch.clone();
 
-        match twitch.create_clip(&stream_user.id).await? {
+        match twitch.new_create_clip(&stream_user.id).await? {
             Some(clip) => {
                 respond!(
                     ctx,

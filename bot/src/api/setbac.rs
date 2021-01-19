@@ -7,6 +7,7 @@ use crate::oauth2;
 use crate::player::{self, Player};
 use crate::prelude::*;
 use crate::settings::Settings;
+use crate::tags;
 use crate::utils;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -182,9 +183,9 @@ pub async fn run(
     let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(false).await?;
     let (mut player_stream, player) = injector.stream::<Player>().await;
     let (mut streamer_token_stream, streamer_token) = injector
-        .stream_key(Key::<oauth2::SyncToken>::tagged(
-            oauth2::TokenId::TwitchStreamer,
-        )?)
+        .stream_key(Key::<oauth2::SyncToken>::tagged(tags::Token::Twitch(
+            tags::Twitch::Streamer,
+        ))?)
         .await;
 
     let mut remote_builder = RemoteBuilder {

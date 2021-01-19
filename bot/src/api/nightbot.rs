@@ -3,6 +3,7 @@
 use crate::api::base::RequestBuilder;
 use crate::injector::{Injector, Provider};
 use crate::oauth2;
+use crate::tags;
 use anyhow::{Error, Result};
 use reqwest::{header, Client, Method, Url};
 
@@ -22,7 +23,7 @@ impl From<Error> for RequestError {
 #[derive(Provider)]
 #[provider(build = "Builder::build", output = "NightBot")]
 struct Builder {
-    #[dependency(tag = "oauth2::TokenId::NightBot")]
+    #[dependency(tag = "tags::Token::NightBot")]
     token: oauth2::SyncToken,
 }
 

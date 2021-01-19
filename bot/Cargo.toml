@@ -27,6 +27,8 @@ reqwest = "0.11.0"
 Inflector = "0.11.4"
 warp = "0.3.0"
 tokio = { version = "1.0.1", features = ["full"] }
+tokio-tungstenite = { version = "0.13.0", features = ["tls"] }
+tokio-stream = "0.1.2"
 url = { version = "2.2.0", features = ["serde"] }
 rand = "0.8.1"
 fixed-map = "0.7.1"
@@ -38,7 +40,6 @@ parking_lot = "0.11.1"
 percent-encoding = "2.1.0"
 bytes = "1.0.0"
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
-pin-utils = "0.1.0"
 smallvec = { version = "1.6.0", features = ["serde"] }
 dirs = "3.0.1"
 backoff = "0.2.1"
@@ -49,17 +50,19 @@ uom = "0.31.0"
 crossbeam = "0.8.0"
 hex = "0.4.2"
 graphql_client = { version = "0.9.0", default-features = false }
-async-fuse = "0.11.2"
+async-fuse = { version = "0.11.2", features = ["stream"] }
 futures-cache = "0.10.0"
 anyhow = "1.0.37"
 thiserror = "1.0.23"
 async-injector = "0.13.1"
 async-trait = "0.1.42"
+async-stream = "0.3.0"
 leaky-bucket = "0.10.0"
 regex = "1.4.2"
 backtrace = "0.3.55"
 futures-util = "0.3.8"
 futures-core = "0.3.8"
+futures-sink = "0.3.8"
 futures-executor = "0.3.8"
 tracing = "0.1.22"
 tracing-core = "0.1.17"
@@ -68,6 +71,7 @@ slab = "0.4.2"
 irc = "0.14.1"
 ignore = "0.4.17"
 notify = "5.0.0-pre.4"
+tungstenite = "0.12.0"
 
 runestick = { version = "0.8.0", optional = true }
 rune = { version = "0.8.0", features = ["diagnostics"], optional = true }

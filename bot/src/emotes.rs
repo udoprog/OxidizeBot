@@ -1,4 +1,4 @@
-use crate::api::{bttv, ffz, twitch::Channel, BetterTTV, FrankerFaceZ, Tduva, Twitch};
+use crate::api::{bttv, ffz, twitch, BetterTTV, FrankerFaceZ, Tduva, Twitch};
 use crate::irc;
 use crate::storage::Cache;
 use crate::template;
@@ -162,7 +162,10 @@ impl Emotes {
     }
 
     /// Construct a set of room emotes from ffz.
-    async fn room_emotes_from_ffz(&self, channel: &Channel) -> Result<EmoteByCode, Error> {
+    async fn room_emotes_from_ffz(
+        &self,
+        channel: &twitch::v5::Channel,
+    ) -> Result<EmoteByCode, Error> {
         let mut emotes = EmoteByCode::default();
 
         let (global, room) = tokio::try_join!(
@@ -224,7 +227,11 @@ impl Emotes {
     }
 
     /// Construct a set of room emotes from bttv.
-    async fn bttv_bot_badge(&self, channel: &Channel, name: &str) -> Result<Option<Badge>, Error> {
+    async fn bttv_bot_badge(
+        &self,
+        channel: &twitch::v5::Channel,
+        name: &str,
+    ) -> Result<Option<Badge>, Error> {
         let channel = self
             .inner
             .cache
@@ -262,7 +269,10 @@ impl Emotes {
     }
 
     /// Construct a set of room emotes from bttv.
-    async fn room_emotes_from_bttv(&self, channel: &Channel) -> Result<EmoteByCode, Error> {
+    async fn room_emotes_from_bttv(
+        &self,
+        channel: &twitch::v5::Channel,
+    ) -> Result<EmoteByCode, Error> {
         let channel = self
             .inner
             .cache
@@ -303,7 +313,11 @@ impl Emotes {
 
     /// Construct a set of room emotes from twitch.
     async fn emote_sets_from_twitch(&self, emote_sets: &str) -> Result<EmoteByCode, Error> {
-        let result = self.inner.twitch.chat_emoticon_images(emote_sets).await?;
+        let result = self
+            .inner
+            .twitch
+            .v5_chat_emoticon_images(emote_sets)
+            .await?;
 
         let mut emotes = EmoteByCode::default();
 
@@ -323,7 +337,7 @@ impl Emotes {
     }
 
     /// Get all room emotes.
-    async fn room_emotes(&self, channel: &Channel) -> Result<Arc<EmoteByCode>, Error> {
+    async fn room_emotes(&self, channel: &twitch::v5::Channel) -> Result<Arc<EmoteByCode>, Error> {
         self.inner
             .cache
             .wrap(
@@ -421,7 +435,7 @@ impl Emotes {
     /// Get twitch subscriber badges.
     async fn twitch_subscriber_badge(
         &self,
-        channel: &Channel,
+        channel: &twitch::v5::Channel,
         needle: u32,
     ) -> Result<Option<Badge>, Error> {
         let badges = self
@@ -432,7 +446,7 @@ impl Emotes {
                     target: &channel.name,
                 },
                 chrono::Duration::hours(24),
-                self.inner.twitch.badges_display(&channel.id),
+                self.inner.twitch.badges_v1_display(&channel.id),
             )
             .await?;
 
@@ -580,7 +594,7 @@ impl Emotes {
     #[allow(unused)]
     async fn twitch_chat_badges(
         &self,
-        channel: &Channel,
+        channel: &twitch::v5::Channel,
         chat_badges: &str,
     ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
         let badges = self
@@ -591,7 +605,7 @@ impl Emotes {
                     target: &channel.name,
                 },
                 chrono::Duration::hours(72),
-                self.inner.twitch.chat_badges(&channel.id),
+                self.inner.twitch.v5_chat_badges(&channel.id),
             )
             .await?;
 
@@ -663,7 +677,7 @@ impl Emotes {
     /// Get chat badges through GQL.
     async fn gql_twitch_chat_badges(
         &self,
-        channel: &Channel,
+        channel: &twitch::v5::Channel,
         name: &str,
     ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
         let badges = self
@@ -744,7 +758,7 @@ impl Emotes {
     /// Render all room badges.
     async fn room_badges(
         &self,
-        channel: &Channel,
+        channel: &twitch::v5::Channel,
         name: &str,
     ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
         self.inner
@@ -814,7 +828,7 @@ impl Emotes {
     pub async fn render(
         &self,
         tags: &irc::Tags,
-        channel: &Channel,
+        channel: &twitch::v5::Channel,
         name: &str,
         message: &str,
     ) -> Result<Rendered, Error> {

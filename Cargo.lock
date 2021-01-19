@@ -127,6 +127,9 @@ name = "async-fuse"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3dcdcc1adb49c8f4f73cd5277c29dd7ca9635c66224589c0a9318973bde8f513"
+dependencies = [
+ "futures-core",
+]
 
 [[package]]
 name = "async-injector"
@@ -2413,6 +2416,7 @@ dependencies = [
  "argwerk",
  "async-fuse",
  "async-injector",
+ "async-stream",
  "async-trait",
  "backoff",
  "backtrace",
@@ -2428,6 +2432,7 @@ dependencies = [
  "futures-cache",
  "futures-core",
  "futures-executor",
+ "futures-sink",
  "futures-util",
  "graphql_client",
  "handlebars",
@@ -2445,7 +2450,6 @@ dependencies = [
  "notify",
  "parking_lot 0.11.1",
  "percent-encoding",
- "pin-utils",
  "rand 0.8.2",
  "regex",
  "relative-path",
@@ -2463,9 +2467,12 @@ dependencies = [
  "smallvec 1.6.1",
  "thiserror",
  "tokio 1.0.2",
+ "tokio-stream",
+ "tokio-tungstenite",
  "tracing",
  "tracing-core",
  "tracing-futures",
+ "tungstenite",
  "uom",
  "url",
  "uuid",
@@ -3869,8 +3876,10 @@ checksum = "e1a5f475f1b9d077ea1017ecbc60890fda8e54942d680ca0b1d2b47cfa2d861b"
 dependencies = [
  "futures-util",
  "log",
+ "native-tls",
  "pin-project 1.0.4",
  "tokio 1.0.2",
+ "tokio-native-tls",
  "tungstenite",
 ]
 
@@ -3987,6 +3996,7 @@ dependencies = [
  "httparse",
  "input_buffer",
  "log",
+ "native-tls",
  "rand 0.8.2",
  "sha-1 0.9.2",
  "url",

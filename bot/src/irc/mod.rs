@@ -12,9 +12,10 @@ use crate::oauth2;
 use crate::prelude::*;
 use crate::script;
 use crate::stream_info;
+use crate::tags;
 use crate::task;
 use crate::utils::{self, Cooldown, Duration};
-use anyhow::{anyhow, bail, Context as _, Error, Result};
+use anyhow::{anyhow, bail, Context as _, Result};
 use irc::client::{self, Client};
 use irc::proto::command::{CapSubCommand, Command};
 use irc::proto::message::{Message, Tag};
@@ -43,121 +44,33 @@ const TWITCH_TAGS_CAP: &str = "twitch.tv/tags";
 const TWITCH_COMMANDS_CAP: &str = "twitch.tv/commands";
 
 struct TwitchSetup {
-    streamer_stream: injector::Stream<oauth2::SyncToken>,
-    streamer: Option<oauth2::SyncToken>,
-    streamer_user: Option<Arc<twitch::User>>,
-    bot_stream: injector::Stream<oauth2::SyncToken>,
-    bot: Option<oauth2::SyncToken>,
-    bot_user: Option<Arc<twitch::User>>,
+    bot_stream: injector::Stream<api::TwitchAndUser>,
+    bot: Option<api::TwitchAndUser>,
+    streamer_stream: injector::Stream<api::TwitchAndUser>,
+    streamer: Option<api::TwitchAndUser>,
 }
 
 impl TwitchSetup {
-    pub async fn setup(
-        &mut self,
-    ) -> Result<(
-        Arc<twitch::User>,
-        api::Twitch,
-        Arc<twitch::User>,
-        api::Twitch,
-    )> {
-        // loop to setup all necessary twitch authentication.
+    async fn setup(&mut self) -> Result<(api::TwitchAndUser, api::TwitchAndUser)> {
         loop {
-            let (streamer_twitch, bot_twitch) = match (self.streamer.as_ref(), self.bot.as_ref()) {
-                (Some(streamer_twitch), Some(bot_twitch)) => (streamer_twitch, bot_twitch),
-                (_, _) => {
+            let (streamer, bot) = match (self.streamer.as_ref(), self.bot.as_ref()) {
+                (Some(streamer), Some(bot)) => (streamer, bot),
+                _ => {
                     tokio::select! {
-                        update = self.streamer_stream.select_next_some() => {
-                            self.streamer = update;
-                        },
-                        update = self.bot_stream.select_next_some() => {
-                            self.bot = update;
-                        },
+                        Some(bot) = self.bot_stream.next() => {
+                            self.bot = bot;
+                        }
+                        Some(streamer) = self.streamer_stream.next() => {
+                            self.streamer = streamer;
+                        }
                     }
 
                     continue;
                 }
             };
 
-            let bot_twitch = api::Twitch::new(bot_twitch.clone())?;
-            let streamer_twitch = api::Twitch::new(streamer_twitch.clone())?;
-
-            let streamer = async {
-                match streamer_twitch.user().await {
-                    Ok(user) => Ok::<_, Error>(Some(user)),
-                    Err(e) => {
-                        streamer_twitch.token.force_refresh().await?;
-                        log_warn!(e, "Failed to get streamer information");
-                        Ok(None)
-                    }
-                }
-            };
-
-            let bot = async {
-                match bot_twitch.user().await {
-                    Ok(user) => Ok::<_, Error>(Some(user)),
-                    Err(e) => {
-                        bot_twitch.token.force_refresh().await?;
-                        log_warn!(e, "Failed to get bot information");
-                        Ok(None)
-                    }
-                }
-            };
-
-            let (bot, streamer) = match tokio::try_join!(bot, streamer)? {
-                (Some(bot), Some(streamer)) => (bot, streamer),
-                (bot, streamer) => {
-                    if bot.is_none() {
-                        self.bot = None;
-                    }
-
-                    if streamer.is_none() {
-                        self.streamer = None;
-                    }
-
-                    continue;
-                }
-            };
-
-            let bot = Arc::new(bot);
-            let streamer = Arc::new(streamer);
-
-            self.bot_user = Some(bot.clone());
-            self.streamer_user = Some(streamer.clone());
-
-            return Ok((bot, bot_twitch, streamer, streamer_twitch));
+            return Ok((streamer.clone(), bot.clone()));
         }
-    }
-
-    /// Inner update helper function.
-    async fn update_token_for(
-        token_update: &mut Option<oauth2::SyncToken>,
-        existing_user: Option<&Arc<twitch::User>>,
-        token: Option<oauth2::SyncToken>,
-    ) -> Result<bool> {
-        *token_update = token;
-
-        let token = match token_update.as_ref() {
-            Some(token) => token,
-            None => return Ok(true),
-        };
-
-        let old_user = match existing_user {
-            Some(user) => user,
-            None => return Ok(true),
-        };
-
-        let user = api::Twitch::new(token.clone())?.user().await?;
-        Ok(user.id != old_user.id)
-    }
-
-    /// Update the bot token and force a restart in case it has changed.
-    pub async fn update_streamer(&mut self, token: Option<oauth2::SyncToken>) -> Result<bool> {
-        Self::update_token_for(&mut self.streamer, self.streamer_user.as_ref(), token).await
-    }
-
-    /// Update the bot token and force a restart in case it has changed.
-    pub async fn update_bot(&mut self, token: Option<oauth2::SyncToken>) -> Result<bool> {
-        Self::update_token_for(&mut self.bot, self.bot_user.as_ref(), token).await
     }
 }
 
@@ -197,42 +110,41 @@ impl Irc {
         } = self;
 
         let (streamer_stream, streamer) = injector
-            .stream_key(&Key::<oauth2::SyncToken>::tagged(
-                oauth2::TokenId::TwitchStreamer,
-            )?)
+            .stream_key(&Key::<api::TwitchAndUser>::tagged(tags::Twitch::Streamer)?)
             .await;
 
         let (bot_stream, bot) = injector
-            .stream_key(&Key::<oauth2::SyncToken>::tagged(
-                oauth2::TokenId::TwitchBot,
-            )?)
+            .stream_key(&Key::<api::TwitchAndUser>::tagged(tags::Twitch::Bot)?)
             .await;
 
         let mut twitch_setup = TwitchSetup {
             streamer_stream,
             streamer,
-            streamer_user: None,
             bot_stream,
             bot,
-            bot_user: None,
         };
 
         'outer: loop {
-            let (bot, bot_twitch, streamer, streamer_twitch) = twitch_setup.setup().await?;
+            let (streamer, bot) = twitch_setup.setup().await?;
 
-            let channel = Arc::new(streamer_twitch.channel().await?);
+            let streamer_channel = match streamer.channel.clone() {
+                Some(channel) => channel,
+                None => {
+                    bail!("missing channel information for streamer");
+                }
+            };
 
-            log::trace!("Channel: {:?}", channel);
-            log::trace!("Streamer: {:?}", streamer);
-            log::trace!("Bot: {:?}", bot);
+            log::trace!("Channel: {:?}", streamer_channel);
+            log::trace!("Streamer: {:?}", streamer.user.name);
+            log::trace!("Bot: {:?}", bot.user.name);
 
-            let chat_channel = format!("#{}", channel.name);
+            let chat_channel = format!("#{}", streamer_channel.name);
             *global_channel.write().await = Some(chat_channel.clone());
 
-            let access_token = bot_twitch.token.read().await?.access_token().to_string();
+            let access_token = bot.client.token.read().await?.access_token().to_string();
 
             let irc_client_config = client::data::config::Config {
-                nickname: Some(bot.name.to_string()),
+                nickname: Some(bot.user.name.to_string()),
                 channels: vec![chat_channel.clone()],
                 password: Some(format!("oauth:{}", access_token)),
                 server: Some(String::from(SERVER)),
@@ -279,7 +191,7 @@ impl Irc {
 
             let stream_info = {
                 let (stream_info, mut stream_state_rx, future) =
-                    stream_info::setup(streamer.clone(), streamer_twitch.clone());
+                    stream_info::setup(streamer.user.clone(), streamer.client.clone());
 
                 let stream_state_tx = stream_state_tx.clone();
 
@@ -311,7 +223,8 @@ impl Irc {
 
             let mut handlers = module::Handlers::default();
 
-            let scripts = script::load_dir(channel.name.clone(), db.clone(), &script_dirs).await?;
+            let scripts =
+                script::load_dir(streamer_channel.name.clone(), db.clone(), &script_dirs).await?;
 
             let (scripts_watch_tx, mut scripts_watch_rx) = sync::mpsc::unbounded_channel();
 
@@ -342,8 +255,8 @@ impl Irc {
                         futures: &mut futures,
                         stream_info: &stream_info,
                         idle: &idle,
-                        twitch: &bot_twitch,
-                        streamer_twitch: &streamer_twitch,
+                        twitch: &bot.client,
+                        streamer_twitch: &streamer.client,
                         sender: &sender,
                         settings: &settings,
                         injector: &injector,
@@ -357,8 +270,8 @@ impl Irc {
             let currency_handler = currency_admin::setup(&injector).await?;
 
             let future = currency_loop(
-                streamer_twitch.clone(),
-                channel.clone(),
+                streamer.clone(),
+                streamer_channel.clone(),
                 sender.clone(),
                 idle.clone(),
                 injector.clone(),
@@ -392,7 +305,7 @@ impl Irc {
                 .unwrap_or_else(|| String::from("Leaving chat... VoHiYo"));
 
             let mut chat_log_builder = chat_log::Builder::new(
-                bot_twitch.clone(),
+                bot.client.clone(),
                 &injector,
                 message_log.clone(),
                 settings.scoped("chat-log"),
@@ -405,7 +318,8 @@ impl Irc {
             let mut pong_timeout = Fuse::empty();
 
             let mut handler = Handler {
-                streamer,
+                streamer: streamer.clone(),
+                streamer_channel,
                 sender: sender.clone(),
                 moderators: Default::default(),
                 vips: Default::default(),
@@ -420,7 +334,7 @@ impl Irc {
                 scripts,
                 idle: &idle,
                 pong_timeout: &mut pong_timeout,
-                token: &bot_twitch.token,
+                token: &bot.client.token,
                 handler_shutdown: false,
                 stream_info: &stream_info,
                 auth: &auth,
@@ -428,7 +342,6 @@ impl Irc {
                 url_whitelist_enabled,
                 bad_words_enabled,
                 chat_log: chat_log_builder.build()?,
-                channel,
                 context_inner: Arc::new(command::ContextInner {
                     sender: sender.clone(),
                     scope_cooldowns: sync::Mutex::new(auth.scope_cooldowns()),
@@ -502,15 +415,14 @@ impl Irc {
                             }
                         }
                     }
-                    Some(update) = twitch_setup.streamer_stream.next() => {
-                        if twitch_setup.update_streamer(update).await? {
-                            leave.set(Fuse::new(tokio::time::sleep(time::Duration::from_secs(1))));
-                        }
+                    // NB: reconnect on credential updates.
+                    Some(streamer) = twitch_setup.streamer_stream.next() => {
+                        twitch_setup.streamer = streamer;
+                        leave.set(Fuse::new(tokio::time::sleep(time::Duration::from_secs(1))));
                     },
-                    Some(update) = twitch_setup.bot_stream.next() => {
-                        if twitch_setup.update_bot(update).await? {
-                            leave.set(Fuse::new(tokio::time::sleep(time::Duration::from_secs(1))));
-                        }
+                    Some(bot) = twitch_setup.bot_stream.next() => {
+                        twitch_setup.bot = bot;
+                        leave.set(Fuse::new(tokio::time::sleep(time::Duration::from_secs(1))));
                     },
                     Some(update) = commands_stream.next() => {
                         handler.commands = update;
@@ -589,8 +501,8 @@ impl Irc {
 
 /// Set up a reward loop.
 async fn currency_loop(
-    twitch: api::Twitch,
-    channel: Arc<twitch::Channel>,
+    streamer: api::TwitchAndUser,
+    streamer_channel: Arc<twitch::v5::Channel>,
     sender: Sender,
     idle: idle::Idle,
     injector: Injector,
@@ -633,7 +545,7 @@ async fn currency_loop(
 
     let (mut db_stream, db) = injector.stream::<db::Database>().await;
 
-    let mut builder = CurrencyBuilder::new(twitch, mysql_schema, injector.clone());
+    let mut builder = CurrencyBuilder::new(streamer.client.clone(), mysql_schema, injector.clone());
     builder.db = db;
     builder.ty = ty;
     builder.enabled = enabled;
@@ -706,7 +618,7 @@ async fn currency_loop(
 
                     let reward = (reward * reward_percentage.load().await as i64) / 100i64;
                     let count = currency
-                        .add_channel_all(&channel.name, reward, seconds)
+                        .add_channel_all(&streamer_channel.name, reward, seconds)
                         .await?;
 
                     if notify_rewards && count > 0 && !idle.is_idle().await {
@@ -724,7 +636,9 @@ async fn currency_loop(
 /// Handler for incoming messages.
 struct Handler<'a> {
     /// Current Streamer.
-    streamer: Arc<twitch::User>,
+    streamer: api::TwitchAndUser,
+    /// The channel data associated with the streamer.
+    streamer_channel: Arc<twitch::v5::Channel>,
     /// Queue for sending messages.
     sender: Sender,
     /// Moderators.
@@ -767,8 +681,6 @@ struct Handler<'a> {
     url_whitelist_enabled: settings::Var<bool>,
     /// Handler for chat logs.
     chat_log: Option<chat_log::ChatLog>,
-    /// Information on the current channel.
-    channel: Arc<twitch::Channel>,
     /// Shared context paramters.
     context_inner: Arc<command::ContextInner>,
 }
@@ -1103,7 +1015,7 @@ impl<'a> Handler<'a> {
                 tags,
                 sender: self.sender.clone(),
                 principal: Principal::Injected,
-                streamer: self.streamer.clone(),
+                streamer: self.streamer.user.clone(),
                 moderators: self.moderators.clone(),
                 vips: self.vips.clone(),
                 stream_info: self.stream_info.clone(),
@@ -1128,7 +1040,7 @@ impl<'a> Handler<'a> {
 
                 if let Some(chat_log) = self.chat_log.as_ref().cloned() {
                     let tags = tags.clone();
-                    let channel = self.channel.clone();
+                    let channel = self.streamer_channel.clone();
                     let name = name.clone();
                     let message = message.clone();
 
@@ -1142,7 +1054,7 @@ impl<'a> Handler<'a> {
                         tags,
                         sender: self.sender.clone(),
                         principal: Principal::User { name },
-                        streamer: self.streamer.clone(),
+                        streamer: self.streamer.user.clone(),
                         moderators: self.moderators.clone(),
                         vips: self.vips.clone(),
                         stream_info: self.stream_info.clone(),
@@ -1256,7 +1168,7 @@ pub struct RealUser<'a> {
     tags: &'a Tags,
     sender: &'a Sender,
     name: &'a str,
-    streamer: &'a twitch::User,
+    streamer: &'a twitch::v5::User,
     moderators: &'a RwLock<HashSet<String>>,
     vips: &'a RwLock<HashSet<String>>,
     stream_info: &'a stream_info::StreamInfo,
@@ -1285,7 +1197,7 @@ impl<'a> RealUser<'a> {
     /// Respond to the user with a message.
     pub async fn respond(&self, m: impl fmt::Display) {
         self.sender
-            .privmsg(format!("{} -> {}", self.display_name(), m))
+            .privmsg(crate::utils::respond(self.display_name(), m))
             .await;
     }
 
@@ -1355,7 +1267,7 @@ struct UserInner {
     tags: Tags,
     sender: Sender,
     principal: Principal,
-    streamer: Arc<twitch::User>,
+    streamer: Arc<twitch::v5::User>,
     moderators: Arc<RwLock<HashSet<String>>>,
     vips: Arc<RwLock<HashSet<String>>>,
     stream_info: stream_info::StreamInfo,
@@ -1418,7 +1330,7 @@ impl User {
     }
 
     /// Get the name of the streamer.
-    pub fn streamer(&self) -> &twitch::User {
+    pub fn streamer(&self) -> &twitch::v5::User {
         &*self.inner.streamer
     }
 
@@ -1443,7 +1355,7 @@ impl User {
             Some(name) => {
                 self.inner
                     .sender
-                    .privmsg(format!("{} -> {}", name, m))
+                    .privmsg(crate::utils::respond(name, m))
                     .await;
             }
             None => {

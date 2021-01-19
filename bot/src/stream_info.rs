@@ -9,10 +9,10 @@ use std::time;
 
 #[derive(Debug, Default)]
 pub struct Data {
-    pub stream: Option<twitch::Stream>,
+    pub stream: Option<twitch::new::Stream>,
     pub title: Option<String>,
     pub game: Option<String>,
-    pub subs: Vec<twitch::Subscription>,
+    pub subs: Vec<twitch::new::Subscription>,
     pub subs_set: HashSet<String>,
 }
 
@@ -24,7 +24,7 @@ pub enum StreamState {
 
 #[derive(Debug, Clone)]
 pub struct StreamInfo {
-    pub user: Arc<twitch::User>,
+    pub user: Arc<twitch::v5::User>,
     pub data: Arc<RwLock<Data>>,
 }
 
@@ -35,9 +35,13 @@ impl StreamInfo {
     }
 
     /// Refresh the known list of subscribers.
-    pub async fn refresh_subs<'a>(&'a self, twitch: &'a api::Twitch, streamer: &'a twitch::User) {
+    pub async fn refresh_subs<'a>(
+        &'a self,
+        twitch: &'a api::Twitch,
+        streamer: &'a twitch::v5::User,
+    ) {
         let subs = twitch
-            .stream_subscriptions(&streamer.id, vec![])
+            .new_stream_subscriptions(&streamer.id, vec![])
             .try_concat();
 
         let subs = match subs.await {
@@ -61,9 +65,9 @@ impl StreamInfo {
     pub async fn refresh_channel<'a>(
         &'a self,
         twitch: &'a api::Twitch,
-        streamer: &'a twitch::User,
+        streamer: &'a twitch::v5::User,
     ) -> Result<()> {
-        let channel = match twitch.channel_by_id(&streamer.id).await {
+        let channel = match twitch.v5_channel_by_id(&streamer.id).await {
             Ok(channel) => channel,
             Err(e) => {
                 log_error!(e, "failed to refresh channel");
@@ -81,10 +85,10 @@ impl StreamInfo {
     pub async fn refresh_stream<'a>(
         &'a self,
         twitch: &'a api::Twitch,
-        streamer: &'a twitch::User,
+        streamer: &'a twitch::v5::User,
         stream_state_tx: &'a mut mpsc::Sender<StreamState>,
     ) -> Result<()> {
-        let stream = match twitch.stream_by_id(&streamer.id).await {
+        let stream = match twitch.new_stream_by_id(&streamer.id).await {
             Ok(stream) => stream,
             Err(e) => {
                 log_error!(e, "failed to refresh stream");
@@ -115,7 +119,7 @@ impl StreamInfo {
 
 /// Set up a stream information loop.
 pub fn setup(
-    streamer: Arc<twitch::User>,
+    streamer: Arc<twitch::v5::User>,
     twitch: api::Twitch,
 ) -> (
     StreamInfo,

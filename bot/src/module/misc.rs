@@ -102,10 +102,10 @@ impl command::Handler for Title {
 
             let user = ctx.user.clone();
 
-            let mut request = api::twitch::UpdateChannelRequest::default();
+            let mut request = api::twitch::v5::UpdateChannelRequest::default();
             request.channel.status = Some(rest.to_string());
             self.twitch
-                .update_channel(&user.streamer().id, request)
+                .v5_update_channel(&user.streamer().id, request)
                 .await?;
             self.stream_info
                 .refresh_channel(&self.twitch, user.streamer())
@@ -164,10 +164,10 @@ impl command::Handler for Game {
         let game = rest.to_string();
         let stream_info = self.stream_info.clone();
 
-        let mut request = api::twitch::UpdateChannelRequest::default();
+        let mut request = api::twitch::v5::UpdateChannelRequest::default();
         request.channel.game = Some(game);
         twitch
-            .update_channel(&ctx.user.streamer().id, request)
+            .v5_update_channel(&ctx.user.streamer().id, request)
             .await?;
         stream_info
             .refresh_channel(&twitch, ctx.user.streamer())

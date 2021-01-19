@@ -10,6 +10,10 @@ use std::time;
 use tokio::sync::Mutex;
 
 mod duration;
+mod respond;
+
+pub(crate) use self::duration::Duration;
+pub(crate) use self::respond::respond;
 
 /// Collection of boxed futures to drive.
 pub type Futures<'a> =
@@ -30,8 +34,6 @@ impl<'a> Driver<'a> for Vec<BoxFuture<'a, Result<(), anyhow::Error>>> {
         self.push(Box::pin(future));
     }
 }
-
-pub use self::duration::Duration;
 
 pub struct Urls<'a> {
     message: &'a str,

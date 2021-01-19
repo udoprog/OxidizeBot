@@ -1,4 +1,4 @@
-use crate::api::{twitch::Channel, Twitch};
+use crate::api::{twitch, Twitch};
 use crate::emotes;
 use crate::injector;
 use crate::irc;
@@ -73,7 +73,13 @@ pub struct ChatLog {
 }
 
 impl ChatLog {
-    pub async fn observe(&self, tags: &irc::Tags, channel: &Channel, name: &str, message: &str) {
+    pub async fn observe(
+        &self,
+        tags: &irc::Tags,
+        channel: &twitch::v5::Channel,
+        name: &str,
+        message: &str,
+    ) {
         let rendered = match self.emotes.as_ref() {
             Some(emotes) => match emotes.render(&tags, channel, name, message).await {
                 Ok(rendered) => Some(rendered),

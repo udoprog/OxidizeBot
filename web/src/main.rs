@@ -89,7 +89,7 @@ async fn main() -> Result<()> {
     let mut releases_interval = tokio::time::interval(time::Duration::from_secs(60 * 10));
 
     let web = web::setup(db.clone(), host, port, config)?;
-    pin_utils::pin_mut!(web);
+    tokio::pin!(web);
 
     #[allow(clippy::unnecessary_mut_passed)]
     loop {
