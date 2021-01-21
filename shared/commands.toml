@@ -889,3 +889,38 @@ content = """
 setbac: !speedrun personal-bests setbac --game gtav
 SetMod: setbac -> Grand Theft Auto V (gtav) -> Classic%: 6h 44m 4s (#11)
 """
+
+[[groups]]
+name = "!auth"
+content = """
+Commands for listing your scopes and granting scopes to others.
+"""
+
+[[groups.commands]]
+name = "!auth scopes `[filter]`"
+content = """
+List your scopes with an optional `[filter]`.
+"""
+
+[[groups.commands.examples]]
+name = "Get your scopes containing `song`"
+content = """
+setbac: !auth scopes song
+SetMod: setbac -> @moderator: song/playback-control, song/spotify, song/list-limit, song/edit-queue, song/volume, song/theme | @subscriber: song/spotify | @everyone: song
+"""
+
+[[groups.commands]]
+name = "!auth permit `<duration>` `<principal>` `<scope>`"
+content = """
+Grant a `<scope>` to `<principal>` for `<duration>`.
+
+`<principal>` can either be a role (e.g. _@everyone_ or _@subscriber_) or a user (without _@_).
+`<duration>` has to be formatted as `[<days>d][<hours>h][<minutes>m][<seconds>s]`, like _5d10m30s_ or _5m_.
+"""
+
+[[groups.commands.examples]]
+name = "Grant _song/spotify_ to _user123_ for _1 minute_"
+content = """
+setbac: !auth permit 1m user123 song/spotify
+SetMod: setbac -> Gave: song/spotify to user123 for 1m
+"""
