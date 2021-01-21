@@ -1,9 +1,32 @@
 import React from "react";
-import {partition} from "../utils";
-import {Form, Button, Alert, Table, InputGroup} from "react-bootstrap";
+import { partition } from "../utils";
+import { Form, Button, Alert, Table, InputGroup } from "react-bootstrap";
 import * as types from "./Settings/Types.js";
 import Setting from "./Setting";
-import {Loading, Error} from 'shared-ui/components';
+import { Loading, Error } from 'shared-ui/components';
+import { decode } from "./Settings/Format";
+
+/**
+ * Build a single data entry.
+ *
+ * @param {*} d data to use a source of entry.
+ */
+function buildEntry(d) {
+  let control = types.decode(d.schema.type);
+
+  let value = null;
+
+  if (d.value !== null) {
+    value = control.construct(d.value);
+  }
+
+  return {
+    key: d.key,
+    control,
+    value,
+    ...d.schema,
+  }
+}
 
 export default class Settings extends React.Component {
   constructor(props) {
@@ -24,13 +47,13 @@ export default class Settings extends React.Component {
       filter,
     };
 
-    this.onLoading = () => {};
+    this.onLoading = () => { };
 
     if (this.props.onLoading !== undefined) {
       this.onLoading = this.props.onLoading;
     }
 
-    this.onError = () => {};
+    this.onError = () => { };
 
     if (this.props.onError !== undefined) {
       this.onError = this.props.onError;
@@ -57,7 +80,7 @@ export default class Settings extends React.Component {
       this.props.history.replace(path);
     }
 
-    this.setState({filter});
+    this.setState({ filter });
   }
 
   /**
@@ -70,27 +93,15 @@ export default class Settings extends React.Component {
       let data = await this.api.settings(this.props.filter);
 
       data = data.map(d => {
-        let control = types.decode(d.schema.type);
-
-        let value = null;
-
-        if (d.value !== null) {
-          value = control.construct(d.value);
-        }
-
-        return {
-          key: d.key,
-          control,
-          value,
-          ...d.schema,
-        }
+        return buildEntry(d);
       });
 
-      this.setState({data});
-      this.onLoading(false);
-    } catch(e) {
+      this.setState({ data });
+    } catch (e) {
       this.onError(e);
     }
+
+    this.onLoading(false);
   }
 
   /**
@@ -98,15 +109,28 @@ export default class Settings extends React.Component {
    *
    * @param {string} key key of the setting to delete.
    */
-  async delete(key) {
+  async delete(key, index) {
     this.onLoading(true);
+
+    this.setState(state => {
+      return {
+        data: state.data.map(setting => {
+          if (setting.key === key) {
+            return Object.assign(setting, { value: null });
+          }
+
+          return setting;
+        })
+      };
+    });
 
     try {
       await this.api.deleteSetting(key);
-      this.onLoading(false);
-    } catch(e) {
+    } catch (e) {
       this.onError(e);
     }
+
+    this.onLoading(false);
   }
 
   /**
@@ -119,24 +143,37 @@ export default class Settings extends React.Component {
     this.onLoading(true);
 
     this.setState(state => {
-      let data = state.data.map(setting => {
-        if (setting.key === key) {
-          return Object.assign(setting, {value});
-        }
+      return {
+        data: state.data.map(setting => {
+          if (setting.key === key) {
+            return Object.assign(setting, { value });
+          }
 
-        return setting;
-      });
-
-      return {data};
+          return setting;
+        })
+      };
     });
 
     try {
       await this.api.editSetting(key, control.serialize(value));
-      await this.list();
-      this.onLoading(false);
-    } catch(e) {
+      let [update] = await this.api.settings({ key: [key] });
+
+      this.setState(state => {
+        return {
+          data: state.data.map(setting => {
+            if (setting.key === key) {
+              return buildEntry(update);
+            }
+
+            return setting;
+          })
+        };
+      });
+    } catch (e) {
       this.onError(e);
     }
+
+    this.onLoading(false);
   }
 
   /**
@@ -237,7 +274,7 @@ export default class Settings extends React.Component {
       );
     }
 
-    let {order, groups, def} = partition(data, d => d.key);
+    let { order, groups, def } = partition(data, d => d.key);
 
     return (
       <div>
@@ -271,7 +308,7 @@ export default class Settings extends React.Component {
                   <th className="settings-group">{title}</th>
                 </tr>
 
-                {group.map(({short, data}) => {
+                {group.map(({ short, data }) => {
                   return <Setting
                     key={data.key}
                     setting={data}
