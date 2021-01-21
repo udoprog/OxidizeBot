@@ -66,7 +66,7 @@ content = "Add the value to a setting which is a collection."
 
 [[groups.commands]]
 name ="!admin delete `<key>` `<value>`"
-content = "Delete avalue from a setting which is a collection."
+content = "Delete a value from a setting which is a collection."
 
 [[groups.commands]]
 name ="!admin toggle `<key>`"
@@ -229,7 +229,7 @@ This is typically used to take a longer command like `!song request` and shorten
 [[groups.commands]]
 name = "!alias edit `<name>` `<template...>`"
 content = """
-Set the command <name> to alias to <template...>.
+Set the command `<name>` to alias to `<template...>`.
 
 In the template you can use the variable `{{rest}}` to expand to the rest of the command being called.
 """
@@ -306,7 +306,7 @@ Commands to request and manage songs playing on stream.
 """
 
 [[groups.commands]]
-name = "!song request spotify:track:<id>"
+name = "!song request `spotify:track:<id>`"
 content = """
 Request a song through a Spotify URI.
 """
@@ -485,7 +485,7 @@ Find out when your song will play.
 [[groups.commands]]
 name = "!song when `<user>`"
 content = """
-Find out when the song for a specific user will play.
+Find out when the song for the given `<user>` will play.
 """
 
 [[groups]]
@@ -678,8 +678,12 @@ name = "!promo list"
 content = "List all available promotions."
 
 [[groups.commands]]
-name = "!promo edit <id> <frequency> <what>"
-content = "Set the promotion identified by <id> to send the message <what> every <frequency>."
+name = "!promo edit `<id>` `<frequency>` `<what>`"
+content = """
+Set the promotion identified by `<id>` to send the message `<what>` every `<frequency>`.
+
+`<frequency>` has to be formatted as `[<days>d][<hours>h][<minutes>m][<seconds>s]`, like _5d10m30s_ or _5m_.
+"""
 
 [[groups.commands.examples]]
 name = "Set a promition for your Discord"
@@ -797,7 +801,7 @@ These are commands related to running in-chat polls.
 """
 
 [[groups.commands]]
-name = "!poll run <question> <options...>"
+name = "!poll run `<question>` `<options...>`"
 content = "Run the poll with the given `<question>`, providing the options listed in `<options...>`."
 
 [[groups.commands.examples]]
