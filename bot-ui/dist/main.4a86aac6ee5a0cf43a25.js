@@ -3707,21 +3707,21 @@ function Settings_typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol ===
 
 
 
-
-
 function _extends() { _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; }; return _extends.apply(this, arguments); }
 
-function Settings_createForOfIteratorHelper(o, allowArrayLike) { var it; if (typeof Symbol === "undefined" || o[Symbol.iterator] == null) { if (Array.isArray(o) || (it = Settings_unsupportedIterableToArray(o)) || allowArrayLike && o && typeof o.length === "number") { if (it) o = it; var i = 0; var F = function F() {}; return { s: F, n: function n() { if (i >= o.length) return { done: true }; return { done: false, value: o[i++] }; }, e: function e(_e) { throw _e; }, f: F }; } throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); } var normalCompletion = true, didErr = false, err; return { s: function s() { it = o[Symbol.iterator](); }, n: function n() { var step = it.next(); normalCompletion = step.done; return step; }, e: function e(_e2) { didErr = true; err = _e2; }, f: function f() { try { if (!normalCompletion && it.return != null) it.return(); } finally { if (didErr) throw err; } } }; }
+function Settings_createForOfIteratorHelper(o, allowArrayLike) { var it; if (typeof Symbol === "undefined" || o[Symbol.iterator] == null) { if (Array.isArray(o) || (it = Settings_unsupportedIterableToArray(o)) || allowArrayLike && o && typeof o.length === "number") { if (it) o = it; var i = 0; var F = function F() {}; return { s: F, n: function n() { if (i >= o.length) return { done: true }; return { done: false, value: o[i++] }; }, e: function e(_e2) { throw _e2; }, f: F }; } throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); } var normalCompletion = true, didErr = false, err; return { s: function s() { it = o[Symbol.iterator](); }, n: function n() { var step = it.next(); normalCompletion = step.done; return step; }, e: function e(_e3) { didErr = true; err = _e3; }, f: function f() { try { if (!normalCompletion && it.return != null) it.return(); } finally { if (didErr) throw err; } } }; }
+
+function Settings_slicedToArray(arr, i) { return Settings_arrayWithHoles(arr) || Settings_iterableToArrayLimit(arr, i) || Settings_unsupportedIterableToArray(arr, i) || Settings_nonIterableRest(); }
+
+function Settings_nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
 
 function Settings_unsupportedIterableToArray(o, minLen) { if (!o) return; if (typeof o === "string") return Settings_arrayLikeToArray(o, minLen); var n = Object.prototype.toString.call(o).slice(8, -1); if (n === "Object" && o.constructor) n = o.constructor.name; if (n === "Map" || n === "Set") return Array.from(o); if (n === "Arguments" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return Settings_arrayLikeToArray(o, minLen); }
 
 function Settings_arrayLikeToArray(arr, len) { if (len == null || len > arr.length) len = arr.length; for (var i = 0, arr2 = new Array(len); i < len; i++) { arr2[i] = arr[i]; } return arr2; }
 
-function Settings_ownKeys(object, enumerableOnly) { var keys = Object.keys(object); if (Object.getOwnPropertySymbols) { var symbols = Object.getOwnPropertySymbols(object); if (enumerableOnly) symbols = symbols.filter(function (sym) { return Object.getOwnPropertyDescriptor(object, sym).enumerable; }); keys.push.apply(keys, symbols); } return keys; }
+function Settings_iterableToArrayLimit(arr, i) { if (typeof Symbol === "undefined" || !(Symbol.iterator in Object(arr))) return; var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"] != null) _i["return"](); } finally { if (_d) throw _e; } } return _arr; }
 
-function Settings_objectSpread(target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i] != null ? arguments[i] : {}; if (i % 2) { Settings_ownKeys(Object(source), true).forEach(function (key) { Settings_defineProperty(target, key, source[key]); }); } else if (Object.getOwnPropertyDescriptors) { Object.defineProperties(target, Object.getOwnPropertyDescriptors(source)); } else { Settings_ownKeys(Object(source)).forEach(function (key) { Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key)); }); } } return target; }
-
-function Settings_defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+function Settings_arrayWithHoles(arr) { if (Array.isArray(arr)) return arr; }
 
 function Settings_asyncGeneratorStep(gen, resolve, reject, _next, _throw, key, arg) { try { var info = gen[key](arg); var value = info.value; } catch (error) { reject(error); return; } if (info.done) { resolve(value); } else { Promise.resolve(value).then(_next, _throw); } }
 
@@ -3747,12 +3747,39 @@ function Settings_isNativeReflectConstruct() { if (typeof Reflect === "undefined
 
 function Settings_getPrototypeOf(o) { Settings_getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return Settings_getPrototypeOf(o); }
 
+function Settings_ownKeys(object, enumerableOnly) { var keys = Object.keys(object); if (Object.getOwnPropertySymbols) { var symbols = Object.getOwnPropertySymbols(object); if (enumerableOnly) symbols = symbols.filter(function (sym) { return Object.getOwnPropertyDescriptor(object, sym).enumerable; }); keys.push.apply(keys, symbols); } return keys; }
+
+function Settings_objectSpread(target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i] != null ? arguments[i] : {}; if (i % 2) { Settings_ownKeys(Object(source), true).forEach(function (key) { Settings_defineProperty(target, key, source[key]); }); } else if (Object.getOwnPropertyDescriptors) { Object.defineProperties(target, Object.getOwnPropertyDescriptors(source)); } else { Settings_ownKeys(Object(source)).forEach(function (key) { Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key)); }); } } return target; }
+
+function Settings_defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
 
 
 
 
 
 
+
+
+/**
+ * Build a single data entry.
+ *
+ * @param {*} d data to use a source of entry.
+ */
+
+function buildEntry(d) {
+  var control = Types_decode(d.schema.type);
+  var value = null;
+
+  if (d.value !== null) {
+    value = control.construct(d.value);
+  }
+
+  return Settings_objectSpread({
+    key: d.key,
+    control: control,
+    value: value
+  }, d.schema);
+}
 
 var Settings = /*#__PURE__*/function (_React$Component) {
   Settings_inherits(Settings, _React$Component);
@@ -3863,37 +3890,28 @@ var Settings = /*#__PURE__*/function (_React$Component) {
               case 4:
                 data = _context2.sent;
                 data = data.map(function (d) {
-                  var control = Types_decode(d.schema.type);
-                  var value = null;
-
-                  if (d.value !== null) {
-                    value = control.construct(d.value);
-                  }
-
-                  return Settings_objectSpread({
-                    key: d.key,
-                    control: control,
-                    value: value
-                  }, d.schema);
+                  return buildEntry(d);
                 });
                 this.setState({
                   data: data
                 });
-                this.onLoading(false);
-                _context2.next = 13;
+                _context2.next = 12;
                 break;
 
-              case 10:
-                _context2.prev = 10;
+              case 9:
+                _context2.prev = 9;
                 _context2.t0 = _context2["catch"](1);
                 this.onError(_context2.t0);
+
+              case 12:
+                this.onLoading(false);
 
               case 13:
               case "end":
                 return _context2.stop();
             }
           }
-        }, _callee2, this, [[1, 10]]);
+        }, _callee2, this, [[1, 9]]);
       }));
 
       function list() {
@@ -3911,35 +3929,50 @@ var Settings = /*#__PURE__*/function (_React$Component) {
   }, {
     key: "delete",
     value: function () {
-      var _delete2 = Settings_asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee3(key) {
+      var _delete2 = Settings_asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee3(key, index) {
         return regeneratorRuntime.wrap(function _callee3$(_context3) {
           while (1) {
             switch (_context3.prev = _context3.next) {
               case 0:
                 this.onLoading(true);
-                _context3.prev = 1;
-                _context3.next = 4;
+                this.setState(function (state) {
+                  return {
+                    data: state.data.map(function (setting) {
+                      if (setting.key === key) {
+                        return Object.assign(setting, {
+                          value: null
+                        });
+                      }
+
+                      return setting;
+                    })
+                  };
+                });
+                _context3.prev = 2;
+                _context3.next = 5;
                 return this.api.deleteSetting(key);
 
-              case 4:
-                this.onLoading(false);
+              case 5:
                 _context3.next = 10;
                 break;
 
               case 7:
                 _context3.prev = 7;
-                _context3.t0 = _context3["catch"](1);
+                _context3.t0 = _context3["catch"](2);
                 this.onError(_context3.t0);
 
               case 10:
+                this.onLoading(false);
+
+              case 11:
               case "end":
                 return _context3.stop();
             }
           }
-        }, _callee3, this, [[1, 7]]);
+        }, _callee3, this, [[2, 7]]);
       }));
 
-      function _delete(_x) {
+      function _delete(_x, _x2) {
         return _delete2.apply(this, arguments);
       }
 
@@ -3956,23 +3989,24 @@ var Settings = /*#__PURE__*/function (_React$Component) {
     key: "edit",
     value: function () {
       var _edit = Settings_asyncToGenerator( /*#__PURE__*/regeneratorRuntime.mark(function _callee4(key, control, value) {
+        var _yield$this$api$setti, _yield$this$api$setti2, update;
+
         return regeneratorRuntime.wrap(function _callee4$(_context4) {
           while (1) {
             switch (_context4.prev = _context4.next) {
               case 0:
                 this.onLoading(true);
                 this.setState(function (state) {
-                  var data = state.data.map(function (setting) {
-                    if (setting.key === key) {
-                      return Object.assign(setting, {
-                        value: value
-                      });
-                    }
-
-                    return setting;
-                  });
                   return {
-                    data: data
+                    data: state.data.map(function (setting) {
+                      if (setting.key === key) {
+                        return Object.assign(setting, {
+                          value: value
+                        });
+                      }
+
+                      return setting;
+                    })
                   };
                 });
                 _context4.prev = 2;
@@ -3981,27 +4015,45 @@ var Settings = /*#__PURE__*/function (_React$Component) {
 
               case 5:
                 _context4.next = 7;
-                return this.list();
+                return this.api.settings({
+                  key: [key]
+                });
 
               case 7:
-                this.onLoading(false);
-                _context4.next = 13;
+                _yield$this$api$setti = _context4.sent;
+                _yield$this$api$setti2 = Settings_slicedToArray(_yield$this$api$setti, 1);
+                update = _yield$this$api$setti2[0];
+                this.setState(function (state) {
+                  return {
+                    data: state.data.map(function (setting) {
+                      if (setting.key === key) {
+                        return buildEntry(update);
+                      }
+
+                      return setting;
+                    })
+                  };
+                });
+                _context4.next = 16;
                 break;
 
-              case 10:
-                _context4.prev = 10;
+              case 13:
+                _context4.prev = 13;
                 _context4.t0 = _context4["catch"](2);
                 this.onError(_context4.t0);
 
-              case 13:
+              case 16:
+                this.onLoading(false);
+
+              case 17:
               case "end":
                 return _context4.stop();
             }
           }
-        }, _callee4, this, [[2, 10]]);
+        }, _callee4, this, [[2, 13]]);
       }));
 
-      function edit(_x2, _x3, _x4) {
+      function edit(_x3, _x4, _x5) {
         return _edit.apply(this, arguments);
       }
 
