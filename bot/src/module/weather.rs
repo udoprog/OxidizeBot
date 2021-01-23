@@ -46,7 +46,7 @@ pub struct Weather {
     enabled: settings::Var<bool>,
     temperature_unit: settings::Var<TemperatureUnit>,
     location: settings::Var<Option<String>>,
-    api: injector::Var<Option<OpenWeatherMap>>,
+    api: injector::Ref<OpenWeatherMap>,
 }
 
 #[async_trait]
@@ -62,10 +62,8 @@ impl command::Handler for Weather {
 
         match ctx.next().as_deref() {
             Some("current") => {
-                let api = self
-                    .api
-                    .read()
-                    .await
+                let api = self.api.read().await;
+                let api = api
                     .as_ref()
                     .ok_or_else(|| respond_err!("API not configured"))?
                     .clone();
@@ -158,7 +156,7 @@ impl super::Module for Module {
                     .var("weather/temperature-unit", TemperatureUnit::DegreesCelsius)
                     .await?,
                 location: settings.optional("weather/location").await?,
-                api: injector.var().await?,
+                api: injector.var().await,
             },
         );
 

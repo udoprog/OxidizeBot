@@ -7,7 +7,7 @@ use anyhow::Result;
 
 /// Handler for the !alias command.
 pub struct Handler {
-    pub aliases: injector::Var<Option<db::Aliases>>,
+    pub aliases: injector::Ref<db::Aliases>,
 }
 
 #[async_trait]
@@ -84,7 +84,7 @@ impl super::Module for Module {
         handlers.insert(
             "alias",
             Handler {
-                aliases: injector.var().await?,
+                aliases: injector.var().await,
             },
         );
         Ok(())

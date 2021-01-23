@@ -251,7 +251,7 @@ pub async fn run(
         max_songs_per_user,
         duplicate_duration,
 
-        themes: injector.var().await?,
+        themes: injector.var().await,
         closed: None,
     }));
 

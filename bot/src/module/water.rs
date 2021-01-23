@@ -18,7 +18,7 @@ pub struct Reward {
 pub struct Handler {
     enabled: settings::Var<bool>,
     cooldown: settings::Var<utils::Cooldown>,
-    currency: injector::Var<Option<Currency>>,
+    currency: injector::Ref<Currency>,
     waters: Mutex<Vec<(DateTime<Utc>, Option<Reward>)>>,
     stream_info: stream_info::StreamInfo,
     reward_multiplier: settings::Var<u32>,
@@ -187,7 +187,7 @@ impl super::Module for Module {
             Handler {
                 enabled,
                 cooldown,
-                currency: injector.var().await?,
+                currency: injector.var().await,
                 waters: Mutex::new(Vec::new()),
                 stream_info: stream_info.clone(),
                 reward_multiplier,

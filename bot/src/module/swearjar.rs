@@ -12,7 +12,7 @@ pub struct Handler {
     enabled: settings::Var<bool>,
     reward: settings::Var<i64>,
     cooldown: settings::Var<Cooldown>,
-    currency: injector::Var<Option<Currency>>,
+    currency: injector::Ref<Currency>,
     twitch: api::Twitch,
 }
 
@@ -105,7 +105,7 @@ impl super::Module for Module {
 
         let cooldown = settings::Var::new(Cooldown::from_duration(cooldown));
 
-        let currency = injector.var().await?;
+        let currency = injector.var().await;
 
         handlers.insert(
             "swearjar",

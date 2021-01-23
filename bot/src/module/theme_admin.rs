@@ -5,7 +5,7 @@ use crate::module;
 use crate::prelude::*;
 
 pub struct Handler {
-    pub themes: injector::Var<Option<db::Themes>>,
+    pub themes: injector::Ref<db::Themes>,
 }
 
 #[async_trait]
@@ -69,7 +69,7 @@ impl super::Module for Module {
         handlers.insert(
             "theme",
             Handler {
-                themes: injector.var().await?,
+                themes: injector.var().await,
             },
         );
         Ok(())

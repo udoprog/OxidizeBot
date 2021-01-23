@@ -10,14 +10,14 @@ use std::sync::Arc;
 
 /// Handler for the !admin command.
 pub struct Handler {
-    pub currency: injector::Var<Option<Currency>>,
+    pub currency: injector::Ref<Currency>,
 }
 
 impl Handler {
     /// Get the name of the command for the current currency.
     pub async fn command_name(&self) -> Option<Arc<String>> {
-        match &*self.currency.read().await {
-            Some(ref c) if c.command_enabled => Some(c.name.clone()),
+        match self.currency.read().await.as_deref() {
+            Some(c) if c.command_enabled => Some(c.name.clone()),
             _ => None,
         }
     }
@@ -244,7 +244,7 @@ impl command::Handler for Handler {
 }
 
 pub async fn setup(injector: &Injector) -> Result<Arc<Handler>, Error> {
-    let currency = injector.var::<Currency>().await?;
+    let currency = injector.var::<Currency>().await;
     let handler = Handler { currency };
     Ok(Arc::new(handler))
 }

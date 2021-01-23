@@ -28,9 +28,9 @@ pub(super) async fn setup(
     // Locally scaled volume.
     let mut scaled_volume = (volume * volume_scale) / 100u32;
 
-    let device = injector::Var::new(device);
-    let volume = injector::Var::new(volume);
-    let volume_scale = injector::Var::new(volume_scale);
+    let device = settings::Var::new(device);
+    let volume = settings::Var::new(volume);
+    let volume_scale = settings::Var::new(volume_scale);
 
     let (config_tx, config_rx) = mpsc::unbounded_channel();
 
@@ -104,13 +104,13 @@ impl ConnectError {
 pub(super) struct ConnectPlayer {
     spotify: Arc<api::Spotify>,
     /// Currently configured device.
-    device: injector::Var<Option<String>>,
+    device: settings::Var<Option<String>>,
     /// Access to settings.
     settings: Settings,
     /// Current volume scale for this player.
-    volume_scale: injector::Var<u32>,
+    volume_scale: settings::Var<u32>,
     /// Current volume for this player.
-    volume: injector::Var<u32>,
+    volume: settings::Var<u32>,
 }
 
 impl ConnectPlayer {
@@ -175,9 +175,8 @@ impl ConnectPlayer {
     }
 
     pub(super) async fn volume(&self, modify: player::ModifyVolume) -> Result<u32, ConnectError> {
-        let mut volume = self.volume.write().await;
-        let update = modify.apply(*volume);
-        *volume = update;
+        let volume = self.volume.load().await;
+        let update = modify.apply(volume);
         self.settings
             .set("volume", update)
             .await
@@ -239,7 +238,7 @@ pub(super) enum ConfigurationEvent {
 #[derive(Clone)]
 pub(super) struct ConnectDevice {
     spotify: Arc<api::Spotify>,
-    pub(super) device: injector::Var<Option<String>>,
+    pub(super) device: settings::Var<Option<String>>,
     settings: Settings,
 }
 

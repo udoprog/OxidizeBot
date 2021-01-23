@@ -13,12 +13,49 @@ use std::fmt;
 use std::marker;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::{
-    sync::{Mutex, RwLock},
-    task::JoinError,
-};
+use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::task::JoinError;
 
-pub use crate::injector::Var;
+/// A synchronized variable from settings.
+#[derive(Debug)]
+pub struct Var<T> {
+    value: Arc<RwLock<T>>,
+}
+
+impl<T> Var<T> {
+    /// Construct a new var.
+    pub fn new(value: T) -> Self {
+        Self {
+            value: Arc::new(RwLock::new(value)),
+        }
+    }
+
+    /// Load the given var.
+    pub async fn load(&self) -> T
+    where
+        T: Clone,
+    {
+        self.value.read().await.clone()
+    }
+
+    /// Read the synchronized var.
+    pub async fn read(&self) -> RwLockReadGuard<'_, T> {
+        self.value.read().await
+    }
+
+    /// Write to the synchronized var.
+    pub async fn write(&self) -> RwLockWriteGuard<'_, T> {
+        self.value.write().await
+    }
+}
+
+impl<T> Clone for Var<T> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+        }
+    }
+}
 
 const SEPARATOR: char = '/';
 
