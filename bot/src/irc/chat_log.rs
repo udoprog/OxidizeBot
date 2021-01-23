@@ -46,6 +46,27 @@ impl Builder {
         })
     }
 
+    /// Update builder.
+    pub async fn update(&mut self) -> Result<Option<ChatLog>> {
+        use crate::stream::StreamExt as _;
+
+        tokio::select! {
+            Some(cache) = self.cache_stream.next() => {
+                self.cache = cache;
+                self.build()
+            }
+            Some(enabled) = self.enabled_stream.next() => {
+                self.enabled = enabled;
+                self.message_log.enabled(enabled).await;
+                self.build()
+            }
+            Some(emotes_enabled) = self.emotes_enabled_stream.next() => {
+                self.emotes_enabled = emotes_enabled;
+                self.build()
+            }
+        }
+    }
+
     /// Construct a new chat log with the specified configuration.
     pub fn build(&self) -> Result<Option<ChatLog>> {
         if !self.enabled {

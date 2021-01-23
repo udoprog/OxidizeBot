@@ -43,454 +43,519 @@ const SERVER: &str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &str = "twitch.tv/tags";
 const TWITCH_COMMANDS_CAP: &str = "twitch.tv/commands";
 
-struct TwitchSetup {
-    bot_stream: injector::Stream<api::TwitchAndUser>,
-    bot: Option<api::TwitchAndUser>,
-    streamer_stream: injector::Stream<api::TwitchAndUser>,
-    streamer: Option<api::TwitchAndUser>,
-}
-
-impl TwitchSetup {
-    async fn setup(&mut self) -> Result<(api::TwitchAndUser, api::TwitchAndUser)> {
-        loop {
-            let (streamer, bot) = match (self.streamer.as_ref(), self.bot.as_ref()) {
-                (Some(streamer), Some(bot)) => (streamer, bot),
-                _ => {
-                    tokio::select! {
-                        Some(bot) = self.bot_stream.next() => {
-                            self.bot = bot;
-                        }
-                        Some(streamer) = self.streamer_stream.next() => {
-                            self.streamer = streamer;
-                        }
-                    }
-
-                    continue;
-                }
-            };
-
-            return Ok((streamer.clone(), bot.clone()));
-        }
-    }
-}
-
 /// Helper struct to construct IRC integration.
 pub struct Irc {
-    pub db: db::Database,
     pub bad_words: db::Words,
-    pub global_bus: Arc<bus::Bus<bus::Global>>,
     pub command_bus: Arc<bus::Bus<bus::Command>>,
-    pub modules: Vec<Box<dyn module::Module>>,
-    pub restart: utils::Restart,
-    pub settings: settings::Settings,
-    pub auth: Auth,
+    pub db: db::Database,
+    pub global_bus: Arc<bus::Bus<bus::Global>>,
     pub global_channel: settings::Var<Option<String>>,
     pub injector: Injector,
-    pub stream_state_tx: mpsc::Sender<stream_info::StreamState>,
     pub message_log: MessageLog,
+    pub modules: Vec<Box<dyn module::Module>>,
+    pub restart: utils::Restart,
     pub script_dirs: Vec<PathBuf>,
+    pub settings: settings::Settings,
+    pub stream_state_tx: mpsc::Sender<stream_info::StreamState>,
 }
 
 impl Irc {
     pub async fn run(self) -> Result<()> {
-        let Irc {
-            db,
-            bad_words,
-            global_bus,
-            command_bus,
-            modules,
-            restart,
-            settings,
-            auth,
-            global_channel,
-            injector,
-            stream_state_tx,
-            message_log,
-            script_dirs,
-        } = self;
+        use backoff::backoff::Backoff as _;
 
-        let (streamer_stream, streamer) = injector
+        let (streamer_stream, streamer) = self
+            .injector
             .stream_key(&Key::<api::TwitchAndUser>::tagged(tags::Twitch::Streamer)?)
             .await;
 
-        let (bot_stream, bot) = injector
+        let (bot_stream, bot) = self
+            .injector
             .stream_key(&Key::<api::TwitchAndUser>::tagged(tags::Twitch::Bot)?)
             .await;
 
-        let mut twitch_setup = TwitchSetup {
+        let (auth_stream, auth) = self.injector.stream().await;
+
+        let mut setup = Setup {
             streamer_stream,
             streamer,
             bot_stream,
             bot,
+            auth_stream,
+            auth,
         };
 
-        'outer: loop {
-            let (streamer, bot) = twitch_setup.setup().await?;
+        let mut error_backoff = backoff::ExponentialBackoff::default();
+        error_backoff.current_interval = time::Duration::from_secs(5);
+        error_backoff.initial_interval = time::Duration::from_secs(5);
+        error_backoff.max_elapsed_time = None;
 
-            let streamer_channel = match streamer.channel.clone() {
-                Some(channel) => channel,
-                None => {
-                    bail!("missing channel information for streamer");
+        loop {
+            let irc_loop = setup.setup(&self).await?;
+
+            match irc_loop.run().await {
+                Ok(()) => {
+                    error_backoff.reset();
                 }
+                Err(e) => {
+                    let backoff = error_backoff.next_backoff().unwrap_or_default();
+                    log_error!(e, "chat component crashed, restarting in {:?}", backoff);
+                    tokio::time::sleep(backoff).await;
+                }
+            }
+        }
+    }
+}
+
+struct Setup {
+    bot_stream: injector::Stream<api::TwitchAndUser>,
+    bot: Option<api::TwitchAndUser>,
+    streamer_stream: injector::Stream<api::TwitchAndUser>,
+    streamer: Option<api::TwitchAndUser>,
+    auth_stream: injector::Stream<Auth>,
+    auth: Option<Auth>,
+}
+
+impl Setup {
+    /// Set up the IRC loop based on updated injector configuration.
+    async fn setup<'a>(&'a mut self, irc: &'a Irc) -> Result<IrcLoop<'a>> {
+        let mut first = true;
+
+        loop {
+            if !std::mem::take(&mut first) {
+                tokio::select! {
+                    Some(bot) = self.bot_stream.next() => {
+                        self.bot = bot;
+                    }
+                    Some(streamer) = self.streamer_stream.next() => {
+                        self.streamer = streamer;
+                    }
+                    Some(auth) = self.auth_stream.next() => {
+                        self.auth = auth;
+                    }
+                }
+            }
+
+            let streamer = match self.streamer.as_ref() {
+                Some(streamer) => streamer,
+                None => continue,
             };
 
-            log::trace!("Channel: {:?}", streamer_channel);
-            log::trace!("Streamer: {:?}", streamer.user.name);
-            log::trace!("Bot: {:?}", bot.user.name);
-
-            let chat_channel = format!("#{}", streamer_channel.name);
-            *global_channel.write().await = Some(chat_channel.clone());
-
-            let access_token = bot.client.token.read().await?.access_token().to_string();
-
-            let irc_client_config = client::data::config::Config {
-                nickname: Some(bot.user.name.to_string()),
-                channels: vec![chat_channel.clone()],
-                password: Some(format!("oauth:{}", access_token)),
-                server: Some(String::from(SERVER)),
-                port: Some(6697),
-                use_tls: Some(true),
-                ..client::data::config::Config::default()
+            let bot = match self.bot.as_ref() {
+                Some(bot) => bot,
+                None => continue,
             };
 
-            let mut client = Client::from_config(irc_client_config).await?;
-            client.identify()?;
+            let auth = match self.auth.as_ref() {
+                Some(auth) => auth,
+                None => continue,
+            };
 
-            let chat_settings = settings.scoped("chat");
+            return Ok(IrcLoop {
+                streamer: streamer.clone(),
+                bot: bot.clone(),
+                auth: auth.clone(),
+                setup: self,
+                irc,
+            });
+        }
+    }
 
-            let url_whitelist_enabled = chat_settings.var("url-whitelist/enabled", true).await?;
-            let bad_words_enabled = chat_settings.var("bad-words/enabled", false).await?;
-            let sender_ty = chat_settings.var("sender-type", sender::Type::Chat).await?;
-            let threshold = chat_settings.var("idle-detection/threshold", 5).await?;
-            let idle = idle::Idle::new(threshold);
+    /// Update loop setup state.
+    async fn update(&mut self) {
+        tokio::select! {
+            Some(streamer) = self.streamer_stream.next() => {
+                self.streamer = streamer;
+            },
+            Some(bot) = self.bot_stream.next() => {
+                self.bot = bot;
+            },
+            Some(auth) = self.auth_stream.next() => {
+                self.auth = auth;
+            }
+        }
+    }
+}
 
-            let nightbot = injector.var::<api::NightBot>().await;
+struct IrcLoop<'a> {
+    bot: api::TwitchAndUser,
+    streamer: api::TwitchAndUser,
+    auth: Auth,
+    setup: &'a mut Setup,
+    irc: &'a Irc,
+}
 
-            let mut buckets = LeakyBuckets::new();
+impl IrcLoop<'_> {
+    async fn run(self) -> Result<()> {
+        let Self {
+            bot,
+            streamer,
+            auth,
+            setup,
+            irc,
+        } = self;
 
-            let sender = Sender::new(
-                sender_ty,
-                chat_channel.clone(),
-                client.sender(),
-                nightbot,
-                &buckets,
-            )?;
+        let Irc {
+            ref bad_words,
+            ref command_bus,
+            ref db,
+            ref global_bus,
+            ref global_channel,
+            ref injector,
+            ref message_log,
+            ref modules,
+            ref restart,
+            ref script_dirs,
+            ref settings,
+            ref stream_state_tx,
+            ..
+        } = irc;
 
-            let mut futures = crate::utils::Futures::new();
+        let streamer_channel = match streamer.channel.clone() {
+            Some(channel) => channel,
+            None => {
+                bail!("missing channel information for streamer");
+            }
+        };
 
-            let coordinate = buckets.coordinate()?;
+        log::trace!("Channel: {:?}", streamer_channel);
+        log::trace!("Streamer: {:?}", streamer.user.name);
+        log::trace!("Bot: {:?}", bot.user.name);
 
-            let future = async move {
-                coordinate.await?;
+        let chat_channel = format!("#{}", streamer_channel.name);
+        *global_channel.write().await = Some(chat_channel.clone());
+
+        let access_token = bot.client.token.read().await?.access_token().to_string();
+
+        let irc_client_config = client::data::config::Config {
+            nickname: Some(bot.user.name.to_string()),
+            channels: vec![chat_channel.clone()],
+            password: Some(format!("oauth:{}", access_token)),
+            server: Some(String::from(SERVER)),
+            port: Some(6697),
+            use_tls: Some(true),
+            ..client::data::config::Config::default()
+        };
+
+        let mut client = Client::from_config(irc_client_config).await?;
+        client.identify()?;
+
+        let chat_settings = settings.scoped("chat");
+
+        let url_whitelist_enabled = chat_settings.var("url-whitelist/enabled", true).await?;
+        let bad_words_enabled = chat_settings.var("bad-words/enabled", false).await?;
+        let sender_ty = chat_settings.var("sender-type", sender::Type::Chat).await?;
+        let threshold = chat_settings.var("idle-detection/threshold", 5).await?;
+        let idle = idle::Idle::new(threshold);
+
+        let nightbot = injector.var::<api::NightBot>().await;
+
+        let mut buckets = LeakyBuckets::new();
+
+        let sender = Sender::new(
+            sender_ty,
+            chat_channel.clone(),
+            client.sender(),
+            nightbot,
+            &buckets,
+        )?;
+
+        let mut futures = crate::utils::Futures::new();
+
+        let coordinate = buckets.coordinate()?;
+
+        let future = async move {
+            coordinate.await?;
+            Ok(())
+        };
+
+        futures.push(Box::pin(
+            future.instrument(trace_span!(target: "futures", "buckets-coordinator",)),
+        ));
+
+        let stream_info = {
+            let (stream_info, mut stream_state_rx, future) =
+                stream_info::setup(streamer.user.clone(), streamer.client.clone());
+
+            let stream_state_tx = stream_state_tx.clone();
+
+            let forward = async move {
+                while let Some(m) = stream_state_rx.recv().await {
+                    stream_state_tx
+                        .send(m)
+                        .await
+                        .map_err(|_| anyhow!("failed to send"))?;
+                }
+
                 Ok(())
             };
 
             futures.push(Box::pin(
-                future.instrument(trace_span!(target: "futures", "buckets-coordinator",)),
+                forward.instrument(trace_span!(target: "futures", "stream-info-forward",)),
             ));
-
-            let stream_info = {
-                let (stream_info, mut stream_state_rx, future) =
-                    stream_info::setup(streamer.user.clone(), streamer.client.clone());
-
-                let stream_state_tx = stream_state_tx.clone();
-
-                let forward = async move {
-                    while let Some(m) = stream_state_rx.recv().await {
-                        stream_state_tx
-                            .send(m)
-                            .await
-                            .map_err(|_| anyhow!("failed to send"))?;
-                    }
-
-                    Ok(())
-                };
-
-                futures.push(Box::pin(
-                    forward.instrument(trace_span!(target: "futures", "stream-info-forward",)),
-                ));
-                futures.push(Box::pin(
-                    future.instrument(trace_span!(target: "futures", "stream-info-refresh",)),
-                ));
-
-                stream_info
-            };
-
             futures.push(Box::pin(
-                refresh_mods_future(sender.clone())
-                    .instrument(trace_span!(target: "futures", "refresh-mods",)),
+                future.instrument(trace_span!(target: "futures", "stream-info-refresh",)),
             ));
 
-            let mut handlers = module::Handlers::default();
+            stream_info
+        };
 
-            let scripts =
-                script::load_dir(streamer_channel.name.clone(), db.clone(), &script_dirs).await?;
+        futures.push(Box::pin(
+            refresh_mods_future(sender.clone())
+                .instrument(trace_span!(target: "futures", "refresh-mods",)),
+        ));
 
-            let (scripts_watch_tx, mut scripts_watch_rx) = sync::mpsc::unbounded_channel();
+        let mut handlers = module::Handlers::default();
 
-            let _watcher = if !script_dirs.is_empty() {
-                let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |e| {
-                    let _ = scripts_watch_tx.send(e);
-                })?;
+        let scripts =
+            script::load_dir(streamer_channel.name.clone(), db.clone(), script_dirs).await?;
 
-                for d in &script_dirs {
-                    if d.is_dir() {
-                        watcher.watch(d, notify::RecursiveMode::Recursive)?;
-                    }
+        let (scripts_watch_tx, mut scripts_watch_rx) = sync::mpsc::unbounded_channel();
+
+        let _watcher = if !script_dirs.is_empty() {
+            let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |e| {
+                let _ = scripts_watch_tx.send(e);
+            })?;
+
+            for d in script_dirs {
+                if d.is_dir() {
+                    watcher.watch(d, notify::RecursiveMode::Recursive)?;
                 }
-
-                Some(watcher)
-            } else {
-                None
-            };
-
-            for module in modules.iter() {
-                if log::log_enabled!(log::Level::Trace) {
-                    log::trace!("initializing module: {}", module.ty());
-                }
-
-                let result = module
-                    .hook(module::HookContext {
-                        handlers: &mut handlers,
-                        futures: &mut futures,
-                        stream_info: &stream_info,
-                        idle: &idle,
-                        twitch: &bot.client,
-                        streamer_twitch: &streamer.client,
-                        sender: &sender,
-                        settings: &settings,
-                        injector: &injector,
-                        auth: &auth,
-                    })
-                    .await;
-
-                result.with_context(|| anyhow!("failed to initialize module: {}", module.ty()))?;
             }
 
-            let currency_handler = currency_admin::setup(&injector).await?;
+            Some(watcher)
+        } else {
+            None
+        };
 
-            let future = currency_loop(
-                streamer.clone(),
-                streamer_channel.clone(),
-                sender.clone(),
-                idle.clone(),
-                injector.clone(),
-                chat_settings.clone(),
-                settings.clone(),
-            )
+        for module in modules {
+            if log::log_enabled!(log::Level::Trace) {
+                log::trace!("initializing module: {}", module.ty());
+            }
+
+            let result = module
+                .hook(module::HookContext {
+                    handlers: &mut handlers,
+                    futures: &mut futures,
+                    stream_info: &stream_info,
+                    idle: &idle,
+                    twitch: &bot.client,
+                    streamer_twitch: &streamer.client,
+                    sender: &sender,
+                    settings: &settings,
+                    injector,
+                })
+                .await;
+
+            result.with_context(|| anyhow!("failed to initialize module: {}", module.ty()))?;
+        }
+
+        let currency_handler = currency_admin::setup(injector).await?;
+
+        let future = currency_loop(
+            streamer.clone(),
+            streamer_channel.clone(),
+            sender.clone(),
+            idle.clone(),
+            injector.clone(),
+            chat_settings.clone(),
+            settings.clone(),
+        )
+        .await?;
+
+        futures.push(Box::pin(
+            future.instrument(trace_span!(target: "futures", "currency-loop",)),
+        ));
+
+        let (mut whitelisted_hosts_stream, whitelisted_hosts) = chat_settings
+            .stream("whitelisted-hosts")
+            .or_default()
             .await?;
 
-            futures.push(Box::pin(
-                future.instrument(trace_span!(target: "futures", "currency-loop",)),
-            ));
-
-            let (mut whitelisted_hosts_stream, whitelisted_hosts) = chat_settings
-                .stream("whitelisted-hosts")
-                .or_default()
-                .await?;
-
-            let (mut moderator_cooldown_stream, moderator_cooldown) = chat_settings
-                .stream("moderator-cooldown")
-                .optional()
-                .await?;
-
-            let (mut api_url_stream, api_url) =
-                settings.stream("remote/api-url").optional().await?;
-
-            let join_message = chat_settings.get::<String>("join-message").await?;
-
-            let leave_message = chat_settings
-                .get::<String>("leave-message")
-                .await?
-                .unwrap_or_else(|| String::from("Leaving chat... VoHiYo"));
-
-            let mut chat_log_builder = chat_log::Builder::new(
-                bot.client.clone(),
-                &injector,
-                message_log.clone(),
-                settings.scoped("chat-log"),
-            )
+        let (mut moderator_cooldown_stream, moderator_cooldown) = chat_settings
+            .stream("moderator-cooldown")
+            .optional()
             .await?;
 
-            let (mut commands_stream, commands) = injector.stream().await;
-            let (mut aliases_stream, aliases) = injector.stream().await;
+        let (mut api_url_stream, api_url) = settings.stream("remote/api-url").optional().await?;
 
-            let mut pong_timeout = Fuse::empty();
+        let join_message = chat_settings.get::<String>("join-message").await?;
 
-            let mut handler = Handler {
-                streamer: streamer.clone(),
-                streamer_channel,
+        let leave_message = chat_settings
+            .get::<String>("leave-message")
+            .await?
+            .unwrap_or_else(|| String::from("Leaving chat... VoHiYo"));
+
+        let mut chat_log_builder = chat_log::Builder::new(
+            bot.client.clone(),
+            injector,
+            message_log.clone(),
+            settings.scoped("chat-log"),
+        )
+        .await?;
+
+        let (mut commands_stream, commands) = injector.stream().await;
+        let (mut aliases_stream, aliases) = injector.stream().await;
+
+        let mut pong_timeout = Fuse::empty();
+
+        let mut handler = Handler {
+            streamer: streamer.clone(),
+            streamer_channel,
+            sender: sender.clone(),
+            moderators: Default::default(),
+            vips: Default::default(),
+            whitelisted_hosts,
+            commands,
+            bad_words: &bad_words,
+            global_bus: &global_bus,
+            aliases,
+            api_url: Arc::new(api_url),
+            moderator_cooldown,
+            handlers,
+            scripts,
+            idle: &idle,
+            pong_timeout: &mut pong_timeout,
+            token: &bot.client.token,
+            handler_shutdown: false,
+            stream_info: &stream_info,
+            auth: &auth,
+            currency_handler,
+            url_whitelist_enabled,
+            bad_words_enabled,
+            chat_log: chat_log_builder.build()?,
+            context_inner: Arc::new(command::ContextInner {
                 sender: sender.clone(),
-                moderators: Default::default(),
-                vips: Default::default(),
-                whitelisted_hosts,
-                commands,
-                bad_words: &bad_words,
-                global_bus: &global_bus,
-                aliases,
-                api_url: Arc::new(api_url),
-                moderator_cooldown,
-                handlers,
-                scripts,
-                idle: &idle,
-                pong_timeout: &mut pong_timeout,
-                token: &bot.client.token,
-                handler_shutdown: false,
-                stream_info: &stream_info,
-                auth: &auth,
-                currency_handler,
-                url_whitelist_enabled,
-                bad_words_enabled,
-                chat_log: chat_log_builder.build()?,
-                context_inner: Arc::new(command::ContextInner {
-                    sender: sender.clone(),
-                    scope_cooldowns: sync::Mutex::new(auth.scope_cooldowns()),
-                    message_hooks: sync::RwLock::new(Default::default()),
-                    restart: restart.clone(),
-                }),
-            };
+                scope_cooldowns: sync::Mutex::new(auth.scope_cooldowns()),
+                message_hooks: sync::RwLock::new(Default::default()),
+                restart: restart.clone(),
+            }),
+        };
 
-            let mut outgoing = client
-                .outgoing()
-                .ok_or_else(|| anyhow!("missing outgoing future for irc client"))?;
+        let mut outgoing = client
+            .outgoing()
+            .ok_or_else(|| anyhow!("missing outgoing future for irc client"))?;
 
-            let mut client_stream = client.stream()?;
+        let mut client_stream = client.stream()?;
 
-            let mut ping_interval = tokio::time::interval(time::Duration::from_secs(10));
-            let mut commands = command_bus.subscribe();
+        let mut ping_interval = tokio::time::interval(time::Duration::from_secs(10));
+        let mut commands = command_bus.subscribe();
 
-            let leave = Fuse::empty();
-            tokio::pin!(leave);
+        let leave = Fuse::empty();
+        tokio::pin!(leave);
 
-            let sender = handler.sender.clone();
+        let sender = handler.sender.clone();
 
-            // Things to do when joining.
-            let join_task = Fuse::new(async move {
-                sender.cap_req(TWITCH_TAGS_CAP).await;
-                sender.cap_req(TWITCH_COMMANDS_CAP).await;
+        // Things to do when joining.
+        let join_task = Fuse::new(async move {
+            sender.cap_req(TWITCH_TAGS_CAP).await;
+            sender.cap_req(TWITCH_COMMANDS_CAP).await;
 
-                if let Some(join_message) = join_message.as_ref() {
-                    // greeting when bot joins.
-                    sender.privmsg_immediate(join_message);
+            if let Some(join_message) = join_message.as_ref() {
+                // greeting when bot joins.
+                sender.privmsg_immediate(join_message);
+            }
+        });
+        tokio::pin!(join_task);
+
+        #[allow(clippy::unnecessary_mut_passed)]
+        while leave.is_empty() {
+            tokio::select! {
+                _ = &mut join_task => {
+                    log::trace!("Done sending capabilities request and join message");
                 }
-            });
-            tokio::pin!(join_task);
+                Some(ev) = scripts_watch_rx.recv() => {
+                    if let Ok(ev) = ev {
+                        if let Err(e) = handler.handle_script_filesystem_event(ev) {
+                            log_error!(e, "failed to handle script filesystem event");
+                        }
+                    }
+                }
+                command = commands.recv() => {
+                    let command = command?;
 
-            #[allow(clippy::unnecessary_mut_passed)]
-            while leave.is_empty() {
-                tokio::select! {
-                    _ = &mut join_task => {
-                        log::trace!("Done sending capabilities request and join message");
-                    }
-                    Some(ev) = scripts_watch_rx.recv() => {
-                        if let Ok(ev) = ev {
-                            if let Err(e) = handler.handle_script_filesystem_event(ev) {
-                                log_error!(e, "failed to handle script filesystem event");
-                            }
-                        }
-                    }
-                    command = commands.recv() => {
-                        let command = command?;
+                    match command {
+                        bus::Command::Raw { command } => {
+                            log::trace!("Raw command: {}", command);
 
-                        match command {
-                            bus::Command::Raw { command } => {
-                                log::trace!("Raw command: {}", command);
-
-                                if let Err(e) = handler.raw(command).await {
-                                    log_error!(e, "Failed to handle message");
-                                }
-                            }
-                        }
-                    }
-                    Some(future) = futures.next() => {
-                        match future {
-                            Ok(..) => {
-                                log::warn!("IRC component exited, exiting...");
-                                break 'outer;
-                            }
-                            Err(e) => {
-                                log_warn!(e, "IRC component errored, restarting in 5 seconds");
-                                tokio::time::sleep(time::Duration::from_secs(5)).await;
-                                continue 'outer;
-                            }
-                        }
-                    }
-                    // NB: reconnect on credential updates.
-                    Some(streamer) = twitch_setup.streamer_stream.next() => {
-                        twitch_setup.streamer = streamer;
-                        leave.set(Fuse::new(tokio::time::sleep(time::Duration::from_secs(1))));
-                    },
-                    Some(bot) = twitch_setup.bot_stream.next() => {
-                        twitch_setup.bot = bot;
-                        leave.set(Fuse::new(tokio::time::sleep(time::Duration::from_secs(1))));
-                    },
-                    Some(update) = commands_stream.next() => {
-                        handler.commands = update;
-                    }
-                    Some(update) = aliases_stream.next() => {
-                        handler.aliases = update;
-                    }
-                    Some(cache) = chat_log_builder.cache_stream.next() => {
-                        chat_log_builder.cache = cache;
-                        handler.chat_log = chat_log_builder.build()?;
-                    }
-                    Some(update) = chat_log_builder.enabled_stream.next() => {
-                        chat_log_builder.enabled = update;
-                        chat_log_builder.message_log.enabled(update).await;
-                        handler.chat_log = chat_log_builder.build()?;
-                    }
-                    Some(update) = chat_log_builder.emotes_enabled_stream.next() => {
-                        chat_log_builder.emotes_enabled = update;
-                        handler.chat_log = chat_log_builder.build()?;
-                    }
-                    Some(update) = api_url_stream.next() => {
-                        handler.api_url = Arc::new(update);
-                    }
-                    Some(update) = moderator_cooldown_stream.next() => {
-                        handler.moderator_cooldown = update;
-                    }
-                    _ = ping_interval.tick() => {
-                        handler.send_ping()?;
-                    }
-                    _ = &mut *handler.pong_timeout => {
-                        bail!("server not responding");
-                    }
-                    update = whitelisted_hosts_stream.next() => {
-                        if let Some(update) = update {
-                            handler.whitelisted_hosts = update;
-                        }
-                    },
-                    message = client_stream.next() => {
-                        if let Some(m) = message.transpose()? {
-                            if let Err(e) = handler.handle(m).await {
+                            if let Err(e) = handler.raw(command).await {
                                 log_error!(e, "Failed to handle message");
                             }
                         }
-
-                        if handler.handler_shutdown {
-                            bail!("handler forcibly shut down");
-                        }
-                    }
-                    _ = &mut outgoing => {
-                        bail!("outgoing future ended unexpectedly");
-                    }
-                    _ = &mut leave => {
-                        break;
                     }
                 }
+                Some(future) = futures.next() => {
+                    match future {
+                        Ok(..) => {
+                            log::warn!("IRC component exited, exiting...");
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            log_warn!(e, "IRC component errored, restarting in 5 seconds");
+                            tokio::time::sleep(time::Duration::from_secs(5)).await;
+                            return Ok(());
+                        }
+                    }
+                }
+                () = setup.update() => {
+                    // If configuration state changes, force a reconnect.
+                    leave.set(Fuse::new(tokio::time::sleep(time::Duration::from_secs(1))));
+                }
+                Some(commands) = commands_stream.next() => {
+                    handler.commands = commands;
+                }
+                Some(aliases) = aliases_stream.next() => {
+                    handler.aliases = aliases;
+                }
+                chat_log = chat_log_builder.update() => {
+                    handler.chat_log = chat_log?;
+                }
+                Some(update) = api_url_stream.next() => {
+                    handler.api_url = Arc::new(update);
+                }
+                Some(update) = moderator_cooldown_stream.next() => {
+                    handler.moderator_cooldown = update;
+                }
+                _ = ping_interval.tick() => {
+                    handler.send_ping()?;
+                }
+                _ = &mut *handler.pong_timeout => {
+                    bail!("server not responding");
+                }
+                update = whitelisted_hosts_stream.next() => {
+                    if let Some(update) = update {
+                        handler.whitelisted_hosts = update;
+                    }
+                },
+                message = client_stream.next() => {
+                    if let Some(m) = message.transpose()? {
+                        if let Err(e) = handler.handle(m).await {
+                            log_error!(e, "Failed to handle message");
+                        }
+                    }
+
+                    if handler.handler_shutdown {
+                        bail!("handler forcibly shut down");
+                    }
+                }
+                _ = &mut outgoing => {
+                    bail!("outgoing future ended unexpectedly");
+                }
+                _ = &mut leave => {
+                    break;
+                }
             }
+        }
 
-            handler.sender.privmsg_immediate(leave_message);
+        handler.sender.privmsg_immediate(leave_message);
 
-            #[allow(clippy::never_loop, clippy::unnecessary_mut_passed)]
-            loop {
-                tokio::select! {
-                    _ = &mut outgoing => {
-                        bail!("outgoing future ended unexpectedly");
-                    }
-                    _ = &mut leave => {
-                        break;
-                    }
+        #[allow(clippy::never_loop, clippy::unnecessary_mut_passed)]
+        loop {
+            tokio::select! {
+                _ = &mut outgoing => {
+                    bail!("outgoing future ended unexpectedly");
+                }
+                _ = &mut leave => {
+                    break;
                 }
             }
         }
@@ -546,6 +611,7 @@ async fn currency_loop(
     let (mut db_stream, db) = injector.stream::<db::Database>().await;
 
     let mut builder = CurrencyBuilder::new(streamer.client.clone(), mysql_schema, injector.clone());
+
     builder.db = db;
     builder.ty = ty;
     builder.enabled = enabled;

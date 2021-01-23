@@ -453,6 +453,7 @@ async fn try_main(
 
     let scopes_schema = auth::Schema::load_static()?;
     let auth = db.auth(scopes_schema).await?;
+    injector.update(auth.clone()).await;
 
     let settings_schema = settings::Schema::load_static()?;
     let settings = db.settings(settings_schema)?;
@@ -724,7 +725,6 @@ async fn try_main(
         modules,
         restart,
         settings,
-        auth,
         global_channel,
         injector: injector.clone(),
         stream_state_tx,

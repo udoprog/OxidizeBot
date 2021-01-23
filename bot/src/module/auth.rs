@@ -8,12 +8,18 @@ use chrono::Utc;
 
 /// Handler for the !auth command.
 pub struct Handler {
-    auth: auth::Auth,
+    auth: injector::Ref<auth::Auth>,
 }
 
 #[async_trait]
 impl command::Handler for Handler {
     async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
+        let auth = self.auth.read().await;
+        let auth = match auth.as_deref() {
+            Some(auth) => auth,
+            None => return Err(respond_err!("auth component not configured").into()),
+        };
+
         match ctx.next().as_deref() {
             Some("scopes") => {
                 let filter = ctx.next();
@@ -35,7 +41,7 @@ impl command::Handler for Handler {
                         .collect::<Vec<_>>()
                 };
 
-                let by_user = filter(self.auth.scopes_for_user(user.name()).await);
+                let by_user = filter(auth.scopes_for_user(user.name()).await);
 
                 let mut result = Vec::new();
 
@@ -48,7 +54,7 @@ impl command::Handler for Handler {
                 }
 
                 for role in user.roles() {
-                    let by_role = filter(self.auth.scopes_for_role(role).await);
+                    let by_role = filter(auth.scopes_for_role(role).await);
 
                     if !by_role.is_empty() {
                         result.push(format!("{}: {}", role, by_role.join(", ")));
@@ -84,9 +90,7 @@ impl command::Handler for Handler {
                     scope = scope
                 );
 
-                self.auth
-                    .insert_temporary(scope, principal, expires_at)
-                    .await;
+                auth.insert_temporary(scope, principal, expires_at).await;
             }
             _ => {
                 respond!(ctx, "Expected: scopes, permit");
@@ -113,9 +117,16 @@ impl super::Module for Module {
 
     async fn hook(
         &self,
-        module::HookContext { handlers, auth, .. }: module::HookContext<'_>,
+        module::HookContext {
+            injector, handlers, ..
+        }: module::HookContext<'_>,
     ) -> Result<()> {
-        handlers.insert("auth", Handler { auth: auth.clone() });
+        handlers.insert(
+            "auth",
+            Handler {
+                auth: injector.var().await,
+            },
+        );
         Ok(())
     }
 }
