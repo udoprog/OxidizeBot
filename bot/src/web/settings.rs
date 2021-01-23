@@ -169,7 +169,7 @@ impl Settings {
         let setting: Option<crate::settings::Setting> = settings
             .setting::<serde_json::Value>(key)
             .await?
-            .map(|s| s.to_setting());
+            .map(|s| s.to_owned());
         Ok(warp::reply::json(&setting))
     }
 

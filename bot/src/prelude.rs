@@ -14,6 +14,10 @@ pub(crate) use tokio::sync::{mpsc, oneshot};
 pub(crate) type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// A boxed stream.
-pub(crate) type BoxStream<'a, T> = Pin<Box<dyn futures_core::Stream<Item = T> + Send + 'a>>;
+pub(crate) type BoxStream<'a, T> = Pin<Box<dyn tokio_stream::Stream<Item = T> + Send + 'a>>;
+
+/// A boxed sync stream.
+pub(crate) type SyncBoxStream<'a, T> =
+    Pin<Box<dyn tokio_stream::Stream<Item = T> + Send + Sync + 'a>>;
 
 pub(crate) use futures_util::TryStreamExt as _;

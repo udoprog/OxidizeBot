@@ -6,15 +6,22 @@ use crate::prelude::*;
 use crate::utils;
 use chrono_tz::Tz;
 use diesel::prelude::*;
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error;
 use std::fmt;
 use std::marker;
+use std::ops;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tokio::task::JoinError;
+
+/// Separator in configuration hierarchy.
+const SEP: char = '/';
+
+/// Indication that a value has been updated.
+type Update = Event<serde_json::Value>;
 
 /// A synchronized variable from settings.
 #[derive(Debug)]
@@ -56,11 +63,6 @@ impl<T> Clone for Var<T> {
         }
     }
 }
-
-const SEPARATOR: char = '/';
-
-type EventSender = mpsc::UnboundedSender<Event<serde_json::Value>>;
-type Subscriptions = Arc<RwLock<HashMap<String, Vec<EventSender>>>>;
 
 #[derive(Debug)]
 pub enum Error {
@@ -107,34 +109,29 @@ pub enum Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
+        match self {
             Self::Shutdown => "injector is shutting down".fmt(fmt),
             Self::EndOfDriverStream => "end of driver stream".fmt(fmt),
             Self::DriverAlreadyConfigured => "driver already configured".fmt(fmt),
-            Self::NoTargetForSchema(ref key) => write!(fmt, "no target for schema key: {}", key),
-            Self::InvalidTimeZone(ref tz) => write!(fmt, "Invalid time zone: {}", tz,),
-            Self::MissingRequiredField(ref field) => {
+            Self::NoTargetForSchema(key) => write!(fmt, "no target for schema key: {}", key),
+            Self::InvalidTimeZone(tz) => write!(fmt, "Invalid time zone: {}", tz,),
+            Self::MissingRequiredField(field) => {
                 write!(fmt, "Missing required field: {}", field)
             }
-            Self::Expected(ref what) => write!(fmt, "Expected {}", what),
-            Self::ExpectedType(ref ty) => write!(fmt, "Expected type: {}", ty),
-            Self::IncompatibleField(ref field) => write!(fmt, "Incompatible field: {}", field),
-            Self::ExpectedOneOf(ref alts) => write!(fmt, "Expected one of: {}", alts.join(", ")),
-            Self::MigrationIncompatible {
-                ref from,
-                ref to,
-                ref ty,
-                ref json,
-            } => write!(
+            Self::Expected(what) => write!(fmt, "Expected {}", what),
+            Self::ExpectedType(ty) => write!(fmt, "Expected type: {}", ty),
+            Self::IncompatibleField(field) => write!(fmt, "Incompatible field: {}", field),
+            Self::ExpectedOneOf(alts) => write!(fmt, "Expected one of: {}", alts.join(", ")),
+            Self::MigrationIncompatible { from, to, ty, json } => write!(
                 fmt,
                 "value for {} (json: {}) is not compatible with {} ({})",
                 from, json, to, ty
             ),
-            Self::Json(ref e) => write!(fmt, "JSON Error: {}", e),
-            Self::Diesel(ref e) => write!(fmt, "Diesel Error: {}", e),
-            Self::Error(ref e) => write!(fmt, "Error: {}", e),
-            Self::FailedToLoadSchema(ref e) => write!(fmt, "Failed to load settings.yaml: {}", e),
-            Self::BadBoolean(ref e) => write!(fmt, "Bad boolean value: {}", e),
+            Self::Json(e) => write!(fmt, "JSON Error: {}", e),
+            Self::Diesel(e) => write!(fmt, "Diesel Error: {}", e),
+            Self::Error(e) => write!(fmt, "Error: {}", e),
+            Self::FailedToLoadSchema(e) => write!(fmt, "Failed to load settings.yaml: {}", e),
+            Self::BadBoolean(e) => write!(fmt, "Bad boolean value: {}", e),
             Self::TaskError(..) => write!(fmt, "Task failed"),
         }
     }
@@ -192,15 +189,15 @@ pub struct Setting {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct SettingRef<'a, T> {
-    pub schema: &'a SchemaType,
-    pub key: Cow<'a, str>,
-    pub value: Option<T>,
+pub struct SettingRef<'settings, 'key, T> {
+    schema: &'settings SchemaType,
+    key: Key<'settings, 'key>,
+    value: Option<T>,
 }
 
-impl SettingRef<'_, serde_json::Value> {
+impl SettingRef<'_, '_, serde_json::Value> {
     /// Convert into an owned value.
-    pub fn to_setting(&self) -> Setting {
+    pub fn to_owned(&self) -> Setting {
         Setting {
             schema: self.schema.clone(),
             key: self.key.to_string(),
@@ -209,6 +206,23 @@ impl SettingRef<'_, serde_json::Value> {
                 Some(value) => value,
             },
         }
+    }
+}
+
+impl<T> SettingRef<'_, '_, T> {
+    /// Access the underlying key this setting references.
+    pub fn key(&self) -> &str {
+        &*self.key
+    }
+
+    /// Access the underlying schema this setting references.
+    pub fn schema(&self) -> &SchemaType {
+        self.schema
+    }
+
+    /// Access the raw value this setting references.
+    pub fn value(&self) -> Option<&T> {
+        self.value.as_ref()
     }
 }
 
@@ -244,30 +258,41 @@ pub struct Schema {
 
 impl Schema {
     /// Convert schema into prefix data.
-    fn as_prefixes(&self) -> HashMap<String, Prefix> {
-        let mut prefixes = HashMap::<String, Prefix>::new();
+    fn as_prefixes(&self) -> HashMap<Box<str>, Prefix> {
+        let mut prefixes = HashMap::<Box<str>, Prefix>::new();
 
         for key in self.types.keys() {
             let mut buf = String::new();
 
-            let mut p = key.split(SEPARATOR).peekable();
+            let mut p = key.split(SEP).peekable();
 
             while let Some(part) = p.next() {
                 buf.push_str(&part);
 
                 prefixes
-                    .entry(buf.clone())
+                    .entry(buf.as_str().into())
                     .or_default()
                     .keys
                     .push(key.clone());
 
                 if p.peek().is_some() {
-                    buf.push(SEPARATOR);
+                    buf.push(SEP);
                 }
             }
         }
 
         prefixes
+    }
+
+    fn as_subscriptions(&self) -> HashMap<Box<str>, broadcast::Sender<Update>> {
+        let mut m = HashMap::new();
+
+        for key in self.types.keys() {
+            let (sender, _) = broadcast::channel(1);
+            m.insert(key.as_str().into(), sender);
+        }
+
+        m
     }
 }
 
@@ -322,11 +347,11 @@ impl Future for Driver {
 pub struct Inner {
     db: db::Database,
     /// Maps setting prefixes to subscriptions.
-    subscriptions: Subscriptions,
+    subscriptions: HashMap<Box<str>, broadcast::Sender<Update>>,
     /// Schema for every corresponding type.
-    pub schema: Arc<Schema>,
+    schema: Schema,
     /// Information about all prefixes.
-    prefixes: Arc<HashMap<String, Prefix>>,
+    prefixes: HashMap<Box<str>, Prefix>,
     /// Channel where new drivers are sent.
     drivers: mpsc::UnboundedSender<Driver>,
     /// Receiver for drivers. Used by the run function.
@@ -336,22 +361,23 @@ pub struct Inner {
 /// A container for settings from which we can subscribe for updates.
 #[derive(Clone)]
 pub struct Settings {
-    scope: String,
+    scope: Box<str>,
     inner: Arc<Inner>,
 }
 
 impl Settings {
     pub fn new(db: db::Database, schema: Schema) -> Self {
         let prefixes = schema.as_prefixes();
+        let subscriptions = schema.as_subscriptions();
         let (drivers, drivers_rx) = mpsc::unbounded_channel();
 
         Self {
-            scope: String::from(""),
+            scope: Default::default(),
             inner: Arc::new(Inner {
                 db,
-                subscriptions: Default::default(),
-                schema: Arc::new(schema),
-                prefixes: Arc::new(prefixes),
+                subscriptions,
+                schema,
+                prefixes,
                 drivers,
                 drivers_rx: Mutex::new(Some(drivers_rx)),
             }),
@@ -451,7 +477,7 @@ impl Settings {
     /// Lookup the given schema.
     pub fn lookup(&self, key: &str) -> Option<&SchemaType> {
         let key = self.key(key);
-        self.inner.schema.types.get(key.as_ref())
+        self.inner.schema.types.get(&*key)
     }
 
     /// Get a setting by prefix.
@@ -465,7 +491,7 @@ impl Settings {
         self.inner
             .db
             .asyncify(move |c| {
-                let prefix = match inner.prefixes.get(&prefix) {
+                let prefix = match inner.prefixes.get(prefix.as_str()) {
                     Some(prefix) => prefix,
                     None => return Ok(Vec::default()),
                 };
@@ -506,18 +532,21 @@ impl Settings {
     /// Get the given setting.
     ///
     /// This includes the schema of the setting as well.
-    pub async fn setting<'a, T>(&'a self, key: &str) -> Result<Option<SettingRef<'a, T>>, Error>
+    pub async fn setting<'settings, 'key, T>(
+        &'settings self,
+        key: &'key str,
+    ) -> Result<Option<SettingRef<'settings, 'key, T>>, Error>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
         let key = self.key(key);
 
-        let schema = match self.inner.schema.types.get(key.as_ref()) {
+        let schema = match self.inner.schema.types.get(&*key) {
             Some(schema) => schema,
             None => return Ok(None),
         };
 
-        let value = self.inner_get(&key).await?;
+        let value = self.inner_get(&*key).await?;
         Ok(Some(SettingRef { schema, key, value }))
     }
 
@@ -675,28 +704,44 @@ impl Settings {
 
     /// Create a scoped setting.
     pub fn scoped(&self, s: &str) -> Settings {
-        let mut scope = self.scope.clone();
+        let mut it = s.split('/').filter(|s| !s.is_empty());
 
-        for s in s.trim_matches(SEPARATOR).split('/') {
-            if s.is_empty() {
-                continue;
+        let scope = if self.scope.is_empty() {
+            let mut scope = String::with_capacity(s.len());
+            let last = it.next_back();
+
+            while let Some(s) = it.next() {
+                scope.push_str(s);
+                scope.push(SEP);
             }
 
-            if !scope.is_empty() {
-                scope.push(SEPARATOR);
+            if let Some(s) = last {
+                scope.push_str(s);
             }
 
-            scope.push_str(s);
-        }
+            scope
+        } else {
+            let mut scope = String::from(self.scope.as_ref());
+
+            for s in it {
+                scope.push(SEP);
+                scope.push_str(s);
+            }
+
+            scope
+        };
 
         Settings {
-            scope,
+            scope: scope.into(),
             inner: self.inner.clone(),
         }
     }
 
     /// Initialize the value from the database.
-    pub fn stream<'a, T>(&'a self, key: &str) -> StreamBuilder<'_, T> {
+    pub fn stream<'settings, 'key, T>(
+        &'settings self,
+        key: &'key str,
+    ) -> StreamBuilder<'settings, 'key, T> {
         let key = self.key(key);
 
         StreamBuilder {
@@ -860,31 +905,19 @@ impl Settings {
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        let (tx, rx) = mpsc::unbounded_channel();
-
-        if !self.inner.schema.contains(key) {
+        let mut rx = if let Some(sender) = self.inner.subscriptions.get(key) {
+            sender.subscribe()
+        } else {
             panic!("no schema registered for key `{}`", key);
-        }
-
-        {
-            let mut subscriptions = self.inner.subscriptions.write().await;
-            let values = subscriptions.entry(key.to_string()).or_default();
-
-            let mut update = Vec::with_capacity(values.len());
-
-            for tx in values.drain(..) {
-                if !tx.is_closed() {
-                    update.push(tx);
-                }
-            }
-
-            update.push(tx);
-            *values = update;
-        }
+        };
 
         OptionStream {
-            key: key.to_string(),
-            rx,
+            key: key.into(),
+            rx: Box::pin(async_stream::stream! {
+                loop {
+                    yield rx.recv().await;
+                }
+            }),
             marker: marker::PhantomData,
         }
     }
@@ -892,49 +925,77 @@ impl Settings {
     /// Try to send the specified event.
     ///
     /// Cleans up the existing subscription if the other side is closed.
-    async fn try_send(&self, key: &str, event: Event<serde_json::Value>) {
-        let subscriptions = self.inner.subscriptions.read().await;
-
-        if let Some(subs) = subscriptions.get(key) {
-            log::trace!("{}: Updating {} subscriptions", key, subs.len());
-
-            for sub in subs {
-                if let Err(e) = sub.send(event.clone()) {
-                    log::error!("error when sending to sub: {}: {}", key, e);
-                }
-            }
-        } else {
-            log::trace!("{}: No subscription to update", key);
+    async fn try_send(&self, key: &str, event: Update) {
+        if let Some(b) = self.inner.subscriptions.get(key) {
+            // NB: intentionally ignore errors. There's nothing to be done in
+            // case there are any.
+            let _ = b.send(event);
         }
     }
 
     /// Construct a new key.
-    fn key<'a>(&'a self, key: &str) -> Cow<'a, str> {
-        let key = key.trim_matches(SEPARATOR);
+    fn key<'settings, 'key>(&'settings self, key: &'key str) -> Key<'settings, 'key> {
+        let key = key.trim_matches(SEP);
 
         if key.is_empty() {
-            return Cow::Borrowed(&self.scope);
+            return Key::Settings(&self.scope);
         }
 
         if self.scope.is_empty() {
-            return Cow::Owned(key.to_string());
+            Key::Key(key)
+        } else {
+            let mut scope = String::from(self.scope.as_ref());
+            scope.push(SEP);
+            scope.push_str(key);
+            Key::Owned(scope.into())
         }
+    }
+}
 
-        let mut scope = self.scope.clone();
-        scope.push(SEPARATOR);
-        scope.push_str(key.trim_matches(SEPARATOR));
-        Cow::Owned(scope)
+/// Internal key holder, reduces the number of copies necessary when there's no
+/// key specified or we can rely solely on scope.
+#[derive(Clone)]
+enum Key<'settings, 'key> {
+    Settings(&'settings str),
+    Key(&'key str),
+    Owned(Box<str>),
+}
+
+impl fmt::Debug for Key<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
+    }
+}
+
+impl serde::Serialize for Key<'_, '_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        ops::Deref::deref(self).serialize(serializer)
+    }
+}
+
+impl ops::Deref for Key<'_, '_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Key::Settings(scope) => *scope,
+            Key::Key(key) => *key,
+            Key::Owned(key) => key.as_ref(),
+        }
     }
 }
 
 #[must_use = "Must consume to drive decide how to handle stream"]
-pub struct StreamBuilder<'a, T> {
-    settings: &'a Settings,
+pub struct StreamBuilder<'settings, 'key, T> {
+    settings: &'settings Settings,
     default_value: Option<T>,
-    key: Cow<'a, str>,
+    key: Key<'settings, 'key>,
 }
 
-impl<'a, T> StreamBuilder<'a, T>
+impl<'settings, 'key, T> StreamBuilder<'settings, 'key, T>
 where
     T: serde::Serialize + serde::de::DeserializeOwned,
 {
@@ -993,12 +1054,12 @@ where
     }
 
     /// Add a potential fallback value when the type is optional.
-    pub fn or(self, other: Option<T>) -> StreamBuilder<'a, T> {
+    pub fn or(self, other: Option<T>) -> Self {
         self.or_else(move || other)
     }
 
     /// Add a potential fallback value when the type is optional.
-    pub fn or_else<F>(mut self, other: F) -> StreamBuilder<'a, T>
+    pub fn or_else<F>(mut self, other: F) -> Self
     where
         F: FnOnce() -> Option<T>,
     {
@@ -1043,8 +1104,8 @@ where
 
 /// Get updates for a specific setting.
 pub struct OptionStream<T> {
-    key: String,
-    rx: mpsc::UnboundedReceiver<Event<serde_json::Value>>,
+    key: Box<str>,
+    rx: SyncBoxStream<'static, Result<Update, broadcast::error::RecvError>>,
     marker: marker::PhantomData<T>,
 }
 
@@ -1057,32 +1118,44 @@ where
     type Item = Option<T>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let item = match self.rx.poll_recv(cx) {
-            Poll::Ready(item) => item,
-            Poll::Pending => return Poll::Pending,
-        };
+        loop {
+            let item = match self.rx.as_mut().poll_next(cx) {
+                Poll::Ready(item) => item,
+                Poll::Pending => return Poll::Pending,
+            };
 
-        let update = match item {
-            Some(update) => update,
-            None => return Poll::Ready(None),
-        };
+            let update = match item {
+                Some(update) => update,
+                None => return Poll::Ready(None),
+            };
 
-        if log::log_enabled!(log::Level::Trace) {
-            log::trace!("{}: {:?}", self.as_ref().key, update);
-        }
-
-        let value = Some(match update {
-            Event::Clear => None,
-            Event::Set(value) => match serde_json::from_value(value) {
-                Ok(value) => Some(value),
+            let update = match update {
+                Ok(update) => update,
+                // An error meant either that we're lagging behind or that the
+                // sender has been dropped. Either way, indicate end of stream.
                 Err(e) => {
-                    log::warn!("bad value for key: {}: {}", self.as_ref().key, e);
-                    None
+                    log_warn!(e, "{}: stream reader errored", self.key);
+                    return Poll::Ready(None);
                 }
-            },
-        });
+            };
 
-        Poll::Ready(value)
+            if log::log_enabled!(log::Level::Trace) {
+                log::trace!("{}: {:?}", self.key, update);
+            }
+
+            let value = Some(match update {
+                Event::Clear => None,
+                Event::Set(value) => match serde_json::from_value(value) {
+                    Ok(value) => Some(value),
+                    Err(e) => {
+                        log::warn!("bad value for key: {}: {}", self.key, e);
+                        None
+                    }
+                },
+            });
+
+            return Poll::Ready(value);
+        }
     }
 }
 
@@ -1324,33 +1397,29 @@ impl Type {
 }
 
 impl fmt::Display for Type {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use self::Kind::*;
 
         match &self.kind {
-            Raw => write!(fmt, "any")?,
-            Duration => write!(fmt, "duration")?,
-            Bool => write!(fmt, "bool")?,
-            Number => write!(fmt, "number")?,
-            Percentage => write!(fmt, "percentage")?,
-            String { .. } => write!(fmt, "string")?,
-            Text => write!(fmt, "text")?,
-            Set { ref value } => write!(fmt, "Array<{}>", value)?,
-            Select {
-                ref value,
-                ref options,
-                ..
-            } => {
+            Raw => write!(f, "any")?,
+            Duration => write!(f, "duration")?,
+            Bool => write!(f, "bool")?,
+            Number => write!(f, "number")?,
+            Percentage => write!(f, "percentage")?,
+            String { .. } => write!(f, "string")?,
+            Text => write!(f, "text")?,
+            Set { value } => write!(f, "Array<{}>", value)?,
+            Select { value, options, .. } => {
                 let options = options.iter().map(|o| &o.value).collect::<Vec<_>>();
                 let options = serde_json::to_string(&options).map_err(|_| fmt::Error)?;
-                write!(fmt, "Select<{}, one_of={}>", value, options)?;
+                write!(f, "Select<{}, one_of={}>", value, options)?;
             }
-            TimeZone => write!(fmt, "TimeZone")?,
-            Object { .. } => write!(fmt, "Object")?,
+            TimeZone => write!(f, "TimeZone")?,
+            Object { .. } => write!(f, "Object")?,
         };
 
         if self.optional {
-            write!(fmt, "?")?;
+            write!(f, "?")?;
         }
 
         Ok(())
