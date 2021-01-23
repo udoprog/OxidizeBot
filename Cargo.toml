@@ -10,6 +10,3 @@ lto = true
 codegen-units = 1
 panic = "abort"
 debug = true
-
-[patch.crates-io]
-irc = { git = "https://github.com/aatxe/irc", branch = "develop" }
