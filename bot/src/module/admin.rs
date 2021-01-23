@@ -185,11 +185,16 @@ impl command::Handler for Handler {
                             None => return self.list_settings_by_prefix(ctx, &key).await,
                         };
 
-                        if setting.schema.secret {
+                        if setting.schema().secret {
                             respond_bail!("Cannot show secret setting `{}`", key);
                         }
 
-                        respond!(ctx, "{} = {}", key, serde_json::to_string(&setting.value)?);
+                        respond!(
+                            ctx,
+                            "{} = {}",
+                            key,
+                            serde_json::to_string(&setting.value())?
+                        );
                     }
                     value => {
                         let schema = self
@@ -243,7 +248,7 @@ impl Handler {
             .await?
             .ok_or_else(|| respond_err!("No setting matching key: {}", key))?;
 
-        if let Some(scope) = setting.schema.scope {
+        if let Some(scope) = setting.schema().scope {
             if !ctx.user.has_scope(scope).await {
                 respond!(
                     ctx,
@@ -254,11 +259,11 @@ impl Handler {
         }
 
         // Check type of the setting.
-        let toggled = match &setting.schema.ty {
+        let toggled = match &setting.schema().ty {
             settings::Type {
                 kind: settings::Kind::Bool,
                 ..
-            } => match setting.value {
+            } => match setting.value() {
                 Some(serde_json::Value::Bool(value)) => serde_json::Value::Bool(!value),
                 // non-booleans are interpreted as `false`.
                 _ => serde_json::Value::Bool(false),
