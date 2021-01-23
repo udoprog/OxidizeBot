@@ -212,7 +212,7 @@ pub(super) struct ConnectStream {
     config_rx: mpsc::UnboundedReceiver<ConfigurationEvent>,
 }
 
-impl Stream for ConnectStream {
+impl stream::Stream for ConnectStream {
     type Item = Result<player::IntegrationEvent, anyhow::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {

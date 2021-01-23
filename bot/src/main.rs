@@ -15,7 +15,6 @@ use oxidize::message_log;
 use oxidize::module;
 use oxidize::oauth2;
 use oxidize::player;
-use oxidize::prelude::*;
 use oxidize::settings;
 use oxidize::storage;
 use oxidize::stream_info;
@@ -29,6 +28,8 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time;
+use tokio::sync::mpsc;
+use tokio_stream::StreamExt as _;
 use tracing::trace_span;
 use tracing_futures::Instrument as _;
 

@@ -10,7 +10,7 @@ macro_rules! log_error {
 #[macro_export]
 macro_rules! log_warn {
     ($e:expr, $fmt:expr $(, $($arg:tt)*)?) => {
-        $crate::log_base!(error, $e, $fmt $(, $($arg)*)*)
+        $crate::log_base!(warn, $e, $fmt $(, $($arg)*)*)
     };
 }
 

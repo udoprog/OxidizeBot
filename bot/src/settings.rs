@@ -1019,7 +1019,7 @@ pub struct Stream<T> {
 
 impl<T> Unpin for Stream<T> {}
 
-impl<T> futures_core::Stream for Stream<T>
+impl<T> stream::Stream for Stream<T>
 where
     T: fmt::Debug + Clone + serde::de::DeserializeOwned,
 {
@@ -1050,7 +1050,7 @@ pub struct OptionStream<T> {
 
 impl<T> Unpin for OptionStream<T> {}
 
-impl<T> futures_core::Stream for OptionStream<T>
+impl<T> stream::Stream for OptionStream<T>
 where
     T: fmt::Debug + serde::de::DeserializeOwned,
 {
@@ -1089,7 +1089,6 @@ where
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
 pub enum Format {
-    /// mysql://<user>:<password>@<host>/<database>
     #[serde(rename = "regex")]
     Regex { pattern: String },
     #[serde(rename = "time-zone")]

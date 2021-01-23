@@ -2,6 +2,7 @@ use crate::api;
 use crate::db;
 use crate::oauth2;
 use crate::session;
+use crate::stream::StreamExt as _;
 use ::oauth2::State;
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
@@ -24,7 +25,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time;
 use thiserror::Error;
-use tokio_stream::StreamExt as _;
 use url::Url;
 
 macro_rules! log_error {

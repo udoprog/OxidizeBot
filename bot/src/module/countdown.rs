@@ -125,7 +125,7 @@ impl super::Module for Module {
 
                         *enabled.write() = update;
                     }
-                    out = timer.as_mut().poll_stream(Stream::poll_next) => {
+                    out = timer.as_mut().poll_stream(stream::Stream::poll_next) => {
                         match out {
                             Some(()) => if let Some(timer) = timer.as_inner_ref() {
                                 writer.write_log(timer);
@@ -245,7 +245,7 @@ struct Timer {
     interval: tokio::time::Interval,
 }
 
-impl Stream for Timer {
+impl stream::Stream for Timer {
     type Item = ();
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {

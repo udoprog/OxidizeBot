@@ -1293,7 +1293,7 @@ where
 
                 ws.on_upgrade(move |websocket: warp::filters::ws::WebSocket| async {
                     if let Err(e) = send_bus_forward(bus, websocket).await {
-                        log::error!("websocket error: {}", e);
+                        log_error!(e, "websocket error");
                     }
                 })
             }
@@ -1304,14 +1304,12 @@ where
 /// Forward the bus message to the websocket.
 async fn send_bus_forward<T>(
     bus: Arc<bus::Bus<T>>,
-    websocket: warp::filters::ws::WebSocket,
+    mut ws: warp::filters::ws::WebSocket,
 ) -> Result<()>
 where
     T: bus::Message,
 {
     use futures_util::sink::SinkExt as _;
-
-    let (mut tx, _) = websocket.split();
 
     // add a receiver and forward all new messages.
     let mut rx = bus.subscribe();
@@ -1319,12 +1317,12 @@ where
     // send all cached messages.
     for m in bus.latest().await {
         let m = filters::ws::Message::text(serde_json::to_string(&m)?);
-        tx.send(m).await?;
+        ws.send(m).await?;
     }
 
     loop {
         let m = rx.recv().await?;
         let m = filters::ws::Message::text(serde_json::to_string(&m)?);
-        tx.send(m).await?;
+        ws.send(m).await?;
     }
 }
