@@ -2429,7 +2429,6 @@ dependencies = [
  "futures-cache",
  "futures-core",
  "futures-executor",
- "futures-sink",
  "futures-util",
  "graphql_client",
  "handlebars",

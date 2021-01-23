@@ -271,7 +271,7 @@ where
     }
 }
 
-impl<T> Stream for PageStream<T>
+impl<T> stream::Stream for PageStream<T>
 where
     T: 'static + Send + serde::de::DeserializeOwned,
 {

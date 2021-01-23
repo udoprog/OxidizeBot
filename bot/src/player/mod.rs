@@ -289,7 +289,11 @@ pub async fn run(
         log::info!("Player is up and running!");
 
         // Drive child futures now that initialization is done.
-        futures.select_next_some().await
+        if let Some(result) = futures.next().await {
+            result?;
+        }
+
+        Ok(())
     })
 }
 

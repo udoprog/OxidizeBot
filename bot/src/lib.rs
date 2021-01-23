@@ -43,7 +43,7 @@ pub mod module;
 pub mod oauth2;
 mod panic_logger;
 pub mod player;
-pub mod prelude;
+pub(crate) mod prelude;
 #[cfg(feature = "scripting")]
 mod script;
 #[cfg(not(feature = "scripting"))]
@@ -64,6 +64,7 @@ pub mod updater;
 mod uri;
 pub mod utils;
 pub mod web;
+pub(crate) use tokio_stream as stream;
 
 pub use self::panic_logger::panic_logger;
 use self::uri::Uri;

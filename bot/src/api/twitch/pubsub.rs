@@ -2,11 +2,11 @@ use crate::api;
 use crate::injector;
 use crate::prelude::BoxStream;
 use crate::settings;
+use crate::stream::StreamExt as _;
 use crate::tags;
 use anyhow::{bail, Result};
 use async_fuse::Fuse;
 use backoff::backoff::Backoff as _;
-use futures_core::Stream;
 use serde::Deserialize as _;
 use std::future::Future;
 use std::pin::Pin;
@@ -15,7 +15,6 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::time::{self, Interval, Sleep};
-use tokio_stream::StreamExt as _;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 pub use self::model::*;
@@ -53,7 +52,7 @@ pub struct TwitchStream<T> {
     stream: BoxStream<'static, T>,
 }
 
-impl<T> Stream for TwitchStream<T> {
+impl<T> crate::stream::Stream for TwitchStream<T> {
     type Item = T;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -78,6 +77,8 @@ impl Client {
     }
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<String>>> {
+        use crate::stream::Stream as _;
+
         loop {
             let message = match Pin::new(&mut self.as_mut().stream).poll_next(cx)? {
                 Poll::Ready(message) => message,
