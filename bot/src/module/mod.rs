@@ -61,7 +61,6 @@ pub struct HookContext<'a> {
     pub streamer_twitch: &'a api::Twitch,
     pub sender: &'a irc::Sender,
     pub settings: &'a settings::Settings,
-    pub auth: &'a crate::auth::Auth,
 }
 
 #[async_trait::async_trait]
