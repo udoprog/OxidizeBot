@@ -544,8 +544,8 @@ pub struct Reward {
 
 pub struct Handler {
     enabled: settings::Var<bool>,
-    player: injector::Var<Option<player::Player>>,
-    currency: injector::Var<Option<currency::Currency>>,
+    player: injector::Ref<player::Player>,
+    currency: injector::Ref<currency::Currency>,
     cooldown: settings::Var<Cooldown>,
     reward_cooldown: settings::Var<Cooldown>,
     punish_cooldown: settings::Var<Cooldown>,
@@ -1078,7 +1078,7 @@ impl super::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<()> {
-        let currency = injector.var().await?;
+        let currency = injector.var().await;
         let settings = settings.scoped("gtav");
 
         let default_reward_cooldown = Cooldown::from_duration(Duration::seconds(60));
@@ -1120,7 +1120,7 @@ impl super::Module for Module {
         let per_command_configs = settings::Var::new(HashMap::new());
         *per_command_configs.write().await = commands_config.into_map();
 
-        let player = injector.var().await?;
+        let player = injector.var().await;
 
         let (tx, mut rx) = mpsc::unbounded_channel();
 

@@ -9,7 +9,7 @@ use crate::utils;
 pub struct AfterStream {
     pub enabled: settings::Var<bool>,
     pub cooldown: settings::Var<utils::Cooldown>,
-    pub after_streams: injector::Var<Option<db::AfterStreams>>,
+    pub after_streams: injector::Ref<db::AfterStreams>,
 }
 
 #[async_trait]
@@ -88,7 +88,7 @@ impl super::Module for Module {
                         utils::Cooldown::from_duration(utils::Duration::seconds(30)),
                     )
                     .await?,
-                after_streams: injector.var().await?,
+                after_streams: injector.var().await,
             },
         );
 

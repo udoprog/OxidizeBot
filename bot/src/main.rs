@@ -443,7 +443,7 @@ async fn try_main(
             .with_context(|| anyhow!("failed to create root: {}", root.display()))?;
     }
 
-    let (injector, driver) = injector::setup_with_driver();
+    let injector = injector::Injector::new();
 
     let mut modules = Vec::<Box<dyn module::Module>>::new();
     let mut futures = oxidize::utils::Futures::new();
@@ -485,13 +485,8 @@ async fn try_main(
     let message_bus = Arc::new(bus::Bus::new());
     let global_bus = Arc::new(bus::Bus::new());
     let youtube_bus = Arc::new(bus::Bus::new());
-    let global_channel = injector::Var::new(None);
+    let global_channel = settings::Var::new(None);
     let command_bus = Arc::new(bus::Bus::new());
-
-    futures.push(Box::pin(
-        async { driver.drive().await.map_err(Into::into) }
-            .instrument(trace_span!(target: "futures", "injector-driver",)),
-    ));
 
     futures.push(Box::pin(
         system_loop(settings.scoped("system"), system.clone())
@@ -775,7 +770,7 @@ async fn notify_after_streams(
 
     loop {
         tokio::select! {
-            update = after_streams_stream.select_next_some() => {
+            Some(update) = after_streams_stream.next() => {
                 after_streams = update;
             }
             Some(update) = rx.recv() => {

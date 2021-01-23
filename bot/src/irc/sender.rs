@@ -29,7 +29,7 @@ struct Inner {
     sender: client::Sender,
     limiter: LeakyBucket,
     nightbot_limiter: LeakyBucket,
-    nightbot: injector::Var<Option<api::NightBot>>,
+    nightbot: injector::Ref<api::NightBot>,
 }
 
 #[derive(Clone)]
@@ -44,7 +44,7 @@ impl Sender {
         ty: settings::Var<Type>,
         target: String,
         sender: client::Sender,
-        nightbot: injector::Var<Option<api::NightBot>>,
+        nightbot: injector::Ref<api::NightBot>,
         buckets: &LeakyBuckets,
     ) -> Result<Sender> {
         // limiter to use for IRC chat messages.

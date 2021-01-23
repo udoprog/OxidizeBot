@@ -56,7 +56,7 @@ pub(super) struct PlayerInternal {
     pub(super) max_songs_per_user: settings::Var<u32>,
     pub(super) duplicate_duration: settings::Var<utils::Duration>,
     /// Theme songs.
-    pub(super) themes: injector::Var<Option<db::Themes>>,
+    pub(super) themes: injector::Ref<db::Themes>,
     /// Player is closed for more requests.
     pub(super) closed: Option<Option<Arc<String>>>,
 }

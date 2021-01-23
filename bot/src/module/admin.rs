@@ -9,10 +9,10 @@ use anyhow::Result;
 /// Handler for the !admin command.
 pub struct Handler {
     settings: settings::Settings,
-    aliases: injector::Var<Option<db::Aliases>>,
-    commands: injector::Var<Option<db::Commands>>,
-    promotions: injector::Var<Option<db::Promotions>>,
-    themes: injector::Var<Option<db::Themes>>,
+    aliases: injector::Ref<db::Aliases>,
+    commands: injector::Ref<db::Commands>,
+    promotions: injector::Ref<db::Promotions>,
+    themes: injector::Ref<db::Themes>,
 }
 
 impl Handler {
@@ -129,19 +129,19 @@ impl command::Handler for Handler {
                     .next()
                     .ok_or_else(|| respond_err!("Expected <group> to enable"))?;
 
-                if let Some(aliases) = &*self.aliases.read().await {
+                if let Some(aliases) = self.aliases.read().await.as_deref() {
                     aliases.enable_group(ctx.channel(), &group).await?;
                 }
 
-                if let Some(commands) = &*self.commands.read().await {
+                if let Some(commands) = self.commands.read().await.as_deref() {
                     commands.enable_group(ctx.channel(), &group).await?;
                 }
 
-                if let Some(promotions) = &*self.promotions.read().await {
+                if let Some(promotions) = self.promotions.read().await.as_deref() {
                     promotions.enable_group(ctx.channel(), &group).await?;
                 }
 
-                if let Some(themes) = &*self.themes.read().await {
+                if let Some(themes) = self.themes.read().await.as_deref() {
                     themes.enable_group(ctx.channel(), &group).await?;
                 }
 
@@ -152,19 +152,19 @@ impl command::Handler for Handler {
                     .next()
                     .ok_or_else(|| respond_err!("Expected <group> to disable"))?;
 
-                if let Some(aliases) = &*self.aliases.read().await {
+                if let Some(aliases) = self.aliases.read().await.as_deref() {
                     aliases.disable_group(ctx.channel(), &group).await?;
                 }
 
-                if let Some(commands) = &*self.commands.read().await {
+                if let Some(commands) = self.commands.read().await.as_deref() {
                     commands.disable_group(ctx.channel(), &group).await?;
                 }
 
-                if let Some(promotions) = &*self.promotions.read().await {
+                if let Some(promotions) = self.promotions.read().await.as_deref() {
                     promotions.disable_group(ctx.channel(), &group).await?;
                 }
 
-                if let Some(themes) = &*self.themes.read().await {
+                if let Some(themes) = self.themes.read().await.as_deref() {
                     themes.disable_group(ctx.channel(), &group).await?;
                 }
 
@@ -354,10 +354,10 @@ impl super::Module for Module {
             "admin",
             Handler {
                 settings: settings.clone(),
-                aliases: injector.var().await?,
-                commands: injector.var().await?,
-                promotions: injector.var().await?,
-                themes: injector.var().await?,
+                aliases: injector.var().await,
+                commands: injector.var().await,
+                promotions: injector.var().await,
+                themes: injector.var().await,
             },
         );
 

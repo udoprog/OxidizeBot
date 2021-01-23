@@ -21,9 +21,9 @@ const EXAMPLE_SEARCH: &str = "queen we will rock you";
 /// Handler for the `!song` command.
 pub struct Handler {
     enabled: settings::Var<bool>,
-    player: injector::Var<Option<Player>>,
+    player: injector::Ref<Player>,
     request_help_cooldown: Mutex<Cooldown>,
-    currency: injector::Var<Option<Currency>>,
+    currency: injector::Ref<Currency>,
     requester: requester::SongRequester,
 }
 
@@ -500,7 +500,7 @@ impl module::Module for Module {
             ..
         }: module::HookContext<'_>,
     ) -> Result<()> {
-        let currency = injector.var().await?;
+        let currency = injector.var().await;
         let settings = settings.scoped("song");
 
         let enabled = settings.var("enabled", false).await?;
@@ -518,7 +518,7 @@ impl module::Module for Module {
             Handler {
                 enabled,
                 request_help_cooldown: Mutex::new(help_cooldown),
-                player: injector.var().await?,
+                player: injector.var().await,
                 currency,
                 requester: requester.clone(),
             },

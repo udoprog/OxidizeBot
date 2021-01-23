@@ -84,7 +84,7 @@ pub struct Irc {
     pub restart: utils::Restart,
     pub settings: settings::Settings,
     pub auth: Auth,
-    pub global_channel: injector::Var<Option<String>>,
+    pub global_channel: settings::Var<Option<String>>,
     pub injector: Injector,
     pub stream_state_tx: mpsc::Sender<stream_info::StreamState>,
     pub message_log: MessageLog,
@@ -164,7 +164,7 @@ impl Irc {
             let threshold = chat_settings.var("idle-detection/threshold", 5).await?;
             let idle = idle::Idle::new(threshold);
 
-            let nightbot = injector.var::<api::NightBot>().await?;
+            let nightbot = injector.var::<api::NightBot>().await;
 
             let mut buckets = LeakyBuckets::new();
 
@@ -172,7 +172,7 @@ impl Irc {
                 sender_ty,
                 chat_channel.clone(),
                 client.sender(),
-                nightbot.clone(),
+                nightbot,
                 &buckets,
             )?;
 

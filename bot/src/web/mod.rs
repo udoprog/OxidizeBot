@@ -94,12 +94,10 @@ pub struct DisabledBody {
 
 /// Aliases endpoint.
 #[derive(Clone)]
-struct Aliases(injector::Var<Option<db::Aliases>>);
+struct Aliases(injector::Ref<db::Aliases>);
 
 impl Aliases {
-    fn route(
-        aliases: injector::Var<Option<db::Aliases>>,
-    ) -> filters::BoxedFilter<(impl warp::Reply,)> {
+    fn route(aliases: injector::Ref<db::Aliases>) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Aliases(aliases);
 
         let list = warp::get()
@@ -165,9 +163,9 @@ impl Aliases {
 
     /// Access underlying aliases abstraction.
     async fn aliases(&self) -> Result<RwLockReadGuard<'_, db::Aliases>> {
-        match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
-            Ok(out) => Ok(out),
-            Err(_) => bail!("aliases not configured"),
+        match self.0.read().await {
+            Some(out) => Ok(out),
+            None => bail!("aliases not configured"),
         }
     }
 
@@ -215,12 +213,10 @@ impl Aliases {
 
 /// Commands endpoint.
 #[derive(Clone)]
-struct Commands(injector::Var<Option<db::Commands>>);
+struct Commands(injector::Ref<db::Commands>);
 
 impl Commands {
-    fn route(
-        commands: injector::Var<Option<db::Commands>>,
-    ) -> filters::BoxedFilter<(impl warp::Reply,)> {
+    fn route(commands: injector::Ref<db::Commands>) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Commands(commands);
 
         let list = warp::get()
@@ -287,9 +283,9 @@ impl Commands {
 
     /// Access underlying commands abstraction.
     async fn commands(&self) -> Result<RwLockReadGuard<'_, db::Commands>> {
-        match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
-            Ok(out) => Ok(out),
-            Err(_) => bail!("commands not configured"),
+        match self.0.read().await {
+            Some(out) => Ok(out),
+            None => bail!("commands not configured"),
         }
     }
 
@@ -337,11 +333,11 @@ impl Commands {
 
 /// Promotions endpoint.
 #[derive(Clone)]
-struct Promotions(injector::Var<Option<db::Promotions>>);
+struct Promotions(injector::Ref<db::Promotions>);
 
 impl Promotions {
     fn route(
-        promotions: injector::Var<Option<db::Promotions>>,
+        promotions: injector::Ref<db::Promotions>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Promotions(promotions);
 
@@ -417,9 +413,9 @@ impl Promotions {
 
     /// Access underlying promotions abstraction.
     async fn promotions(&self) -> Result<RwLockReadGuard<'_, db::Promotions>> {
-        match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
-            Ok(out) => Ok(out),
-            Err(_) => bail!("promotions not configured"),
+        match self.0.read().await {
+            Some(out) => Ok(out),
+            None => bail!("promotions not configured"),
         }
     }
 
@@ -471,12 +467,10 @@ impl Promotions {
 
 /// Themes endpoint.
 #[derive(Clone)]
-struct Themes(injector::Var<Option<db::Themes>>);
+struct Themes(injector::Ref<db::Themes>);
 
 impl Themes {
-    fn route(
-        themes: injector::Var<Option<db::Themes>>,
-    ) -> filters::BoxedFilter<(impl warp::Reply,)> {
+    fn route(themes: injector::Ref<db::Themes>) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Themes(themes);
 
         let list = warp::get()
@@ -545,9 +539,9 @@ impl Themes {
 
     /// Access underlying themes abstraction.
     async fn themes(&self) -> Result<RwLockReadGuard<'_, db::Themes>> {
-        match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
-            Ok(out) => Ok(out),
-            Err(_) => bail!("themes not configured"),
+        match self.0.read().await {
+            Some(out) => Ok(out),
+            None => bail!("themes not configured"),
         }
     }
 
@@ -593,7 +587,7 @@ impl Themes {
 struct Auth {
     active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
     auth: auth::Auth,
-    settings: injector::Var<Option<crate::settings::Settings>>,
+    settings: injector::Ref<crate::settings::Settings>,
 }
 
 #[derive(serde::Deserialize)]
@@ -606,7 +600,7 @@ impl Auth {
     fn route(
         auth: auth::Auth,
         active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
-        settings: injector::Var<Option<crate::settings::Settings>>,
+        settings: injector::Ref<crate::settings::Settings>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Auth {
             auth,
@@ -783,10 +777,10 @@ impl Auth {
 /// API to manage device.
 #[derive(Clone)]
 struct Api {
-    player: injector::Var<Option<player::Player>>,
-    after_streams: injector::Var<Option<db::AfterStreams>>,
-    currency: injector::Var<Option<Currency>>,
-    latest: injector::Var<Option<api::github::Release>>,
+    player: injector::Ref<player::Player>,
+    after_streams: injector::Ref<db::AfterStreams>,
+    currency: injector::Ref<Currency>,
+    latest: crate::settings::Var<Option<api::github::Release>>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -803,7 +797,7 @@ impl Api {
     async fn set_device(self, id: String) -> Result<impl warp::Reply, Error> {
         let player = self.player.read().await;
 
-        let player = match &*player {
+        let player = match player.as_deref() {
             Some(player) => player,
             None => return Err(Error::BadRequest),
         };
@@ -822,7 +816,7 @@ impl Api {
     async fn devices(self) -> Result<impl warp::Reply, Error> {
         let player = self.player.read().await;
 
-        let player = match &*player {
+        let player = match player.as_deref() {
             Some(player) => player,
             None => {
                 let data = Devices::default();
@@ -882,9 +876,9 @@ impl Api {
 
     /// Access underlying after streams abstraction.
     async fn after_streams(&self) -> Result<RwLockReadGuard<'_, db::AfterStreams>> {
-        match RwLockReadGuard::try_map(self.after_streams.read().await, |c| c.as_ref()) {
-            Ok(out) => Ok(out),
-            Err(_) => bail!("after streams not configured"),
+        match self.after_streams.read().await {
+            Some(out) => Ok(out),
+            None => bail!("after streams not configured"),
         }
     }
 
@@ -985,18 +979,18 @@ pub async fn setup(
     youtube_bus: Arc<bus::Bus<bus::YouTube>>,
     command_bus: Arc<bus::Bus<bus::Command>>,
     auth: auth::Auth,
-    channel: injector::Var<Option<String>>,
-    latest: injector::Var<Option<api::github::Release>>,
+    channel: crate::settings::Var<Option<String>>,
+    latest: crate::settings::Var<Option<api::github::Release>>,
 ) -> Result<(Server, impl Future<Output = ()>)> {
     let addr: SocketAddr = str::parse("0.0.0.0:12345")?;
 
-    let player = injector.var().await?;
+    let player = injector.var().await;
     let active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>> = Default::default();
 
     let api = Api {
         player: player.clone(),
-        after_streams: injector.var().await?,
-        currency: injector.var().await?,
+        after_streams: injector.var().await,
+        currency: injector.var().await,
         latest,
     };
 
@@ -1085,15 +1079,15 @@ pub async fn setup(
             .and(Auth::route(
                 auth,
                 active_connections.clone(),
-                injector.var().await?,
+                injector.var().await,
             ))
             .boxed());
-        let route = route.or(Aliases::route(injector.var().await?));
-        let route = route.or(Commands::route(injector.var().await?));
-        let route = route.or(Promotions::route(injector.var().await?));
-        let route = route.or(Themes::route(injector.var().await?));
-        let route = route.or(Settings::route(injector.var().await?));
-        let route = route.or(Cache::route(injector.var().await?));
+        let route = route.or(Aliases::route(injector.var().await));
+        let route = route.or(Commands::route(injector.var().await));
+        let route = route.or(Promotions::route(injector.var().await));
+        let route = route.or(Themes::route(injector.var().await));
+        let route = route.or(Settings::route(injector.var().await));
+        let route = route.or(Cache::route(injector.var().await));
         let route = route.or(Chat::route(command_bus, message_log));
 
         // TODO: move endpoint into abstraction thingie.
@@ -1104,7 +1098,7 @@ pub async fn setup(
 
                     async move {
                         let current = Current {
-                            channel: channel.read().await.clone(),
+                            channel: channel.load().await,
                         };
                         Ok::<_, warp::Rejection>(warp::reply::json(&current))
                     }
@@ -1263,7 +1257,7 @@ struct ErrorMessage {
 /// Interface to the server.
 #[derive(Clone)]
 pub struct Server {
-    player: injector::Var<Option<player::Player>>,
+    player: injector::Ref<player::Player>,
     /// Callbacks for when we have received a token.
     active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
 }

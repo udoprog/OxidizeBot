@@ -6,7 +6,7 @@ use crate::prelude::*;
 
 pub struct Handler {
     pub enabled: settings::Var<bool>,
-    pub commands: injector::Var<Option<db::Commands>>,
+    pub commands: injector::Ref<db::Commands>,
 }
 
 #[async_trait]
@@ -92,7 +92,7 @@ impl super::Module for Module {
         }: module::HookContext<'_>,
     ) -> Result<(), anyhow::Error> {
         let enabled = settings.var("command/enabled", true).await?;
-        let commands = injector.var().await?;
+        let commands = injector.var().await;
         handlers.insert("command", Handler { enabled, commands });
         Ok(())
     }

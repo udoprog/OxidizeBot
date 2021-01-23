@@ -1,6 +1,6 @@
 use crate::injector;
 use crate::web::EMPTY;
-use anyhow::{bail, Result};
+use anyhow::{format_err, Result};
 use tokio::sync::RwLockReadGuard;
 use warp::body;
 use warp::filters;
@@ -15,11 +15,11 @@ struct DeleteRequest {
 
 /// Cache endpoints.
 #[derive(Clone)]
-pub struct Cache(injector::Var<Option<crate::storage::Cache>>);
+pub struct Cache(injector::Ref<crate::storage::Cache>);
 
 impl Cache {
     pub fn route(
-        cache: injector::Var<Option<crate::storage::Cache>>,
+        cache: injector::Ref<crate::storage::Cache>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Cache(cache);
 
@@ -47,9 +47,9 @@ impl Cache {
 
     /// Access underlying cache abstraction.
     async fn cache(&self) -> Result<RwLockReadGuard<'_, crate::storage::Cache>> {
-        match RwLockReadGuard::try_map(self.0.read().await, |c| c.as_ref()) {
-            Ok(out) => Ok(out),
-            Err(_) => bail!("cache not configured"),
+        match self.0.read().await {
+            Some(out) => Ok(out),
+            None => Err(format_err!("cache not configured")),
         }
     }
 

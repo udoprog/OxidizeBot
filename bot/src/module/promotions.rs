@@ -9,7 +9,7 @@ use chrono::Utc;
 
 pub struct Handler {
     enabled: settings::Var<bool>,
-    promotions: injector::Var<Option<db::Promotions>>,
+    promotions: injector::Ref<db::Promotions>,
 }
 
 #[async_trait]
@@ -83,7 +83,7 @@ impl super::Module for Module {
             "promo",
             Handler {
                 enabled: enabled.clone(),
-                promotions: injector.var().await?,
+                promotions: injector.var().await,
             },
         );
 
@@ -96,7 +96,7 @@ impl super::Module for Module {
             loop {
                 // TODO: check that this actually works.
                 tokio::select! {
-                    update = promotions_stream.select_next_some() => {
+                    Some(update) = promotions_stream.next() => {
                         promotions = update;
                     }
                     duration = setting.next() => {

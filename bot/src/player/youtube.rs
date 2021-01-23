@@ -15,7 +15,7 @@ pub(super) async fn setup(
         settings.stream("volume-scale").or_with(100).await?;
     let (mut volume_stream, volume) = settings.stream("volume").or_with(50).await?;
     let mut scaled_volume = (volume * volume_scale) / 100u32;
-    let volume = injector::Var::new(volume);
+    let volume = settings::Var::new(volume);
 
     let player = YouTubePlayer {
         bus,
@@ -51,7 +51,7 @@ pub(super) async fn setup(
 pub(super) struct YouTubePlayer {
     bus: Arc<bus::Bus<bus::YouTube>>,
     settings: Settings,
-    volume: injector::Var<u32>,
+    volume: settings::Var<u32>,
 }
 
 impl YouTubePlayer {

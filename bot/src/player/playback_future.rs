@@ -61,7 +61,7 @@ impl PlaybackFuture {
 
         loop {
             tokio::select! {
-                song = song_stream.select_next_some() => {
+                Some(song) = song_stream.next() => {
                     song_timeout.set(song.and_then(|s| match s.state() {
                         State::Playing => Some(Fuse::new(tokio::time::sleep_until(s.deadline().into()))),
                         _ => None,

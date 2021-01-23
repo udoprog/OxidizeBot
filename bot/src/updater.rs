@@ -11,10 +11,10 @@ const REPO: &str = "OxidizeBot";
 pub fn run(
     injector: &injector::Injector,
 ) -> (
-    injector::Var<Option<api::github::Release>>,
+    settings::Var<Option<api::github::Release>>,
     impl Future<Output = Result<()>>,
 ) {
-    let latest = injector::Var::new(None);
+    let latest = settings::Var::new(None);
     let returned_latest = latest.clone();
     let injector = injector.clone();
 
@@ -26,7 +26,7 @@ pub fn run(
 
         loop {
             tokio::select! {
-                update = cache_stream.select_next_some() => {
+                Some(update) = cache_stream.next() => {
                     cache = update;
                 }
                 _ = interval.tick() => {
