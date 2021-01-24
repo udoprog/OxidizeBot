@@ -6,7 +6,6 @@ use crate::injector::{Injector, Key};
 use crate::oauth2;
 use crate::player::{self, Player};
 use crate::prelude::*;
-use crate::settings::Settings;
 use crate::tags;
 use crate::utils;
 use anyhow::Result;
@@ -167,7 +166,7 @@ struct Remote {
 
 /// Run update loop shipping information to the remote server.
 pub async fn run(
-    settings: &Settings,
+    settings: &crate::Settings,
     injector: &Injector,
     global_bus: bus::Bus<bus::Global>,
 ) -> Result<impl Future<Output = Result<()>>> {

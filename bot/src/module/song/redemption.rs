@@ -4,7 +4,6 @@ use crate::irc;
 use crate::module::song::requester::{RequestCurrency, SongRequester};
 use crate::player::Player;
 use crate::prelude::*;
-use crate::settings;
 use crate::stream_info::StreamInfo;
 use anyhow::Result;
 
@@ -12,7 +11,7 @@ use anyhow::Result;
 pub(crate) async fn task(
     sender: irc::Sender,
     injector: Injector,
-    settings: settings::Settings,
+    settings: crate::Settings,
     requester: SongRequester,
     streamer_twitch: api::Twitch,
     stream_info: StreamInfo,

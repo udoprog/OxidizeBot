@@ -23,11 +23,7 @@ pub(super) struct PlaybackFuture {
 
 impl PlaybackFuture {
     /// Run the playback future.
-    pub(super) async fn run(
-        mut self,
-        injector: Injector,
-        settings: settings::Settings,
-    ) -> Result<()> {
+    pub(super) async fn run(mut self, injector: Injector, settings: crate::Settings) -> Result<()> {
         // TODO: Remove fallback-uri migration next major release.
         if let Some(fallback_uri) = settings.get::<String>("fallback-uri").await? {
             if str::parse::<Uri>(&fallback_uri).is_err() {

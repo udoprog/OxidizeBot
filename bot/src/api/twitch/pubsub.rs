@@ -1,7 +1,6 @@
 use crate::api;
 use crate::injector::{Injector, Key};
 use crate::prelude::BoxStream;
-use crate::settings;
 use crate::tags;
 use anyhow::{bail, Result};
 use async_fuse::Fuse;
@@ -105,7 +104,7 @@ impl Client {
 
 /// Connect to the pub/sub websocket once available.
 pub fn connect(
-    settings: &settings::Settings,
+    settings: &crate::Settings,
     injector: &Injector,
 ) -> impl Future<Output = Result<()>> {
     task(settings.clone(), injector.clone())
@@ -275,7 +274,7 @@ impl State {
     }
 }
 
-async fn task(settings: settings::Settings, injector: Injector) -> Result<()> {
+async fn task(settings: crate::Settings, injector: Injector) -> Result<()> {
     let settings = settings.scoped("pubsub");
 
     let (mut enabled_stream, enabled) = settings.stream::<bool>("enabled").or_default().await?;

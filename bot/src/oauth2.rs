@@ -4,7 +4,6 @@ use crate::api::{
 };
 use crate::injector::{Injector, Key};
 use crate::prelude::*;
-use crate::settings::Settings;
 use crate::utils::Duration;
 use crate::web;
 use anyhow::Error;
@@ -137,7 +136,7 @@ struct ConnectionFactory {
     force_refresh: bool,
     connection: Option<Connection>,
     sync_token: SyncToken,
-    settings: Settings,
+    settings: crate::Settings,
     injector: Injector,
     key: Key<SyncToken>,
     server: web::Server,
@@ -386,8 +385,8 @@ impl fmt::Debug for ConnectionFactory {
 pub async fn build(
     flow_id: &'static str,
     what: &'static str,
-    parent: &Settings,
-    settings: Settings,
+    parent: &crate::Settings,
+    settings: crate::Settings,
     injector: Injector,
     key: Key<SyncToken>,
     server: web::Server,

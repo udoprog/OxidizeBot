@@ -553,7 +553,7 @@ pub(crate) struct Constraint {
 
 impl Constraint {
     pub(crate) async fn build(
-        vars: &mut settings::Settings,
+        vars: &mut crate::Settings,
         enabled: bool,
         min_currency: i64,
     ) -> Result<Self> {

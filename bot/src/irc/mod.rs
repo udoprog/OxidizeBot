@@ -106,7 +106,7 @@ struct Setup {
     #[dependency]
     global_bus: bus::Bus<bus::Global>,
     #[dependency]
-    settings: settings::Settings,
+    settings: crate::Settings,
     #[dependency]
     restart: utils::Restart,
 }
@@ -507,8 +507,8 @@ async fn currency_loop(
     sender: Sender,
     idle: idle::Idle,
     injector: Injector,
-    chat_settings: settings::Settings,
-    settings: settings::Settings,
+    chat_settings: crate::Settings,
+    settings: crate::Settings,
 ) -> Result<impl Future<Output = Result<()>>> {
     log::trace!("Setting up currency loop");
 

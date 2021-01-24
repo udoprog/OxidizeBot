@@ -1,6 +1,5 @@
 //! Utilities for dealing with dynamic configuration and settings.
 
-use crate::auth::Scope;
 use crate::db;
 use crate::prelude::*;
 use crate::utils;
@@ -24,6 +23,9 @@ const SEP: char = '/';
 
 /// Indication that a value has been updated.
 type Update = Event<serde_json::Value>;
+
+/// Required traits for a scope.
+pub trait Scope: 'static + Clone + Send + Sync + Default {}
 
 /// A synchronized variable from settings.
 #[derive(Debug)]
@@ -184,22 +186,31 @@ pub enum Event<T> {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Setting {
-    pub schema: SchemaType,
+pub struct Setting<S>
+where
+    S: Scope,
+{
+    pub schema: SchemaType<S>,
     pub key: String,
     pub value: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SettingRef<'settings, 'key, T> {
-    schema: &'settings SchemaType,
+pub struct SettingRef<'settings, 'key, S, T>
+where
+    S: Scope,
+{
+    schema: &'settings SchemaType<S>,
     key: Key<'settings, 'key>,
     value: Option<T>,
 }
 
-impl SettingRef<'_, '_, serde_json::Value> {
+impl<S> SettingRef<'_, '_, S, serde_json::Value>
+where
+    S: Scope,
+{
     /// Convert into an owned value.
-    pub fn to_owned(&self) -> Setting {
+    pub fn to_owned(&self) -> Setting<S> {
         Setting {
             schema: self.schema.clone(),
             key: self.key.to_string(),
@@ -211,14 +222,17 @@ impl SettingRef<'_, '_, serde_json::Value> {
     }
 }
 
-impl<T> SettingRef<'_, '_, T> {
+impl<S, T> SettingRef<'_, '_, S, T>
+where
+    S: Scope,
+{
     /// Access the underlying key this setting references.
     pub fn key(&self) -> &str {
         &*self.key
     }
 
     /// Access the underlying schema this setting references.
-    pub fn schema(&self) -> &SchemaType {
+    pub fn schema(&self) -> &SchemaType<S> {
         self.schema
     }
 
@@ -229,12 +243,15 @@ impl<T> SettingRef<'_, '_, T> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SchemaType {
+pub struct SchemaType<S>
+where
+    S: Scope,
+{
     /// Documentation for this type.
     pub doc: String,
     /// Scope required to modify variable.
     #[serde(default)]
-    pub scope: Option<Scope>,
+    pub scope: Option<S>,
     /// The type.
     #[serde(rename = "type")]
     pub ty: Type,
@@ -249,16 +266,20 @@ pub struct SchemaType {
     pub title: Option<String>,
 }
 
-const SCHEMA: &[u8] = include_bytes!("settings.yaml");
-
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct Schema {
+#[derive(Debug, Clone, Deserialize)]
+pub struct Schema<S>
+where
+    S: Scope,
+{
     #[serde(default)]
     migrations: Vec<Migration>,
-    types: HashMap<String, SchemaType>,
+    types: HashMap<String, SchemaType<S>>,
 }
 
-impl Schema {
+impl<S> Schema<S>
+where
+    S: Scope,
+{
     /// Convert schema into prefix data.
     fn as_prefixes(&self) -> HashMap<Box<str>, Prefix> {
         let mut prefixes = HashMap::<Box<str>, Prefix>::new();
@@ -298,7 +319,7 @@ impl Schema {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Migration {
     /// Treat the migration as a prefix migration.
     #[serde(default)]
@@ -309,14 +330,22 @@ pub struct Migration {
     pub to: String,
 }
 
-impl Schema {
+impl<S> Schema<S>
+where
+    S: Scope + de::DeserializeOwned,
+{
     /// Load schema from the given set of bytes.
-    pub fn load_static() -> Result<Schema, Error> {
-        serde_yaml::from_slice(SCHEMA).map_err(Error::FailedToLoadSchema)
+    pub fn load_bytes(bytes: &[u8]) -> Result<Schema<S>, Error> {
+        serde_yaml::from_slice(bytes).map_err(Error::FailedToLoadSchema)
     }
+}
 
+impl<S> Schema<S>
+where
+    S: Scope,
+{
     /// Lookup the given type by key.
-    pub fn lookup(&self, key: &str) -> Option<SchemaType> {
+    pub fn lookup(&self, key: &str) -> Option<SchemaType<S>> {
         self.types.get(key).cloned()
     }
 
@@ -346,12 +375,15 @@ impl Future for Driver {
     }
 }
 
-pub struct Inner {
+pub struct Inner<S>
+where
+    S: Scope,
+{
     db: db::Database,
     /// Maps setting prefixes to subscriptions.
     subscriptions: HashMap<Box<str>, broadcast::Sender<Update>>,
     /// Schema for every corresponding type.
-    schema: Schema,
+    schema: Schema<S>,
     /// Information about all prefixes.
     prefixes: HashMap<Box<str>, Prefix>,
     /// Channel where new drivers are sent.
@@ -362,13 +394,19 @@ pub struct Inner {
 
 /// A container for settings from which we can subscribe for updates.
 #[derive(Clone)]
-pub struct Settings {
+pub struct Settings<S>
+where
+    S: Scope,
+{
     scope: Box<str>,
-    inner: Arc<Inner>,
+    inner: Arc<Inner<S>>,
 }
 
-impl Settings {
-    pub fn new(db: db::Database, schema: Schema) -> Self {
+impl<S> Settings<S>
+where
+    S: Scope,
+{
+    pub fn new(db: db::Database, schema: Schema<S>) -> Self {
         let prefixes = schema.as_prefixes();
         let subscriptions = schema.as_subscriptions();
         let (drivers, drivers_rx) = mpsc::unbounded_channel();
@@ -477,13 +515,13 @@ impl Settings {
     }
 
     /// Lookup the given schema.
-    pub fn lookup(&self, key: &str) -> Option<&SchemaType> {
+    pub fn lookup(&self, key: &str) -> Option<&SchemaType<S>> {
         let key = self.key(key);
         self.inner.schema.types.get(&*key)
     }
 
     /// Get a setting by prefix.
-    pub async fn list_by_prefix(&self, prefix: &str) -> Result<Vec<Setting>, Error> {
+    pub async fn list_by_prefix(&self, prefix: &str) -> Result<Vec<Setting<S>>, Error> {
         use self::db::schema::settings::dsl;
 
         let prefix = self.key(prefix);
@@ -537,7 +575,7 @@ impl Settings {
     pub async fn setting<'settings, 'key, T>(
         &'settings self,
         key: &'key str,
-    ) -> Result<Option<SettingRef<'settings, 'key, T>>, Error>
+    ) -> Result<Option<SettingRef<'settings, 'key, S, T>>, Error>
     where
         T: Serialize + de::DeserializeOwned,
     {
@@ -645,7 +683,7 @@ impl Settings {
     }
 
     /// Insert the given setting.
-    pub async fn list(&self) -> Result<Vec<Setting>, Error> {
+    pub async fn list(&self) -> Result<Vec<Setting<S>>, Error> {
         use self::db::schema::settings::dsl;
 
         let inner = self.inner.clone();
@@ -705,7 +743,7 @@ impl Settings {
     }
 
     /// Create a scoped setting.
-    pub fn scoped(&self, s: &str) -> Settings {
+    pub fn scoped(&self, s: &str) -> Settings<S> {
         let mut it = s.split('/').filter(|s| !s.is_empty());
 
         let scope = if self.scope.is_empty() {
@@ -743,7 +781,7 @@ impl Settings {
     pub fn stream<'settings, 'key, T>(
         &'settings self,
         key: &'key str,
-    ) -> StreamBuilder<'settings, 'key, T> {
+    ) -> StreamBuilder<'settings, 'key, S, T> {
         let key = self.key(key);
 
         StreamBuilder {
@@ -977,14 +1015,18 @@ impl ops::Deref for Key<'_, '_> {
 }
 
 #[must_use = "Must consume to drive decide how to handle stream"]
-pub struct StreamBuilder<'settings, 'key, T> {
-    settings: &'settings Settings,
+pub struct StreamBuilder<'settings, 'key, S, T>
+where
+    S: Scope,
+{
+    settings: &'settings Settings<S>,
     default_value: Option<T>,
     key: Key<'settings, 'key>,
 }
 
-impl<'settings, 'key, T> StreamBuilder<'settings, 'key, T>
+impl<'settings, 'key, S, T> StreamBuilder<'settings, 'key, S, T>
 where
+    S: Scope,
     T: Serialize + de::DeserializeOwned,
 {
     /// Make the setting required, falling back to using and storing the default value if necessary.
@@ -1068,8 +1110,7 @@ pub struct Stream<T> {
 
 impl<T> Stream<T>
 where
-    T: Clone,
-    T: de::DeserializeOwned,
+    T: Clone + de::DeserializeOwned,
 {
     /// Recv the next update to the setting associated with the stream.
     pub async fn recv(&mut self) -> T {

@@ -587,7 +587,7 @@ impl Themes {
 struct Auth {
     active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
     auth: auth::Auth,
-    settings: injector::Ref<crate::settings::Settings>,
+    settings: injector::Ref<crate::Settings>,
 }
 
 #[derive(serde::Deserialize)]
@@ -600,7 +600,7 @@ impl Auth {
     fn route(
         auth: auth::Auth,
         active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
-        settings: injector::Ref<crate::settings::Settings>,
+        settings: injector::Ref<crate::Settings>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Auth {
             auth,

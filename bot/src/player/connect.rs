@@ -1,7 +1,6 @@
 use crate::api;
 use crate::player;
 use crate::prelude::*;
-use crate::settings::Settings;
 use crate::track_id::SpotifyId;
 use anyhow::{bail, Error, Result};
 use std::sync::Arc;
@@ -11,7 +10,7 @@ use thiserror::Error;
 /// Setup a player.
 pub(super) async fn setup(
     spotify: Arc<api::Spotify>,
-    settings: Settings,
+    settings: crate::Settings,
 ) -> Result<(
     ConnectStream,
     ConnectPlayer,
@@ -104,7 +103,7 @@ pub(super) struct ConnectPlayer {
     /// Currently configured device.
     device: settings::Var<Option<String>>,
     /// Access to settings.
-    settings: Settings,
+    settings: crate::Settings,
     /// Current volume scale for this player.
     volume_scale: settings::Var<u32>,
     /// Current volume for this player.
@@ -231,7 +230,7 @@ pub(super) enum ConfigurationEvent {
 pub(super) struct ConnectDevice {
     spotify: Arc<api::Spotify>,
     pub(super) device: settings::Var<Option<String>>,
-    settings: Settings,
+    settings: crate::Settings,
 }
 
 impl ConnectDevice {

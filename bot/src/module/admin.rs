@@ -8,7 +8,7 @@ use anyhow::Result;
 
 /// Handler for the !admin command.
 pub struct Handler {
-    settings: settings::Settings,
+    settings: crate::Settings,
     aliases: injector::Ref<db::Aliases>,
     commands: injector::Ref<db::Commands>,
     promotions: injector::Ref<db::Promotions>,

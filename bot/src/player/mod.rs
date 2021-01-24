@@ -2,7 +2,6 @@ use crate::api;
 use crate::bus;
 use crate::db;
 use crate::prelude::*;
-use crate::settings;
 use crate::song_file::SongFile;
 use crate::spotify_id::SpotifyId;
 use crate::track_id::TrackId;
@@ -176,7 +175,7 @@ pub async fn run(
     youtube: Arc<api::YouTube>,
     global_bus: bus::Bus<bus::Global>,
     youtube_bus: bus::Bus<bus::YouTube>,
-    settings: settings::Settings,
+    settings: crate::Settings,
 ) -> Result<impl Future<Output = Result<()>>> {
     let settings = settings.scoped("player");
 

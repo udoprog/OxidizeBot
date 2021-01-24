@@ -23,7 +23,7 @@ impl Builder {
         twitch: Twitch,
         injector: &Injector,
         message_log: message_log::MessageLog,
-        settings: settings::Settings,
+        settings: crate::Settings,
     ) -> Result<Self> {
         let (cache_stream, cache) = injector.stream::<Cache>().await;
 

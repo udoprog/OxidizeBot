@@ -92,10 +92,7 @@ impl Database {
     }
 
     /// Access settings from the database.
-    pub fn settings(
-        &self,
-        schema: crate::settings::Schema,
-    ) -> Result<crate::settings::Settings, Error> {
+    pub fn settings(&self, schema: crate::Schema) -> Result<crate::Settings, Error> {
         Ok(crate::settings::Settings::new(self.clone(), schema))
     }
 

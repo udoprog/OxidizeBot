@@ -68,3 +68,17 @@ pub(crate) use tokio_stream as stream;
 
 pub use self::panic_logger::panic_logger;
 use self::uri::Uri;
+
+/// The local schema alias.
+pub(crate) type Schema = crate::settings::Schema<crate::auth::Scope>;
+/// The local settings alias.
+pub type Settings = crate::settings::Settings<crate::auth::Scope>;
+/// The local setting alias.
+pub(crate) type Setting = crate::settings::Setting<crate::auth::Scope>;
+
+pub const SCHEMA: &[u8] = include_bytes!("settings.yaml");
+
+/// Load the settings schema to use.
+pub fn load_schema() -> Result<crate::Schema, crate::settings::Error> {
+    crate::settings::Schema::load_bytes(SCHEMA)
+}

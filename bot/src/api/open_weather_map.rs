@@ -3,7 +3,6 @@
 use crate::api::RequestBuilder;
 use crate::injector::Injector;
 use crate::prelude::*;
-use crate::settings::Settings;
 use anyhow::Result;
 use reqwest::{header, Client, Method, Url};
 use std::fmt;
@@ -44,7 +43,7 @@ impl Builder {
 
 /// Hook up open weather api if all necessary settings are available.
 pub async fn setup(
-    settings: Settings,
+    settings: crate::Settings,
     injector: Injector,
 ) -> Result<impl Future<Output = Result<()>>> {
     let (mut api_key_stream, api_key) = settings

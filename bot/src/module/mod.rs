@@ -3,7 +3,6 @@ use crate::command;
 use crate::idle;
 use crate::injector::Injector;
 use crate::irc;
-use crate::settings;
 use crate::stream_info;
 use crate::utils;
 use std::collections::HashMap;
@@ -60,7 +59,7 @@ pub struct HookContext<'a> {
     pub twitch: &'a api::Twitch,
     pub streamer_twitch: &'a api::Twitch,
     pub sender: &'a irc::Sender,
-    pub settings: &'a settings::Settings,
+    pub settings: &'a crate::Settings,
 }
 
 #[async_trait::async_trait]

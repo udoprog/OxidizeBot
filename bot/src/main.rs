@@ -15,7 +15,6 @@ use oxidize::message_log;
 use oxidize::module;
 use oxidize::oauth2;
 use oxidize::player;
-use oxidize::settings;
 use oxidize::storage;
 use oxidize::stream_info;
 use oxidize::sys;
@@ -455,7 +454,7 @@ async fn try_main(
     let auth = db.auth(scopes_schema).await?;
     injector.update(auth.clone()).await;
 
-    let settings_schema = settings::Schema::load_static()?;
+    let settings_schema = oxidize::load_schema()?;
     let settings = db.settings(settings_schema)?;
 
     let drive = settings.clone();
@@ -805,7 +804,7 @@ async fn notify_after_streams(
 }
 
 /// Run the loop that handles installing this as a service.
-async fn system_loop(settings: settings::Settings, system: sys::System) -> Result<()> {
+async fn system_loop(settings: oxidize::Settings, system: sys::System) -> Result<()> {
     settings
         .set("run-on-startup", system.is_installed()?)
         .await?;

@@ -22,11 +22,11 @@ struct SettingsQuery {
 
 /// Settings endpoint.
 #[derive(Clone)]
-pub struct Settings(injector::Ref<crate::settings::Settings>);
+pub struct Settings(injector::Ref<crate::Settings>);
 
 impl Settings {
     pub fn route(
-        settings: injector::Ref<crate::settings::Settings>,
+        settings: injector::Ref<crate::Settings>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Settings(settings);
 
@@ -101,7 +101,7 @@ impl Settings {
     }
 
     /// Access underlying settings abstraction.
-    async fn settings(&self) -> Result<RwLockReadGuard<'_, crate::settings::Settings>> {
+    async fn settings(&self) -> Result<RwLockReadGuard<'_, crate::Settings>> {
         match self.0.read().await {
             Some(out) => Ok(out),
             None => bail!("settings not configured"),
@@ -166,7 +166,7 @@ impl Settings {
     /// Get the given setting by key.
     async fn get_setting(&self, key: &str) -> Result<impl warp::Reply> {
         let settings = self.settings().await?;
-        let setting: Option<crate::settings::Setting> = settings
+        let setting: Option<crate::Setting> = settings
             .setting::<serde_json::Value>(key)
             .await?
             .map(|s| s.to_owned());

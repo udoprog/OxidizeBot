@@ -70,7 +70,7 @@ pub struct SongFile {
 }
 
 impl SongFile {
-    pub(crate) async fn run(injector: Injector, settings: settings::Settings) -> Result<()> {
+    pub(crate) async fn run(injector: Injector, settings: crate::Settings) -> Result<()> {
         let (mut song_stream, mut song) = injector.stream::<player::Song>().await;
         let (mut state_stream, mut state) = injector.stream::<player::State>().await;
         let (mut path_stream, path) = settings.stream("path").optional().await?;

@@ -435,6 +435,15 @@ macro_rules! scopes {
         Unknown,
     }
 
+    impl crate::settings::Scope for Scope {
+    }
+
+    impl Default for Scope {
+        fn default() -> Self {
+            Self::Unknown
+        }
+    }
+
     impl Scope {
         /// Get a list of all scopes.
         pub fn list() -> Vec<Scope> {
