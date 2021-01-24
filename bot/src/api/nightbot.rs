@@ -20,19 +20,6 @@ impl From<Error> for RequestError {
     }
 }
 
-#[derive(Provider)]
-#[provider(build = "Builder::build", output = "NightBot")]
-struct Builder {
-    #[dependency(tag = "tags::Token::NightBot")]
-    token: oauth2::SyncToken,
-}
-
-impl Builder {
-    pub async fn build(self) -> Option<NightBot> {
-        NightBot::new(self.token).ok()
-    }
-}
-
 /// API integration.
 #[derive(Clone, Debug)]
 pub struct NightBot {
@@ -53,8 +40,24 @@ impl NightBot {
 
     /// Run the stream that updates the nightbot client.
     pub async fn run(injector: Injector) -> Result<()> {
-        Builder::run(injector).await?;
-        Ok(())
+        #[derive(Provider)]
+        struct Deps {
+            #[dependency(tag = "tags::Token::NightBot")]
+            token: oauth2::SyncToken,
+        }
+
+        let mut deps = Deps::provider(&injector).await?;
+
+        loop {
+            match deps.update().await {
+                Some(deps) => {
+                    injector.update(NightBot::new(deps.token)?).await;
+                }
+                None => {
+                    injector.clear::<NightBot>().await;
+                }
+            }
+        }
     }
 
     /// Get request against API.

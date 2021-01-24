@@ -5,7 +5,6 @@ use crate::command;
 use crate::currency::CurrencyBuilder;
 use crate::db;
 use crate::idle;
-use crate::injector::{self, Injector, Key};
 use crate::message_log::MessageLog;
 use crate::module;
 use crate::oauth2;
@@ -50,7 +49,7 @@ pub struct Irc {
     pub db: db::Database,
     pub global_bus: Arc<bus::Bus<bus::Global>>,
     pub global_channel: settings::Var<Option<String>>,
-    pub injector: Injector,
+    pub injector: injector::Injector,
     pub message_log: MessageLog,
     pub modules: Vec<Box<dyn module::Module>>,
     pub restart: utils::Restart,
@@ -63,26 +62,7 @@ impl Irc {
     pub async fn run(self) -> Result<()> {
         use backoff::backoff::Backoff as _;
 
-        let (streamer_stream, streamer) = self
-            .injector
-            .stream_key(&Key::<api::TwitchAndUser>::tagged(tags::Twitch::Streamer)?)
-            .await;
-
-        let (bot_stream, bot) = self
-            .injector
-            .stream_key(&Key::<api::TwitchAndUser>::tagged(tags::Twitch::Bot)?)
-            .await;
-
-        let (auth_stream, auth) = self.injector.stream().await;
-
-        let mut setup = Setup {
-            streamer_stream,
-            streamer,
-            bot_stream,
-            bot,
-            auth_stream,
-            auth,
-        };
+        let mut provider = Setup::provider(&self.injector).await?;
 
         let mut error_backoff = backoff::ExponentialBackoff::default();
         error_backoff.current_interval = time::Duration::from_secs(5);
@@ -90,97 +70,45 @@ impl Irc {
         error_backoff.max_elapsed_time = None;
 
         loop {
-            let irc_loop = setup.setup(&self).await?;
+            while let Some(setup) = provider.update().await {
+                let irc_loop = IrcLoop {
+                    streamer: setup.streamer,
+                    bot: setup.bot,
+                    auth: setup.auth,
+                    provider: &mut provider,
+                    irc: &self,
+                };
 
-            match irc_loop.run().await {
-                Ok(()) => {
-                    error_backoff.reset();
-                }
-                Err(e) => {
-                    let backoff = error_backoff.next_backoff().unwrap_or_default();
-                    log_error!(e, "chat component crashed, restarting in {:?}", backoff);
-                    tokio::time::sleep(backoff).await;
+                match irc_loop.run().await {
+                    Ok(()) => {
+                        error_backoff.reset();
+                    }
+                    Err(e) => {
+                        let backoff = error_backoff.next_backoff().unwrap_or_default();
+                        log_error!(e, "chat component crashed, restarting in {:?}", backoff);
+                        tokio::time::sleep(backoff).await;
+                    }
                 }
             }
         }
     }
 }
 
+#[derive(Provider)]
 struct Setup {
-    bot_stream: injector::Stream<api::TwitchAndUser>,
-    bot: Option<api::TwitchAndUser>,
-    streamer_stream: injector::Stream<api::TwitchAndUser>,
-    streamer: Option<api::TwitchAndUser>,
-    auth_stream: injector::Stream<Auth>,
-    auth: Option<Auth>,
-}
-
-impl Setup {
-    /// Set up the IRC loop based on updated injector configuration.
-    async fn setup<'a>(&'a mut self, irc: &'a Irc) -> Result<IrcLoop<'a>> {
-        let mut first = true;
-
-        loop {
-            if !std::mem::take(&mut first) {
-                tokio::select! {
-                    Some(bot) = self.bot_stream.next() => {
-                        self.bot = bot;
-                    }
-                    Some(streamer) = self.streamer_stream.next() => {
-                        self.streamer = streamer;
-                    }
-                    Some(auth) = self.auth_stream.next() => {
-                        self.auth = auth;
-                    }
-                }
-            }
-
-            let streamer = match self.streamer.as_ref() {
-                Some(streamer) => streamer,
-                None => continue,
-            };
-
-            let bot = match self.bot.as_ref() {
-                Some(bot) => bot,
-                None => continue,
-            };
-
-            let auth = match self.auth.as_ref() {
-                Some(auth) => auth,
-                None => continue,
-            };
-
-            return Ok(IrcLoop {
-                streamer: streamer.clone(),
-                bot: bot.clone(),
-                auth: auth.clone(),
-                setup: self,
-                irc,
-            });
-        }
-    }
-
-    /// Update loop setup state.
-    async fn update(&mut self) {
-        tokio::select! {
-            Some(streamer) = self.streamer_stream.next() => {
-                self.streamer = streamer;
-            },
-            Some(bot) = self.bot_stream.next() => {
-                self.bot = bot;
-            },
-            Some(auth) = self.auth_stream.next() => {
-                self.auth = auth;
-            }
-        }
-    }
+    #[dependency(tag = "tags::Twitch::Bot")]
+    bot: api::TwitchAndUser,
+    #[dependency(tag = "tags::Twitch::Streamer")]
+    streamer: api::TwitchAndUser,
+    #[dependency]
+    auth: Auth,
 }
 
 struct IrcLoop<'a> {
     bot: api::TwitchAndUser,
     streamer: api::TwitchAndUser,
     auth: Auth,
-    setup: &'a mut Setup,
+    provider: &'a mut SetupProvider,
     irc: &'a Irc,
 }
 
@@ -190,7 +118,7 @@ impl IrcLoop<'_> {
             bot,
             streamer,
             auth,
-            setup,
+            provider,
             irc,
         } = self;
 
@@ -496,7 +424,7 @@ impl IrcLoop<'_> {
                         }
                     }
                 }
-                () = setup.update() => {
+                () = provider.wait() => {
                     // If configuration state changes, force a reconnect.
                     leave.set(Fuse::new(tokio::time::sleep(time::Duration::from_secs(1))));
                 }
@@ -570,7 +498,7 @@ async fn currency_loop(
     streamer_channel: Arc<twitch::v5::Channel>,
     sender: Sender,
     idle: idle::Idle,
-    injector: Injector,
+    injector: injector::Injector,
     chat_settings: settings::Settings,
     settings: settings::Settings,
 ) -> Result<impl Future<Output = Result<()>>> {

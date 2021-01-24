@@ -1,4 +1,5 @@
 pub(crate) use crate::injector;
+pub(crate) use crate::injector::Provider;
 pub(crate) use crate::settings;
 pub(crate) use crate::stream::{self as stream, StreamExt as _};
 pub(crate) use crate::utils;
