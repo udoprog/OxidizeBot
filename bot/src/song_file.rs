@@ -131,10 +131,10 @@ impl SongFile {
                 }
                 _ = song_file.as_pin_mut().poll_inner(|mut f, cx| f.update_interval.poll_tick(cx)) => {
                 }
-                Some(update) = song_stream.next() => {
+                update = song_stream.recv() => {
                     song = update;
                 }
-                Some(update) = state_stream.next() => {
+                update = state_stream.recv() => {
                     state = update;
                 }
             }

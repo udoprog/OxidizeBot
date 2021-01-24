@@ -96,7 +96,7 @@ impl super::Module for Module {
             loop {
                 // TODO: check that this actually works.
                 tokio::select! {
-                    Some(update) = promotions_stream.next() => {
+                    update = promotions_stream.recv() => {
                         promotions = update;
                     }
                     duration = setting.recv() => {

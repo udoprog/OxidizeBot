@@ -2,7 +2,6 @@ use crate::api;
 use crate::injector::{Injector, Key};
 use crate::prelude::BoxStream;
 use crate::settings;
-use crate::stream::StreamExt as _;
 use crate::tags;
 use anyhow::{bail, Result};
 use async_fuse::Fuse;
@@ -340,7 +339,7 @@ async fn task(settings: settings::Settings, injector: Injector) -> Result<()> {
                 state.enabled = enabled;
                 state.build().await;
             }
-            Some(streamer) = streamer_stream.next() => {
+            streamer = streamer_stream.recv() => {
                 state.streamer = streamer;
                 state.build().await;
             }

@@ -435,7 +435,7 @@ pub async fn build(
 
         loop {
             tokio::select! {
-                Some(setbac) = setbac_stream.next() => {
+                setbac = setbac_stream.recv() => {
                     builder.setbac = setbac;
                     builder.update().await?;
                 }

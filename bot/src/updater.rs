@@ -25,7 +25,7 @@ pub fn run(
 
         loop {
             tokio::select! {
-                Some(update) = cache_stream.next() => {
+                update = cache_stream.recv() => {
                     cache = update;
                 }
                 _ = interval.tick() => {

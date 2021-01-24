@@ -43,11 +43,11 @@ pub(crate) async fn task(
                 state.request_redemption = request_redemption.map(Into::into);
                 state.build();
             }
-            Some(pubsub) = pubsub_stream.next() => {
+            pubsub = pubsub_stream.recv() => {
                 state.pubsub = pubsub;
                 state.build();
             }
-            Some(player) = player_stream.next() => {
+            player = player_stream.recv() => {
                 state.player = player;
                 state.build();
             }

@@ -768,7 +768,7 @@ async fn notify_after_streams(
 
     loop {
         tokio::select! {
-            Some(update) = after_streams_stream.next() => {
+            update = after_streams_stream.recv() => {
                 after_streams = update;
             }
             Some(update) = rx.recv() => {

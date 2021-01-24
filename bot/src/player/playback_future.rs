@@ -61,7 +61,7 @@ impl PlaybackFuture {
 
         loop {
             tokio::select! {
-                Some(song) = song_stream.next() => {
+                song = song_stream.recv() => {
                     song_timeout.set(song.and_then(|s| match s.state() {
                         State::Playing => Some(Fuse::new(tokio::time::sleep_until(s.deadline().into()))),
                         _ => None,
@@ -72,8 +72,7 @@ impl PlaybackFuture {
                 }
                 /* player */
                 _ = &mut song_timeout => {
-                    let mut internal = self.internal.write().await;
-                    internal.end_of_track().await?;
+                    self.internal.write().await.end_of_track().await?;
                 }
                 update = self.detached_stream.recv() => {
                     self.internal.write().await.update_detached(update).await?;
@@ -91,8 +90,8 @@ impl PlaybackFuture {
                 _ = song_update_interval.as_pin_mut().poll_inner(|mut i, cx| i.poll_tick(cx)) => {
                     self.internal.write().await.song_update().await;
                 }
-                Some(event) = self.connect_stream.next() => {
-                    self.internal.write().await.handle_player_event(event?).await?;
+                event = self.connect_stream.recv() => {
+                    self.internal.write().await.handle_player_event(event).await?;
                 }
             }
         }

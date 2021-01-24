@@ -209,7 +209,7 @@ pub async fn run(
     Ok(async move {
         loop {
             tokio::select! {
-                Some(update) = streamer_token_stream.next() => {
+                update = streamer_token_stream.recv() => {
                     remote_builder.streamer_token = update;
                     remote_builder.init(&mut remote).await;
                 }
@@ -217,7 +217,7 @@ pub async fn run(
                     remote_builder.secret_key = secret_key;
                     remote_builder.init(&mut remote).await;
                 }
-                Some(update) = player_stream.next() => {
+                update = player_stream.recv() => {
                     remote_builder.player = update;
                     remote_builder.init(&mut remote).await;
                 }

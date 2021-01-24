@@ -4,9 +4,7 @@ use crate::prelude::*;
 use crate::settings::Settings;
 use crate::track_id::SpotifyId;
 use anyhow::{bail, Error, Result};
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -212,21 +210,15 @@ pub(super) struct ConnectStream {
     config_rx: mpsc::UnboundedReceiver<ConfigurationEvent>,
 }
 
-impl stream::Stream for ConnectStream {
-    type Item = Result<player::IntegrationEvent, anyhow::Error>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        use self::player::IntegrationEvent::*;
-
-        if let Poll::Ready(Some(e)) = self.config_rx.poll_recv(cx) {
-            match e {
-                ConfigurationEvent::DeviceChanged => {
-                    return Poll::Ready(Some(Ok(DeviceChanged)));
-                }
+impl ConnectStream {
+    pub(crate) async fn recv(&mut self) -> player::IntegrationEvent {
+        loop {
+            if let Some(event) = self.config_rx.recv().await {
+                return match event {
+                    ConfigurationEvent::DeviceChanged => player::IntegrationEvent::DeviceChanged,
+                };
             }
         }
-
-        Poll::Pending
     }
 }
 

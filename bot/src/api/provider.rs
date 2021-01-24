@@ -59,11 +59,10 @@ impl TwitchAndUserProvider {
         this.update(token).await?;
 
         // loop to setup all necessary twitch authentication.
-        if let Some(token) = token_stream.next().await {
+        loop {
+            let token = token_stream.recv().await;
             this.update(token).await?;
         }
-
-        Ok(())
     }
 
     /// Inner update helper function.

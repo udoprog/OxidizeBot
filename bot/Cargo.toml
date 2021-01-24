@@ -54,7 +54,7 @@ async-fuse = { version = "0.11.2", features = ["stream"] }
 futures-cache = "0.10.0"
 anyhow = "1.0.38"
 thiserror = "1.0.23"
-async-injector = "0.16.0"
+async-injector = "0.17.0"
 async-trait = "0.1.42"
 async-stream = "0.3.0"
 leaky-bucket = "0.10.0"

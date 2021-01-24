@@ -438,10 +438,10 @@ impl IrcLoop<'_> {
                     // If configuration state changes, force a reconnect.
                     leave.set(Fuse::new(tokio::time::sleep(time::Duration::from_secs(1))));
                 }
-                Some(commands) = commands_stream.next() => {
+                commands = commands_stream.recv() => {
                     handler.commands = commands;
                 }
-                Some(aliases) = aliases_stream.next() => {
+                aliases = aliases_stream.recv() => {
                     handler.aliases = aliases;
                 }
                 chat_log = chat_log_builder.update() => {
@@ -577,7 +577,7 @@ async fn currency_loop(
                 update = notify_rewards_stream.recv() => {
                     notify_rewards = update;
                 }
-                Some(update) = db_stream.next() => {
+                update = db_stream.recv() => {
                     builder.db = update;
                     currency = builder.build_and_inject().await;
                 }

@@ -24,7 +24,7 @@ pub(crate) async fn task(
 
     loop {
         tokio::select! {
-            Some(player) = player_stream.next() => {
+            player = player_stream.recv() => {
                 feedback_loop.set(new_feedback_loop(player));
             }
             result = &mut feedback_loop => {

@@ -48,10 +48,8 @@ impl Builder {
 
     /// Update builder.
     pub async fn update(&mut self) -> Result<Option<ChatLog>> {
-        use crate::stream::StreamExt as _;
-
         tokio::select! {
-            Some(cache) = self.cache_stream.next() => {
+            cache = self.cache_stream.recv() => {
                 self.cache = cache;
                 self.build()
             }

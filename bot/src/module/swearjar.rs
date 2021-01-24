@@ -90,7 +90,6 @@ impl super::Module for Module {
             handlers,
             twitch,
             injector,
-            futures,
             settings,
             ..
         }: module::HookContext<'_>,
@@ -98,12 +97,12 @@ impl super::Module for Module {
         let enabled = settings.var("swearjar/enabled", false).await?;
         let reward = settings.var("swearjar/reward", 10).await?;
 
-        let (mut cooldown_stream, cooldown) = settings
-            .stream("swearjar/cooldown")
-            .or_with(Duration::seconds(60 * 10))
+        let cooldown = settings
+            .var(
+                "swearjar/cooldown",
+                Cooldown::from_duration(Duration::seconds(60 * 10)),
+            )
             .await?;
-
-        let cooldown = settings::Var::new(Cooldown::from_duration(cooldown));
 
         let currency = injector.var().await;
 
@@ -112,20 +111,12 @@ impl super::Module for Module {
             Handler {
                 enabled,
                 reward,
-                cooldown: cooldown.clone(),
+                cooldown,
                 currency,
                 twitch: twitch.clone(),
             },
         );
 
-        let future = async move {
-            loop {
-                let update = cooldown_stream.recv().await;
-                cooldown.write().await.cooldown = update;
-            }
-        };
-
-        futures.push(Box::pin(future));
         Ok(())
     }
 }

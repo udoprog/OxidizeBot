@@ -133,24 +133,22 @@ dependencies = [
 
 [[package]]
 name = "async-injector"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "223356c355538a0904658d75ee4b27fe6af36d8aa050cea37b1a738d6bf14986"
+checksum = "9069dabe5843d30741bc8462a746d2325af49ad4e01896e1cf4e66dd45d3604d"
 dependencies = [
  "async-injector-derive",
- "async-stream",
  "hashbrown 0.9.1",
  "serde",
  "serde-hashkey 0.4.0",
  "tokio 1.1.0",
- "tokio-stream",
 ]
 
 [[package]]
 name = "async-injector-derive"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ec8f983bbb906460edc7d22757b418988f69a4ee59502421a749c159b8b9511"
+checksum = "1bdb41f2405c4d33b7d2552957298cc7dbcfa8da1337db9154590b6ea3edd9ab"
 dependencies = [
  "darling",
  "proc-macro2",
