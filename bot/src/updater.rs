@@ -1,5 +1,4 @@
 use crate::api;
-use crate::injector;
 use crate::prelude::*;
 use crate::storage::Cache;
 use crate::utils::Duration;
@@ -9,7 +8,7 @@ const USER: &str = "udoprog";
 const REPO: &str = "OxidizeBot";
 
 pub fn run(
-    injector: &injector::Injector,
+    injector: &Injector,
 ) -> (
     settings::Var<Option<api::github::Release>>,
     impl Future<Output = Result<()>>,

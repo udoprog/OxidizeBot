@@ -3,12 +3,11 @@ use crate::player;
 use crate::prelude::*;
 use crate::settings::Settings;
 use anyhow::Result;
-use std::sync::Arc;
 use std::time::Duration;
 
 /// Setup a player.
 pub(super) async fn setup(
-    bus: Arc<bus::Bus<bus::YouTube>>,
+    bus: bus::Bus<bus::YouTube>,
     settings: Settings,
 ) -> Result<(YouTubePlayer, impl Future<Output = Result<()>>)> {
     let (mut volume_scale_stream, mut volume_scale) =
@@ -49,7 +48,7 @@ pub(super) async fn setup(
 
 #[derive(Clone)]
 pub(super) struct YouTubePlayer {
-    bus: Arc<bus::Bus<bus::YouTube>>,
+    bus: bus::Bus<bus::YouTube>,
     settings: Settings,
     volume: settings::Var<u32>,
 }

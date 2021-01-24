@@ -17,3 +17,9 @@ pub enum Twitch {
     Streamer,
     Bot,
 }
+
+/// Identifiers a set of generic global variables.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub enum Globals {
+    Channel,
+}

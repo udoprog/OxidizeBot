@@ -1,7 +1,6 @@
 use crate::api;
 use crate::bus;
 use crate::db;
-use crate::injector;
 use crate::prelude::*;
 use crate::settings;
 use crate::song_file::SongFile;
@@ -171,12 +170,12 @@ pub(self) async fn convert_item(
 
 /// Run the player.
 pub async fn run(
-    injector: &injector::Injector,
+    injector: &Injector,
     db: db::Database,
     spotify: Arc<api::Spotify>,
     youtube: Arc<api::YouTube>,
-    global_bus: Arc<bus::Bus<bus::Global>>,
-    youtube_bus: Arc<bus::Bus<bus::YouTube>>,
+    global_bus: bus::Bus<bus::Global>,
+    youtube_bus: bus::Bus<bus::YouTube>,
     settings: settings::Settings,
 ) -> Result<impl Future<Output = Result<()>>> {
     let settings = settings.scoped("player");

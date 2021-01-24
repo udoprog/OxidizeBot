@@ -40,7 +40,7 @@ impl bus::Message for Event {
 #[derive(Default)]
 pub struct Builder {
     limit: Option<usize>,
-    bus: Option<Arc<bus::Bus<Event>>>,
+    bus: Option<bus::Bus<Event>>,
 }
 
 impl Builder {
@@ -53,7 +53,7 @@ impl Builder {
     }
 
     /// Associate a bus with the log.
-    pub fn bus(self, bus: Arc<bus::Bus<Event>>) -> Self {
+    pub fn bus(self, bus: bus::Bus<Event>) -> Self {
         Self {
             bus: Some(bus),
             ..self
@@ -76,7 +76,7 @@ impl Builder {
 pub struct Inner {
     enabled: bool,
     limit: Option<usize>,
-    bus: Option<Arc<bus::Bus<Event>>>,
+    bus: Option<bus::Bus<Event>>,
     messages: VecDeque<Message>,
 }
 

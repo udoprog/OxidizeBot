@@ -972,17 +972,20 @@ impl Api {
 
 /// Set up the web endpoint.
 pub async fn setup(
-    injector: &injector::Injector,
+    injector: &Injector,
     message_log: message_log::MessageLog,
-    message_bus: Arc<bus::Bus<message_log::Event>>,
-    global_bus: Arc<bus::Bus<bus::Global>>,
-    youtube_bus: Arc<bus::Bus<bus::YouTube>>,
-    command_bus: Arc<bus::Bus<bus::Command>>,
+    message_bus: bus::Bus<message_log::Event>,
+    global_bus: bus::Bus<bus::Global>,
+    youtube_bus: bus::Bus<bus::YouTube>,
+    command_bus: bus::Bus<bus::Command>,
     auth: auth::Auth,
-    channel: crate::settings::Var<Option<String>>,
     latest: crate::settings::Var<Option<api::github::Release>>,
 ) -> Result<(Server, impl Future<Output = ()>)> {
     let addr: SocketAddr = str::parse("0.0.0.0:12345")?;
+
+    let channel = injector
+        .var_key(Key::<String>::tagged(tags::Globals::Channel)?)
+        .await;
 
     let player = injector.var().await;
     let active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>> = Default::default();
@@ -1282,7 +1285,7 @@ pub struct ReceivedToken {
 }
 
 /// Connecting a bus to a websocket connection.
-fn send_bus<T>(bus: Arc<bus::Bus<T>>) -> filters::BoxedFilter<(impl warp::Reply,)>
+fn send_bus<T>(bus: bus::Bus<T>) -> filters::BoxedFilter<(impl warp::Reply,)>
 where
     T: bus::Message,
 {
@@ -1302,10 +1305,7 @@ where
 }
 
 /// Forward the bus message to the websocket.
-async fn send_bus_forward<T>(
-    bus: Arc<bus::Bus<T>>,
-    mut ws: warp::filters::ws::WebSocket,
-) -> Result<()>
+async fn send_bus_forward<T>(bus: bus::Bus<T>, mut ws: warp::filters::ws::WebSocket) -> Result<()>
 where
     T: bus::Message,
 {

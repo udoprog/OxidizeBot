@@ -118,7 +118,7 @@ fn parse_url(url: &str) -> Option<Url> {
 struct RemoteBuilder {
     streamer_token: Option<oauth2::SyncToken>,
     injector: Injector,
-    global_bus: Arc<bus::Bus<bus::Global>>,
+    global_bus: bus::Bus<bus::Global>,
     player: Option<Player>,
     enabled: bool,
     api_url: Option<Url>,
@@ -169,7 +169,7 @@ struct Remote {
 pub async fn run(
     settings: &Settings,
     injector: &Injector,
-    global_bus: Arc<bus::Bus<bus::Global>>,
+    global_bus: bus::Bus<bus::Global>,
 ) -> Result<impl Future<Output = Result<()>>> {
     let settings = settings.scoped("remote");
 

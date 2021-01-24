@@ -27,7 +27,7 @@ pub struct TwitchAndUser {
 }
 
 /// Set up the task to provide various twitch clients.
-pub async fn twitch_clients_task(injector: injector::Injector) -> Result<()> {
+pub async fn twitch_clients_task(injector: Injector) -> Result<()> {
     let streamer = TwitchAndUserProvider::run(injector.clone(), tags::Twitch::Streamer, true);
     let bot = TwitchAndUserProvider::run(injector.clone(), tags::Twitch::Bot, false);
     tokio::try_join!(streamer, bot)?;
@@ -35,8 +35,8 @@ pub async fn twitch_clients_task(injector: injector::Injector) -> Result<()> {
 }
 
 struct TwitchAndUserProvider {
-    key: injector::Key<TwitchAndUser>,
-    injector: injector::Injector,
+    key: Key<TwitchAndUser>,
+    injector: Injector,
     /// Currently known user id.
     user_id: Option<Box<str>>,
     /// If we want to include channel information.
@@ -44,15 +44,13 @@ struct TwitchAndUserProvider {
 }
 
 impl TwitchAndUserProvider {
-    pub async fn run(injector: injector::Injector, id: tags::Twitch, channel: bool) -> Result<()> {
+    pub async fn run(injector: Injector, id: tags::Twitch, channel: bool) -> Result<()> {
         let (mut token_stream, token) = injector
-            .stream_key(&injector::Key::<oauth2::SyncToken>::tagged(
-                tags::Token::Twitch(id),
-            )?)
+            .stream_key(&Key::<oauth2::SyncToken>::tagged(tags::Token::Twitch(id))?)
             .await;
 
         let mut this = TwitchAndUserProvider {
-            key: injector::Key::<TwitchAndUser>::tagged(id)?,
+            key: Key::<TwitchAndUser>::tagged(id)?,
             injector,
             user_id: None,
             channel,

@@ -9,7 +9,7 @@ use anyhow::{Context as _, Result};
 /// Setup the task that sends chat feedback.
 pub(crate) async fn task(
     sender: Sender,
-    injector: injector::Injector,
+    injector: Injector,
     chat_feedback: settings::Var<bool>,
 ) -> Result<()> {
     let (mut player_stream, player) = injector.stream::<Player>().await;

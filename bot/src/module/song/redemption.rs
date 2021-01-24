@@ -11,7 +11,7 @@ use anyhow::Result;
 /// Task used to react to redemptions as song requests.
 pub(crate) async fn task(
     sender: irc::Sender,
-    injector: injector::Injector,
+    injector: Injector,
     settings: settings::Settings,
     requester: SongRequester,
     streamer_twitch: api::Twitch,

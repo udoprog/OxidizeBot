@@ -1,7 +1,7 @@
-pub(crate) use crate::injector;
-pub(crate) use crate::injector::Provider;
+pub(crate) use crate::injector::{self, Injector, Key, Provider};
 pub(crate) use crate::settings;
 pub(crate) use crate::stream::{self as stream, StreamExt as _};
+pub(crate) use crate::tags;
 pub(crate) use crate::utils;
 pub(crate) use async_fuse::Fuse;
 pub(crate) use async_trait::async_trait;

@@ -1,6 +1,6 @@
 use crate::api::{twitch, Twitch};
 use crate::emotes;
-use crate::injector;
+use crate::injector::{Injector, Stream};
 use crate::irc;
 use crate::message_log;
 use crate::settings;
@@ -10,7 +10,7 @@ use anyhow::Result;
 pub struct Builder {
     twitch: Twitch,
     pub(crate) message_log: message_log::MessageLog,
-    pub(crate) cache_stream: injector::Stream<Cache>,
+    pub(crate) cache_stream: Stream<Cache>,
     pub(crate) cache: Option<Cache>,
     pub(crate) enabled_stream: settings::Stream<bool>,
     pub(crate) enabled: bool,
@@ -21,7 +21,7 @@ pub struct Builder {
 impl Builder {
     pub async fn new(
         twitch: Twitch,
-        injector: &injector::Injector,
+        injector: &Injector,
         message_log: message_log::MessageLog,
         settings: settings::Settings,
     ) -> Result<Self> {

@@ -27,7 +27,7 @@ pub(super) struct Initialized {
 
 pub(super) struct PlayerInternal {
     pub(super) initialized: Initialized,
-    pub(super) injector: injector::Injector,
+    pub(super) injector: Injector,
     /// Current player kind.
     pub(super) player: PlayerKind,
     /// Updated to the current playback mode.
@@ -48,7 +48,7 @@ pub(super) struct PlayerInternal {
     /// The player bus.
     pub(super) bus: bus::Bus<Event>,
     /// Notifier to use when sending song updates.
-    pub(super) global_bus: Arc<bus::Bus<bus::Global>>,
+    pub(super) global_bus: bus::Bus<bus::Global>,
     /// Song config.
     pub(super) song_switch_feedback: settings::Var<bool>,
     pub(super) device: ConnectDevice,

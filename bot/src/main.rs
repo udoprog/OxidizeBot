@@ -9,7 +9,7 @@ use oxidize::api;
 use oxidize::auth;
 use oxidize::bus;
 use oxidize::db;
-use oxidize::injector;
+use oxidize::injector::{Injector, Key};
 use oxidize::irc;
 use oxidize::message_log;
 use oxidize::module;
@@ -444,7 +444,7 @@ async fn try_main(
             .with_context(|| anyhow!("failed to create root: {}", root.display()))?;
     }
 
-    let injector = injector::Injector::new();
+    let injector = Injector::new();
 
     let mut modules = Vec::<Box<dyn module::Module>>::new();
     let mut futures = oxidize::utils::Futures::new();
@@ -473,6 +473,7 @@ async fn try_main(
     injector.update(settings.clone()).await;
 
     let bad_words = db::Words::load(db.clone()).await?;
+    injector.update(bad_words).await;
 
     injector
         .update(db::AfterStreams::load(db.clone()).await?)
@@ -484,11 +485,14 @@ async fn try_main(
         .await;
     injector.update(db::Themes::load(db.clone()).await?).await;
 
-    let message_bus = Arc::new(bus::Bus::new());
-    let global_bus = Arc::new(bus::Bus::new());
-    let youtube_bus = Arc::new(bus::Bus::new());
-    let global_channel = settings::Var::new(None);
-    let command_bus = Arc::new(bus::Bus::new());
+    let message_bus = bus::Bus::new();
+    injector.update(message_bus.clone()).await;
+    let global_bus = bus::Bus::new();
+    injector.update(global_bus.clone()).await;
+    let youtube_bus = bus::Bus::new();
+    injector.update(youtube_bus.clone()).await;
+    let command_bus = bus::Bus::new();
+    injector.update(command_bus.clone()).await;
 
     futures.push(Box::pin(
         system_loop(settings.scoped("system"), system.clone())
@@ -506,6 +510,7 @@ async fn try_main(
         .bus(message_bus.clone())
         .limit(512)
         .build();
+    injector.update(message_log.clone()).await;
 
     let (web, future) = web::setup(
         &injector,
@@ -515,7 +520,6 @@ async fn try_main(
         youtube_bus.clone(),
         command_bus.clone(),
         auth.clone(),
-        global_channel.clone(),
         latest.clone(),
     )
     .await?;
@@ -544,7 +548,7 @@ async fn try_main(
 
     let spotify_setup = {
         let s = token_settings.scoped("spotify");
-        let key = injector::Key::tagged(tags::Token::Spotify)?;
+        let key = Key::tagged(tags::Token::Spotify)?;
         oauth2::build(
             "spotify",
             "Spotify",
@@ -558,7 +562,7 @@ async fn try_main(
 
     let youtube_setup = {
         let s = token_settings.scoped("youtube");
-        let key = injector::Key::tagged(tags::Token::YouTube)?;
+        let key = Key::tagged(tags::Token::YouTube)?;
         oauth2::build(
             "youtube",
             "YouTube",
@@ -572,7 +576,7 @@ async fn try_main(
 
     let nightbot_setup = {
         let s = token_settings.scoped("nightbot");
-        let key = injector::Key::tagged(tags::Token::NightBot)?;
+        let key = Key::tagged(tags::Token::NightBot)?;
         oauth2::build(
             "nightbot",
             "NightBot",
@@ -586,7 +590,7 @@ async fn try_main(
 
     let streamer_setup = {
         let s = token_settings.scoped("twitch-streamer");
-        let key = injector::Key::tagged(tags::Token::Twitch(tags::Twitch::Streamer))?;
+        let key = Key::tagged(tags::Token::Twitch(tags::Twitch::Streamer))?;
         oauth2::build(
             "twitch-streamer",
             "Twitch Streamer",
@@ -600,7 +604,7 @@ async fn try_main(
 
     let bot_setup = {
         let s = token_settings.scoped("twitch-bot");
-        let key = injector::Key::tagged(tags::Token::Twitch(tags::Twitch::Bot))?;
+        let key = Key::tagged(tags::Token::Twitch(tags::Twitch::Bot))?;
         oauth2::build(
             "twitch-bot",
             "Twitch Bot",
@@ -655,7 +659,8 @@ async fn try_main(
             .instrument(trace_span!(target: "futures", "open-weather-map",)),
     ));
 
-    let (restart, internal_restart) = utils::Restart::new();
+    let (restart, restart_rx) = utils::Restart::new();
+    injector.update(restart).await;
 
     let spotify = Arc::new(api::Spotify::new(spotify_token.clone())?);
     let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
@@ -718,17 +723,9 @@ async fn try_main(
     ));
 
     let irc = irc::Irc {
-        db: db.clone(),
-        bad_words,
-        global_bus,
-        command_bus,
         modules,
-        restart,
-        settings,
-        global_channel,
         injector: injector.clone(),
         stream_state_tx,
-        message_log,
         script_dirs: script_dirs.clone(),
     };
 
@@ -748,7 +745,7 @@ async fn try_main(
             log::info!("restart triggered by system");
             Ok(Intent::Restart)
         },
-        _ = internal_restart => {
+        _ = restart_rx => {
             log::info!("restart triggered by bot");
             Ok(Intent::Restart)
         },
@@ -763,7 +760,7 @@ async fn try_main(
 ///
 /// If this is clicked, open the after-streams page.
 async fn notify_after_streams(
-    injector: &injector::Injector,
+    injector: &Injector,
     mut rx: mpsc::Receiver<stream_info::StreamState>,
     system: sys::System,
 ) -> Result<()> {

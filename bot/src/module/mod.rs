@@ -1,7 +1,7 @@
 use crate::api;
 use crate::command;
 use crate::idle;
-use crate::injector;
+use crate::injector::Injector;
 use crate::irc;
 use crate::settings;
 use crate::stream_info;
@@ -52,7 +52,7 @@ impl Handlers {
 
 /// Context for a hook.
 pub struct HookContext<'a> {
-    pub injector: &'a injector::Injector,
+    pub injector: &'a Injector,
     pub handlers: &'a mut Handlers,
     pub futures: &'a mut utils::Futures<'static>,
     pub stream_info: &'a stream_info::StreamInfo,

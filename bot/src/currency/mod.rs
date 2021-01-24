@@ -2,7 +2,7 @@
 use crate::api;
 pub use crate::db::models::Balance;
 use crate::db::Database;
-use crate::injector;
+use crate::injector::Injector;
 use crate::utils::Duration;
 use anyhow::{Error, Result};
 use std::collections::HashSet;
@@ -34,7 +34,7 @@ impl BalanceOf {
 pub struct CurrencyBuilder {
     twitch: api::Twitch,
     pub mysql_schema: mysql::Schema,
-    injector: injector::Injector,
+    injector: Injector,
     pub ty: BackendType,
     pub enabled: bool,
     pub command_enabled: bool,
@@ -45,11 +45,7 @@ pub struct CurrencyBuilder {
 
 impl CurrencyBuilder {
     /// Construct a new currency builder.
-    pub fn new(
-        twitch: api::Twitch,
-        mysql_schema: mysql::Schema,
-        injector: injector::Injector,
-    ) -> Self {
+    pub fn new(twitch: api::Twitch, mysql_schema: mysql::Schema, injector: Injector) -> Self {
         Self {
             twitch,
             mysql_schema,

@@ -25,7 +25,7 @@ impl PlaybackFuture {
     /// Run the playback future.
     pub(super) async fn run(
         mut self,
-        injector: injector::Injector,
+        injector: Injector,
         settings: settings::Settings,
     ) -> Result<()> {
         // TODO: Remove fallback-uri migration next major release.

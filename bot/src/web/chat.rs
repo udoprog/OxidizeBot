@@ -1,7 +1,6 @@
 use crate::bus;
 use crate::message_log;
 use crate::web::EMPTY;
-use std::sync::Arc;
 use warp::filters;
 use warp::path;
 use warp::Filter as _;
@@ -14,13 +13,13 @@ struct CommandQuery {
 /// Chat endpoint.
 #[derive(Clone)]
 pub struct Chat {
-    bus: Arc<bus::Bus<bus::Command>>,
+    bus: bus::Bus<bus::Command>,
     message_log: message_log::MessageLog,
 }
 
 impl Chat {
     pub fn route(
-        bus: Arc<bus::Bus<bus::Command>>,
+        bus: bus::Bus<bus::Command>,
         message_log: message_log::MessageLog,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Self { bus, message_log };

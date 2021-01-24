@@ -44,17 +44,9 @@ const TWITCH_COMMANDS_CAP: &str = "twitch.tv/commands";
 
 /// Helper struct to construct IRC integration.
 pub struct Irc {
-    pub bad_words: db::Words,
-    pub command_bus: Arc<bus::Bus<bus::Command>>,
-    pub db: db::Database,
-    pub global_bus: Arc<bus::Bus<bus::Global>>,
-    pub global_channel: settings::Var<Option<String>>,
-    pub injector: injector::Injector,
-    pub message_log: MessageLog,
+    pub injector: Injector,
     pub modules: Vec<Box<dyn module::Module>>,
-    pub restart: utils::Restart,
     pub script_dirs: Vec<PathBuf>,
-    pub settings: settings::Settings,
     pub stream_state_tx: mpsc::Sender<stream_info::StreamState>,
 }
 
@@ -70,11 +62,9 @@ impl Irc {
         error_backoff.max_elapsed_time = None;
 
         loop {
-            while let Some(setup) = provider.update().await {
+            while let Some(setup) = provider.build() {
                 let irc_loop = IrcLoop {
-                    streamer: setup.streamer,
-                    bot: setup.bot,
-                    auth: setup.auth,
+                    setup,
                     provider: &mut provider,
                     irc: &self,
                 };
@@ -87,27 +77,42 @@ impl Irc {
                         let backoff = error_backoff.next_backoff().unwrap_or_default();
                         log_error!(e, "chat component crashed, restarting in {:?}", backoff);
                         tokio::time::sleep(backoff).await;
+                        continue;
                     }
                 }
             }
+
+            provider.wait().await;
         }
     }
 }
 
 #[derive(Provider)]
 struct Setup {
+    #[dependency]
+    db: db::Database,
     #[dependency(tag = "tags::Twitch::Bot")]
     bot: api::TwitchAndUser,
     #[dependency(tag = "tags::Twitch::Streamer")]
     streamer: api::TwitchAndUser,
     #[dependency]
     auth: Auth,
+    #[dependency]
+    bad_words: db::Words,
+    #[dependency]
+    message_log: MessageLog,
+    #[dependency]
+    command_bus: bus::Bus<bus::Command>,
+    #[dependency]
+    global_bus: bus::Bus<bus::Global>,
+    #[dependency]
+    settings: settings::Settings,
+    #[dependency]
+    restart: utils::Restart,
 }
 
 struct IrcLoop<'a> {
-    bot: api::TwitchAndUser,
-    streamer: api::TwitchAndUser,
-    auth: Auth,
+    setup: Setup,
     provider: &'a mut SetupProvider,
     irc: &'a Irc,
 }
@@ -115,26 +120,29 @@ struct IrcLoop<'a> {
 impl IrcLoop<'_> {
     async fn run(self) -> Result<()> {
         let Self {
-            bot,
-            streamer,
-            auth,
+            setup,
             provider,
             irc,
         } = self;
 
+        let Setup {
+            db,
+            bot,
+            streamer,
+            auth,
+            bad_words,
+            message_log,
+            command_bus,
+            global_bus,
+            settings,
+            restart,
+        } = setup;
+
         let Irc {
-            ref bad_words,
-            ref command_bus,
-            ref db,
-            ref global_bus,
-            ref global_channel,
-            ref injector,
-            ref message_log,
-            ref modules,
-            ref restart,
-            ref script_dirs,
-            ref settings,
-            ref stream_state_tx,
+            injector,
+            modules,
+            script_dirs,
+            stream_state_tx,
             ..
         } = irc;
 
@@ -150,7 +158,9 @@ impl IrcLoop<'_> {
         log::trace!("Bot: {:?}", bot.user.name);
 
         let chat_channel = format!("#{}", streamer_channel.name);
-        *global_channel.write().await = Some(chat_channel.clone());
+        injector
+            .update_key(Key::tagged(tags::Globals::Channel)?, chat_channel.clone())
+            .await;
 
         let access_token = bot.client.token.read().await?.access_token().to_string();
 
@@ -355,7 +365,7 @@ impl IrcLoop<'_> {
                 sender: sender.clone(),
                 scope_cooldowns: sync::Mutex::new(auth.scope_cooldowns()),
                 message_hooks: sync::RwLock::new(Default::default()),
-                restart: restart.clone(),
+                restart,
             }),
         };
 
@@ -498,7 +508,7 @@ async fn currency_loop(
     streamer_channel: Arc<twitch::v5::Channel>,
     sender: Sender,
     idle: idle::Idle,
-    injector: injector::Injector,
+    injector: Injector,
     chat_settings: settings::Settings,
     settings: settings::Settings,
 ) -> Result<impl Future<Output = Result<()>>> {
@@ -646,7 +656,7 @@ struct Handler<'a> {
     /// Bad words.
     bad_words: &'a db::Words,
     /// For sending notifications.
-    global_bus: &'a Arc<bus::Bus<bus::Global>>,
+    global_bus: &'a bus::Bus<bus::Global>,
     /// Aliases.
     aliases: Option<db::Aliases>,
     /// Configured API URL.
@@ -734,7 +744,7 @@ impl Handler<'_> {
 async fn process_command(
     command: &str,
     mut ctx: command::Context,
-    global_bus: &Arc<bus::Bus<bus::Global>>,
+    global_bus: &bus::Bus<bus::Global>,
     currency_handler: &Arc<currency_admin::Handler>,
     handlers: &module::Handlers,
     scripts: &script::Scripts,
@@ -981,7 +991,7 @@ impl<'a> Handler<'a> {
                 let result = process_command(
                     command,
                     ctx,
-                    &self.global_bus,
+                    self.global_bus,
                     &self.currency_handler,
                     &self.handlers,
                     &self.scripts,

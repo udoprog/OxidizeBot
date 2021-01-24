@@ -1,5 +1,5 @@
 use crate::api;
-use crate::injector;
+use crate::injector::{Injector, Key};
 use crate::prelude::BoxStream;
 use crate::settings;
 use crate::stream::StreamExt as _;
@@ -107,7 +107,7 @@ impl Client {
 /// Connect to the pub/sub websocket once available.
 pub fn connect(
     settings: &settings::Settings,
-    injector: &injector::Injector,
+    injector: &Injector,
 ) -> impl Future<Output = Result<()>> {
     task(settings.clone(), injector.clone())
 }
@@ -276,7 +276,7 @@ impl State {
     }
 }
 
-async fn task(settings: settings::Settings, injector: injector::Injector) -> Result<()> {
+async fn task(settings: settings::Settings, injector: Injector) -> Result<()> {
     let settings = settings.scoped("pubsub");
 
     let (mut enabled_stream, enabled) = settings.stream::<bool>("enabled").or_default().await?;
@@ -291,7 +291,7 @@ async fn task(settings: settings::Settings, injector: injector::Injector) -> Res
 
     injector.update(ws.clone()).await;
 
-    let streamer_key = injector::Key::<api::TwitchAndUser>::tagged(tags::Twitch::Streamer)?;
+    let streamer_key = Key::<api::TwitchAndUser>::tagged(tags::Twitch::Streamer)?;
     let (mut streamer_stream, streamer) = injector.stream_key(&streamer_key).await;
 
     let mut state = State {
