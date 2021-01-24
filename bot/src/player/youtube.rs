@@ -29,12 +29,12 @@ pub(super) async fn setup(
 
         loop {
             tokio::select! {
-                Some(update) = volume_scale_stream.next() => {
+                update = volume_scale_stream.recv() => {
                     volume_scale = update;
                     scaled_volume = (volume.load().await * volume_scale) / 100u32;
                     player.volume_update(scaled_volume).await;
                 }
-                Some(update) = volume_stream.next() => {
+                update = volume_stream.recv() => {
                     *volume.write().await = update;
                     scaled_volume = (volume.load().await * volume_scale) / 100u32;
                     player.volume_update(scaled_volume).await;

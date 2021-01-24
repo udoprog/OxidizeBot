@@ -109,23 +109,23 @@ impl SongFile {
         loop {
             tokio::select! {
                 /* current song */
-                Some(update) = enabled_stream.next() => {
+                update = enabled_stream.recv() => {
                     builder.enabled = update;
                     builder.init(&mut song_file);
                 }
-                Some(update) = path_stream.next() => {
+                update = path_stream.recv() => {
                     builder.path = update;
                     builder.init(&mut song_file);
                 }
-                Some(update) = template_stream.next() => {
+                update = template_stream.recv() => {
                     builder.template = update;
                     builder.init(&mut song_file);
                 }
-                Some(update) = stopped_template_stream.next() => {
+                update = stopped_template_stream.recv() => {
                     builder.stopped_template = update;
                     builder.init(&mut song_file);
                 }
-                Some(update) = update_interval_stream.next() => {
+                update = update_interval_stream.recv() => {
                     builder.update_interval = update;
                     builder.init(&mut song_file);
                 }

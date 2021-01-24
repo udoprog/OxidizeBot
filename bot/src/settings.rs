@@ -6,6 +6,8 @@ use crate::prelude::*;
 use crate::utils;
 use chrono_tz::Tz;
 use diesel::prelude::*;
+use serde::de;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error;
 use std::fmt;
@@ -181,14 +183,14 @@ pub enum Event<T> {
     Set(T),
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Setting {
     pub schema: SchemaType,
     pub key: String,
     pub value: serde_json::Value,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SettingRef<'settings, 'key, T> {
     schema: &'settings SchemaType,
     key: Key<'settings, 'key>,
@@ -226,7 +228,7 @@ impl<T> SettingRef<'_, '_, T> {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaType {
     /// Documentation for this type.
     pub doc: String,
@@ -537,7 +539,7 @@ impl Settings {
         key: &'key str,
     ) -> Result<Option<SettingRef<'settings, 'key, T>>, Error>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned,
+        T: Serialize + de::DeserializeOwned,
     {
         let key = self.key(key);
 
@@ -559,7 +561,7 @@ impl Settings {
     /// Get the value of the given key from the database.
     pub async fn get<T>(&self, key: &str) -> Result<Option<T>, Error>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned,
+        T: Serialize + de::DeserializeOwned,
     {
         let key = self.key(key);
         self.inner_get(&key).await
@@ -568,7 +570,7 @@ impl Settings {
     /// Insert the given setting without sending an update notification to other components.
     pub async fn set_silent<T>(&self, key: &str, value: T) -> Result<(), Error>
     where
-        T: serde::Serialize,
+        T: Serialize,
     {
         let key = self.key(key);
         self.inner_set(key.as_ref(), value, false).await
@@ -577,7 +579,7 @@ impl Settings {
     /// Insert the given setting.
     pub async fn set<T>(&self, key: &str, value: T) -> Result<(), Error>
     where
-        T: serde::Serialize,
+        T: Serialize,
     {
         let key = self.key(key);
         self.inner_set(key.as_ref(), value, true).await
@@ -754,13 +756,7 @@ impl Settings {
     /// Get a synchronized variable for the given configuration key.
     pub async fn var<T>(&self, key: &str, default: T) -> Result<Var<T>, Error>
     where
-        T: 'static
-            + fmt::Debug
-            + Send
-            + Sync
-            + Clone
-            + serde::Serialize
-            + serde::de::DeserializeOwned,
+        T: 'static + fmt::Debug + Send + Sync + Clone + Serialize + de::DeserializeOwned,
     {
         let (mut stream, value) = self.stream(key).or_with(default).await?;
 
@@ -768,7 +764,8 @@ impl Settings {
         let future_var = var.clone();
 
         let future = Box::pin(async move {
-            while let Some(update) = stream.next().await {
+            loop {
+                let update = stream.recv().await;
                 *future_var.write().await = update;
             }
         });
@@ -785,20 +782,15 @@ impl Settings {
     /// Get an optional synchronized variable for the given configuration key.
     pub async fn optional<T>(&self, key: &str) -> Result<Var<Option<T>>, Error>
     where
-        T: 'static
-            + fmt::Debug
-            + Send
-            + Sync
-            + Clone
-            + serde::Serialize
-            + serde::de::DeserializeOwned,
+        T: 'static + fmt::Debug + Send + Sync + Clone + Serialize + de::DeserializeOwned,
     {
         let (mut stream, value) = self.stream(key).optional().await?;
-        let value = settings::Var::new(value);
+        let value = Var::new(value);
         let future_value = value.clone();
 
         let future = Box::pin(async move {
-            while let Some(update) = stream.next().await {
+            loop {
+                let update = stream.recv().await;
                 *future_value.write().await = update;
             }
         });
@@ -846,7 +838,7 @@ impl Settings {
     /// Get the value of the given key from the database.
     async fn inner_get<T>(&self, key: &str) -> Result<Option<T>, Error>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned,
+        T: Serialize + de::DeserializeOwned,
     {
         use self::db::schema::settings::dsl;
 
@@ -883,7 +875,7 @@ impl Settings {
     /// Insert the given setting.
     async fn inner_set<T>(&self, key: &str, value: T, notify: bool) -> Result<(), Error>
     where
-        T: serde::Serialize,
+        T: Serialize,
     {
         let value = serde_json::to_value(value)?;
         self.inner_set_json(key, value, notify).await
@@ -892,7 +884,7 @@ impl Settings {
     /// Subscribe for events on the given key.
     async fn make_stream<T>(&self, key: &str, default: T) -> Stream<T>
     where
-        T: Clone + serde::Serialize + serde::de::DeserializeOwned,
+        T: Clone + Serialize + de::DeserializeOwned,
     {
         Stream {
             default,
@@ -903,9 +895,9 @@ impl Settings {
     /// Subscribe for any events on the given key.
     async fn make_option_stream<T>(&self, key: &str) -> OptionStream<T>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned,
+        T: Serialize + de::DeserializeOwned,
     {
-        let mut rx = if let Some(sender) = self.inner.subscriptions.get(key) {
+        let rx = if let Some(sender) = self.inner.subscriptions.get(key) {
             sender.subscribe()
         } else {
             panic!("no schema registered for key `{}`", key);
@@ -913,11 +905,7 @@ impl Settings {
 
         OptionStream {
             key: key.into(),
-            rx: Box::pin(async_stream::stream! {
-                loop {
-                    yield rx.recv().await;
-                }
-            }),
+            rx,
             marker: marker::PhantomData,
         }
     }
@@ -967,7 +955,7 @@ impl fmt::Debug for Key<'_, '_> {
     }
 }
 
-impl serde::Serialize for Key<'_, '_> {
+impl Serialize for Key<'_, '_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -997,7 +985,7 @@ pub struct StreamBuilder<'settings, 'key, T> {
 
 impl<'settings, 'key, T> StreamBuilder<'settings, 'key, T>
 where
-    T: serde::Serialize + serde::de::DeserializeOwned,
+    T: Serialize + de::DeserializeOwned,
 {
     /// Make the setting required, falling back to using and storing the default value if necessary.
     pub async fn or_default(self) -> Result<(Stream<T>, T), Error>
@@ -1078,88 +1066,56 @@ pub struct Stream<T> {
     option_stream: OptionStream<T>,
 }
 
-impl<T> Unpin for Stream<T> {}
-
-impl<T> stream::Stream for Stream<T>
+impl<T> Stream<T>
 where
-    T: fmt::Debug + Clone + serde::de::DeserializeOwned,
+    T: Clone,
+    T: de::DeserializeOwned,
 {
-    type Item = T;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let output = match Pin::new(&mut self.option_stream).poll_next(cx) {
-            Poll::Ready(output) => output,
-            Poll::Pending => return Poll::Pending,
-        };
-
-        Poll::Ready(Some(match output {
-            Some(update) => match update {
-                Some(update) => update,
-                None => self.as_ref().default.clone(),
-            },
-            None => return Poll::Ready(None),
-        }))
+    /// Recv the next update to the setting associated with the stream.
+    pub async fn recv(&mut self) -> T {
+        if let Some(value) = self.option_stream.recv().await {
+            value
+        } else {
+            self.default.clone()
+        }
     }
 }
 
 /// Get updates for a specific setting.
 pub struct OptionStream<T> {
     key: Box<str>,
-    rx: SyncBoxStream<'static, Result<Update, broadcast::error::RecvError>>,
+    rx: broadcast::Receiver<Update>,
     marker: marker::PhantomData<T>,
 }
 
-impl<T> Unpin for OptionStream<T> {}
-
-impl<T> stream::Stream for OptionStream<T>
+impl<T> OptionStream<T>
 where
-    T: fmt::Debug + serde::de::DeserializeOwned,
+    T: de::DeserializeOwned,
 {
-    type Item = Option<T>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        loop {
-            let item = match self.rx.as_mut().poll_next(cx) {
-                Poll::Ready(item) => item,
-                Poll::Pending => return Poll::Pending,
-            };
-
-            let update = match item {
-                Some(update) => update,
-                None => return Poll::Ready(None),
-            };
-
-            let update = match update {
-                Ok(update) => update,
-                // An error meant either that we're lagging behind or that the
-                // sender has been dropped. Either way, indicate end of stream.
-                Err(e) => {
-                    log_warn!(e, "{}: stream reader errored", self.key);
-                    return Poll::Ready(None);
-                }
-            };
-
-            if log::log_enabled!(log::Level::Trace) {
-                log::trace!("{}: {:?}", self.key, update);
+    /// Recv the next update to the setting associated with the stream.
+    pub async fn recv(&mut self) -> Option<T> {
+        let item = match self.rx.recv().await {
+            Ok(item) => item,
+            Err(e) => {
+                log_warn!(e, "{}: stream reader errored", self.key);
+                return None;
             }
+        };
 
-            let value = Some(match update {
-                Event::Clear => None,
-                Event::Set(value) => match serde_json::from_value(value) {
-                    Ok(value) => Some(value),
-                    Err(e) => {
-                        log::warn!("bad value for key: {}: {}", self.key, e);
-                        None
-                    }
-                },
-            });
-
-            return Poll::Ready(value);
+        match item {
+            Event::Clear => None,
+            Event::Set(value) => match serde_json::from_value(value) {
+                Ok(value) => Some(value),
+                Err(e) => {
+                    log::warn!("bad value for key: {}: {}", self.key, e);
+                    None
+                }
+            },
         }
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum Format {
     #[serde(rename = "regex")]
@@ -1176,7 +1132,7 @@ impl Default for Format {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Type {
     #[serde(default)]
     pub optional: bool,
@@ -1184,7 +1140,7 @@ pub struct Type {
     pub kind: Kind,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Field {
     pub title: String,
     pub field: String,
@@ -1192,7 +1148,7 @@ pub struct Field {
     pub ty: Box<Type>,
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum SelectVariant {
     #[serde(rename = "typeahead")]
     Typeahead,
@@ -1206,13 +1162,13 @@ impl Default for SelectVariant {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelectOption {
     title: String,
     value: serde_json::Value,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "id")]
 pub enum Kind {
     #[serde(rename = "raw")]

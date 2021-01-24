@@ -1162,13 +1162,14 @@ impl super::Module for Module {
 
             loop {
                 tokio::select! {
-                    Some(update) = commands_config_stream.next() => {
+                    update = commands_config_stream.recv() => {
                         *per_command_configs.write().await = update.into_map();
                     }
-                    Some(update) = enabled_stream.next() => {
-                        receiver = match update {
-                            true => Fuse::new(&mut rx),
-                            false => Fuse::empty(),
+                    update = enabled_stream.recv() => {
+                        receiver = if update {
+                            Fuse::new(&mut rx)
+                        } else {
+                            Fuse::empty()
                         };
 
                         *enabled.write().await = update;

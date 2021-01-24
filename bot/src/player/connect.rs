@@ -58,19 +58,19 @@ pub(super) async fn setup(
 
         loop {
             tokio::select! {
-                Some(update) = device_stream.next() => {
+                update = device_stream.recv() => {
                     *device.write().await = update;
 
                     if config_tx.send(ConfigurationEvent::DeviceChanged).is_err() {
                         bail!("failed to send configuration event");
                     }
                 }
-                Some(update) = volume_scale_stream.next() => {
+                update = volume_scale_stream.recv() => {
                     *volume_scale.write().await = update;
                     scaled_volume = (volume.load().await * update) / 100u32;
                     player.volume_update_log(scaled_volume).await;
                 }
-                Some(update) = volume_stream.next() => {
+                update = volume_stream.recv() => {
                     *volume.write().await = update;
                     scaled_volume = (update * volume_scale.load().await) / 100u32;
                     player.volume_update_log(scaled_volume).await;

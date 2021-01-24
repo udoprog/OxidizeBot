@@ -67,7 +67,7 @@ impl PlaybackFuture {
                         _ => None,
                     }).unwrap_or_default());
                 }
-                Some(fallback) = fallback_stream.next() => {
+                fallback = fallback_stream.recv() => {
                     self.internal.write().await.update_fallback_items(fallback).await;
                 }
                 /* player */
@@ -75,13 +75,13 @@ impl PlaybackFuture {
                     let mut internal = self.internal.write().await;
                     internal.end_of_track().await?;
                 }
-                Some(update) = self.detached_stream.next() => {
+                update = self.detached_stream.recv() => {
                     self.internal.write().await.update_detached(update).await?;
                 }
-                Some(update) = self.playback_mode_stream.next() => {
+                update = self.playback_mode_stream.recv() => {
                     self.internal.write().await.update_playback_mode(update).await?;
                 }
-                Some(value) = self.song_update_interval_stream.next() => {
+                value = self.song_update_interval_stream.recv() => {
                     song_update_interval = if value.is_empty() {
                         Fuse::empty()
                     } else {

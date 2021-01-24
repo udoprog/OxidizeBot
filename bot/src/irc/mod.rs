@@ -447,11 +447,11 @@ impl IrcLoop<'_> {
                 chat_log = chat_log_builder.update() => {
                     handler.chat_log = chat_log?;
                 }
-                Some(update) = api_url_stream.next() => {
-                    handler.api_url = Arc::new(update);
+                api_url = api_url_stream.recv() => {
+                    handler.api_url = Arc::new(api_url);
                 }
-                Some(update) = moderator_cooldown_stream.next() => {
-                    handler.moderator_cooldown = update;
+                moderator_cooldown = moderator_cooldown_stream.recv() => {
+                    handler.moderator_cooldown = moderator_cooldown;
                 }
                 _ = ping_interval.tick() => {
                     handler.send_ping()?;
@@ -459,10 +459,8 @@ impl IrcLoop<'_> {
                 _ = &mut *handler.pong_timeout => {
                     bail!("server not responding");
                 }
-                update = whitelisted_hosts_stream.next() => {
-                    if let Some(update) = update {
-                        handler.whitelisted_hosts = update;
-                    }
+                update = whitelisted_hosts_stream.recv() => {
+                    handler.whitelisted_hosts = update;
                 },
                 message = client_stream.next() => {
                     if let Some(m) = message.transpose()? {
@@ -572,42 +570,42 @@ async fn currency_loop(
 
         loop {
             tokio::select! {
-                Some(update) = interval_stream.next() => {
+                update = interval_stream.recv() => {
                     reward_interval = update;
                     timer = new_timer(&reward_interval, viewer_reward);
                 }
-                Some(update) = notify_rewards_stream.next() => {
+                update = notify_rewards_stream.recv() => {
                     notify_rewards = update;
                 }
                 Some(update) = db_stream.next() => {
                     builder.db = update;
                     currency = builder.build_and_inject().await;
                 }
-                Some(enabled) = enabled_stream.next() => {
+                enabled = enabled_stream.recv() => {
                     builder.enabled = enabled;
                     currency = builder.build_and_inject().await;
                 }
-                Some(update) = ty_stream.next() => {
+                update = ty_stream.recv() => {
                     builder.ty = update;
                     currency = builder.build_and_inject().await;
                 }
-                Some(name) = name_stream.next() => {
+                name = name_stream.recv() => {
                     builder.name = name.map(Arc::new);
                     currency = builder.build_and_inject().await;
                 }
-                Some(mysql_url) = mysql_url_stream.next() => {
+                mysql_url = mysql_url_stream.recv() => {
                     builder.mysql_url = mysql_url;
                     currency = builder.build_and_inject().await;
                 }
-                Some(update) = mysql_schema_stream.next() => {
+                update = mysql_schema_stream.recv() => {
                     builder.mysql_schema = update;
                     currency = builder.build_and_inject().await;
                 }
-                Some(command_enabled) = command_enabled_stream.next() => {
+                command_enabled = command_enabled_stream.recv() => {
                     builder.command_enabled = command_enabled;
                     currency = builder.build_and_inject().await;
                 }
-                Some(viewer_reward) = viewer_reward_stream.next() => {
+                viewer_reward = viewer_reward_stream.recv() => {
                     timer = new_timer(&reward_interval, viewer_reward);
                 }
                 _ = timer.as_pin_mut().poll_inner(|mut i, cx| i.poll_tick(cx)) => {

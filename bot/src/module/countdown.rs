@@ -4,10 +4,8 @@ use crate::module;
 use crate::prelude::*;
 use crate::template;
 use crate::utils;
-use parking_lot::RwLock;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time;
 
 enum Event {
@@ -19,7 +17,7 @@ enum Event {
 
 pub struct Handler {
     sender: mpsc::UnboundedSender<Event>,
-    enabled: Arc<RwLock<bool>>,
+    enabled: settings::Var<bool>,
 }
 
 #[async_trait]
@@ -29,7 +27,7 @@ impl command::Handler for Handler {
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
-        if !*self.enabled.read() {
+        if !self.enabled.load().await {
             return Ok(());
         }
 
@@ -91,7 +89,7 @@ impl super::Module for Module {
         let settings = settings.scoped("countdown");
 
         let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(true).await?;
-        let enabled = Arc::new(RwLock::new(enabled));
+        let enabled = settings::Var::new(enabled);
 
         let (mut path_stream, path) = settings.stream::<PathBuf>("path").optional().await?;
 
@@ -114,16 +112,16 @@ impl super::Module for Module {
 
             loop {
                 tokio::select! {
-                    Some(update) = path_stream.next() => {
+                    update = path_stream.recv() => {
                         writer.path = update;
                     }
-                    Some(update) = enabled_stream.next() => {
+                    update = enabled_stream.recv() => {
                         if (!update) {
                             timer.set(Fuse::empty());
                             writer.clear_log();
                         }
 
-                        *enabled.write() = update;
+                        *enabled.write().await = update;
                     }
                     out = timer.as_mut().poll_stream(stream::Stream::poll_next) => {
                         match out {

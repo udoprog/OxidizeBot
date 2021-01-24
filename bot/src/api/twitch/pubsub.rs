@@ -336,7 +336,7 @@ async fn task(settings: settings::Settings, injector: Injector) -> Result<()> {
                     log_error!(e, "failed to handle message");
                 }
             }
-            Some(enabled) = enabled_stream.next() => {
+            enabled = enabled_stream.recv() => {
                 state.enabled = enabled;
                 state.build().await;
             }

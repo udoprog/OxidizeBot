@@ -4,7 +4,7 @@ use crate::api::RequestBuilder;
 use crate::injector::Injector;
 use crate::prelude::*;
 use crate::settings::Settings;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use reqwest::{header, Client, Method, Url};
 use std::fmt;
 use std::sync::Arc;
@@ -57,12 +57,10 @@ pub async fn setup(
     builder.build_and_inject().await?;
 
     Ok(async move {
-        while let Some(api_key) = api_key_stream.next().await {
-            builder.api_key = api_key;
+        loop {
+            builder.api_key = api_key_stream.recv().await;
             builder.build_and_inject().await?;
         }
-
-        Err(anyhow!("api-key stream ended"))
     })
 }
 

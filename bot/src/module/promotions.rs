@@ -99,10 +99,8 @@ impl super::Module for Module {
                     Some(update) = promotions_stream.next() => {
                         promotions = update;
                     }
-                    duration = setting.next() => {
-                        if let Some(duration) = duration {
-                            interval = tokio::time::interval(duration.as_std());
-                        }
+                    duration = setting.recv() => {
+                        interval = tokio::time::interval(duration.as_std());
                     }
                     _ = interval.tick() => {
                         if !enabled.load().await {

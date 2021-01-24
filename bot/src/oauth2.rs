@@ -439,7 +439,7 @@ pub async fn build(
                     builder.setbac = setbac;
                     builder.update().await?;
                 }
-                Some(connection) = connection_stream.next() => {
+                connection = connection_stream.recv() => {
                     log::trace!("{}: New from settings", what);
                     builder.update_from_settings(connection).await?;
                 }
@@ -455,7 +455,7 @@ pub async fn build(
                     log::trace!("{}: Check for expiration", what);
                     builder.update().await?;
                 }
-                Some(update) = check_interval_stream.next() => {
+                update = check_interval_stream.recv() => {
                     check_interval = tokio::time::interval(update.as_std());
                 }
             }

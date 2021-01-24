@@ -213,24 +213,24 @@ pub async fn run(
                     remote_builder.streamer_token = update;
                     remote_builder.init(&mut remote).await;
                 }
-                Some(update) = secret_key_stream.next() => {
-                    remote_builder.secret_key = update;
+                secret_key = secret_key_stream.recv() => {
+                    remote_builder.secret_key = secret_key;
                     remote_builder.init(&mut remote).await;
                 }
                 Some(update) = player_stream.next() => {
                     remote_builder.player = update;
                     remote_builder.init(&mut remote).await;
                 }
-                Some(update) = api_url_stream.next() => {
-                    remote_builder.api_url = match update.and_then(|s| parse_url(&s)) {
+                api_url = api_url_stream.recv() => {
+                    remote_builder.api_url = match api_url.and_then(|s| parse_url(&s)) {
                         Some(api_url) => Some(api_url),
                         None => None,
                     };
 
                     remote_builder.init(&mut remote).await;
                 }
-                Some(update) = enabled_stream.next() => {
-                    remote_builder.enabled = update;
+                enabled = enabled_stream.recv() => {
+                    remote_builder.enabled = enabled;
                     remote_builder.init(&mut remote).await;
                 }
                 event = async { remote.rx.as_mut().unwrap().recv().await }, if remote.rx.is_some() => {

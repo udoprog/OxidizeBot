@@ -39,7 +39,7 @@ pub(crate) async fn task(
 
     loop {
         tokio::select! {
-            Some(request_redemption) = request_redemption_stream.next() => {
+            request_redemption = request_redemption_stream.recv() => {
                 state.request_redemption = request_redemption.map(Into::into);
                 state.build();
             }

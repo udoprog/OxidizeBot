@@ -818,9 +818,8 @@ async fn system_loop(settings: settings::Settings, system: sys::System) -> Resul
         (false, true) => system.uninstall(),
     };
 
-    while let Some(update) = run_on_startup_stream.next().await {
+    loop {
+        let update = run_on_startup_stream.recv().await;
         build(update)?;
     }
-
-    bail!("run-on-startup stream ended");
 }
