@@ -66,7 +66,7 @@ tracing = "0.1.22"
 tracing-core = "0.1.17"
 tracing-futures = { version = "0.2.4", default-features = false, features = ["std-future"] }
 slab = "0.4.2"
-irc = { git = "https://github.com/aatxe/irc", branch = "develop" }
+irc = "0.15.0"
 ignore = "0.4.17"
 notify = "5.0.0-pre.4"
 tungstenite = "0.12.0"
