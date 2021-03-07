@@ -110,13 +110,15 @@ impl command::Handler for Title {
             self.stream_info
                 .refresh_channel(&self.twitch, user.streamer())
                 .await?;
+
+            respond!(ctx, "Title updated!");
         }
 
         Ok(())
     }
 }
 
-/// Handler for the `!title` command.
+/// Handler for the `!game` command.
 pub struct Game {
     pub enabled: settings::Var<bool>,
     pub stream_info: stream_info::StreamInfo,
