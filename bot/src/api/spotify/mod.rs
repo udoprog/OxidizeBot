@@ -12,6 +12,7 @@ pub use self::model::user::PrivateUser;
 use crate::api::RequestBuilder;
 use crate::oauth2;
 use crate::prelude::*;
+use crate::spotify_id::SpotifyId;
 use anyhow::Result;
 use bytes::Bytes;
 use reqwest::{header, Client, Method, StatusCode};
@@ -22,6 +23,7 @@ use url::Url;
 mod model;
 
 const API_URL: &str = "https://api.spotify.com/v1";
+const DEFAULT_LIMIT: usize = 50;
 
 /// API integration.
 #[derive(Clone, Debug)]
@@ -56,9 +58,10 @@ impl Spotify {
     }
 
     /// Get my playlists.
-    pub async fn playlist(&self, id: String, market: Option<&str>) -> Result<FullPlaylist> {
+    pub async fn playlist(&self, id: SpotifyId, market: Option<&str>) -> Result<FullPlaylist> {
         let req = self
-            .request(Method::GET, &["playlists", id.as_str()])
+            .request(Method::GET, &["playlists", id.to_string().as_str()])
+            .query_param("limit", &DEFAULT_LIMIT.to_string())
             .optional_query_param("market", market);
 
         req.execute().await?.json()
@@ -190,14 +193,11 @@ impl Spotify {
 
     /// Get my songs.
     pub async fn my_tracks(&self) -> Result<Page<SavedTrack>> {
-        let req = self.request(Method::GET, &["me", "tracks"]);
-        req.execute().await?.json()
-    }
+        let req = self
+            .request(Method::GET, &["me", "tracks"])
+            .query_param("limit", &DEFAULT_LIMIT.to_string());
 
-    /// Get my songs.
-    pub fn my_tracks_stream(&self) -> PageStream<SavedTrack> {
-        let req = self.request(Method::GET, &["me", "tracks"]);
-        self.page_stream(async move { req.execute().await?.json() })
+        req.execute().await?.json()
     }
 
     /// Get the full track by ID.
@@ -252,6 +252,7 @@ fn device_control<C>(status: StatusCode, _: &C) -> Result<Option<bool>> {
     }
 }
 
+/// A page converted into a stream which will perform pagination under the hood.
 pub struct PageStream<T> {
     client: Client,
     token: oauth2::SyncToken,
@@ -283,15 +284,16 @@ where
             None => return Poll::Ready(None),
         };
 
-        if let Poll::Ready(page) = future.as_mut().poll(cx)? {
-            self.as_mut().next = match page.next.map(|s| str::parse(s.as_str())).transpose()? {
-                Some(next) => Some(Box::pin(self.next_page(next))),
-                None => None,
-            };
+        let page = match future.as_mut().poll(cx)? {
+            Poll::Ready(page) => page,
+            Poll::Pending => return Poll::Pending,
+        };
 
-            return Poll::Ready(Some(Ok(page.items)));
-        }
+        self.as_mut().next = match page.next.map(|s| str::parse(s.as_str())).transpose()? {
+            Some(next) => Some(Box::pin(self.next_page(next))),
+            None => None,
+        };
 
-        Poll::Pending
+        Poll::Ready(Some(Ok(page.items)))
     }
 }

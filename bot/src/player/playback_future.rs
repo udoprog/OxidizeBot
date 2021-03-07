@@ -36,11 +36,9 @@ impl PlaybackFuture {
         }
 
         let (mut fallback_stream, fallback) = settings.stream("fallback-uri").optional().await?;
-        self.internal
-            .write()
-            .await
-            .update_fallback_items(fallback)
-            .await;
+
+        let configure_fallback = Fuse::new(update_fallback_items_task(&self.internal, fallback));
+        tokio::pin!(configure_fallback);
 
         let (mut song_stream, song) = injector.stream::<Song>().await;
 
@@ -62,9 +60,6 @@ impl PlaybackFuture {
                         State::Playing => Some(Fuse::new(tokio::time::sleep_until(s.deadline().into()))),
                         _ => None,
                     }).unwrap_or_default());
-                }
-                fallback = fallback_stream.recv() => {
-                    self.internal.write().await.update_fallback_items(fallback).await;
                 }
                 /* player */
                 _ = &mut song_timeout => {
@@ -89,7 +84,36 @@ impl PlaybackFuture {
                 event = self.connect_stream.recv() => {
                     self.internal.write().await.handle_player_event(event).await?;
                 }
+                fallback = fallback_stream.recv() => {
+                    configure_fallback.set(Fuse::new(update_fallback_items_task(&self.internal, fallback)));
+                }
+                _ = configure_fallback.as_mut() => {
+                }
             }
+        }
+
+        /// Update fallback item tasks.
+        async fn update_fallback_items_task(
+            internal: &RwLock<PlayerInternal>,
+            fallback: Option<Uri>,
+        ) {
+            let task = retry_until_ok! {
+                "Loading fallback items", {
+                    let task = internal.read().await.load_fallback_items(fallback.as_ref());
+                    let (what, items) = task.await?;
+
+                    log::info!(
+                        "Updated fallback queue with {} items from {}.",
+                        items.len(),
+                        what
+                    );
+
+                    internal.write().await.update_fallback_items(items).await;
+                    Ok(())
+                }
+            };
+
+            task.await
         }
     }
 }

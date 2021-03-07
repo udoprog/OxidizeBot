@@ -14,15 +14,15 @@ pub struct Item {
 impl Item {
     /// Human readable version of playback item.
     pub fn what(&self) -> String {
-        match self.track {
-            Track::Spotify { ref track } => {
+        match &self.track {
+            Track::Spotify { track } => {
                 if let Some(artists) = utils::human_artists(&track.artists) {
                     format!("\"{}\" by {}", track.name, artists)
                 } else {
                     format!("\"{}\"", track.name)
                 }
             }
-            Track::YouTube { ref video } => match video.snippet.as_ref() {
+            Track::YouTube { video } => match video.snippet.as_ref() {
                 Some(snippet) => match snippet.channel_title.as_ref() {
                     Some(channel_title) => {
                         format!("\"{}\" from \"{}\"", snippet.title, channel_title)
@@ -34,17 +34,11 @@ impl Item {
         }
     }
 
+    /// Test if the given item is playable.
     pub fn is_playable(&self) -> bool {
-        match self.track {
-            Track::Spotify { ref track } => {
-                match track.is_playable {
-                    Some(is_playable) => return is_playable,
-                    None => return false,
-                };
-            }
-            Track::YouTube { video: _ } => {
-                return true;
-            }
+        match &self.track {
+            Track::Spotify { track } => track.is_playable.unwrap_or(true),
+            Track::YouTube { video: _ } => true,
         }
     }
 }

@@ -35,21 +35,21 @@ impl StreamInfo {
     }
 
     /// Refresh the known list of subscribers.
-    pub async fn refresh_subs<'a>(
-        &'a self,
-        twitch: &'a api::Twitch,
-        streamer: &'a twitch::v5::User,
-    ) {
-        let subs = twitch
-            .new_stream_subscriptions(&streamer.id, vec![])
-            .try_concat();
+    pub async fn refresh_subs(
+        &self,
+        twitch: &api::Twitch,
+        streamer: &twitch::v5::User,
+    ) -> Result<()> {
+        let subs = {
+            let mut out = Vec::new();
 
-        let subs = match subs.await {
-            Ok(subs) => subs,
-            Err(e) => {
-                log_error!(e, "failed to fetch subscriptions");
-                return;
+            let mut stream = twitch.new_stream_subscriptions(&streamer.id, vec![]);
+
+            while let Some(subs) = stream.next().await.transpose()? {
+                out.extend(subs);
             }
+
+            out
         };
 
         let mut info = self.data.write();
@@ -59,6 +59,8 @@ impl StreamInfo {
             .iter()
             .map(|s| s.user_name.to_lowercase())
             .collect();
+
+        Ok(())
     }
 
     /// Refresh channel.
@@ -144,7 +146,9 @@ pub fn setup(
         loop {
             tokio::select! {
                 _ = subs_interval.tick() => {
-                    future_info.refresh_subs(&twitch, &*streamer).await;
+                    if let Err(e) = future_info.refresh_subs(&twitch, &*streamer).await {
+                        log_error!(e, "failed to refresh subscriptions");
+                    }
                 }
                 _ = stream_interval.tick() => {
                     let stream = future_info

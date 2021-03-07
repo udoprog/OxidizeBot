@@ -42,7 +42,8 @@ const PACKAGE: &str = env!("CARGO_PKG_NAME");
 #[cfg(feature = "windows")]
 mod internal {
     use super::FILE;
-    use log4rs::config::{Config, ConfigBuilder, Logger, LoggerBuilder, Root, RootBuilder};
+    use log4rs::config::runtime::{ConfigBuilder, LoggerBuilder, RootBuilder};
+    use log4rs::config::{Config, Logger, Root};
 
     pub(crate) fn logger_builder() -> LoggerBuilder {
         Logger::builder().appender(FILE).additive(false)

@@ -1,5 +1,5 @@
 use crate::api;
-use crate::api::spotify::PrivateUser;
+use crate::api::spotify::{FullTrack, PrivateUser};
 use crate::bus;
 use crate::db;
 use crate::injector;
@@ -139,53 +139,31 @@ impl PlayerInternal {
         Ok(())
     }
 
-    /// Convert all songs of a user into items.
-    async fn songs_to_items(spotify: &Arc<api::Spotify>) -> Result<Vec<Arc<Item>>> {
-        let mut items = Vec::new();
-
-        for added_song in spotify.my_tracks_stream().try_concat().await? {
-            let track = added_song.track;
-
-            let track_id = match &track.id {
-                Some(track_id) => track_id,
-                None => {
-                    continue;
-                }
-            };
-
-            let track_id = TrackId::Spotify(
-                SpotifyId::from_base62(&track_id)
-                    .map_err(|_| anyhow!("bad spotify id: {}", track_id))?,
-            );
-
-            let duration = Duration::from_millis(track.duration_ms.into());
-
-            items.push(Arc::new(Item {
-                track_id,
-                track: Track::Spotify { track },
-                user: None,
-                duration,
-            }));
-        }
-
-        Ok(items)
-    }
-
     /// Switch the current player and send the appropriate play commands.
     async fn switch_current_player(&mut self, player: PlayerKind) -> Result<()> {
         use self::PlayerKind::*;
 
-        match (self.player, player) {
-            (Spotify, Spotify) => (),
-            (YouTube, YouTube) => (),
-            (Spotify, _) | (None, YouTube) => {
-                self.connect_player.stop().await?;
+        let result = match (self.player, player) {
+            (Spotify, Spotify) => Ok(()),
+            (YouTube, YouTube) => Ok(()),
+            (Spotify, _) | (None, YouTube) => self
+                .connect_player
+                .stop()
+                .await
+                .map_err(anyhow::Error::from),
+            (YouTube, _) | (None, Spotify) => {
+                self.youtube_player.stop().await;
+                Ok(())
             }
-            (YouTube, _) | (None, Spotify) => self.youtube_player.stop().await,
-            (None, None) => (),
-        }
+            (None, None) => Ok(()),
+        };
 
         self.player = player;
+
+        if let Err(e) = result {
+            log_warn!(e, "failed to configure service for switching")
+        }
+
         Ok(())
     }
 
@@ -534,107 +512,128 @@ impl PlayerInternal {
         Ok(())
     }
 
-    /// Update fallback items based on an URI.
-    pub(super) async fn update_fallback_items(&mut self, uri: Option<Uri>) {
-        let result = match uri.as_ref() {
-            Some(uri) => {
-                let id = match uri {
-                    Uri::SpotifyPlaylist(id) => id,
-                    uri => {
-                        log::warn!("Bad fallback URI `{}`, expected Spotify Playlist", uri);
-                        return;
-                    }
-                };
-
-                let result = Self::playlist_to_items(&self.spotify, id.to_string()).await;
-
-                match result {
-                    Ok((name, items)) => Ok((Some(name), items)),
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to load playlist `{}`, \
-                             falling back to library: {}",
-                            uri,
-                            e
-                        );
-                        Self::songs_to_items(&self.spotify)
-                            .await
-                            .map(|items| (None, items))
-                    }
-                }
-            }
-            None => Self::songs_to_items(&self.spotify)
-                .await
-                .map(|items| (None, items)),
-        };
-
-        let (what, items) = match result {
-            Ok(result) => result,
-            Err(e) => {
-                log_error!(e, "Failed to configure fallback items");
-                return;
-            }
-        };
-
-        let what = what
-            .as_ref()
-            .map(|u| format!("\"{}\" playlist", u))
-            .unwrap_or_else(|| String::from("your library"));
-
-        log::info!(
-            "Updated fallback queue with {} items from {}.",
-            items.len(),
-            what
-        );
-
+    /// Update fallback items.
+    pub(super) async fn update_fallback_items(&mut self, items: Vec<Arc<Item>>) {
         self.mixer.update_fallback_items(items);
     }
 
-    /// Convert a playlist into items.
-    async fn playlist_to_items(
-        spotify: &Arc<api::Spotify>,
-        playlist: String,
-    ) -> Result<(String, Vec<Arc<Item>>)> {
-        let mut items = Vec::new();
+    /// Load fallback items with the given uri.
+    pub(super) fn load_fallback_items<'a>(
+        &self,
+        uri: Option<&'a Uri>,
+    ) -> impl Future<Output = Result<(String, Vec<Arc<Item>>)>> + 'a {
+        let spotify = self.spotify.clone();
 
-        // TODO: cache this value
-        let streamer: PrivateUser = spotify.me().await?;
+        async move {
+            let (what, items) = match uri {
+                Some(uri) => {
+                    let id = match uri {
+                        Uri::SpotifyPlaylist(id) => id,
+                        uri => {
+                            return Err(anyhow!(
+                                "Bad fallback URI `{}`, expected Spotify Playlist",
+                                uri
+                            ));
+                        }
+                    };
 
-        let playlist = spotify
-            .playlist(playlist, streamer.country.as_deref())
-            .await?;
-        let name = playlist.name.to_string();
-
-        for playlist_track in spotify.page_as_stream(playlist.tracks).try_concat().await? {
-            let track = playlist_track.track;
-
-            let track_id = match &track.id {
-                Some(track_id) => track_id,
+                    let (name, items) = download_spotify_playlist(&spotify, *id).await?;
+                    let items = convert(items).await?;
+                    (Some(name), items)
+                }
                 None => {
-                    continue;
+                    let items = download_spotify_library(&spotify).await?;
+                    let items = convert(items).await?;
+                    (None, items)
                 }
             };
 
-            let track_id = TrackId::Spotify(
-                SpotifyId::from_base62(&track_id)
-                    .map_err(|_| anyhow!("bad spotify id: {}", track_id))?,
-            );
+            let what = what
+                .as_ref()
+                .map(|u| format!("\"{}\" playlist", u))
+                .unwrap_or_else(|| String::from("your library"));
 
-            let duration = Duration::from_millis(track.duration_ms.into());
+            return Ok((what, items));
 
-            let item = Item {
-                track_id,
-                track: Track::Spotify { track },
-                user: None,
-                duration,
-            };
+            async fn convert(
+                stream: impl stream::Stream<Item = Result<FullTrack>>,
+            ) -> Result<Vec<Arc<Item>>> {
+                tokio::pin!(stream);
 
-            if item.is_playable() {
-                items.push(Arc::new(item));
+                let mut items = Vec::new();
+
+                while let Some(track) = stream.next().await.transpose()? {
+                    let track_id = match &track.id {
+                        Some(track_id) => track_id,
+                        None => {
+                            continue;
+                        }
+                    };
+
+                    let track_id = TrackId::Spotify(
+                        SpotifyId::from_base62(&track_id)
+                            .map_err(|_| anyhow!("bad spotify id: {}", track_id))?,
+                    );
+
+                    let duration = Duration::from_millis(track.duration_ms.into());
+
+                    let item = Item {
+                        track_id,
+                        track: Track::Spotify { track },
+                        user: None,
+                        duration,
+                    };
+
+                    if item.is_playable() {
+                        items.push(Arc::new(item));
+                    }
+                }
+
+                Ok(items)
+            }
+
+            /// Download a playlist from Spotify.
+            async fn download_spotify_playlist(
+                spotify: &api::Spotify,
+                playlist: SpotifyId,
+            ) -> Result<(String, impl stream::Stream<Item = Result<FullTrack>>)> {
+                let streamer = spotify.me().await?;
+                let playlist = spotify
+                    .playlist(playlist, streamer.country.as_deref())
+                    .await?;
+
+                let name = playlist.name.to_string();
+                let mut playlist_tracks = spotify.page_as_stream(playlist.tracks);
+
+                let items = async_stream::stream! {
+                    while let Some(tracks) = playlist_tracks.next().await.transpose()? {
+                        for playlist_track in tracks {
+                            yield Ok(playlist_track.track);
+                        }
+                    }
+                };
+
+                Ok((name, items))
+            }
+
+            /// Download a spotify library.
+            async fn download_spotify_library(
+                spotify: &api::Spotify,
+            ) -> Result<impl stream::Stream<Item = Result<FullTrack>>> {
+                let saved_tracks = spotify.my_tracks().await?;
+                let mut saved_tracks = spotify.page_as_stream(saved_tracks);
+
+                let items = async_stream::stream! {
+                    while let Some(tracks) = saved_tracks.next().await.transpose()? {
+                        for saved_track in tracks {
+                            yield Ok(saved_track.track);
+                        }
+                    }
+                };
+
+                Ok(items)
             }
         }
-
-        Ok((name, items))
     }
 
     /// Handle an event from the connect integration.

@@ -81,9 +81,9 @@ pub(super) async fn setup(
 
 #[derive(Debug, Error)]
 pub(super) enum ConnectError {
-    #[error("no device configured or available")]
-    NoDevice,
-    #[error("error when issuing {0} command")]
+    #[error("{0}: no device configured or available")]
+    NoDevice(&'static str),
+    #[error("{0}: error")]
     Error(&'static str, #[source] Error),
 }
 
@@ -92,7 +92,7 @@ impl ConnectError {
         match result {
             Err(e) => Err(ConnectError::Error(what, e.into())),
             Ok(true) => Ok(()),
-            Ok(false) => Err(ConnectError::NoDevice),
+            Ok(false) => Err(ConnectError::NoDevice(what)),
         }
     }
 }
@@ -171,6 +171,7 @@ impl ConnectPlayer {
         self.volume(player::ModifyVolume::Set(update)).await
     }
 
+    /// Modify the volume of the player.
     pub(super) async fn volume(&self, modify: player::ModifyVolume) -> Result<u32, ConnectError> {
         let volume = self.volume.load().await;
         let update = modify.apply(volume);
@@ -181,6 +182,7 @@ impl ConnectPlayer {
         Ok(update)
     }
 
+    /// Get the current volume of the player.
     pub(super) async fn current_volume(&self) -> u32 {
         self.volume.load().await
     }

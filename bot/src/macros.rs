@@ -108,13 +108,13 @@ macro_rules! retry_until_ok {
 
             loop {
                 log::info!("{}", $id);
-                let res = async { $($f)* }.await;
+                let res: anyhow::Result<_> = async { $($f)* }.await;
 
                 match res {
                     Ok(output) => break output,
                     Err(e) => {
                         let duration = backoff.next();
-                        log_warn!(e, "\"{}\" failed, trying again in {:?}", $id, duration);
+                        log_warn!(e, "{} failed, trying again in {:?}", $id, duration);
                         tokio::time::sleep(duration).await;
                     }
                 }
