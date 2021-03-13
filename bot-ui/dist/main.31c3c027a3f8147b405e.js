@@ -7944,6 +7944,7 @@ var YouTube = /*#__PURE__*/function (_React$Component) {
     _this.playerRef = /*#__PURE__*/react.createRef();
     _this.state = {
       playing: false,
+      stopped: true,
       loading: true,
       events: [],
       api: null,
@@ -7968,7 +7969,9 @@ var YouTube = /*#__PURE__*/function (_React$Component) {
         case "youtube/current":
           switch (data.event.type) {
             case "play":
-              var update = {};
+              var update = {
+                stopped: false
+              };
 
               if (!this.state.playing) {
                 this.player.playVideo();
@@ -7999,7 +8002,8 @@ var YouTube = /*#__PURE__*/function (_React$Component) {
               }
 
               this.setState({
-                playing: false
+                playing: false,
+                stopped: false
               });
               break;
 
@@ -8010,6 +8014,7 @@ var YouTube = /*#__PURE__*/function (_React$Component) {
 
               this.setState({
                 playing: false,
+                stopped: true,
                 videoId: null
               });
               break;

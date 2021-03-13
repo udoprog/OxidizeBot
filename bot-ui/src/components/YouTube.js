@@ -26,6 +26,7 @@ export default class YouTube extends React.Component {
 
     this.state = {
       playing: false,
+      stopped: true,
       loading: true,
       events: [],
       api: null,
@@ -47,7 +48,7 @@ export default class YouTube extends React.Component {
       case "youtube/current":
         switch (data.event.type) {
           case "play":
-            let update = {};
+            let update = { stopped: false };
 
             if (!this.state.playing) {
               this.player.playVideo();
@@ -73,14 +74,14 @@ export default class YouTube extends React.Component {
               this.player.pauseVideo();
             }
 
-            this.setState({ playing: false });
+            this.setState({ playing: false, stopped: false });
             break;
           case "stop":
             if (this.state.playing) {
               this.player.stopVideo();
             }
 
-            this.setState({ playing: false, videoId: null });
+            this.setState({ playing: false, stopped: true, videoId: null });
             break;
           default:
             break;
