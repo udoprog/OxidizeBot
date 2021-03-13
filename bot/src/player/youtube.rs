@@ -84,12 +84,17 @@ impl YouTubePlayer {
         self.bus.send(bus::YouTube::YouTubeCurrent { event }).await;
     }
 
-    pub(super) async fn volume(&self, modify: player::ModifyVolume) -> Result<u32> {
+    pub(super) async fn volume(&self, modify: player::ModifyVolume) -> u32 {
         let mut volume = self.volume.write().await;
         let update = modify.apply(*volume);
         *volume = update;
-        self.settings.set("volume", update).await?;
-        Ok(update)
+        let result = self.settings.set("volume", update).await;
+
+        if let Err(e) = result {
+            log_error!(e, "failed to store updated volume in settings");
+        }
+
+        update
     }
 
     pub(super) async fn current_volume(&self) -> u32 {

@@ -75,9 +75,7 @@ impl PlayerInternal {
                         log::trace!("Syncing playback");
                         let volume_percent = p.device.volume_percent;
                         self.device.sync_device(Some(p.device)).await?;
-                        self.connect_player
-                            .set_scaled_volume(volume_percent)
-                            .await?;
+                        self.connect_player.set_scaled_volume(volume_percent).await;
                         self.sync(song).await?;
                     }
                     None => {
@@ -143,36 +141,28 @@ impl PlayerInternal {
     async fn switch_current_player(&mut self, player: PlayerKind) -> Result<()> {
         use self::PlayerKind::*;
 
-        let result = match (self.player, player) {
-            (Spotify, Spotify) => Ok(()),
-            (YouTube, YouTube) => Ok(()),
-            (Spotify, _) | (None, YouTube) => self
-                .connect_player
-                .stop()
-                .await
-                .map_err(anyhow::Error::from),
+        match (self.player, player) {
+            (Spotify, Spotify) => (),
+            (YouTube, YouTube) => (),
+            (Spotify, _) | (None, YouTube) => {
+                self.connect_player.stop().await;
+            }
             (YouTube, _) | (None, Spotify) => {
                 self.youtube_player.stop().await;
-                Ok(())
             }
-            (None, None) => Ok(()),
-        };
-
-        self.player = player;
-
-        if let Err(e) = result {
-            log_warn!(e, "failed to configure service for switching")
+            (None, None) => (),
         }
 
+        self.player = player;
         Ok(())
     }
 
     /// Send a pause command to the appropriate player.
-    async fn send_pause_command(&mut self) -> Result<()> {
+    async fn send_pause_command(&mut self) {
         match self.player {
             PlayerKind::Spotify => {
                 log::trace!("pausing spotify player");
-                self.connect_player.pause().await?;
+                self.connect_player.pause().await;
             }
             PlayerKind::YouTube => {
                 log::trace!("pausing youtube player");
@@ -180,17 +170,15 @@ impl PlayerInternal {
             }
             _ => (),
         }
-
-        Ok(())
     }
 
     /// Play the given song.
-    async fn send_play_command(&mut self, song: &Song) -> Result<()> {
+    async fn send_play_command(&mut self, song: &Song) {
         match song.item.track_id.clone() {
             TrackId::Spotify(id) => {
                 self.connect_player
                     .play(Some(id), Some(song.elapsed()))
-                    .await?;
+                    .await;
             }
             TrackId::YouTube(id) => {
                 self.youtube_player
@@ -198,8 +186,6 @@ impl PlayerInternal {
                     .await;
             }
         }
-
-        Ok(())
     }
 
     /// Switch the player to the specified song without changing its state.
@@ -224,7 +210,7 @@ impl PlayerInternal {
     async fn play_song(&mut self, source: Source, mut song: Song) -> Result<()> {
         song.play();
 
-        self.send_play_command(&song).await?;
+        self.send_play_command(&song).await;
         self.switch_current_player(song.player()).await?;
         self.notify_song_change(Some(&song)).await?;
 
@@ -241,7 +227,7 @@ impl PlayerInternal {
 
     /// Resume playing a specific song.
     async fn resume_song(&mut self, source: Source, song: Song) -> Result<()> {
-        self.send_play_command(&song).await?;
+        self.send_play_command(&song).await;
         self.switch_current_player(song.player()).await?;
         self.notify_song_change(Some(&song)).await?;
 
@@ -323,7 +309,7 @@ impl PlayerInternal {
                 }
             }
             PlaybackMode::Queue => {
-                self.connect_player.play(None, None).await?;
+                self.connect_player.play(None, None).await;
 
                 if let Source::Manual = source {
                     let feedback = self.song_switch_feedback.load().await;
@@ -351,7 +337,7 @@ impl PlayerInternal {
 
         match self.playback_mode {
             PlaybackMode::Default => {
-                self.send_pause_command().await?;
+                self.send_pause_command().await;
                 self.injector.update(State::Paused).await;
 
                 let song = self
@@ -369,7 +355,7 @@ impl PlayerInternal {
                 self.notify_song_change(song.as_ref()).await?;
             }
             PlaybackMode::Queue => {
-                self.connect_player.pause().await?;
+                self.connect_player.pause().await;
 
                 if let Source::Manual = source {
                     self.bus.send_sync(Event::Pausing);
@@ -418,7 +404,7 @@ impl PlayerInternal {
                 }
             }
             PlaybackMode::Queue => {
-                self.connect_player.next().await?;
+                self.connect_player.next().await;
 
                 if let Source::Manual = source {
                     self.bus.send_sync(Event::Skip);
@@ -500,7 +486,7 @@ impl PlayerInternal {
             }
             PlaybackMode::Queue => match &item.track_id {
                 &TrackId::Spotify(id) => {
-                    self.connect_player.play(Some(id), Some(offset)).await?;
+                    self.connect_player.play(Some(id), Some(offset)).await;
                     self.injector.update(State::Playing).await;
                 }
                 _ => {
@@ -685,7 +671,7 @@ impl PlayerInternal {
                 // TODO: how do we deal with playback mode on a device transfer?
                 match track_id {
                     TrackId::Spotify(id) => {
-                        self.connect_player.play(Some(id), Some(elapsed)).await?;
+                        self.connect_player.play(Some(id), Some(elapsed)).await;
                         self.switch_current_player(PlayerKind::Spotify).await?;
                         self.injector.update(State::Playing).await;
                     }

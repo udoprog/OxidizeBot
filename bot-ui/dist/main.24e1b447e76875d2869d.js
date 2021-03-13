@@ -7943,8 +7943,7 @@ var YouTube = /*#__PURE__*/function (_React$Component) {
     _this.player = null;
     _this.playerRef = /*#__PURE__*/react.createRef();
     _this.state = {
-      stopped: true,
-      paused: true,
+      playing: false,
       loading: true,
       events: [],
       api: null,
@@ -7969,10 +7968,12 @@ var YouTube = /*#__PURE__*/function (_React$Component) {
         case "youtube/current":
           switch (data.event.type) {
             case "play":
-              var update = {
-                stopped: false,
-                paused: false
-              };
+              var update = {};
+
+              if (!this.state.playing) {
+                this.player.playVideo();
+                update.playing = true;
+              }
 
               if (this.state.videoId !== data.event.video_id) {
                 var videoId = data.event.video_id;
@@ -7980,16 +7981,12 @@ var YouTube = /*#__PURE__*/function (_React$Component) {
                   videoId: videoId,
                   suggestedQuality: SUGGESTED_QUALITY
                 });
-                this.player.seekTo(data.event.elapsed);
-                this.player.playVideo();
+                this.player.seekTo(data.event.elapsed, true);
                 update.videoId = data.event.video_id;
               } else {
-                if (this.state.paused) {
-                  this.player.playVideo();
-                }
-
+                // We are a bit out of sync.
                 if (Math.abs(data.event.elapsed - this.player.getCurrentTime()) > 2) {
-                  this.player.seekTo(data.event.elapsed);
+                  this.player.seekTo(data.event.elapsed, true);
                 }
               }
 
@@ -7997,18 +7994,22 @@ var YouTube = /*#__PURE__*/function (_React$Component) {
               break;
 
             case "pause":
-              this.player.pauseVideo();
+              if (this.state.playing) {
+                this.player.pauseVideo();
+              }
+
               this.setState({
-                stopped: false,
-                paused: true
+                playing: false
               });
               break;
 
             case "stop":
-              this.player.pauseVideo();
+              if (this.state.playing) {
+                this.player.stopVideo();
+              }
+
               this.setState({
-                stopped: true,
-                paused: false,
+                playing: false,
                 videoId: null
               });
               break;
@@ -8045,12 +8046,22 @@ var YouTube = /*#__PURE__*/function (_React$Component) {
         autoplay: false,
         events: {
           onReady: function onReady() {
+            if (_this2.state.playing) {
+              _this2.player.playVideo();
+            }
+
             _this2.setState({
               loading: false
             });
           },
           onPlaybackQualityChange: function onPlaybackQualityChange(e) {},
-          onStateChange: function onStateChange(e) {}
+          onStateChange: function onStateChange(event) {
+            if (event.data === -1) {
+              if (_this2.state.playing) {
+                _this2.player.playVideo();
+              }
+            }
+          }
         }
       });
     }

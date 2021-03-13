@@ -366,7 +366,7 @@ impl command::Handler for Handler {
                             None => player::ModifyVolume::Set(argument),
                         };
 
-                        match player.volume(volume).await? {
+                        match player.volume(volume).await {
                             Some(volume) => {
                                 respond!(ctx, format!("Updated volume to {}.", volume));
                             }

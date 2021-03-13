@@ -407,23 +407,6 @@ impl Player {
         Ok(())
     }
 
-    /// Update volume of the player.
-    pub async fn volume(&self, modify: ModifyVolume) -> Result<Option<u32>> {
-        let inner = self.inner.read().await;
-
-        let track_id = match inner.injector.get::<Song>().await {
-            Some(song) => song.item.track_id.clone(),
-            None => {
-                return Ok(None);
-            }
-        };
-
-        Ok(match track_id {
-            TrackId::Spotify(..) => Some(inner.connect_player.volume(modify).await?),
-            TrackId::YouTube(..) => Some(inner.youtube_player.volume(modify).await?),
-        })
-    }
-
     /// Get the current volume.
     pub async fn current_volume(&self) -> Option<u32> {
         let inner = self.inner.read().await;
@@ -441,6 +424,23 @@ impl Player {
             TrackId::Spotify(..) => Some(inner.connect_player.current_volume().await),
             TrackId::YouTube(..) => Some(inner.youtube_player.current_volume().await),
         }
+    }
+
+    /// Update volume of the player.
+    pub(super) async fn volume(&self, modify: ModifyVolume) -> Option<u32> {
+        let inner = self.inner.read().await;
+
+        let track_id = match inner.injector.get::<Song>().await {
+            Some(song) => song.item.track_id.clone(),
+            None => {
+                return None;
+            }
+        };
+
+        Some(match track_id {
+            TrackId::Spotify(..) => inner.connect_player.volume(modify).await,
+            TrackId::YouTube(..) => inner.youtube_player.volume(modify).await,
+        })
     }
 
     /// Close the player from more requests.

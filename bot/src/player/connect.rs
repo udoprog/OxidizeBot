@@ -51,7 +51,7 @@ pub(super) async fn setup(
     let returned_player = player.clone();
 
     let future = async move {
-        player.volume_update_log(scaled_volume).await;
+        warn_on_error(player.volume_update(scaled_volume).await);
 
         loop {
             tokio::select! {
@@ -65,12 +65,12 @@ pub(super) async fn setup(
                 update = volume_scale_stream.recv() => {
                     *volume_scale.write().await = update;
                     scaled_volume = (volume.load().await * update) / 100u32;
-                    player.volume_update_log(scaled_volume).await;
+                    warn_on_error(player.volume_update(scaled_volume).await);
                 }
                 update = volume_stream.recv() => {
                     *volume.write().await = update;
                     scaled_volume = (update * volume_scale.load().await) / 100u32;
-                    player.volume_update_log(scaled_volume).await;
+                    warn_on_error(player.volume_update(scaled_volume).await);
                 }
             }
         }
@@ -111,12 +111,9 @@ pub(super) struct ConnectPlayer {
 }
 
 impl ConnectPlayer {
-    /// Play the specified song.
-    pub(super) async fn play(
-        &self,
-        id: Option<SpotifyId>,
-        elapsed: Option<Duration>,
-    ) -> Result<(), ConnectError> {
+    /// Play the specified song. Or just starting playing if the id of the song
+    /// is unspecified.
+    pub(super) async fn play(&self, id: Option<SpotifyId>, elapsed: Option<Duration>) {
         let track_uri = id.map(|id| format!("spotify:track:{}", id.to_base62()));
         let elapsed = elapsed.map(|elapsed| elapsed.as_millis() as u64);
         let device_id = self.device.load().await;
@@ -126,7 +123,46 @@ impl ConnectPlayer {
             .me_player_play(device_id.as_deref(), track_uri.as_deref(), elapsed)
             .await;
 
-        ConnectError::handle(result, "play")
+        warn_on_error(ConnectError::handle(result, "play"));
+    }
+
+    /// Play the next song.
+    pub(super) async fn next(&self) {
+        let device_id = self.device.load().await;
+        let result = self.spotify.me_player_next(device_id.as_deref()).await;
+        warn_on_error(ConnectError::handle(result, "skip"));
+    }
+
+    /// Pause playback.
+    pub(super) async fn pause(&self) {
+        let device_id = self.device.load().await;
+
+        warn_on_error(ConnectError::handle(
+            self.spotify.me_player_pause(device_id.as_deref()).await,
+            "pause",
+        ));
+    }
+
+    /// Stop playback.
+    pub(super) async fn stop(&self) {
+        let device_id = self.device.load().await;
+
+        warn_on_error(ConnectError::handle(
+            self.spotify.me_player_pause(device_id.as_deref()).await,
+            "stop",
+        ));
+    }
+
+    /// Update a scaled volume.
+    pub(super) async fn set_scaled_volume(&self, scaled_volume: u32) {
+        let volume_scale = self.volume_scale.load().await;
+        let update = u32::min((scaled_volume * 100) / volume_scale, 100);
+        self.volume(player::ModifyVolume::Set(update)).await;
+    }
+
+    /// Get the current volume of the player.
+    pub(super) async fn current_volume(&self) -> u32 {
+        self.volume.load().await
     }
 
     /// Enqueue the specified song to play next.
@@ -142,49 +178,22 @@ impl ConnectPlayer {
         ConnectError::handle(result, "queue")
     }
 
-    pub(super) async fn next(&self) -> Result<(), ConnectError> {
-        let device_id = self.device.load().await;
-        let result = self.spotify.me_player_next(device_id.as_deref()).await;
-        ConnectError::handle(result, "skip")
-    }
-
-    pub(super) async fn pause(&self) -> Result<(), ConnectError> {
-        let device_id = self.device.load().await;
-        ConnectError::handle(
-            self.spotify.me_player_pause(device_id.as_deref()).await,
-            "pause",
-        )
-    }
-
-    pub(super) async fn stop(&self) -> Result<(), ConnectError> {
-        let device_id = self.device.load().await;
-        ConnectError::handle(
-            self.spotify.me_player_pause(device_id.as_deref()).await,
-            "stop",
-        )
-    }
-
-    /// Update an unscaled volume.
-    pub(super) async fn set_scaled_volume(&self, scaled_volume: u32) -> Result<u32, ConnectError> {
-        let volume_scale = self.volume_scale.load().await;
-        let update = u32::min((scaled_volume * 100) / volume_scale, 100);
-        self.volume(player::ModifyVolume::Set(update)).await
-    }
-
-    /// Modify the volume of the player.
-    pub(super) async fn volume(&self, modify: player::ModifyVolume) -> Result<u32, ConnectError> {
+    /// Internal function to modify the volume of the player.
+    pub(super) async fn volume(&self, modify: player::ModifyVolume) -> u32 {
         let volume = self.volume.load().await;
         let update = modify.apply(volume);
-        self.settings
+
+        let result = self
+            .settings
             .set("volume", update)
             .await
-            .map_err(|e| ConnectError::Error("update volume settings", e.into()))?;
-        Ok(update)
-    }
+            .map_err(|e| ConnectError::Error("update volume settings", e.into()));
 
-    /// Get the current volume of the player.
-    pub(super) async fn current_volume(&self) -> u32 {
-        self.volume.load().await
+        if let Err(e) = result {
+            log_error!(e, "failed to store updated volume in settings");
+        }
+
+        update
     }
 
     async fn volume_update(&self, volume: u32) -> Result<(), ConnectError> {
@@ -196,13 +205,6 @@ impl ConnectPlayer {
                 .await,
             "volume",
         )
-    }
-
-    /// Same as volume update, but logs instead of errors.
-    async fn volume_update_log(&self, volume: u32) {
-        if let Err(e) = self.volume_update(volume).await {
-            log_warn!(e, "Failed to update volume");
-        }
     }
 }
 
@@ -262,5 +264,15 @@ impl ConnectDevice {
     pub(super) async fn set_device(&self, device: Option<String>) -> Result<()> {
         self.settings.set("device", device).await?;
         Ok(())
+    }
+}
+
+/// Discards a result and log a warning on errors.
+fn warn_on_error<T, E>(result: Result<T, E>)
+where
+    Error: From<E>,
+{
+    if let Err(e) = result {
+        log_warn!(e, "failed to issue connect command");
     }
 }

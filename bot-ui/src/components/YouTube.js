@@ -25,8 +25,7 @@ export default class YouTube extends React.Component {
     this.playerRef = React.createRef();
 
     this.state = {
-      stopped: true,
-      paused: true,
+      playing: false,
       loading: true,
       events: [],
       api: null,
@@ -48,45 +47,40 @@ export default class YouTube extends React.Component {
       case "youtube/current":
         switch (data.event.type) {
           case "play":
-            let update = {
-              stopped: false,
-              paused: false,
-            };
+            let update = {};
+
+            if (!this.state.playing) {
+              this.player.playVideo();
+              update.playing = true;
+            }
 
             if (this.state.videoId !== data.event.video_id) {
               let videoId = data.event.video_id;
               this.player.loadVideoById({videoId, suggestedQuality: SUGGESTED_QUALITY});
-              this.player.seekTo(data.event.elapsed);
-              this.player.playVideo();
+              this.player.seekTo(data.event.elapsed, true);
               update.videoId = data.event.video_id;
             } else {
-              if (this.state.paused) {
-                this.player.playVideo();
-              }
-
+              // We are a bit out of sync.
               if (Math.abs(data.event.elapsed - this.player.getCurrentTime()) > 2) {
-                this.player.seekTo(data.event.elapsed);
+                this.player.seekTo(data.event.elapsed, true);
               }
             }
 
             this.setState(update);
             break;
           case "pause":
-            this.player.pauseVideo();
+            if (this.state.playing) {
+              this.player.pauseVideo();
+            }
 
-            this.setState({
-              stopped: false,
-              paused: true,
-            });
+            this.setState({ playing: false });
             break;
           case "stop":
-            this.player.pauseVideo();
+            if (this.state.playing) {
+              this.player.stopVideo();
+            }
 
-            this.setState({
-              stopped: true,
-              paused: false,
-              videoId: null,
-            });
+            this.setState({ playing: false, videoId: null });
             break;
           default:
             break;
@@ -114,13 +108,22 @@ export default class YouTube extends React.Component {
       autoplay: false,
       events: {
         onReady: () => {
+          if (this.state.playing) {
+            this.player.playVideo();
+          }
+  
           this.setState({
             loading: false,
           });
         },
         onPlaybackQualityChange: e => {
         },
-        onStateChange: e => {
+        onStateChange: event => {
+          if (event.data === -1) {
+            if (this.state.playing) {
+              this.player.playVideo();
+            }
+          }
         },
       }
     });
