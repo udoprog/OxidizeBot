@@ -14,7 +14,6 @@ import Cache from "./components/Cache";
 import Modules from "./components/Modules.js";
 import ImportExport from "./components/ImportExport.js";
 import Commands from "./components/Commands.js";
-import '@fortawesome/fontawesome-free-solid'
 import Promotions from "./components/Promotions";
 import Aliases from "./components/Aliases";
 import Themes from "./components/Themes";
@@ -26,6 +25,11 @@ import * as semver from "semver";
 import logo from "./logo.png";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { InlineLoading, Loading, Error } from 'shared-ui/components';
+
+import '@fortawesome/fontawesome-free-solid'
+import { library } from '@fortawesome/fontawesome-svg-core';
+import { faYoutube, faSpotify } from '@fortawesome/free-brands-svg-icons';
+library.add(faYoutube, faSpotify);
 
 /**
  * Required spotify configuration.

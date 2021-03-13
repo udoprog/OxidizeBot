@@ -1,6 +1,7 @@
 import Websocket from "react-websocket";
 import React from "react";
 import {formatDuration, percentage, pickArtist, pickAlbumArt, websocketUrl} from "../utils.js";
+import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 
 /**
  * Pick the image best suited for album art.
@@ -40,19 +41,16 @@ class CurrentSong extends React.Component {
 
     if (this.props.requestBy !== null) {
       requestBy = (
-        <span className="request">
-          <span className="request-by">request by</span>
-          <span className="request-user">{this.props.requestBy}</span>
+        <span className="info-request">
+          <span className="info-request-by">request by</span>
+          <span className="info-request-user">{this.props.requestBy}</span>
         </span>
       );
     }
 
-    let state = null;
     let albumArt = null;
 
     if (this.props.albumArt) {
-      state = <div className={stateClasses}></div>;
-
       albumArt = (
         <img className="album-art"
           width={this.props.albumArt.width}
@@ -61,17 +59,27 @@ class CurrentSong extends React.Component {
       );
     }
 
+    let source = null;
+
+    if (!!this.props.source) {
+      source = <FontAwesomeIcon className="info-source" icon={['fab', this.props.source]} />;
+    }
+
     let progressBarStyle = {
       width: `${percentage(this.props.elapsed, this.props.duration)}%`,
     };
 
     let stateClasses = "state";
+    let stateContent = null;
 
     if (this.props.isPlaying) {
       stateClasses += " state-playing";
     } else {
       stateClasses += " state-paused";
+      stateContent = <FontAwesomeIcon icon="pause" />;
     }
+    
+    let state = <div className={stateClasses}>{stateContent}</div>;
 
     let trackName = "Unknown Track";
 
@@ -93,29 +101,32 @@ class CurrentSong extends React.Component {
         </div>
 
         <div className="info">
-          <div className="track">
-            <div className="track-name">{trackName}</div>
+          <div className="info-track">
+            {trackName}
+            {source}
           </div>
 
-          <div className="artist">
-            <span className="artist-name">{artistName}</span>
+          <div className="info-artist">
+            <span className="info-artist-name">{artistName}</span>
             {requestBy}
           </div>
 
-          <div className="progress">
-            <span className="timer">
-              <span className="elapsed">{formatDuration(this.props.elapsed)}</span>
-              <span>/</span>
-              <span className="duration">{formatDuration(this.props.duration)}</span>
-            </span>
+          <div className="info-progress">
+            <div className="info-progress-elapsed">{formatDuration(this.props.elapsed)}</div>
 
-            <div
-              className="progress-bar"
-              role="progressbar"
-              aria-valuenow="0"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              style={progressBarStyle} />
+            <div className="info-progress-bar">
+              <div className="progress">
+                <div
+                  className="progress-bar"
+                  role="progressbar"
+                  aria-valuenow="0"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  style={progressBarStyle} />
+              </div>
+            </div>
+
+            <div className="info-progress-duration">{formatDuration(this.props.duration)}</div>
           </div>
         </div>
       </div>
@@ -134,6 +145,7 @@ export default class Overlay extends React.Component {
       albumArt: null,
       elapsed: 0,
       duration: 0,
+      isPlaying: false,
     };
   }
 
@@ -153,6 +165,8 @@ export default class Overlay extends React.Component {
           requestBy: data.user,
           elapsed: data.elapsed,
           duration: data.duration,
+          isPlaying: data.is_playing,
+          source: null,
         };
 
         if (data.track) {
@@ -162,6 +176,7 @@ export default class Overlay extends React.Component {
               update.track = track.name;
               update.artist = pickArtist(track.artists);
               update.albumArt = pickAlbumArt(track.album.images, 64);
+              update.source = "spotify";
               break;
             case "youtube":
               let video = data.track.video;
@@ -172,10 +187,12 @@ export default class Overlay extends React.Component {
                 };
                 update.track = video.snippet.title;
                 update.albumArt = pickYouTubeAlbumArt(video.snippet.thumbnails, 64);
+                update.source = "youtube";
               } else {
                 update.track = null;
                 update.albumArt = null;
                 update.artist = null;
+                update.source = null;
               }
 
               break;
@@ -208,6 +225,8 @@ export default class Overlay extends React.Component {
           albumArt={this.state.albumArt}
           elapsed={this.state.elapsed}
           duration={this.state.duration}
+          source={this.state.source}
+          isPlaying={this.state.isPlaying}
         />
       </div>
     );

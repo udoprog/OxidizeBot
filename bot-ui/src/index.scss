@@ -1,7 +1,10 @@
 @import '~react-bootstrap-typeahead/css/Typeahead.css';
 @import '~shared-ui/index';
 
-$title-fonts: "monospace";
+$title-fonts: Consolas, monospace;
+$progress-height: 16px;
+$album-size: 64px;
+$text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px  1px 0 #000, 1px  1px 0 #000;
 
 #index {
   width: 100%;
@@ -28,7 +31,7 @@ body {
   position: absolute;
   background-color: rgba(0, 0, 0, 0.25);
   display: grid;
-  grid-template-columns: [left] 64px 10px [gutter] auto [end];
+  grid-template-columns: [left] $album-size 10px [gutter] auto [end];
   align-items: center;
 
   padding: 10px;
@@ -36,61 +39,91 @@ body {
   max-width: 33%;
 
   color: white;
-  font-family: Consolas, monospace;
-  font-weight: bold;
-  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px  1px 0 #000, 1px  1px 0 #000;
-
+  font-family: $title-fonts;
   grid-row-end: top;
-
-  .request {
-    float: right;
-
-    &-by {
-      margin-right: 10px;
-      font-size: .8em;
-    }
-  }
 
   .album {
     grid-column-start: left;
-    width: 64px;
-    height: 64px;
+    height: $album-size;
   }
 
   .info {
     display: grid;
     height: 100%;
-    grid-template-rows: auto auto 16px;
+    grid-template-rows: auto auto $progress-height;
     grid-column-start: gutter;
 
-    .track {
+    &-track {
+      text-shadow: $text-shadow;
+      text-overflow: ellipsis;
+      font-weight: bold;
       grid-row-start: 1;
+      font-size: 1.4em;
+      line-height: 0.8em;
+      white-space: nowrap;
+    }
+
+    &-source {
+      float: right;
+    }
+
+    &-artist {
+      display: grid;
+      grid-template-columns: [name] max-content auto [request] max-content;
+
+      text-shadow: $text-shadow;
+      grid-row-start: 2;
 
       &-name {
-        padding-left: 1px;
-        font-size: 1.4em;
-        line-height: 0.8em;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        grid-column-start: name;
       }
     }
 
-    .artist {
-      grid-row-start: 2;
+    &-request {
+      grid-column-start: request;
+      text-shadow: $text-shadow;
+
+      &-by {
+        white-space: nowrap;
+        font-size: .8em;
+        margin-right: 4px;
+      }
     }
 
-    .progress {
+    &-progress {
+      display: grid;
       grid-row-start: 3;
+      grid-template-columns: [elapsed] min-content 10px [bar] auto 10px [duration] min-content;
+
+      &-elapsed {
+        grid-column-start: elapsed;
+        font-size: $progress-height * 0.8;
+        line-height: $progress-height;
+        text-align: right;
+        text-shadow: $text-shadow;
+      }
 
       &-bar {
-        background-color: #888888;
-        transition: none;
+        padding-top: 5px;
+        grid-column-start: bar;
+
+        .progress {
+          height: 8px;
+
+          .progress-bar {
+            grid-column-start: 2;
+            background-color: #888888;
+            transition: none;
+          }
+        }
       }
 
-      .timer {
-        position: absolute;
-        padding-left: 5px;
+      &-duration {
+        grid-column-start: duration;
+        font-size: $progress-height * 0.8;
+        line-height: $progress-height;
+        text-align: left;
+        text-shadow: $text-shadow;
       }
     }
   }
@@ -98,11 +131,13 @@ body {
   .state {
     display: none;
     position: absolute;
-    width: 64px;
-    height: 64px;
+    height: $album-size;
+    width: $album-size;
+    line-height: $album-size;
+    font-size: 40px;
+    text-align: center;
     z-index: 1000;
 
-    color: #FF7F50;
     background-size: 32px 32px;
     background-repeat: no-repeat;
     background-position: left 16px top 16px;
@@ -251,11 +286,11 @@ body {
 
 .command {
   &-name {
-    font-family: monospace;
+    font-family: $title-fonts;
   }
 
   &-template {
-    font-family: monospace;
+    font-family: $title-fonts;
   }
 }
 
