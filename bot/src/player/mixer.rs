@@ -114,7 +114,7 @@ impl Mixer {
         }
 
         if let Some(item) = self.queue.remove(n) {
-            self.db.player_remove_song(&item.track_id).await?;
+            self.db.player_remove_song(&item.track_id, true).await?;
             return Ok(Some(item));
         }
 
@@ -128,7 +128,7 @@ impl Mixer {
         }
 
         if let Some(item) = self.queue.pop_back() {
-            self.db.player_remove_song(&item.track_id).await?;
+            self.db.player_remove_song(&item.track_id, true).await?;
             return Ok(Some(item));
         }
 
@@ -147,7 +147,7 @@ impl Mixer {
             .rposition(|i| i.user.as_ref().map(|u| u == user).unwrap_or_default())
         {
             if let Some(item) = self.queue.remove(position) {
-                self.db.player_remove_song(&item.track_id).await?;
+                self.db.player_remove_song(&item.track_id, true).await?;
                 return Ok(Some(item));
             }
         }
@@ -238,7 +238,7 @@ impl Mixer {
     /// Pop the front of the queue.
     async fn pop_front(&mut self) -> Result<Option<Arc<Item>>> {
         if let Some(item) = self.queue.pop_front() {
-            self.db.player_remove_song(&item.track_id).await?;
+            self.db.player_remove_song(&item.track_id, false).await?;
             Ok(Some(item))
         } else {
             Ok(None)

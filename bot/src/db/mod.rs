@@ -128,15 +128,17 @@ impl Database {
         use self::schema::songs::dsl;
 
         self.asyncify(move |c| {
-            Ok(diesel::update(dsl::songs.filter(dsl::deleted.eq(false)))
-                .set(dsl::deleted.eq(true))
-                .execute(c)?)
+            Ok(diesel::delete(dsl::songs.filter(dsl::deleted.eq(false))).execute(c)?)
         })
         .await
     }
 
     /// Remove the song with the given ID.
-    pub async fn player_remove_song(&self, track_id: &TrackId) -> Result<bool, Error> {
+    pub async fn player_remove_song(
+        &self,
+        track_id: &TrackId,
+        true_delete: bool,
+    ) -> Result<bool, Error> {
         use self::schema::songs::dsl;
 
         let track_id = track_id.clone();
@@ -149,9 +151,13 @@ impl Database {
                 .limit(1)
                 .load(c)?;
 
-            let count = diesel::update(dsl::songs.filter(dsl::id.eq_any(ids)))
-                .set(dsl::deleted.eq(true))
-                .execute(c)?;
+            let query = dsl::songs.filter(dsl::id.eq_any(ids));
+            let count = match true_delete {
+                true => diesel::delete(query).execute(c)?,
+                false => diesel::update(query)
+                    .set(dsl::deleted.eq(true))
+                    .execute(c)?,
+            };
 
             Ok(count == 1)
         })
