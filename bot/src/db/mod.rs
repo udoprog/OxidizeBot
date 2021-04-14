@@ -102,7 +102,7 @@ impl Database {
 
         self.asyncify(move |c| {
             let songs = dsl::songs
-                .filter(dsl::deleted.eq(false))
+                .filter(dsl::deleted.eq(false).and(dsl::played.eq(false)))
                 .order((dsl::promoted_at.desc(), dsl::added_at.asc()))
                 .load::<models::Song>(c)?;
             Ok(songs)
@@ -128,7 +128,13 @@ impl Database {
         use self::schema::songs::dsl;
 
         self.asyncify(move |c| {
-            Ok(diesel::delete(dsl::songs.filter(dsl::deleted.eq(false))).execute(c)?)
+            Ok(
+                diesel::update(
+                    dsl::songs.filter(dsl::played.eq(false).and(dsl::deleted.eq(false))),
+                )
+                .set(dsl::deleted.eq(true))
+                .execute(c)?,
+            )
         })
         .await
     }
@@ -137,7 +143,7 @@ impl Database {
     pub async fn player_remove_song(
         &self,
         track_id: &TrackId,
-        true_delete: bool,
+        played: bool,
     ) -> Result<bool, Error> {
         use self::schema::songs::dsl;
 
@@ -146,18 +152,19 @@ impl Database {
         self.asyncify(move |c| {
             let ids: Vec<i32> = dsl::songs
                 .select(dsl::id)
-                .filter(dsl::deleted.eq(false).and(dsl::track_id.eq(&track_id)))
+                .filter(
+                    dsl::played
+                        .eq(false)
+                        .and(dsl::deleted.eq(false))
+                        .and(dsl::track_id.eq(&track_id)),
+                )
                 .order(dsl::added_at.desc())
                 .limit(1)
                 .load(c)?;
 
-            let query = dsl::songs.filter(dsl::id.eq_any(ids));
-            let count = match true_delete {
-                true => diesel::delete(query).execute(c)?,
-                false => diesel::update(query)
-                    .set(dsl::deleted.eq(true))
-                    .execute(c)?,
-            };
+            let count = diesel::update(dsl::songs.filter(dsl::id.eq_any(ids)))
+                .set((dsl::played.eq(played), dsl::deleted.eq(!played)))
+                .execute(c)?;
 
             Ok(count == 1)
         })
@@ -178,7 +185,12 @@ impl Database {
         self.asyncify(move |c| {
             let ids: Vec<i32> = dsl::songs
                 .select(dsl::id)
-                .filter(dsl::deleted.eq(false).and(dsl::track_id.eq(&track_id)))
+                .filter(
+                    dsl::played
+                        .eq(false)
+                        .and(dsl::deleted.eq(false))
+                        .and(dsl::track_id.eq(&track_id)),
+                )
                 .order(dsl::added_at.desc())
                 .limit(1)
                 .load(c)?;
@@ -214,7 +226,12 @@ impl Database {
             let since = since.naive_utc();
 
             let song = dsl::songs
-                .filter(dsl::added_at.gt(&since).and(dsl::track_id.eq(&track_id)))
+                .filter(
+                    dsl::added_at
+                        .gt(&since)
+                        .and(dsl::played.eq(true))
+                        .and(dsl::track_id.eq(&track_id)),
+                )
                 .first::<models::Song>(c)
                 .optional()?;
 
