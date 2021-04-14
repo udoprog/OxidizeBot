@@ -40,6 +40,7 @@ table! {
     songs (id) {
         id -> Integer,
         deleted -> Bool,
+        played -> Bool,
         track_id -> Text,
         added_at -> Timestamp,
         promoted_at -> Nullable<Timestamp>,

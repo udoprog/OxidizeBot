@@ -119,7 +119,9 @@ pub struct BadWord {
 pub struct Song {
     /// ID of the song request.
     pub id: i32,
-    /// If the request is deleted or not.
+    /// If the request already played or not.
+    pub played: bool,
+    /// If the request was deleted or not.
     pub deleted: bool,
     /// The track id of the song.
     pub track_id: TrackId,
