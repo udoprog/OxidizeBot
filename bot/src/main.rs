@@ -784,7 +784,7 @@ async fn notify_after_streams(
 
                         let list = after_streams.list().await?;
 
-                        if list.len() > 0 {
+                        if !list.is_empty() {
                             let reminder = sys::Notification::new(format!(
                                 "You have {} afterstream messages.\nClick to open...",
                                 list.len()
