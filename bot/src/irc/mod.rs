@@ -19,7 +19,7 @@ use irc::client::{self, Client};
 use irc::proto::command::{CapSubCommand, Command};
 use irc::proto::message::{Message, Tag};
 use leaky_bucket::LeakyBuckets;
-use notify::{RecommendedWatcher, Watcher};
+use notify::{RecommendedWatcher, Watcher, recommended_watcher};
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::fmt;
@@ -250,7 +250,7 @@ impl IrcLoop<'_> {
         let (scripts_watch_tx, mut scripts_watch_rx) = sync::mpsc::unbounded_channel();
 
         let _watcher = if !script_dirs.is_empty() {
-            let mut watcher: RecommendedWatcher = Watcher::new_immediate(move |e| {
+            let mut watcher: RecommendedWatcher = recommended_watcher(move |e| {
                 let _ = scripts_watch_tx.send(e);
             })?;
 
