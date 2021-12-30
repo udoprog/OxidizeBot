@@ -2,7 +2,6 @@ import React from "react";
 import { Row, Col, Table, Alert } from "react-bootstrap";
 import { api } from "../globals.js";
 import { ApiError } from "../api.js";
-import { RouteLayout } from "./Layout.js";
 import Loading from 'shared-ui/components/Loading';
 import * as enableRemoteUpdates from '../assets/enable-remote-updates.png';
 
@@ -110,11 +109,11 @@ export default class Player extends React.Component {
     }
 
     return (
-      <RouteLayout>
+      <>
         <h2 className="oxi-page-title">Playlist for {this.props.match.params.id}</h2>
         <Loading isLoading={this.state.loading} />
         {content}
-      </RouteLayout>
+      </>
     );
   }
 }

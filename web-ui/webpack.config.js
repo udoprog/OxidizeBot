@@ -88,7 +88,7 @@ module.exports = function(_, argv) {
       historyApiFallback: true,
       proxy: {
         '/api': {
-          target: 'http://localhost:8000',
+          target: 'http://localhost:18080',
           secure: false,
         },
       },

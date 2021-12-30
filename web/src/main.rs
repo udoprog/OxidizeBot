@@ -58,31 +58,31 @@ async fn main() -> Result<()> {
     let config = toml::from_str::<web::Config>(&fs::read_to_string(config_path)?)?;
 
     let base = config.database.to_path(root);
-    let v28 = base.clone();
-    let v31 = base.with_extension("31");
-    let v31_db;
+    let old = base.with_extension("31");
+    let new = base.with_extension("34");
+    let new_db;
 
-    if !v31.is_dir() {
-        log::warn!("migrating database {} -> {}", v28.display(), v31.display());
+    if !new.is_dir() {
+        log::warn!("migrating database {} -> {}", old.display(), new.display());
 
-        // migrate 28 to 31
-        let v28 = sled28::Db::open(v28)?.open_tree("storage")?;
-        v31_db = sled31::open(v31)?.open_tree("storage")?;
+        // migrate 31 to 34.
+        let old = sled31::open(old)?.open_tree("storage")?;
+        new_db = sled34::open(new)?.open_tree("storage")?;
 
         let mut count = 0;
 
-        for result in v28.scan_prefix(&[]) {
+        for result in old.scan_prefix(&[]) {
             let (k, v) = result?;
-            v31_db.insert(k, &*v)?;
+            new_db.insert(k, &*v)?;
             count += 1;
         }
 
         log::warn!("migrated {} records", count);
     } else {
-        v31_db = sled31::open(v31)?.open_tree("storage")?;
+        new_db = sled34::open(new)?.open_tree("storage")?;
     }
 
-    let db = db::Database::load(v31_db)?;
+    let db = db::Database::load(new_db)?;
 
     let github = api::GitHub::new()?;
 

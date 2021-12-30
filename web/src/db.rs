@@ -3,7 +3,8 @@ use crate::oauth2;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use sled31 as sled;
+use sled::transaction::TransactionError;
+use sled34 as sled;
 use std::fmt;
 use thiserror::Error;
 
@@ -586,7 +587,7 @@ impl Transaction<'_> {
     }
 
     /// Commit the current transaction.
-    pub fn commit(self) -> sled::TransactionResult<()> {
+    pub fn commit(self) -> Result<(), TransactionError> {
         let Transaction { tree, ops } = self;
 
         tree.transaction(move |tree| {

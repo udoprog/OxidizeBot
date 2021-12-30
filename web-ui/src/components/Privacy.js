@@ -1,6 +1,5 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { RouteLayout } from "./Layout.js";
 
 export default class Privacy extends React.Component {
   constructor(props) {
@@ -9,7 +8,7 @@ export default class Privacy extends React.Component {
 
   render() {
     return (
-      <RouteLayout>
+      <>
         <h1 className="oxi-page-title">Privacy Policy</h1>
 
         <p>Effective date: October 4, 2019</p>
@@ -53,7 +52,7 @@ export default class Privacy extends React.Component {
         <ul>
           <li>By email: <a href="mailto:udoprog@tedro.se">udoprog@tedro.se</a></li>
         </ul>
-      </RouteLayout>
+      </>
     );
   }
 }

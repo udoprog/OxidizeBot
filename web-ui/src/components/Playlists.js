@@ -2,7 +2,6 @@ import React from "react";
 import { Table, Alert, Spinner } from "react-bootstrap";
 import { Link } from "react-router-dom";
 import { api } from "../globals.js";
-import { RouteLayout } from "./Layout";
 import Loading from 'shared-ui/components/Loading';
 import * as utils from "../utils";
 
@@ -70,7 +69,7 @@ export default class Players extends React.Component {
     }
 
     return (
-      <RouteLayout>
+      <>
         <h2 className="oxi-page-title">Playlists</h2>
 
         <p className="oxi-center">
@@ -79,7 +78,7 @@ export default class Players extends React.Component {
 
         <Loading isLoading={this.state.loading} />
         {content}
-      </RouteLayout>
+      </>
     );
   }
 }

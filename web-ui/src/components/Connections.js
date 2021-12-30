@@ -1,11 +1,11 @@
 import React from "react";
-import { RouteLayout } from "./Layout.js";
 import { Alert, Table, Button, Form, FormControl, InputGroup, ButtonGroup } from "react-bootstrap";
 import { api, currentConnections, currentUser } from "../globals.js";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import Loading from 'shared-ui/components/Loading';
 import UserPrompt from "./UserPrompt";
 import Connection from "./Connection";
+import { useLocation } from "react-router";
 
 class CountDown {
   constructor(count, call, end) {
@@ -253,12 +253,12 @@ export default class Connections extends React.Component {
       <Form className="mb-3">
         <InputGroup>
           <FormControl readOnly={true} value={value} placeholder={placeholder} />
-          <InputGroup.Append>
+          <>
             {showKey}
             {clear}
             {generate}
             {send}
-          </InputGroup.Append>
+          </>
         </InputGroup>
       </Form>
     );
@@ -306,7 +306,7 @@ export default class Connections extends React.Component {
     }
 
     return (
-      <RouteLayout>
+      <>
         <h2 className="oxi-page-title">My Connections</h2>
 
         {justConnected}
@@ -315,7 +315,7 @@ export default class Connections extends React.Component {
         <Loading isLoading={this.state.loading} />
         {error}
         {content}
-      </RouteLayout>
+      </>
     );
   }
 }

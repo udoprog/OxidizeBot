@@ -43,12 +43,10 @@ export default class Help extends React.Component {
   constructor(props) {
     super(props);
 
-    let q = new URLSearchParams(this.props.location.search);
-
     this.state = {
       loading: true,
       groups: props.commands.groups,
-      filter: q.get('q') || '',
+      filter: props.searchParams.get('q') || '',
       groupsLimit: 3,
     };
 
@@ -92,15 +90,12 @@ export default class Help extends React.Component {
   }
 
   changeFilter(filter) {
-    var path = `${this.props.location.pathname}`;
-
     if (!!filter) {
-      var search = new URLSearchParams(this.props.location.search);
-      search.set('q', filter);
-      path = `${path}?${search}`
+      this.props.setSearchParams({'q': filter});
+    } else {
+      this.props.setSearchParams({});
     }
 
-    this.props.history.replace(path);
     this.setState({filter, groupsLimit: this.defaultGroupsLimit});
   }
 

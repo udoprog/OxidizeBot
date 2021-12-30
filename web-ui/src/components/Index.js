@@ -1,6 +1,5 @@
 import React from "react";
-import { Card, CardDeck, Row, Col } from "react-bootstrap";
-import { RouteLayout } from "./Layout.js";
+import { Card, CardGroup, Row, Col } from "react-bootstrap";
 import twitchDarkLogo from "../assets/twitch-dark.png";
 import windowsImg from "../assets/windows.svg";
 import debianImg from "../assets/debian.svg";
@@ -211,7 +210,7 @@ export default class Index extends React.Component {
     let macCard = this.renderCard(r => r.mac, "Mac OS", macImg);
 
     return (
-      <RouteLayout>
+      <>
         <Row className="oxi-intro">
           <Col sm="8">
             <h1 className="oxi-title">OxidizeBot</h1>
@@ -239,7 +238,7 @@ export default class Index extends React.Component {
           </Col>
         </Row>
 
-        <CardDeck className="mb-4">
+        <CardGroup className="mb-4">
           <Card>
             <Card.Body>
               <Card.Title className="oxi-center"><b>Free</b> and <b>Open Source</b></Card.Title>
@@ -277,16 +276,16 @@ export default class Index extends React.Component {
               </div>
             </Card.Body>
           </Card>
-        </CardDeck>
+        </CardGroup>
 
         <h4 className="oxi-center mb-4">Downloads</h4>
 
-        <CardDeck>
+        <CardGroup>
           {windowsCard}
           {debianCard}
           {macCard}
-        </CardDeck>
-      </RouteLayout>
+        </CardGroup>
+      </>
     );
   }
 }
