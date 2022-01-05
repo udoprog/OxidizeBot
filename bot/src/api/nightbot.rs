@@ -49,7 +49,7 @@ impl NightBot {
         let mut deps = Deps::provider(&injector).await?;
 
         loop {
-            match deps.update().await {
+            match deps.wait_for_update().await {
                 Some(deps) => {
                     injector.update(NightBot::new(deps.token)?).await;
                 }

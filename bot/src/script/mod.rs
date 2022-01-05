@@ -2,9 +2,11 @@ use crate::command;
 use crate::db;
 use anyhow::{anyhow, Result};
 use ignore::Walk;
-use rune::diagnostics::EmitDiagnostics as _;
+use rune::runtime::{ConstValue, Protocol, RuntimeContext, SyncFunction};
 use rune::termcolor;
-use runestick::{Any, ConstValue, Context, ContextError, FromValue, Module, SyncFunction, Vm};
+use rune::{
+    Any, Context, ContextError, Diagnostics, FromValue, Module, Options, Source, Sources, Vm,
+};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -54,7 +56,7 @@ struct InternalHandler {
     name: String,
     function: SyncFunction,
     path: PathBuf,
-    sources: Arc<rune::Sources>,
+    sources: Arc<Sources>,
 }
 
 #[derive(Clone)]
@@ -87,13 +89,13 @@ struct ScopedDb {
 
 impl ScopedDb {
     /// Set the given value in the database.
-    async fn set(&self, key: ConstValue, value: ConstValue) -> Result<(), runestick::Error> {
+    async fn set(&self, key: ConstValue, value: ConstValue) -> Result<(), rune::Error> {
         self.db.set(key, value).await?;
         Ok(())
     }
 
     /// Get the stored value.
-    async fn get(&self, key: ConstValue) -> Result<Option<ConstValue>, runestick::Error> {
+    async fn get(&self, key: ConstValue) -> Result<Option<ConstValue>, rune::Error> {
         let value = self.db.get::<ConstValue, ConstValue>(key).await?;
         Ok(value)
     }
@@ -117,7 +119,7 @@ impl Handler {
                 Ok(result) => result,
                 Err(error) => {
                     let mut buffer = termcolor::Buffer::no_color();
-                    error.emit_diagnostics(&mut buffer, &*self.handler.sources)?;
+                    error.emit(&mut buffer, &*self.handler.sources)?;
 
                     return Err(anyhow!(
                         "failed to call handler for: {}:\n{}",
@@ -140,7 +142,8 @@ impl Handler {
 
 pub(crate) struct Scripts {
     context: Arc<Context>,
-    options: rune::Options,
+    runtime: Arc<RuntimeContext>,
+    options: Options,
     db: Db,
     handlers: HashMap<String, Arc<InternalHandler>>,
     // Keeps track of commands by path so that they may be unregistered.
@@ -150,8 +153,12 @@ pub(crate) struct Scripts {
 impl Scripts {
     /// Construct a new script handler.
     async fn new(channel: String, db: db::Database) -> Result<Self> {
+        let context = Self::context()?;
+        let runtime = Arc::new(context.runtime());
+
         Ok(Self {
-            context: Self::context()?,
+            context,
+            runtime,
             options: Default::default(),
             db: Db::open(channel, db).await?,
             handlers: HashMap::new(),
@@ -188,27 +195,24 @@ impl Scripts {
 
     /// Load the given path as a script.
     pub(crate) fn load(&mut self, path: &Path) -> Result<()> {
-        let mut sources = rune::Sources::new();
-        sources.insert(runestick::Source::from_path(path)?);
+        let mut sources = Sources::new();
+        sources.insert(Source::from_path(path)?);
 
-        let mut errors = rune::Errors::new();
-        let mut warnings = rune::Warnings::new();
+        let mut diagnostics = Diagnostics::new();
 
-        let result = rune::load_sources(
-            &*self.context,
-            &self.options,
-            &mut sources,
-            &mut errors,
-            &mut warnings,
-        );
+        let result = rune::prepare(&mut sources)
+            .with_context(&self.context)
+            .with_options(&self.options)
+            .with_diagnostics(&mut diagnostics)
+            .build();
 
         let sources = Arc::new(sources);
 
         let unit = match result {
             Ok(unit) => Arc::new(unit),
-            Err(rune::LoadSourcesError) => {
+            Err(..) => {
                 let mut buffer = termcolor::Buffer::no_color();
-                errors.emit_diagnostics(&mut buffer, &*sources)?;
+                diagnostics.emit(&mut buffer, &*sources)?;
 
                 return Err(anyhow!(
                     "failed to load source at: {}:\n{}",
@@ -219,7 +223,7 @@ impl Scripts {
         };
 
         let mut reg = Registry::new();
-        let vm = Vm::new(self.context.clone(), unit);
+        let mut vm = Vm::new(self.runtime.clone(), unit);
         <()>::from_value(vm.call(&["main"], (&mut reg,))?)?;
 
         for (command, function) in reg.handlers {
@@ -258,21 +262,21 @@ impl Scripts {
     }
 
     fn oxi_mod() -> Result<Module, ContextError> {
-        let mut m = Module::new(&["oxi"]);
+        let mut m = Module::with_item(&["oxi"]);
 
         m.ty::<Ctx>()?;
         m.async_inst_fn("respond", Ctx::respond)?;
         m.async_inst_fn("privmsg", Ctx::privmsg)?;
         m.inst_fn("user", Ctx::user)?;
-        m.getter("db", Ctx::db)?;
+        m.field_fn(Protocol::GET, "db", Ctx::db)?;
 
         m.ty::<Registry>()?;
         m.inst_fn("register", Registry::register)?;
 
         m.ty::<ScopedDb>()?;
-        m.async_inst_fn(runestick::INDEX_SET, ScopedDb::set)?;
+        m.async_inst_fn(Protocol::INDEX_SET, ScopedDb::set)?;
         m.async_inst_fn("set", ScopedDb::set)?;
-        m.async_inst_fn(runestick::INDEX_GET, ScopedDb::get)?;
+        m.async_inst_fn(Protocol::INDEX_GET, ScopedDb::get)?;
         m.async_inst_fn("get", ScopedDb::get)?;
 
         Ok(m)

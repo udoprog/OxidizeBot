@@ -5,7 +5,7 @@ use anyhow::Result;
 use irc::client;
 use irc::proto::command::{CapSubCommand, Command};
 use irc::proto::message::Message;
-use leaky_bucket::{LeakyBucket, LeakyBuckets};
+use leaky_bucket::RateLimiter;
 use std::fmt;
 use std::sync::Arc;
 use std::time;
@@ -27,8 +27,8 @@ impl Default for Type {
 struct Inner {
     target: String,
     sender: client::Sender,
-    limiter: LeakyBucket,
-    nightbot_limiter: LeakyBucket,
+    limiter: RateLimiter,
+    nightbot_limiter: RateLimiter,
     nightbot: injector::Ref<api::NightBot>,
 }
 
@@ -45,21 +45,17 @@ impl Sender {
         target: String,
         sender: client::Sender,
         nightbot: injector::Ref<api::NightBot>,
-        buckets: &LeakyBuckets,
     ) -> Result<Sender> {
         // limiter to use for IRC chat messages.
-        let limiter = buckets
-            .rate_limiter()
-            .refill_amount(10)
-            .refill_interval(time::Duration::from_secs(1))
+        let limiter = RateLimiter::builder()
+            .interval(time::Duration::from_secs(1))
             .max(95)
-            .build()?;
+            .build();
 
-        let nightbot_limiter = buckets
-            .rate_limiter()
+        let nightbot_limiter = RateLimiter::builder()
             .max(1)
-            .refill_interval(time::Duration::from_secs(5))
-            .build()?;
+            .interval(time::Duration::from_secs(5))
+            .build();
 
         Ok(Sender {
             ty,
@@ -97,10 +93,7 @@ impl Sender {
     pub async fn send(&self, m: impl Into<Message>) {
         let m = m.into();
 
-        if let Err(e) = self.inner.limiter.acquire(1).await {
-            log_error!(e, "error in limiter");
-            return;
-        }
+        self.inner.limiter.acquire(1).await;
 
         if let Err(e) = self.inner.sender.send(m) {
             log_error!(e, "failed to send message");
@@ -154,10 +147,7 @@ impl Sender {
         };
 
         // wait for the initial permit, keep the lock in case message is rejected.
-        if let Err(e) = inner.nightbot_limiter.acquire(1).await {
-            log_error!(e, "error in limiter");
-            return;
-        }
+        inner.nightbot_limiter.acquire(1).await;
 
         loop {
             let result = nightbot.channel_send(m.clone()).await;
