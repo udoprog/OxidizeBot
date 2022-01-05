@@ -10,7 +10,7 @@
 
 <div align="center">
   <a href="https://github.com/udoprog/OxidizeBot/actions">
-    <img alt="GitHub Actions Build Status" src="https://github.com/udoprog/OxidizeBot/workflows/Build/badge.svg">
+    <img alt="GitHub Actions Build Status" src="https://github.com/udoprog/OxidizeBot/workflows/CI/badge.svg">
   </a>
 
   <a href="https://discord.gg/v5AeNkT">
