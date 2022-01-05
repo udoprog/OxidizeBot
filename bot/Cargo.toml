@@ -55,10 +55,10 @@ async-fuse = { version = "0.11.2", features = ["stream"] }
 futures-cache = "0.10.0"
 anyhow = "1.0.38"
 thiserror = "1.0.23"
-async-injector = "0.17.0"
+async-injector = "0.18.1"
 async-trait = "0.1.42"
 async-stream = "0.3.0"
-leaky-bucket = "0.10.0"
+leaky-bucket = "0.11.0"
 regex = "1.4.3"
 backtrace = "0.3.56"
 futures-util = "0.3.12"
@@ -71,9 +71,8 @@ irc = "0.15.0"
 ignore = "0.4.17"
 notify = "5.0.0-pre.13"
 
-runestick = { version = "0.8.0", optional = true }
-rune = { version = "0.8.0", features = ["diagnostics"], optional = true }
-rune-modules = { version = "0.8.0", features = ["full"], optional = true }
+rune = { version = "0.10.3", optional = true }
+rune-modules = { version = "0.10.3", features = ["full"], optional = true }
 
 [build-dependencies]
 winres = "0.1.11"
@@ -86,4 +85,4 @@ winapi = { version = "0.3.9", features = ["shellapi", "impl-default"] }
 [features]
 default = []
 windows = []
-scripting = ["runestick", "rune", "rune-modules"]
+scripting = ["rune", "rune-modules"]

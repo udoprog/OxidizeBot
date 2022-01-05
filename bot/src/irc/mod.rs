@@ -18,8 +18,7 @@ use anyhow::{anyhow, bail, Context as _, Result};
 use irc::client::{self, Client};
 use irc::proto::command::{CapSubCommand, Command};
 use irc::proto::message::{Message, Tag};
-use leaky_bucket::LeakyBuckets;
-use notify::{RecommendedWatcher, Watcher, recommended_watcher};
+use notify::{recommended_watcher, RecommendedWatcher, Watcher};
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::fmt;
@@ -187,28 +186,9 @@ impl IrcLoop<'_> {
 
         let nightbot = injector.var::<api::NightBot>().await;
 
-        let mut buckets = LeakyBuckets::new();
-
-        let sender = Sender::new(
-            sender_ty,
-            chat_channel.clone(),
-            client.sender(),
-            nightbot,
-            &buckets,
-        )?;
+        let sender = Sender::new(sender_ty, chat_channel.clone(), client.sender(), nightbot)?;
 
         let mut futures = crate::utils::Futures::new();
-
-        let coordinate = buckets.coordinate()?;
-
-        let future = async move {
-            coordinate.await?;
-            Ok(())
-        };
-
-        futures.push(Box::pin(
-            future.instrument(trace_span!(target: "futures", "buckets-coordinator",)),
-        ));
 
         let stream_info = {
             let (stream_info, mut stream_state_rx, future) =
@@ -434,7 +414,7 @@ impl IrcLoop<'_> {
                         }
                     }
                 }
-                () = provider.wait() => {
+                _ = provider.wait_for_update() => {
                     // If configuration state changes, force a reconnect.
                     leave.set(Fuse::new(tokio::time::sleep(time::Duration::from_secs(1))));
                 }

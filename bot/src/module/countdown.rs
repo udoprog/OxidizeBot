@@ -116,7 +116,7 @@ impl super::Module for Module {
                         writer.path = update;
                     }
                     update = enabled_stream.recv() => {
-                        if (!update) {
+                        if !update {
                             timer.set(Fuse::empty());
                             writer.clear_log();
                         }

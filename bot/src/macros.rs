@@ -76,7 +76,7 @@ macro_rules! respond_err {
 /// Helper macro to bail with a respond error.
 macro_rules! respond_bail {
     ($($t:tt)*) => {
-        return Err(respond_err!($($t)*).into());
+        return Err(respond_err!($($t)*).into())
     };
 }
 
