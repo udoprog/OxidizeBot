@@ -1130,6 +1130,7 @@ pub async fn setup(
     let routes = routes.or(ws_youtube.recover(recover));
 
     let fallback = Asset::get("index.html");
+    let fallback = fallback.map(|f| f.data);
 
     let routes =
         routes.or(warp::get()
@@ -1156,7 +1157,7 @@ pub async fn setup(
         let (mime, asset) = match Asset::get(path) {
             Some(asset) => {
                 let mime = mime_guess::from_path(path).first_or_octet_stream();
-                (mime, asset)
+                (mime, asset.data)
             }
             None => {
                 let fallback = fallback.ok_or_else(warp::reject::not_found)?;

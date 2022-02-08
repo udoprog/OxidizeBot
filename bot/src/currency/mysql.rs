@@ -176,7 +176,8 @@ impl Backend {
     /// Construct a new built-in backend.
     pub fn connect(channel: String, url: String, schema: Schema) -> Result<Self> {
         let channel = Arc::new(channel);
-        let pool = mysql::Pool::new(url);
+        let opts = mysql::Opts::from_url(&url)?;
+        let pool = mysql::Pool::new(opts);
         let queries = Arc::new(Queries { schema });
 
         Ok(Backend {
