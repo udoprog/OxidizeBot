@@ -18,7 +18,7 @@ pub use self::ffz::FrankerFaceZ;
 pub use self::github::GitHub;
 pub use self::nightbot::NightBot;
 pub use self::open_weather_map::OpenWeatherMap;
-pub use self::provider::{twitch_clients_task, TwitchAndUser};
+pub use self::provider::{twitch_clients_task, Channel, TwitchAndUser, User};
 pub use self::setbac::Setbac;
 pub use self::speedrun::Speedrun;
 pub use self::spotify::Spotify;

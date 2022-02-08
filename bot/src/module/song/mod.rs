@@ -186,7 +186,7 @@ impl command::Handler for Handler {
                         ctx,
                         "You can find the queue at {}/player/{}",
                         api_url,
-                        ctx.user.streamer().name
+                        ctx.user.streamer().login
                     );
                     return Ok(());
                 }

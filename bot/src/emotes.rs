@@ -1,4 +1,4 @@
-use crate::api::{bttv, ffz, twitch, BetterTTV, FrankerFaceZ, Tduva, Twitch};
+use crate::api::{self, bttv, ffz, BetterTTV, FrankerFaceZ, Tduva, Twitch};
 use crate::irc;
 use crate::storage::Cache;
 use crate::template;
@@ -162,15 +162,12 @@ impl Emotes {
     }
 
     /// Construct a set of room emotes from ffz.
-    async fn room_emotes_from_ffz(
-        &self,
-        channel: &twitch::v5::Channel,
-    ) -> Result<EmoteByCode, Error> {
+    async fn room_emotes_from_ffz(&self, user: &api::User) -> Result<EmoteByCode, Error> {
         let mut emotes = EmoteByCode::default();
 
         let (global, room) = tokio::try_join!(
             self.inner.ffz.set_global(),
-            self.inner.ffz.room(&channel.name),
+            self.inner.ffz.room(&user.login),
         )?;
 
         for (_, s) in global.sets {
@@ -227,20 +224,16 @@ impl Emotes {
     }
 
     /// Construct a set of room emotes from bttv.
-    async fn bttv_bot_badge(
-        &self,
-        channel: &twitch::v5::Channel,
-        name: &str,
-    ) -> Result<Option<Badge>, Error> {
+    async fn bttv_bot_badge(&self, user: &api::User, name: &str) -> Result<Option<Badge>, Error> {
         let channel = self
             .inner
             .cache
             .wrap(
                 Key::BttvChannel {
-                    target: &channel.name,
+                    target: &user.login,
                 },
                 chrono::Duration::hours(72),
-                self.inner.bttv.channels(&channel.name),
+                self.inner.bttv.channels(&user.login),
             )
             .await?;
 
@@ -269,19 +262,16 @@ impl Emotes {
     }
 
     /// Construct a set of room emotes from bttv.
-    async fn room_emotes_from_bttv(
-        &self,
-        channel: &twitch::v5::Channel,
-    ) -> Result<EmoteByCode, Error> {
+    async fn room_emotes_from_bttv(&self, user: &api::User) -> Result<EmoteByCode, Error> {
         let channel = self
             .inner
             .cache
             .wrap(
                 Key::BttvChannel {
-                    target: &channel.name,
+                    target: &user.login,
                 },
                 chrono::Duration::hours(72),
-                self.inner.bttv.channels(&channel.name),
+                self.inner.bttv.channels(&user.login),
             )
             .await?;
 
@@ -294,7 +284,7 @@ impl Emotes {
     }
 
     /// Construct a twitch emote.
-    fn twitch_emote(id: u64) -> Arc<Emote> {
+    fn twitch_emote(id: &str) -> Arc<Emote> {
         let mut urls = Urls::default();
 
         let options: SmallVec<[(&mut Option<Url>, &str); 3]> = smallvec![
@@ -313,18 +303,12 @@ impl Emotes {
 
     /// Construct a set of room emotes from twitch.
     async fn emote_sets_from_twitch(&self, emote_sets: &str) -> Result<EmoteByCode, Error> {
-        let result = self
-            .inner
-            .twitch
-            .v5_chat_emoticon_images(emote_sets)
-            .await?;
+        let sets = self.inner.twitch.new_emote_sets(emote_sets).await?;
 
         let mut emotes = EmoteByCode::default();
 
-        for (_, set) in result.emoticon_sets {
-            for e in set {
-                emotes.insert(e.code, Self::twitch_emote(e.id));
-            }
+        for e in sets {
+            emotes.insert(e.name, Self::twitch_emote(&e.id));
         }
 
         Ok(emotes)
@@ -337,19 +321,19 @@ impl Emotes {
     }
 
     /// Get all room emotes.
-    async fn room_emotes(&self, channel: &twitch::v5::Channel) -> Result<Arc<EmoteByCode>, Error> {
+    async fn room_emotes(&self, user: &api::User) -> Result<Arc<EmoteByCode>, Error> {
         self.inner
             .cache
             .wrap(
                 Key::RoomEmotes {
-                    target: &channel.name,
+                    target: &user.login,
                 },
                 chrono::Duration::hours(6),
                 async move {
                     let mut emotes = EmoteByCode::default();
                     let (a, b) = tokio::try_join!(
-                        self.room_emotes_from_ffz(channel),
-                        self.room_emotes_from_bttv(channel),
+                        self.room_emotes_from_ffz(user),
+                        self.room_emotes_from_bttv(user),
                     )?;
                     emotes.extend(a);
                     emotes.extend(b);
@@ -380,7 +364,7 @@ impl Emotes {
             let mut p = emote.split(':');
 
             let id = match p.next() {
-                Some(id) => str::parse::<u64>(id)?,
+                Some(id) => id,
                 None => continue,
             };
 
@@ -435,7 +419,7 @@ impl Emotes {
     /// Get twitch subscriber badges.
     async fn twitch_subscriber_badge(
         &self,
-        channel: &twitch::v5::Channel,
+        user: &api::User,
         needle: u32,
     ) -> Result<Option<Badge>, Error> {
         let badges = self
@@ -443,10 +427,10 @@ impl Emotes {
             .cache
             .wrap(
                 Key::TwitchSubscriberBadges {
-                    target: &channel.name,
+                    target: &user.login,
                 },
                 chrono::Duration::hours(24),
-                self.inner.twitch.badges_v1_display(&channel.id),
+                self.inner.twitch.badges_v1_display(&user.id),
             )
             .await?;
 
@@ -588,96 +572,10 @@ impl Emotes {
         Ok(out)
     }
 
-    /// Get twitch chat badges.
-    ///
-    /// Deprecated for as long as GQL works since it's _much_ better.
-    #[allow(unused)]
-    async fn twitch_chat_badges(
-        &self,
-        channel: &twitch::v5::Channel,
-        chat_badges: &str,
-    ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
-        let badges = self
-            .inner
-            .cache
-            .wrap(
-                Key::TwitchChatBadges {
-                    target: &channel.name,
-                },
-                chrono::Duration::hours(72),
-                self.inner.twitch.v5_chat_badges(&channel.id),
-            )
-            .await?;
-
-        let mut out = SmallVec::new();
-
-        let mut badges = match badges {
-            Some(badges) => badges,
-            None => return Ok(out),
-        };
-
-        for (name, version) in split_badges(chat_badges) {
-            let name = match name {
-                "admin" => "admin",
-                "broadcaster" => "broadcaster",
-                "global_mod" => "global_mod",
-                "moderator" => "mod",
-                "staff" => "staff",
-                "turbo" => "turbo",
-                "subscriber" => {
-                    // NB: subscriber badges are handled separately.
-                    out.extend(self.twitch_subscriber_badge(channel, version).await?);
-                    continue;
-                }
-                "bits" => {
-                    // NB: bits badges are not supported.
-                    continue;
-                }
-                name => {
-                    // NB: not supported.
-                    log::trace!("Unsupported badge: {}", name);
-                    continue;
-                }
-            };
-
-            let badge = match badges.badges.remove(name) {
-                Some(badge) => badge,
-                None => continue,
-            };
-
-            let image = match badge.image {
-                Some(image) => image,
-                None => continue,
-            };
-
-            let mut urls = Urls::default();
-            urls.small = Some(image.into());
-
-            out.push(Badge {
-                title: name.to_string(),
-                badge_url: None,
-                urls,
-                bg_color: None,
-            });
-        }
-
-        return Ok(out);
-
-        /// Split all the badges.
-        fn split_badges(badges: &str) -> impl Iterator<Item = (&str, u32)> {
-            badges.split(',').flat_map(|b| {
-                let mut it = b.split('/');
-                let badge = it.next()?;
-                let version = str::parse::<u32>(it.next()?).ok()?;
-                Some((badge, version))
-            })
-        }
-    }
-
     /// Get chat badges through GQL.
     async fn gql_twitch_chat_badges(
         &self,
-        channel: &twitch::v5::Channel,
+        user: &api::User,
         name: &str,
     ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
         let badges = self
@@ -685,11 +583,11 @@ impl Emotes {
             .cache
             .wrap(
                 Key::GqlTwitchChatBadges {
-                    target: &channel.name,
+                    target: &user.login,
                     name,
                 },
                 chrono::Duration::hours(72),
-                self.inner.twitch.gql_display_badges(&channel.name, name),
+                self.inner.twitch.gql_display_badges(&user.login, name),
             )
             .await?;
 
@@ -758,24 +656,24 @@ impl Emotes {
     /// Render all room badges.
     async fn room_badges(
         &self,
-        channel: &twitch::v5::Channel,
+        user: &api::User,
         name: &str,
     ) -> Result<SmallVec<[Badge; INLINED_BADGES]>, Error> {
         self.inner
             .cache
             .wrap(
                 Key::RoomBadges {
-                    target: &channel.name,
+                    target: &user.login,
                     name,
                 },
                 chrono::Duration::hours(1),
                 async move {
                     let mut out = SmallVec::new();
 
-                    let twitch = self.gql_twitch_chat_badges(channel, name);
+                    let twitch = self.gql_twitch_chat_badges(user, name);
                     let ffz = self.ffz_chat_badges(name);
                     let tduva = self.tduva_chat_badges(name);
-                    let bttv = self.bttv_bot_badge(channel, name);
+                    let bttv = self.bttv_bot_badge(user, name);
 
                     let (twitch, ffz, tduva, bttv) = tokio::join!(twitch, ffz, tduva, bttv);
 
@@ -783,7 +681,7 @@ impl Emotes {
                         Ok(badges) => out.extend(badges),
                         Err(e) => log::warn!(
                             "{}/{}: failed to get twitch chat badges: {}",
-                            channel.name,
+                            user.login,
                             name,
                             e
                         ),
@@ -793,7 +691,7 @@ impl Emotes {
                         Ok(badges) => out.extend(badges),
                         Err(e) => log::warn!(
                             "{}/{}: failed to get ffz chat badges: {}",
-                            channel.name,
+                            user.login,
                             name,
                             e
                         ),
@@ -803,7 +701,7 @@ impl Emotes {
                         Ok(badges) => out.extend(badges),
                         Err(e) => log::warn!(
                             "{}/{}: failed to get tduva chat badges: {}",
-                            channel.name,
+                            user.login,
                             name,
                             e
                         ),
@@ -813,7 +711,7 @@ impl Emotes {
                         Ok(badges) => out.extend(badges),
                         Err(e) => log::warn!(
                             "{}/{}: failed to get bttv chat badges: {}",
-                            channel.name,
+                            user.login,
                             name,
                             e
                         ),
@@ -828,13 +726,13 @@ impl Emotes {
     pub async fn render(
         &self,
         tags: &irc::Tags,
-        channel: &twitch::v5::Channel,
+        user: &api::User,
         name: &str,
         message: &str,
     ) -> Result<Rendered, Error> {
         let (badges, room_emotes, global_emotes) = tokio::try_join!(
-            self.room_badges(channel, name),
-            self.room_emotes(channel),
+            self.room_badges(user, name),
+            self.room_emotes(user),
             self.global_emotes(),
         )?;
         let message_emotes = self.message_emotes_twitch(tags, message)?;
