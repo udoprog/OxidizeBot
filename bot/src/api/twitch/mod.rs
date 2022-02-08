@@ -4,13 +4,14 @@ use crate::api::RequestBuilder;
 use crate::oauth2;
 use anyhow::{Context, Result};
 use bytes::Bytes;
+use futures_core::Stream;
 use reqwest::{header, Client, Method, Url};
+use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 pub const CLIPS_URL: &str = "http://clips.twitch.tv";
 const TMI_TWITCH_URL: &str = "https://tmi.twitch.tv";
 const API_TWITCH_URL: &str = "https://api.twitch.tv";
-const BADGES_TWITCH_URL: &str = "https://badges.twitch.tv";
 const GQL_URL: &str = "https://gql.twitch.tv/gql";
 
 const GQL_CLIENT_ID: &str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
@@ -35,7 +36,6 @@ pub struct Twitch {
     client: Client,
     client_id_header: header::HeaderName,
     api_url: Url,
-    badges_url: Url,
     gql_url: Url,
     pub token: oauth2::SyncToken,
 }
@@ -47,7 +47,6 @@ impl Twitch {
             client: Client::new(),
             client_id_header: str::parse::<header::HeaderName>("Client-ID")?,
             api_url: str::parse::<Url>(API_TWITCH_URL)?,
-            badges_url: str::parse::<Url>(BADGES_TWITCH_URL)?,
             gql_url: str::parse::<Url>(GQL_URL)?,
             token,
         })
@@ -62,12 +61,13 @@ impl Twitch {
             TMI_TWITCH_URL, channel
         ))?;
 
-        let req = RequestBuilder::new(self.client.clone(), Method::GET, url)
-            .header(header::ACCEPT, "application/json");
+        let res = RequestBuilder::new(&self.client, Method::GET, url)
+            .header(header::ACCEPT, "application/json")
+            .execute()
+            .await?
+            .json::<Response>()?;
 
-        let body = req.execute().await?.json::<Response>()?;
-
-        return Ok(body.chatters);
+        return Ok(res.chatters);
 
         #[derive(serde::Deserialize)]
         struct Response {
@@ -75,88 +75,79 @@ impl Twitch {
         }
     }
 
-    /// Get badge URLs for the specified channel.
-    pub(crate) async fn badges_v1_display(
-        &self,
-        channel_id: &str,
-    ) -> Result<Option<badges_v1::BadgesDisplay>> {
-        let req = self.badges_v1(Method::GET, &["badges", "channels", &channel_id, "display"]);
-
-        Ok(req
-            .execute()
-            .await?
-            .not_found()
-            .json()
-            .context("request badges")?)
-    }
-
     /// Get display badges through GQL.
     pub(crate) async fn gql_display_badges(
         &self,
         login: &str,
         channel: &str,
-    ) -> Result<Option<self::gql::badges::ResponseData>> {
+    ) -> Result<Option<gql::badges::ResponseData>> {
         use graphql_client::{GraphQLQuery as _, Response};
 
-        let body = self::gql::Badges::build_query(self::gql::badges::Variables {
+        let body = gql::Badges::build_query(gql::badges::Variables {
             login: login.to_string(),
             channel_login: channel.to_string(),
         });
 
-        let req = self.gql()?.body(serde_json::to_vec(&body)?);
-
-        let res = req
+        let res = self
+            .gql()
+            .body(serde_json::to_vec(&body)?)
             .execute()
             .await?
-            .json::<Response<self::gql::badges::ResponseData>>()?
+            .json::<Response<gql::badges::ResponseData>>()?
             .data;
 
         Ok(res)
     }
 
     /// Search for a category with the given name.
-    pub fn new_search_categories(&self, query: &str) -> new::Paged<new::Category> {
-        let request = self
-            .new_api(Method::GET, &["search", "categories"])
-            .query_param("query", query);
+    pub fn new_search_categories<'a>(
+        &'a self,
+        query: &str,
+    ) -> impl Stream<Item = Result<new::Category>> + 'a {
+        let mut req = self.new_api(Method::GET, &["search", "categories"]);
 
-        new::Paged::new(request)
+        req.query_param("query", query);
+
+        page(req)
     }
 
     /// Get information on a user.
-    pub fn new_stream_subscriptions(
-        &self,
+    pub fn new_stream_subscriptions<'a>(
+        &'a self,
         broadcaster_id: &str,
         user_ids: Vec<String>,
-    ) -> new::Paged<new::Subscription> {
-        let mut request = self
-            .new_api(Method::GET, &["subscriptions"])
-            .query_param(BROADCASTER_ID, broadcaster_id);
+    ) -> impl Stream<Item = Result<new::Subscription>> + 'a {
+        let mut req = self.new_api(Method::GET, &["subscriptions"]);
+        req.query_param(BROADCASTER_ID, broadcaster_id);
 
         for user_id in &user_ids {
-            request = request.query_param("user_id", user_id);
+            req.query_param("user_id", user_id);
         }
 
-        new::Paged::new(request)
+        page(req)
     }
 
     /// Create a clip for the given broadcaster.
     pub(crate) async fn new_create_clip(&self, broadcaster_id: &str) -> Result<Option<new::Clip>> {
-        let req = self
+        let res = self
             .new_api(Method::POST, &["clips"])
-            .query_param(BROADCASTER_ID, broadcaster_id);
+            .query_param(BROADCASTER_ID, broadcaster_id)
+            .execute()
+            .await?
+            .json::<Data<Vec<new::Clip>>>()?;
 
-        let res = req.execute().await?.json::<Data<Vec<new::Clip>>>()?;
         Ok(res.data.into_iter().next())
     }
 
     /// Get stream information.
     pub(crate) async fn new_stream_by_id(&self, id: &str) -> Result<Option<new::Stream>> {
-        let req = self
+        let res = self
             .new_api(Method::GET, &["streams"])
-            .query_param("user_id", id);
+            .query_param("user_id", id)
+            .execute()
+            .await?
+            .json::<Data<Vec<new::Stream>>>()?;
 
-        let res = req.execute().await?.json::<Data<Vec<new::Stream>>>()?;
         Ok(res.data.into_iter().next())
     }
 
@@ -169,12 +160,12 @@ impl Twitch {
     ) -> Result<()> {
         use serde::Serialize;
 
-        let req = self
-            .new_api(
-                Method::PATCH,
-                &["channel_points", "custom_rewards", "redemptions"],
-            )
-            .header(header::CONTENT_TYPE, "application/json")
+        let mut req = self.new_api(
+            Method::PATCH,
+            &["channel_points", "custom_rewards", "redemptions"],
+        );
+
+        req.header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json")
             .query_param(BROADCASTER_ID, broadcaster_id)
             .query_param("id", &redemption.id)
@@ -206,18 +197,18 @@ impl Twitch {
         &self,
         broadcaster_id: &str,
     ) -> Result<Option<new::Channel>> {
-        let req = self
-            .new_api(Method::GET, &["channels"])
-            .query_param(BROADCASTER_ID, broadcaster_id);
+        let mut req = self.new_api(Method::GET, &["channels"]);
+        req.query_param(BROADCASTER_ID, broadcaster_id);
+
         let result = req.execute().await?.json::<Data<Vec<new::Channel>>>()?;
         Ok(result.data.into_iter().next())
     }
 
     /// Get emotes by sets.
     pub(crate) async fn new_emote_sets(&self, id: &str) -> Result<Vec<new::Emote>> {
-        let req = self
-            .new_api(Method::GET, &["chat", "emotes", "set"])
-            .query_param("emote_set_id", id);
+        let mut req = self.new_api(Method::GET, &["chat", "emotes", "set"]);
+        req.query_param("emote_set_id", id);
+
         Ok(req.execute().await?.json::<Data<Vec<new::Emote>>>()?.data)
     }
 
@@ -227,11 +218,9 @@ impl Twitch {
         &self,
         broadcaster_id: &str,
     ) -> Result<Vec<new::ChatBadge>> {
-        let req = self
+        let data = self
             .new_api(Method::GET, &["chat", "badges"])
-            .query_param(BROADCASTER_ID, broadcaster_id);
-
-        let data = req
+            .query_param(BROADCASTER_ID, broadcaster_id)
             .execute()
             .await?
             .json::<Data<Vec<new::ChatBadge>>>()
@@ -248,13 +237,13 @@ impl Twitch {
     ) -> Result<()> {
         let body = Bytes::from(serde_json::to_vec(&request)?);
 
-        let req = self
-            .new_api(Method::PATCH, &["channels"])
+        self.new_api(Method::PATCH, &["channels"])
             .query_param(BROADCASTER_ID, broadcaster_id)
             .header(header::CONTENT_TYPE, "application/json")
-            .body(body);
-
-        req.execute().await?.ok()
+            .body(body)
+            .execute()
+            .await?
+            .ok()
     }
 
     /// Get request against API.
@@ -267,31 +256,49 @@ impl Twitch {
             url_path.extend(path);
         }
 
-        RequestBuilder::new(self.client.clone(), method, url)
-            .token(self.token.clone())
-            .client_id_header(&self.client_id_header)
-    }
-
-    /// Get request against Badges API.
-    fn badges_v1(&self, method: Method, path: &[&str]) -> RequestBuilder {
-        let mut url = self.badges_url.clone();
-
-        {
-            let mut url_path = url.path_segments_mut().expect("bad base");
-            url_path.push("v1");
-            url_path.extend(path);
-        }
-
-        RequestBuilder::new(self.client.clone(), method, url)
+        let mut req = RequestBuilder::new(&self.client, method, url);
+        req.token(&self.token)
+            .client_id_header(&self.client_id_header);
+        req
     }
 
     /// Access GQL client.
-    fn gql(&self) -> Result<RequestBuilder> {
-        let req = RequestBuilder::new(self.client.clone(), Method::POST, self.gql_url.clone())
-            .header(header::CONTENT_TYPE, "application/json")
+    fn gql(&self) -> RequestBuilder<'_> {
+        let mut req = RequestBuilder::new(&self.client, Method::POST, self.gql_url.clone());
+
+        req.header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json")
             .header(self.client_id_header.clone(), GQL_CLIENT_ID);
 
-        Ok(req)
+        req
+    }
+}
+
+/// Perform pagination over the given request.
+fn page<'a, T: 'a>(request: RequestBuilder<'a>) -> impl Stream<Item = Result<T>> + 'a
+where
+    T: DeserializeOwned,
+{
+    async_stream::try_stream! {
+        let initial = request.execute().await?.json::<new::Page<T>>()?;
+        let mut page = initial.data.into_iter();
+        let mut pagination = initial.pagination;
+
+        loop {
+            while let Some(item) = page.next() {
+                yield item;
+            }
+
+            let cursor = match pagination.as_ref().and_then(|p| p.cursor.as_ref()) {
+                Some(cursor) => cursor,
+                None => break,
+            };
+
+            let mut next = request.clone();
+            next.query_param("after", cursor);
+            let next = next.execute().await?.json::<new::Page<T>>()?;
+            page = next.data.into_iter();
+            pagination = next.pagination;
+        }
     }
 }

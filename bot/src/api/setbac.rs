@@ -301,28 +301,35 @@ impl Setbac {
     }
 
     /// Get request against API.
-    fn request(&self, method: Method, path: &[&str]) -> RequestBuilder {
+    fn request<I>(&self, method: Method, path: I) -> RequestBuilder<'_>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
         let mut url = self.inner.api_url.clone();
-        url.path_segments_mut().expect("bad base").extend(path);
 
-        let mut builder = RequestBuilder::new(self.inner.client.clone(), method, url);
-
-        if let Some(secret_key) = self.inner.secret_key.as_ref() {
-            builder = builder.header(header::AUTHORIZATION, &format!("key:{}", secret_key));
-        } else if let Some(streamer_token) = self.inner.streamer_token.as_ref() {
-            builder = builder.token(streamer_token.clone()).use_oauth2_header();
+        if let Ok(mut p) = url.path_segments_mut() {
+            p.extend(path);
         }
 
-        builder
+        let mut request = RequestBuilder::new(&self.inner.client, method, url);
+
+        if let Some(secret_key) = self.inner.secret_key.as_ref() {
+            request.header(header::AUTHORIZATION, &format!("key:{}", secret_key));
+        } else if let Some(streamer_token) = self.inner.streamer_token.as_ref() {
+            request.token(streamer_token).use_oauth2_header();
+        }
+
+        request
     }
 
     /// Update the channel information.
     pub async fn player_update(&self, request: PlayerUpdate) -> Result<()> {
         let body = serde_json::to_vec(&request)?;
 
-        let req = self
-            .request(Method::POST, &["api", "player"])
-            .header(header::CONTENT_TYPE, "application/json")
+        let mut req = self.request(Method::POST, &["api", "player"]);
+
+        req.header(header::CONTENT_TYPE, "application/json")
             .body(body);
 
         req.execute().await?.ok()?;
@@ -331,9 +338,9 @@ impl Setbac {
 
     /// Get the token corresponding to the given flow.
     pub async fn get_connection(&self, id: &str) -> Result<Option<Connection>> {
-        let req = self
-            .request(Method::GET, &["api", "connections", id])
-            .header(header::CONTENT_TYPE, "application/json");
+        let mut req = self.request(Method::GET, &["api", "connections", id]);
+
+        req.header(header::CONTENT_TYPE, "application/json");
 
         let token = req.execute().await?.json::<Data<Connection>>()?;
         Ok(token.data)
@@ -341,9 +348,9 @@ impl Setbac {
 
     /// Get the token corresponding to the given flow.
     pub async fn get_connection_meta(&self, flow_id: &str) -> Result<Option<ConnectionMeta>> {
-        let req = self
-            .request(Method::GET, &["api", "connections", flow_id])
-            .query_param("format", "meta")
+        let mut req = self.request(Method::GET, &["api", "connections", flow_id]);
+
+        req.query_param("format", "meta")
             .header(header::CONTENT_TYPE, "application/json");
 
         let token = req.execute().await?.json::<Data<ConnectionMeta>>()?;
@@ -352,9 +359,9 @@ impl Setbac {
 
     /// Get meta for all available connections.
     pub async fn get_connections_meta(&self) -> Result<Vec<ConnectionMeta>> {
-        let req = self
-            .request(Method::GET, &["api", "connections"])
-            .query_param("format", "meta")
+        let mut req = self.request(Method::GET, &["api", "connections"]);
+
+        req.query_param("format", "meta")
             .header(header::CONTENT_TYPE, "application/json");
 
         let data = req.execute().await?.json::<Vec<ConnectionMeta>>()?;
@@ -363,9 +370,9 @@ impl Setbac {
 
     /// Refresh the token corresponding to the given flow.
     pub async fn refresh_connection(&self, id: &str) -> Result<Option<Connection>> {
-        let req = self
-            .request(Method::POST, &["api", "connections", id, "refresh"])
-            .header(header::CONTENT_TYPE, "application/json");
+        let mut req = self.request(Method::POST, &["api", "connections", id, "refresh"]);
+
+        req.header(header::CONTENT_TYPE, "application/json");
 
         let token = req.execute().await?.json::<Data<Connection>>()?;
         Ok(token.data)

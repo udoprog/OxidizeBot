@@ -164,7 +164,8 @@ impl command::Handler for Game {
 
         let stream_info = self.stream_info.clone();
 
-        let mut stream = self.twitch.new_search_categories(rest);
+        let stream = self.twitch.new_search_categories(rest);
+        tokio::pin!(stream);
 
         let first = if let Some(first) = stream.next().await {
             first?

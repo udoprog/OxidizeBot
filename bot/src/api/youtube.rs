@@ -31,23 +31,27 @@ impl YouTube {
     }
 
     /// Build request against v3 URL.
-    fn v3(&self, method: Method, path: &[&str]) -> RequestBuilder {
+    fn v3<I>(&self, method: Method, path: I) -> RequestBuilder<'_>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
         let mut url = self.v3_url.clone();
 
-        {
-            let mut url_path = url.path_segments_mut().expect("bad base");
-            url_path.extend(path);
+        if let Ok(mut p) = url.path_segments_mut() {
+            p.extend(path);
         }
 
-        RequestBuilder::new(self.client.clone(), method, url).token(self.token.clone())
+        let mut req = RequestBuilder::new(&self.client, method, url);
+        req.token(&self.token);
+        req
     }
 
     /// Update the channel information.
     pub async fn videos_by_id(&self, video_id: &str, part: &str) -> Result<Option<Video>> {
-        let req = self
-            .v3(Method::GET, &["videos"])
-            .query_param("part", part)
-            .query_param("id", video_id);
+        let mut req = self.v3(Method::GET, &["videos"]);
+
+        req.query_param("part", part).query_param("id", video_id);
 
         Ok(req
             .execute()
@@ -59,10 +63,9 @@ impl YouTube {
 
     /// Search YouTube.
     pub async fn search(&self, q: &str) -> Result<SearchResults> {
-        let req = self
-            .v3(Method::GET, &["search"])
-            .query_param("part", "snippet")
-            .query_param("q", q);
+        let mut req = self.v3(Method::GET, &["search"]);
+
+        req.query_param("part", "snippet").query_param("q", q);
 
         match req.execute().await?.not_found().json::<SearchResults>()? {
             Some(result) => Ok(result),
@@ -76,7 +79,7 @@ impl YouTube {
         url.query_pairs_mut()
             .append_pair("video_id", video_id.as_str());
 
-        let req = RequestBuilder::new(self.client.clone(), Method::GET, url);
+        let req = RequestBuilder::new(&self.client, Method::GET, url);
         let body = req.execute().await?.not_found().body()?;
 
         let body = match body {

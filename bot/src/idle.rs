@@ -8,8 +8,6 @@ use std::sync::Arc;
 pub struct Idle {
     /// Number of messages seen.
     seen: Arc<AtomicUsize>,
-    /// Last time we saw enough messages to not be considered idle.
-    last: Arc<AtomicUsize>,
     threshold: settings::Var<u32>,
 }
 
@@ -18,7 +16,6 @@ impl Idle {
     pub fn new(threshold: settings::Var<u32>) -> Self {
         Idle {
             seen: Arc::new(AtomicUsize::new(0)),
-            last: Arc::new(AtomicUsize::new(0)),
             threshold,
         }
     }

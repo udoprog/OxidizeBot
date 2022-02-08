@@ -2,7 +2,6 @@ use crate::oauth2;
 use anyhow::{bail, Result};
 use bytes::Bytes;
 use reqwest::{header, Client, Method, StatusCode, Url};
-use std::borrow::Cow;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -43,8 +42,8 @@ impl BodyHelper for Option<Bytes> {
 
 #[derive(Clone)]
 pub struct RequestBuilder<'a> {
-    token: Option<oauth2::SyncToken>,
-    client: Client,
+    token: Option<&'a oauth2::SyncToken>,
+    client: &'a Client,
     url: Url,
     method: Method,
     headers: Vec<(header::HeaderName, String)>,
@@ -52,13 +51,13 @@ pub struct RequestBuilder<'a> {
     /// Use Bearer header instead of OAuth for access tokens.
     use_bearer: bool,
     /// Add the client id to the specified header if configured.
-    client_id_header: Option<Cow<'a, header::HeaderName>>,
-    absent_body: bool,
+    client_id_header: Option<&'a header::HeaderName>,
+    empty_body: bool,
 }
 
 impl<'a> RequestBuilder<'a> {
     /// Construct a new request builder.
-    pub fn new(client: Client, method: Method, url: Url) -> Self {
+    pub fn new(client: &'a Client, method: Method, url: Url) -> Self {
         Self {
             token: None,
             client,
@@ -68,84 +67,58 @@ impl<'a> RequestBuilder<'a> {
             body: Bytes::new(),
             use_bearer: true,
             client_id_header: None,
-            absent_body: false,
-        }
-    }
-
-    /// Coerce into an owned request. This will clone all the necessary
-    /// underlying data.
-    pub fn into_owned(self) -> RequestBuilder<'static> {
-        RequestBuilder {
-            token: self.token,
-            client: self.client,
-            url: self.url,
-            method: self.method,
-            headers: self.headers,
-            body: self.body,
-            use_bearer: self.use_bearer,
-            client_id_header: self
-                .client_id_header
-                .map(|header| Cow::Owned(header.into_owned())),
-            absent_body: self.absent_body,
+            empty_body: false,
         }
     }
 
     /// Use the OAuth2 header instead of Bearer when sending authentication.
-    pub fn use_oauth2_header(mut self) -> Self {
+    pub fn use_oauth2_header(&mut self) -> &mut Self {
         self.use_bearer = false;
         self
     }
 
     /// Configure if empty bodies should have a Content-Type or not.
-    pub fn absent_body(mut self, absent_body: bool) -> Self {
-        self.absent_body = absent_body;
+    pub fn empty_body(&mut self) -> &mut Self {
+        self.empty_body = true;
         self
     }
 
     /// Use the specified Client-ID header.
-    pub fn client_id_header(mut self, header: &'a header::HeaderName) -> Self {
-        self.client_id_header = Some(Cow::Borrowed(header));
+    pub fn client_id_header(&mut self, header: &'a header::HeaderName) -> &mut Self {
+        self.client_id_header = Some(header);
         self
     }
 
     /// Set the token to use.
-    pub fn token(self, token: oauth2::SyncToken) -> Self {
-        Self {
-            token: Some(token),
-            ..self
-        }
+    pub fn token(&mut self, token: &'a oauth2::SyncToken) -> &mut Self {
+        self.token = Some(token);
+        self
     }
 
     /// Change the body of the request.
-    pub fn body(mut self, body: impl Into<Bytes>) -> Self {
+    pub fn body(&mut self, body: impl Into<Bytes>) -> &mut Self {
         self.body = body.into();
         self
     }
 
     /// Push a header.
-    pub fn header(mut self, key: header::HeaderName, value: &str) -> Self {
+    pub fn header(&mut self, key: header::HeaderName, value: &str) -> &mut Self {
         self.headers.push((key, value.to_owned()));
         self
     }
 
     /// Add a query parameter.
-    pub fn query_param(mut self, key: &str, value: &str) -> Self {
-        self.url.query_pairs_mut().append_pair(key, value);
-        self
-    }
-
-    /// Add an optional query parameter.
-    pub fn optional_query_param(mut self, key: &str, value: Option<&str>) -> Self {
-        if let Some(value) = value {
-            self.url.query_pairs_mut().append_pair(key, value);
-        }
-
+    pub fn query_param<S>(&mut self, key: &str, value: S) -> &mut Self
+    where
+        S: AsRef<str>,
+    {
+        self.url.query_pairs_mut().append_pair(key, value.as_ref());
         self
     }
 
     /// Send request and only return status.
     pub async fn json_map<T>(
-        self,
+        &self,
         m: impl FnOnce(StatusCode, &Bytes) -> Result<Option<T>>,
     ) -> Result<T>
     where
@@ -178,7 +151,7 @@ impl<'a> RequestBuilder<'a> {
             &Method::GET => req,
             &Method::HEAD => req,
             _ => {
-                if self.body.is_empty() && self.absent_body {
+                if self.body.is_empty() && self.empty_body {
                     req
                 } else {
                     req.header(header::CONTENT_LENGTH, self.body.len())

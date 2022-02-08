@@ -61,11 +61,13 @@ impl NightBot {
     }
 
     /// Get request against API.
-    fn request(&self, method: Method, path: &[&str]) -> RequestBuilder {
+    fn request<'a>(&'a self, method: Method, path: &[&str]) -> RequestBuilder<'a> {
         let mut url = self.api_url.clone();
         url.path_segments_mut().expect("bad base").extend(path);
 
-        RequestBuilder::new(self.client.clone(), method, url).token(self.token.clone())
+        let mut req = RequestBuilder::new(&self.client, method, url);
+        req.token(&self.token);
+        req
     }
 
     /// Update the channel information.
@@ -74,9 +76,9 @@ impl NightBot {
 
         let message = serde_json::to_string(&message).map_err(|e| RequestError::Other(e.into()))?;
 
-        let req = self
-            .request(Method::POST, &["channel", "send"])
-            .header(header::CONTENT_TYPE, "application/json")
+        let mut req = self.request(Method::POST, &["channel", "send"]);
+
+        req.header(header::CONTENT_TYPE, "application/json")
             .body(message.into_bytes());
 
         let _ = req.execute().await?.json::<Status>()?;

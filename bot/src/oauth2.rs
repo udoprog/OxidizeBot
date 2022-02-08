@@ -34,6 +34,7 @@ pub struct InnerSyncToken {
 pub struct SyncToken {
     /// Name of the flow associated with connection.
     what: &'static str,
+    /// The interior reference to the token.
     inner: Arc<RwLock<InnerSyncToken>>,
     /// Channel to use to force a refresh.
     force_refresh: mpsc::UnboundedSender<Option<Connection>>,

@@ -537,6 +537,7 @@ impl fmt::Display for Command {
 }
 
 #[derive(Clone)]
+#[allow(unused)]
 pub struct Reward {
     user: String,
     amount: i32,
