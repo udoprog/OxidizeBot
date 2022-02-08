@@ -2,6 +2,7 @@ use crate::oauth2;
 use anyhow::{bail, Result};
 use bytes::Bytes;
 use reqwest::{header, Client, Method, StatusCode, Url};
+use std::borrow::Cow;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -41,7 +42,7 @@ impl BodyHelper for Option<Bytes> {
 }
 
 #[derive(Clone)]
-pub struct RequestBuilder {
+pub struct RequestBuilder<'a> {
     token: Option<oauth2::SyncToken>,
     client: Client,
     url: Url,
@@ -51,11 +52,11 @@ pub struct RequestBuilder {
     /// Use Bearer header instead of OAuth for access tokens.
     use_bearer: bool,
     /// Add the client id to the specified header if configured.
-    client_id_header: Option<&'static str>,
+    client_id_header: Option<Cow<'a, header::HeaderName>>,
     absent_body: bool,
 }
 
-impl RequestBuilder {
+impl<'a> RequestBuilder<'a> {
     /// Construct a new request builder.
     pub fn new(client: Client, method: Method, url: Url) -> Self {
         Self {
@@ -68,6 +69,24 @@ impl RequestBuilder {
             use_bearer: true,
             client_id_header: None,
             absent_body: false,
+        }
+    }
+
+    /// Coerce into an owned request. This will clone all the necessary
+    /// underlying data.
+    pub fn into_owned(self) -> RequestBuilder<'static> {
+        RequestBuilder {
+            token: self.token,
+            client: self.client,
+            url: self.url,
+            method: self.method,
+            headers: self.headers,
+            body: self.body,
+            use_bearer: self.use_bearer,
+            client_id_header: self
+                .client_id_header
+                .map(|header| Cow::Owned(header.into_owned())),
+            absent_body: self.absent_body,
         }
     }
 
@@ -84,8 +103,8 @@ impl RequestBuilder {
     }
 
     /// Use the specified Client-ID header.
-    pub fn client_id_header(mut self, header: &'static str) -> Self {
-        self.client_id_header = Some(header);
+    pub fn client_id_header(mut self, header: &'a header::HeaderName) -> Self {
+        self.client_id_header = Some(Cow::Borrowed(header));
         self
     }
 
@@ -182,8 +201,8 @@ impl RequestBuilder {
                 req = req.header(header::AUTHORIZATION, format!("OAuth {}", access_token));
             }
 
-            if let Some(client_id_header) = self.client_id_header {
-                req = req.header(client_id_header, token.client_id())
+            if let Some(client_id_header) = &self.client_id_header {
+                req = req.header(&**client_id_header, token.client_id())
             }
         }
 

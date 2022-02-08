@@ -1145,10 +1145,7 @@ pub async fn setup(
     // TODO: fix when this review is fixed: https://github.com/seanmonstar/warp/pull/265#pullrequestreview-294644379
     let server_future = service.try_bind_ephemeral(addr)?.1;
 
-    let server = Server {
-        player,
-        active_connections,
-    };
+    let server = Server { active_connections };
 
     return Ok((server, server_future));
 
@@ -1260,7 +1257,6 @@ struct ErrorMessage {
 /// Interface to the server.
 #[derive(Clone)]
 pub struct Server {
-    player: injector::Ref<player::Player>,
     /// Callbacks for when we have received a token.
     active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
 }

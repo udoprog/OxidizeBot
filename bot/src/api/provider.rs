@@ -13,15 +13,46 @@ use crate::api;
 use crate::oauth2;
 use crate::prelude::*;
 use crate::tags;
-use anyhow::Result;
+use anyhow::{Error, Result};
+
+/// The injected user information.
+#[derive(Debug)]
+pub struct User {
+    /// Identifier of the user.
+    pub id: String,
+    /// The login of the user.
+    pub login: String,
+    /// The display name of the user.
+    pub display_name: String,
+}
+
+impl User {
+    fn from_api(api: api::twitch::new::User) -> Self {
+        Self {
+            id: api.id,
+            login: api.login,
+            display_name: api.display_name,
+        }
+    }
+}
+
+/// The injected channel information.
+#[derive(Debug)]
+pub struct Channel {}
+
+impl Channel {
+    fn from_api(_: api::twitch::new::Channel) -> Self {
+        Self {}
+    }
+}
 
 /// The injected structure for a connected twitch client.
 #[derive(Clone)]
 pub struct TwitchAndUser {
     /// The user the connection refers to.
-    pub user: Arc<api::twitch::v5::User>,
+    pub user: Arc<api::User>,
     /// Channel associated with the api client.
-    pub channel: Option<Arc<api::twitch::v5::Channel>>,
+    pub channel: Option<Arc<api::Channel>>,
     /// The client connection.
     pub client: api::Twitch,
 }
@@ -81,8 +112,14 @@ impl TwitchAndUserProvider {
         let client = api::Twitch::new(token)?;
 
         let (user, channel) = if self.channel {
-            match tokio::try_join!(client.v5_user(), client.v5_channel()) {
-                Ok((user, channel)) => (user, Some(channel)),
+            let fut = async {
+                let user = client.new_user_by_bearer().await?;
+                let channel = client.new_channel_by_id(&user.id).await?;
+                Ok::<_, Error>((user, channel))
+            };
+
+            match fut.await {
+                Ok((user, channel)) => (user, channel),
                 Err(e) => {
                     client.token.force_refresh().await?;
                     log_warn!(e, "failed to get twitch user information");
@@ -90,8 +127,8 @@ impl TwitchAndUserProvider {
                 }
             }
         } else {
-            match client.v5_user().await {
-                Ok(ok) => (ok, None),
+            match client.new_user_by_bearer().await {
+                Ok(user) => (user, None),
                 Err(e) => {
                     client.token.force_refresh().await?;
                     log_warn!(e, "failed to get twitch user information");
@@ -99,6 +136,9 @@ impl TwitchAndUserProvider {
                 }
             }
         };
+
+        let user = User::from_api(user);
+        let channel = channel.map(Channel::from_api);
 
         if Some(user.id.as_str()) == self.user_id.as_deref() {
             // Client w/ same user id. Do not update.

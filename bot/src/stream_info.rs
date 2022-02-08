@@ -24,7 +24,7 @@ pub enum StreamState {
 
 #[derive(Debug, Clone)]
 pub struct StreamInfo {
-    pub user: Arc<twitch::v5::User>,
+    pub user: Arc<api::User>,
     pub data: Arc<RwLock<Data>>,
 }
 
@@ -35,18 +35,14 @@ impl StreamInfo {
     }
 
     /// Refresh the known list of subscribers.
-    pub async fn refresh_subs(
-        &self,
-        twitch: &api::Twitch,
-        streamer: &twitch::v5::User,
-    ) -> Result<()> {
+    pub async fn refresh_subs(&self, twitch: &api::Twitch, streamer: &api::User) -> Result<()> {
         let subs = {
             let mut out = Vec::new();
 
             let mut stream = twitch.new_stream_subscriptions(&streamer.id, vec![]);
 
-            while let Some(subs) = stream.next().await.transpose()? {
-                out.extend(subs);
+            while let Some(sub) = stream.next().await.transpose()? {
+                out.push(sub);
             }
 
             out
@@ -67,10 +63,14 @@ impl StreamInfo {
     pub async fn refresh_channel<'a>(
         &'a self,
         twitch: &'a api::Twitch,
-        streamer: &'a twitch::v5::User,
+        streamer: &'a api::User,
     ) -> Result<()> {
-        let channel = match twitch.v5_channel_by_id(&streamer.id).await {
-            Ok(channel) => channel,
+        let channel = match twitch.new_channel_by_id(&streamer.id).await {
+            Ok(Some(channel)) => channel,
+            Ok(None) => {
+                log::error!("no channel matching the given id `{id}`", id = streamer.id);
+                return Ok(());
+            }
             Err(e) => {
                 log_error!(e, "failed to refresh channel");
                 return Ok(());
@@ -78,8 +78,8 @@ impl StreamInfo {
         };
 
         let mut info = self.data.write();
-        info.title = channel.status;
-        info.game = channel.game;
+        info.title = channel.title;
+        info.game = channel.game_name;
         Ok(())
     }
 
@@ -87,7 +87,7 @@ impl StreamInfo {
     pub async fn refresh_stream<'a>(
         &'a self,
         twitch: &'a api::Twitch,
-        streamer: &'a twitch::v5::User,
+        streamer: &'a api::User,
         stream_state_tx: &'a mut mpsc::Sender<StreamState>,
     ) -> Result<()> {
         let stream = match twitch.new_stream_by_id(&streamer.id).await {
@@ -121,7 +121,7 @@ impl StreamInfo {
 
 /// Set up a stream information loop.
 pub fn setup(
-    streamer: Arc<twitch::v5::User>,
+    streamer: Arc<api::User>,
     twitch: api::Twitch,
 ) -> (
     StreamInfo,

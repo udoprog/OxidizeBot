@@ -1,4 +1,4 @@
-use crate::api::{self, twitch};
+use crate::api;
 use crate::auth::{Auth, Role, Scope};
 use crate::bus;
 use crate::command;
@@ -145,7 +145,7 @@ impl IrcLoop<'_> {
             ..
         } = irc;
 
-        let streamer_channel = match streamer.channel.clone() {
+        let streamer_channel = match &streamer.channel {
             Some(channel) => channel,
             None => {
                 bail!("missing channel information for streamer");
@@ -153,10 +153,10 @@ impl IrcLoop<'_> {
         };
 
         log::trace!("Channel: {:?}", streamer_channel);
-        log::trace!("Streamer: {:?}", streamer.user.name);
-        log::trace!("Bot: {:?}", bot.user.name);
+        log::trace!("Streamer: {:?}", streamer.user.display_name);
+        log::trace!("Bot: {:?}", bot.user.display_name);
 
-        let chat_channel = format!("#{}", streamer_channel.name);
+        let chat_channel = format!("#{}", streamer.user.login);
         injector
             .update_key(Key::tagged(tags::Globals::Channel)?, chat_channel.clone())
             .await;
@@ -164,7 +164,7 @@ impl IrcLoop<'_> {
         let access_token = bot.client.token.read().await?.access_token().to_string();
 
         let irc_client_config = client::data::config::Config {
-            nickname: Some(bot.user.name.to_string()),
+            nickname: Some(bot.user.login.to_string()),
             channels: vec![chat_channel.clone()],
             password: Some(format!("oauth:{}", access_token)),
             server: Some(String::from(SERVER)),
@@ -225,7 +225,7 @@ impl IrcLoop<'_> {
         let mut handlers = module::Handlers::default();
 
         let scripts =
-            script::load_dir(streamer_channel.name.clone(), db.clone(), script_dirs).await?;
+            script::load_dir(streamer.user.login.clone(), db.clone(), script_dirs).await?;
 
         let (scripts_watch_tx, mut scripts_watch_rx) = sync::mpsc::unbounded_channel();
 
@@ -271,7 +271,6 @@ impl IrcLoop<'_> {
 
         let future = currency_loop(
             streamer.clone(),
-            streamer_channel.clone(),
             sender.clone(),
             idle.clone(),
             injector.clone(),
@@ -317,8 +316,7 @@ impl IrcLoop<'_> {
         let mut pong_timeout = Fuse::empty();
 
         let mut handler = Handler {
-            streamer: streamer.clone(),
-            streamer_channel,
+            streamer: &streamer,
             sender: sender.clone(),
             moderators: Default::default(),
             vips: Default::default(),
@@ -483,7 +481,6 @@ impl IrcLoop<'_> {
 /// Set up a reward loop.
 async fn currency_loop(
     streamer: api::TwitchAndUser,
-    streamer_channel: Arc<twitch::v5::Channel>,
     sender: Sender,
     idle: idle::Idle,
     injector: Injector,
@@ -600,7 +597,7 @@ async fn currency_loop(
 
                     let reward = (reward * reward_percentage.load().await as i64) / 100i64;
                     let count = currency
-                        .add_channel_all(&streamer_channel.name, reward, seconds)
+                        .add_channel_all(&streamer.user.login, reward, seconds)
                         .await?;
 
                     if notify_rewards && count > 0 && !idle.is_idle().await {
@@ -618,9 +615,7 @@ async fn currency_loop(
 /// Handler for incoming messages.
 struct Handler<'a> {
     /// Current Streamer.
-    streamer: api::TwitchAndUser,
-    /// The channel data associated with the streamer.
-    streamer_channel: Arc<twitch::v5::Channel>,
+    streamer: &'a api::TwitchAndUser,
     /// Queue for sending messages.
     sender: Sender,
     /// Moderators.
@@ -1022,12 +1017,12 @@ impl<'a> Handler<'a> {
 
                 if let Some(chat_log) = self.chat_log.as_ref().cloned() {
                     let tags = tags.clone();
-                    let channel = self.streamer_channel.clone();
+                    let user = self.streamer.user.clone();
                     let name = name.clone();
                     let message = message.clone();
 
                     task::spawn(Box::pin(async move {
-                        chat_log.observe(&tags, &*channel, &name, &*message).await;
+                        chat_log.observe(&tags, &*user, &name, &*message).await;
                     }));
                 }
 
@@ -1150,7 +1145,7 @@ pub struct RealUser<'a> {
     tags: &'a Tags,
     sender: &'a Sender,
     name: &'a str,
-    streamer: &'a twitch::v5::User,
+    streamer: &'a api::User,
     moderators: &'a RwLock<HashSet<String>>,
     vips: &'a RwLock<HashSet<String>>,
     stream_info: &'a stream_info::StreamInfo,
@@ -1190,7 +1185,7 @@ impl<'a> RealUser<'a> {
 
     /// Test if streamer.
     fn is_streamer(&self) -> bool {
-        self.name == self.streamer.name
+        self.name == self.streamer.login
     }
 
     /// Test if moderator.
@@ -1249,7 +1244,7 @@ struct UserInner {
     tags: Tags,
     sender: Sender,
     principal: Principal,
-    streamer: Arc<twitch::v5::User>,
+    streamer: Arc<api::User>,
     moderators: Arc<RwLock<HashSet<String>>>,
     vips: Arc<RwLock<HashSet<String>>>,
     stream_info: stream_info::StreamInfo,
@@ -1312,7 +1307,7 @@ impl User {
     }
 
     /// Get the name of the streamer.
-    pub fn streamer(&self) -> &twitch::v5::User {
+    pub fn streamer(&self) -> &api::User {
         &*self.inner.streamer
     }
 

@@ -59,7 +59,7 @@ impl command::Handler for Handler {
         let total_reward = reward * u.len() as i64;
 
         currency
-            .balance_add(user.channel(), &user.streamer().name, -total_reward)
+            .balance_add(user.channel(), &user.streamer().display_name, -total_reward)
             .await?;
 
         currency

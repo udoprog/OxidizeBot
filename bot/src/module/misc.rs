@@ -102,10 +102,10 @@ impl command::Handler for Title {
 
             let user = ctx.user.clone();
 
-            let mut request = api::twitch::v5::UpdateChannelRequest::default();
-            request.channel.status = Some(rest.to_string());
+            let mut request = api::twitch::new::ModifyChannelRequest::default();
+            request.title = Some(rest);
             self.twitch
-                .v5_update_channel(&user.streamer().id, request)
+                .new_modify_channel(&user.streamer().id, request)
                 .await?;
             self.stream_info
                 .refresh_channel(&self.twitch, user.streamer())
@@ -162,20 +162,29 @@ impl command::Handler for Game {
 
         ctx.check_scope(auth::Scope::GameEdit).await?;
 
-        let twitch = self.twitch.clone();
-        let game = rest.to_string();
         let stream_info = self.stream_info.clone();
 
-        let mut request = api::twitch::v5::UpdateChannelRequest::default();
-        request.channel.game = Some(game);
-        twitch
-            .v5_update_channel(&ctx.user.streamer().id, request)
-            .await?;
-        stream_info
-            .refresh_channel(&twitch, ctx.user.streamer())
+        let mut stream = self.twitch.new_search_categories(rest);
+
+        let first = if let Some(first) = stream.next().await {
+            first?
+        } else {
+            respond!(ctx, "No category found matching `{}`", rest);
+            return Ok(());
+        };
+
+        let mut request = api::twitch::new::ModifyChannelRequest::default();
+        request.game_id = Some(&first.id);
+
+        self.twitch
+            .new_modify_channel(&ctx.user.streamer().id, request)
             .await?;
 
-        respond!(ctx, "Game updated!");
+        stream_info
+            .refresh_channel(&self.twitch, ctx.user.streamer())
+            .await?;
+
+        respond!(ctx, "Game updated to `{}`!", first.name);
         Ok(())
     }
 }
