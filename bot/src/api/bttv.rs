@@ -24,16 +24,20 @@ impl BetterTTV {
     }
 
     /// Build request against v2 URL.
-    fn v2(&self, method: Method, path: &[&str]) -> RequestBuilder {
+    fn v2<I>(&self, method: Method, path: I) -> RequestBuilder<'_>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
         let mut url = self.v2_url.clone();
 
-        {
-            let mut url_path = url.path_segments_mut().expect("bad base");
-            url_path.extend(path);
+        if let Ok(mut p) = url.path_segments_mut() {
+            p.extend(path);
         }
 
-        let req = RequestBuilder::new(self.client.clone(), method, url);
-        req.header(header::ACCEPT, "application/json")
+        let mut req = RequestBuilder::new(&self.client, method, url);
+        req.header(header::ACCEPT, "application/json");
+        req
     }
 
     /// Get the set associated with the room.

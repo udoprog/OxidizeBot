@@ -11,13 +11,12 @@ pub use self::model::track::{FullTrack, SavedTrack};
 pub use self::model::user::PrivateUser;
 use crate::api::RequestBuilder;
 use crate::oauth2;
-use crate::prelude::*;
 use crate::spotify_id::SpotifyId;
 use anyhow::Result;
 use bytes::Bytes;
+use futures_core::Stream;
 use reqwest::{header, Client, Method, StatusCode};
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use serde::de::DeserializeOwned;
 use url::Url;
 
 mod model;
@@ -44,10 +43,20 @@ impl Spotify {
     }
 
     /// Get request against API.
-    fn request(&self, method: Method, path: &[&str]) -> RequestBuilder {
+    fn request<I>(&self, method: Method, path: I) -> RequestBuilder<'_>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
         let mut url = self.api_url.clone();
-        url.path_segments_mut().expect("bad base").extend(path);
-        RequestBuilder::new(self.client.clone(), method, url).token(self.token.clone())
+
+        if let Ok(mut p) = url.path_segments_mut() {
+            p.extend(path);
+        }
+
+        let mut req = RequestBuilder::new(&self.client, method, url);
+        req.token(&self.token);
+        req
     }
 
     /// Get user info.
@@ -59,10 +68,13 @@ impl Spotify {
 
     /// Get my playlists.
     pub async fn playlist(&self, id: SpotifyId, market: Option<&str>) -> Result<FullPlaylist> {
-        let req = self
-            .request(Method::GET, &["playlists", id.to_string().as_str()])
-            .query_param("limit", &DEFAULT_LIMIT.to_string())
-            .optional_query_param("market", market);
+        let mut req = self.request(Method::GET, &["playlists", id.to_string().as_str()]);
+
+        req.query_param("limit", &DEFAULT_LIMIT.to_string());
+
+        if let Some(market) = market {
+            req.query_param("market", market);
+        }
 
         req.execute().await?.json()
     }
@@ -83,30 +95,39 @@ impl Spotify {
     pub async fn me_player_volume(&self, device_id: Option<&str>, volume: f32) -> Result<bool> {
         let volume = u32::min(100, (volume * 100f32).round() as u32).to_string();
 
-        self.request(Method::PUT, &["me", "player", "volume"])
-            .optional_query_param("device_id", device_id)
-            .query_param("volume_percent", &volume)
+        let mut req = self.request(Method::PUT, &["me", "player", "volume"]);
+
+        if let Some(device_id) = device_id {
+            req.query_param("device_id", device_id);
+        }
+
+        req.query_param("volume_percent", &volume)
             .header(header::ACCEPT, "application/json")
             .header(header::CONTENT_LENGTH, "0")
-            .absent_body(true)
-            .json_map(device_control)
-            .await
+            .empty_body();
+
+        req.json_map(device_control).await
     }
 
     /// Start playing a track.
     pub async fn me_player_pause(&self, device_id: Option<&str>) -> Result<bool> {
-        self.request(Method::PUT, &["me", "player", "pause"])
-            .optional_query_param("device_id", device_id)
-            .header(header::CONTENT_LENGTH, "0")
+        let mut req = self.request(Method::PUT, &["me", "player", "pause"]);
+
+        if let Some(device_id) = device_id {
+            req.query_param("device_id", device_id);
+        }
+
+        req.header(header::CONTENT_LENGTH, "0")
             .header(header::ACCEPT, "application/json")
-            .absent_body(true)
-            .json_map(device_control)
-            .await
+            .empty_body();
+
+        req.json_map(device_control).await
     }
 
     /// Information on the current playback.
     pub async fn me_player(&self) -> Result<Option<FullPlayingContext>> {
         let req = self.request(Method::GET, &["me", "player"]);
+
         req.execute()
             .await?
             .not_found()
@@ -128,15 +149,18 @@ impl Spotify {
 
         let body = Bytes::from(serde_json::to_vec(&request)?);
 
-        let r = self
-            .request(Method::PUT, &["me", "player", "play"])
-            .optional_query_param("device_id", device_id)
-            .header(header::CONTENT_TYPE, "application/json")
+        let mut req = self.request(Method::PUT, &["me", "player", "play"]);
+
+        if let Some(device_id) = device_id {
+            req.query_param("device_id", device_id);
+        }
+
+        req.header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json")
-            .absent_body(true)
+            .empty_body()
             .body(body);
 
-        return r.json_map(device_control).await;
+        return req.json_map(device_control).await;
 
         #[derive(serde::Serialize)]
         struct Request<'a> {
@@ -164,10 +188,13 @@ impl Spotify {
 
     /// Enqueue the specified track.
     pub async fn me_player_queue(&self, device_id: Option<&str>, track_uri: &str) -> Result<bool> {
-        let r = self
-            .request(Method::POST, &["me", "player", "queue"])
-            .query_param("uri", &track_uri)
-            .optional_query_param("device_id", device_id)
+        let mut r = self.request(Method::POST, &["me", "player", "queue"]);
+
+        if let Some(device_id) = device_id {
+            r.query_param("device_id", device_id);
+        }
+
+        r.query_param("uri", &track_uri)
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json");
 
@@ -176,10 +203,13 @@ impl Spotify {
 
     /// Skip to the next song.
     pub async fn me_player_next(&self, device_id: Option<&str>) -> Result<bool> {
-        let r = self
-            .request(Method::POST, &["me", "player", "next"])
-            .optional_query_param("device_id", device_id)
-            .header(header::CONTENT_TYPE, "application/json")
+        let mut r = self.request(Method::POST, &["me", "player", "next"]);
+
+        if let Some(device_id) = device_id {
+            r.query_param("device_id", device_id);
+        }
+
+        r.header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json");
 
         r.json_map(device_control).await
@@ -193,52 +223,60 @@ impl Spotify {
 
     /// Get my songs.
     pub async fn my_tracks(&self) -> Result<Page<SavedTrack>> {
-        let req = self
-            .request(Method::GET, &["me", "tracks"])
-            .query_param("limit", &DEFAULT_LIMIT.to_string());
-
+        let mut req = self.request(Method::GET, &["me", "tracks"]);
+        req.query_param("limit", &DEFAULT_LIMIT.to_string());
         req.execute().await?.json()
     }
 
     /// Get the full track by ID.
     pub async fn track(&self, id: String, market: Option<&str>) -> Result<FullTrack> {
-        let req = self
-            .request(Method::GET, &["tracks", id.as_str()])
-            .optional_query_param("market", market);
+        let mut req = self.request(Method::GET, &["tracks", id.as_str()]);
+
+        if let Some(market) = market {
+            req.query_param("market", market);
+        }
 
         req.execute().await?.json()
     }
 
     /// Search for tracks.
-    pub async fn search_track(&self, q: &str) -> Result<Page<FullTrack>> {
-        let req = self
-            .request(Method::GET, &["search"])
+    pub async fn search_track(&self, q: &str, limit: u32) -> Result<SearchTracks> {
+        self.request(Method::GET, &["search"])
             .query_param("type", "track")
-            .query_param("q", q);
-
-        req.execute()
+            .query_param("q", q)
+            .query_param("limit", limit.to_string().as_str())
+            .execute()
             .await?
             .json::<SearchTracks>()
-            .map(|r| r.tracks)
     }
 
     /// Convert a page object into a stream.
-    pub fn page_as_stream<T>(&self, page: Page<T>) -> PageStream<T>
+    pub fn page_as_stream<'a, T: 'a>(&'a self, page: Page<T>) -> impl Stream<Item = Result<T>> + 'a
     where
-        T: 'static + Send + serde::de::DeserializeOwned,
+        T: Send + DeserializeOwned,
     {
-        self.page_stream(std::future::ready(Ok(page)))
-    }
+        async_stream::try_stream! {
+            let mut current = page.items.into_iter();
+            let mut next_url = page.next;
 
-    /// Create a streamed page request.
-    fn page_stream<'a, T>(
-        &self,
-        future: impl Future<Output = Result<Page<T>>> + Send + 'static,
-    ) -> PageStream<T> {
-        PageStream {
-            client: self.client.clone(),
-            token: self.token.clone(),
-            next: Some(Box::pin(future)),
+            loop {
+                while let Some(item) = current.next() {
+                    yield item;
+                }
+
+                let url = match next_url.take() {
+                    Some(next) => next,
+                    None => break,
+                };
+
+                let mut req = RequestBuilder::new(&self.client, Method::GET, str::parse(&url)?);
+                req.token(&self.token);
+
+                let Page { items, next, .. } = req.execute().await?.json::<Page<T>>()?;
+
+                current = items.into_iter();
+                next_url = next;
+            }
         }
     }
 }
@@ -249,51 +287,5 @@ fn device_control<C>(status: StatusCode, _: &C) -> Result<Option<bool>> {
         StatusCode::NO_CONTENT => Ok(Some(true)),
         StatusCode::NOT_FOUND => Ok(Some(false)),
         _ => Ok(None),
-    }
-}
-
-/// A page converted into a stream which will perform pagination under the hood.
-pub struct PageStream<T> {
-    client: Client,
-    token: oauth2::SyncToken,
-    next: Option<BoxFuture<'static, Result<Page<T>>>>,
-}
-
-impl<T> PageStream<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    /// Get the next page for a type.
-    pub fn next_page(&self, url: Url) -> impl Future<Output = Result<Page<T>>> {
-        let req =
-            RequestBuilder::new(self.client.clone(), Method::GET, url).token(self.token.clone());
-
-        async move { req.execute().await?.json() }
-    }
-}
-
-impl<T> stream::Stream for PageStream<T>
-where
-    T: 'static + Send + serde::de::DeserializeOwned,
-{
-    type Item = Result<Vec<T>>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let future = match self.next.as_mut() {
-            Some(future) => future,
-            None => return Poll::Ready(None),
-        };
-
-        let page = match future.as_mut().poll(cx)? {
-            Poll::Ready(page) => page,
-            Poll::Pending => return Poll::Pending,
-        };
-
-        self.as_mut().next = match page.next.map(|s| str::parse(s.as_str())).transpose()? {
-            Some(next) => Some(Box::pin(self.next_page(next))),
-            None => None,
-        };
-
-        Poll::Ready(Some(Ok(page.items)))
     }
 }

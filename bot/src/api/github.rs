@@ -24,15 +24,18 @@ impl GitHub {
     }
 
     /// Build request against v3 URL.
-    fn request(&self, method: Method, path: &[&str]) -> RequestBuilder {
+    fn request<I>(&self, method: Method, path: I) -> RequestBuilder<'_>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
         let mut url = self.api_url.clone();
 
-        {
-            let mut url_path = url.path_segments_mut().expect("bad base");
-            url_path.extend(path);
+        if let Ok(mut p) = url.path_segments_mut() {
+            p.extend(path);
         }
 
-        RequestBuilder::new(self.client.clone(), method, url)
+        RequestBuilder::new(&self.client, method, url)
     }
 
     /// Get all releases for the given repo.

@@ -39,7 +39,8 @@ impl StreamInfo {
         let subs = {
             let mut out = Vec::new();
 
-            let mut stream = twitch.new_stream_subscriptions(&streamer.id, vec![]);
+            let stream = twitch.new_stream_subscriptions(&streamer.id, vec![]);
+            tokio::pin!(stream);
 
             while let Some(sub) = stream.next().await.transpose()? {
                 out.push(sub);

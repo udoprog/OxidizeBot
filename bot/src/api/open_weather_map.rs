@@ -74,21 +74,26 @@ impl OpenWeatherMap {
     }
 
     /// Build request against v2 URL.
-    fn v2(&self, method: Method, path: &[&str]) -> RequestBuilder {
+    fn v2<I>(&self, method: Method, path: I) -> RequestBuilder<'_>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
         let mut url = self.v2_url.clone();
 
-        {
-            let mut url_path = url.path_segments_mut().expect("bad base");
-            url_path.extend(path);
+        if let Ok(mut p) = url.path_segments_mut() {
+            p.extend(path);
         }
 
-        let req = RequestBuilder::new(self.client.clone(), method, url);
-        let req = req.query_param("appid", &*self.api_key);
-        req.header(header::ACCEPT, "application/json")
+        let mut req = RequestBuilder::new(&self.client, method, url);
+        req.query_param("appid", &*self.api_key)
+            .header(header::ACCEPT, "application/json");
+        req
     }
 
     pub async fn current(&self, q: String) -> Result<Option<Current>> {
-        let req = self.v2(Method::GET, &["weather"]).query_param("q", &q);
+        let mut req = self.v2(Method::GET, &["weather"]);
+        req.query_param("q", &q);
         Ok(req.execute().await?.not_found().json()?)
     }
 }

@@ -476,9 +476,9 @@ impl Player {
             q
         };
 
-        let page = inner.spotify.search_track(q).await?;
+        let page = inner.spotify.search_track(q, 1).await?;
 
-        match page.items.into_iter().next().and_then(|t| t.id) {
+        match page.tracks.items.into_iter().next().and_then(|t| t.id) {
             Some(track_id) => match SpotifyId::from_base62(&track_id) {
                 Ok(track_id) => Ok(Some(TrackId::Spotify(track_id))),
                 Err(_) => bail!("search result returned malformed id"),

@@ -416,66 +416,6 @@ impl Emotes {
             .await
     }
 
-    /// Get twitch subscriber badges.
-    async fn twitch_subscriber_badge(
-        &self,
-        user: &api::User,
-        needle: u32,
-    ) -> Result<Option<Badge>, Error> {
-        let badges = self
-            .inner
-            .cache
-            .wrap(
-                Key::TwitchSubscriberBadges {
-                    target: &user.login,
-                },
-                chrono::Duration::hours(24),
-                self.inner.twitch.badges_v1_display(&user.id),
-            )
-            .await?;
-
-        let mut badges = match badges {
-            Some(badges) => badges,
-            None => return Ok(None),
-        };
-
-        let subscriber = match badges.badge_sets.remove("subscriber") {
-            Some(subscriber) => subscriber,
-            None => return Ok(None),
-        };
-
-        let mut best = None;
-
-        for (version, badge) in subscriber.versions {
-            let version = match str::parse::<u32>(&version).ok() {
-                Some(version) => version,
-                None => continue,
-            };
-
-            best = match best {
-                Some((v, _)) if version <= needle && version > v => Some((version, badge)),
-                Some(best) => Some(best),
-                None => Some((version, badge)),
-            };
-        }
-
-        if let Some((_, badge)) = best {
-            let mut urls = Urls::default();
-            urls.small = Some(Url::from(badge.image_url_1x));
-            urls.medium = Some(Url::from(badge.image_url_2x));
-            urls.large = Some(Url::from(badge.image_url_4x));
-
-            return Ok(Some(Badge {
-                title: badge.title,
-                badge_url: None,
-                urls,
-                bg_color: None,
-            }));
-        }
-
-        Ok(None)
-    }
-
     /// Get ffz chat badges.
     async fn ffz_chat_badges(
         &self,

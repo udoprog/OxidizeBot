@@ -16,6 +16,7 @@ use crate::utils;
 use crate::Uri;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
+use futures_core::Stream;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -528,7 +529,7 @@ impl PlayerInternal {
                     (Some(name), items)
                 }
                 None => {
-                    let items = download_spotify_library(&spotify).await?;
+                    let items = download_spotify_library(&spotify);
                     let items = convert(items).await?;
                     (None, items)
                 }
@@ -542,7 +543,7 @@ impl PlayerInternal {
             return Ok((what, items));
 
             async fn convert(
-                stream: impl stream::Stream<Item = Result<FullTrack>>,
+                stream: impl Stream<Item = Result<FullTrack>>,
             ) -> Result<Vec<Arc<Item>>> {
                 tokio::pin!(stream);
 
@@ -582,20 +583,21 @@ impl PlayerInternal {
             async fn download_spotify_playlist(
                 spotify: &api::Spotify,
                 playlist: SpotifyId,
-            ) -> Result<(String, impl stream::Stream<Item = Result<FullTrack>>)> {
+            ) -> Result<(String, impl Stream<Item = Result<FullTrack>> + '_)> {
                 let streamer = spotify.me().await?;
+
                 let playlist = spotify
                     .playlist(playlist, streamer.country.as_deref())
                     .await?;
 
                 let name = playlist.name.to_string();
-                let mut playlist_tracks = spotify.page_as_stream(playlist.tracks);
 
-                let items = async_stream::stream! {
-                    while let Some(tracks) = playlist_tracks.next().await.transpose()? {
-                        for playlist_track in tracks {
-                            yield Ok(playlist_track.track);
-                        }
+                let items = async_stream::try_stream! {
+                    let playlist_tracks = spotify.page_as_stream(playlist.tracks);
+                    tokio::pin!(playlist_tracks);
+
+                    while let Some(playlist_track) = playlist_tracks.next().await.transpose()? {
+                        yield playlist_track.track;
                     }
                 };
 
@@ -603,21 +605,18 @@ impl PlayerInternal {
             }
 
             /// Download a spotify library.
-            async fn download_spotify_library(
+            fn download_spotify_library(
                 spotify: &api::Spotify,
-            ) -> Result<impl stream::Stream<Item = Result<FullTrack>>> {
-                let saved_tracks = spotify.my_tracks().await?;
-                let mut saved_tracks = spotify.page_as_stream(saved_tracks);
+            ) -> impl Stream<Item = Result<FullTrack>> + '_ {
+                async_stream::try_stream! {
+                    let saved_tracks = spotify.my_tracks().await?;
+                    let saved_tracks = spotify.page_as_stream(saved_tracks);
+                    tokio::pin!(saved_tracks);
 
-                let items = async_stream::stream! {
-                    while let Some(tracks) = saved_tracks.next().await.transpose()? {
-                        for saved_track in tracks {
-                            yield Ok(saved_track.track);
-                        }
+                    while let Some(track) = saved_tracks.next().await.transpose()? {
+                        yield track.track;
                     }
-                };
-
-                Ok(items)
+                }
             }
         }
     }

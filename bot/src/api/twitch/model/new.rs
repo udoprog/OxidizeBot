@@ -1,11 +1,5 @@
-use crate::api::RequestBuilder;
-use crate::prelude::BoxFuture;
-use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use std::vec::IntoIter;
 
 /// A Twitch category.
 #[derive(Debug, Deserialize)]
@@ -28,10 +22,10 @@ pub struct Pagination {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct Page<T> {
-    data: Vec<T>,
+pub struct Page<T> {
+    pub data: Vec<T>,
     #[serde(default)]
-    pagination: Option<Pagination>,
+    pub pagination: Option<Pagination>,
 }
 
 #[derive(Deserialize)]
@@ -111,76 +105,4 @@ pub struct ChatBadge {
 pub struct ModifyChannelRequest<'a> {
     pub title: Option<&'a str>,
     pub game_id: Option<&'a str>,
-}
-
-/// A response that is paged as a stream of requests.
-pub struct Paged<T> {
-    /// The current page being returned.
-    current: IntoIter<T>,
-    /// Request template.
-    request: RequestBuilder<'static>,
-    /// Current future of a page to return.
-    page: Option<BoxFuture<'static, Result<Page<T>>>>,
-}
-
-impl<T> Paged<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    /// Construct a new paged request.
-    pub(crate) fn new(request: RequestBuilder<'_>) -> Self {
-        let request = request.into_owned();
-        let req = request.clone();
-        let initial = async move { req.execute().await?.json::<Page<T>>() };
-
-        Self {
-            current: Vec::new().into_iter(),
-            request,
-            page: Some(Box::pin(initial)),
-        }
-    }
-}
-
-impl<T> futures_core::Stream for Paged<T>
-where
-    T: 'static + Unpin + Send + serde::de::DeserializeOwned,
-{
-    type Item = Result<T>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = &mut *self;
-
-        loop {
-            if let Some(item) = this.current.next() {
-                cx.waker().wake_by_ref();
-                return Poll::Ready(Some(Ok(item)));
-            }
-
-            let page = match &mut this.page {
-                Some(page) => page,
-                None => return Poll::Ready(None),
-            };
-
-            let page = match page.as_mut().poll(cx) {
-                Poll::Ready(result) => {
-                    this.page = None;
-                    result?
-                }
-                Poll::Pending => return Poll::Pending,
-            };
-
-            let Page { data, pagination } = page;
-
-            if data.is_empty() {
-                return Poll::Ready(None);
-            }
-
-            if let Some(cursor) = pagination.and_then(|p| p.cursor) {
-                let req = this.request.clone().query_param("after", &cursor);
-                this.page = Some(Box::pin(async move { req.execute().await?.json() }));
-            }
-
-            this.current = data.into_iter();
-        }
-    }
 }

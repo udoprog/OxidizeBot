@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 
 pub mod badges_v1;
 pub mod new;
-pub mod v5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Data<T> {

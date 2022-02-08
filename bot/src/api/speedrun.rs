@@ -26,16 +26,20 @@ impl Speedrun {
     }
 
     /// Build request against v3 URL.
-    fn v1(&self, method: Method, path: &[&str]) -> RequestBuilder {
+    fn v1<I>(&self, method: Method, path: I) -> RequestBuilder<'_>
+    where
+        I: IntoIterator,
+        I::Item: AsRef<str>,
+    {
         let mut url = self.v1_url.clone();
 
-        {
-            let mut url_path = url.path_segments_mut().expect("bad base");
-            url_path.extend(path);
+        if let Ok(mut p) = url.path_segments_mut() {
+            p.extend(path);
         }
 
-        let req = RequestBuilder::new(self.client.clone(), method, url);
-        req.header(header::ACCEPT, "application/json")
+        let mut req = RequestBuilder::new(&self.client, method, url);
+        req.header(header::ACCEPT, "application/json");
+        req
     }
 
     /// Fetch the user by id.
@@ -58,7 +62,7 @@ impl Speedrun {
         let mut request = self.v1(Method::GET, &["users", user_id, "personal-bests"]);
 
         if let Some(q) = embeds.to_query() {
-            request = request.query_param("embed", q.as_str());
+            request.query_param("embed", q.as_str());
         }
 
         let data: Option<Data<Vec<Run>>> = request
@@ -89,7 +93,7 @@ impl Speedrun {
         let mut request = self.v1(Method::GET, &["games", game_id, "categories"]);
 
         if let Some(q) = embeds.to_query() {
-            request = request.query_param("embed", q.as_str());
+            request.query_param("embed", q.as_str());
         }
 
         let data: Option<Data<Vec<Category>>> = request
@@ -128,9 +132,9 @@ impl Speedrun {
         category_id: &str,
         top: u32,
     ) -> Result<Option<Page<GameRecord>>> {
-        let req = self
-            .v1(Method::GET, &["categories", category_id, "records"])
-            .query_param("top", top.to_string().as_str());
+        let mut req = self.v1(Method::GET, &["categories", category_id, "records"]);
+
+        req.query_param("top", top.to_string().as_str());
 
         Ok(req
             .execute()
@@ -148,19 +152,19 @@ impl Speedrun {
         variables: &Variables,
         embeds: &Embeds,
     ) -> Result<Option<GameRecord>> {
-        let mut request = self
-            .v1(
-                Method::GET,
-                &["leaderboards", game_id, "category", category_id],
-            )
-            .query_param("top", top.to_string().as_str());
+        let mut request = self.v1(
+            Method::GET,
+            &["leaderboards", game_id, "category", category_id],
+        );
+
+        request.query_param("top", top.to_string().as_str());
 
         if let Some(q) = embeds.to_query() {
-            request = request.query_param("embed", q.as_str());
+            request.query_param("embed", q.as_str());
         }
 
         for (key, value) in &variables.0 {
-            request = request.query_param(&format!("var-{}", key), &value);
+            request.query_param(&format!("var-{}", key), &value);
         }
 
         let data: Option<Data<GameRecord>> = request
