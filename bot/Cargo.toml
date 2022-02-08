@@ -10,76 +10,75 @@ description = "High octane Twitch bot powered by Rust"
 argwerk = "0.20.0"
 eudex = "0.1.1"
 chrono = { version = "0.4.19", features = ["serde"] }
-chrono-tz = { version = "0.5.3", features = ["serde"] }
-mysql_async = "0.27.0"
-diesel = { version = "1.4.5", features = ["sqlite", "chrono"] }
-diesel_migrations = "1.4.0"
-# set the bundled feature to use the bundled libsqlite3
+chrono-tz = { version = "0.6.1", features = ["serde"] }
+mysql_async = "0.29.0"
+diesel = { version = "1.4.8", features = ["sqlite", "chrono"] }
 libsqlite3-sys = { version = "0.17.3", features = ["bundled", "unlock_notify"] }
+diesel_migrations = "1.4.0"
 log = "0.4.14"
-relative-path = { version = "1.3.2", features = ["serde"] }
-serde = { version = "1.0.123", features = ["rc"] }
-serde_yaml = "0.8.17"
-serde_json = "1.0.62"
-serde_cbor = "0.11.1"
-serde_urlencoded = "0.7.0"
-reqwest = "0.11.0"
+relative-path = { version = "1.6.1", features = ["serde"] }
+serde = { version = "1.0.136", features = ["rc"] }
+serde_yaml = "0.8.23"
+serde_json = "1.0.78"
+serde_cbor = "0.11.2"
+serde_urlencoded = "0.7.1"
+reqwest = "0.11.9"
 Inflector = "0.11.4"
-warp = "0.3.0"
-tokio = { version = "1.2.0", features = ["full"] }
-tokio-tungstenite = { version = "0.14.0", features = ["rustls-tls"] }
-tungstenite = "0.13.0"
-tokio-stream = "0.1.3"
-url = { version = "2.2.0", features = ["serde"] }
-rand = "0.8.3"
-fixed-map = "0.7.1"
+warp = "0.3.2"
+tokio = { version = "1.16.1", features = ["full"] }
+tokio-tungstenite = { version = "0.16.1", features = ["rustls"] }
+tungstenite = "0.16.0"
+tokio-stream = "0.1.8"
+url = { version = "2.2.2", features = ["serde"] }
+rand = "0.8.4"
+fixed-map = "0.7.2"
 log4rs = "1.0.0"
-handlebars = "3.5.2"
+handlebars = "4.2.1"
 lazy_static = "1.4.0"
 webbrowser = "0.5.5"
-parking_lot = "0.11.1"
+parking_lot = "0.12.0"
 percent-encoding = "2.1.0"
-bytes = "1.0.1"
+bytes = "1.1.0"
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
-smallvec = { version = "1.6.1", features = ["serde"] }
-dirs = "3.0.1"
-backoff = "0.3.0"
-rust-embed = { version = "5.9.0", features = ["interpolate-folder-path"] }
+smallvec = { version = "1.8.0", features = ["serde"] }
+dirs = "4.0.0"
+backoff = "0.4.0"
+rust-embed = { version = "6.3.0", features = ["interpolate-folder-path"] }
 mime = "0.3.16"
 mime_guess = "2.0.3"
-uom = "0.31.0"
-crossbeam = "0.8.0"
-hex = "0.4.2"
-graphql_client = { version = "0.9.0", default-features = false }
+uom = "0.32.0"
+crossbeam = "0.8.1"
+hex = "0.4.3"
+graphql_client = { version = "0.10.0", default-features = false, features = ["graphql_query_derive"] }
 async-fuse = { version = "0.11.2", features = ["stream"] }
 futures-cache = "0.10.0"
-anyhow = "1.0.38"
-thiserror = "1.0.23"
-async-injector = "0.18.1"
-async-trait = "0.1.42"
-async-stream = "0.3.0"
-leaky-bucket = "0.11.0"
-regex = "1.4.3"
-backtrace = "0.3.56"
-futures-util = "0.3.12"
-futures-core = "0.3.12"
-tracing = "0.1.23"
-tracing-core = "0.1.17"
-tracing-futures = { version = "0.2.4", default-features = false, features = ["std-future"] }
-slab = "0.4.2"
+anyhow = "1.0.53"
+thiserror = "1.0.30"
+async-injector = "0.18.2"
+async-trait = "0.1.52"
+async-stream = "0.3.2"
+leaky-bucket = "0.11.1"
+regex = "1.5.4"
+backtrace = "0.3.64"
+futures-util = "0.3.21"
+futures-core = "0.3.21"
+tracing = "0.1.30"
+tracing-core = "0.1.22"
+tracing-futures = { version = "0.2.5", default-features = false, features = ["std-future"] }
+slab = "0.4.5"
 irc = "0.15.0"
-ignore = "0.4.17"
+ignore = "0.4.18"
 notify = "5.0.0-pre.13"
 
 rune = { version = "0.10.3", optional = true }
 rune-modules = { version = "0.10.3", features = ["full"], optional = true }
 
 [build-dependencies]
-winres = "0.1.11"
-anyhow = "1.0.38"
+winres = "0.1.12"
+anyhow = "1.0.53"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-futures-executor = "0.3.12"
+futures-executor = "0.3.21"
 winapi = { version = "0.3.9", features = ["shellapi", "impl-default"] }
 
 [features]

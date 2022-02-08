@@ -123,8 +123,8 @@ impl Template {
                     TemplateElement::Expression(helper) => {
                         collect_helper(out, &mut queue, &*helper);
                     }
-                    TemplateElement::HTMLExpression(param) => {
-                        collect_parameter(out, &mut queue, &*param);
+                    TemplateElement::HtmlExpression(param) => {
+                        collect_helper(out, &mut queue, param);
                     }
                     _ => (),
                 }
@@ -137,7 +137,7 @@ impl Template {
             p: &'e Parameter,
         ) {
             match p {
-                Parameter::Subexpression(ref e) => {
+                Parameter::Subexpression(e) => {
                     queue.push_back(&*e.element);
                 }
                 p => {
