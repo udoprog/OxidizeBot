@@ -276,8 +276,8 @@ impl Window {
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let (events_tx, events_rx) = mpsc::unbounded_channel();
 
-        let thread = thread::spawn(move || unsafe {
-            let info = match init_window(name.as_str()) {
+        let thread = thread::spawn(move || {
+            let info = match unsafe { init_window(name.as_str()) } {
                 Ok(info) => info,
                 Err(e) => {
                     if tx.send(Err(e)).is_err() {
@@ -300,7 +300,7 @@ impl Window {
                 (*stash.borrow_mut()) = Some(data);
             });
 
-            run_loop();
+            unsafe { run_loop() };
 
             if shutdown_tx.send(()).is_err() {
                 log::error!("shutdown receiver closed");
@@ -491,15 +491,15 @@ impl Window {
     pub fn set_icon_from_file(&self, icon_file: &str) -> Result<(), io::Error> {
         let wstr_icon_file = icon_file.to_wide_null();
 
-        let hicon = unsafe {
-            let result = winuser::LoadImageW(
+        let hicon = {
+            let result = unsafe { winuser::LoadImageW(
                 std::ptr::null_mut(),
                 wstr_icon_file.as_ptr(),
                 IMAGE_ICON,
                 64,
                 64,
                 LR_LOADFROMFILE,
-            );
+            ) }; 
 
             if result.is_null() {
                 return Err(io::Error::last_os_error());
@@ -567,14 +567,14 @@ impl Window {
 
     /// Shutdown the given window.
     fn shutdown(&self) -> Result<(), io::Error> {
-        let result = unsafe {
+        let result = {
             let mut nid = new_nid(self.info.hwnd);
             nid.uFlags = shellapi::NIF_ICON;
 
-            shellapi::Shell_NotifyIconW(
+            unsafe { shellapi::Shell_NotifyIconW(
                 shellapi::NIM_DELETE,
                 &mut nid as *mut shellapi::NOTIFYICONDATAW,
-            )
+            ) }
         };
 
         if result == FALSE {
@@ -589,15 +589,15 @@ impl Window {
 
     /// Internal call to set icon.
     fn set_icon(&self, icon: HICON) -> Result<(), io::Error> {
-        let result = unsafe {
+        let result = {
             let mut nid = new_nid(self.info.hwnd);
             nid.uFlags = shellapi::NIF_ICON;
             nid.hIcon = icon;
 
-            shellapi::Shell_NotifyIconW(
+            unsafe { shellapi::Shell_NotifyIconW(
                 shellapi::NIM_MODIFY,
                 &mut nid as *mut shellapi::NOTIFYICONDATAW,
-            )
+            ) }
         };
 
         if result == FALSE {
