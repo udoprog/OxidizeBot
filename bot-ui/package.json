@@ -18,7 +18,7 @@
     "@fortawesome/free-solid-svg-icons": "^5.15.2",
     "@fortawesome/react-fontawesome": "^0.1.14",
     "core-js": "^3.9.1",
-    "moment-timezone": "^0.5.33",
+    "moment-timezone": "^0.5.35",
     "npm": "^8.11.0",
     "react": "^17.0.1",
     "react-bootstrap": "^1.5.1",
