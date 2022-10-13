@@ -7,6 +7,17 @@ on:
   pull_request: {}
 
 jobs:
+  check_formatting:
+    name: Check Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          components: rustfmt
+      - run: cargo fmt --all -- --check
   build:
     name: Build
     runs-on: ${{ matrix.os }}
