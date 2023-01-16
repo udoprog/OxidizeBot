@@ -45,7 +45,7 @@ pub struct Command {
 }
 
 #[derive(Debug, Clone, Default, diesel::AsChangeset)]
-#[table_name = "commands"]
+#[diesel(table_name = commands)]
 pub struct UpdateCommand<'a> {
     pub count: Option<i32>,
     pub text: Option<&'a str>,
@@ -54,7 +54,7 @@ pub struct UpdateCommand<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
-#[table_name = "aliases"]
+#[diesel(table_name = aliases)]
 pub struct Alias {
     /// The channel the alias belongs to.
     pub channel: String,
@@ -71,7 +71,7 @@ pub struct Alias {
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Insertable)]
-#[table_name = "aliases"]
+#[diesel(table_name = aliases)]
 pub struct InsertAlias {
     pub channel: String,
     pub name: String,
@@ -79,7 +79,7 @@ pub struct InsertAlias {
 }
 
 #[derive(Debug, Clone, Default, diesel::AsChangeset)]
-#[table_name = "aliases"]
+#[diesel(table_name = aliases)]
 pub struct UpdateAlias<'a> {
     pub text: Option<&'a str>,
     pub group: Option<&'a str>,
@@ -102,7 +102,7 @@ pub struct AfterStream {
 
 /// Insert model for afterstreams.
 #[derive(diesel::Insertable)]
-#[table_name = "after_streams"]
+#[diesel(table_name = after_streams)]
 pub struct InsertAfterStream {
     pub channel: Option<String>,
     pub user: String,
@@ -136,7 +136,7 @@ pub struct Song {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, diesel::Insertable)]
-#[table_name = "songs"]
+#[diesel(table_name = songs)]
 pub struct AddSong {
     /// The track id of the song.
     pub track_id: TrackId,
@@ -165,7 +165,7 @@ pub struct Promotion {
 }
 
 #[derive(Debug, Clone, Default, diesel::AsChangeset)]
-#[table_name = "promotions"]
+#[diesel(table_name = promotions)]
 pub struct UpdatePromotion<'a> {
     pub frequency: Option<i32>,
     pub promoted_at: Option<&'a NaiveDateTime>,
@@ -193,7 +193,7 @@ pub struct Theme {
 }
 
 #[derive(Debug, Clone, Default, diesel::AsChangeset)]
-#[table_name = "themes"]
+#[diesel(table_name = themes)]
 pub struct UpdateTheme<'a> {
     pub track_id: Option<&'a TrackId>,
     pub start: Option<i32>,
@@ -210,7 +210,7 @@ pub struct ScriptKey {
 }
 
 #[derive(Debug, Clone, Default, diesel::AsChangeset)]
-#[table_name = "script_keys"]
+#[diesel(table_name = script_keys)]
 pub struct SetScriptKeyValue<'a> {
     pub value: &'a [u8],
 }

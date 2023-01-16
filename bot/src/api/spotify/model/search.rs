@@ -5,11 +5,13 @@ use super::page::Page;
 use super::playlist::SimplifiedPlaylist;
 use super::track::FullTrack;
 use serde::{Deserialize, Serialize};
+
 ///[search item](https://developer.spotify.com/web-api/search-item/)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchPlaylists {
     pub playlists: Page<SimplifiedPlaylist>,
 }
+
 ///[search item](https://developer.spotify.com/web-api/search-item/)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchAlbums {
@@ -21,6 +23,7 @@ pub struct SearchAlbums {
 pub struct SearchArtists {
     pub artists: Page<FullArtist>,
 }
+
 ///[search item](https://developer.spotify.com/web-api/search-item/)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchTracks {

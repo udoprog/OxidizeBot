@@ -56,6 +56,7 @@ pub struct TrackLink {
 pub struct FullTracks {
     pub tracks: Vec<FullTrack>,
 }
+
 ///[track object simplified](https://developer.spotify.com/web-api/object-model/#track-object-simplified)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimplifiedTrack {

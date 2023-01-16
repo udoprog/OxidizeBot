@@ -35,13 +35,13 @@ impl Backend {
 
         self.db
             .asyncify(move |c| {
-                c.transaction(move || {
+                c.transaction(move |c| {
                     let giver_filter = dsl::balances
                         .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&giver)));
 
                     let balance = giver_filter
                         .select(dsl::amount)
-                        .first::<i64>(&*c)
+                        .first::<i64>(c)
                         .optional()?
                         .unwrap_or_default();
 
@@ -63,7 +63,7 @@ impl Backend {
 
         self.db
             .asyncify(move |c| {
-                let balances = dsl::balances.load::<models::Balance>(&*c)?;
+                let balances = dsl::balances.load::<models::Balance>(c)?;
                 Ok(balances)
             })
             .await
@@ -85,13 +85,13 @@ impl Backend {
                             .and(dsl::user.eq(&balance.user)),
                     );
 
-                    let b = filter.clone().first::<models::Balance>(&*c).optional()?;
+                    let b = filter.clone().first::<models::Balance>(c).optional()?;
 
                     match b {
                         None => {
                             diesel::insert_into(dsl::balances)
                                 .values(&balance)
-                                .execute(&*c)?;
+                                .execute(c)?;
                         }
                         Some(_) => {
                             diesel::update(filter)
@@ -99,7 +99,7 @@ impl Backend {
                                     dsl::amount.eq(balance.amount),
                                     dsl::watch_time.eq(balance.watch_time),
                                 ))
-                                .execute(&*c)?;
+                                .execute(c)?;
                         }
                     }
                 }
@@ -121,7 +121,7 @@ impl Backend {
                 let result = dsl::balances
                     .select((dsl::amount, dsl::watch_time))
                     .filter(dsl::channel.eq(channel).and(dsl::user.eq(user)))
-                    .first::<(i64, i64)>(&*c)
+                    .first::<(i64, i64)>(c)
                     .optional()?;
 
                 let (balance, watch_time) = match result {
@@ -143,7 +143,7 @@ impl Backend {
         let user = user_id(user);
 
         self.db
-            .asyncify(move |c| modify_balance(&*c, &channel, &user, amount))
+            .asyncify(move |c| modify_balance(c, &channel, &user, amount))
             .await
     }
 
@@ -168,7 +168,7 @@ impl Backend {
                     let filter = dsl::balances
                         .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&user)));
 
-                    let b = filter.clone().first::<models::Balance>(&*c).optional()?;
+                    let b = filter.clone().first::<models::Balance>(c).optional()?;
 
                     match b {
                         None => {
@@ -181,7 +181,7 @@ impl Backend {
 
                             diesel::insert_into(dsl::balances)
                                 .values(&balance)
-                                .execute(&*c)?;
+                                .execute(c)?;
                         }
                         Some(b) => {
                             let value = b.amount.saturating_add(amount);
@@ -189,7 +189,7 @@ impl Backend {
 
                             diesel::update(filter)
                                 .set((dsl::amount.eq(value), dsl::watch_time.eq(watch_time)))
-                                .execute(&*c)?;
+                                .execute(c)?;
                         }
                     }
                 }
@@ -201,12 +201,12 @@ impl Backend {
 }
 
 /// Common function to modify the balance for the given user.
-fn modify_balance(c: &SqliteConnection, channel: &str, user: &str, amount: i64) -> Result<()> {
+fn modify_balance(c: &mut SqliteConnection, channel: &str, user: &str, amount: i64) -> Result<()> {
     use self::schema::balances::dsl;
 
     let filter = dsl::balances.filter(dsl::channel.eq(channel).and(dsl::user.eq(user)));
 
-    match filter.clone().first::<models::Balance>(&*c).optional()? {
+    match filter.clone().first::<models::Balance>(c).optional()? {
         None => {
             let balance = models::Balance {
                 channel: channel.to_string(),

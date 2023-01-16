@@ -15,6 +15,7 @@ use crate::task;
 use crate::track_id::TrackId;
 use crate::utils;
 use anyhow::bail;
+use diesel_migrations::{EmbeddedMigrations, HarnessWithOutput, MigrationHarness};
 use std::path::Path;
 use thiserror::Error;
 
@@ -36,7 +37,7 @@ use diesel::prelude::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-embed_migrations!("./migrations");
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 /// Database abstraction.
 #[derive(Clone)]
@@ -51,12 +52,19 @@ impl Database {
 
         log::info!("Using database: {}", url);
 
-        let pool = SqliteConnection::establish(&url)?;
+        let mut pool = SqliteConnection::establish(&url)?;
 
         let mut output = Vec::new();
 
         // Run all migrations and provide some diagnostics on errors.
-        let result = embedded_migrations::run_with_output(&pool, &mut output);
+        let result = {
+            let mut harness = HarnessWithOutput::new(&mut pool, &mut output);
+
+            match harness.run_pending_migrations(MIGRATIONS) {
+                Ok(..) => Ok(()),
+                Err(e) => Err(Error::msg(e.to_string())),
+            }
+        };
         let output = String::from_utf8_lossy(&output);
         result.with_context(|| anyhow!("error when running migrations: {}", output))?;
 
@@ -72,7 +80,7 @@ impl Database {
     /// Run a blocking task with exlusive access to the database pool.
     pub async fn asyncify<F, T, E>(&self, task: F) -> Result<T, E>
     where
-        F: FnOnce(&SqliteConnection) -> Result<T, E> + Send + 'static,
+        F: FnOnce(&mut SqliteConnection) -> Result<T, E> + Send + 'static,
         T: Send + 'static,
         E: Send + 'static,
         E: From<tokio::task::JoinError>,
@@ -80,8 +88,8 @@ impl Database {
         let pool = self.pool.clone();
 
         task::asyncify(move || {
-            let guard = pool.lock();
-            task(&*guard)
+            let mut guard = pool.lock();
+            task(&mut *guard)
         })
         .await
     }

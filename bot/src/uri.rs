@@ -2,6 +2,9 @@
 ///
 /// URIs are strings that identify a single resource, like a track or a playlist.
 use crate::spotify_id::SpotifyId;
+use diesel::backend::{Backend, RawValue};
+use diesel::serialize::IsNull;
+use diesel::sqlite::Sqlite;
 use std::fmt;
 use std::str::FromStr as _;
 use thiserror::Error;
@@ -9,7 +12,7 @@ use thiserror::Error;
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, diesel::FromSqlRow, diesel::AsExpression,
 )]
-#[sql_type = "diesel::sql_types::Text"]
+#[diesel(sql_type = diesel::sql_types::Text)]
 pub enum Uri {
     /// A Spotify track.
     SpotifyTrack(SpotifyId),
@@ -71,25 +74,22 @@ impl fmt::Display for Uri {
     }
 }
 
-impl<DB> diesel::serialize::ToSql<diesel::sql_types::Text, DB> for Uri
-where
-    DB: diesel::backend::Backend,
-    String: diesel::serialize::ToSql<diesel::sql_types::Text, DB>,
-{
-    fn to_sql<W>(&self, out: &mut diesel::serialize::Output<W, DB>) -> diesel::serialize::Result
-    where
-        W: std::io::Write,
-    {
-        self.to_string().to_sql(out)
+impl diesel::serialize::ToSql<diesel::sql_types::Text, Sqlite> for Uri {
+    fn to_sql<'b>(
+        &self,
+        out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
+    ) -> diesel::serialize::Result {
+        out.set_value(self.to_string());
+        Ok(IsNull::No)
     }
 }
 
 impl<DB> diesel::deserialize::FromSql<diesel::sql_types::Text, DB> for Uri
 where
-    DB: diesel::backend::Backend,
+    DB: Backend,
     String: diesel::deserialize::FromSql<diesel::sql_types::Text, DB>,
 {
-    fn from_sql(bytes: Option<&DB::RawValue>) -> diesel::deserialize::Result<Self> {
+    fn from_sql(bytes: RawValue<'_, DB>) -> diesel::deserialize::Result<Self> {
         let s = String::from_sql(bytes)?;
         Ok(Uri::from_str(&s)?)
     }

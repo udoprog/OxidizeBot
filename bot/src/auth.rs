@@ -2,7 +2,11 @@ use crate::db;
 use crate::utils::{Cooldown, Duration};
 use anyhow::{Context as _, Error};
 use chrono::{DateTime, Utc};
+use diesel::backend::{Backend, RawValue};
 use diesel::prelude::*;
+use diesel::serialize::IsNull;
+use diesel::serialize::ToSql;
+use diesel::sqlite::Sqlite;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::iter;
@@ -429,7 +433,7 @@ macro_rules! scopes {
         diesel::FromSqlRow,
         diesel::AsExpression,
     )]
-    #[sql_type = "diesel::sql_types::Text"]
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub enum Scope {
         $(#[serde(rename = $scope)] $variant,)*
         Unknown,
@@ -473,25 +477,19 @@ macro_rules! scopes {
         }
     }
 
-    impl<DB> diesel::serialize::ToSql<diesel::sql_types::Text, DB> for Scope
-    where
-        DB: diesel::backend::Backend,
-        String: diesel::serialize::ToSql<diesel::sql_types::Text, DB>,
-    {
-        fn to_sql<W>(&self, out: &mut diesel::serialize::Output<W, DB>) -> diesel::serialize::Result
-        where
-            W: std::io::Write,
-        {
-            self.to_string().to_sql(out)
+    impl ToSql<diesel::sql_types::Text, Sqlite> for Scope {
+        fn to_sql<'b>(&self, out: &mut diesel::serialize::Output<'b, '_, Sqlite>) -> diesel::serialize::Result {
+            out.set_value(self.to_string());
+            Ok(IsNull::No)
         }
     }
 
     impl<DB> diesel::deserialize::FromSql<diesel::sql_types::Text, DB> for Scope
     where
-        DB: diesel::backend::Backend,
+        DB: Backend,
         String: diesel::deserialize::FromSql<diesel::sql_types::Text, DB>,
     {
-        fn from_sql(bytes: Option<&DB::RawValue>) -> diesel::deserialize::Result<Self> {
+        fn from_sql(bytes: RawValue<'_, DB>) -> diesel::deserialize::Result<Self> {
             let s = String::from_sql(bytes)?;
             Ok(str::parse(&s)?)
         }
@@ -515,7 +513,7 @@ macro_rules! roles {
         diesel::FromSqlRow,
         diesel::AsExpression,
     )]
-    #[sql_type = "diesel::sql_types::Text"]
+    #[diesel(sql_type = diesel::sql_types::Text)]
     pub enum Role {
         $(#[serde(rename = $role)] $variant,)*
         Unknown,
@@ -550,25 +548,19 @@ macro_rules! roles {
         }
     }
 
-    impl<DB> diesel::serialize::ToSql<diesel::sql_types::Text, DB> for Role
-    where
-        DB: diesel::backend::Backend,
-        String: diesel::serialize::ToSql<diesel::sql_types::Text, DB>,
-    {
-        fn to_sql<W>(&self, out: &mut diesel::serialize::Output<W, DB>) -> diesel::serialize::Result
-        where
-            W: std::io::Write,
-        {
-            self.to_string().to_sql(out)
+    impl ToSql<diesel::sql_types::Text, Sqlite> for Role {
+        fn to_sql<'b>(&self, out: &mut diesel::serialize::Output<'b, '_, Sqlite>) -> diesel::serialize::Result {
+            out.set_value(self.to_string());
+            Ok(IsNull::No)
         }
     }
 
     impl<DB> diesel::deserialize::FromSql<diesel::sql_types::Text, DB> for Role
     where
-        DB: diesel::backend::Backend,
+        DB: Backend,
         String: diesel::deserialize::FromSql<diesel::sql_types::Text, DB>,
     {
-        fn from_sql(bytes: Option<&DB::RawValue>) -> diesel::deserialize::Result<Self> {
+        fn from_sql(bytes: RawValue<'_, DB>) -> diesel::deserialize::Result<Self> {
             let s = String::from_sql(bytes)?;
             Ok(str::parse(&s)?)
         }
