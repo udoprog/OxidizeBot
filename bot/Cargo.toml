@@ -25,7 +25,7 @@ serde_urlencoded = "0.7.1"
 reqwest = "0.11.13"
 Inflector = "0.11.4"
 warp = "0.3.3"
-tokio = { version = "1.24.1", features = ["full"] }
+tokio = { version = "1.24.2", features = ["full"] }
 tokio-tungstenite = { version = "0.18.0", features = ["rustls"] }
 tungstenite = "0.18.0"
 tokio-stream = "0.1.11"
