@@ -1,5 +1,4 @@
 [workspace]
-
 default-members = ["bot"]
 members = ["bot", "web"]
 exclude = ["tools/builder"]

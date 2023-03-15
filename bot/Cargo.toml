@@ -3,8 +3,14 @@ name = "oxidize"
 version = "0.0.0"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2018"
+description = "A high performance Twitch Bot powered by Rust"
+documentation = "https://docs.rs/oxidize"
+readme = "README.md"
+homepage = "https://github.com/udoprog/OxidizeBot"
+repository = "https://github.com/udoprog/OxidizeBot"
 license = "MIT/Apache-2.0"
-description = "High octane Twitch bot powered by Rust"
+keywords = ["twitch"]
+categories = ["games"]
 
 [dependencies]
 argwerk = "0.20.2"

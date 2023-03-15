@@ -1,44 +1,27 @@
 name: CI
 
 on:
+  pull_request: {}
   push:
     branches:
       - main
-  pull_request: {}
 
 jobs:
-  check_formatting:
-    name: Check Formatting
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          components: rustfmt
-      - run: cargo fmt --all -- --check
-  build:
-    name: Build
+  test:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
-    - name: Checkout
-      uses: actions/checkout@v1
-    - name: Setup Toolchain
-      uses: actions-rs/toolchain@v1
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
+    - run: cargo test --all
+
+  rustfmt:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: stable
-        override: true
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --all
-    - name: Test
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --all
+        components: rustfmt
+    - run: cargo fmt --all --check
