@@ -28,7 +28,7 @@ log = "0.4.17"
 pretty_env_logger = "0.4.0"
 reqwest = "0.11.14"
 chrono = { version = "0.4.24", features = ["serde"] }
-clap = "4.1.8"
+clap = { version = "4.1.8", features = ["derive"] }
 rust-embed = { version = "6.6.0", features = ["interpolate-folder-path"] }
 mime_guess = "2.0.4"
 mime = "0.3.16"
@@ -39,8 +39,8 @@ time = "0.3.20"
 async-oauth2 = "0.4.1"
 url = { version = "2.3.1", features = ["serde"] }
 parking_lot = "0.12.1"
-sled28 = { package = "sled", version = "0.34.7" }
-sled31 = { package = "sled", version = "0.34.7" }
+sled28 = { package = "sled", version = "0.28.0" }
+sled31 = { package = "sled", version = "0.31.0" }
 ring = "0.16.20"
 relative-path = { version = "1.8.0", features = ["serde"] }
 pin-utils = "0.1.0"

@@ -38,9 +38,11 @@ impl Session {
     where
         T: Serialize,
     {
+        use base64::prelude::*;
+
         let data = serde_cbor::to_vec(&value)?;
         let data = self.sealer.encrypt(&data)?;
-        let data = base64::encode(&data);
+        let data = BASE64_STANDARD.encode(&data);
 
         let mut jar = CookieJar::new();
         jar.add(self.cookie(name.to_string(), data).finish());
@@ -57,7 +59,7 @@ impl Session {
         headers.insert(
             header::SET_COOKIE,
             self.cookie(name.to_string(), "")
-                .expires(time::OffsetDateTime::unix_epoch())
+                .expires(time::OffsetDateTime::UNIX_EPOCH)
                 .finish()
                 .encoded()
                 .to_string()
@@ -96,6 +98,8 @@ impl Session {
 
     /// Verify cookie.
     fn verify_cookie<B>(&self, req: &Request<B>) -> Result<Option<db::User>, Error> {
+        use base64::prelude::*;
+
         // Get it through cookie.
         let jar = match self.cookies_from_header(req)? {
             Some(jar) => jar,
@@ -107,7 +111,7 @@ impl Session {
             None => return Ok(None),
         };
 
-        let data = base64::decode(cookie.value())?;
+        let data = BASE64_STANDARD.decode(cookie.value())?;
 
         let data = match self.sealer.decrypt(&data)? {
             Some(data) => data,

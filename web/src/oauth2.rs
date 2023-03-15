@@ -1,5 +1,5 @@
 use ::oauth2::{
-    AccessToken, AuthorizationCode, Client, ClientSecret, RefreshToken, RequestTokenError, Scope,
+    AccessToken, AuthorizationCode, Client, ClientSecret, ExecuteError, RefreshToken, Scope,
     StandardToken, State, Token, TokenType,
 };
 use anyhow::{anyhow, bail, Error};
@@ -103,9 +103,10 @@ impl SavedToken {
 
     /// Generate a unique hash corresponding to this token.
     pub fn hash(&self) -> Result<String, Error> {
+        use base64::prelude::*;
         let bytes = serde_cbor::to_vec(&[&self.client_id, &*self.access_token])?;
         let digest = ring::digest::digest(&ring::digest::SHA256, &bytes);
-        Ok(base64::encode(digest.as_ref()))
+        Ok(BASE64_STANDARD.encode(digest.as_ref()))
     }
 }
 
@@ -273,7 +274,7 @@ impl Flow {
 
         let token_response = match token_response {
             Ok(t) => t,
-            Err(RequestTokenError::BadResponse {
+            Err(ExecuteError::BadResponse {
                 status,
                 body,
                 error,
@@ -313,7 +314,7 @@ impl Flow {
     pub async fn refresh_token(
         &self,
         refresh_token: &RefreshToken,
-    ) -> Result<SavedToken, RequestTokenError> {
+    ) -> Result<SavedToken, ExecuteError> {
         match self.config.ty {
             FlowType::Twitch => self.refresh_token_inner::<TwitchToken>(refresh_token).await,
             FlowType::YouTube => {
@@ -335,7 +336,7 @@ impl Flow {
     async fn refresh_token_inner<T>(
         &self,
         refresh_token: &RefreshToken,
-    ) -> Result<SavedToken, RequestTokenError>
+    ) -> Result<SavedToken, ExecuteError>
     where
         T: Token,
     {

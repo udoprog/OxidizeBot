@@ -1,8 +1,11 @@
-use crate::api;
-use crate::db;
-use crate::oauth2;
-use crate::session;
-use crate::stream::StreamExt as _;
+use std::collections::HashMap;
+use std::error::Error as _;
+use std::fmt;
+use std::future::Future;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time;
+
 use ::oauth2::State;
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
@@ -14,18 +17,17 @@ use hyper::service;
 use hyper::{Request, Response, StatusCode};
 use parking_lot::Mutex;
 use relative_path::RelativePathBuf;
+use rust_embed::EmbeddedFile;
 use serde::{de, Deserialize, Serialize};
 use smallvec::SmallVec;
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::error::Error as _;
-use std::fmt;
-use std::future::Future;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time;
 use thiserror::Error;
 use url::Url;
+
+use crate::api;
+use crate::db;
+use crate::oauth2;
+use crate::session;
+use crate::stream::StreamExt as _;
 
 macro_rules! log_error {
     ($e:expr, $fmt:expr $(, $($tt:tt)*)?) => {{
@@ -210,7 +212,7 @@ pub struct Handler {
     db: db::Database,
     config: Config,
     session: session::Session,
-    fallback: Cow<'static, [u8]>,
+    fallback: EmbeddedFile,
     id_twitch_client: api::IdTwitchClient,
     spotify: api::Spotify,
     login_flow: Arc<oauth2::Flow>,
@@ -223,7 +225,7 @@ pub struct Handler {
 impl Handler {
     /// Construct a new server.
     pub fn new(
-        fallback: Cow<'static, [u8]>,
+        fallback: EmbeddedFile,
         db: db::Database,
         config: Config,
         pending_tokens: Arc<Mutex<HashMap<State, PendingToken>>>,
@@ -266,9 +268,9 @@ impl Handler {
                     r.headers_mut().insert(header::EXPIRES, expires);
                 }
 
-                (mime, asset)
+                (mime, asset.data)
             }
-            None => (mime::TEXT_HTML_UTF_8, self.fallback.clone()),
+            None => (mime::TEXT_HTML_UTF_8, self.fallback.data.clone()),
         };
 
         *r.body_mut() = Body::from(asset);
@@ -714,6 +716,8 @@ impl Handler {
 
     /// Generate a new key.
     async fn create_key(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+        use base64::prelude::*;
+
         let user = self.verify(req)?;
 
         use ring::rand::SecureRandom as _;
@@ -722,7 +726,7 @@ impl Handler {
         self.random
             .fill(&mut buf)
             .map_err(|_| anyhow!("failed to generate random key"))?;
-        let key = base64::encode(&buf);
+        let key = BASE64_STANDARD.encode(&buf);
         self.db.insert_key(&user.user_id, &key)?;
 
         return json_ok(&KeyInfo { key });

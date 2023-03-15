@@ -1,58 +1,50 @@
-use anyhow::{bail, Result};
+use std::fs;
+use std::path::Path;
+use std::path::PathBuf;
+use std::time;
+
+use anyhow::{bail, Context, Result};
+use clap::Parser;
 use oxidize_web::api;
 use oxidize_web::db;
 use oxidize_web::web;
-use std::fs;
-use std::path::Path;
-use std::time;
 
-const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-fn opts() -> clap::App<'static, 'static> {
-    clap::App::new("Oxidize Web")
-        .version(VERSION)
-        .author("John-John Tedro <udoprog@tedro.se>")
-        .about("Web Components of Oxidize")
-        .arg(
-            clap::Arg::with_name("config")
-                .takes_value(true)
-                .long("config")
-                .help("Configuration file to use."),
-        )
-        .arg(
-            clap::Arg::with_name("port")
-                .takes_value(true)
-                .long("port")
-                .help("Port to bind to."),
-        )
+#[derive(Parser)]
+#[command(author, version, about, version, long_about = None)]
+struct Opts {
+    /// Configuration file to use.
+    #[arg(long)]
+    pub(crate) config: Option<PathBuf>,
+    /// Host to bind to.
+    #[arg(long)]
+    pub(crate) host: Option<String>,
+    /// Port to bind to.
+    #[arg(long)]
+    pub(crate) port: Option<u32>,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     pretty_env_logger::init();
 
-    let opts = opts();
-    let m = opts.get_matches();
+    let opts = Opts::try_parse()?;
 
-    let config_path = match m.value_of("config") {
-        Some(config_path) => Path::new(config_path),
+    let config_path = match &opts.config {
+        Some(config_path) => config_path,
         None => Path::new("config.toml"),
     };
 
     let root = match config_path.parent() {
         Some(root) => root.to_owned(),
-        None => std::env::current_dir().expect("process to have a current directory"),
+        None => std::env::current_dir().context("process to have a current directory")?,
     };
 
-    let host = match m.value_of("host") {
-        Some(host) => host.to_string(),
+    let host = match opts.host {
+        Some(host) => host,
         None => "127.0.0.1".to_string(),
     };
 
-    let port = match m.value_of("port") {
-        Some(port) => str::parse(port)?,
-        None => 8000,
-    };
+    let port = opts.port.unwrap_or(8000);
 
     log::info!("Loading config: {}", config_path.display());
     let config = toml::from_str::<web::Config>(&fs::read_to_string(config_path)?)?;
