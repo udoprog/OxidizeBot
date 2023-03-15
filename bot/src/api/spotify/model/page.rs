@@ -1,8 +1,7 @@
 //! All kinds of page object
 use serde::{Deserialize, Serialize};
 
-///Basic page
-///ppaging abject(https://developer.spotify.com/web-api/object-model/#paging-object)
+/// [Basic page object](https://developer.spotify.com/web-api/object-model/#paging-object)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Page<T> {
     pub href: String,
@@ -14,7 +13,7 @@ pub struct Page<T> {
     pub total: u32,
 }
 /// cursor based page
-///[cursor based paging object](https://developer.spotify.com/web-api/object-model/#cursor-based-paging-object)
+/// [cursor based paging object](https://developer.spotify.com/web-api/object-model/#cursor-based-paging-object)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CursorBasedPage<T> {
     pub href: String,
