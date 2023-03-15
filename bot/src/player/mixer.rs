@@ -99,9 +99,7 @@ impl Mixer {
             return Ok(vec![]);
         }
 
-        let purged = std::mem::replace(&mut self.queue, VecDeque::new())
-            .into_iter()
-            .collect();
+        let purged = std::mem::take(&mut self.queue).into_iter().collect();
 
         self.db.player_song_purge().await?;
         Ok(purged)
@@ -224,7 +222,7 @@ impl Mixer {
 
         // Take next from queue.
         if let Some(item) = self.pop_front().await? {
-            return Ok(Some(Song::new(item.clone(), Default::default())));
+            return Ok(Some(Song::new(item, Default::default())));
         }
 
         if self.fallback_items.is_empty() {

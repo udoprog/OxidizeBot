@@ -40,7 +40,7 @@ pub fn run(
 
                     releases.sort_by(|a, b| b.published_at.cmp(&a.published_at));
 
-                    let release = match releases.into_iter().filter(|r| !r.prerelease).next() {
+                    let release = match releases.into_iter().find(|r| !r.prerelease) {
                         Some(release) => release,
                         None => continue,
                     };

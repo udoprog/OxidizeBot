@@ -35,10 +35,7 @@ impl ScriptStorage {
                 let filter =
                     dsl::script_keys.filter(dsl::channel.eq(&channel).and(dsl::key.eq(&key)));
 
-                let first = filter
-                    .clone()
-                    .first::<db::models::ScriptKey>(c)
-                    .optional()?;
+                let first = filter.first::<db::models::ScriptKey>(c).optional()?;
 
                 match first {
                     None => {
@@ -81,10 +78,7 @@ impl ScriptStorage {
                 let filter =
                     dsl::script_keys.filter(dsl::channel.eq(&channel).and(dsl::key.eq(&key)));
 
-                let first = filter
-                    .clone()
-                    .first::<db::models::ScriptKey>(c)
-                    .optional()?;
+                let first = filter.first::<db::models::ScriptKey>(c).optional()?;
 
                 match first {
                     None => Ok(None),

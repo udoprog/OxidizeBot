@@ -91,7 +91,7 @@ impl PlayerInternal {
 
         if !self.initialized.queue {
             self.mixer
-                .initialize_queue(&*self.spotify, &*self.youtube)
+                .initialize_queue(&self.spotify, &self.youtube)
                 .await?;
 
             self.initialized.queue = true;
@@ -441,18 +441,15 @@ impl PlayerInternal {
 
         log::trace!("Pausing player");
 
-        match self.playback_mode {
-            PlaybackMode::Default => {
-                if !self.injector.exists::<Song>().await {
-                    if let Some(song) = self.mixer.next_song().await? {
-                        self.play_song(source, song).await?;
-                    }
+        if let PlaybackMode::Default = self.playback_mode {
+            if !self.injector.exists::<Song>().await {
+                if let Some(song) = self.mixer.next_song().await? {
+                    self.play_song(source, song).await?;
                 }
-
-                self.global_bus.send(bus::Global::SongModified).await;
-                self.bus.send_sync(Event::Modified);
             }
-            _ => (),
+
+            self.global_bus.send(bus::Global::SongModified).await;
+            self.bus.send_sync(Event::Modified);
         }
 
         Ok(())
@@ -558,7 +555,7 @@ impl PlayerInternal {
                     };
 
                     let track_id = TrackId::Spotify(
-                        SpotifyId::from_base62(&track_id)
+                        SpotifyId::from_base62(track_id)
                             .map_err(|_| anyhow!("bad spotify id: {}", track_id))?,
                     );
 
@@ -566,7 +563,9 @@ impl PlayerInternal {
 
                     let item = Item {
                         track_id,
-                        track: Track::Spotify { track },
+                        track: Track::Spotify {
+                            track: Box::new(track),
+                        },
                         user: None,
                         duration,
                     };
@@ -717,11 +716,8 @@ impl PlayerInternal {
     pub(super) async fn update_playback_mode(&mut self, mode: PlaybackMode) -> Result<()> {
         self.playback_mode = mode;
 
-        match mode {
-            PlaybackMode::Queue => {
-                self.detach().await?;
-            }
-            _ => {}
+        if let PlaybackMode::Queue = mode {
+            self.detach().await?;
         }
 
         Ok(())
@@ -780,7 +776,7 @@ impl PlayerInternal {
                 if !duplicate_duration.is_empty() {
                     if let Some(last) = self
                         .mixer
-                        .last_song_within(&track_id, duplicate_duration.clone())
+                        .last_song_within(&track_id, duplicate_duration)
                         .await
                         .map_err(AddTrackError::Error)?
                     {
@@ -829,8 +825,8 @@ impl PlayerInternal {
         }
 
         let item = convert_item(
-            &*self.spotify,
-            &*self.youtube,
+            &self.spotify,
+            &self.youtube,
             Some(user),
             &track_id,
             None,
@@ -880,8 +876,8 @@ impl PlayerInternal {
         market: Option<&str>,
     ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
         let item = convert_item(
-            &*self.spotify,
-            &*self.youtube,
+            &self.spotify,
+            &self.youtube,
             Some(user),
             &track_id,
             None,

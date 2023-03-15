@@ -65,14 +65,11 @@ impl Database {
         self.0
             .asyncify(move |c| {
                 let filter = dsl::bad_words.filter(dsl::word.eq(&word));
-                let b = filter.clone().first::<db::models::BadWord>(c).optional()?;
+                let b = filter.first::<db::models::BadWord>(c).optional()?;
 
                 match b {
                     None => {
-                        let bad_word = db::models::BadWord {
-                            word,
-                            why: why.map(|s| s.to_string()),
-                        };
+                        let bad_word = db::models::BadWord { word, why };
 
                         diesel::insert_into(dsl::bad_words)
                             .values(&bad_word)

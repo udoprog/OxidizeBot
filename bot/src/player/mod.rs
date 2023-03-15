@@ -130,7 +130,12 @@ pub(self) async fn convert_item(
             let track = spotify.track(track_id_string, market).await?;
             let duration = Duration::from_millis(track.duration_ms.into());
 
-            (Track::Spotify { track }, duration)
+            (
+                Track::Spotify {
+                    track: Box::new(track),
+                },
+                duration,
+            )
         }
         TrackId::YouTube(id) => {
             if !youtube.token.is_ready().await {
@@ -150,7 +155,12 @@ pub(self) async fn convert_item(
                 .ok_or_else(|| anyhow::anyhow!("video does not have content details"))?;
 
             let duration = str::parse::<utils::PtDuration>(&content_details.duration)?;
-            (Track::YouTube { video }, duration.into_std())
+            (
+                Track::YouTube {
+                    video: Box::new(video),
+                },
+                duration.into_std(),
+            )
         }
     };
 
@@ -460,12 +470,10 @@ impl Player {
         if q.starts_with("youtube:") {
             let q = q.trim_start_matches("youtube:");
             let results = inner.youtube.search(q).await?;
-
-            let result = results.items.into_iter().filter(|r| match r.id.kind {
-                api::youtube::Kind::Video => true,
-                _ => false,
-            });
-
+            let result = results
+                .items
+                .into_iter()
+                .filter(|r| matches!(r.id.kind, api::youtube::Kind::Video));
             let mut result = result.flat_map(|r| r.id.video_id);
             return Ok(result.next().map(TrackId::YouTube));
         }
@@ -504,8 +512,8 @@ impl Player {
         let duration = theme.end.clone().map(|o| o.as_duration());
 
         let item = convert_item(
-            &*inner.spotify,
-            &*inner.youtube,
+            &inner.spotify,
+            &inner.youtube,
             None,
             &theme.track_id,
             duration,
@@ -603,7 +611,7 @@ impl Player {
 
         if let Some(c) = inner.injector.get::<Song>().await {
             if predicate(&c.item) {
-                return Some((Default::default(), c.item.clone()));
+                return Some((Default::default(), c.item));
             }
 
             duration += c.remaining();

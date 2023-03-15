@@ -29,7 +29,7 @@ impl Database {
                 let filter =
                     dsl::themes.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
 
-                let first = filter.clone().first::<db::models::Theme>(c).optional()?;
+                let first = filter.first::<db::models::Theme>(c).optional()?;
 
                 match first {
                     None => {

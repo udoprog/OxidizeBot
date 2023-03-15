@@ -28,9 +28,7 @@ pub(crate) async fn task(
                 feedback_loop.set(new_feedback_loop(player));
             }
             result = &mut feedback_loop => {
-                if let Err(e) = result.context("feedback loop errored") {
-                    return Err(e.into());
-                }
+                result.context("feedback loop errored")?
             }
         }
     }

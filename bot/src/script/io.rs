@@ -8,7 +8,7 @@ pub(crate) fn module() -> Result<Module, ContextError> {
     m.raw_fn(&["dbg"], dbg_impl)?;
     m.function(&["print"], print_impl)?;
     m.function(&["println"], println_impl)?;
-    return Ok(m);
+    Ok(m)
 }
 
 fn dbg_impl(stack: &mut Stack, args: usize) -> Result<(), VmError> {
@@ -19,7 +19,7 @@ fn dbg_impl(stack: &mut Stack, args: usize) -> Result<(), VmError> {
 
     for value in it {
         write!(string, "{:?}", value).map_err(VmError::panic)?;
-        string.push_str("\n");
+        string.push('\n');
     }
 
     if let Some(value) = last {

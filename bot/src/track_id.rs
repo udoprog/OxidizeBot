@@ -78,10 +78,7 @@ impl fmt::Display for TrackId {
 impl TrackId {
     /// Test if this is a youtube track.
     pub fn is_youtube(&self) -> bool {
-        match *self {
-            TrackId::YouTube(..) => true,
-            _ => false,
-        }
+        matches!(self, TrackId::YouTube(..))
     }
 
     /// Get the URL for this track.
@@ -161,27 +158,25 @@ impl TrackId {
 
         return str::parse(s);
 
+        #[inline]
         fn is_long_youtube(host: &url::Host<&str>) -> bool {
-            match *host {
-                url::Host::Domain("youtube.com") => true,
-                url::Host::Domain("www.youtube.com") => true,
-                _ => false,
-            }
+            matches!(
+                host,
+                url::Host::Domain("youtube.com") | url::Host::Domain("www.youtube.com")
+            )
         }
 
+        #[inline]
         fn is_short_youtube(host: &url::Host<&str>) -> bool {
-            match *host {
-                url::Host::Domain("youtu.be") => true,
-                _ => false,
-            }
+            matches!(host, url::Host::Domain("youtu.be"))
         }
     }
 }
 
 impl diesel::serialize::ToSql<diesel::sql_types::Text, Sqlite> for TrackId {
-    fn to_sql<'b>(
+    fn to_sql(
         &self,
-        out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
+        out: &mut diesel::serialize::Output<'_, '_, Sqlite>,
     ) -> diesel::serialize::Result {
         out.set_value(self.to_string());
         Ok(IsNull::No)

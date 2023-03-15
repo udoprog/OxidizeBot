@@ -29,7 +29,7 @@ impl command::Handler for Handler {
             .currency
             .load()
             .await
-            .ok_or_else(|| respond_err!("No currency configured"))?;
+            .ok_or(respond_err!("No currency configured"))?;
 
         match ctx.next().as_deref() {
             None => {

@@ -45,7 +45,7 @@ impl GitHub {
             &["repos", user.as_str(), repo.as_str(), "releases"],
         );
 
-        Ok(req.execute().await?.json()?)
+        req.execute().await?.json()
     }
 
     /// Get all releases for the given repo.
@@ -55,7 +55,7 @@ impl GitHub {
             &["repos", user.as_str(), repo.as_str(), "releases", "latest"],
         );
 
-        Ok(req.execute().await?.json()?)
+        req.execute().await?.json()
     }
 }
 

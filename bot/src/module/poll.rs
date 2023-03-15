@@ -69,14 +69,14 @@ impl command::Handler for Poll {
                         *polls
                             .iter()
                             .max_by_key(|e| e.1.created_at)
-                            .ok_or_else(|| respond_err!("No running polls"))?
+                            .ok_or(respond_err!("No running polls"))?
                             .0
                     }
                 };
 
                 let poll = polls
                     .remove(&id)
-                    .ok_or_else(|| respond_err!("No poll with id `{}`!", id))?;
+                    .ok_or(respond_err!("No poll with id `{}`!", id))?;
 
                 ctx.remove_hook(id).await;
                 let results = poll.close().await;

@@ -90,7 +90,7 @@ pub(super) enum ConnectError {
 impl ConnectError {
     fn handle(result: Result<bool>, what: &'static str) -> Result<(), ConnectError> {
         match result {
-            Err(e) => Err(ConnectError::Error(what, e.into())),
+            Err(e) => Err(ConnectError::Error(what, e)),
             Ok(true) => Ok(()),
             Ok(false) => Err(ConnectError::NoDevice(what)),
         }

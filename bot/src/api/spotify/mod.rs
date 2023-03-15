@@ -194,7 +194,7 @@ impl Spotify {
             r.query_param("device_id", device_id);
         }
 
-        r.query_param("uri", &track_uri)
+        r.query_param("uri", track_uri)
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json");
 
@@ -260,7 +260,7 @@ impl Spotify {
             let mut next_url = page.next;
 
             loop {
-                while let Some(item) = current.next() {
+                for item in current.by_ref() {
                     yield item;
                 }
 

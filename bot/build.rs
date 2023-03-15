@@ -102,7 +102,7 @@ fn main() -> Result<()> {
     let user_agent;
 
     let output = Command::new("git")
-        .args(&["rev-parse", "--short", "HEAD"])
+        .args(["rev-parse", "--short", "HEAD"])
         .output()?;
 
     let rev = std::str::from_utf8(&output.stdout)?.trim();
@@ -121,7 +121,7 @@ fn main() -> Result<()> {
     }
 
     fs::write(out_dir.join("version.txt"), &version).context("writing version.txt")?;
-    fs::write(out_dir.join("user_agent.txt"), &user_agent).context("writing user_agent.txt")?;
+    fs::write(out_dir.join("user_agent.txt"), user_agent).context("writing user_agent.txt")?;
 
     // backtrace compile probe
     match backtrace_compile_probe() {

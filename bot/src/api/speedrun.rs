@@ -136,11 +136,10 @@ impl Speedrun {
 
         req.query_param("top", top.to_string().as_str());
 
-        Ok(req
-            .execute()
+        req.execute()
             .await?
             .empty_on_status(StatusCode::NO_CONTENT)
-            .json()?)
+            .json()
     }
 
     /// Get all records associated with a category.
@@ -164,7 +163,7 @@ impl Speedrun {
         }
 
         for (key, value) in &variables.0 {
-            request.query_param(&format!("var-{}", key), &value);
+            request.query_param(&format!("var-{}", key), value);
         }
 
         let data: Option<Data<GameRecord>> = request
@@ -405,9 +404,9 @@ pub struct Guest {
 #[serde(tag = "rel")]
 pub enum Players {
     #[serde(rename = "user")]
-    User(User),
+    User(Box<User>),
     #[serde(rename = "guest")]
-    Guest(Guest),
+    Guest(Box<Guest>),
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

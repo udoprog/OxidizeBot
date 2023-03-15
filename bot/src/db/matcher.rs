@@ -70,7 +70,7 @@ where
                     self.by_channel_regex
                         .entry(key.channel.clone())
                         .or_default()
-                        .remove(&key);
+                        .remove(key);
                 }
             }
 

@@ -129,10 +129,7 @@ impl RemoteBuilder {
         if self.enabled {
             remote.rx = Some(self.global_bus.subscribe());
 
-            remote.player = match self.player.as_ref() {
-                Some(player) => Some(player.clone()),
-                None => None,
-            };
+            remote.player = self.player.as_ref().cloned();
         } else {
             remote.rx = None;
             remote.player = None;
@@ -197,10 +194,7 @@ pub async fn run(
         secret_key,
     };
 
-    remote_builder.api_url = match api_url.and_then(|s| parse_url(&s)) {
-        Some(api_url) => Some(api_url),
-        None => None,
-    };
+    remote_builder.api_url = api_url.and_then(|s| parse_url(&s));
 
     let mut remote = Remote::default();
     remote_builder.init(&mut remote).await;
@@ -221,10 +215,7 @@ pub async fn run(
                     remote_builder.init(&mut remote).await;
                 }
                 api_url = api_url_stream.recv() => {
-                    remote_builder.api_url = match api_url.and_then(|s| parse_url(&s)) {
-                        Some(api_url) => Some(api_url),
-                        None => None,
-                    };
+                    remote_builder.api_url = api_url.and_then(|s| parse_url(&s));
 
                     remote_builder.init(&mut remote).await;
                 }

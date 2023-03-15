@@ -142,6 +142,7 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Execute the request.
+    #[allow(clippy::match_ref_pats)]
     pub async fn execute(&self) -> Result<Response<Bytes>> {
         // NB: scope to only lock the token over the request setup.
         log::trace!("Request: {}: {}", self.method, self.url);

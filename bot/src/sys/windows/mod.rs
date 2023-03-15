@@ -110,7 +110,7 @@ impl System {
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
         )?;
 
-        key.set("OxidizeBot", &Self::run_registry_entry()?)?;
+        key.set("OxidizeBot", Self::run_registry_entry()?)?;
         Ok(())
     }
 
@@ -187,7 +187,7 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                             window.set_icon_from_buffer(ICON, 128, 128)?;
                         }
                         Event::Errored(message) => {
-                            let message = format!("{}", message);
+                            let message = message.to_string();
                             window.set_tooltip(&message)?;
                             window.set_icon_from_buffer(ICON_ERROR, 128, 128)?;
                         }
@@ -202,7 +202,7 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                     match e {
                         window::Event::MenuClicked(idx) => match idx {
                             0 => {
-                                let _ = webbrowser::open(web::URL)?;
+                                webbrowser::open(web::URL)?;
                             }
                             2 => {
                                 let _ = open_dir(&log_file)?;
@@ -224,7 +224,7 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                         }
                         window::Event::BalloonClicked => {
                             if let Some(Some(mut cb)) = notification_on_click.pop_front() {
-                                let _ = cb()?;
+                                cb()?;
                             }
                         }
                         window::Event::BalloonTimeout => {

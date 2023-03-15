@@ -147,16 +147,16 @@ pub fn setup(
         loop {
             tokio::select! {
                 _ = subs_interval.tick() => {
-                    if let Err(e) = future_info.refresh_subs(&twitch, &*streamer).await {
+                    if let Err(e) = future_info.refresh_subs(&twitch, &streamer).await {
                         log_error!(e, "failed to refresh subscriptions");
                     }
                 }
                 _ = stream_interval.tick() => {
                     let stream = future_info
-                        .refresh_stream(&twitch, &*streamer, &mut stream_state_tx);
+                        .refresh_stream(&twitch, &streamer, &mut stream_state_tx);
 
                     let channel = future_info
-                        .refresh_channel(&twitch, &*streamer);
+                        .refresh_channel(&twitch, &streamer);
 
                     tokio::try_join!(stream, channel)?;
                 }

@@ -63,10 +63,7 @@ impl command::Handler for Weather {
         match ctx.next().as_deref() {
             Some("current") => {
                 let api = self.api.read().await;
-                let api = api
-                    .as_ref()
-                    .ok_or_else(|| respond_err!("API not configured"))?
-                    .clone();
+                let api = api.as_ref().ok_or(respond_err!("API not configured"))?;
 
                 let loc = match ctx.rest() {
                     "" => self.location.load().await,

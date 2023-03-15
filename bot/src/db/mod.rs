@@ -89,14 +89,14 @@ impl Database {
 
         task::asyncify(move || {
             let mut guard = pool.lock();
-            task(&mut *guard)
+            task(&mut guard)
         })
         .await
     }
 
     /// Access auth from the database.
     pub async fn auth(&self, schema: crate::auth::Schema) -> Result<crate::auth::Auth, Error> {
-        Ok(crate::auth::Auth::new(self.clone(), schema).await?)
+        crate::auth::Auth::new(self.clone(), schema).await
     }
 
     /// Access settings from the database.

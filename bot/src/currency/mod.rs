@@ -135,20 +135,15 @@ impl CurrencyBuilder {
     }
 }
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, Default)]
 pub enum BackendType {
     #[serde(rename = "builtin")]
+    #[default]
     BuiltIn,
     #[serde(rename = "mysql")]
     Mysql,
     #[serde(rename = "honkos")]
     Honkos,
-}
-
-impl Default for BackendType {
-    fn default() -> Self {
-        BackendType::BuiltIn
-    }
 }
 
 enum Backend {

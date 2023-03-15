@@ -153,7 +153,7 @@ impl State {
 
         let result = self
             .streamer_twitch
-            .new_update_redemption_status(&broadcaster_id, &redemption, status)
+            .new_update_redemption_status(broadcaster_id, &redemption, status)
             .await;
 
         if let Err(e) = result {

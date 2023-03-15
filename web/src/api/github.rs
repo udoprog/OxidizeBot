@@ -36,7 +36,7 @@ impl GitHub {
     /// Get all releases for the given repo.
     pub async fn releases(&self, user: &str, repo: &str) -> Result<Vec<Release>, Error> {
         let req = self.request(Method::GET, &["repos", user, repo, "releases"]);
-        Ok(req.execute().await?)
+        req.execute().await
     }
 }
 

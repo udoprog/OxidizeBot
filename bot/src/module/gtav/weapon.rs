@@ -3,6 +3,7 @@ use std::fmt;
 macro_rules! weapons {
     ($($variant:ident, $id:expr, $cost:expr,)*) => {
         #[derive(Clone, Copy)]
+        #[allow(clippy::upper_case_acronyms)]
         pub enum Weapon {
             Random,
             $($variant,)*

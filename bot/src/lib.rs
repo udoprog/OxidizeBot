@@ -99,6 +99,8 @@
 
 #![recursion_limit = "1024"]
 #![cfg_attr(backtrace, feature(backtrace))]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::field_reassign_with_default)]
 
 #[macro_use]
 extern crate diesel;

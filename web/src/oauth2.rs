@@ -192,7 +192,7 @@ impl Flow {
         scopes.extend(self.config.scopes.iter().cloned());
 
         for s in &token.scopes {
-            scopes.remove(&s);
+            scopes.remove(s);
         }
 
         if !scopes.is_empty() {

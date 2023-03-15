@@ -94,7 +94,7 @@ pub struct ChatLog {
 impl ChatLog {
     pub async fn observe(&self, tags: &irc::Tags, user: &api::User, name: &str, message: &str) {
         let rendered = match self.emotes.as_ref() {
-            Some(emotes) => match emotes.render(&tags, user, name, message).await {
+            Some(emotes) => match emotes.render(tags, user, name, message).await {
                 Ok(rendered) => Some(rendered),
                 Err(e) => {
                     log::warn!("failed to render emotes: {}", e);
@@ -105,7 +105,7 @@ impl ChatLog {
         };
 
         self.message_log
-            .push_back(&tags, &name, message, rendered)
+            .push_back(tags, name, message, rendered)
             .await;
     }
 }

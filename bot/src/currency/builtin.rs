@@ -85,7 +85,7 @@ impl Backend {
                             .and(dsl::user.eq(&balance.user)),
                     );
 
-                    let b = filter.clone().first::<models::Balance>(c).optional()?;
+                    let b = filter.first::<models::Balance>(c).optional()?;
 
                     match b {
                         None => {
@@ -114,7 +114,7 @@ impl Backend {
         use self::schema::balances::dsl;
 
         let channel = channel_id(channel);
-        let user = user_id(&user);
+        let user = user_id(user);
 
         self.db
             .asyncify(move |c| {
@@ -168,7 +168,7 @@ impl Backend {
                     let filter = dsl::balances
                         .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&user)));
 
-                    let b = filter.clone().first::<models::Balance>(c).optional()?;
+                    let b = filter.first::<models::Balance>(c).optional()?;
 
                     match b {
                         None => {
@@ -206,7 +206,7 @@ fn modify_balance(c: &mut SqliteConnection, channel: &str, user: &str, amount: i
 
     let filter = dsl::balances.filter(dsl::channel.eq(channel).and(dsl::user.eq(user)));
 
-    match filter.clone().first::<models::Balance>(c).optional()? {
+    match filter.first::<models::Balance>(c).optional()? {
         None => {
             let balance = models::Balance {
                 channel: channel.to_string(),

@@ -14,7 +14,7 @@ pub enum Event {
     Enabled { enabled: bool },
     /// Indicate that the given message has been received.
     #[serde(rename = "message")]
-    Message(Message),
+    Message(Box<Message>),
     /// Indicates that a message with the given ID has been deleted.
     #[serde(rename = "delete-by-id")]
     DeleteById { id: String },
@@ -202,7 +202,7 @@ impl MessageLog {
         };
 
         if let Some(bus) = inner.bus.as_ref() {
-            bus.send(Event::Message(m.clone())).await;
+            bus.send(Event::Message(Box::new(m.clone()))).await;
         }
 
         inner.messages.push_back(m);

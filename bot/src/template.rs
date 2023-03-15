@@ -113,7 +113,7 @@ impl Template {
         return out;
 
         /// Helper to collect all expressions without recursing.
-        fn collect_element<'e>(out: &mut HashSet<String>, e: &'e TemplateElement) {
+        fn collect_element(out: &mut HashSet<String>, e: &TemplateElement) {
             let mut queue = VecDeque::new();
 
             queue.push_back(e);
@@ -121,7 +121,7 @@ impl Template {
             while let Some(e) = queue.pop_front() {
                 match e {
                     TemplateElement::Expression(helper) => {
-                        collect_helper(out, &mut queue, &*helper);
+                        collect_helper(out, &mut queue, helper);
                     }
                     TemplateElement::HtmlExpression(param) => {
                         collect_helper(out, &mut queue, param);
@@ -177,7 +177,7 @@ impl Template {
         let ctx = handlebars::Context::wraps(data)?;
         let mut render_context = handlebars::RenderContext::new(None);
         self.template
-            .render(&*REGISTRY, &ctx, &mut render_context, output)
+            .render(&REGISTRY, &ctx, &mut render_context, output)
             .map_err(Into::into)
     }
 }

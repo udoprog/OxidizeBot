@@ -3,7 +3,7 @@ use crate::prelude::*;
 use percent_encoding::PercentDecode;
 use std::borrow::Cow;
 use std::fmt;
-use std::mem;
+
 use std::ops;
 use std::sync::Arc;
 use std::time;
@@ -102,7 +102,7 @@ impl<'a> Iterator for QueryPairs<'a> {
                 self.query = &rest[1..];
                 s
             }
-            None => mem::replace(&mut self.query, ""),
+            None => std::mem::take(&mut self.query),
         };
 
         match s.find('=') {
@@ -131,7 +131,7 @@ impl ops::Deref for WordsStorage {
 
     fn deref(&self) -> &str {
         match self {
-            Self::Shared(s) => &*s,
+            Self::Shared(s) => s,
             Self::Static(s) => s,
         }
     }
@@ -188,7 +188,7 @@ impl Words {
 
     /// Access the underlying string.
     pub fn string(&self) -> &str {
-        &*self.string
+        &self.string
     }
 
     /// Take the next character.
@@ -308,7 +308,7 @@ impl<'a> Iterator for TrimmedWords<'a> {
 
         let (out, rest) = match self.string.find(is_trim_separator) {
             Some(n) => self.string.split_at(n),
-            None => return Some(mem::replace(&mut self.string, "")),
+            None => return Some(std::mem::take(&mut self.string)),
         };
 
         self.string = rest.trim_start_matches(is_trim_separator);
@@ -657,7 +657,7 @@ impl Cooldown {
     pub fn is_open(&mut self) -> bool {
         let now = time::Instant::now();
 
-        match self.check(now.clone()) {
+        match self.check(now) {
             None => {
                 self.poke(now);
                 true

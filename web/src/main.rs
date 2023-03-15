@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
 
         let mut count = 0;
 
-        for result in v28.scan_prefix(&[]) {
+        for result in v28.scan_prefix([]) {
             let (k, v) = result?;
             v31_db.insert(k, &*v)?;
             count += 1;

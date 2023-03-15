@@ -284,7 +284,7 @@ impl Database {
 
             match Key::deserialize(key.as_ref())? {
                 Key::Player { ref user_login } => {
-                    if let Some(partial) = Self::deserialize::<PlayerPartial>(&value).ok() {
+                    if let Ok(partial) = Self::deserialize::<PlayerPartial>(&value) {
                         out.push(PlayerEntry {
                             user_login: user_login.to_string(),
                             last_update: partial.last_update,
@@ -327,7 +327,7 @@ impl Database {
             user_id: user_id.to_string(),
         };
 
-        self.insert(&key, &user)
+        self.insert(&key, user)
     }
 
     /// Get information on the given user.
@@ -552,7 +552,7 @@ impl Database {
     where
         T: DeserializeOwned,
     {
-        serde_cbor::from_slice(&*value)
+        serde_cbor::from_slice(value)
     }
 }
 

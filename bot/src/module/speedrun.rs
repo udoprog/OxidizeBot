@@ -166,7 +166,7 @@ impl Speedrun {
             let mut name = category.name.clone();
 
             if let Some(c) = SubCategory::match_run(&run.run, &sub_categories) {
-                if !category_filter.match_sub_category(&c) {
+                if !category_filter.match_sub_category(c) {
                     continue;
                 }
 
@@ -447,7 +447,7 @@ impl Speedrun {
         speedrun: &'a CachedSpeedrun,
         player: &'a RelatedPlayer,
         match_user: Option<&'a str>,
-        embedded_players: &'a HashMap<String, User>,
+        embedded_players: &'a HashMap<String, Box<User>>,
     ) -> Result<Option<String>> {
         match *player {
             RelatedPlayer::Player(ref player) => {
@@ -551,7 +551,7 @@ struct CachedSpeedrun {
 
 impl CachedSpeedrun {
     /// Get cached user information by ID.
-    pub async fn user_by_id(&self, user: &str) -> Result<Option<User>> {
+    pub async fn user_by_id(&self, user: &str) -> Result<Option<Box<User>>> {
         let result = self
             .cache
             .wrap(
@@ -561,7 +561,7 @@ impl CachedSpeedrun {
             )
             .await?;
 
-        Ok(result)
+        Ok(result.map(Box::new))
     }
 
     /// Get personal bests by user.
@@ -573,12 +573,9 @@ impl CachedSpeedrun {
         let result = self
             .cache
             .wrap(
-                Key::UserPersonalBests {
-                    user_id,
-                    embeds: &embeds,
-                },
+                Key::UserPersonalBests { user_id, embeds },
                 chrono::Duration::hours(2),
-                self.speedrun.user_personal_bests(user_id, &embeds),
+                self.speedrun.user_personal_bests(user_id, embeds),
             )
             .await?;
 
@@ -820,7 +817,7 @@ fn abbreviate_text(mut text: &str) -> String {
                     out.push(' ');
                 }
 
-                let e = text.find(' ').unwrap_or_else(|| text.len());
+                let e = text.find(' ').unwrap_or(text.len());
                 out.push_str(&text[..e]);
                 text = &text[e..];
 
@@ -832,7 +829,7 @@ fn abbreviate_text(mut text: &str) -> String {
                     last_spacing = false;
                 }
 
-                let e = text.find(' ').unwrap_or_else(|| text.len());
+                let e = text.find(' ').unwrap_or(text.len());
 
                 for c in c.to_uppercase() {
                     out.push(c);

@@ -64,7 +64,7 @@ impl Song {
             }
         };
 
-        let track_id = match SpotifyId::from_base62(&track_id) {
+        let track_id = match SpotifyId::from_base62(track_id) {
             Ok(spotify_id) => TrackId::Spotify(spotify_id),
             Err(e) => {
                 log::warn!(
@@ -81,7 +81,9 @@ impl Song {
 
         let item = Arc::new(Item {
             track_id,
-            track: Track::Spotify { track },
+            track: Track::Spotify {
+                track: Box::new(track),
+            },
             user: None,
             duration,
         });

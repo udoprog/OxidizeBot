@@ -75,9 +75,9 @@ impl fmt::Display for Uri {
 }
 
 impl diesel::serialize::ToSql<diesel::sql_types::Text, Sqlite> for Uri {
-    fn to_sql<'b>(
+    fn to_sql(
         &self,
-        out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
+        out: &mut diesel::serialize::Output<'_, '_, Sqlite>,
     ) -> diesel::serialize::Result {
         out.set_value(self.to_string());
         Ok(IsNull::No)

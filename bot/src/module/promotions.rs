@@ -138,7 +138,7 @@ async fn promote(promotions: db::Promotions, sender: irc::Sender) -> Result<(), 
 
     if let Some(p) = pick(promotions.list(channel).await) {
         let text = p.render(&PromoData { channel })?;
-        promotions.bump_promoted_at(&*p).await?;
+        promotions.bump_promoted_at(&p).await?;
         sender.privmsg(text).await;
     }
 
@@ -162,7 +162,7 @@ fn pick(mut promotions: Vec<Arc<db::Promotion>>) -> Option<Arc<db::Promotion>> {
             Some(promoted_at) => promoted_at,
         };
 
-        if now.clone().signed_duration_since(promoted_at.clone()) < p.frequency.as_chrono() {
+        if now.signed_duration_since(*promoted_at) < p.frequency.as_chrono() {
             continue;
         }
 

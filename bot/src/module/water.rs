@@ -41,9 +41,9 @@ impl Handler {
             .as_ref()
             .map(|s| s.started_at);
 
-        let started_at = started_at.ok_or_else(|| {
-            respond_err!("Sorry, the !water command is currently not available :(")
-        })?;
+        let started_at = started_at.ok_or(respond_err!(
+            "Sorry, the !water command is currently not available :("
+        ))?;
 
         waters.push((started_at, None));
         Ok((started_at, None))

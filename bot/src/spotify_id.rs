@@ -57,8 +57,8 @@ impl SpotifyId {
         Ok(SpotifyId(n))
     }
 
-    pub fn to_base62(&self) -> String {
-        let &SpotifyId(mut n) = self;
+    pub fn to_base62(self) -> String {
+        let SpotifyId(mut n) = self;
 
         let mut data = [0u8; 22];
         let sixty_two = 62u128;

@@ -2,6 +2,7 @@
 #![type_length_limit = "4194304"]
 #![cfg_attr(feature = "windows", windows_subsystem = "windows")]
 #![cfg_attr(backtrace, feature(backtrace))]
+#![allow(clippy::field_reassign_with_default)]
 
 use anyhow::{anyhow, bail, Context, Result};
 use backoff::backoff::Backoff as _;
@@ -337,9 +338,7 @@ fn inner_main(args: Args) -> Result<()> {
 
     let storage = storage::Storage::open(&root.join("storage"))?;
 
-    let mut script_dirs = Vec::new();
-    script_dirs.push(root.join("scripts"));
-    script_dirs.push(PathBuf::from("scripts"));
+    let script_dirs = vec![root.join("scripts"), PathBuf::from("scripts")];
 
     loop {
         let runtime = {
@@ -433,14 +432,14 @@ fn inner_main(args: Args) -> Result<()> {
 async fn try_main(
     system: &sys::System,
     root: &Path,
-    script_dirs: &Vec<PathBuf>,
+    script_dirs: &[PathBuf],
     db: &db::Database,
     storage: &storage::Storage,
 ) -> Result<Intent> {
     log::info!("Starting Oxidize Bot Version {}", oxidize::VERSION);
 
     if !root.is_dir() {
-        std::fs::create_dir_all(&root)
+        std::fs::create_dir_all(root)
             .with_context(|| anyhow!("failed to create root: {}", root.display()))?;
     }
 
@@ -726,7 +725,7 @@ async fn try_main(
         modules,
         injector: injector.clone(),
         stream_state_tx,
-        script_dirs: script_dirs.clone(),
+        script_dirs: script_dirs.to_vec(),
     };
 
     futures.push(Box::pin(

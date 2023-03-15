@@ -129,7 +129,7 @@ impl Context {
         if let Some(cooldown) = scope_cooldowns.get_mut(&scope) {
             let now = Instant::now();
 
-            if let Some(duration) = cooldown.check(now.clone()) {
+            if let Some(duration) = cooldown.check(now) {
                 respond_bail!(
                     "Cooldown in effect for {}",
                     utils::compact_duration(duration),
@@ -197,7 +197,7 @@ impl Context {
     {
         Ok(self
             .next_parse_optional()?
-            .ok_or_else(|| respond_err!("Expected {}", m))?)
+            .ok_or(respond_err!("Expected {}", m))?)
     }
 
     /// Take the rest and parse as the given type.
@@ -225,6 +225,6 @@ impl Context {
     where
         M: fmt::Display,
     {
-        Ok(self.next().ok_or_else(|| respond_err!("Expected {}", m))?)
+        Ok(self.next().ok_or(respond_err!("Expected {}", m))?)
     }
 }

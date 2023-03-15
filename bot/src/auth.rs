@@ -24,7 +24,7 @@ pub struct Schema {
 impl Schema {
     /// Load schema from the given set of bytes.
     pub fn load_static() -> Result<Schema, anyhow::Error> {
-        Ok(serde_yaml::from_slice(SCHEMA).context("failed to load auth.yaml")?)
+        serde_yaml::from_slice(SCHEMA).context("failed to load auth.yaml")
     }
 }
 
@@ -48,8 +48,8 @@ impl std::str::FromStr for RoleOrUser {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.starts_with('@') {
-            let role = Role::from_str(&s[1..])?;
+        if let Some(s) = s.strip_prefix('@') {
+            let role = Role::from_str(s)?;
             return Ok(RoleOrUser::Role(role));
         }
 
@@ -159,7 +159,7 @@ impl Auth {
         let mut cooldowns = HashMap::new();
 
         for (scope, schema) in self.inner.schema.scopes.iter() {
-            if let Some(duration) = schema.cooldown.clone() {
+            if let Some(duration) = schema.cooldown {
                 cooldowns.insert(*scope, Cooldown::from_duration(duration));
             }
         }
@@ -569,18 +569,13 @@ macro_rules! roles {
 }
 
 /// The risk of a given scope.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, Default)]
 pub enum Risk {
     #[serde(rename = "high")]
     High,
     #[serde(rename = "default", other)]
+    #[default]
     Default,
-}
-
-impl Default for Risk {
-    fn default() -> Self {
-        Risk::Default
-    }
 }
 
 scopes! {

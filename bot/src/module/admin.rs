@@ -127,7 +127,7 @@ impl command::Handler for Handler {
             Some("enable-group") => {
                 let group = ctx
                     .next()
-                    .ok_or_else(|| respond_err!("Expected <group> to enable"))?;
+                    .ok_or(respond_err!("Expected <group> to enable"))?;
 
                 if let Some(aliases) = self.aliases.read().await.as_deref() {
                     aliases.enable_group(ctx.channel(), &group).await?;
@@ -150,7 +150,7 @@ impl command::Handler for Handler {
             Some("disable-group") => {
                 let group = ctx
                     .next()
-                    .ok_or_else(|| respond_err!("Expected <group> to disable"))?;
+                    .ok_or(respond_err!("Expected <group> to disable"))?;
 
                 if let Some(aliases) = self.aliases.read().await.as_deref() {
                     aliases.disable_group(ctx.channel(), &group).await?;
@@ -200,7 +200,7 @@ impl command::Handler for Handler {
                         let schema = self
                             .settings
                             .lookup(&key)
-                            .ok_or_else(|| respond_err!("No such setting"))?;
+                            .ok_or(respond_err!("No such setting"))?;
 
                         let value = schema.ty.parse_as_json(value).map_err(|e| {
                             respond_err!("Value is not a valid {} type: {}", schema.ty, e)
@@ -246,7 +246,7 @@ impl Handler {
             .settings
             .setting::<serde_json::Value>(&key)
             .await?
-            .ok_or_else(|| respond_err!("No setting matching key: {}", key))?;
+            .ok_or(respond_err!("No setting matching key: {}", key))?;
 
         if let Some(scope) = setting.schema().scope {
             if !ctx.user.has_scope(scope).await {
@@ -296,7 +296,7 @@ impl Handler {
         let schema = self
             .settings
             .lookup(key)
-            .ok_or_else(|| respond_err!("No such setting"))?;
+            .ok_or(respond_err!("No such setting"))?;
 
         // Test schema permissions.
         if let Some(scope) = schema.scope {
@@ -329,7 +329,7 @@ impl Handler {
 
 /// Extract a settings key from the context.
 fn key(ctx: &mut command::Context) -> Result<String> {
-    let key = ctx.next().ok_or_else(|| respond_err!("Expected <key>"))?;
+    let key = ctx.next().ok_or(respond_err!("Expected <key>"))?;
 
     if key.starts_with("secrets/") {
         respond_bail!("Cannot access secrets through chat!");

@@ -94,7 +94,7 @@ impl OpenWeatherMap {
     pub async fn current(&self, q: String) -> Result<Option<Current>> {
         let mut req = self.v2(Method::GET, &["weather"]);
         req.query_param("q", &q);
-        Ok(req.execute().await?.not_found().json()?)
+        req.execute().await?.not_found().json()
     }
 }
 

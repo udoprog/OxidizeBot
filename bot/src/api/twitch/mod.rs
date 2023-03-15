@@ -285,7 +285,7 @@ where
         let mut pagination = initial.pagination;
 
         loop {
-            while let Some(item) = page.next() {
+            for item in page.by_ref() {
                 yield item;
             }
 

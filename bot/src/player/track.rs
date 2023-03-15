@@ -7,9 +7,9 @@ use anyhow::Result;
 #[serde(tag = "type")]
 pub enum Track {
     #[serde(rename = "spotify")]
-    Spotify { track: api::spotify::FullTrack },
+    Spotify { track: Box<api::spotify::FullTrack> },
     #[serde(rename = "youtube")]
-    YouTube { video: api::youtube::Video },
+    YouTube { video: Box<api::youtube::Video> },
 }
 
 impl Track {
@@ -40,8 +40,8 @@ impl Track {
     /// TODO: this is a hack to avoid breaking web API.
     pub fn to_json(&self) -> Result<serde_json::Value> {
         let json = match *self {
-            Self::Spotify { ref track } => serde_json::to_value(&track)?,
-            Self::YouTube { ref video } => serde_json::to_value(&video)?,
+            Self::Spotify { ref track } => serde_json::to_value(track)?,
+            Self::YouTube { ref video } => serde_json::to_value(video)?,
         };
 
         Ok(json)

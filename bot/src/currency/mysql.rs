@@ -265,7 +265,7 @@ impl Backend {
 
     /// Find user balance.
     pub async fn balance_of(&self, _channel: &str, user: &str) -> Result<Option<BalanceOf>> {
-        let user = user_id(&user);
+        let user = user_id(user);
         let opts = mysql::TxOpts::new();
         let mut tx = self.pool.start_transaction(opts).await?;
 
@@ -284,7 +284,7 @@ impl Backend {
 
     /// Add (or subtract) from the balance for a single user.
     pub async fn balance_add(&self, _channel: &str, user: &str, amount: i64) -> Result<()> {
-        let user = user_id(&user);
+        let user = user_id(user);
         let amount = amount.try_into()?;
 
         let opts = mysql::TxOpts::new();

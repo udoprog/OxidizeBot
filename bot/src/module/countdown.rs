@@ -182,7 +182,7 @@ impl FileWriter {
         log::trace!("Writing to log: {}", path.display());
 
         let mut f = fs::File::create(path)?;
-        let remaining = timer.duration.saturating_sub(timer.elapsed.clone());
+        let remaining = timer.duration.saturating_sub(timer.elapsed);
         let remaining = remaining.as_digital();
         let elapsed = timer.elapsed.as_digital();
         let duration = timer.duration.as_digital();

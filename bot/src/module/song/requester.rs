@@ -55,7 +55,7 @@ impl SongRequester {
         let spotify = self.spotify.clone();
         let youtube = self.youtube.clone();
 
-        let track_id = match TrackId::parse_with_urls(&q) {
+        let track_id = match TrackId::parse_with_urls(q) {
             Ok(track_id) => Some(track_id),
             Err(e) => {
                 match e {

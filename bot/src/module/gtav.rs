@@ -612,7 +612,7 @@ impl Handler {
                         let cooldown = e.into_mut();
 
                         if cooldown.cooldown != per_user_cooldown.cooldown {
-                            cooldown.cooldown = per_user_cooldown.cooldown.clone();
+                            cooldown.cooldown = per_user_cooldown.cooldown;
                         }
 
                         Some(cooldown)
@@ -631,7 +631,7 @@ impl Handler {
                     let cooldown = e.into_mut();
 
                     if cooldown.cooldown != per_command_cooldown.cooldown {
-                        cooldown.cooldown = per_command_cooldown.cooldown.clone();
+                        cooldown.cooldown = per_command_cooldown.cooldown;
                     }
 
                     cooldown
@@ -645,7 +645,6 @@ impl Handler {
                 .read()
                 .await
                 .get(command.command_name())
-                .clone()
             {
                 Some(setting) => setting.cooldown.clone(),
                 None => None,
@@ -659,20 +658,20 @@ impl Handler {
         let mut remaining = smallvec::SmallVec::<[_; 4]>::new();
 
         if let Some(user_cooldown) = user_cooldown.as_mut() {
-            remaining.extend(user_cooldown.check(now.clone()).map(|d| ("User", d)));
+            remaining.extend(user_cooldown.check(now).map(|d| ("User", d)));
         }
 
         if let Some(command_specific) = command_specific.as_ref() {
             let mut cooldown = command_specific.write().await;
 
-            remaining.extend(cooldown.check(now.clone()).map(|d| ("Command specific", d)));
+            remaining.extend(cooldown.check(now).map(|d| ("Command specific", d)));
         } else {
-            remaining.extend(cooldown.check(now.clone()).map(|d| ("Global", d)));
-            remaining.extend(command_cooldown.check(now.clone()).map(|d| ("Command", d)));
+            remaining.extend(cooldown.check(now).map(|d| ("Global", d)));
+            remaining.extend(command_cooldown.check(now).map(|d| ("Command", d)));
 
             if let Some(category_cooldown) = category_cooldown.as_ref() {
                 let mut cooldown = category_cooldown.write().await;
-                remaining.extend(cooldown.check(now.clone()).map(|d| ("Category", d)));
+                remaining.extend(cooldown.check(now).map(|d| ("Category", d)));
             }
         }
 
@@ -709,7 +708,7 @@ impl Handler {
             Some("randomize-weather") => Command::RandomizeWeather,
             Some("randomize-character") => Command::RandomizeCharacter,
             Some("randomize-doors") => Command::RandomizeDoors,
-            Some("license") => match license(ctx.rest(), &ctx).await {
+            Some("license") => match license(ctx.rest(), ctx).await {
                 Some(license) => Command::License(license),
                 None => return Ok(None),
             },
@@ -746,7 +745,7 @@ impl Handler {
             Some("all-weapons") => Command::TakeAllWeapons,
             Some("health") => Command::TakeHealth,
             Some("wanted") => match ctx.next().map(|s| str::parse(&s)) {
-                Some(Ok(n)) if n >= 1 && n <= 5 => Command::Wanted(n),
+                Some(Ok(n)) if (1..=5).contains(&n) => Command::Wanted(n),
                 _ => {
                     respond!(ctx, "Expected number between 1 and 5");
                     return Ok(None);
@@ -840,11 +839,11 @@ impl Handler {
             Some("armor") => Command::GiveArmor,
             Some("boost") => Command::Boost,
             Some("superboost") => {
-                self.play_theme_song(&ctx, "gtav/superboost").await;
+                self.play_theme_song(ctx, "gtav/superboost").await;
                 Command::SuperBoost
             }
             Some("superspeed") => {
-                self.play_theme_song(&ctx, "gtav/superspeed").await;
+                self.play_theme_song(ctx, "gtav/superspeed").await;
                 Command::SuperSpeed(30f32)
             }
             Some("superswim") => Command::SuperSwim(30f32),
@@ -909,7 +908,7 @@ impl command::Handler for Handler {
             .currency
             .load()
             .await
-            .ok_or_else(|| respond_err!("No currency configured for stream, sorry :("))?;
+            .ok_or(respond_err!("No currency configured for stream, sorry :("))?;
 
         let (result, category_cooldown) = match ctx.next().as_deref() {
             Some("other") => {
@@ -964,7 +963,7 @@ impl command::Handler for Handler {
 
         if !bypass_cooldown {
             if let Some((what, remaining)) =
-                self.check_cooldown(&ctx, &command, category_cooldown).await
+                self.check_cooldown(ctx, &command, category_cooldown).await
             {
                 respond!(
                     ctx,
@@ -1018,10 +1017,7 @@ impl command::Handler for Handler {
         }
 
         if self.success_feedback.load().await {
-            let who = match ctx.user.display_name() {
-                Some(name) => name,
-                None => "Someone",
-            };
+            let who = ctx.user.display_name().unwrap_or("Someone");
 
             sender
                 .privmsg(format!(

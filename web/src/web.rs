@@ -558,16 +558,16 @@ impl Handler {
 
                     log_error!(e, "failed to refresh token");
 
-                    return Ok(http_error(
+                    return http_error(
                         StatusCode::BAD_REQUEST,
                         "Token refresh failed, server responded with client error",
-                    )?);
+                    );
                 }
                 _ => return Err(Error::Error(e.into())),
             },
         };
 
-        let meta = self.token_meta(&*flow, &token).await?;
+        let meta = self.token_meta(flow, &token).await?;
 
         self.db.add_connection(
             &user.user_id,
@@ -616,11 +616,7 @@ impl Handler {
         let connections = self.db.connections_by_user(&user.user_id)?;
 
         let query = self.decode_query::<Query>(req)?;
-
-        let meta = match query.format.as_deref() {
-            Some("meta") => true,
-            _ => false,
-        };
+        let meta = matches!(query.format.as_deref(), Some("meta"));
 
         let mut out = Vec::new();
 
@@ -693,7 +689,7 @@ impl Handler {
         })?;
 
         self.pending_tokens.lock().insert(
-            exchange_token.state.clone(),
+            exchange_token.state,
             PendingToken {
                 created_at: Utc::now(),
                 flow,
@@ -726,7 +722,7 @@ impl Handler {
         self.random
             .fill(&mut buf)
             .map_err(|_| anyhow!("failed to generate random key"))?;
-        let key = BASE64_STANDARD.encode(&buf);
+        let key = BASE64_STANDARD.encode(buf);
         self.db.insert_key(&user.user_id, &key)?;
 
         return json_ok(&KeyInfo { key });
@@ -759,14 +755,14 @@ impl Handler {
     /// Handle listing players.
     async fn list_players(&self) -> Result<Response<Body>, Error> {
         let keys = self.db.list_players()?;
-        json_ok(&keys)
+        json_ok(keys)
     }
 
     /// Get information for a single player.
     async fn get_player(&self, id: &str) -> Result<Response<Body>, Error> {
         let player = self.db.get_player(id)?;
         let player = player.ok_or_else(|| Error::NotFound)?;
-        json_ok(&player)
+        json_ok(player)
     }
 
     /// Verify the specified request.
@@ -843,7 +839,7 @@ impl Handler {
                     }
                 }
 
-                let meta = self.token_meta(&*flow, &token).await?;
+                let meta = self.token_meta(&flow, &token).await?;
 
                 self.db.add_connection(
                     &action.user_id,
@@ -913,7 +909,7 @@ impl Handler {
 
     /// Show the current session.
     async fn get_auth_current(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
-        json_ok(&self.session.verify(req)?)
+        json_ok(self.session.verify(req)?)
     }
 
     /// Handle a playlist update.
@@ -985,16 +981,16 @@ impl Handler {
             None => return Err(Error::NotFound),
         };
 
-        json_ok(&releases)
+        json_ok(releases)
     }
 
     /// Test for authentication, if enabled.
     async fn auth_twitch_token(&self, token: &str) -> Result<api::twitch::ValidateToken, Error> {
-        Ok(self
+        self
             .id_twitch_client
             .validate_token(token)
             .await
-            .map_err(Error::Error)?)
+            .map_err(Error::Error)
     }
 
     /// Get token meta-information.
@@ -1010,11 +1006,11 @@ impl Handler {
                     .validate_token(&token.access_token)
                     .await?;
 
-                Ok(serde_cbor::value::to_value(&result)?)
+                Ok(serde_cbor::value::to_value(result)?)
             }
             oauth2::FlowType::Spotify => {
                 let result = self.spotify.v1_me(&token.access_token).await?;
-                Ok(serde_cbor::value::to_value(&result)?)
+                Ok(serde_cbor::value::to_value(result)?)
             }
             _ => Ok(serde_cbor::value::to_value(&Empty {})?),
         };

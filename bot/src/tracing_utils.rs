@@ -74,7 +74,7 @@ thread_local! {
 
 impl tracing_core::Subscriber for Subscriber {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-        log::logger().enabled(&as_log(&metadata))
+        log::logger().enabled(&as_log(metadata))
     }
 
     fn new_span(&self, attrs: &span::Attributes<'_>) -> Id {

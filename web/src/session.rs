@@ -93,7 +93,7 @@ impl Session {
             None => return Ok(None),
         };
 
-        Ok(self.db.get_user_by_key(key)?)
+        self.db.get_user_by_key(key)
     }
 
     /// Verify cookie.
@@ -119,7 +119,7 @@ impl Session {
         };
 
         let session = serde_cbor::from_slice::<SessionData>(&data)?;
-        Ok(self.db.get_user(&session.user_id)?)
+        self.db.get_user(&session.user_id)
     }
 
     /// Verify the given request and return user information (if present).

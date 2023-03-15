@@ -228,7 +228,7 @@ where
 {
     /// Access the underlying key this setting references.
     pub fn key(&self) -> &str {
-        &*self.key
+        &self.key
     }
 
     /// Access the underlying schema this setting references.
@@ -290,7 +290,7 @@ where
             let mut p = key.split(SEP).peekable();
 
             while let Some(part) = p.next() {
-                buf.push_str(&part);
+                buf.push_str(part);
 
                 prefixes
                     .entry(buf.as_str().into())
@@ -501,7 +501,7 @@ where
                 });
             }
 
-            self.set_json(&to_key, from).await?;
+            self.set_json(to_key, from).await?;
         } else {
             log::warn!(
                 "Ignoring value for {} since {} is already present",
@@ -510,7 +510,7 @@ where
             );
         }
 
-        self.inner_clear(&from_key).await?;
+        self.inner_clear(from_key).await?;
         Ok(())
     }
 
@@ -586,7 +586,7 @@ where
             None => return Ok(None),
         };
 
-        let value = self.inner_get(&*key).await?;
+        let value = self.inner_get(&key).await?;
         Ok(Some(SettingRef { schema, key, value }))
     }
 
@@ -651,7 +651,6 @@ where
                 let filter = dsl::settings.filter(dsl::key.eq(&key));
 
                 let b = filter
-                    .clone()
                     .select((dsl::key, dsl::value))
                     .first::<(String, String)>(c)
                     .optional()?;
@@ -750,7 +749,7 @@ where
             let mut scope = String::with_capacity(s.len());
             let last = it.next_back();
 
-            while let Some(s) = it.next() {
+            for s in it.by_ref() {
                 scope.push_str(s);
                 scope.push(SEP);
             }
@@ -1007,8 +1006,8 @@ impl ops::Deref for Key<'_, '_> {
 
     fn deref(&self) -> &Self::Target {
         match self {
-            Key::Settings(scope) => *scope,
-            Key::Key(key) => *key,
+            Key::Settings(scope) => scope,
+            Key::Key(key) => key,
             Key::Owned(key) => key.as_ref(),
         }
     }
@@ -1158,19 +1157,15 @@ where
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
+#[derive(Default)]
 pub enum Format {
     #[serde(rename = "regex")]
     Regex { pattern: String },
     #[serde(rename = "time-zone")]
     TimeZone,
     #[serde(rename = "none")]
+    #[default]
     None,
-}
-
-impl Default for Format {
-    fn default() -> Self {
-        Format::None
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1189,18 +1184,13 @@ pub struct Field {
     pub ty: Box<Type>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 pub enum SelectVariant {
     #[serde(rename = "typeahead")]
     Typeahead,
     #[serde(rename = "default")]
+    #[default]
     Default,
-}
-
-impl Default for SelectVariant {
-    fn default() -> Self {
-        SelectVariant::Default
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

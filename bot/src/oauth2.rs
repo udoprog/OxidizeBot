@@ -25,7 +25,7 @@ pub struct CancelledToken(());
 #[derive(Debug, Default)]
 pub struct InnerSyncToken {
     /// Stored connection.
-    connection: Option<Connection>,
+    connection: Option<Box<Connection>>,
     /// Queue to notify when a connection is available.
     ready_queue: VecDeque<oneshot::Sender<()>>,
 }
@@ -37,14 +37,14 @@ pub struct SyncToken {
     /// The interior reference to the token.
     inner: Arc<RwLock<InnerSyncToken>>,
     /// Channel to use to force a refresh.
-    force_refresh: mpsc::UnboundedSender<Option<Connection>>,
+    force_refresh: mpsc::UnboundedSender<Option<Box<Connection>>>,
 }
 
 impl SyncToken {
     /// Create a new SyncToken.
     pub fn new(
         what: &'static str,
-        force_refresh: mpsc::UnboundedSender<Option<Connection>>,
+        force_refresh: mpsc::UnboundedSender<Option<Box<Connection>>>,
     ) -> Self {
         Self {
             what,
@@ -54,7 +54,7 @@ impl SyncToken {
     }
 
     /// Set the connection and notify all waiters.
-    pub async fn update(&self, update: Connection) {
+    pub async fn update(&self, update: Box<Connection>) {
         let mut lock = self.inner.write().await;
 
         let InnerSyncToken {
@@ -135,7 +135,7 @@ struct ConnectionFactory {
     what: &'static str,
     expires: time::Duration,
     force_refresh: bool,
-    connection: Option<Connection>,
+    connection: Option<Box<Connection>>,
     sync_token: SyncToken,
     settings: crate::Settings,
     injector: Injector,
@@ -150,7 +150,7 @@ enum Validation {
     /// Remote connection no longer present.
     Cleared,
     /// Connection needs to be updated.
-    Updated(Connection),
+    Updated(Box<Connection>),
 }
 
 impl ConnectionFactory {
@@ -168,7 +168,7 @@ impl ConnectionFactory {
                     self.injector.clear_key(&self.key).await;
                 }
 
-                self.server.clear_connection(&self.flow_id).await;
+                self.server.clear_connection(self.flow_id).await;
             }
             Validation::Updated(connection) => {
                 let meta = connection.as_meta();
@@ -184,7 +184,7 @@ impl ConnectionFactory {
                     self.current_hash = Some(meta.hash.clone());
                 }
 
-                self.server.update_connection(&self.flow_id, meta).await;
+                self.server.update_connection(self.flow_id, meta).await;
             }
         }
 
@@ -194,7 +194,7 @@ impl ConnectionFactory {
     /// Set the connection from settings.
     pub async fn update_from_settings(
         &mut self,
-        connection: Option<Connection>,
+        connection: Option<Box<Connection>>,
     ) -> Result<(), Error> {
         let was_none = self.connection.is_none();
         self.connection = connection.clone();
@@ -206,7 +206,7 @@ impl ConnectionFactory {
             Validation::Cleared => None,
             Validation::Updated(connection) => {
                 self.settings
-                    .set_silent("connection", Some(&connection))
+                    .set_silent("connection", Some(connection.as_ref()))
                     .await?;
                 Some(connection)
             }
@@ -223,7 +223,7 @@ impl ConnectionFactory {
                 self.current_hash = Some(meta.hash.clone());
             }
 
-            self.server.update_connection(&self.flow_id, meta).await;
+            self.server.update_connection(self.flow_id, meta).await;
         } else {
             self.sync_token.clear().await;
 
@@ -232,7 +232,7 @@ impl ConnectionFactory {
                 self.current_hash = None;
             }
 
-            self.server.clear_connection(&self.flow_id).await;
+            self.server.clear_connection(self.flow_id).await;
         }
 
         Ok(())
@@ -314,9 +314,16 @@ impl ConnectionFactory {
     }
 
     /// Request a new connection from the authentication flow.
-    async fn request_new_connection(&self, setbac: &Setbac) -> Result<Option<Connection>, Error> {
+    async fn request_new_connection(
+        &self,
+        setbac: &Setbac,
+    ) -> Result<Option<Box<Connection>>, Error> {
         log::trace!("{}: Requesting new connection", self.what);
-        Ok(setbac.get_connection(self.flow_id).await?)
+
+        match setbac.get_connection(self.flow_id).await? {
+            Some(connection) => Ok(Some(Box::new(connection))),
+            None => Ok(None),
+        }
     }
 
     /// Validate a connection base on the current flow.
@@ -349,7 +356,7 @@ impl ConnectionFactory {
     }
 
     /// Refresh a connection.
-    async fn refresh_connection(&self, setbac: &Setbac) -> Result<Option<Connection>, Error> {
+    async fn refresh_connection(&self, setbac: &Setbac) -> Result<Option<Box<Connection>>, Error> {
         log::trace!("{}: Refreshing connection", self.what);
 
         let connection = match setbac.refresh_connection(self.flow_id).await? {
@@ -357,7 +364,7 @@ impl ConnectionFactory {
             None => return Ok(None),
         };
 
-        Ok(Some(connection))
+        Ok(Some(Box::new(connection)))
     }
 
     /// Check if connection is outdated.
@@ -366,7 +373,7 @@ impl ConnectionFactory {
             return Ok(true);
         }
 
-        Ok(c.token.expires_within(self.expires)?)
+        c.token.expires_within(self.expires)
     }
 }
 
@@ -428,7 +435,9 @@ pub async fn build(
     // check for expirations.
     let mut check_interval = tokio::time::interval(check_interval.as_std());
 
-    builder.update_from_settings(connection).await?;
+    builder
+        .update_from_settings(connection.map(Box::new))
+        .await?;
 
     let future = async move {
         log::trace!("{}: Running loop", what);
@@ -441,7 +450,7 @@ pub async fn build(
                 }
                 connection = connection_stream.recv() => {
                     log::trace!("{}: New from settings", what);
-                    builder.update_from_settings(connection).await?;
+                    builder.update_from_settings(connection.map(Box::new)).await?;
                 }
                 _ = force_refresh_rx.recv() => {
                     log::trace!("{}: Forced refresh", what);

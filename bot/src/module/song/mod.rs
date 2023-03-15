@@ -119,7 +119,7 @@ impl command::Handler for Handler {
             .player
             .load()
             .await
-            .ok_or_else(|| respond_err!("No player configured"))?;
+            .ok_or(respond_err!("No player configured"))?;
 
         match ctx.next().as_deref() {
             Some("theme") => {
@@ -149,9 +149,7 @@ impl command::Handler for Handler {
             }
             Some("promote") => {
                 ctx.check_scope(Scope::SongEditQueue).await?;
-                let index = ctx
-                    .next()
-                    .ok_or_else(|| respond_err!("Expected <number>"))?;
+                let index = ctx.next().ok_or(respond_err!("Expected <number>"))?;
                 let index = parse_queue_position(&index).await?;
 
                 if let Some(item) = player.promote_song(ctx.user.name(), index).await? {

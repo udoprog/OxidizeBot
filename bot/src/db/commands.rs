@@ -28,7 +28,7 @@ impl Database {
                 let filter = dsl::commands
                     .filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
 
-                match filter.clone().first::<db::models::Command>(c).optional()? {
+                match filter.first::<db::models::Command>(c).optional()? {
                     None => {
                         let command = db::models::Command {
                             channel: key.channel.to_string(),
@@ -261,7 +261,7 @@ impl Command {
     where
         T: serde::Serialize,
     {
-        Ok(self.template.render_to_string(data)?)
+        self.template.render_to_string(data)
     }
 
     /// Test if the rendered command has the given var.

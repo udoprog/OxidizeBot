@@ -2,7 +2,7 @@
 name = "oxidize"
 version = "0.0.0"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
-edition = "2018"
+edition = "2021"
 rust-version = "1.65"
 description = "A high performance Twitch Bot powered by Rust."
 documentation = "https://docs.rs/oxidize"

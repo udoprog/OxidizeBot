@@ -28,9 +28,9 @@ impl AfterStreams {
         self.db
             .asyncify(move |c| {
                 let after_stream = models::InsertAfterStream {
-                    channel: Some(String::from(channel)),
-                    user: String::from(user),
-                    text: String::from(text),
+                    channel: Some(channel),
+                    user,
+                    text,
                 };
 
                 diesel::insert_into(dsl::after_streams)

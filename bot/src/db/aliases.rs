@@ -24,7 +24,7 @@ impl Database {
                 let filter =
                     dsl::aliases.filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
 
-                let first = filter.clone().first::<db::models::Alias>(c).optional()?;
+                let first = filter.first::<db::models::Alias>(c).optional()?;
 
                 match first {
                     None => {

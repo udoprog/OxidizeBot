@@ -10,18 +10,13 @@ use std::fmt;
 use std::sync::Arc;
 use std::time;
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, Default)]
 pub enum Type {
     #[serde(rename = "chat")]
+    #[default]
     Chat,
     #[serde(rename = "nightbot")]
     NightBot,
-}
-
-impl Default for Type {
-    fn default() -> Self {
-        Type::Chat
-    }
 }
 
 struct Inner {
@@ -111,7 +106,7 @@ impl Sender {
     pub async fn privmsg(&self, f: impl fmt::Display) {
         match self.ty.load().await {
             Type::NightBot => {
-                self.send_nightbot(&*self.inner, f.to_string()).await;
+                self.send_nightbot(&self.inner, f.to_string()).await;
             }
             Type::Chat => {
                 self.send(Command::PRIVMSG(self.inner.target.clone(), f.to_string()))

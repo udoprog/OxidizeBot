@@ -42,10 +42,7 @@ impl Database {
             .asyncify(move |c| {
                 let filter = dsl::promotions
                     .filter(dsl::channel.eq(&key.channel).and(dsl::name.eq(&key.name)));
-                let b = filter
-                    .clone()
-                    .first::<db::models::Promotion>(c)
-                    .optional()?;
+                let b = filter.first::<db::models::Promotion>(c).optional()?;
 
                 let frequency = frequency.num_seconds() as i32;
 
@@ -93,7 +90,7 @@ impl Database {
         use db::schema::promotions::dsl;
 
         let from = from.clone();
-        let now = now.clone();
+        let now = *now;
 
         self.0
             .asyncify(move |c| {
@@ -148,11 +145,7 @@ impl Promotions {
 
         let mut inner = self.inner.write().await;
 
-        if let Some(promotion) = self
-            .db
-            .edit(&key, frequency.clone(), template.source())
-            .await?
-        {
+        if let Some(promotion) = self.db.edit(&key, frequency, template.source()).await? {
             let promoted_at = promotion.promoted_at.map(|d| DateTime::from_utc(d, Utc));
 
             inner.insert(
@@ -250,7 +243,7 @@ impl Promotion {
     where
         T: serde::Serialize,
     {
-        Ok(self.template.render_to_string(data)?)
+        self.template.render_to_string(data)
     }
 }
 

@@ -83,6 +83,7 @@ impl Db {
 /// A database scoped into a single command.
 #[derive(Clone, Any)]
 struct ScopedDb {
+    #[allow(unused)]
     command: String,
     db: db::ScriptStorage,
 }
@@ -119,7 +120,7 @@ impl Handler {
                 Ok(result) => result,
                 Err(error) => {
                     let mut buffer = termcolor::Buffer::no_color();
-                    error.emit(&mut buffer, &*self.handler.sources)?;
+                    error.emit(&mut buffer, &self.handler.sources)?;
 
                     return Err(anyhow!(
                         "failed to call handler for: {}:\n{}",
@@ -212,7 +213,7 @@ impl Scripts {
             Ok(unit) => Arc::new(unit),
             Err(..) => {
                 let mut buffer = termcolor::Buffer::no_color();
-                diagnostics.emit(&mut buffer, &*sources)?;
+                diagnostics.emit(&mut buffer, &sources)?;
 
                 return Err(anyhow!(
                     "failed to load source at: {}:\n{}",
@@ -224,7 +225,7 @@ impl Scripts {
 
         let mut reg = Registry::new();
         let mut vm = Vm::new(self.runtime.clone(), unit);
-        <()>::from_value(vm.call(&["main"], (&mut reg,))?)?;
+        <()>::from_value(vm.call(["main"], (&mut reg,))?)?;
 
         for (command, function) in reg.handlers {
             if let Some(handler) = self.handlers.get(&command) {

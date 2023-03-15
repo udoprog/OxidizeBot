@@ -216,7 +216,7 @@ impl State {
     }
 
     fn deserialize_frame(text: &str) -> Result<self::transport::Frame> {
-        let value = serde_json::from_str::<serde_json::Value>(&text)?;
+        let value = serde_json::from_str::<serde_json::Value>(text)?;
         let frame = self::transport::Frame::deserialize(&value)?;
         Ok(frame)
     }
@@ -238,10 +238,8 @@ impl State {
                 if let Some(error) = response.error {
                     log::warn!("got error `{}`, disconnecting", error);
                     self.recover().await;
-                } else {
-                    if response.nonce.as_deref() == Some("initialize") {
-                        log::info!("Connected to Twitch Pub/Sub!");
-                    }
+                } else if response.nonce.as_deref() == Some("initialize") {
+                    log::info!("Connected to Twitch Pub/Sub!");
                 }
             }
             self::transport::Frame::Pong => {

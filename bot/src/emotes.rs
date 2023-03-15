@@ -6,7 +6,7 @@ use anyhow::Error;
 use futures_cache as cache;
 use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet};
-use std::mem;
+
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -389,10 +389,10 @@ impl Emotes {
             let mut it = rest.split(',').next()?.split('-');
 
             let s = it.next()?;
-            let s = str::parse::<usize>(&s).ok()?;
+            let s = str::parse::<usize>(s).ok()?;
 
             let e = it.next()?;
-            let e = str::parse::<usize>(&e).ok()?;
+            let e = str::parse::<usize>(e).ok()?;
 
             Some((s, e))
         }
@@ -680,9 +680,9 @@ impl Emotes {
         Ok(Rendered::render(
             badges,
             message,
-            &*room_emotes,
+            &room_emotes,
             &message_emotes,
-            &*global_emotes,
+            &global_emotes,
         ))
     }
 }
@@ -759,9 +759,9 @@ impl Rendered {
         };
 
         'outer: loop {
-            let mut it = Words::new(buf);
+            let it = Words::new(buf);
 
-            while let Some((idx, word)) = it.next() {
+            for (idx, word) in it {
                 if let Some(emote) = emote(word) {
                     if !emotes.contains_key(word) {
                         emotes.insert(word.to_string(), emote.clone());
@@ -842,7 +842,7 @@ impl<'a> Iterator for Words<'a> {
         let s = match self.string.find(|c: char| !c.is_whitespace()) {
             Some(n) => n,
             None => {
-                let string = mem::replace(&mut self.string, "");
+                let string = std::mem::take(&mut self.string);
                 self.n += string.len();
                 return None;
             }
@@ -851,7 +851,7 @@ impl<'a> Iterator for Words<'a> {
         let e = match self.string[s..].find(char::is_whitespace) {
             Some(n) => s + n,
             None => {
-                let string = mem::replace(&mut self.string, "");
+                let string = std::mem::take(&mut self.string);
                 let n = self.n + s;
                 self.n += string.len();
                 return Some((n, &string[s..]));

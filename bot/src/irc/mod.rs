@@ -22,7 +22,7 @@ use notify::{recommended_watcher, RecommendedWatcher, Watcher};
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::fmt;
-use std::mem;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time;
@@ -43,10 +43,10 @@ const TWITCH_COMMANDS_CAP: &str = "twitch.tv/commands";
 
 /// Helper struct to construct IRC integration.
 pub struct Irc {
-    pub injector: Injector,
     pub modules: Vec<Box<dyn module::Module>>,
-    pub script_dirs: Vec<PathBuf>,
+    pub injector: Injector,
     pub stream_state_tx: mpsc::Sender<stream_info::StreamState>,
+    pub script_dirs: Vec<PathBuf>,
 }
 
 impl Irc {
@@ -535,6 +535,7 @@ async fn currency_loop(
     let mut currency = builder.build_and_inject().await;
 
     Ok(async move {
+        let _ = &streamer;
         let new_timer = |interval: &Duration, viewer_reward: bool| {
             if viewer_reward && !interval.is_empty() {
                 Fuse::new(tokio::time::interval(interval.as_std()))
@@ -884,7 +885,7 @@ impl<'a> Handler<'a> {
     /// Process the given command.
     pub async fn process_message(&mut self, user: &User, mut message: Arc<String>) -> Result<()> {
         // Run message hooks.
-        let _ = task::spawn({
+        task::spawn({
             let user = user.clone();
             let context_inner = self.context_inner.clone();
             let message = message.clone();
@@ -893,7 +894,7 @@ impl<'a> Handler<'a> {
                 let message_hooks = context_inner.message_hooks.read().await;
 
                 for (key, hook) in &*message_hooks {
-                    if let Err(e) = hook.peek(&user, &*message).await {
+                    if let Err(e) = hook.peek(&user, &message).await {
                         log_error!(e, "Hook `{}` failed", key);
                     }
                 }
@@ -935,7 +936,7 @@ impl<'a> Handler<'a> {
                 .await
             {
                 if command.has_var("count") {
-                    commands.increment(&*command).await?;
+                    commands.increment(&command).await?;
                 }
 
                 let vars = CommandVars {
@@ -951,9 +952,7 @@ impl<'a> Handler<'a> {
         }
 
         if let Some(command) = first {
-            if command.starts_with('!') {
-                let command = &command[1..];
-
+            if let Some(command) = command.strip_prefix('!') {
                 let ctx = command::Context {
                     api_url: self.api_url.clone(),
                     user: user.clone(),
@@ -976,8 +975,8 @@ impl<'a> Handler<'a> {
             }
         }
 
-        if self.should_be_deleted(&user, &*message).await {
-            self.delete_message(&user)?;
+        if self.should_be_deleted(user, &message).await {
+            self.delete_message(user)?;
         }
 
         Ok(())
@@ -1007,7 +1006,7 @@ impl<'a> Handler<'a> {
     pub async fn handle(&mut self, mut m: Message) -> Result<()> {
         match m.command {
             Command::PRIVMSG(_, ref mut message) => {
-                let message = Arc::new(mem::replace(message, String::new()));
+                let message = Arc::new(std::mem::take(message));
                 let tags = Tags::from_tags(m.tags.take());
 
                 let name = m
@@ -1022,7 +1021,7 @@ impl<'a> Handler<'a> {
                     let message = message.clone();
 
                     task::spawn(Box::pin(async move {
-                        chat_log.observe(&tags, &*user, &name, &*message).await;
+                        chat_log.observe(&tags, &user, &name, &message).await;
                     }));
                 }
 
@@ -1160,15 +1159,12 @@ impl<'a> RealUser<'a> {
 
     /// Get the name of the user.
     pub fn name(&self) -> &'a str {
-        &self.name
+        self.name
     }
 
     /// Get the display name of the user.
     pub fn display_name(&self) -> &'a str {
-        self.tags
-            .display_name
-            .as_deref()
-            .unwrap_or_else(|| self.name)
+        self.tags.display_name.as_deref().unwrap_or(self.name)
     }
 
     /// Respond to the user with a message.
@@ -1264,9 +1260,9 @@ impl User {
                 tags: &self.inner.tags,
                 sender: &self.inner.sender,
                 name,
-                streamer: &*self.inner.streamer,
-                moderators: &*self.inner.moderators,
-                vips: &*self.inner.vips,
+                streamer: &self.inner.streamer,
+                moderators: &self.inner.moderators,
+                vips: &self.inner.vips,
                 stream_info: &self.inner.stream_info,
                 auth: &self.inner.auth,
             }),
@@ -1308,7 +1304,7 @@ impl User {
 
     /// Get the name of the streamer.
     pub fn streamer(&self) -> &api::User {
-        &*self.inner.streamer
+        &self.inner.streamer
     }
 
     /// Test if the current user is the given user.
@@ -1414,7 +1410,7 @@ where
         // length of current line.
         let mut len = 0;
 
-        while let Some(result) = self.iter.next() {
+        for result in self.iter.by_ref() {
             self.item_buf.clear();
             write!(&mut self.item_buf, "{}", result)
                 .expect("a Display implementation returned an error unexpectedly");
@@ -1566,7 +1562,7 @@ impl ClearMsgTags {
 #[derive(Debug)]
 pub enum SenderThreadItem {
     Exit,
-    Send(Message),
+    Send(Box<Message>),
 }
 
 #[derive(serde::Serialize)]

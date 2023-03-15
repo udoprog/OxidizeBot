@@ -116,7 +116,7 @@ impl Settings {
                 let settings = self.settings().await?;
 
                 for prefix in prefix.split(',') {
-                    out.extend(settings.list_by_prefix(&prefix).await?);
+                    out.extend(settings.list_by_prefix(prefix).await?);
                 }
 
                 out
