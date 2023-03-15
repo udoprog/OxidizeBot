@@ -2570,7 +2570,7 @@ dependencies = [
  "reqwest",
  "rune",
  "rune-modules",
- "rust-embed 6.4.2",
+ "rust-embed",
  "serde",
  "serde_cbor",
  "serde_json",
@@ -2616,7 +2616,7 @@ dependencies = [
  "relative-path",
  "reqwest",
  "ring",
- "rust-embed 5.9.0",
+ "rust-embed",
  "serde",
  "serde_cbor",
  "serde_json",
@@ -3195,37 +3195,12 @@ dependencies = [
 
 [[package]]
 name = "rust-embed"
-version = "5.9.0"
+version = "6.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fe1fe6aac5d6bb9e1ffd81002340363272a7648234ec7bdfac5ee202cb65523"
+checksum = "d40377bff8cceee81e28ddb73ac97f5c2856ce5522f0b260b763f434cdfae602"
 dependencies = [
- "rust-embed-impl 5.9.0",
- "rust-embed-utils 5.1.0",
- "walkdir",
-]
-
-[[package]]
-name = "rust-embed"
-version = "6.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "283ffe2f866869428c92e0d61c2f35dfb4355293cdfdc48f49e895c15f1333d1"
-dependencies = [
- "rust-embed-impl 6.3.1",
- "rust-embed-utils 7.3.0",
- "walkdir",
-]
-
-[[package]]
-name = "rust-embed-impl"
-version = "5.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ed91c41c42ef7bf687384439c312e75e0da9c149b0390889b94de3c7d9d9e66"
-dependencies = [
- "proc-macro2",
- "quote",
- "rust-embed-utils 5.1.0",
- "shellexpand",
- "syn",
+ "rust-embed-impl",
+ "rust-embed-utils",
  "walkdir",
 ]
 
@@ -3237,18 +3212,9 @@ checksum = "31ab23d42d71fb9be1b643fe6765d292c5e14d46912d13f3ae2815ca048ea04d"
 dependencies = [
  "proc-macro2",
  "quote",
- "rust-embed-utils 7.3.0",
+ "rust-embed-utils",
  "shellexpand",
  "syn",
- "walkdir",
-]
-
-[[package]]
-name = "rust-embed-utils"
-version = "5.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a512219132473ab0a77b52077059f1c47ce4af7fbdc94503e9862a34422876d"
-dependencies = [
  "walkdir",
 ]
 

@@ -43,7 +43,7 @@ uuid = { version = "1.2.2", features = ["serde", "v4"] }
 smallvec = { version = "1.10.0", features = ["serde"] }
 dirs = "4.0.0"
 backoff = "0.4.0"
-rust-embed = { version = "6.4.2", features = ["interpolate-folder-path"] }
+rust-embed = { version = "6.3.0", features = ["interpolate-folder-path"] }
 mime = "0.3.16"
 mime_guess = "2.0.4"
 uom = "0.33.0"

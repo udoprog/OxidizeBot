@@ -22,7 +22,7 @@ pretty_env_logger = "0.4.0"
 reqwest = "0.11.0"
 chrono = { version = "0.4.19", features = ["serde"] }
 clap = "2.33.3"
-rust-embed = { version = "5.9.0", features = ["interpolate-folder-path"] }
+rust-embed = { version = "6.3.0", features = ["interpolate-folder-path"] }
 mime_guess = "2.0.3"
 mime = "0.3.16"
 smallvec = "1.6.1"
