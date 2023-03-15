@@ -10,12 +10,32 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
+        rust: ["1.65", stable]
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{matrix.rust}}
+    - run: cargo build --workspace -p oxidize
+    - run: cargo test --workspace --all-targets
+      if: matrix.rust == 'stable'
+    - run: cargo test --workspace --doc
+      if: matrix.rust == 'stable'
+
+  test-os:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macOS-latest]
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@stable
-    - run: cargo test --all
+    - run: cargo test --workspace --all-targets
+    - run: cargo test --workspace --doc
 
   rustfmt:
     runs-on: ubuntu-latest
