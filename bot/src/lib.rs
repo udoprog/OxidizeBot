@@ -1,8 +1,8 @@
-//! <div align="center">
-//!     <a href="https://setbac.tv">
-//!         <img src="https://raw.githubusercontent.com/udoprog/OxidizeBot/main/bot/res/icon48.png" title="Oxidize Bot">
-//!     </a>
-//! </div>
+//! <a href="https://setbac.tv">
+//!     <img src="https://raw.githubusercontent.com/udoprog/OxidizeBot/main/bot/res/icon48.png" title="Oxidize Bot">
+//! </a>
+//!
+//! <br>
 //!
 //! <p align="center">
 //!     A high performance Twitch Bot powered by Rust

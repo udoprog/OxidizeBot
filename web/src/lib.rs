@@ -1,8 +1,8 @@
-//! <div align="center">
-//!     <a href="https://setbac.tv">
-//!         <img src="https://raw.githubusercontent.com/udoprog/OxidizeBot/main/bot/res/icon48.png" title="Oxidize Bot">
-//!     </a>
-//! </div>
+//! <a href="https://setbac.tv">
+//!     <img src="https://raw.githubusercontent.com/udoprog/OxidizeBot/main/bot/res/icon48.png" title="Oxidize Bot">
+//! </a>
+//!
+//! <br>
 //!
 //! <p align="center">
 //!     The web component of OxidizeBot, a high performance Twitch Bot powered by Rust
@@ -19,9 +19,6 @@
 //!     &ndash;
 //!     <a href="https://setbac.tv/help" rel="nofollow">Command Help ❓</a>
 //! </div>
-//!
-//! <br>
-//!
 #![recursion_limit = "256"]
 
 mod aead;
