@@ -986,8 +986,7 @@ impl Handler {
 
     /// Test for authentication, if enabled.
     async fn auth_twitch_token(&self, token: &str) -> Result<api::twitch::ValidateToken, Error> {
-        self
-            .id_twitch_client
+        self.id_twitch_client
             .validate_token(token)
             .await
             .map_err(Error::Error)
