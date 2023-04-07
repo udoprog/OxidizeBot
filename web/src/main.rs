@@ -25,7 +25,18 @@ struct Opts {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    pretty_env_logger::init();
+    use tracing_subscriber::prelude::*;
+    use tracing_subscriber::{fmt, Registry};
+
+    let env_filter = tracing_subscriber::EnvFilter::from_default_env();
+
+    let subscriber = Registry::default().with(env_filter).with(
+        fmt::Layer::default()
+            .with_writer(std::io::stdout)
+            .with_ansi(false),
+    );
+
+    tracing::subscriber::set_global_default(subscriber)?;
 
     let opts = Opts::try_parse()?;
 
