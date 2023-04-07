@@ -19,22 +19,10 @@ macro_rules! log_base {
     ($level:tt, $e:expr, $fmt:expr $(, $($arg:tt)*)?) => {{
         let e = anyhow::Error::from($e);
 
-        log::$level!($fmt $(, $($arg)*)*);
+        tracing::$level!($fmt $(, $($arg)*)*);
 
         for e in e.chain() {
-            #[cfg(not(backtrace))]
-            {
-                log::$level!("caused by: {}", e);
-            }
-
-            #[cfg(backtrace)]
-            {
-                if let Some(bt) = e.backtrace() {
-                    log::$level!("caused by: {}\n{}", e, bt);
-                } else {
-                    log::$level!("caused by: {}", e);
-                }
-            }
+            tracing::$level!("caused by: {}", e);
         }
     }};
 }
@@ -107,7 +95,7 @@ macro_rules! retry_until_ok {
             let mut backoff = $crate::backoff::Exponential::new(std::time::Duration::from_secs(2));
 
             loop {
-                log::info!("{}", $id);
+                tracing::info!("{}", $id);
                 let res: anyhow::Result<_> = async { $($f)* }.await;
 
                 match res {

@@ -51,7 +51,7 @@ impl Queries {
             user_column = self.schema.user_column,
         );
 
-        log::trace!("select_balances: {}", query);
+        tracing::trace!("select_balances: {}", query);
         let results = tx
             .exec_map(query.as_str(), (), mysql::from_row::<(String, i32)>)
             .await?;
@@ -77,7 +77,7 @@ impl Queries {
             "user" => user,
         };
 
-        log::trace!("select_balance: {} {:?}", query, params);
+        tracing::trace!("select_balance: {} {:?}", query, params);
         Ok(tx.exec_first(query.as_str(), params).await?)
     }
 
@@ -115,7 +115,7 @@ impl Queries {
             }
         });
 
-        log::trace!("upsert_balances: {}", query);
+        tracing::trace!("upsert_balances: {}", query);
         tx.exec_batch(query.as_str(), params).await?;
         Ok(())
     }
@@ -138,7 +138,7 @@ impl Queries {
             "balance" => balance,
         };
 
-        log::trace!("insert_balance: {} {:?}", query, params);
+        tracing::trace!("insert_balance: {} {:?}", query, params);
         tx.exec_drop(query.as_str(), params).await?;
         Ok(())
     }
@@ -160,7 +160,7 @@ impl Queries {
             "user" => user,
         };
 
-        log::trace!("update_balance: {} {:?}", query, params);
+        tracing::trace!("update_balance: {} {:?}", query, params);
         tx.exec_drop(query.as_str(), params).await?;
         Ok(())
     }

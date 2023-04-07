@@ -730,7 +730,7 @@ impl Restart {
             return true;
         }
 
-        log::warn!("shutdown already called");
+        tracing::warn!("shutdown already called");
         false
     }
 }

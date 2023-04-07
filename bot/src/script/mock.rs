@@ -27,11 +27,11 @@ impl Scripts {
     }
 
     pub(crate) fn reload(&mut self, path: &Path) -> Result<()> {
-        log::trace!("reload: {}", path.display());
+        tracing::trace!("reload: {}", path.display());
         Ok(())
     }
 
     pub(crate) fn unload(&mut self, path: &Path) {
-        log::trace!("unload: {}", path.display());
+        tracing::trace!("unload: {}", path.display());
     }
 }

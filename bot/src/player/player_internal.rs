@@ -69,18 +69,18 @@ impl PlayerInternal {
             let p = self.spotify.me_player().await?;
 
             if let Some(p) = p {
-                log::trace!("Detected Spotify playback: {:?}", p);
+                tracing::trace!("Detected Spotify playback: {:?}", p);
 
                 match Song::from_playback(&p) {
                     Some(song) => {
-                        log::trace!("Syncing playback");
+                        tracing::trace!("Syncing playback");
                         let volume_percent = p.device.volume_percent;
                         self.device.sync_device(Some(p.device)).await?;
                         self.connect_player.set_scaled_volume(volume_percent).await;
                         self.sync(song).await?;
                     }
                     None => {
-                        log::trace!("Pausing playback since item is missing");
+                        tracing::trace!("Pausing playback since item is missing");
                         self.pause(Source::Automatic).await?;
                     }
                 }
@@ -115,11 +115,11 @@ impl PlayerInternal {
     /// We've reached the end of track, process it.
     pub(super) async fn end_of_track(&mut self) -> Result<()> {
         if self.is_unmanaged() {
-            log::warn!("End of track called even though we are no longer managing the player");
+            tracing::warn!("End of track called even though we are no longer managing the player");
             return Ok(());
         }
 
-        log::trace!("Song ended, loading next song...");
+        tracing::trace!("Song ended, loading next song...");
 
         if let Some(song) = self.mixer.next_song().await? {
             self.play_song(Source::Manual, song).await?;
@@ -162,11 +162,11 @@ impl PlayerInternal {
     async fn send_pause_command(&mut self) {
         match self.player {
             PlayerKind::Spotify => {
-                log::trace!("pausing spotify player");
+                tracing::trace!("pausing spotify player");
                 self.connect_player.pause().await;
             }
             PlayerKind::YouTube => {
-                log::trace!("pausing youtube player");
+                tracing::trace!("pausing youtube player");
                 self.youtube_player.pause().await;
             }
             _ => (),
@@ -277,7 +277,7 @@ impl PlayerInternal {
             return Ok(());
         }
 
-        log::trace!("Starting Player");
+        tracing::trace!("Starting Player");
 
         match self.playback_mode {
             PlaybackMode::Default => {
@@ -334,7 +334,7 @@ impl PlayerInternal {
             return Ok(());
         }
 
-        log::trace!("Pausing Player");
+        tracing::trace!("Pausing Player");
 
         match self.playback_mode {
             PlaybackMode::Default => {
@@ -378,7 +378,7 @@ impl PlayerInternal {
             return Ok(());
         }
 
-        log::trace!("Skipping Song");
+        tracing::trace!("Skipping Song");
 
         match self.playback_mode {
             PlaybackMode::Default => {
@@ -418,7 +418,7 @@ impl PlayerInternal {
 
     /// Start playback on a specific song state.
     pub(super) async fn sync(&mut self, song: Song) -> Result<()> {
-        log::trace!("Syncing Song");
+        tracing::trace!("Syncing Song");
 
         self.switch_current_player(song.player()).await?;
 
@@ -439,7 +439,7 @@ impl PlayerInternal {
             return Ok(());
         }
 
-        log::trace!("Pausing player");
+        tracing::trace!("Pausing player");
 
         if let PlaybackMode::Default = self.playback_mode {
             if !self.injector.exists::<Song>().await {
@@ -470,7 +470,7 @@ impl PlayerInternal {
             return Ok(());
         }
 
-        log::trace!("Pausing player");
+        tracing::trace!("Pausing player");
 
         match self.playback_mode {
             PlaybackMode::Default => {
@@ -488,7 +488,7 @@ impl PlayerInternal {
                     self.injector.update(State::Playing).await;
                 }
                 _ => {
-                    log::info!("Can't inject playback of a non-spotify song.");
+                    tracing::info!("Can't inject playback of a non-spotify song.");
                 }
             },
         }
@@ -627,7 +627,7 @@ impl PlayerInternal {
         let state = self.injector.get::<State>().await.unwrap_or_default();
 
         if self.detached {
-            log::trace!(
+            tracing::trace!(
                 "Ignoring (Detached): IntegrationEvent = {:?}, State = {:?}, Player = {:?}",
                 e,
                 state,
@@ -637,7 +637,7 @@ impl PlayerInternal {
             return Ok(());
         }
 
-        log::trace!(
+        tracing::trace!(
             "Processing: IntegrationEvent = {:?}, State = {:?}, Player = {:?}",
             e,
             state,

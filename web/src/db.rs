@@ -458,7 +458,7 @@ impl Database {
             let connection = match serde_cbor::from_slice(value.as_ref()) {
                 Ok(connection) => connection,
                 Err(e) => {
-                    log::warn!("failed to deserialize connection: {}", e);
+                    tracing::warn!("failed to deserialize connection: {}", e);
                     continue;
                 }
             };
@@ -539,7 +539,7 @@ impl Database {
         let value = match Self::deserialize(&value) {
             Ok(value) => value,
             Err(e) => {
-                log::warn!("Ignoring invalid value stored at: {:?}: {}", key, e);
+                tracing::warn!("Ignoring invalid value stored at: {:?}: {}", key, e);
                 return Ok(None);
             }
         };

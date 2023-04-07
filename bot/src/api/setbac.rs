@@ -14,6 +14,7 @@ use reqwest::{header, Client, Method, Url};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::Instrument;
 
 const DEFAULT_API_URL: &str = "https://setbac.tv";
 
@@ -162,6 +163,7 @@ struct Remote {
 }
 
 /// Run update loop shipping information to the remote server.
+#[tracing::instrument(skip_all)]
 pub async fn run(
     settings: &crate::Settings,
     injector: &Injector,
@@ -199,7 +201,7 @@ pub async fn run(
     let mut remote = Remote::default();
     remote_builder.init(&mut remote).await;
 
-    Ok(async move {
+    let future = async move {
         loop {
             tokio::select! {
                 update = streamer_token_stream.recv() => {
@@ -242,7 +244,7 @@ pub async fn run(
                         None => continue,
                     };
 
-                    log::trace!("pushing remote player update");
+                    tracing::trace!("pushing remote player update");
 
                     let mut update = PlayerUpdate::default();
 
@@ -258,7 +260,9 @@ pub async fn run(
                 }
             }
         }
-    })
+    };
+
+    Ok(future.in_current_span())
 }
 
 pub struct Inner {

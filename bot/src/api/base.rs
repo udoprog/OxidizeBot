@@ -145,7 +145,7 @@ impl<'a> RequestBuilder<'a> {
     #[allow(clippy::match_ref_pats)]
     pub async fn execute(&self) -> Result<Response<Bytes>> {
         // NB: scope to only lock the token over the request setup.
-        log::trace!("Request: {}: {}", self.method, self.url);
+        tracing::trace!("Request: {}: {}", self.method, self.url);
         let mut req = self.client.request(self.method.clone(), self.url.clone());
 
         req = match &self.method {
@@ -186,9 +186,9 @@ impl<'a> RequestBuilder<'a> {
         let status = res.status();
         let body = res.bytes().await.map_err(ReceiveResponseError)?;
 
-        if log::log_enabled!(log::Level::Trace) {
+        if tracing::enabled!(tracing::Level::TRACE) {
             let response = String::from_utf8_lossy(&body);
-            log::trace!(
+            tracing::trace!(
                 "Response: {}: {}: {}: {}",
                 self.method,
                 self.url,

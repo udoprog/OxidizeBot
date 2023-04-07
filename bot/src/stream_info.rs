@@ -6,6 +6,7 @@ use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time;
+use tracing::Instrument;
 
 #[derive(Debug, Default)]
 pub struct Data {
@@ -69,7 +70,7 @@ impl StreamInfo {
         let channel = match twitch.new_channel_by_id(&streamer.id).await {
             Ok(Some(channel)) => channel,
             Ok(None) => {
-                log::error!("no channel matching the given id `{id}`", id = streamer.id);
+                tracing::error!("no channel matching the given id `{id}`", id = streamer.id);
                 return Ok(());
             }
             Err(e) => {
@@ -121,6 +122,7 @@ impl StreamInfo {
 }
 
 /// Set up a stream information loop.
+#[tracing::instrument(skip_all)]
 pub fn setup(
     streamer: Arc<api::User>,
     twitch: api::Twitch,
@@ -164,5 +166,5 @@ pub fn setup(
         }
     };
 
-    (stream_info, stream_state_rx, future)
+    (stream_info, stream_state_rx, future.in_current_span())
 }

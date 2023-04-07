@@ -50,7 +50,7 @@ impl Database {
     pub fn open(path: &Path) -> Result<Database, Error> {
         let url = path.display().to_string();
 
-        log::info!("Using database: {}", url);
+        tracing::info!("Using database: {}", url);
 
         let mut pool = SqliteConnection::establish(&url)?;
 
@@ -69,7 +69,7 @@ impl Database {
         result.with_context(|| anyhow!("error when running migrations: {}", output))?;
 
         if !output.is_empty() {
-            log::trace!("migrations output:\n{}", output);
+            tracing::trace!("migrations output:\n{}", output);
         }
 
         Ok(Database {

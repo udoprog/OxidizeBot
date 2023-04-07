@@ -5,6 +5,7 @@ use anyhow::Result;
 use std::time::Duration;
 
 /// Setup a player.
+#[tracing::instrument(skip_all)]
 pub(super) async fn setup(
     bus: bus::Bus<bus::YouTube>,
     settings: crate::Settings,

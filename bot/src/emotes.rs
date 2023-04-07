@@ -619,7 +619,7 @@ impl Emotes {
 
                     match twitch {
                         Ok(badges) => out.extend(badges),
-                        Err(e) => log::warn!(
+                        Err(e) => tracing::warn!(
                             "{}/{}: failed to get twitch chat badges: {}",
                             user.login,
                             name,
@@ -629,7 +629,7 @@ impl Emotes {
 
                     match ffz {
                         Ok(badges) => out.extend(badges),
-                        Err(e) => log::warn!(
+                        Err(e) => tracing::warn!(
                             "{}/{}: failed to get ffz chat badges: {}",
                             user.login,
                             name,
@@ -639,7 +639,7 @@ impl Emotes {
 
                     match tduva {
                         Ok(badges) => out.extend(badges),
-                        Err(e) => log::warn!(
+                        Err(e) => tracing::warn!(
                             "{}/{}: failed to get tduva chat badges: {}",
                             user.login,
                             name,
@@ -649,7 +649,7 @@ impl Emotes {
 
                     match bttv {
                         Ok(badges) => out.extend(badges),
-                        Err(e) => log::warn!(
+                        Err(e) => tracing::warn!(
                             "{}/{}: failed to get bttv chat badges: {}",
                             user.login,
                             name,

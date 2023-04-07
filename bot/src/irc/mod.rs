@@ -27,8 +27,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time;
 use tokio::sync;
-use tracing::trace_span;
-use tracing_futures::Instrument as _;
+use tracing::Instrument;
 
 // re-exports
 pub use self::sender::Sender;
@@ -50,6 +49,7 @@ pub struct Irc {
 }
 
 impl Irc {
+    #[tracing::instrument(skip_all)]
     pub async fn run(self) -> Result<()> {
         use backoff::backoff::Backoff as _;
 
@@ -152,9 +152,9 @@ impl IrcLoop<'_> {
             }
         };
 
-        log::trace!("Channel: {:?}", streamer_channel);
-        log::trace!("Streamer: {:?}", streamer.user.display_name);
-        log::trace!("Bot: {:?}", bot.user.display_name);
+        tracing::trace!("Channel: {:?}", streamer_channel);
+        tracing::trace!("Streamer: {:?}", streamer.user.display_name);
+        tracing::trace!("Bot: {:?}", bot.user.display_name);
 
         let chat_channel = format!("#{}", streamer.user.login);
         injector
@@ -205,22 +205,16 @@ impl IrcLoop<'_> {
                 }
 
                 Ok(())
-            };
+            }
+            .in_current_span();
 
-            futures.push(Box::pin(
-                forward.instrument(trace_span!(target: "futures", "stream-info-forward",)),
-            ));
-            futures.push(Box::pin(
-                future.instrument(trace_span!(target: "futures", "stream-info-refresh",)),
-            ));
+            futures.push(Box::pin(forward));
+            futures.push(Box::pin(future));
 
             stream_info
         };
 
-        futures.push(Box::pin(
-            refresh_mods_future(sender.clone())
-                .instrument(trace_span!(target: "futures", "refresh-mods",)),
-        ));
+        futures.push(Box::pin(refresh_mods_future(sender.clone())));
 
         let mut handlers = module::Handlers::default();
 
@@ -246,9 +240,7 @@ impl IrcLoop<'_> {
         };
 
         for module in modules {
-            if log::log_enabled!(log::Level::Trace) {
-                log::trace!("initializing module: {}", module.ty());
-            }
+            tracing::trace!("initializing module: {}", module.ty());
 
             let result = module
                 .hook(module::HookContext {
@@ -279,9 +271,7 @@ impl IrcLoop<'_> {
         )
         .await?;
 
-        futures.push(Box::pin(
-            future.instrument(trace_span!(target: "futures", "currency-loop",)),
-        ));
+        futures.push(Box::pin(future));
 
         let (mut whitelisted_hosts_stream, whitelisted_hosts) = chat_settings
             .stream("whitelisted-hosts")
@@ -377,7 +367,7 @@ impl IrcLoop<'_> {
         while leave.is_empty() {
             tokio::select! {
                 _ = &mut join_task => {
-                    log::trace!("Done sending capabilities request and join message");
+                    tracing::trace!("Done sending capabilities request and join message");
                 }
                 Some(ev) = scripts_watch_rx.recv() => {
                     if let Ok(ev) = ev {
@@ -391,7 +381,7 @@ impl IrcLoop<'_> {
 
                     match command {
                         bus::Command::Raw { command } => {
-                            log::trace!("Raw command: {}", command);
+                            tracing::trace!("Raw command: {}", command);
 
                             if let Err(e) = handler.raw(command).await {
                                 log_error!(e, "Failed to handle message");
@@ -402,7 +392,7 @@ impl IrcLoop<'_> {
                 Some(future) = futures.next() => {
                     match future {
                         Ok(..) => {
-                            log::warn!("IRC component exited, exiting...");
+                            tracing::warn!("IRC component exited, exiting...");
                             return Ok(());
                         }
                         Err(e) => {
@@ -479,6 +469,7 @@ impl IrcLoop<'_> {
 }
 
 /// Set up a reward loop.
+#[tracing::instrument(skip_all)]
 async fn currency_loop(
     streamer: api::TwitchAndUser,
     sender: Sender,
@@ -487,7 +478,7 @@ async fn currency_loop(
     chat_settings: crate::Settings,
     settings: crate::Settings,
 ) -> Result<impl Future<Output = Result<()>>> {
-    log::trace!("Setting up currency loop");
+    tracing::trace!("Setting up currency loop");
 
     let reward = 10;
     let default_interval = Duration::seconds(60 * 10);
@@ -594,7 +585,7 @@ async fn currency_loop(
 
                     let seconds = reward_interval.num_seconds() as i64;
 
-                    log::trace!("running reward loop");
+                    tracing::trace!("running reward loop");
 
                     let reward = (reward * reward_percentage.load().await as i64) / 100i64;
                     let count = currency
@@ -668,7 +659,7 @@ impl Handler<'_> {
     fn handle_script_filesystem_event(&mut self, ev: notify::Event) -> Result<()> {
         use notify::event::{CreateKind, EventKind::*, ModifyKind, RemoveKind, RenameMode};
 
-        log::trace!("filesystem event: {:?}", ev);
+        tracing::trace!("filesystem event: {:?}", ev);
 
         let kind = match ev.kind {
             Create(CreateKind::File) => Kind::Load,
@@ -685,7 +676,7 @@ impl Handler<'_> {
         match kind {
             Kind::Load => {
                 for p in &ev.paths {
-                    log::info!("loading script: {}", p.display());
+                    tracing::info!("loading script: {}", p.display());
 
                     let p = p.canonicalize()?;
 
@@ -696,7 +687,7 @@ impl Handler<'_> {
             }
             Kind::Remove => {
                 for p in &ev.paths {
-                    log::info!("unloading script: {}", p.display());
+                    tracing::info!("unloading script: {}", p.display());
 
                     let p = p.canonicalize()?;
                     self.scripts.unload(&p);
@@ -729,7 +720,7 @@ async fn process_command(
             global_bus.send(bus::Global::Ping).await;
         }
         other => {
-            log::trace!("Testing command: {}", other);
+            tracing::trace!("Testing command: {}", other);
 
             // TODO: store currency name locally to match against.
             let currency_command = currency_handler.command_name().await;
@@ -744,8 +735,8 @@ async fn process_command(
             if let Some(handler) = handler {
                 let scope = handler.scope();
 
-                if log::log_enabled!(log::Level::Trace) {
-                    log::trace!("Auth: {:?} against {:?}", scope, ctx.user.roles());
+                if tracing::enabled!(tracing::Level::TRACE) {
+                    tracing::trace!("Auth: {:?} against {:?}", scope, ctx.user.roles());
                 }
 
                 // Test if user has the required scope to run the given
@@ -798,7 +789,7 @@ impl<'a> Handler<'a> {
             None => return Ok(()),
         };
 
-        log::info!("Attempting to delete message: {}", id);
+        tracing::info!("Attempting to delete message: {}", id);
         user.inner.sender.delete(id);
         Ok(())
     }
@@ -1053,25 +1044,25 @@ impl<'a> Handler<'a> {
                     _ => {}
                 }
 
-                log::trace!(
+                tracing::trace!(
                     "Capability Acknowledged: {}",
                     what.as_ref().map(|w| w.as_str()).unwrap_or("*")
                 );
             }
             Command::JOIN(ref channel, _, _) => {
                 let user = m.source_nickname().unwrap_or("?");
-                log::trace!("{} joined {}", user, channel);
+                tracing::trace!("{} joined {}", user, channel);
             }
             Command::Response(..) => {
-                log::trace!("Response: {}", m);
+                tracing::trace!("Response: {}", m);
             }
             Command::PING(ref server, ref other) => {
-                log::trace!("Received PING, responding with PONG");
+                tracing::trace!("Received PING, responding with PONG");
                 self.sender
                     .send_immediate(Command::PONG(server.clone(), other.clone()));
             }
             Command::PONG(..) => {
-                log::trace!("Received PONG, clearing PING timeout");
+                tracing::trace!("Received PONG, clearing PING timeout");
                 self.pong_timeout.clear();
             }
             Command::NOTICE(_, ref message) => {
@@ -1097,10 +1088,10 @@ impl<'a> Handler<'a> {
                         *self.vips.write() = parse_room_members(message);
                     }
                     Some(msg_id) => {
-                        log::info!("unhandled notice w/ msg_id: {:?}: {:?}", msg_id, m);
+                        tracing::info!("unhandled notice w/ msg_id: {:?}: {:?}", msg_id, m);
                     }
                     None => {
-                        log::info!("unhandled notice: {:?}", m);
+                        tracing::info!("unhandled notice: {:?}", m);
                     }
                 }
             }
@@ -1125,11 +1116,11 @@ impl<'a> Handler<'a> {
                     }
                 }
                 _ => {
-                    log::trace!("Raw: {:?}", m);
+                    tracing::trace!("Raw: {:?}", m);
                 }
             },
             _ => {
-                log::info!("unhandled: {:?}", m);
+                tracing::info!("unhandled: {:?}", m);
             }
         }
 
@@ -1581,12 +1572,13 @@ pub struct CommandVars<'a> {
 }
 
 // Future to refresh moderators every 5 minutes.
+#[tracing::instrument(skip_all)]
 async fn refresh_mods_future(sender: Sender) -> Result<()> {
     let mut interval = tokio::time::interval(time::Duration::from_secs(60 * 5));
 
     loop {
         interval.tick().await;
-        log::trace!("refreshing mods and vips");
+        tracing::trace!("refreshing mods and vips");
         sender.mods();
         sender.vips();
     }

@@ -51,7 +51,7 @@ pub(crate) async fn task(
                 state.build();
             }
             Some(redemption) = state.redemptions_stream.next() => {
-                log::info!("got redemption");
+                tracing::info!("got redemption");
                 state.process_redemption(redemption).await;
             }
         }
@@ -101,7 +101,7 @@ impl State {
         let input = match redemption.user_input.as_ref() {
             Some(input) => input,
             None => {
-                log::warn!(
+                tracing::warn!(
                     "got matching redemption `{}`, but it had no user input",
                     title
                 );
@@ -112,7 +112,7 @@ impl State {
         let player = match &self.player {
             Some(player) => player,
             None => {
-                log::warn!(
+                tracing::warn!(
                     "got matching redemption `{}`, but player not configured",
                     title
                 );
@@ -120,7 +120,7 @@ impl State {
             }
         };
 
-        log::trace!("process request: {}", input);
+        tracing::trace!("process request: {}", input);
 
         let result = self
             .requester

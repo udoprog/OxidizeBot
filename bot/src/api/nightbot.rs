@@ -39,6 +39,7 @@ impl NightBot {
     }
 
     /// Run the stream that updates the nightbot client.
+    #[tracing::instrument(skip_all)]
     pub async fn run(injector: Injector) -> Result<()> {
         #[derive(Provider)]
         struct Deps {

@@ -14,6 +14,7 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::time::{self, Interval, Sleep};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+use tracing::Instrument;
 
 pub use self::model::*;
 
@@ -68,7 +69,7 @@ impl Client {
         use futures_util::SinkExt as _;
 
         let text = serde_json::to_string(&frame)?;
-        log::trace!(">> {:?}", frame);
+        tracing::trace!(">> {:?}", frame);
         let message = tungstenite::Message::Text(text);
         self.stream.send(message).await?;
         Ok(())
@@ -92,7 +93,7 @@ impl Client {
                 tungstenite::Message::Text(text) => text,
                 tungstenite::Message::Close(..) => return Poll::Ready(None),
                 message => {
-                    log::warn!("Unhandled websocket message: {:?}", message);
+                    tracing::warn!("Unhandled websocket message: {:?}", message);
                     continue;
                 }
             };
@@ -103,11 +104,12 @@ impl Client {
 }
 
 /// Connect to the pub/sub websocket once available.
+#[tracing::instrument(skip_all)]
 pub fn connect(
     settings: &crate::Settings,
     injector: &Injector,
 ) -> impl Future<Output = Result<()>> {
-    task(settings.clone(), injector.clone())
+    task(settings.clone(), injector.clone()).in_current_span()
 }
 
 struct State {
@@ -129,7 +131,7 @@ impl State {
                 log_error!(e, "error when closing stream");
             }
 
-            log::info!("Disconnected from Twitch Pub/Sub!");
+            tracing::info!("Disconnected from Twitch Pub/Sub!");
         }
 
         self.client.clear();
@@ -149,9 +151,9 @@ impl State {
 
         // NB: if still enabled, set a reconnect.
         if self.enabled {
-            log::info!("Attempting to reconnect");
+            tracing::info!("Attempting to reconnect");
             let backoff = self.reconnect_backoff.next_backoff().unwrap_or_default();
-            log::warn!("reconnecting in {:?}", backoff);
+            tracing::warn!("reconnecting in {:?}", backoff);
             self.reconnect.set(Box::pin(time::sleep(backoff)));
         }
     }
@@ -188,7 +190,7 @@ impl State {
             use tungstenite::handshake::client::Request;
             use tungstenite::http::Uri;
 
-            log::trace!("Connecting to Twitch Pub/Sub");
+            tracing::trace!("Connecting to Twitch Pub/Sub");
 
             let auth_token = streamer.client.token.read().await?.access_token.clone();
 
@@ -226,20 +228,20 @@ impl State {
         let frame = match Self::deserialize_frame(text) {
             Ok(frame) => frame,
             Err(e) => {
-                log::trace!("<< raw: {}", text);
+                tracing::trace!("<< raw: {}", text);
                 return Err(e);
             }
         };
 
-        log::trace!("<< {:?}", frame);
+        tracing::trace!("<< {:?}", frame);
 
         match frame {
             self::transport::Frame::Response(response) => {
                 if let Some(error) = response.error {
-                    log::warn!("got error `{}`, disconnecting", error);
+                    tracing::warn!("got error `{}`, disconnecting", error);
                     self.recover().await;
                 } else if response.nonce.as_deref() == Some("initialize") {
-                    log::info!("Connected to Twitch Pub/Sub!");
+                    tracing::info!("Connected to Twitch Pub/Sub!");
                 }
             }
             self::transport::Frame::Pong => {
@@ -322,7 +324,7 @@ async fn task(settings: crate::Settings, injector: Injector) -> Result<()> {
                         }
                     }
                     None => {
-                        log::error!("end of websocket stream");
+                        tracing::error!("end of websocket stream");
                         state.recover().await;
                         continue;
                     },
@@ -352,7 +354,7 @@ async fn task(settings: crate::Settings, injector: Injector) -> Result<()> {
                 state.build().await;
             }
             _ = &mut state.pong_deadline => {
-                log::warn!("Did not receive pong in time!");
+                tracing::warn!("Did not receive pong in time!");
                 state.recover().await;
             }
         }

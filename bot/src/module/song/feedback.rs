@@ -45,7 +45,7 @@ async fn feedback(
 
     loop {
         let e = rx.recv().await?;
-        log::trace!("Player event: {:?}", e);
+        tracing::trace!("Player event: {:?}", e);
 
         match e {
             Event::Detached => {

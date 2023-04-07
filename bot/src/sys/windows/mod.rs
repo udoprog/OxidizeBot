@@ -1,17 +1,20 @@
-use crate::prelude::*;
-use crate::sys::Notification;
-use crate::web;
-use anyhow::{anyhow, bail, Context as _, Error};
-use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::io;
 use std::path::Path;
 use std::ptr;
 use std::sync::Arc;
 use std::thread;
+
+use anyhow::{anyhow, bail, Context as _, Error};
+use chrono::Local;
+use parking_lot::Mutex;
 use tokio::sync::broadcast;
 use winapi::um::shellapi::ShellExecuteW;
 use winapi::um::winuser::SW_SHOW;
+
+use crate::prelude::*;
+use crate::sys::Notification;
+use crate::web;
 
 mod convert;
 mod registry;
@@ -49,21 +52,21 @@ impl System {
     /// Clear the current state.
     pub fn clear(&self) {
         if let Err(e) = self.events.send(Event::Cleared) {
-            log::error!("failed to send clear: {}", e);
+            tracing::error!("failed to send clear: {}", e);
         }
     }
 
     /// Set an error.
     pub fn error(&self, error: String) {
         if let Err(e) = self.events.send(Event::Errored(error)) {
-            log::error!("failed to send clear: {}", e);
+            tracing::error!("failed to send clear: {}", e);
         }
     }
 
     /// Send the given notification.
     pub fn notification(&self, n: Notification) {
         if let Err(e) = self.events.send(Event::Notification(n)) {
-            log::error!("failed to send notification: {}", e);
+            tracing::error!("failed to send notification: {}", e);
         }
     }
 
@@ -180,7 +183,7 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                     window.quit();
                 }
                 Some(event) = events_rx.recv() => {
-                    log::trace!("Event: {:?}", event);
+                    tracing::trace!("Event: {:?}", event);
 
                     match event {
                         Event::Cleared => {
@@ -205,6 +208,8 @@ pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                                 webbrowser::open(web::URL)?;
                             }
                             2 => {
+                                let date = Local::now().date_naive();
+                                let log_file = log_file.with_extension(format!("log.{date}"));
                                 let _ = open_dir(&log_file)?;
                             }
                             3 => {

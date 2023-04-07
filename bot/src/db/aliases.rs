@@ -122,7 +122,7 @@ impl Aliases {
             match alias.template.render_to_string(&captures) {
                 Ok(s) => return Some((key, s)),
                 Err(e) => {
-                    log::error!("failed to render alias: {}", e);
+                    tracing::error!("failed to render alias: {}", e);
                 }
             }
         }

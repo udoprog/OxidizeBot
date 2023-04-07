@@ -21,7 +21,7 @@ pub fn panic_logger() {
 
         match info.location() {
             Some(location) => {
-                log::error!(
+                tracing::error!(
                     target: "panic", "thread '{}' panicked at '{}': {}:{}\n{:?}",
                     thread,
                     msg,
@@ -31,7 +31,7 @@ pub fn panic_logger() {
                 );
             }
             None => {
-                log::error!(
+                tracing::error!(
                     target: "panic",
                     "thread '{}' panicked at '{}'\n{:?}",
                     thread,
@@ -41,7 +41,7 @@ pub fn panic_logger() {
             }
         }
 
-        log::error!("Since the process panicked it will now shut down :(");
+        tracing::error!("Since the process panicked it will now shut down :(");
         std::process::abort();
     }));
 }

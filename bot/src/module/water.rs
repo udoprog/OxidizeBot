@@ -101,7 +101,7 @@ impl command::Handler for Handler {
                     .balance_add(ctx.channel(), &reward.user, -reward.amount)
                     .await
                 {
-                    log::error!("failed to undo water from database: {}", e);
+                    tracing::error!("failed to undo water from database: {}", e);
                 }
             }
             None => {
@@ -142,7 +142,7 @@ impl command::Handler for Handler {
                     .balance_add(ctx.channel(), user.name(), amount)
                     .await
                 {
-                    log::error!("failed to appply water balance: {}", e);
+                    tracing::error!("failed to appply water balance: {}", e);
                 }
             }
             Some(_) => {
