@@ -62,7 +62,7 @@ impl Mixer {
             if let Ok(Some(item)) = item {
                 self.queue.push_back(Arc::new(item));
             } else {
-                log::warn!("failed to convert db item: {:?}", song);
+                tracing::warn!("failed to convert db item: {:?}", song);
             }
         }
 
@@ -226,7 +226,7 @@ impl Mixer {
         }
 
         if self.fallback_items.is_empty() {
-            log::warn!("there are no fallback songs available");
+            tracing::warn!("there are no fallback songs available");
             return Ok(None);
         }
 

@@ -8,6 +8,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 /// Setup a player.
+#[tracing::instrument(skip_all)]
 pub(super) async fn setup(
     spotify: Arc<api::Spotify>,
     settings: crate::Settings,

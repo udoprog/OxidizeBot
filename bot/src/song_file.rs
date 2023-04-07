@@ -22,7 +22,7 @@ impl SongFileBuilder {
     /// Construct a new SongFile handler if all the necessary options are available.
     pub fn build(&self) -> Option<SongFile> {
         if !self.enabled {
-            log::trace!("not enabled");
+            tracing::trace!("not enabled");
             return None;
         }
 
@@ -31,7 +31,7 @@ impl SongFileBuilder {
         let update_interval = if !self.update_interval.is_empty() {
             self.update_interval
         } else {
-            log::trace!("no update interval configured");
+            tracing::trace!("no update interval configured");
             return None;
         };
 
@@ -70,6 +70,7 @@ pub struct SongFile {
 }
 
 impl SongFile {
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn run(injector: Injector, settings: crate::Settings) -> Result<()> {
         let (mut song_stream, mut song) = injector.stream::<player::Song>().await;
         let (mut state_stream, mut state) = injector.stream::<player::State>().await;
@@ -147,7 +148,7 @@ impl SongFile {
 
     /// Write current song. Log any errors.
     async fn update_song(&self, song: Option<&player::Song>, state: Option<player::State>) {
-        log::trace!("updating song: {:?} {:?}", song, state);
+        tracing::trace!("updating song: {:?} {:?}", song, state);
 
         let state = state.unwrap_or_default();
 
@@ -157,7 +158,7 @@ impl SongFile {
         };
 
         if let Err(e) = result {
-            log::warn!(
+            tracing::warn!(
                 "failed to write current song: {}: {}",
                 self.path.display(),
                 e
@@ -195,7 +196,7 @@ impl SongFile {
     /// Clear the old log.
     pub fn blank_log(&self) {
         if let Err(e) = self.blank() {
-            log::error!("Failed to blank file: {}: {}", self.path.display(), e);
+            tracing::error!("Failed to blank file: {}: {}", self.path.display(), e);
         }
     }
 }

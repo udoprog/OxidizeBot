@@ -19,6 +19,7 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{RwLock, RwLockReadGuard};
+use tracing::Instrument;
 use warp::{body, filters, path, Filter as _};
 
 mod cache;
@@ -971,7 +972,8 @@ impl Api {
 }
 
 /// Set up the web endpoint.
-pub async fn setup(
+#[tracing::instrument(skip_all)]
+pub async fn run(
     injector: &Injector,
     message_log: message_log::MessageLog,
     message_bus: bus::Bus<message_log::Event>,
@@ -1148,7 +1150,7 @@ pub async fn setup(
 
     let server = Server { active_connections };
 
-    return Ok((server, server_future));
+    return Ok((server, server_future.in_current_span()));
 
     fn serve(
         path: &str,
@@ -1231,7 +1233,7 @@ async fn recover(err: warp::Rejection) -> Result<impl warp::Reply, warp::Rejecti
         Ok(warp::reply::with_status(json, code))
     } else if let Some(e) = err.find::<CustomReject>() {
         // TODO: Also log which endpoint caused the error
-        log::error!("Endpoint error caused by: {}", e.0);
+        tracing::error!("Endpoint error caused by: {}", e.0);
 
         let json = warp::reply::json(&ErrorMessage {
             code: 500,

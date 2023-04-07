@@ -67,7 +67,7 @@ impl SyncToken {
         // send ready notifications if we updated the connection.
         while let Some(front) = ready_queue.pop_front() {
             if let Err(()) = front.send(()) {
-                log::warn!("tried to send ready notification but failed");
+                tracing::warn!("tried to send ready notification but failed");
             }
         }
     }
@@ -108,7 +108,7 @@ impl SyncToken {
             rx
         };
 
-        log::trace!("Waiting for connection: {}", self.what);
+        tracing::trace!("Waiting for connection: {}", self.what);
 
         match rx.await {
             Ok(()) => Ok(()),
@@ -254,14 +254,14 @@ impl ConnectionFactory {
         let setbac = match self.setbac.as_ref() {
             Some(setbac) => setbac,
             _ => {
-                log::trace!("{}: No client to configured", self.what);
+                tracing::trace!("{}: No client to configured", self.what);
                 return Ok(Validation::Ok);
             }
         };
 
         if self.force_refresh {
             self.force_refresh = false;
-            log::trace!("{}: Forcing refresh of existing connection", self.what);
+            tracing::trace!("{}: Forcing refresh of existing connection", self.what);
 
             if let Some(connection) = self.refresh_connection(setbac).await? {
                 self.connection = Some(connection.clone());
@@ -318,7 +318,7 @@ impl ConnectionFactory {
         &self,
         setbac: &Setbac,
     ) -> Result<Option<Box<Connection>>, Error> {
-        log::trace!("{}: Requesting new connection", self.what);
+        tracing::trace!("{}: Requesting new connection", self.what);
 
         match setbac.get_connection(self.flow_id).await? {
             Some(connection) => Ok(Some(Box::new(connection))),
@@ -332,19 +332,19 @@ impl ConnectionFactory {
         setbac: &Setbac,
         connection: &Connection,
     ) -> Result<Validation, Error> {
-        log::trace!("{}: Validating connection", self.what);
+        tracing::trace!("{}: Validating connection", self.what);
 
         // TODO: for some reason, this doesn't update :/
         let meta = match setbac.get_connection_meta(self.flow_id).await? {
             Some(c) => c,
             None => {
-                log::trace!("{}: Remote connection cleared", self.what);
+                tracing::trace!("{}: Remote connection cleared", self.what);
                 return Ok(Validation::Cleared);
             }
         };
 
         if !self.is_outdated(connection, &meta)? {
-            log::trace!("{}: Connection OK", self.what);
+            tracing::trace!("{}: Connection OK", self.what);
             return Ok(Validation::Ok);
         }
 
@@ -357,7 +357,7 @@ impl ConnectionFactory {
 
     /// Refresh a connection.
     async fn refresh_connection(&self, setbac: &Setbac) -> Result<Option<Box<Connection>>, Error> {
-        log::trace!("{}: Refreshing connection", self.what);
+        tracing::trace!("{}: Refreshing connection", self.what);
 
         let connection = match setbac.refresh_connection(self.flow_id).await? {
             Some(connection) => connection,
@@ -390,6 +390,7 @@ impl fmt::Debug for ConnectionFactory {
 }
 
 /// Setup a synchronized token and the future necessary to keep it up-to-date.
+#[tracing::instrument(skip_all, fields(flow_id, what))]
 pub async fn build(
     flow_id: &'static str,
     what: &'static str,
@@ -440,7 +441,7 @@ pub async fn build(
         .await?;
 
     let future = async move {
-        log::trace!("{}: Running loop", what);
+        tracing::trace!("{}: Running loop", what);
 
         loop {
             tokio::select! {
@@ -449,19 +450,19 @@ pub async fn build(
                     builder.update().await?;
                 }
                 connection = connection_stream.recv() => {
-                    log::trace!("{}: New from settings", what);
+                    tracing::trace!("{}: New from settings", what);
                     builder.update_from_settings(connection.map(Box::new)).await?;
                 }
                 _ = force_refresh_rx.recv() => {
-                    log::trace!("{}: Forced refresh", what);
+                    tracing::trace!("{}: Forced refresh", what);
 
                     if !std::mem::take(&mut builder.force_refresh) {
-                        log::warn!("Forcing connection refresh for: {}", builder.what);
+                        tracing::warn!("Forcing connection refresh for: {}", builder.what);
                         builder.update().await?;
                     }
                 }
                 _ = check_interval.tick() => {
-                    log::trace!("{}: Check for expiration", what);
+                    tracing::trace!("{}: Check for expiration", what);
                     builder.update().await?;
                 }
                 update = check_interval_stream.recv() => {

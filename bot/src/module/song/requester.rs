@@ -63,13 +63,13 @@ impl SongRequester {
                     track_id::ParseTrackIdError::MissingUriPrefix => (),
                     // show other errors.
                     e => {
-                        log::warn!("bad song request: {}", e);
+                        tracing::warn!("bad song request: {}", e);
                         let e = format!("{} :(", e);
                         return Err(RequestError::BadRequest(Some(e)));
                     }
                 }
 
-                log::trace!("Failed to parse as URL/URI: {}: {}", q, e);
+                tracing::trace!("Failed to parse as URL/URI: {}: {}", q, e);
                 None
             }
         };

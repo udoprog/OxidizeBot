@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
 
     let port = opts.port.unwrap_or(8000);
 
-    log::info!("Loading config: {}", config_path.display());
+    tracing::info!("Loading config: {}", config_path.display());
     let config = toml::from_str::<web::Config>(&fs::read_to_string(config_path)?)?;
 
     let base = config.database.to_path(root);
@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
     let v31_db;
 
     if !v31.is_dir() {
-        log::warn!("migrating database {} -> {}", v28.display(), v31.display());
+        tracing::warn!("migrating database {} -> {}", v28.display(), v31.display());
 
         // migrate 28 to 31
         let v28 = sled28::Db::open(v28)?.open_tree("storage")?;
@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
             count += 1;
         }
 
-        log::warn!("migrated {} records", count);
+        tracing::warn!("migrated {} records", count);
     } else {
         v31_db = sled31::open(v31)?.open_tree("storage")?;
     }
@@ -90,7 +90,7 @@ async fn main() -> Result<()> {
                 bail!("web future ended unexpectedly");
             }
             _ = releases_interval.tick() => {
-                log::info!("Check for new github releases");
+                tracing::info!("Check for new github releases");
 
                 let github = github.clone();
                 let db = db.clone();
@@ -104,7 +104,7 @@ async fn main() -> Result<()> {
 
                 tokio::spawn(async move {
                     if let Err(e) = future.await {
-                        log::error!("failed to refresh github release: {}", e);
+                        tracing::error!("failed to refresh github release: {}", e);
                     }
                 });
             }

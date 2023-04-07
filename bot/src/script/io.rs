@@ -26,15 +26,15 @@ fn dbg_impl(stack: &mut Stack, args: usize) -> Result<(), VmError> {
         write!(string, "{:?}", value).map_err(VmError::panic)?;
     }
 
-    log::info!("[dbg]: {}", string);
+    tracing::info!("[dbg]: {}", string);
     stack.push(Value::Unit);
     Ok(())
 }
 
 fn print_impl(m: &str) {
-    log::info!("[out]: {}", m);
+    tracing::info!("[out]: {}", m);
 }
 
 fn println_impl(m: &str) {
-    log::info!("[out]: {}", m);
+    tracing::info!("[out]: {}", m);
 }

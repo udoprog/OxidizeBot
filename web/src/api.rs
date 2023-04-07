@@ -63,7 +63,7 @@ impl RequestBuilder {
             );
         }
 
-        log::trace!("response: {}", String::from_utf8_lossy(body.as_ref()));
+        tracing::trace!("response: {}", String::from_utf8_lossy(body.as_ref()));
         serde_json::from_slice(body.as_ref()).map_err(Into::into)
     }
 

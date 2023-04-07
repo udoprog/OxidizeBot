@@ -23,6 +23,7 @@ pub(super) struct PlaybackFuture {
 
 impl PlaybackFuture {
     /// Run the playback future.
+    #[tracing::instrument(skip_all)]
     pub(super) async fn run(mut self, injector: Injector, settings: crate::Settings) -> Result<()> {
         // TODO: Remove fallback-uri migration next major release.
         if let Some(fallback_uri) = settings.get::<String>("fallback-uri").await? {
@@ -102,7 +103,7 @@ impl PlaybackFuture {
                     let task = internal.read().await.load_fallback_items(fallback.as_ref());
                     let (what, items) = task.await?;
 
-                    log::info!(
+                    tracing::info!(
                         "Updated fallback queue with {} items from {}.",
                         items.len(),
                         what

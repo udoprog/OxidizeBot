@@ -576,16 +576,16 @@ impl Handler {
             match player.play_theme(target.as_str(), id.as_str()).await {
                 Ok(()) => (),
                 Err(player::PlayThemeError::NoSuchTheme) => {
-                    log::error!("you need to configure the theme `{}`", id);
+                    tracing::error!("you need to configure the theme `{}`", id);
                 }
                 Err(player::PlayThemeError::NotConfigured) => {
-                    log::error!("themes system is not configured");
+                    tracing::error!("themes system is not configured");
                 }
                 Err(player::PlayThemeError::MissingAuth) => {
-                    log::error!("missing authentication to play the theme `{}`", id);
+                    tracing::error!("missing authentication to play the theme `{}`", id);
                 }
                 Err(player::PlayThemeError::Error(e)) => {
-                    log::error!("error when playing theme: {}", e);
+                    tracing::error!("error when playing theme: {}", e);
                 }
             }
         }
@@ -1174,12 +1174,12 @@ impl super::Module for Module {
                     Some((user, id, command)) = receiver.as_pin_mut().poll_stream(|mut r, cx| r.poll_recv(cx)) => {
                         let who = user.name().unwrap_or("unknown");
                         let message = format!("{} {} {}", who, id, command.command());
-                        log::info!("sent: {}", message);
+                        tracing::info!("sent: {}", message);
 
                         match socket.send(message.as_bytes()).await {
                             Ok(_) => (),
                             Err(e) => {
-                                log::error!("failed to send message: {}", e);
+                                tracing::error!("failed to send message: {}", e);
                             }
                         }
                     }

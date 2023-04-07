@@ -1,13 +1,16 @@
+use anyhow::Result;
+use tracing::Instrument;
+
 use crate::api;
 use crate::prelude::*;
 use crate::storage::Cache;
 use crate::utils::Duration;
-use anyhow::Result;
 
 const USER: &str = "udoprog";
 const REPO: &str = "OxidizeBot";
 
-pub fn run(
+#[tracing::instrument(skip_all)]
+pub fn updater(
     injector: &Injector,
 ) -> (
     settings::Var<Option<api::github::Release>>,
@@ -29,7 +32,7 @@ pub fn run(
                     cache = update;
                 }
                 _ = interval.tick() => {
-                    log::trace!("Looking for new release...");
+                    tracing::trace!("Looking for new release...");
 
                     let future = github.releases(String::from(USER), String::from(REPO));
 
@@ -51,5 +54,5 @@ pub fn run(
         }
     };
 
-    (returned_latest, future)
+    (returned_latest, future.in_current_span())
 }

@@ -51,7 +51,7 @@ impl Song {
         let track = match playback.item.clone() {
             Some(track) => track,
             _ => {
-                log::warn!("No playback item in current playback");
+                tracing::warn!("No playback item in current playback");
                 return None;
             }
         };
@@ -59,7 +59,7 @@ impl Song {
         let track_id = match &track.id {
             Some(track_id) => track_id,
             None => {
-                log::warn!("Current playback doesn't have a track id");
+                tracing::warn!("Current playback doesn't have a track id");
                 return None;
             }
         };
@@ -67,7 +67,7 @@ impl Song {
         let track_id = match SpotifyId::from_base62(track_id) {
             Ok(spotify_id) => TrackId::Spotify(spotify_id),
             Err(e) => {
-                log::warn!(
+                tracing::warn!(
                     "Failed to parse track id from current playback: {}: {}",
                     track_id,
                     e

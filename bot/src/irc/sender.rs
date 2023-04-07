@@ -136,7 +136,7 @@ impl Sender {
         let nightbot = match inner.nightbot.load().await {
             Some(nightbot) => nightbot,
             None => {
-                log::warn!("Nightbot API is not configured");
+                tracing::warn!("Nightbot API is not configured");
                 return;
             }
         };

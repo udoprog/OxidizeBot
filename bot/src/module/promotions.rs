@@ -113,13 +113,13 @@ impl super::Module for Module {
                         };
 
                         if idle.is_idle().await {
-                            log::trace!("channel is too idle to send a promotion");
+                            tracing::trace!("channel is too idle to send a promotion");
                         } else {
                             let promotions = promotions.clone();
                             let sender = sender.clone();
 
                             if let Err(e) = promote(promotions, sender).await {
-                                log::error!("failed to send promotion: {}", e);
+                                tracing::error!("failed to send promotion: {}", e);
                             }
                         }
                     }

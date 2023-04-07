@@ -12,8 +12,6 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::trace_span;
-use tracing_futures::Instrument as _;
 
 pub(self) use self::connect::{ConnectDevice, ConnectPlayer, ConnectStream};
 pub(self) use self::mixer::Mixer;
@@ -178,6 +176,7 @@ pub(self) async fn convert_item(
 }
 
 /// Run the player.
+#[tracing::instrument(skip_all)]
 pub async fn run(
     injector: &Injector,
     db: db::Database,
@@ -194,21 +193,17 @@ pub async fn run(
     let (connect_stream, connect_player, device, future) =
         self::connect::setup(spotify.clone(), settings.scoped("spotify")).await?;
 
-    futures.push(Box::pin(
-        future.instrument(trace_span!(target: "futures", "spotify")),
-    ));
+    futures.push(Box::pin(future));
 
     let (youtube_player, future) =
         self::youtube::setup(youtube_bus, settings.scoped("youtube")).await?;
 
-    futures.push(Box::pin(
-        future.instrument(trace_span!(target: "futures", "youtube")),
-    ));
+    futures.push(Box::pin(future));
 
-    futures.push(Box::pin(
-        SongFile::run(injector.clone(), settings.scoped("song-file"))
-            .instrument(trace_span!(target: "futures", "song-file")),
-    ));
+    futures.push(Box::pin(SongFile::run(
+        injector.clone(),
+        settings.scoped("song-file"),
+    )));
 
     let bus = bus::Bus::new();
 
@@ -272,11 +267,7 @@ pub async fn run(
         song_update_interval_stream,
     };
 
-    futures.push(Box::pin(
-        playback
-            .run(injector.clone(), settings)
-            .instrument(trace_span!(target: "futures", "playback")),
-    ));
+    futures.push(Box::pin(playback.run(injector.clone(), settings)));
 
     injector
         .update(Player {
@@ -294,7 +285,7 @@ pub async fn run(
         })
         .await;
 
-        log::info!("Player is up and running!");
+        tracing::info!("Player is up and running!");
 
         // Drive child futures now that initialization is done.
         if let Some(result) = futures.next().await {

@@ -158,7 +158,6 @@ pub mod sys;
 pub mod tags;
 mod task;
 pub mod template;
-pub mod tracing_utils;
 mod track_id;
 pub mod updater;
 mod uri;

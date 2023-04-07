@@ -50,12 +50,12 @@ impl command::Handler for Clip {
                 );
 
                 if let Some(_title) = title {
-                    log::warn!("Title was requested, but it can't be set (right now)")
+                    tracing::warn!("Title was requested, but it can't be set (right now)")
                 }
             }
             None => {
                 respond!(ctx, "Failed to create clip, sorry :(");
-                log::error!("created clip, but API returned nothing");
+                tracing::error!("created clip, but API returned nothing");
             }
         }
 

@@ -179,7 +179,7 @@ impl FileWriter {
             None => return Ok(()),
         };
 
-        log::trace!("Writing to log: {}", path.display());
+        tracing::trace!("Writing to log: {}", path.display());
 
         let mut f = fs::File::create(path)?;
         let remaining = timer.duration.saturating_sub(timer.elapsed);
@@ -212,7 +212,7 @@ impl FileWriter {
             None => return Ok(()),
         };
 
-        log::trace!("Clearing log: {}", path.display());
+        tracing::trace!("Clearing log: {}", path.display());
 
         if !path.is_file() {
             return Ok(());

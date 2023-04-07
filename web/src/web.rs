@@ -31,13 +31,13 @@ use crate::stream::StreamExt as _;
 
 macro_rules! log_error {
     ($e:expr, $fmt:expr $(, $($tt:tt)*)?) => {{
-        log::error!($fmt $(, $($tt)*)*);
-        log::error!("caused by: {}", $e);
+        tracing::error!($fmt $(, $($tt)*)*);
+        tracing::error!("caused by: {}", $e);
 
         let mut last = $e.source();
 
         while let Some(e) = last {
-            log::error!("caused by: {}", e);
+            tracing::error!("caused by: {}", e);
             last = e.source();
         }
     }}
@@ -76,7 +76,7 @@ pub fn setup(
     let handler = Arc::new(Handler::new(fallback, db, config, pending_tokens.clone())?);
 
     let bind = format!("{}:{}", host, port);
-    log::info!("Listening on: http://{}", bind);
+    tracing::info!("Listening on: http://{}", bind);
 
     let addr: SocketAddr = str::parse(&bind)?;
 
@@ -111,7 +111,7 @@ pub fn setup(
                     }
 
                     if !to_remove.is_empty() {
-                        log::info!("Removing {} expired tokens", to_remove.len());
+                        tracing::info!("Removing {} expired tokens", to_remove.len());
                     }
 
                     for remove in to_remove {
@@ -357,7 +357,7 @@ impl Handler {
                         r
                     }
                     Err(e) => {
-                        log::error!("failed to build response: {}", e);
+                        tracing::error!("failed to build response: {}", e);
                         let mut r = Response::new(Body::from("Internal Server Error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         r
@@ -394,7 +394,7 @@ impl Handler {
             x_forwarded_for,
         };
 
-        log::info!(
+        tracing::info!(
             target: "request",
             "{remote_address} {method} {uri} (User Agent: {user_agent}) ({request_size}) => {status} ({response_size})",
             remote_address = remote_address,

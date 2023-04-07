@@ -467,7 +467,7 @@ where
             match self.migrate_exact(&current_key, &to_key).await {
                 Ok(()) => (),
                 Err(Error::NoTargetForSchema(..)) => {
-                    log::warn!("Clearing setting without schema: {}", current_key);
+                    tracing::warn!("Clearing setting without schema: {}", current_key);
                     self.inner_clear(&current_key).await?;
                 }
                 Err(e) => return Err(e),
@@ -484,7 +484,7 @@ where
             None => return Ok(()),
         };
 
-        log::info!("Migrating setting: {} -> {}", from_key, to_key);
+        tracing::info!("Migrating setting: {} -> {}", from_key, to_key);
 
         let to = match self.setting::<serde_json::Value>(to_key).await? {
             Some(to) => to,
@@ -503,7 +503,7 @@ where
 
             self.set_json(to_key, from).await?;
         } else {
-            log::warn!(
+            tracing::warn!(
                 "Ignoring value for {} since {} is already present",
                 from_key,
                 to_key
@@ -638,8 +638,8 @@ where
     ) -> Result<(), Error> {
         use self::db::schema::settings::dsl;
 
-        if log::log_enabled!(log::Level::Trace) {
-            log::trace!("{}: Setting to {:?} (notify: {})", key, value, notify);
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!("{}: Setting to {:?} (notify: {})", key, value, notify);
         }
 
         let key = key.to_string();
@@ -845,6 +845,7 @@ where
     /// associated with it are driven to completion.
     ///
     /// This has to be called for the injector to perform important tasks.
+    #[tracing::instrument(skip_all)]
     pub async fn drive(self) -> Result<(), Error> {
         let mut rx = self
             .inner
@@ -899,7 +900,7 @@ where
             Some(value) => match serde_json::from_str::<Option<T>>(&value) {
                 Ok(value) => value,
                 Err(e) => {
-                    log::warn!("bad value for key: {}: {}", key, e);
+                    tracing::warn!("bad value for key: {}: {}", key, e);
                     None
                 }
             },
@@ -1147,7 +1148,7 @@ where
             Event::Set(value) => match serde_json::from_value(value) {
                 Ok(value) => Some(value),
                 Err(e) => {
-                    log::warn!("bad value for key: {}: {}", self.key, e);
+                    tracing::warn!("bad value for key: {}: {}", self.key, e);
                     None
                 }
             },
