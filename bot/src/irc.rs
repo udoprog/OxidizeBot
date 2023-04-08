@@ -1,6 +1,7 @@
 mod chat_log;
 mod currency;
 mod currency_admin;
+pub(crate) mod messages;
 mod sender;
 
 use std::path::PathBuf;
@@ -9,15 +10,15 @@ use std::time;
 
 use anyhow::{anyhow, bail, Context as _, Result};
 use irc::client::{self, Client};
-use irc::proto::command::{CapSubCommand, Command};
+use irc::proto::command::Command;
 use irc::proto::message::{Message, Tag};
 use irc::proto::Prefix;
 use notify::{recommended_watcher, RecommendedWatcher, Watcher};
-use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::fmt;
 use tokio::sync;
 
+pub(crate) use self::messages::Messages;
 pub(crate) use self::sender::Sender;
 use crate::api;
 use crate::auth::{Auth, Role, Scope};
@@ -187,7 +188,16 @@ impl IrcLoop<'_> {
             stream_info
         };
 
-        futures.push(Box::pin(refresh_mods_future(sender.clone())));
+        let context_inner = Arc::new(command::ContextInner::new(
+            sender.clone(),
+            restart,
+            auth.scope_cooldowns(),
+        ));
+
+        futures.push(Box::pin(refresh_roles(
+            context_inner.clone(),
+            streamer.clone(),
+        )));
 
         let mut handlers = module::Handlers::default();
 
@@ -257,13 +267,6 @@ impl IrcLoop<'_> {
 
         let (mut api_url_stream, api_url) = settings.stream("remote/api-url").optional().await?;
 
-        let join_message = chat_settings.get::<String>("join-message").await?;
-
-        let leave_message = chat_settings
-            .get::<String>("leave-message")
-            .await?
-            .unwrap_or_else(|| String::from("Leaving chat... VoHiYo"));
-
         let mut chat_log_builder = chat_log::Builder::new(
             streamer.clone(),
             injector,
@@ -277,11 +280,12 @@ impl IrcLoop<'_> {
 
         let mut pong_timeout = Fuse::empty();
 
+        let (messages, future) = messages::setup(&settings).await?;
+        futures.push(Box::pin(future));
+
         let mut handler = Handler {
             streamer: &streamer,
             sender: sender.clone(),
-            moderators: Default::default(),
-            vips: Default::default(),
             whitelisted_hosts,
             commands,
             bad_words: &bad_words,
@@ -301,12 +305,8 @@ impl IrcLoop<'_> {
             url_whitelist_enabled,
             bad_words_enabled,
             chat_log: chat_log_builder.build()?,
-            context_inner: Arc::new(command::ContextInner {
-                sender: sender.clone(),
-                scope_cooldowns: sync::Mutex::new(auth.scope_cooldowns()),
-                message_hooks: sync::RwLock::new(Default::default()),
-                restart,
-            }),
+            messages: messages.clone(),
+            context_inner,
         };
 
         let mut outgoing = client
@@ -328,9 +328,8 @@ impl IrcLoop<'_> {
             sender.cap_req(TWITCH_TAGS_CAP).await;
             sender.cap_req(TWITCH_COMMANDS_CAP).await;
 
-            if let Some(join_message) = join_message.as_ref() {
-                // greeting when bot joins.
-                sender.privmsg_immediate(join_message);
+            if let Some(m) = messages.try_get(messages::JOIN_CHAT).await {
+                sender.privmsg_immediate(m);
             }
         });
         tokio::pin!(join_task);
@@ -421,7 +420,9 @@ impl IrcLoop<'_> {
             }
         }
 
-        handler.sender.privmsg_immediate(leave_message);
+        if let Some(m) = handler.messages.try_get(messages::LEAVE_CHAT).await {
+            handler.sender.privmsg_immediate(m);
+        }
 
         loop {
             tokio::select! {
@@ -444,10 +445,6 @@ struct Handler<'a> {
     streamer: &'a api::TwitchAndUser,
     /// Queue for sending messages.
     sender: Sender,
-    /// Moderators.
-    moderators: Arc<RwLock<HashSet<String>>>,
-    /// VIPs.
-    vips: Arc<RwLock<HashSet<String>>>,
     /// Whitelisted hosts for links.
     whitelisted_hosts: HashSet<String>,
     /// All registered commands.
@@ -484,6 +481,8 @@ struct Handler<'a> {
     url_whitelist_enabled: settings::Var<bool>,
     /// Handler for chat logs.
     chat_log: Option<chat_log::ChatLog>,
+    /// Messages.
+    messages: Messages,
     /// Shared context paramters.
     context_inner: Arc<command::ContextInner>,
 }
@@ -581,9 +580,11 @@ async fn process_command(
                 if let Some(scope) = scope {
                     if !ctx.user.has_scope(scope).await {
                         if ctx.user.is_moderator() {
-                            respond!(ctx, "You are not allowed to run that command");
+                            let m = ctx.messages.get(messages::AUTH_FAILED).await;
+                            ctx.respond(m).await;
                         } else {
-                            respond!(ctx, "Do you think this is a democracy? LUL");
+                            let m = ctx.messages.get(messages::AUTH_FAILED_RUDE).await;
+                            ctx.respond(m).await;
                         }
 
                         return Ok(());
@@ -592,8 +593,10 @@ async fn process_command(
 
                 task::spawn(async move {
                     if let Err(e) = handler.handle(&mut ctx).await {
-                        if let Some(command::Respond(respond)) = e.downcast_ref() {
-                            respond!(ctx, respond);
+                        if let Some(respond) = e.downcast_ref::<command::Respond>() {
+                            if let command::Respond::Message(respond) = respond {
+                                respond!(ctx, respond);
+                            }
                         } else {
                             respond!(ctx, "Sorry, something went wrong :(");
                             log_error!(e, "Error when processing command");
@@ -788,6 +791,7 @@ impl<'a> Handler<'a> {
                     api_url: self.api_url.clone(),
                     user: user.clone(),
                     it,
+                    messages: self.messages.clone(),
                     inner: self.context_inner.clone(),
                 };
 
@@ -823,10 +827,9 @@ impl<'a> Handler<'a> {
                 sender: self.sender.clone(),
                 principal: Principal::Injected,
                 streamer_login: self.streamer.user.login.clone(),
-                moderators: self.moderators.clone(),
-                vips: self.vips.clone(),
                 stream_info: self.stream_info.clone(),
                 auth: self.auth.clone(),
+                context: self.context_inner.clone(),
             }),
         };
 
@@ -864,28 +867,13 @@ impl<'a> Handler<'a> {
                         sender: self.sender.clone(),
                         principal: Principal::User { login },
                         streamer_login: self.streamer.user.login.clone(),
-                        moderators: self.moderators.clone(),
-                        vips: self.vips.clone(),
                         stream_info: self.stream_info.clone(),
                         auth: self.auth.clone(),
+                        context: self.context_inner.clone(),
                     }),
                 };
 
                 self.process_message(&user, message).await?;
-            }
-            Command::CAP(_, CapSubCommand::ACK, _, what) => {
-                // twitch commands capabilities have been acknowledged.
-                // do what needs to happen with them (like `/mods`).
-                if let Some(TWITCH_COMMANDS_CAP) = what.as_deref() {
-                    // request to get a list of moderators and vips.
-                    self.sender.mods();
-                    self.sender.vips();
-                }
-
-                tracing::trace!(
-                    "Capability Acknowledged: {}",
-                    what.as_ref().map(|w| w.as_str()).unwrap_or("*")
-                );
             }
             Command::JOIN(channel, _, _) => {
                 let user = match &m.prefix {
@@ -912,24 +900,6 @@ impl<'a> Handler<'a> {
                         tracing::trace!("Authentication failed");
                         self.bot.client.token.force_refresh().await?;
                         self.handler_shutdown = true;
-                    }
-                    Some("no_mods") => {
-                        tracing::trace!("No moderators");
-                        self.moderators.write().clear();
-                    }
-                    // Response to /mods request.
-                    Some("room_mods") => {
-                        tracing::trace!(?message, "Got list of room mods");
-                        *self.moderators.write() = parse_room_members(&message);
-                    }
-                    Some("no_vips") => {
-                        tracing::trace!("No vips");
-                        self.vips.write().clear();
-                    }
-                    // Response to /vips request.
-                    Some("vips_success") => {
-                        tracing::trace!(?message, "Got list of vips");
-                        *self.vips.write() = parse_room_members(&message);
                     }
                     msg_id => {
                         tracing::info!(?msg_id, message, "Unhandled notice");
@@ -980,10 +950,9 @@ pub(crate) struct RealUser<'a> {
     sender: &'a Sender,
     login: &'a str,
     streamer_login: &'a str,
-    moderators: &'a RwLock<HashSet<String>>,
-    vips: &'a RwLock<HashSet<String>>,
     stream_info: &'a stream_info::StreamInfo,
     auth: &'a Auth,
+    context: &'a command::ContextInner,
 }
 
 impl<'a> RealUser<'a> {
@@ -1016,7 +985,7 @@ impl<'a> RealUser<'a> {
 
     /// Test if moderator.
     fn is_moderator(&self) -> bool {
-        self.moderators.read().contains(self.login)
+        self.context.moderators.read().contains(self.login)
     }
 
     /// Test if user is a subscriber.
@@ -1026,7 +995,7 @@ impl<'a> RealUser<'a> {
 
     /// Test if vip.
     fn is_vip(&self) -> bool {
-        self.vips.read().contains(self.login)
+        self.context.vips.read().contains(self.login)
     }
 
     /// Get a list of all roles the current requester belongs to.
@@ -1074,10 +1043,9 @@ struct UserInner {
     sender: Sender,
     principal: Principal,
     streamer_login: String,
-    moderators: Arc<RwLock<HashSet<String>>>,
-    vips: Arc<RwLock<HashSet<String>>>,
     stream_info: stream_info::StreamInfo,
     auth: Auth,
+    context: Arc<command::ContextInner>,
 }
 
 #[derive(Clone)]
@@ -1094,10 +1062,9 @@ impl User {
                 sender: &self.inner.sender,
                 login: login.as_ref(),
                 streamer_login: &self.inner.streamer_login,
-                moderators: &self.inner.moderators,
-                vips: &self.inner.vips,
                 stream_info: &self.inner.stream_info,
                 auth: &self.inner.auth,
+                context: &self.inner.context,
             }),
             Principal::Injected => None,
         }
@@ -1392,61 +1359,40 @@ pub(crate) struct CommandVars<'a> {
 
 // Future to refresh moderators every 5 minutes.
 #[tracing::instrument(skip_all)]
-async fn refresh_mods_future(sender: Sender) -> Result<()> {
+async fn refresh_roles(
+    context: Arc<command::ContextInner>,
+    streamer: api::TwitchAndUser,
+) -> Result<()> {
     let mut interval = tokio::time::interval(time::Duration::from_secs(60 * 5));
 
     loop {
         interval.tick().await;
         tracing::trace!("Refreshing mods and vips");
-        sender.mods();
-        sender.vips();
-    }
-}
 
-/// Parse the `room_mods` message.
-fn parse_room_members(message: &str) -> HashSet<String> {
-    let mut out = HashSet::default();
+        let mods = streamer.client.moderators(&streamer.user.id);
+        let vips = streamer.client.vips(&streamer.user.id);
 
-    if let Some(index) = message.find(':') {
-        let message = &message[(index + 1)..];
-        let message = message.trim_end_matches('.');
+        tokio::pin!(mods);
+        tokio::pin!(vips);
 
-        out.extend(
-            message
-                .split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(String::from),
-        );
-    }
+        let mut set = HashSet::new();
 
-    out
-}
+        while let Some(chatter) = mods.next().await.transpose()? {
+            set.insert(chatter.user_login);
+        }
 
-#[cfg(test)]
-mod tests {
-    use super::parse_room_members;
-    use std::collections::HashSet;
+        if *context.moderators.read() != set {
+            *context.moderators.write() = set;
+        }
 
-    #[test]
-    fn test_parse_room_mods() {
-        assert_eq!(
-            vec![String::from("foo"), String::from("bar")]
-                .into_iter()
-                .collect::<HashSet<String>>(),
-            parse_room_members("The moderators of this channel are: foo, bar")
-        );
+        let mut set = HashSet::new();
 
-        assert_eq!(
-            vec![String::from("a")]
-                .into_iter()
-                .collect::<HashSet<String>>(),
-            parse_room_members("The moderators of this channel are: a")
-        );
+        while let Some(chatter) = vips.next().await.transpose()? {
+            set.insert(chatter.user_login);
+        }
 
-        assert_eq!(
-            vec![].into_iter().collect::<HashSet<String>>(),
-            parse_room_members("The moderators of this channel are:")
-        );
+        if *context.vips.read() != set {
+            *context.vips.write() = set;
+        }
     }
 }

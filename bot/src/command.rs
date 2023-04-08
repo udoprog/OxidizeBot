@@ -4,9 +4,11 @@ use crate::auth::Scope;
 use crate::irc;
 use crate::prelude::*;
 use crate::utils;
+
 use anyhow::Result;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt;
 use std::num;
 use std::str;
@@ -16,8 +18,14 @@ use thiserror::Error;
 use tokio::sync;
 
 #[derive(Debug, Error)]
-#[error("Command failed with: {0}")]
-pub(crate) struct Respond(pub(crate) Cow<'static, str>);
+pub(crate) enum Respond {
+    /// Response already sent.
+    #[error("Command failed")]
+    Empty,
+    /// A literal message.
+    #[error("Command failed with: {0}")]
+    Message(Cow<'static, str>),
+}
 
 /// An opaque identifier for a hook that has been inserted.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -62,12 +70,33 @@ pub(crate) trait MessageHook: std::any::Any + Send + Sync {
 pub(crate) struct ContextInner {
     /// Sender associated with the command.
     pub(crate) sender: irc::Sender,
+    /// Shutdown handler.
+    pub(crate) restart: utils::Restart,
     /// Active scope cooldowns.
     pub(crate) scope_cooldowns: sync::Mutex<HashMap<Scope, utils::Cooldown>>,
     /// A hook that can be installed to peek at all incoming messages.
     pub(crate) message_hooks: sync::RwLock<slab::Slab<Box<dyn MessageHook>>>,
-    /// Shutdown handler.
-    pub(crate) restart: utils::Restart,
+    /// Logins for moderators.
+    pub(crate) moderators: parking_lot::RwLock<HashSet<String>>,
+    /// Logins for VIPs.
+    pub(crate) vips: parking_lot::RwLock<HashSet<String>>,
+}
+
+impl ContextInner {
+    pub(crate) fn new(
+        sender: irc::Sender,
+        restart: utils::Restart,
+        scope_cooldowns: HashMap<Scope, utils::Cooldown>,
+    ) -> Self {
+        Self {
+            sender,
+            restart,
+            scope_cooldowns: sync::Mutex::new(scope_cooldowns),
+            message_hooks: Default::default(),
+            moderators: Default::default(),
+            vips: Default::default(),
+        }
+    }
 }
 
 /// Context for a single command invocation.
@@ -76,6 +105,7 @@ pub(crate) struct Context {
     pub(crate) api_url: Arc<Option<String>>,
     pub(crate) user: irc::User,
     pub(crate) it: utils::Words,
+    pub(crate) messages: irc::Messages,
     pub(crate) inner: Arc<ContextInner>,
 }
 
@@ -125,7 +155,9 @@ impl Context {
         };
 
         if !self.user.has_scope(scope).await {
-            respond_bail!("Do you think this is a democracy? LUL");
+            let m = self.messages.get(irc::messages::AUTH_FAILED_RUDE).await;
+            self.respond(m).await;
+            respond_bail!();
         }
 
         if self.user.has_scope(Scope::BypassCooldowns).await {

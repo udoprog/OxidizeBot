@@ -74,16 +74,6 @@ impl Sender {
         self.privmsg_immediate(format!("/delete {}", id));
     }
 
-    /// Get list of mods.
-    pub(crate) fn mods(&self) {
-        self.privmsg_immediate("/mods");
-    }
-
-    /// Get list of VIPs.
-    pub(crate) fn vips(&self) {
-        self.privmsg_immediate("/vips");
-    }
-
     /// Only send to chat, with rate limiting.
     pub(crate) async fn send(&self, m: impl Into<Message>) {
         let m = m.into();

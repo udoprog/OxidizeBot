@@ -5,6 +5,10 @@ migrations:
     to: song/youtube/enabled
   - from: irc/startup-message
     to: chat/join-message
+  - from: chat/leave-message
+    to: messages/leave-chat
+  - from: chat/join-message
+    to: messages/join-chat
   - prefix: true
     from: irc/
     to: chat/
@@ -166,12 +170,6 @@ types:
   chat/moderator-cooldown:
     doc: How long we must wait between each moderator action.
     type: {id: duration, optional: true}
-  chat/join-message:
-    doc: Message to send when the bot joins your channel.
-    type: {id: string, optional: true}
-  chat/leave-message:
-    doc: Message to send when the bot leaves your channel.
-    type: {id: string, optional: true}
   chat/idle-detection/threshold:
     doc: How many messages must be received before the channel is no longer considered idle.
     type: {id: number}
@@ -560,3 +558,15 @@ types:
       The URL to base the `!help` command from.
       Default is <https://setbac.tv>.
     type: {id: string}
+  messages/join-chat:
+    doc: Message to send when the bot joins your channel.
+    type: {id: string, optional: true}
+  messages/leave-chat:
+    doc: Message to send when the bot leaves your channel.
+    type: {id: string, optional: true}
+  messages/auth-failed:
+    doc: Message to send if a moderator tries to do something unauthorized.
+    type: {id: string, optional: true}
+  messages/auth-failed-rude:
+    doc: Message to send if a regular user tries to do something unauthorized.
+    type: {id: string, optional: true}

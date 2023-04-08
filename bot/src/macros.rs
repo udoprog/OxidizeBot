@@ -52,12 +52,16 @@ macro_rules! try_infinite_empty {
 
 /// Helper macro to generate a respond error.
 macro_rules! respond_err {
+    () => {
+        crate::command::Respond::Empty
+    };
+
     ($m:expr) => {
-        crate::command::Respond(std::borrow::Cow::Borrowed($m))
+        crate::command::Respond::Message(std::borrow::Cow::Borrowed($m))
     };
 
     ($($t:tt)*) => {
-        crate::command::Respond(std::borrow::Cow::Owned(format!($($t)*)))
+        crate::command::Respond::Message(std::borrow::Cow::Owned(format!($($t)*)))
     };
 }
 

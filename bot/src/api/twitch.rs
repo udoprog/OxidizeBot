@@ -52,7 +52,7 @@ impl Twitch {
         })
     }
 
-    /// Get chatters for the given channel using TMI.
+    /// Get chatters for the given broadcaster.
     pub(crate) fn chatters(
         &self,
         moderator_id: &str,
@@ -63,6 +63,23 @@ impl Twitch {
         req.query_param("moderator_id", moderator_id)
             .query_param("broadcaster_id", broadcaster_id);
 
+        page(req)
+    }
+
+    /// Get moderators for the current broadcaster.
+    pub(crate) fn moderators(
+        &self,
+        broadcaster_id: &str,
+    ) -> impl Stream<Item = Result<Chatter>> + '_ {
+        let mut req = self.new_api(Method::GET, &["moderation", "moderators"]);
+        req.query_param("broadcaster_id", broadcaster_id);
+        page(req)
+    }
+
+    /// Get VIPs for the current broadcaster.
+    pub(crate) fn vips(&self, broadcaster_id: &str) -> impl Stream<Item = Result<Chatter>> + '_ {
+        let mut req = self.new_api(Method::GET, &["channels", "vips"]);
+        req.query_param("broadcaster_id", broadcaster_id);
         page(req)
     }
 
