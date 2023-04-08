@@ -281,10 +281,11 @@ pub(crate) async fn run(
     Ok(async move {
         // Note: these tasks might fail sporadically, since we need to perform external
         // API calls to initialize metadata for playback items.
-        retry_until_ok!("Initialize Player", {
-            internal.write().await.initialize().await
-        })
-        .await;
+        retry_until_ok! {
+            "Initialize Player", {
+                internal.write().await.initialize().await
+            }
+        };
 
         tracing::info!("Player is up and running!");
 

@@ -95,7 +95,7 @@ macro_rules! respond {
 #[macro_export]
 macro_rules! retry_until_ok {
     ($id:expr, { $($f:tt)* }) => {
-        async {
+        'output: {
             let mut backoff = $crate::backoff::Exponential::new(std::time::Duration::from_secs(2));
 
             loop {
@@ -103,7 +103,7 @@ macro_rules! retry_until_ok {
                 let res: anyhow::Result<_> = async { $($f)* }.await;
 
                 match res {
-                    Ok(output) => break output,
+                    Ok(output) => break 'output output,
                     Err(e) => {
                         let duration = backoff.next();
                         log_warn!(e, "{} failed, trying again in {:?}", $id, duration);

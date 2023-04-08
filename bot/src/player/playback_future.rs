@@ -98,10 +98,9 @@ impl PlaybackFuture {
             internal: &RwLock<PlayerInternal>,
             fallback: Option<Uri>,
         ) {
-            let task = retry_until_ok! {
+            retry_until_ok! {
                 "Loading fallback items", {
-                    let task = internal.read().await.load_fallback_items(fallback.as_ref());
-                    let (what, items) = task.await?;
+                    let (what, items) = internal.read().await.load_fallback_items(fallback.as_ref()).await?;
 
                     tracing::info!(
                         "Updated fallback queue with {} items from {}.",
@@ -112,9 +111,7 @@ impl PlaybackFuture {
                     internal.write().await.update_fallback_items(items).await;
                     Ok(())
                 }
-            };
-
-            task.await
+            }
         }
     }
 }

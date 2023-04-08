@@ -502,119 +502,113 @@ impl PlayerInternal {
     }
 
     /// Load fallback items with the given uri.
-    pub(super) fn load_fallback_items<'a>(
+    pub(super) async fn load_fallback_items(
         &self,
-        uri: Option<&'a Uri>,
-    ) -> impl Future<Output = Result<(String, Vec<Arc<Item>>)>> + 'a {
-        let spotify = self.spotify.clone();
-
-        async move {
-            let (what, items) = match uri {
-                Some(uri) => {
-                    let id = match uri {
-                        Uri::SpotifyPlaylist(id) => id,
-                        uri => {
-                            return Err(anyhow!(
-                                "Bad fallback URI `{}`, expected Spotify Playlist",
-                                uri
-                            ));
-                        }
-                    };
-
-                    let (name, items) = download_spotify_playlist(&spotify, *id).await?;
-                    let items = convert(items).await?;
-                    (Some(name), items)
-                }
-                None => {
-                    let items = download_spotify_library(&spotify);
-                    let items = convert(items).await?;
-                    (None, items)
-                }
-            };
-
-            let what = what
-                .as_ref()
-                .map(|u| format!("\"{}\" playlist", u))
-                .unwrap_or_else(|| String::from("your library"));
-
-            return Ok((what, items));
-
-            async fn convert(
-                stream: impl Stream<Item = Result<FullTrack>>,
-            ) -> Result<Vec<Arc<Item>>> {
-                tokio::pin!(stream);
-
-                let mut items = Vec::new();
-
-                while let Some(track) = stream.next().await.transpose()? {
-                    let track_id = match &track.id {
-                        Some(track_id) => track_id,
-                        None => {
-                            continue;
-                        }
-                    };
-
-                    let track_id = TrackId::Spotify(
-                        SpotifyId::from_base62(track_id)
-                            .map_err(|_| anyhow!("bad spotify id: {}", track_id))?,
-                    );
-
-                    let duration = Duration::from_millis(track.duration_ms.into());
-
-                    let item = Item {
-                        track_id,
-                        track: Track::Spotify {
-                            track: Box::new(track),
-                        },
-                        user: None,
-                        duration,
-                    };
-
-                    if item.is_playable() {
-                        items.push(Arc::new(item));
-                    }
-                }
-
-                Ok(items)
-            }
-
-            /// Download a playlist from Spotify.
-            async fn download_spotify_playlist(
-                spotify: &api::Spotify,
-                playlist: SpotifyId,
-            ) -> Result<(String, impl Stream<Item = Result<FullTrack>> + '_)> {
-                let streamer = spotify.me().await?;
-
-                let playlist = spotify
-                    .playlist(playlist, streamer.country.as_deref())
-                    .await?;
-
-                let name = playlist.name.to_string();
-
-                let items = async_stream::try_stream! {
-                    let playlist_tracks = spotify.page_as_stream(playlist.tracks);
-                    tokio::pin!(playlist_tracks);
-
-                    while let Some(playlist_track) = playlist_tracks.next().await.transpose()? {
-                        yield playlist_track.track;
+        uri: Option<&Uri>,
+    ) -> Result<(String, Vec<Arc<Item>>)> {
+        let (what, items) = match uri {
+            Some(uri) => {
+                let id = match uri {
+                    Uri::SpotifyPlaylist(id) => id,
+                    uri => {
+                        return Err(anyhow!(
+                            "Bad fallback URI `{}`, expected Spotify Playlist",
+                            uri
+                        ));
                     }
                 };
 
-                Ok((name, items))
+                let (name, items) = download_spotify_playlist(&self.spotify, *id).await?;
+                let items = convert(items).await?;
+                (Some(name), items)
+            }
+            None => {
+                let items = download_spotify_library(&self.spotify);
+                let items = convert(items).await?;
+                (None, items)
+            }
+        };
+
+        let what = what
+            .as_ref()
+            .map(|u| format!("\"{}\" playlist", u))
+            .unwrap_or_else(|| String::from("your library"));
+
+        return Ok((what, items));
+
+        async fn convert(stream: impl Stream<Item = Result<FullTrack>>) -> Result<Vec<Arc<Item>>> {
+            tokio::pin!(stream);
+
+            let mut items = Vec::new();
+
+            while let Some(track) = stream.next().await.transpose()? {
+                let track_id = match &track.id {
+                    Some(track_id) => track_id,
+                    None => {
+                        continue;
+                    }
+                };
+
+                let track_id = TrackId::Spotify(
+                    SpotifyId::from_base62(track_id)
+                        .map_err(|_| anyhow!("bad spotify id: {}", track_id))?,
+                );
+
+                let duration = Duration::from_millis(track.duration_ms.into());
+
+                let item = Item {
+                    track_id,
+                    track: Track::Spotify {
+                        track: Box::new(track),
+                    },
+                    user: None,
+                    duration,
+                };
+
+                if item.is_playable() {
+                    items.push(Arc::new(item));
+                }
             }
 
-            /// Download a spotify library.
-            fn download_spotify_library(
-                spotify: &api::Spotify,
-            ) -> impl Stream<Item = Result<FullTrack>> + '_ {
-                async_stream::try_stream! {
-                    let saved_tracks = spotify.my_tracks().await?;
-                    let saved_tracks = spotify.page_as_stream(saved_tracks);
-                    tokio::pin!(saved_tracks);
+            Ok(items)
+        }
 
-                    while let Some(track) = saved_tracks.next().await.transpose()? {
-                        yield track.track;
-                    }
+        /// Download a playlist from Spotify.
+        async fn download_spotify_playlist(
+            spotify: &api::Spotify,
+            playlist: SpotifyId,
+        ) -> Result<(String, impl Stream<Item = Result<FullTrack>> + '_)> {
+            let streamer = spotify.me().await?;
+
+            let playlist = spotify
+                .playlist(playlist, streamer.country.as_deref())
+                .await?;
+
+            let name = playlist.name.to_string();
+
+            let items = async_stream::try_stream! {
+                let playlist_tracks = spotify.page_as_stream(playlist.tracks);
+                tokio::pin!(playlist_tracks);
+
+                while let Some(playlist_track) = playlist_tracks.next().await.transpose()? {
+                    yield playlist_track.track;
+                }
+            };
+
+            Ok((name, items))
+        }
+
+        /// Download a spotify library.
+        fn download_spotify_library(
+            spotify: &api::Spotify,
+        ) -> impl Stream<Item = Result<FullTrack>> + '_ {
+            async_stream::try_stream! {
+                let saved_tracks = spotify.my_tracks().await?;
+                let saved_tracks = spotify.page_as_stream(saved_tracks);
+                tokio::pin!(saved_tracks);
+
+                while let Some(track) = saved_tracks.next().await.transpose()? {
+                    yield track.track;
                 }
             }
         }
