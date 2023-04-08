@@ -313,31 +313,6 @@ impl Auth {
     }
 
     /// Test if the given assignment exists.
-    pub(crate) async fn test(&self, scope: Scope, user: &str, role: Role) -> bool {
-        if self.inner.grants.read().await.contains(&(scope, role)) {
-            return true;
-        }
-
-        let now = Utc::now();
-
-        let against = iter::once(RoleOrUser::User(user.to_string()))
-            .chain(iter::once(RoleOrUser::Role(role)));
-
-        let (granted, expired) = self.test_temporary(&now, scope, against).await;
-
-        // Delete temporary grants that has expired.
-        if expired {
-            self.inner
-                .temporary_grants
-                .write()
-                .await
-                .retain(|g| !g.is_expired(&now));
-        }
-
-        granted
-    }
-
-    /// Test if the given assignment exists.
     pub(crate) async fn test_any(
         &self,
         scope: Scope,

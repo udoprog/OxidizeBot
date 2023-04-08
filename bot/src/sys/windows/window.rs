@@ -1,32 +1,28 @@
-#![allow(unused)]
-
-use super::convert::{FromWide as _, ToWide as _};
-use crate::prelude::*;
-use crate::sys::Notification;
-use anyhow::{anyhow, Context as _, Error};
 use std::cell::RefCell;
-use std::ffi::OsStr;
 use std::future::Future;
 use std::io;
-use std::os::windows::ffi::OsStrExt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::thread;
-use std::time::Duration;
+
+use anyhow::{anyhow, Context as _, Error};
 use winapi::shared::basetsd::ULONG_PTR;
 use winapi::shared::minwindef::{
     DWORD, FALSE, HINSTANCE, LPARAM, LRESULT, PBYTE, TRUE, UINT, WPARAM,
 };
 use winapi::shared::ntdef::LPCWSTR;
 use winapi::shared::windef::{HBRUSH, HICON, HMENU, HWND, POINT};
-use winapi::um::libloaderapi;
 use winapi::um::shellapi;
 use winapi::um::winuser;
 use winapi::um::winuser::{
-    IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, MENUINFO, MENUITEMINFOW, MFS_DEFAULT,
-    MFT_SEPARATOR, MFT_STRING, MIIM_FTYPE, MIIM_ID, MIIM_STATE, MIIM_STRING, MIM_APPLYTOSUBMENUS,
-    MIM_STYLE, MNS_NOTIFYBYPOS, WM_DESTROY, WM_USER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+    LR_DEFAULTCOLOR, MENUINFO, MENUITEMINFOW, MFS_DEFAULT, MFT_SEPARATOR, MFT_STRING, MIIM_FTYPE,
+    MIIM_ID, MIIM_STATE, MIIM_STRING, MIM_APPLYTOSUBMENUS, MIM_STYLE, MNS_NOTIFYBYPOS, WM_DESTROY,
+    WM_USER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
+
+use super::convert::ToWide as _;
+use crate::prelude::*;
+use crate::sys::Notification;
 
 const ICON_MSG_ID: UINT = WM_USER + 1;
 
@@ -42,7 +38,6 @@ pub(crate) fn copy_wstring(dest: &mut [u16], source: &str) {
 #[derive(Clone)]
 struct WindowInfo {
     pub(crate) hwnd: HWND,
-    pub(crate) hinstance: HINSTANCE,
     pub(crate) hmenu: HMENU,
 }
 
@@ -166,8 +161,6 @@ fn new_menuitem() -> MENUITEMINFOW {
 unsafe fn init_window(name: &str) -> Result<WindowInfo, io::Error> {
     let class_name = name.to_wide_null();
 
-    let hinstance: HINSTANCE = libloaderapi::GetModuleHandleA(std::ptr::null_mut());
-
     let wnd = WNDCLASSW {
         style: 0,
         lpfnWndProc: Some(window_proc),
@@ -239,11 +232,7 @@ unsafe fn init_window(name: &str) -> Result<WindowInfo, io::Error> {
         return Err(io::Error::last_os_error());
     }
 
-    Ok(WindowInfo {
-        hwnd,
-        hmenu,
-        hinstance,
-    })
+    Ok(WindowInfo { hwnd, hmenu })
 }
 
 unsafe fn run_loop() {
@@ -463,52 +452,6 @@ impl Window {
         }
 
         Ok(())
-    }
-
-    /// Set an icon from a resource.
-    pub(crate) fn set_icon_from_resource(&self, resource_name: &str) -> Result<(), io::Error> {
-        let resource_name = resource_name.to_wide_null();
-
-        let icon = unsafe {
-            winuser::LoadImageW(
-                self.info.hinstance,
-                resource_name.as_ptr(),
-                IMAGE_ICON,
-                64,
-                64,
-                0,
-            )
-        };
-
-        if icon.is_null() {
-            return Err(io::Error::last_os_error());
-        }
-
-        self.set_icon(icon as HICON)
-    }
-
-    /// Set the process icon from a file.
-    pub(crate) fn set_icon_from_file(&self, icon_file: &str) -> Result<(), io::Error> {
-        let wstr_icon_file = icon_file.to_wide_null();
-
-        let hicon = unsafe {
-            let result = winuser::LoadImageW(
-                std::ptr::null_mut(),
-                wstr_icon_file.as_ptr(),
-                IMAGE_ICON,
-                64,
-                64,
-                LR_LOADFROMFILE,
-            );
-
-            if result.is_null() {
-                return Err(io::Error::last_os_error());
-            }
-
-            result as HICON
-        };
-
-        self.set_icon(hicon)
     }
 
     /// Set an icon from a buffer.

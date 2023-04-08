@@ -3,16 +3,14 @@ use crate::auth;
 use crate::command;
 use crate::module;
 use crate::prelude::*;
-use crate::stream_info;
 use crate::utils::{Cooldown, Duration};
 use anyhow::Result;
 
 /// Handler for the `!clip` command.
 pub(crate) struct Clip {
-    pub(crate) enabled: settings::Var<bool>,
-    pub(crate) stream_info: stream_info::StreamInfo,
-    pub(crate) clip_cooldown: settings::Var<Cooldown>,
-    pub(crate) streamer: api::TwitchAndUser,
+    enabled: settings::Var<bool>,
+    clip_cooldown: settings::Var<Cooldown>,
+    streamer: api::TwitchAndUser,
 }
 
 #[async_trait]
@@ -78,7 +76,6 @@ impl super::Module for Module {
         module::HookContext {
             handlers,
             settings,
-            stream_info,
             streamer,
             ..
         }: module::HookContext<'_>,
@@ -89,7 +86,6 @@ impl super::Module for Module {
             "clip",
             Clip {
                 enabled: settings.var("enabled", true).await?,
-                stream_info: stream_info.clone(),
                 clip_cooldown: settings
                     .var("cooldown", Cooldown::from_duration(Duration::seconds(30)))
                     .await?,

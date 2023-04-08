@@ -1,24 +1,14 @@
 //! nightbot.tv API helpers.
 
+use anyhow::Result;
+use reqwest::{header, Client, Method, Url};
+
 use crate::api::base::RequestBuilder;
 use crate::injector::{Injector, Provider};
 use crate::oauth2;
 use crate::tags;
-use anyhow::{Error, Result};
-use reqwest::{header, Client, Method, Url};
 
 static NIGHTBOT_URL_V1: &str = "https://api.nightbot.tv/1";
-
-pub(crate) enum RequestError {
-    TooManyRequests,
-    Other(Error),
-}
-
-impl From<Error> for RequestError {
-    fn from(value: Error) -> Self {
-        RequestError::Other(value)
-    }
-}
 
 /// API integration.
 #[derive(Clone, Debug)]
@@ -72,10 +62,9 @@ impl NightBot {
     }
 
     /// Update the channel information.
-    pub(crate) async fn channel_send(&self, message: String) -> Result<(), RequestError> {
+    pub(crate) async fn channel_send(&self, message: String) -> Result<()> {
         let message = Message { message };
-
-        let message = serde_json::to_string(&message).map_err(|e| RequestError::Other(e.into()))?;
+        let message = serde_json::to_string(&message)?;
 
         let mut req = self.request(Method::POST, &["channel", "send"]);
 

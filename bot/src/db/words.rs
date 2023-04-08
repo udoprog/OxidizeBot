@@ -126,6 +126,7 @@ impl Words {
     }
 
     /// Insert a word into the bad words list.
+    #[allow(unused)]
     pub(crate) async fn edit(&self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error> {
         self.db.edit(word, why).await?;
         let mut inner = self.inner.write().await;
@@ -134,6 +135,7 @@ impl Words {
     }
 
     /// Remove a word from the bad words list.
+    #[allow(unused)]
     pub(crate) async fn delete(&self, word: &str) -> Result<bool, anyhow::Error> {
         if !self.db.delete(word).await? {
             return Ok(false);

@@ -1277,12 +1277,6 @@ impl Server {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct ReceivedToken {
-    pub(crate) code: String,
-    pub(crate) state: String,
-}
-
 /// Connecting a bus to a websocket connection.
 fn send_bus<T>(bus: bus::Bus<T>) -> filters::BoxedFilter<(impl warp::Reply,)>
 where

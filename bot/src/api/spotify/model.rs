@@ -1,7 +1,6 @@
 //! All Spotify API endpoint response object
 //!
 //! Copied under the MIT license from: <https://github.com/ramsayleung/rspotify>.
-#![allow(unused)]
 
 pub(crate) mod album;
 pub(crate) mod artist;

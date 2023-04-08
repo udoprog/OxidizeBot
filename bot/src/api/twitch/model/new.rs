@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 pub(crate) struct Category {
     pub(crate) id: String,
     pub(crate) name: String,
-    pub(crate) box_art_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,7 +30,6 @@ pub(crate) struct Page<T> {
 #[derive(Deserialize)]
 pub(crate) struct Clip {
     pub(crate) id: String,
-    pub(crate) edit_url: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

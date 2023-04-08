@@ -72,9 +72,8 @@ impl Db {
     }
 
     /// Scope the db.
-    fn scoped(&self, command: &str) -> ScopedDb {
+    fn scoped(&self) -> ScopedDb {
         ScopedDb {
-            command: command.to_owned(),
             db: self.db.clone(),
         }
     }
@@ -83,8 +82,6 @@ impl Db {
 /// A database scoped into a single command.
 #[derive(Clone, Any)]
 struct ScopedDb {
-    #[allow(unused)]
-    command: String,
     db: db::ScriptStorage,
 }
 
@@ -112,7 +109,7 @@ impl Handler {
     pub(crate) async fn call(self, ctx: command::Context) -> Result<()> {
         let ctx = Ctx {
             ctx,
-            db: self.db.scoped(&self.handler.name),
+            db: self.db.scoped(),
         };
 
         let result: Result<(), ConstValue> =

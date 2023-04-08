@@ -87,22 +87,6 @@ impl Token {
 
         Ok(out)
     }
-
-    /// Test that token has all the specified scopes.
-    pub(crate) fn has_scopes(&self, scopes: &[String]) -> bool {
-        use std::collections::HashSet;
-
-        let mut scopes = scopes
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<HashSet<String>>();
-
-        for s in &self.scopes {
-            scopes.remove(s);
-        }
-
-        scopes.is_empty()
-    }
 }
 
 fn parse_url(url: &str) -> Option<Url> {
@@ -353,17 +337,6 @@ impl Setbac {
 
         let token = req.execute().await?.json::<Data<ConnectionMeta>>()?;
         Ok(token.data)
-    }
-
-    /// Get meta for all available connections.
-    pub(crate) async fn get_connections_meta(&self) -> Result<Vec<ConnectionMeta>> {
-        let mut req = self.request(Method::GET, &["api", "connections"]);
-
-        req.query_param("format", "meta")
-            .header(header::CONTENT_TYPE, "application/json");
-
-        let data = req.execute().await?.json::<Vec<ConnectionMeta>>()?;
-        Ok(data)
     }
 
     /// Refresh the token corresponding to the given flow.

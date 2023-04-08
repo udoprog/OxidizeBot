@@ -337,7 +337,6 @@ impl IrcLoop<'_> {
         });
         tokio::pin!(join_task);
 
-        #[allow(clippy::unnecessary_mut_passed)]
         while leave.is_empty() {
             tokio::select! {
                 _ = &mut join_task => {
@@ -426,7 +425,6 @@ impl IrcLoop<'_> {
 
         handler.sender.privmsg_immediate(leave_message);
 
-        #[allow(clippy::unnecessary_mut_passed)]
         loop {
             tokio::select! {
                 _ = &mut outgoing => {
@@ -661,15 +659,11 @@ impl<'a> Handler<'a> {
             }
         }
 
-        #[allow(clippy::collapsible_if)]
+        if !user.has_scope(Scope::ChatBypassUrlWhitelist).await
+            && self.url_whitelist_enabled.load().await
+            && self.has_bad_link(message)
         {
-            if !user.has_scope(Scope::ChatBypassUrlWhitelist).await
-                && self.url_whitelist_enabled.load().await
-            {
-                if self.has_bad_link(message) {
-                    return true;
-                }
-            }
+            return true;
         }
 
         false
@@ -877,16 +871,12 @@ impl<'a> Handler<'a> {
                 self.process_message(&user, message).await?;
             }
             Command::CAP(_, CapSubCommand::ACK, _, ref what) => {
-                #[allow(clippy::single_match)]
-                match what.as_deref() {
-                    // twitch commands capabilities have been acknowledged.
-                    // do what needs to happen with them (like `/mods`).
-                    Some(TWITCH_COMMANDS_CAP) => {
-                        // request to get a list of moderators and vips.
-                        self.sender.mods();
-                        self.sender.vips();
-                    }
-                    _ => {}
+                // twitch commands capabilities have been acknowledged.
+                // do what needs to happen with them (like `/mods`).
+                if let Some(TWITCH_COMMANDS_CAP) = what.as_deref() {
+                    // request to get a list of moderators and vips.
+                    self.sender.mods();
+                    self.sender.vips();
                 }
 
                 tracing::trace!(
@@ -1101,12 +1091,6 @@ impl User {
         }
     }
 
-    /// Get the channel the user is associated with.
-    #[deprecated = "figure out context from streamer TwichAndUser instead"]
-    pub(crate) fn channel(&self) -> &str {
-        self.inner.sender.channel()
-    }
-
     /// Get the name of the user.
     pub(crate) fn name(&self) -> Option<&str> {
         match self.inner.principal {
@@ -1124,11 +1108,6 @@ impl User {
             .display_name
             .as_deref()
             .or_else(|| self.name())
-    }
-
-    /// Get tags associated with the message.
-    pub(crate) fn tags(&self) -> &Tags {
-        &self.inner.tags
     }
 
     /// Access the sender associated with the user.
@@ -1244,33 +1223,30 @@ where
             write!(&mut self.item_buf, "{}", result)
                 .expect("a Display implementation returned an error unexpectedly");
 
-            #[allow(clippy::never_loop)]
-            loop {
-                if len + self.item_buf.len() <= self.width {
-                    if len > 0 {
-                        self.line_buf.push_str(self.sep);
-                    }
-
-                    self.line_buf.push_str(&self.item_buf);
-                    len += self.item_buf.len() + self.sep.len();
-                    break;
+            if len + self.item_buf.len() <= self.width {
+                if len > 0 {
+                    self.line_buf.push_str(self.sep);
                 }
 
-                // we don't have a choice, force an entry even if it's too wide.
-                if self.line_buf.is_empty() {
-                    let mut index = usize::min(self.item_buf.len(), self.width - TAIL.len());
-
-                    while index > 0 && !self.item_buf.is_char_boundary(index) {
-                        index -= 1;
-                    }
-
-                    return Some(format!("{}{}", &self.item_buf[..index], TAIL));
-                }
-
-                let output = self.line_buf.clone();
-                self.line_buf.clear();
-                return Some(output);
+                self.line_buf.push_str(&self.item_buf);
+                len += self.item_buf.len() + self.sep.len();
+                continue;
             }
+
+            // we don't have a choice, force an entry even if it's too wide.
+            if self.line_buf.is_empty() {
+                let mut index = usize::min(self.item_buf.len(), self.width - TAIL.len());
+
+                while index > 0 && !self.item_buf.is_char_boundary(index) {
+                    index -= 1;
+                }
+
+                return Some(format!("{}{}", &self.item_buf[..index], TAIL));
+            }
+
+            let output = self.line_buf.clone();
+            self.line_buf.clear();
+            return Some(output);
         }
 
         if !self.line_buf.is_empty() {
@@ -1313,13 +1289,10 @@ pub(crate) struct Tags {
     pub(crate) color: Option<String>,
     /// Emotes part of the message.
     pub(crate) emotes: Option<String>,
-    /// Badges part of the message.
-    pub(crate) badges: Option<String>,
 }
 
 impl Tags {
     /// Extract tags from message.
-    #[allow(clippy::single_match)]
     fn from_tags(tags: Option<Vec<Tag>>) -> Tags {
         let mut id = None;
         let mut msg_id = None;
@@ -1327,21 +1300,20 @@ impl Tags {
         let mut user_id = None;
         let mut color = None;
         let mut emotes = None;
-        let mut badges = None;
 
         if let Some(tags) = tags {
             for t in tags {
-                match t {
-                    Tag(name, Some(value)) => match name.as_str() {
-                        "id" => id = Some(value),
-                        "msg-id" => msg_id = Some(value),
-                        "display-name" => display_name = Some(value),
-                        "user-id" => user_id = Some(value),
-                        "color" => color = Some(value),
-                        "emotes" => emotes = Some(value),
-                        "badges" => badges = Some(value),
-                        _ => (),
-                    },
+                let Tag(name, Some(value)) = t else {
+                    continue;
+                };
+
+                match name.as_str() {
+                    "id" => id = Some(value),
+                    "msg-id" => msg_id = Some(value),
+                    "display-name" => display_name = Some(value),
+                    "user-id" => user_id = Some(value),
+                    "color" => color = Some(value),
+                    "emotes" => emotes = Some(value),
                     _ => (),
                 }
             }
@@ -1354,7 +1326,6 @@ impl Tags {
             user_id,
             color,
             emotes,
-            badges,
         }
     }
 }
@@ -1366,18 +1337,17 @@ struct ClearMsgTags {
 
 impl ClearMsgTags {
     /// Extract tags from message.
-    #[allow(clippy::single_match)]
     fn from_tags(tags: Option<Vec<Tag>>) -> Option<ClearMsgTags> {
         let mut target_msg_id = None;
 
         if let Some(tags) = tags {
             for t in tags {
-                match t {
-                    Tag(name, Some(value)) => match name.as_str() {
-                        "target-msg-id" => target_msg_id = Some(value),
-                        _ => (),
-                    },
-                    _ => (),
+                let Tag(name, Some(value)) = t else {
+                    continue;
+                };
+
+                if name.as_str() == "target-msg-id" {
+                    target_msg_id = Some(value);
                 }
             }
         }
@@ -1386,12 +1356,6 @@ impl ClearMsgTags {
             target_msg_id: target_msg_id?,
         })
     }
-}
-
-#[derive(Debug)]
-pub(crate) enum SenderThreadItem {
-    Exit,
-    Send(Box<Message>),
 }
 
 #[derive(serde::Serialize)]

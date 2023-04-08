@@ -4,7 +4,7 @@ pub(crate) use self::model::artist::SimplifiedArtist;
 pub(crate) use self::model::context::FullPlayingContext;
 pub(crate) use self::model::device::Device;
 pub(crate) use self::model::page::Page;
-pub(crate) use self::model::playlist::{FullPlaylist, SimplifiedPlaylist};
+pub(crate) use self::model::playlist::FullPlaylist;
 pub(crate) use self::model::search::SearchTracks;
 pub(crate) use self::model::senum::DeviceType;
 pub(crate) use self::model::track::{FullTrack, SavedTrack};
@@ -225,12 +225,6 @@ impl Spotify {
             .header(header::ACCEPT, "application/json");
 
         r.json_map(device_control).await
-    }
-
-    /// Get my playlists.
-    pub(crate) async fn my_playlists(&self) -> Result<Page<SimplifiedPlaylist>> {
-        let req = self.request(Method::GET, &["me", "playlists"]);
-        req.execute().await?.json()
     }
 
     /// Get my songs.

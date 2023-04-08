@@ -83,14 +83,6 @@ impl Notification {
         }
     }
 
-    /// Set the notification timeout.
-    pub(crate) fn timeout(self, timeout: Duration) -> Self {
-        Self {
-            timeout: Some(timeout),
-            ..self
-        }
-    }
-
     /// What should happen if we click the notification.
     pub(crate) fn on_click<F>(self, on_click: F) -> Self
     where

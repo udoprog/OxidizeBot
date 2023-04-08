@@ -93,7 +93,6 @@ pub(crate) fn setup(
         let mut interval = tokio::time::interval(time::Duration::from_secs(30));
         let expires = chrono::Duration::minutes(5);
 
-        #[allow(clippy::unnecessary_mut_passed)]
         loop {
             tokio::select! {
                 result = &mut server_future => {

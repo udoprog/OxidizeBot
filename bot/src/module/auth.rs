@@ -103,12 +103,6 @@ impl command::Handler for Handler {
 
 pub(crate) struct Module;
 
-impl Module {
-    pub(crate) fn load() -> Self {
-        Module
-    }
-}
-
 #[async_trait]
 impl super::Module for Module {
     fn ty(&self) -> &'static str {

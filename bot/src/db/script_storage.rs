@@ -1,9 +1,7 @@
-use crate::db;
-use crate::db::models;
 use anyhow::Result;
 use diesel::prelude::*;
 
-pub(crate) use self::models::AfterStream;
+use crate::db;
 
 #[derive(Clone)]
 pub(crate) struct ScriptStorage {

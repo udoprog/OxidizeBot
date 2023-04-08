@@ -47,20 +47,6 @@ impl GitHub {
 
         req.execute().await?.json()
     }
-
-    /// Get all releases for the given repo.
-    pub(crate) async fn releases_latest(
-        &self,
-        user: String,
-        repo: String,
-    ) -> Result<Option<Release>> {
-        let req = self.request(
-            Method::GET,
-            &["repos", user.as_str(), repo.as_str(), "releases", "latest"],
-        );
-
-        req.execute().await?.json()
-    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

@@ -1,6 +1,5 @@
 use crate::api;
 use crate::utils;
-use anyhow::Result;
 
 /// Information on a single track.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -34,16 +33,5 @@ impl Track {
                 .unwrap_or("no name")
                 .to_string(),
         }
-    }
-
-    /// Convert into JSON.
-    /// TODO: this is a hack to avoid breaking web API.
-    pub(crate) fn to_json(&self) -> Result<serde_json::Value> {
-        let json = match *self {
-            Self::Spotify { ref track } => serde_json::to_value(track)?,
-            Self::YouTube { ref video } => serde_json::to_value(video)?,
-        };
-
-        Ok(json)
     }
 }

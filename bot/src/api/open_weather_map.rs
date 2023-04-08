@@ -118,14 +118,12 @@ pub(crate) struct Current {
     pub(crate) cod: u64,
 }
 
-#[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Coord {
     pub(crate) lon: f32,
     pub(crate) lat: f32,
 }
 
-#[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Sys {
     pub(crate) country: String,
@@ -133,7 +131,6 @@ pub(crate) struct Sys {
     pub(crate) sunset: u64,
 }
 
-#[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Weather {
     pub(crate) id: u64,
@@ -163,7 +160,6 @@ impl fmt::Display for Weather {
     }
 }
 
-#[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Main {
     pub(crate) temp: f32,
@@ -181,7 +177,6 @@ pub(crate) struct Main {
     pub(crate) grnd_level: Option<u64>,
 }
 
-#[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Wind {
     #[serde(default)]
@@ -190,7 +185,6 @@ pub(crate) struct Wind {
     pub(crate) deg: Option<f32>,
 }
 
-#[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Precipitation {
     #[serde(rename = "1h", default)]
@@ -199,7 +193,6 @@ pub(crate) struct Precipitation {
     pub(crate) _3h: Option<f32>,
 }
 
-#[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Clouds {
     pub(crate) all: u64,

@@ -114,7 +114,6 @@ async fn main() -> Result<()> {
     let web = web::setup(db.clone(), host, port, config)?;
     tokio::pin!(web);
 
-    #[allow(clippy::unnecessary_mut_passed)]
     loop {
         tokio::select! {
             _ = web.as_mut() => {

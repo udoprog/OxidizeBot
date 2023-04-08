@@ -536,13 +536,6 @@ impl fmt::Display for Command {
     }
 }
 
-#[derive(Clone)]
-#[allow(unused)]
-pub(crate) struct Reward {
-    user: String,
-    amount: i32,
-}
-
 pub(crate) struct Handler {
     enabled: settings::Var<bool>,
     player: injector::Ref<player::Player>,

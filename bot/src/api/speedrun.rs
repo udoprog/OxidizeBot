@@ -127,22 +127,6 @@ impl Speedrun {
     }
 
     /// Get all records associated with a category.
-    pub(crate) async fn category_records_by_id(
-        &self,
-        category_id: &str,
-        top: u32,
-    ) -> Result<Option<Page<GameRecord>>> {
-        let mut req = self.v1(Method::GET, &["categories", category_id, "records"]);
-
-        req.query_param("top", top.to_string().as_str());
-
-        req.execute()
-            .await?
-            .empty_on_status(StatusCode::NO_CONTENT)
-            .json()
-    }
-
-    /// Get all records associated with a category.
     pub(crate) async fn leaderboard(
         &self,
         game_id: &str,

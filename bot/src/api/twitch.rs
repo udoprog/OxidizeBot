@@ -1,13 +1,14 @@
 //! Twitch API helpers.
 
-use crate::api::RequestBuilder;
-use crate::oauth2;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use bytes::Bytes;
 use futures_core::Stream;
 use reqwest::{header, Client, Method, Url};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
+
+use crate::api::RequestBuilder;
+use crate::oauth2;
 
 pub(crate) const CLIPS_URL: &str = "http://clips.twitch.tv";
 const API_TWITCH_URL: &str = "https://api.twitch.tv";
@@ -200,23 +201,6 @@ impl Twitch {
         req.query_param("emote_set_id", id);
 
         Ok(req.execute().await?.json::<Data<Vec<new::Emote>>>()?.data)
-    }
-
-    /// Get all custom badge URLs for the given chat.
-    #[allow(unused)]
-    pub(crate) async fn new_chat_badges(
-        &self,
-        broadcaster_id: &str,
-    ) -> Result<Vec<new::ChatBadge>> {
-        let data = self
-            .new_api(Method::GET, &["chat", "badges"])
-            .query_param(BROADCASTER_ID, broadcaster_id)
-            .execute()
-            .await?
-            .json::<Data<Vec<new::ChatBadge>>>()
-            .context("request chat badges")?;
-
-        Ok(data.data)
     }
 
     /// Update the channel information.

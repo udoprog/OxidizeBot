@@ -7,6 +7,7 @@ mod matcher;
 pub(crate) mod models;
 mod promotions;
 pub(crate) mod schema;
+#[cfg(feature = "scripting")]
 mod script_storage;
 mod themes;
 mod words;
@@ -19,13 +20,14 @@ use diesel_migrations::{EmbeddedMigrations, HarnessWithOutput, MigrationHarness}
 use std::path::Path;
 use thiserror::Error;
 
-pub(crate) use self::after_streams::{AfterStream, AfterStreams};
-pub(crate) use self::aliases::{Alias, Aliases};
-pub(crate) use self::commands::{Command, Commands};
+pub(crate) use self::after_streams::AfterStreams;
+pub(crate) use self::aliases::Aliases;
+pub(crate) use self::commands::Commands;
 pub(crate) use self::matcher::Captures;
 pub(crate) use self::promotions::{Promotion, Promotions};
+#[cfg(feature = "scripting")]
 pub(crate) use self::script_storage::ScriptStorage;
-pub(crate) use self::themes::{Theme, Themes};
+pub(crate) use self::themes::Themes;
 pub(crate) use self::words::{Word, Words};
 
 pub(crate) use self::matcher::Key;

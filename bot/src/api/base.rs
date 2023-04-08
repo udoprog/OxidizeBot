@@ -142,15 +142,16 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Execute the request.
-    #[allow(clippy::match_ref_pats)]
+    #[tracing::instrument(skip_all, fields(method = ?self.method, url = ?self.url))]
     pub(crate) async fn execute(&self) -> Result<Response<Bytes>> {
         // NB: scope to only lock the token over the request setup.
-        tracing::trace!("Request: {}: {}", self.method, self.url);
+        tracing::trace!("Executing");
+
         let mut req = self.client.request(self.method.clone(), self.url.clone());
 
-        req = match &self.method {
-            &Method::GET => req,
-            &Method::HEAD => req,
+        req = match self.method {
+            Method::GET => req,
+            Method::HEAD => req,
             _ => {
                 if self.body.is_empty() && self.empty_body {
                     req
@@ -188,13 +189,7 @@ impl<'a> RequestBuilder<'a> {
 
         if tracing::enabled!(tracing::Level::TRACE) {
             let response = String::from_utf8_lossy(&body);
-            tracing::trace!(
-                "Response: {}: {}: {}: {}",
-                self.method,
-                self.url,
-                status,
-                response
-            );
+            tracing::trace!(?status, "Response: {response}");
         }
 
         if let Some(token) = self.token.as_ref() {
@@ -306,27 +301,6 @@ impl Response<Option<Bytes>> {
                 );
             }
         }
-    }
-
-    /// Access the underlying raw body.
-    pub(crate) fn body(self) -> Result<Option<Bytes>> {
-        let body = match self.body {
-            Some(body) => body,
-            None => return Ok(None),
-        };
-
-        if !self.status.is_success() {
-            let body = String::from_utf8_lossy(body.as_ref());
-            bail!(
-                "Bad response: {}: {}: {}: {}",
-                self.method,
-                self.url,
-                self.status,
-                body
-            );
-        }
-
-        Ok(Some(body))
     }
 }
 

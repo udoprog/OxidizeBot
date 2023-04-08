@@ -486,19 +486,15 @@ impl Emotes {
         let mut d = TduvaData::default();
 
         for badge in badges {
-            #[allow(clippy::single_match)]
-            match badge.id.as_str() {
-                "chatty" => {
-                    d.chatty.push(TduvaBadge {
-                        id: badge.id,
-                        version: badge.version,
-                        image_url: badge.image_url,
-                        color: badge.color,
-                        title: badge.meta_title,
-                        usernames: badge.usernames.into_iter().collect(),
-                    });
-                }
-                _ => (),
+            if badge.id.as_str() == "chatty" {
+                d.chatty.push(TduvaBadge {
+                    id: badge.id,
+                    version: badge.version,
+                    image_url: badge.image_url,
+                    color: badge.color,
+                    title: badge.meta_title,
+                    usernames: badge.usernames.into_iter().collect(),
+                });
             }
         }
 

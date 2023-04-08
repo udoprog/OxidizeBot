@@ -1,6 +1,5 @@
 use crate::api;
 use crate::prelude::*;
-use percent_encoding::PercentDecode;
 use std::borrow::Cow;
 use std::fmt;
 
@@ -77,49 +76,6 @@ impl<'a> Iterator for Urls<'a> {
     }
 }
 
-/// Decode a query string.
-pub(crate) fn query_pairs(query: &str) -> QueryPairs<'_> {
-    QueryPairs { query }
-}
-
-pub(crate) struct QueryPairs<'a> {
-    query: &'a str,
-}
-
-impl<'a> Iterator for QueryPairs<'a> {
-    type Item = (PercentDecode<'a>, Option<PercentDecode<'a>>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        use percent_encoding::percent_decode;
-
-        if self.query.is_empty() {
-            return None;
-        }
-
-        let s = match self.query.find('&') {
-            Some(index) => {
-                let (s, rest) = self.query.split_at(index);
-                self.query = &rest[1..];
-                s
-            }
-            None => std::mem::take(&mut self.query),
-        };
-
-        match s.find('=') {
-            Some(index) => {
-                let (s, rest) = s.split_at(index);
-                let key = percent_decode(s.as_bytes());
-                let value = percent_decode(rest[1..].as_bytes());
-                Some((key, Some(value)))
-            }
-            None => {
-                let s = percent_decode(s.as_bytes());
-                Some((s, None))
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) enum WordsStorage {
     Shared(Arc<String>),
@@ -156,18 +112,6 @@ pub(crate) struct Words {
     /// one character lookahead.
     b0: Option<(usize, char)>,
     buffer: String,
-}
-
-impl Words {
-    /// Construct an empty iterator over words.
-    pub(crate) fn empty() -> Self {
-        Self {
-            string: WordsStorage::Static(""),
-            off: 0,
-            b0: None,
-            buffer: String::new(),
-        }
-    }
 }
 
 impl Words {

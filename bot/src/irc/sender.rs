@@ -144,24 +144,8 @@ impl Sender {
         // wait for the initial permit, keep the lock in case message is rejected.
         inner.nightbot_limiter.acquire(1).await;
 
-        loop {
-            let result = nightbot.channel_send(m.clone()).await;
-
-            match result {
-                Ok(()) => (),
-                Err(api::nightbot::RequestError::TooManyRequests) => {
-                    // since we still hold the lock, no one else can send.
-                    // sleep for 100 ms an retry the send.
-                    tokio::time::sleep(time::Duration::from_millis(1000)).await;
-
-                    continue;
-                }
-                Err(api::nightbot::RequestError::Other(e)) => {
-                    log_error!(e, "Failed to send message via nightbot");
-                }
-            }
-
-            break;
+        if let Err(e) = nightbot.channel_send(m.clone()).await {
+            log_error!(e, "Failed to send message via nightbot");
         }
     }
 }

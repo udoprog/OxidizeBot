@@ -226,11 +226,6 @@ impl<S, T> SettingRef<'_, '_, S, T>
 where
     S: Scope,
 {
-    /// Access the underlying key this setting references.
-    pub(crate) fn key(&self) -> &str {
-        &self.key
-    }
-
     /// Access the underlying schema this setting references.
     pub(crate) fn schema(&self) -> &SchemaType<S> {
         self.schema
@@ -337,21 +332,6 @@ where
     /// Load schema from the given set of bytes.
     pub(crate) fn load_bytes(bytes: &[u8]) -> Result<Schema<S>, Error> {
         serde_yaml::from_slice(bytes).map_err(Error::FailedToLoadSchema)
-    }
-}
-
-impl<S> Schema<S>
-where
-    S: Scope,
-{
-    /// Lookup the given type by key.
-    pub(crate) fn lookup(&self, key: &str) -> Option<SchemaType<S>> {
-        self.types.get(key).cloned()
-    }
-
-    /// Test if schema contains the given key.
-    pub(crate) fn contains(&self, key: &str) -> bool {
-        self.types.contains_key(key)
     }
 }
 
@@ -588,12 +568,6 @@ where
 
         let value = self.inner_get(&key).await?;
         Ok(Some(SettingRef { schema, key, value }))
-    }
-
-    /// Test if the given key exists in the database.
-    pub(crate) async fn has(&self, key: &str) -> Result<bool, Error> {
-        let key = self.key(key);
-        Ok(self.inner_get::<serde_json::Value>(&key).await?.is_some())
     }
 
     /// Get the value of the given key from the database.
@@ -1239,16 +1213,6 @@ pub(crate) enum Kind {
 }
 
 impl Type {
-    /// Construct a set with the specified inner value.
-    pub(crate) fn set(ty: Type) -> Type {
-        Type {
-            optional: false,
-            kind: Kind::Set {
-                value: Box::new(ty),
-            },
-        }
-    }
-
     /// Parse the given string as the current type and convert into JSON.
     pub(crate) fn parse_as_json(&self, s: &str) -> Result<serde_json::Value, Error> {
         use self::Kind::*;

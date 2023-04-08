@@ -31,9 +31,6 @@ pub(crate) enum ParseTrackIdError {
                        https://youtu.be/<id>"
     )]
     BadUrl(String),
-    /// Argument had a bad URI.
-    #[error("bad URI, expected: spotify:tracks:<id>")]
-    BadUri(String),
     /// Failed to parse an ID.
     #[error("bad spotify track id (expected base62): {}", _0)]
     BadBase62(String),
@@ -76,11 +73,6 @@ impl fmt::Display for TrackId {
 }
 
 impl TrackId {
-    /// Test if this is a youtube track.
-    pub(crate) fn is_youtube(&self) -> bool {
-        matches!(self, TrackId::YouTube(..))
-    }
-
     /// Get the URL for this track.
     pub(crate) fn url(&self) -> String {
         match *self {

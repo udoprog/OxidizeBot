@@ -8,14 +8,12 @@ use reqwest::{Client, Method, Url};
 use std::collections::HashMap;
 
 const V3_URL: &str = "https://www.googleapis.com/youtube/v3";
-const GET_VIDEO_INFO_URL: &str = "https://www.youtube.com/get_video_info";
 
 /// API integration.
 #[derive(Clone, Debug)]
 pub(crate) struct YouTube {
     client: Client,
     v3_url: Url,
-    get_video_info_url: Url,
     pub(crate) token: oauth2::SyncToken,
 }
 
@@ -25,7 +23,6 @@ impl YouTube {
         Ok(Self {
             client: Client::new(),
             v3_url: str::parse::<Url>(V3_URL)?,
-            get_video_info_url: str::parse::<Url>(GET_VIDEO_INFO_URL)?,
             token,
         })
     }
@@ -71,25 +68,6 @@ impl YouTube {
             Some(result) => Ok(result),
             None => bail!("got empty response"),
         }
-    }
-
-    /// Get video info of a video.
-    pub(crate) async fn get_video_info(&self, video_id: String) -> Result<Option<VideoInfo>> {
-        let mut url = self.get_video_info_url.clone();
-        url.query_pairs_mut()
-            .append_pair("video_id", video_id.as_str());
-
-        let req = RequestBuilder::new(&self.client, Method::GET, url);
-        let body = req.execute().await?.not_found().body()?;
-
-        let body = match body {
-            Some(body) => body,
-            None => return Ok(None),
-        };
-
-        let result: RawVideoInfo = serde_urlencoded::from_bytes(&body)?;
-        let result = result.into_decoded()?;
-        Ok(Some(result))
     }
 }
 
@@ -249,21 +227,4 @@ pub(crate) struct PlayerConfig {
 pub(crate) struct PlayerResponse {
     #[serde(default)]
     pub(crate) player_config: Option<PlayerConfig>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct VideoInfo {
-    pub(crate) player_response: Option<PlayerResponse>,
-}
-
-impl RawVideoInfo {
-    /// Convert into a decoded version.
-    pub(crate) fn into_decoded(self) -> Result<VideoInfo> {
-        let player_response = match self.player_response.as_ref() {
-            Some(player_response) => Some(serde_json::from_str(player_response)?),
-            None => None,
-        };
-
-        Ok(VideoInfo { player_response })
-    }
 }

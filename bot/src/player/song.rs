@@ -27,23 +27,6 @@ impl Song {
         }
     }
 
-    /// Test if the two songs reference roughly the same song.
-    pub(crate) fn is_same(&self, song: &Self) -> bool {
-        if self.item.track_id != song.item.track_id {
-            return false;
-        }
-
-        let a = self.elapsed();
-        let b = song.elapsed();
-        let diff = if a > b { a - b } else { b - a };
-
-        if diff.as_secs() > 5 {
-            return false;
-        }
-
-        true
-    }
-
     /// Convert a playback information into a Song struct.
     pub(crate) fn from_playback(playback: &api::spotify::FullPlayingContext) -> Option<Self> {
         let progress_ms = playback.progress_ms.unwrap_or_default();

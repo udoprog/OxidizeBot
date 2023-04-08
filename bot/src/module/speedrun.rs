@@ -1,8 +1,8 @@
 use crate::api::{
     self,
     speedrun::{
-        Category, CategoryType, Embed, Embeds, Game, GameRecord, Level, Page, Players,
-        RelatedPlayer, Run, RunInfo, User, Variable, Variables,
+        Category, CategoryType, Embed, Embeds, Game, GameRecord, Level, Players, RelatedPlayer,
+        Run, RunInfo, User, Variable, Variables,
     },
 };
 use crate::auth;
@@ -520,10 +520,6 @@ pub(crate) enum Key<'a> {
     CategoryVariables {
         category_id: &'a str,
     },
-    CategoryRecordsById {
-        category_id: &'a str,
-        top: u32,
-    },
     GameById {
         game_id: &'a str,
     },
@@ -593,25 +589,6 @@ impl CachedSpeedrun {
                 Key::CategoryVariables { category_id },
                 chrono::Duration::hours(2),
                 self.speedrun.category_variables(category_id),
-            )
-            .await?;
-
-        Ok(result)
-    }
-
-    /// Get cached user information by ID.
-    #[allow(unused)]
-    pub(crate) async fn category_records_by_id(
-        &self,
-        category_id: &str,
-        top: u32,
-    ) -> Result<Option<Page<GameRecord>>> {
-        let result = self
-            .cache
-            .wrap(
-                Key::CategoryRecordsById { category_id, top },
-                chrono::Duration::hours(24),
-                self.speedrun.category_records_by_id(category_id, top),
             )
             .await?;
 

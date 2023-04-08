@@ -135,8 +135,6 @@ impl Message for YouTube {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
 pub(crate) enum Global {
-    #[serde(rename = "firework")]
-    Firework,
     #[serde(rename = "ping")]
     Ping,
     /// Progress of current song.

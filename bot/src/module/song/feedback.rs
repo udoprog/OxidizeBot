@@ -1,10 +1,10 @@
+use anyhow::{Context as _, Result};
+
 use crate::irc;
 use crate::irc::Sender;
 use crate::player::{Event, Player};
 use crate::prelude::*;
 use crate::settings;
-use crate::utils::{Cooldown, Duration};
-use anyhow::{Context as _, Result};
 
 /// Setup the task that sends chat feedback.
 pub(crate) async fn task(
@@ -40,7 +40,6 @@ async fn feedback(
     sender: irc::Sender,
     chat_feedback: settings::Var<bool>,
 ) -> Result<()> {
-    let mut configured_cooldown = Cooldown::from_duration(Duration::seconds(10));
     let mut rx = player.subscribe().await;
 
     loop {
@@ -83,11 +82,6 @@ async fn feedback(
                 sender
                     .privmsg("Song queue is empty (use !song request <spotify-id> to add more).")
                     .await;
-            }
-            Event::NotConfigured => {
-                if configured_cooldown.is_open() {
-                    sender.privmsg("Player has not been configured!").await;
-                }
             }
             // other event we don't care about
             _ => (),

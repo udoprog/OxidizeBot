@@ -310,8 +310,6 @@ pub(crate) enum Event {
     Pausing,
     /// queue was modified in some way.
     Modified,
-    /// player has not been configured.
-    NotConfigured,
     /// Player is detached.
     Detached,
 }
@@ -347,12 +345,6 @@ impl Player {
     pub(crate) async fn set_device(&self, device: String) -> Result<()> {
         let inner = self.inner.read().await;
         inner.device.set_device(Some(device)).await
-    }
-
-    /// Clear the current device.
-    pub(crate) async fn clear_device(&self) -> Result<()> {
-        let inner = self.inner.read().await;
-        inner.device.set_device(None).await
     }
 
     /// Get the next N songs in queue.
