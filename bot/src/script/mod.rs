@@ -230,7 +230,7 @@ impl Scripts {
         for (command, function) in reg.handlers {
             if let Some(handler) = self.handlers.get(&command) {
                 tracing::warn!(
-                    "ignoring duplicate handler for command `{}`, already registered in {}",
+                    "Ignoring duplicate handler for command `{}`, already registered in {}",
                     command,
                     handler.path.display()
                 );

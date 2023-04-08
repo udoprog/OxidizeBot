@@ -5,7 +5,6 @@ use anyhow::Result;
 use std::time::Duration;
 
 /// Setup a player.
-#[tracing::instrument(skip_all)]
 pub(super) async fn setup(
     bus: bus::Bus<bus::YouTube>,
     settings: crate::Settings,
@@ -92,7 +91,7 @@ impl YouTubePlayer {
         let result = self.settings.set("volume", update).await;
 
         if let Err(e) = result {
-            log_error!(e, "failed to store updated volume in settings");
+            log_error!(e, "Failed to store updated volume in settings");
         }
 
         update

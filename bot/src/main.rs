@@ -283,13 +283,12 @@ fn inner_main(args: Args) -> Result<()> {
         system.notification(shutdown);
     }
 
-    tracing::info!("exiting...");
+    tracing::info!("Exiting...");
     system.join()?;
     Ok(())
 }
 
 /// Actual main function, running the application loop.
-#[tracing::instrument(skip_all)]
 async fn try_main(
     system: &sys::System,
     root: &Path,
@@ -391,7 +390,7 @@ async fn try_main(
         tracing::info!("Opening {} for the first time", web::URL);
 
         if let Err(e) = webbrowser::open(web::URL) {
-            tracing::error!("failed to open browser: {}", e);
+            tracing::error!("Failed to open browser: {}", e);
         }
 
         settings.set("first-run", false).await?;
@@ -404,51 +403,26 @@ async fn try_main(
     let spotify_setup = {
         let s = token_settings.scoped("spotify");
         let key = Key::tagged(tags::Token::Spotify)?;
-        oauth2::build(
-            "spotify",
-            "Spotify",
-            &settings,
-            s,
-            injector.clone(),
-            key,
-            web.clone(),
-        )
+        oauth2::setup("spotify", &settings, s, injector.clone(), key, web.clone())
     };
 
     let youtube_setup = {
         let s = token_settings.scoped("youtube");
         let key = Key::tagged(tags::Token::YouTube)?;
-        oauth2::build(
-            "youtube",
-            "YouTube",
-            &settings,
-            s,
-            injector.clone(),
-            key,
-            web.clone(),
-        )
+        oauth2::setup("youtube", &settings, s, injector.clone(), key, web.clone())
     };
 
     let nightbot_setup = {
         let s = token_settings.scoped("nightbot");
         let key = Key::tagged(tags::Token::NightBot)?;
-        oauth2::build(
-            "nightbot",
-            "NightBot",
-            &settings,
-            s,
-            injector.clone(),
-            key,
-            web.clone(),
-        )
+        oauth2::setup("nightbot", &settings, s, injector.clone(), key, web.clone())
     };
 
     let streamer_setup = {
         let s = token_settings.scoped("twitch-streamer");
         let key = Key::tagged(tags::Token::Twitch(tags::Twitch::Streamer))?;
-        oauth2::build(
+        oauth2::setup(
             "twitch-streamer",
-            "Twitch Streamer",
             &settings,
             s,
             injector.clone(),
@@ -460,9 +434,8 @@ async fn try_main(
     let bot_setup = {
         let s = token_settings.scoped("twitch-bot");
         let key = Key::tagged(tags::Token::Twitch(tags::Twitch::Bot))?;
-        oauth2::build(
+        oauth2::setup(
             "twitch-bot",
-            "Twitch Bot",
             &settings,
             s,
             injector.clone(),
@@ -565,19 +538,19 @@ async fn try_main(
             result.map(|_| Intent::Shutdown)
         }
         _ = system.wait_for_shutdown() => {
-            tracing::info!("shutdown triggered by system");
+            tracing::info!("Shutdown triggered by system");
             Ok(Intent::Shutdown)
         },
         _ = system.wait_for_restart() => {
-            tracing::info!("restart triggered by system");
+            tracing::info!("Restart triggered by system");
             Ok(Intent::Restart)
         },
         _ = restart_rx => {
-            tracing::info!("restart triggered by bot");
+            tracing::info!("Restart triggered by bot");
             Ok(Intent::Restart)
         },
         _ = tokio::signal::ctrl_c() => {
-            tracing::info!("shutdown triggered by signal");
+            tracing::info!("Shutdown triggered by signal");
             Ok(Intent::Shutdown)
         },
     }

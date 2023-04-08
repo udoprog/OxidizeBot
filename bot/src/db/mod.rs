@@ -69,7 +69,7 @@ impl Database {
         result.with_context(|| anyhow!("error when running migrations: {}", output))?;
 
         if !output.is_empty() {
-            tracing::trace!("migrations output:\n{}", output);
+            tracing::trace!("Migrations output:\n{}", output);
         }
 
         Ok(Database {

@@ -9,21 +9,10 @@ pub struct Data<T> {
 }
 
 #[derive(Deserialize)]
-pub struct Chatters {
-    #[serde(default)]
-    pub broadcaster: Vec<String>,
-    #[serde(default)]
-    pub vips: Vec<String>,
-    #[serde(default)]
-    pub moderators: Vec<String>,
-    #[serde(default)]
-    pub staff: Vec<String>,
-    #[serde(default)]
-    pub admins: Vec<String>,
-    #[serde(default)]
-    pub global_mods: Vec<String>,
-    #[serde(default)]
-    pub viewers: Vec<String>,
+pub struct Chatter {
+    pub user_id: String,
+    pub user_login: String,
+    pub user_name: String,
 }
 
 /// Response from the validate token endpoint.

@@ -56,8 +56,8 @@ pub struct HookContext<'a> {
     pub futures: &'a mut utils::Futures<'static>,
     pub stream_info: &'a stream_info::StreamInfo,
     pub idle: &'a idle::Idle,
-    pub twitch: &'a api::Twitch,
-    pub streamer_twitch: &'a api::Twitch,
+    // pub bot: &'a api::TwitchAndUser,
+    pub streamer: &'a api::TwitchAndUser,
     pub sender: &'a irc::Sender,
     pub settings: &'a crate::Settings,
 }

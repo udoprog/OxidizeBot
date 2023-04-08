@@ -900,7 +900,7 @@ where
             Some(value) => match serde_json::from_str::<Option<T>>(&value) {
                 Ok(value) => value,
                 Err(e) => {
-                    tracing::warn!("bad value for key: {}: {}", key, e);
+                    tracing::warn!("Bad value for key: {}: {}", key, e);
                     None
                 }
             },
@@ -1148,7 +1148,7 @@ where
             Event::Set(value) => match serde_json::from_value(value) {
                 Ok(value) => Some(value),
                 Err(e) => {
-                    tracing::warn!("bad value for key: {}: {}", self.key, e);
+                    tracing::warn!("Bad value for key: {}: {}", self.key, e);
                     None
                 }
             },

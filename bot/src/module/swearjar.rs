@@ -13,7 +13,7 @@ pub struct Handler {
     reward: settings::Var<i64>,
     cooldown: settings::Var<Cooldown>,
     currency: injector::Ref<Currency>,
-    twitch: api::Twitch,
+    streamer: api::TwitchAndUser,
 }
 
 #[async_trait]
@@ -46,29 +46,33 @@ impl command::Handler for Handler {
         let user = &ctx.user;
         let reward = self.reward.load().await;
 
-        let chatters = self.twitch.chatters(user.channel()).await?;
+        let mut users = HashSet::new();
 
-        let mut u = HashSet::new();
-        u.extend(chatters.viewers);
-        u.extend(chatters.moderators);
+        let chatters = self
+            .streamer
+            .client
+            .chatters(&self.streamer.user.id, &self.streamer.user.id);
+        tokio::pin!(chatters);
 
-        if u.is_empty() {
+        while let Some(chatter) = chatters.next().await.transpose()? {
+            users.insert(chatter.user_login);
+        }
+
+        if users.is_empty() {
             bail!("no chatters to reward");
         }
 
-        let total_reward = reward * u.len() as i64;
+        let total_reward = reward * users.len() as i64;
 
         currency
-            .balance_add(user.channel(), &user.streamer().display_name, -total_reward)
+            .balance_add(&self.streamer.user.login, -total_reward)
             .await?;
 
-        currency
-            .balances_increment(user.channel(), u, reward, 0)
-            .await?;
+        currency.balances_increment(users, reward, 0).await?;
 
         user.sender().privmsg(format!(
             "/me has taken {} {currency} from {streamer} and given it to the viewers for listening to their bad mouth!",
-            total_reward, currency = currency.name, streamer = user.streamer().display_name,
+            total_reward, currency = currency.name, streamer = self.streamer.user.display_name,
         )).await;
 
         Ok(())
@@ -88,7 +92,7 @@ impl super::Module for Module {
         &self,
         module::HookContext {
             handlers,
-            twitch,
+            streamer,
             injector,
             settings,
             ..
@@ -113,7 +117,7 @@ impl super::Module for Module {
                 reward,
                 cooldown,
                 currency,
-                twitch: twitch.clone(),
+                streamer: streamer.clone(),
             },
         );
 

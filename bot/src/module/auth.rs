@@ -41,7 +41,7 @@ impl command::Handler for Handler {
                         .collect::<Vec<_>>()
                 };
 
-                let by_user = filter(auth.scopes_for_user(user.name()).await);
+                let by_user = filter(auth.scopes_for_user(user.login()).await);
 
                 let mut result = Vec::new();
 

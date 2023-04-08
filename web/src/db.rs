@@ -458,7 +458,7 @@ impl Database {
             let connection = match serde_cbor::from_slice(value.as_ref()) {
                 Ok(connection) => connection,
                 Err(e) => {
-                    tracing::warn!("failed to deserialize connection: {}", e);
+                    tracing::warn!("Failed to deserialize connection: {}", e);
                     continue;
                 }
             };

@@ -1,3 +1,8 @@
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use tokio::sync::Mutex;
+
+use crate::api;
 use crate::auth;
 use crate::command;
 use crate::currency::Currency;
@@ -5,9 +10,6 @@ use crate::module;
 use crate::prelude::*;
 use crate::stream_info;
 use crate::utils;
-use anyhow::Result;
-use chrono::{DateTime, Utc};
-use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct Reward {
@@ -22,6 +24,7 @@ pub struct Handler {
     waters: Mutex<Vec<(DateTime<Utc>, Option<Reward>)>>,
     stream_info: stream_info::StreamInfo,
     reward_multiplier: settings::Var<u32>,
+    streamer: api::TwitchAndUser,
 }
 
 impl Handler {
@@ -97,11 +100,8 @@ impl command::Handler for Handler {
                 ))
                 .await;
 
-                if let Err(e) = currency
-                    .balance_add(ctx.channel(), &reward.user, -reward.amount)
-                    .await
-                {
-                    tracing::error!("failed to undo water from database: {}", e);
+                if let Err(e) = currency.balance_add(&reward.user, -reward.amount).await {
+                    tracing::error!("Failed to undo water from database: {}", e);
                 }
             }
             None => {
@@ -124,7 +124,7 @@ impl command::Handler for Handler {
                 waters.push((
                     now,
                     Some(Reward {
-                        user: user.name().to_string(),
+                        user: user.login().to_string(),
                         amount,
                     }),
                 ));
@@ -132,17 +132,14 @@ impl command::Handler for Handler {
                 respond!(
                     ctx,
                     "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.",
-                    streamer = ctx.user.streamer().display_name,
+                    streamer = self.streamer.user.login,
                     user = user.display_name(),
                     amount = amount,
                     currency = currency.name
                 );
 
-                if let Err(e) = currency
-                    .balance_add(ctx.channel(), user.name(), amount)
-                    .await
-                {
-                    tracing::error!("failed to appply water balance: {}", e);
+                if let Err(e) = currency.balance_add(user.login(), amount).await {
+                    tracing::error!("Failed to appply water balance: {}", e);
                 }
             }
             Some(_) => {
@@ -170,6 +167,7 @@ impl super::Module for Module {
             stream_info,
             settings,
             injector,
+            streamer,
             ..
         }: module::HookContext<'_>,
     ) -> Result<()> {
@@ -191,6 +189,7 @@ impl super::Module for Module {
                 waters: Mutex::new(Vec::new()),
                 stream_info: stream_info.clone(),
                 reward_multiplier,
+                streamer: streamer.clone(),
             },
         );
 

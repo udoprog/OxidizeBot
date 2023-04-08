@@ -32,12 +32,12 @@ use crate::stream::StreamExt as _;
 macro_rules! log_error {
     ($e:expr, $fmt:expr $(, $($tt:tt)*)?) => {{
         tracing::error!($fmt $(, $($tt)*)*);
-        tracing::error!("caused by: {}", $e);
+        tracing::error!("Caused by: {}", $e);
 
         let mut last = $e.source();
 
         while let Some(e) = last {
-            tracing::error!("caused by: {}", e);
+            tracing::error!("Caused by: {}", e);
             last = e.source();
         }
     }}
@@ -343,7 +343,7 @@ impl Handler {
                     Error::NotFound => http_error(StatusCode::NOT_FOUND, "Not Found"),
                     Error::Unauthorized => http_error(StatusCode::UNAUTHORIZED, "Unauthorized"),
                     Error::Error(e) => {
-                        log_error!(e, "internal server error");
+                        log_error!(e, "Internal server error");
                         http_error(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
                     }
                 };
@@ -351,13 +351,13 @@ impl Handler {
                 match result {
                     Ok(result) => result,
                     Err(Error::Error(e)) => {
-                        log_error!(e, "failed to build error response");
+                        log_error!(e, "Failed to build error response");
                         let mut r = Response::new(Body::from("Internal Server Error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         r
                     }
                     Err(e) => {
-                        tracing::error!("failed to build response: {}", e);
+                        tracing::error!("Failed to build response: {}", e);
                         let mut r = Response::new(Body::from("Internal Server Error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         r
@@ -556,7 +556,7 @@ impl Handler {
                 Some(status) if status.is_client_error() => {
                     self.db.delete_connection(&user.user_id, id)?;
 
-                    log_error!(e, "failed to refresh token");
+                    log_error!(e, "Failed to refresh token");
 
                     return http_error(
                         StatusCode::BAD_REQUEST,

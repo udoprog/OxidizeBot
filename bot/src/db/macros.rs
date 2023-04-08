@@ -181,7 +181,7 @@ macro_rules! database_group_fns {
             match self.db.rename(&from_key, &to_key).await {
                 Err(e) => {
                     tracing::error!(
-                        "failed to rename {what} `{}` in database: {}",
+                        "Failed to rename {what} `{}` in database: {}",
                         from,
                         e,
                         what = <$thing>::NAME

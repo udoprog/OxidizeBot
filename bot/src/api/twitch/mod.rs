@@ -10,7 +10,6 @@ use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 pub const CLIPS_URL: &str = "http://clips.twitch.tv";
-const TMI_TWITCH_URL: &str = "https://tmi.twitch.tv";
 const API_TWITCH_URL: &str = "https://api.twitch.tv";
 const GQL_URL: &str = "https://gql.twitch.tv/gql";
 
@@ -53,26 +52,17 @@ impl Twitch {
     }
 
     /// Get chatters for the given channel using TMI.
-    pub(crate) async fn chatters(&self, channel: &str) -> Result<Chatters> {
-        let channel = channel.trim_start_matches('#');
+    pub(crate) fn chatters(
+        &self,
+        broadcaster_id: &str,
+        moderator_id: &str,
+    ) -> impl Stream<Item = Result<Chatter>> + '_ {
+        let mut req = self.new_api(Method::GET, &["chat", "chatters"]);
 
-        let url = Url::parse(&format!(
-            "{}/group/user/{}/chatters",
-            TMI_TWITCH_URL, channel
-        ))?;
+        req.query_param("broadcaster_id", broadcaster_id)
+            .query_param("moderator_id", moderator_id);
 
-        let res = RequestBuilder::new(&self.client, Method::GET, url)
-            .header(header::ACCEPT, "application/json")
-            .execute()
-            .await?
-            .json::<Response>()?;
-
-        return Ok(res.chatters);
-
-        #[derive(serde::Deserialize)]
-        struct Response {
-            chatters: Chatters,
-        }
+        page(req)
     }
 
     /// Get display badges through GQL.

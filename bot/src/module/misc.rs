@@ -62,7 +62,7 @@ impl command::Handler for Uptime {
 pub struct Title {
     pub enabled: settings::Var<bool>,
     pub stream_info: stream_info::StreamInfo,
-    pub twitch: api::Twitch,
+    pub streamer: api::TwitchAndUser,
 }
 
 impl Title {
@@ -100,17 +100,15 @@ impl command::Handler for Title {
         } else {
             ctx.check_scope(auth::Scope::TitleEdit).await?;
 
-            let user = ctx.user.clone();
-
             let mut request = api::twitch::new::ModifyChannelRequest::default();
             request.title = Some(rest);
-            self.twitch
-                .new_modify_channel(&user.streamer().id, request)
-                .await?;
-            self.stream_info
-                .refresh_channel(&self.twitch, user.streamer())
+
+            self.streamer
+                .client
+                .new_modify_channel(&self.streamer.user.id, request)
                 .await?;
 
+            self.stream_info.refresh_channel(&self.streamer).await?;
             respond!(ctx, "Title updated!");
         }
 
@@ -122,7 +120,7 @@ impl command::Handler for Title {
 pub struct Game {
     pub enabled: settings::Var<bool>,
     pub stream_info: stream_info::StreamInfo,
-    pub twitch: api::Twitch,
+    pub streamer: api::TwitchAndUser,
 }
 
 impl Game {
@@ -164,7 +162,7 @@ impl command::Handler for Game {
 
         let stream_info = self.stream_info.clone();
 
-        let stream = self.twitch.new_search_categories(rest);
+        let stream = self.streamer.client.new_search_categories(rest);
         tokio::pin!(stream);
 
         let first = if let Some(first) = stream.next().await {
@@ -177,13 +175,12 @@ impl command::Handler for Game {
         let mut request = api::twitch::new::ModifyChannelRequest::default();
         request.game_id = Some(&first.id);
 
-        self.twitch
-            .new_modify_channel(&ctx.user.streamer().id, request)
+        self.streamer
+            .client
+            .new_modify_channel(&self.streamer.user.id, request)
             .await?;
 
-        stream_info
-            .refresh_channel(&self.twitch, ctx.user.streamer())
-            .await?;
+        stream_info.refresh_channel(&self.streamer).await?;
 
         respond!(ctx, "Game updated to `{}`!", first.name);
         Ok(())
@@ -204,7 +201,7 @@ impl super::Module for Module {
         module::HookContext {
             handlers,
             stream_info,
-            streamer_twitch,
+            streamer,
             settings,
             ..
         }: module::HookContext<'_>,
@@ -214,7 +211,7 @@ impl super::Module for Module {
             Title {
                 enabled: settings.var("title/enabled", true).await?,
                 stream_info: stream_info.clone(),
-                twitch: streamer_twitch.clone(),
+                streamer: streamer.clone(),
             },
         );
 
@@ -223,7 +220,7 @@ impl super::Module for Module {
             Game {
                 enabled: settings.var("game/enabled", true).await?,
                 stream_info: stream_info.clone(),
-                twitch: streamer_twitch.clone(),
+                streamer: streamer.clone(),
             },
         );
 

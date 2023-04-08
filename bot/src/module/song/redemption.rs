@@ -4,7 +4,6 @@ use crate::irc;
 use crate::module::song::requester::{RequestCurrency, SongRequester};
 use crate::player::Player;
 use crate::prelude::*;
-use crate::stream_info::StreamInfo;
 use anyhow::Result;
 
 /// Task used to react to redemptions as song requests.
@@ -13,8 +12,7 @@ pub(crate) async fn task(
     injector: Injector,
     settings: crate::Settings,
     requester: SongRequester,
-    streamer_twitch: api::Twitch,
-    stream_info: StreamInfo,
+    streamer: api::TwitchAndUser,
 ) -> Result<()> {
     let (mut pubsub_stream, pubsub) = injector.stream::<pubsub::TwitchPubSub>().await;
     let (mut player_stream, player) = injector.stream::<Player>().await;
@@ -24,9 +22,8 @@ pub(crate) async fn task(
         .await?;
 
     let mut state = State {
-        stream_info,
         requester,
-        streamer_twitch,
+        streamer,
         player,
         pubsub,
         sender,
@@ -51,7 +48,7 @@ pub(crate) async fn task(
                 state.build();
             }
             Some(redemption) = state.redemptions_stream.next() => {
-                tracing::info!("got redemption");
+                tracing::info!("Got redemption");
                 state.process_redemption(redemption).await;
             }
         }
@@ -59,9 +56,8 @@ pub(crate) async fn task(
 }
 
 struct State {
-    stream_info: StreamInfo,
     requester: SongRequester,
-    streamer_twitch: api::Twitch,
+    streamer: api::TwitchAndUser,
     pubsub: Option<pubsub::TwitchPubSub>,
     player: Option<Player>,
     sender: irc::Sender,
@@ -102,7 +98,7 @@ impl State {
             Some(input) => input,
             None => {
                 tracing::warn!(
-                    "got matching redemption `{}`, but it had no user input",
+                    "Got matching redemption `{}`, but it had no user input",
                     title
                 );
                 return;
@@ -113,20 +109,19 @@ impl State {
             Some(player) => player,
             None => {
                 tracing::warn!(
-                    "got matching redemption `{}`, but player not configured",
+                    "Got matching redemption `{}`, but player not configured",
                     title
                 );
                 return;
             }
         };
 
-        tracing::trace!("process request: {}", input);
+        tracing::trace!("Process request: {}", input);
 
         let result = self
             .requester
             .request(
                 input,
-                self.sender.channel(),
                 &redemption.user.login,
                 None,
                 RequestCurrency::Redemption,
@@ -134,7 +129,6 @@ impl State {
             )
             .await;
 
-        let broadcaster_id = &self.stream_info.user.id;
         let display_name = &redemption.user.display_name;
 
         let status = match result {
@@ -152,8 +146,9 @@ impl State {
         };
 
         let result = self
-            .streamer_twitch
-            .new_update_redemption_status(broadcaster_id, &redemption, status)
+            .streamer
+            .client
+            .new_update_redemption_status(&self.streamer.user.id, &redemption, status)
             .await;
 
         if let Err(e) = result {

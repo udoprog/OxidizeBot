@@ -1,13 +1,16 @@
 //! Stream currency configuration.
+use std::collections::HashSet;
+use std::sync::Arc;
+
+use anyhow::{Error, Result};
+use thiserror::Error;
+use tokio_stream::StreamExt;
+
 use crate::api;
 pub use crate::db::models::Balance;
 use crate::db::Database;
 use crate::injector::Injector;
 use crate::utils::Duration;
-use anyhow::{Error, Result};
-use std::collections::HashSet;
-use std::sync::Arc;
-use thiserror::Error;
 
 mod builtin;
 mod mysql;
@@ -32,7 +35,8 @@ impl BalanceOf {
 
 /// Helper struct to construct a currency.
 pub struct CurrencyBuilder {
-    twitch: api::Twitch,
+    bot: api::TwitchAndUser,
+    streamer: api::TwitchAndUser,
     pub mysql_schema: mysql::Schema,
     injector: Injector,
     pub ty: BackendType,
@@ -45,9 +49,15 @@ pub struct CurrencyBuilder {
 
 impl CurrencyBuilder {
     /// Construct a new currency builder.
-    pub fn new(twitch: api::Twitch, mysql_schema: mysql::Schema, injector: Injector) -> Self {
+    pub fn new(
+        bot: api::TwitchAndUser,
+        streamer: api::TwitchAndUser,
+        mysql_schema: mysql::Schema,
+        injector: Injector,
+    ) -> Self {
         Self {
-            twitch,
+            bot,
+            streamer,
             mysql_schema,
             injector,
             ty: Default::default(),
@@ -95,7 +105,7 @@ impl CurrencyBuilder {
                 let backend = match self::mysql::Backend::connect(channel, url, schema) {
                     Ok(backend) => backend,
                     Err(e) => {
-                        log_error!(e, "failed to establish connection");
+                        log_error!(e, "Failed to establish connection");
                         return None;
                     }
                 };
@@ -114,7 +124,7 @@ impl CurrencyBuilder {
                 let backend = match self::mysql::Backend::connect(channel, url, schema) {
                     Ok(backend) => backend,
                     Err(e) => {
-                        log_error!(e, "failed to establish connection");
+                        log_error!(e, "Failed to establish connection");
                         return None;
                     }
                 };
@@ -123,14 +133,14 @@ impl CurrencyBuilder {
             }
         };
 
-        let name = Arc::new(self.name.as_ref()?.to_string());
-        let twitch = self.twitch.clone();
-        let command_enabled = self.command_enabled;
-
         Some(Currency {
-            name,
-            command_enabled,
-            inner: Arc::new(Inner { backend, twitch }),
+            name: Arc::new(self.name.as_ref()?.to_string()),
+            command_enabled: self.command_enabled,
+            inner: Arc::new(Inner {
+                backend,
+                bot: self.bot.clone(),
+                streamer: self.streamer.clone(),
+            }),
         })
     }
 }
@@ -218,6 +228,7 @@ impl Backend {
     }
 
     /// Add balance to users.
+    #[tracing::instrument(skip(self, users))]
     pub async fn balances_increment<I>(
         &self,
         channel: &str,
@@ -227,7 +238,7 @@ impl Backend {
     ) -> Result<()>
     where
         I: IntoIterator<Item = String> + Send + 'static,
-        I::IntoIter: Send + 'static,
+        I::IntoIter: Send,
     {
         use self::Backend::*;
 
@@ -244,7 +255,8 @@ impl Backend {
 
 struct Inner {
     backend: Backend,
-    twitch: api::Twitch,
+    bot: api::TwitchAndUser,
+    streamer: api::TwitchAndUser,
 }
 
 /// The currency being used.
@@ -260,23 +272,36 @@ impl Currency {
     #[tracing::instrument(skip(self))]
     pub async fn add_channel_all(
         &self,
-        channel: &str,
         reward: i64,
         watch_time: i64,
     ) -> Result<usize, anyhow::Error> {
-        tracing::trace!("getting chatters");
-        let chatters = self.inner.twitch.chatters(channel).await?;
+        tracing::trace!("Getting chatters");
+        let moderator_id = self.inner.bot.user.id.as_str();
+
+        let chatters = self
+            .inner
+            .bot
+            .client
+            .chatters(&self.inner.streamer.user.id, moderator_id);
+
+        tokio::pin!(chatters);
 
         let mut users = HashSet::new();
-        users.extend(chatters.viewers);
-        users.extend(chatters.moderators);
-        users.extend(chatters.broadcaster);
+
+        while let Some(chatter) = chatters.next().await.transpose()? {
+            users.insert(chatter.user_login);
+        }
 
         let len = users.len();
 
         self.inner
             .backend
-            .balances_increment(channel, users, reward, watch_time)
+            .balances_increment(
+                self.inner.streamer.user.login.as_str(),
+                users,
+                reward,
+                watch_time,
+            )
             .await?;
 
         Ok(len)
@@ -285,7 +310,6 @@ impl Currency {
     /// Add (or subtract) from the balance for a single user.
     pub async fn balance_transfer(
         &self,
-        channel: &str,
         giver: &str,
         taker: &str,
         amount: i64,
@@ -293,7 +317,13 @@ impl Currency {
     ) -> Result<(), BalanceTransferError> {
         self.inner
             .backend
-            .balance_transfer(channel, giver, taker, amount, override_balance)
+            .balance_transfer(
+                &self.inner.streamer.user.login,
+                giver,
+                taker,
+                amount,
+                override_balance,
+            )
             .await
     }
 
@@ -308,30 +338,30 @@ impl Currency {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>> {
-        self.inner.backend.balance_of(channel, user).await
+    pub async fn balance_of(&self, user: &str) -> Result<Option<BalanceOf>> {
+        self.inner
+            .backend
+            .balance_of(&self.inner.streamer.user.login, user)
+            .await
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<()> {
-        self.inner.backend.balance_add(channel, user, amount).await
+    pub async fn balance_add(&self, user: &str, amount: i64) -> Result<()> {
+        self.inner
+            .backend
+            .balance_add(&self.inner.streamer.user.login, user, amount)
+            .await
     }
 
     /// Add balance to users.
-    pub async fn balances_increment<I>(
-        &self,
-        channel: &str,
-        users: I,
-        amount: i64,
-        watch_time: i64,
-    ) -> Result<()>
+    pub async fn balances_increment<I>(&self, users: I, amount: i64, watch_time: i64) -> Result<()>
     where
         I: IntoIterator<Item = String> + Send + 'static,
         I::IntoIter: Send + 'static,
     {
         self.inner
             .backend
-            .balances_increment(channel, users, amount, watch_time)
+            .balances_increment(&self.inner.streamer.user.login, users, amount, watch_time)
             .await
     }
 }

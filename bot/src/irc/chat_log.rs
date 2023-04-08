@@ -97,7 +97,7 @@ impl ChatLog {
             Some(emotes) => match emotes.render(tags, user, name, message).await {
                 Ok(rendered) => Some(rendered),
                 Err(e) => {
-                    tracing::warn!("failed to render emotes: {}", e);
+                    tracing::warn!("Failed to render emotes: {}", e);
                     None
                 }
             },

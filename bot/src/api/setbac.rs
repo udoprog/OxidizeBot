@@ -244,7 +244,7 @@ pub async fn run(
                         None => continue,
                     };
 
-                    tracing::trace!("pushing remote player update");
+                    tracing::trace!("Pushing remote player update");
 
                     let mut update = PlayerUpdate::default();
 
