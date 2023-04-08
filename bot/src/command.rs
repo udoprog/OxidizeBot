@@ -115,7 +115,15 @@ impl Context {
     }
 
     /// Verify that the current user has the associated scope.
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn check_scope(&self, scope: Scope) -> Result<()> {
+        tracing::info! {
+            ?scope,
+            roles = ?self.user.roles(),
+            principal = ?self.user.principal(),
+            "Checking scope"
+        };
+
         if !self.user.has_scope(scope).await {
             respond_bail!("Do you think this is a democracy? LUL");
         }

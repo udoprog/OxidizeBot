@@ -97,11 +97,11 @@ impl ChatLog {
         &self,
         tags: &irc::Tags,
         user: &api::User,
-        name: &str,
+        login: &str,
         message: &str,
     ) {
         let rendered = match self.emotes.as_ref() {
-            Some(emotes) => match emotes.render(tags, user, name, message).await {
+            Some(emotes) => match emotes.render(tags, user, login, message).await {
                 Ok(rendered) => Some(rendered),
                 Err(e) => {
                     tracing::warn!("Failed to render emotes: {}", e);
@@ -112,7 +112,7 @@ impl ChatLog {
         };
 
         self.message_log
-            .push_back(tags, name, message, rendered)
+            .push_back(tags, login, message, rendered)
             .await;
     }
 }

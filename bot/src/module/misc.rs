@@ -108,7 +108,7 @@ impl command::Handler for Title {
                 .new_modify_channel(&self.streamer.user.id, request)
                 .await?;
 
-            self.stream_info.refresh_channel(&self.streamer).await?;
+            self.stream_info.refresh(&self.streamer).await?;
             respond!(ctx, "Title updated!");
         }
 
@@ -180,7 +180,7 @@ impl command::Handler for Game {
             .new_modify_channel(&self.streamer.user.id, request)
             .await?;
 
-        stream_info.refresh_channel(&self.streamer).await?;
+        stream_info.refresh(&self.streamer).await?;
 
         respond!(ctx, "Game updated to `{}`!", first.name);
         Ok(())

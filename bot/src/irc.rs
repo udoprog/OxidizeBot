@@ -47,7 +47,6 @@ pub(crate) struct Irc {
 }
 
 impl Irc {
-    #[tracing::instrument(skip_all)]
     pub(crate) async fn run(self) -> Result<()> {
         use backoff::backoff::Backoff as _;
 
@@ -570,9 +569,12 @@ async fn process_command(
             if let Some(handler) = handler {
                 let scope = handler.scope();
 
-                if tracing::enabled!(tracing::Level::TRACE) {
-                    tracing::trace!("Auth: {:?} against {:?}", scope, ctx.user.roles());
-                }
+                tracing::info! {
+                    ?scope,
+                    roles = ?ctx.user.roles(),
+                    principal = ?ctx.user.principal(),
+                    "Testing auth"
+                };
 
                 // Test if user has the required scope to run the given
                 // command.
@@ -839,18 +841,20 @@ impl<'a> Handler<'a> {
                 let message = Arc::new(message);
                 let tags = Tags::from_tags(m.tags);
 
-                let Some(Prefix::Nickname(name, _, _)) = m.prefix else {
+                let Some(Prefix::Nickname(login, _, _)) = m.prefix else {
                     bail!("Missing nickname");
                 };
+
+                let login = Box::<str>::from(login);
 
                 if let Some(chat_log) = self.chat_log.as_ref().cloned() {
                     let tags = tags.clone();
                     let user = self.streamer.user.clone();
-                    let name = name.clone();
+                    let login = login.clone();
                     let message = message.clone();
 
                     task::spawn(Box::pin(async move {
-                        chat_log.observe(&tags, &user, &name, &message).await;
+                        chat_log.observe(&tags, &user, &login, &message).await;
                     }));
                 }
 
@@ -858,8 +862,8 @@ impl<'a> Handler<'a> {
                     inner: Arc::new(UserInner {
                         tags,
                         sender: self.sender.clone(),
-                        principal: Principal::User { login: name },
-                        streamer_login: self.streamer.user.id.clone(),
+                        principal: Principal::User { login },
+                        streamer_login: self.streamer.user.login.clone(),
                         moderators: self.moderators.clone(),
                         vips: self.vips.clone(),
                         stream_info: self.stream_info.clone(),
@@ -890,9 +894,6 @@ impl<'a> Handler<'a> {
                 };
 
                 tracing::trace!("{} joined {}", user, channel);
-            }
-            Command::Response(..) => {
-                tracing::trace!("Response: {}", m);
             }
             Command::PING(server, other) => {
                 tracing::trace!("Received PING, responding with PONG");
@@ -935,7 +936,10 @@ impl<'a> Handler<'a> {
                     }
                 }
             }
-            Command::Raw(command, tail) => match command.as_str() {
+            Command::Response(response, tail) => {
+                tracing::trace!(?response, ?tail, "Response");
+            }
+            Command::Raw(raw, tail) => match raw.as_str() {
                 "CLEARMSG" => {
                     if let Some(chat_log) = self.chat_log.as_ref() {
                         if let Some(tags) = ClearMsgTags::from_tags(m.tags) {
@@ -956,11 +960,11 @@ impl<'a> Handler<'a> {
                     }
                 }
                 _ => {
-                    tracing::trace!("Raw: {:?}", m);
+                    tracing::trace!(?raw, ?tail, "Unhandled raw command");
                 }
             },
             _ => {
-                tracing::info!("Unhandled: {:?}", m);
+                tracing::info!(?m, "Unhandled",);
             }
         }
 
@@ -983,7 +987,7 @@ pub(crate) struct RealUser<'a> {
 }
 
 impl<'a> RealUser<'a> {
-    /// Get the name of the user.
+    /// Get the login of the user.
     pub(crate) fn login(&self) -> &'a str {
         self.login
     }
@@ -1056,8 +1060,11 @@ impl<'a> RealUser<'a> {
 }
 
 /// Information about the user.
+#[derive(Debug)]
 pub(crate) enum Principal {
-    User { login: String },
+    /// A real user based on its login.
+    User { login: Box<str> },
+    /// An injected user command.
     Injected,
 }
 
@@ -1082,10 +1089,10 @@ impl User {
     /// Access the user as a real user.
     pub(crate) fn real(&self) -> Option<RealUser<'_>> {
         match self.inner.principal {
-            Principal::User { login: ref name } => Some(RealUser {
+            Principal::User { ref login } => Some(RealUser {
                 tags: &self.inner.tags,
                 sender: &self.inner.sender,
-                login: name,
+                login: login.as_ref(),
                 streamer_login: &self.inner.streamer_login,
                 moderators: &self.inner.moderators,
                 vips: &self.inner.vips,
@@ -1123,6 +1130,11 @@ impl User {
     /// Test if the current user is the given user.
     pub(crate) fn is(&self, name: &str) -> bool {
         self.real().map(|u| u.is(name)).unwrap_or(false)
+    }
+
+    /// Get the principal of the current user.
+    pub(crate) fn principal(&self) -> &Principal {
+        &self.inner.principal
     }
 
     /// Test if streamer.

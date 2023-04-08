@@ -671,11 +671,11 @@ impl Emotes {
         &self,
         tags: &irc::Tags,
         user: &api::User,
-        name: &str,
+        login: &str,
         message: &str,
     ) -> Result<Rendered, Error> {
         let (badges, room_emotes, global_emotes) = tokio::try_join!(
-            self.room_badges(user, name),
+            self.room_badges(user, login),
             self.room_emotes(user),
             self.global_emotes(),
         )?;

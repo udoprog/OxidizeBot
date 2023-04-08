@@ -64,18 +64,15 @@ impl StreamInfo {
 
     /// Refresh channel.
     #[tracing::instrument(skip_all, fields(id = ?streamer.user.id))]
-    pub(crate) async fn refresh_channel<'a>(
-        &'a self,
-        streamer: &'a api::TwitchAndUser,
-    ) -> Result<()> {
+    pub(crate) async fn refresh<'a>(&'a self, streamer: &'a api::TwitchAndUser) -> Result<()> {
         let channel = match streamer.client.new_channel_by_id(&streamer.user.id).await {
             Ok(Some(channel)) => channel,
             Ok(None) => {
-                tracing::error!("No channel matching the given id`");
+                tracing::warn!("No channel matching the given id`");
                 return Ok(());
             }
             Err(e) => {
-                log_error!(e, "Failed to refresh channel");
+                log_warn!(e, "Failed to refresh channel");
                 return Ok(());
             }
         };
@@ -150,7 +147,7 @@ pub(crate) fn setup(
                         .refresh_stream(&streamer, &stream_state_tx);
 
                     let channel = future_info
-                        .refresh_channel(&streamer);
+                        .refresh(&streamer);
 
                     tokio::try_join!(stream, channel)?;
                 }
