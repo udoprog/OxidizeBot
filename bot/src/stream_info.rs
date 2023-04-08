@@ -90,7 +90,7 @@ impl StreamInfo {
         &'a self,
         twitch: &'a api::Twitch,
         streamer: &'a api::User,
-        stream_state_tx: &'a mut mpsc::Sender<StreamState>,
+        stream_state_tx: &'a mpsc::Sender<StreamState>,
     ) -> Result<()> {
         let stream = match twitch.new_stream_by_id(&streamer.id).await {
             Ok(stream) => stream,
@@ -126,13 +126,8 @@ impl StreamInfo {
 pub fn setup(
     streamer: Arc<api::User>,
     twitch: api::Twitch,
-) -> (
-    StreamInfo,
-    mpsc::Receiver<StreamState>,
-    impl Future<Output = Result<()>>,
-) {
-    let (mut stream_state_tx, stream_state_rx) = mpsc::channel(64);
-
+    stream_state_tx: mpsc::Sender<StreamState>,
+) -> (StreamInfo, impl Future<Output = Result<()>>) {
     let stream_info = StreamInfo {
         user: streamer.clone(),
         data: Default::default(),
@@ -155,7 +150,7 @@ pub fn setup(
                 }
                 _ = stream_interval.tick() => {
                     let stream = future_info
-                        .refresh_stream(&twitch, &streamer, &mut stream_state_tx);
+                        .refresh_stream(&twitch, &streamer, &stream_state_tx);
 
                     let channel = future_info
                         .refresh_channel(&twitch, &streamer);
@@ -166,5 +161,5 @@ pub fn setup(
         }
     };
 
-    (stream_info, stream_state_rx, future.in_current_span())
+    (stream_info, future.in_current_span())
 }

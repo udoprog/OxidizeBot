@@ -257,12 +257,14 @@ pub struct Currency {
 
 impl Currency {
     /// Reward all users.
+    #[tracing::instrument(skip(self))]
     pub async fn add_channel_all(
         &self,
         channel: &str,
         reward: i64,
         watch_time: i64,
     ) -> Result<usize, anyhow::Error> {
+        tracing::trace!("getting chatters");
         let chatters = self.inner.twitch.chatters(channel).await?;
 
         let mut users = HashSet::new();

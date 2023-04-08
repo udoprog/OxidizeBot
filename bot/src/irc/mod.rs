@@ -22,12 +22,12 @@ use notify::{recommended_watcher, RecommendedWatcher, Watcher};
 use parking_lot::RwLock;
 use std::collections::HashSet;
 use std::fmt;
+use tracing::Instrument;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time;
 use tokio::sync;
-use tracing::Instrument;
 
 // re-exports
 pub use self::sender::Sender;
@@ -191,26 +191,13 @@ impl IrcLoop<'_> {
         let mut futures = crate::utils::Futures::new();
 
         let stream_info = {
-            let (stream_info, mut stream_state_rx, future) =
-                stream_info::setup(streamer.user.clone(), streamer.client.clone());
+            let (stream_info, future) = stream_info::setup(
+                streamer.user.clone(),
+                streamer.client.clone(),
+                stream_state_tx.clone(),
+            );
 
-            let stream_state_tx = stream_state_tx.clone();
-
-            let forward = async move {
-                while let Some(m) = stream_state_rx.recv().await {
-                    stream_state_tx
-                        .send(m)
-                        .await
-                        .map_err(|_| anyhow!("failed to send"))?;
-                }
-
-                Ok(())
-            }
-            .in_current_span();
-
-            futures.push(Box::pin(forward));
             futures.push(Box::pin(future));
-
             stream_info
         };
 
@@ -452,7 +439,7 @@ impl IrcLoop<'_> {
 
         handler.sender.privmsg_immediate(leave_message);
 
-        #[allow(clippy::never_loop, clippy::unnecessary_mut_passed)]
+        #[allow(clippy::unnecessary_mut_passed)]
         loop {
             tokio::select! {
                 _ = &mut outgoing => {
@@ -525,8 +512,7 @@ async fn currency_loop(
 
     let mut currency = builder.build_and_inject().await;
 
-    Ok(async move {
-        let _ = &streamer;
+    let future = async move {
         let new_timer = |interval: &Duration, viewer_reward: bool| {
             if viewer_reward && !interval.is_empty() {
                 Fuse::new(tokio::time::interval(interval.as_std()))
@@ -601,7 +587,9 @@ async fn currency_loop(
                 }
             }
         }
-    })
+    };
+
+    Ok(future.in_current_span())
 }
 
 /// Handler for incoming messages.
