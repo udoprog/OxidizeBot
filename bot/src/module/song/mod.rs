@@ -1,3 +1,8 @@
+use anyhow::Result;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+use crate::api;
 use crate::auth::Scope;
 use crate::command;
 use crate::currency::Currency;
@@ -8,9 +13,6 @@ use crate::player::{AddTrackError, Item, PlayThemeError, Player};
 use crate::prelude::*;
 use crate::settings;
 use crate::utils::{self, Cooldown, Duration};
-use anyhow::Result;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 mod feedback;
 mod redemption;
@@ -25,6 +27,7 @@ pub struct Handler {
     request_help_cooldown: Mutex<Cooldown>,
     currency: injector::Ref<Currency>,
     requester: requester::SongRequester,
+    streamer: api::TwitchAndUser,
 }
 
 impl Handler {
@@ -45,8 +48,7 @@ impl Handler {
             .requester
             .request(
                 &q,
-                user.channel(),
-                user.name(),
+                user.login(),
                 Some(&user),
                 requester::RequestCurrency::BotCurrency(currency.as_ref()),
                 player,
@@ -125,23 +127,26 @@ impl command::Handler for Handler {
             Some("theme") => {
                 ctx.check_scope(Scope::SongTheme).await?;
                 let name = ctx.next_str("<name>")?;
-                let user = ctx.user.clone();
 
-                match player.play_theme(user.channel(), name.as_str()).await {
+                match player
+                    .play_theme(&self.streamer.user.login, name.as_str())
+                    .await
+                {
                     Ok(()) => (),
                     Err(PlayThemeError::NoSuchTheme) => {
-                        user.respond("No such theme :(").await;
+                        ctx.user.respond("No such theme :(").await;
                     }
                     Err(PlayThemeError::NotConfigured) => {
-                        user.respond("Theme system is not configured :(").await;
+                        ctx.user.respond("Theme system is not configured :(").await;
                     }
                     Err(PlayThemeError::Error(e)) => {
-                        user.respond("There was a problem playing that theme :(")
+                        ctx.user
+                            .respond("There was a problem playing that theme :(")
                             .await;
-                        log_error!(e, "failed to add song");
+                        log_error!(e, "Failed to add song");
                     }
                     Err(PlayThemeError::MissingAuth) => {
-                        user.respond(
+                        ctx.user.respond(
                             "Cannot play the given theme because the service has not been authenticated by the streamer!",
                         ).await;
                     }
@@ -184,7 +189,7 @@ impl command::Handler for Handler {
                         ctx,
                         "You can find the queue at {}/player/{}",
                         api_url,
-                        ctx.user.streamer().login
+                        self.streamer.user.login
                     );
                     return Ok(());
                 }
@@ -259,7 +264,7 @@ impl command::Handler for Handler {
                             }
                         };
 
-                        (true, user.name())
+                        (true, user.login())
                     }
                 };
 
@@ -320,7 +325,7 @@ impl command::Handler for Handler {
                             }
                         };
 
-                        player.remove_last_by_user(user.name()).await?
+                        player.remove_last_by_user(user.login()).await?
                     }
                     Some(n) => {
                         ctx.check_scope(Scope::SongEditQueue).await?;
@@ -493,8 +498,7 @@ impl module::Module for Module {
             sender,
             settings,
             injector,
-            streamer_twitch,
-            stream_info,
+            streamer,
             ..
         }: module::HookContext<'_>,
     ) -> Result<()> {
@@ -519,6 +523,7 @@ impl module::Module for Module {
                 player: injector.var().await,
                 currency,
                 requester: requester.clone(),
+                streamer: streamer.clone(),
             },
         );
 
@@ -533,8 +538,7 @@ impl module::Module for Module {
             injector.clone(),
             settings,
             requester,
-            streamer_twitch.clone(),
-            stream_info.clone(),
+            streamer.clone(),
         )));
 
         Ok(())

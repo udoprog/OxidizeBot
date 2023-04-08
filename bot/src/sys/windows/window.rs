@@ -303,7 +303,7 @@ impl Window {
             run_loop();
 
             if shutdown_tx.send(()).is_err() {
-                tracing::error!("shutdown receiver closed");
+                tracing::error!("Shutdown receiver closed");
             }
         });
 

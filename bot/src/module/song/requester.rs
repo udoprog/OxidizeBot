@@ -41,7 +41,6 @@ impl SongRequester {
     pub(crate) async fn request(
         &self,
         q: &str,
-        channel: &str,
         user: &str,
         real_user: Option<&RealUser<'_>>,
         currency: RequestCurrency<'_>,
@@ -63,7 +62,7 @@ impl SongRequester {
                     track_id::ParseTrackIdError::MissingUriPrefix => (),
                     // show other errors.
                     e => {
-                        tracing::warn!("bad song request: {}", e);
+                        tracing::warn!("Bad song request: {}", e);
                         let e = format!("{} :(", e);
                         return Err(RequestError::BadRequest(Some(e)));
                     }
@@ -136,7 +135,7 @@ impl SongRequester {
                             };
 
                             let balance = currency
-                                .balance_of(channel, user)
+                                .balance_of(user)
                                 .await
                                 .map_err(RequestError::Error)?
                                 .unwrap_or_default();
@@ -180,7 +179,7 @@ impl SongRequester {
         };
 
         currency
-            .balance_add(channel, user, request_reward as i64)
+            .balance_add(user, request_reward as i64)
             .await
             .map_err(RequestError::Error)?;
 

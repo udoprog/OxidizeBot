@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time;
 use thiserror::Error;
 use tokio::sync::{RwLock, RwLockReadGuard};
+use tracing::Instrument;
 
 #[derive(Debug, Error)]
 #[error("Missing OAuth 2.0 Connection: {0}")]
@@ -33,7 +34,7 @@ pub struct InnerSyncToken {
 #[derive(Clone, Debug)]
 pub struct SyncToken {
     /// Name of the flow associated with connection.
-    what: &'static str,
+    flow_id: &'static str,
     /// The interior reference to the token.
     inner: Arc<RwLock<InnerSyncToken>>,
     /// Channel to use to force a refresh.
@@ -43,11 +44,11 @@ pub struct SyncToken {
 impl SyncToken {
     /// Create a new SyncToken.
     pub fn new(
-        what: &'static str,
+        flow_id: &'static str,
         force_refresh: mpsc::UnboundedSender<Option<Box<Connection>>>,
     ) -> Self {
         Self {
-            what,
+            flow_id,
             inner: Default::default(),
             force_refresh,
         }
@@ -55,6 +56,7 @@ impl SyncToken {
 
     /// Set the connection and notify all waiters.
     pub async fn update(&self, update: Box<Connection>) {
+        tracing::info!("Updating connection");
         let mut lock = self.inner.write().await;
 
         let InnerSyncToken {
@@ -67,18 +69,22 @@ impl SyncToken {
         // send ready notifications if we updated the connection.
         while let Some(front) = ready_queue.pop_front() {
             if let Err(()) = front.send(()) {
-                tracing::warn!("tried to send ready notification but failed");
+                tracing::warn!("Tried to send ready notification but failed");
             }
         }
     }
 
     /// Clear the current connection.
+    #[tracing::instrument(skip_all)]
     pub async fn clear(&self) {
+        tracing::trace!("Clearing connection");
         self.inner.write().await.connection = None;
     }
 
     /// Force a connection refresh.
+    #[tracing::instrument(skip_all)]
     pub async fn force_refresh(&self) -> Result<(), Error> {
+        tracing::trace!("Clearing refresh");
         let connection = self.inner.write().await.connection.take();
         self.force_refresh.send(connection)?;
         Ok(())
@@ -90,6 +96,7 @@ impl SyncToken {
     }
 
     /// Wait until an underlying connection is available.
+    #[tracing::instrument(skip_all)]
     pub async fn wait_until_ready(&self) -> Result<(), CancelledToken> {
         let rx = {
             let mut lock = self.inner.write().await;
@@ -108,7 +115,7 @@ impl SyncToken {
             rx
         };
 
-        tracing::trace!("Waiting for connection: {}", self.what);
+        tracing::trace!("Waiting for connection");
 
         match rx.await {
             Ok(()) => Ok(()),
@@ -124,7 +131,7 @@ impl SyncToken {
             i.connection.as_ref().map(|c| &c.token)
         }) {
             Ok(guard) => Ok(guard),
-            Err(_) => Err(MissingTokenError(self.what)),
+            Err(_) => Err(MissingTokenError(self.flow_id)),
         }
     }
 }
@@ -132,7 +139,6 @@ impl SyncToken {
 struct ConnectionFactory {
     setbac: Option<Setbac>,
     flow_id: &'static str,
-    what: &'static str,
     expires: time::Duration,
     force_refresh: bool,
     connection: Option<Box<Connection>>,
@@ -157,11 +163,16 @@ impl ConnectionFactory {
     /// Perform an update based on the existing state.
     pub async fn update(&mut self) -> Result<(), Error> {
         match self.log_build().await {
-            Validation::Ok => (),
+            Validation::Ok => {
+                tracing::trace!("Connection ok")
+            }
             Validation::Cleared => {
+                tracing::info!("Connection cleared");
+
                 self.settings
                     .set_silent("connection", None::<Connection>)
                     .await?;
+
                 self.sync_token.clear().await;
 
                 if self.current_hash.is_some() {
@@ -171,13 +182,19 @@ impl ConnectionFactory {
                 self.server.clear_connection(self.flow_id).await;
             }
             Validation::Updated(connection) => {
+                tracing::info!("Connection updated");
+
                 let meta = connection.as_meta();
+
                 self.settings
                     .set_silent("connection", Some(&connection))
                     .await?;
+
                 self.sync_token.update(connection).await;
 
                 if self.current_hash.as_ref() != Some(&meta.hash) {
+                    tracing::trace!("Update sync token through injector");
+
                     self.injector
                         .update_key(&self.key, self.sync_token.clone())
                         .await;
@@ -192,6 +209,7 @@ impl ConnectionFactory {
     }
 
     /// Set the connection from settings.
+    #[tracing::instrument(skip_all)]
     pub async fn update_from_settings(
         &mut self,
         connection: Option<Box<Connection>>,
@@ -243,39 +261,39 @@ impl ConnectionFactory {
         match self.build().await {
             Ok(connection) => connection,
             Err(e) => {
-                log_error!(e, "{}: Failed to build connection", self.what);
+                log_error!(e, "Failed to build connection");
                 Validation::Ok
             }
         }
     }
 
     /// Construct a new connection.
+    #[tracing::instrument(skip_all)]
     pub async fn build(&mut self) -> Result<Validation, Error> {
-        let setbac = match self.setbac.as_ref() {
-            Some(setbac) => setbac,
-            _ => {
-                tracing::trace!("{}: No client to configured", self.what);
-                return Ok(Validation::Ok);
-            }
+        let Some(setbac) = self.setbac.as_ref() else {
+            tracing::trace!("No client to configure");
+            return Ok(Validation::Ok);
         };
+
+        tracing::trace!("Building connection");
 
         if self.force_refresh {
             self.force_refresh = false;
-            tracing::trace!("{}: Forcing refresh of existing connection", self.what);
+            tracing::trace!("Forcing refresh of existing connection");
 
-            if let Some(connection) = self.refresh_connection(setbac).await? {
+            return Ok(if let Some(connection) = self.refresh(setbac).await? {
                 self.connection = Some(connection.clone());
-                return Ok(Validation::Updated(connection));
+                Validation::Updated(connection)
             } else {
                 self.connection = None;
-                return Ok(Validation::Cleared);
-            }
+                Validation::Cleared
+            });
         }
 
         match self.connection.as_ref() {
             // existing expired connection.
             Some(connection) => {
-                let result = self.validate_connection(setbac, connection).await?;
+                let result = self.validate(setbac, connection).await?;
 
                 Ok(match result {
                     Validation::Ok => Validation::Ok,
@@ -291,77 +309,66 @@ impl ConnectionFactory {
             }
             // No existing connection, request a new one.
             None => {
-                if let Some(connection) = self.request_new_connection(setbac).await? {
-                    Ok(match self.validate_connection(setbac, &connection).await? {
-                        Validation::Ok => {
-                            self.connection = Some(connection.clone());
-                            Validation::Updated(connection)
-                        }
-                        Validation::Cleared => {
-                            self.connection = None;
-                            Validation::Cleared
-                        }
-                        Validation::Updated(connection) => {
-                            self.connection = Some(connection.clone());
-                            Validation::Updated(connection)
-                        }
-                    })
-                } else {
-                    Ok(Validation::Ok)
-                }
+                tracing::trace!("Requesting new connection");
+
+                let Some(connection) = setbac.get_connection(self.flow_id).await? else {
+                    tracing::trace!("No remote connection configured");
+                    return Ok(Validation::Ok);
+                };
+
+                Ok(match self.validate(setbac, &connection).await? {
+                    Validation::Ok => {
+                        let connection = Box::new(connection);
+                        self.connection = Some(connection.clone());
+                        Validation::Updated(connection)
+                    }
+                    Validation::Cleared => {
+                        self.connection = None;
+                        Validation::Cleared
+                    }
+                    Validation::Updated(connection) => {
+                        self.connection = Some(connection.clone());
+                        Validation::Updated(connection)
+                    }
+                })
             }
-        }
-    }
-
-    /// Request a new connection from the authentication flow.
-    async fn request_new_connection(
-        &self,
-        setbac: &Setbac,
-    ) -> Result<Option<Box<Connection>>, Error> {
-        tracing::trace!("{}: Requesting new connection", self.what);
-
-        match setbac.get_connection(self.flow_id).await? {
-            Some(connection) => Ok(Some(Box::new(connection))),
-            None => Ok(None),
         }
     }
 
     /// Validate a connection base on the current flow.
-    async fn validate_connection(
+    #[tracing::instrument(skip_all)]
+    async fn validate(
         &self,
         setbac: &Setbac,
         connection: &Connection,
     ) -> Result<Validation, Error> {
-        tracing::trace!("{}: Validating connection", self.what);
+        tracing::trace!("Validating connection");
 
         // TODO: for some reason, this doesn't update :/
-        let meta = match setbac.get_connection_meta(self.flow_id).await? {
-            Some(c) => c,
-            None => {
-                tracing::trace!("{}: Remote connection cleared", self.what);
-                return Ok(Validation::Cleared);
-            }
+        let Some(meta) = setbac.get_connection_meta(self.flow_id).await? else {
+            tracing::trace!("Remote connection cleared");
+            return Ok(Validation::Cleared);
         };
 
         if !self.is_outdated(connection, &meta)? {
-            tracing::trace!("{}: Connection OK", self.what);
+            tracing::trace!("Connection not outdated");
             return Ok(Validation::Ok);
         }
 
         // try to refresh in case it has expired.
-        Ok(match self.refresh_connection(setbac).await? {
+        Ok(match self.refresh(setbac).await? {
             None => Validation::Cleared,
             Some(connection) => Validation::Updated(connection),
         })
     }
 
     /// Refresh a connection.
-    async fn refresh_connection(&self, setbac: &Setbac) -> Result<Option<Box<Connection>>, Error> {
-        tracing::trace!("{}: Refreshing connection", self.what);
+    #[tracing::instrument(skip_all)]
+    async fn refresh(&self, setbac: &Setbac) -> Result<Option<Box<Connection>>, Error> {
+        tracing::trace!("Refreshing");
 
-        let connection = match setbac.refresh_connection(self.flow_id).await? {
-            Some(connection) => connection,
-            None => return Ok(None),
+        let Some(connection) = setbac.refresh_connection(self.flow_id).await? else {
+            return Ok(None)
         };
 
         Ok(Some(Box::new(connection)))
@@ -381,7 +388,6 @@ impl fmt::Debug for ConnectionFactory {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("ConnectionFactory")
             .field("flow_id", &self.flow_id)
-            .field("what", &self.what)
             .field("expires", &self.expires)
             .field("force_refresh", &self.force_refresh)
             .field("connection", &self.connection)
@@ -390,10 +396,9 @@ impl fmt::Debug for ConnectionFactory {
 }
 
 /// Setup a synchronized token and the future necessary to keep it up-to-date.
-#[tracing::instrument(skip_all, fields(flow_id, what))]
-pub async fn build(
+#[tracing::instrument(skip_all, fields(id = flow_id))]
+pub async fn setup(
     flow_id: &'static str,
-    what: &'static str,
     parent: &crate::Settings,
     settings: crate::Settings,
     injector: Injector,
@@ -416,12 +421,11 @@ pub async fn build(
         .or_with(Duration::seconds(30))
         .await?;
 
-    let sync_token = SyncToken::new(what, force_refresh);
+    let sync_token = SyncToken::new(flow_id, force_refresh);
 
     let mut builder = ConnectionFactory {
         setbac,
         flow_id,
-        what,
         expires,
         force_refresh: false,
         connection: None,
@@ -441,7 +445,7 @@ pub async fn build(
         .await?;
 
     let future = async move {
-        tracing::trace!("{}: Running loop", what);
+        tracing::trace!("Starting loop");
 
         loop {
             tokio::select! {
@@ -450,19 +454,19 @@ pub async fn build(
                     builder.update().await?;
                 }
                 connection = connection_stream.recv() => {
-                    tracing::trace!("{}: New from settings", what);
+                    tracing::trace!("New from settings");
                     builder.update_from_settings(connection.map(Box::new)).await?;
                 }
                 _ = force_refresh_rx.recv() => {
-                    tracing::trace!("{}: Forced refresh", what);
+                    tracing::trace!("Forced refresh");
 
                     if !std::mem::take(&mut builder.force_refresh) {
-                        tracing::warn!("Forcing connection refresh for: {}", builder.what);
+                        tracing::warn!("Forcing connection refresh");
                         builder.update().await?;
                     }
                 }
                 _ = check_interval.tick() => {
-                    tracing::trace!("{}: Check for expiration", what);
+                    tracing::trace!("Check for expiration");
                     builder.update().await?;
                 }
                 update = check_interval_stream.recv() => {
@@ -472,5 +476,5 @@ pub async fn build(
         }
     };
 
-    Ok((sync_token, future))
+    Ok((sync_token, future.in_current_span()))
 }

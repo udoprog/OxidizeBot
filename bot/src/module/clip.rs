@@ -12,7 +12,7 @@ pub struct Clip {
     pub enabled: settings::Var<bool>,
     pub stream_info: stream_info::StreamInfo,
     pub clip_cooldown: settings::Var<Cooldown>,
-    pub twitch: api::Twitch,
+    pub streamer: api::TwitchAndUser,
 }
 
 #[async_trait]
@@ -31,16 +31,17 @@ impl command::Handler for Clip {
             return Ok(());
         }
 
-        let stream_user = self.stream_info.user.clone();
-
         let title = match ctx.rest().trim() {
             "" => None,
             other => Some(other.to_string()),
         };
 
-        let twitch = self.twitch.clone();
-
-        match twitch.new_create_clip(&stream_user.id).await? {
+        match self
+            .streamer
+            .client
+            .new_create_clip(&self.streamer.user.id)
+            .await?
+        {
             Some(clip) => {
                 respond!(
                     ctx,
@@ -55,7 +56,7 @@ impl command::Handler for Clip {
             }
             None => {
                 respond!(ctx, "Failed to create clip, sorry :(");
-                tracing::error!("created clip, but API returned nothing");
+                tracing::error!("Created clip, but API returned nothing");
             }
         }
 
@@ -78,7 +79,7 @@ impl super::Module for Module {
             handlers,
             settings,
             stream_info,
-            twitch,
+            streamer,
             ..
         }: module::HookContext<'_>,
     ) -> Result<()> {
@@ -92,7 +93,7 @@ impl super::Module for Module {
                 clip_cooldown: settings
                     .var("cooldown", Cooldown::from_duration(Duration::seconds(30)))
                     .await?,
-                twitch: twitch.clone(),
+                streamer: streamer.clone(),
             },
         );
 

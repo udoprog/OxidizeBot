@@ -148,13 +148,17 @@ impl Backend {
     }
 
     /// Add balance to users.
-    pub async fn balances_increment(
+    pub async fn balances_increment<I>(
         &self,
         channel: &str,
-        users: impl IntoIterator<Item = String> + Send + 'static,
+        users: I,
         amount: i64,
         watch_time: i64,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        I: IntoIterator<Item = String> + Send + 'static,
+        I::IntoIter: Send,
+    {
         use self::schema::balances::dsl;
 
         // NB: for legacy reasons, channel is stored with a hash.

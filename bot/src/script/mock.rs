@@ -26,12 +26,14 @@ impl Scripts {
         None
     }
 
+    #[tracing::instrument(skip(self))]
     pub(crate) fn reload(&mut self, path: &Path) -> Result<()> {
-        tracing::trace!("reload: {}", path.display());
+        tracing::trace!("Reload");
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     pub(crate) fn unload(&mut self, path: &Path) {
-        tracing::trace!("unload: {}", path.display());
+        tracing::trace!("Unload");
     }
 }

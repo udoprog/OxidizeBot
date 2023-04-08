@@ -40,10 +40,13 @@ struct Queries {
 
 impl Queries {
     /// Select all balances.
+    #[tracing::instrument(skip(self, tx))]
     async fn select_balances<Tx>(&self, tx: &mut Tx) -> Result<Vec<(String, i32)>>
     where
         Tx: Queryable,
     {
+        tracing::trace!("Select balances");
+
         let query = format!(
             "SELECT (`{user_column}`, `{balance_column}`) FROM `{table}`",
             table = self.schema.table,
@@ -51,7 +54,6 @@ impl Queries {
             user_column = self.schema.user_column,
         );
 
-        tracing::trace!("select_balances: {}", query);
         let results = tx
             .exec_map(query.as_str(), (), mysql::from_row::<(String, i32)>)
             .await?;
@@ -59,10 +61,13 @@ impl Queries {
     }
 
     /// Select the given balance.
+    #[tracing::instrument(skip(self, tx))]
     async fn select_balance<Tx>(&self, tx: &mut Tx, user: &str) -> Result<Option<i32>>
     where
         Tx: Queryable,
     {
+        tracing::trace!("Select balance");
+
         let query = format!(
             "SELECT `{balance_column}` \
              FROM `{table}` \
@@ -77,7 +82,6 @@ impl Queries {
             "user" => user,
         };
 
-        tracing::trace!("select_balance: {} {:?}", query, params);
         Ok(tx.exec_first(query.as_str(), params).await?)
     }
 
@@ -93,12 +97,15 @@ impl Queries {
     }
 
     /// Update or insert a batch of balances.
+    #[tracing::instrument(skip_all)]
     async fn upsert_balances<Tx, I>(&self, tx: &mut Tx, users: I, amount: i32) -> Result<()>
     where
         Tx: Queryable,
-        I: IntoIterator<Item = String> + Send + 'static,
-        I::IntoIter: Send + 'static,
+        I: IntoIterator<Item = String> + Send,
+        I::IntoIter: Send,
     {
+        tracing::trace!("Upsert balances");
+
         let query = format! {
             "INSERT INTO `{table}` (`{user_column}`, `{balance_column}`) \
             VALUES (:user, :amount) \
@@ -115,16 +122,18 @@ impl Queries {
             }
         });
 
-        tracing::trace!("upsert_balances: {}", query);
         tx.exec_batch(query.as_str(), params).await?;
         Ok(())
     }
 
     /// Insert the given balance.
+    #[tracing::instrument(skip(self, tx))]
     async fn insert_balance<Tx>(&self, tx: &mut Tx, user: &str, balance: i32) -> Result<()>
     where
         Tx: Queryable,
     {
+        tracing::trace!("Insert balance");
+
         let query = format!(
             "INSERT INTO `{table}` (`{user_column}`, `{balance_column}`) \
              VALUES (:user, :balance)",
@@ -138,16 +147,18 @@ impl Queries {
             "balance" => balance,
         };
 
-        tracing::trace!("insert_balance: {} {:?}", query, params);
         tx.exec_drop(query.as_str(), params).await?;
         Ok(())
     }
 
     /// Update the given balance.
+    #[tracing::instrument(skip(self, tx))]
     async fn update_balance<Tx>(&self, tx: &mut Tx, user: &str, balance: i32) -> Result<()>
     where
         Tx: Queryable,
     {
+        tracing::trace!("Update balance");
+
         let query = format!(
             "UPDATE `{table}` SET `{balance_column}` = :balance WHERE `{user_column}` = :user",
             table = self.schema.table,
@@ -160,7 +171,6 @@ impl Queries {
             "user" => user,
         };
 
-        tracing::trace!("update_balance: {} {:?}", query, params);
         tx.exec_drop(query.as_str(), params).await?;
         Ok(())
     }
@@ -297,8 +307,8 @@ impl Backend {
     /// Add balance to users.
     pub async fn balances_increment<I>(&self, _channel: &str, users: I, amount: i64) -> Result<()>
     where
-        I: IntoIterator<Item = String> + Send + 'static,
-        I::IntoIter: Send + 'static,
+        I: IntoIterator<Item = String> + Send,
+        I::IntoIter: Send,
     {
         let amount = amount.try_into()?;
         let opts = mysql::TxOpts::new();

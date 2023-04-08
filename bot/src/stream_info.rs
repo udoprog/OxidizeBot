@@ -25,7 +25,6 @@ pub enum StreamState {
 
 #[derive(Debug, Clone)]
 pub struct StreamInfo {
-    pub user: Arc<api::User>,
     pub data: Arc<RwLock<Data>>,
 }
 
@@ -36,11 +35,13 @@ impl StreamInfo {
     }
 
     /// Refresh the known list of subscribers.
-    pub async fn refresh_subs(&self, twitch: &api::Twitch, streamer: &api::User) -> Result<()> {
+    pub async fn refresh_subs(&self, streamer: &api::TwitchAndUser) -> Result<()> {
         let subs = {
             let mut out = Vec::new();
 
-            let stream = twitch.new_stream_subscriptions(&streamer.id, vec![]);
+            let stream = streamer
+                .client
+                .new_stream_subscriptions(&streamer.user.id, vec![]);
             tokio::pin!(stream);
 
             while let Some(sub) = stream.next().await.transpose()? {
@@ -62,19 +63,16 @@ impl StreamInfo {
     }
 
     /// Refresh channel.
-    pub async fn refresh_channel<'a>(
-        &'a self,
-        twitch: &'a api::Twitch,
-        streamer: &'a api::User,
-    ) -> Result<()> {
-        let channel = match twitch.new_channel_by_id(&streamer.id).await {
+    #[tracing::instrument(skip_all, fields(id = ?streamer.user.id))]
+    pub async fn refresh_channel<'a>(&'a self, streamer: &'a api::TwitchAndUser) -> Result<()> {
+        let channel = match streamer.client.new_channel_by_id(&streamer.user.id).await {
             Ok(Some(channel)) => channel,
             Ok(None) => {
-                tracing::error!("no channel matching the given id `{id}`", id = streamer.id);
+                tracing::error!("No channel matching the given id`");
                 return Ok(());
             }
             Err(e) => {
-                log_error!(e, "failed to refresh channel");
+                log_error!(e, "Failed to refresh channel");
                 return Ok(());
             }
         };
@@ -88,14 +86,13 @@ impl StreamInfo {
     /// Refresh the stream info.
     pub async fn refresh_stream<'a>(
         &'a self,
-        twitch: &'a api::Twitch,
-        streamer: &'a api::User,
+        streamer: &'a api::TwitchAndUser,
         stream_state_tx: &'a mpsc::Sender<StreamState>,
     ) -> Result<()> {
-        let stream = match twitch.new_stream_by_id(&streamer.id).await {
+        let stream = match streamer.client.new_stream_by_id(&streamer.user.id).await {
             Ok(stream) => stream,
             Err(e) => {
-                log_error!(e, "failed to refresh stream");
+                log_error!(e, "Failed to refresh stream");
                 return Ok(());
             }
         };
@@ -122,14 +119,11 @@ impl StreamInfo {
 }
 
 /// Set up a stream information loop.
-#[tracing::instrument(skip_all)]
 pub fn setup(
-    streamer: Arc<api::User>,
-    twitch: api::Twitch,
+    streamer: api::TwitchAndUser,
     stream_state_tx: mpsc::Sender<StreamState>,
 ) -> (StreamInfo, impl Future<Output = Result<()>>) {
     let stream_info = StreamInfo {
-        user: streamer.clone(),
         data: Default::default(),
     };
 
@@ -139,21 +133,21 @@ pub fn setup(
     let future_info = stream_info.clone();
 
     let future = async move {
-        twitch.token.wait_until_ready().await?;
+        streamer.client.token.wait_until_ready().await?;
 
         loop {
             tokio::select! {
                 _ = subs_interval.tick() => {
-                    if let Err(e) = future_info.refresh_subs(&twitch, &streamer).await {
-                        log_error!(e, "failed to refresh subscriptions");
+                    if let Err(e) = future_info.refresh_subs(&streamer).await {
+                        log_error!(e, "Failed to refresh subscriptions");
                     }
                 }
                 _ = stream_interval.tick() => {
                     let stream = future_info
-                        .refresh_stream(&twitch, &streamer, &stream_state_tx);
+                        .refresh_stream(&streamer, &stream_state_tx);
 
                     let channel = future_info
-                        .refresh_channel(&twitch, &streamer);
+                        .refresh_channel(&streamer);
 
                     tokio::try_join!(stream, channel)?;
                 }

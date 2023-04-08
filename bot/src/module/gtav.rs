@@ -576,16 +576,16 @@ impl Handler {
             match player.play_theme(target.as_str(), id.as_str()).await {
                 Ok(()) => (),
                 Err(player::PlayThemeError::NoSuchTheme) => {
-                    tracing::error!("you need to configure the theme `{}`", id);
+                    tracing::error!("You need to configure the theme `{}`", id);
                 }
                 Err(player::PlayThemeError::NotConfigured) => {
-                    tracing::error!("themes system is not configured");
+                    tracing::error!("Themes system is not configured");
                 }
                 Err(player::PlayThemeError::MissingAuth) => {
-                    tracing::error!("missing authentication to play the theme `{}`", id);
+                    tracing::error!("Missing authentication to play the theme `{}`", id);
                 }
                 Err(player::PlayThemeError::Error(e)) => {
-                    tracing::error!("error when playing theme: {}", e);
+                    tracing::error!("Error when playing theme: {}", e);
                 }
             }
         }
@@ -606,7 +606,7 @@ impl Handler {
         // NB: only real users are subject to cooldown.
         let mut user_cooldown = {
             match ctx.user.real() {
-                Some(user) => match per_user_cooldowns.entry(user.name().to_string()) {
+                Some(user) => match per_user_cooldowns.entry(user.login().to_string()) {
                     hash_map::Entry::Vacant(e) => Some(e.insert(per_user_cooldown.clone())),
                     hash_map::Entry::Occupied(e) => {
                         let cooldown = e.into_mut();
@@ -984,10 +984,7 @@ impl command::Handler for Handler {
         let tx = self.tx.clone();
 
         if let Some(real) = ctx.user.real() {
-            let balance = currency
-                .balance_of(ctx.user.channel(), real.name())
-                .await?
-                .unwrap_or_default();
+            let balance = currency.balance_of(real.login()).await?.unwrap_or_default();
 
             let balance = if balance.balance < 0 {
                 0u32
@@ -1011,9 +1008,7 @@ impl command::Handler for Handler {
                 return Ok(());
             }
 
-            currency
-                .balance_add(ctx.user.channel(), real.name(), -(cost as i64))
-                .await?;
+            currency.balance_add(real.login(), -(cost as i64)).await?;
         }
 
         if self.success_feedback.load().await {
@@ -1174,12 +1169,12 @@ impl super::Module for Module {
                     Some((user, id, command)) = receiver.as_pin_mut().poll_stream(|mut r, cx| r.poll_recv(cx)) => {
                         let who = user.name().unwrap_or("unknown");
                         let message = format!("{} {} {}", who, id, command.command());
-                        tracing::info!("sent: {}", message);
+                        tracing::info!("Sent: {}", message);
 
                         match socket.send(message.as_bytes()).await {
                             Ok(_) => (),
                             Err(e) => {
-                                tracing::error!("failed to send message: {}", e);
+                                tracing::error!("Failed to send message: {}", e);
                             }
                         }
                     }

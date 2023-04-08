@@ -42,7 +42,6 @@ impl Builder {
 }
 
 /// Hook up open weather api if all necessary settings are available.
-#[tracing::instrument(skip_all)]
 pub async fn setup(
     settings: crate::Settings,
     injector: Injector,

@@ -8,7 +8,6 @@ use std::time::Duration;
 use thiserror::Error;
 
 /// Setup a player.
-#[tracing::instrument(skip_all)]
 pub(super) async fn setup(
     spotify: Arc<api::Spotify>,
     settings: crate::Settings,
@@ -191,7 +190,7 @@ impl ConnectPlayer {
             .map_err(|e| ConnectError::Error("update volume settings", e.into()));
 
         if let Err(e) = result {
-            log_error!(e, "failed to store updated volume in settings");
+            log_error!(e, "Failed to store updated volume in settings");
         }
 
         update

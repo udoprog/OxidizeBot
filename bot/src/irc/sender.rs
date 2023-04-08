@@ -91,14 +91,14 @@ impl Sender {
         self.inner.limiter.acquire(1).await;
 
         if let Err(e) = self.inner.sender.send(m) {
-            log_error!(e, "failed to send message");
+            log_error!(e, "Failed to send message");
         }
     }
 
     /// Send an immediate message, without taking rate limiting into account.
     pub fn send_immediate(&self, m: impl Into<Message>) {
         if let Err(e) = self.inner.sender.send(m) {
-            log_error!(e, "failed to send message");
+            log_error!(e, "Failed to send message");
         }
     }
 
@@ -157,7 +157,7 @@ impl Sender {
                     continue;
                 }
                 Err(api::nightbot::RequestError::Other(e)) => {
-                    log_error!(e, "failed to send message via nightbot");
+                    log_error!(e, "Failed to send message via nightbot");
                 }
             }
 

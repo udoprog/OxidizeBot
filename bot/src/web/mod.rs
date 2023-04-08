@@ -1295,7 +1295,7 @@ where
 
                 ws.on_upgrade(move |websocket: warp::filters::ws::WebSocket| async {
                     if let Err(e) = send_bus_forward(bus, websocket).await {
-                        log_error!(e, "websocket error");
+                        log_error!(e, "Websocket error");
                     }
                 })
             }

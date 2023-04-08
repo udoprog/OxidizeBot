@@ -41,7 +41,7 @@ impl command::Handler for Handler {
                     }
                 };
 
-                let result = currency.balance_of(user.channel(), user.name()).await;
+                let result = currency.balance_of(user.login()).await;
 
                 match result {
                     Ok(balance) => {
@@ -58,7 +58,7 @@ impl command::Handler for Handler {
                     }
                     Err(e) => {
                         respond!(user, "Could not get balance, sorry :(");
-                        log_error!(e, "failed to get balance");
+                        log_error!(e, "Failed to get balance");
                     }
                 }
             }
@@ -66,7 +66,7 @@ impl command::Handler for Handler {
                 ctx.check_scope(Scope::CurrencyShow).await?;
                 let to_show = ctx.next_str("<user>")?;
 
-                match currency.balance_of(ctx.channel(), to_show.as_str()).await {
+                match currency.balance_of(to_show.as_str()).await {
                     Ok(balance) => {
                         let balance = balance.unwrap_or_default();
                         let watch_time = utils::compact_duration(balance.watch_time().as_std());
@@ -82,7 +82,7 @@ impl command::Handler for Handler {
                     }
                     Err(e) => {
                         respond!(ctx, "Count not get balance, sorry :(");
-                        log_error!(e, "failed to get balance");
+                        log_error!(e, "Failed to get balance");
                     }
                 }
             }
@@ -113,13 +113,7 @@ impl command::Handler for Handler {
                 }
 
                 let result = currency
-                    .balance_transfer(
-                        user.channel(),
-                        user.name(),
-                        &taker,
-                        amount,
-                        user.is_streamer(),
-                    )
+                    .balance_transfer(user.login(), &taker, amount, user.is_streamer())
                     .await;
 
                 match result {
@@ -146,7 +140,7 @@ impl command::Handler for Handler {
                             "Failed to give {currency}, sorry :(",
                             currency = currency.name
                         );
-                        log_error!(e, "failed to modify currency");
+                        log_error!(e, "Failed to modify currency");
                     }
                 }
             }
@@ -164,9 +158,7 @@ impl command::Handler for Handler {
                     return Ok(());
                 }
 
-                currency
-                    .balance_add(ctx.user.channel(), &boosted_user, amount)
-                    .await?;
+                currency.balance_add(&boosted_user, amount).await?;
 
                 if amount >= 0 {
                     respond!(
@@ -191,9 +183,7 @@ impl command::Handler for Handler {
 
                 let amount: i64 = ctx.next_parse("<amount>")?;
 
-                currency
-                    .add_channel_all(ctx.user.channel(), amount, 0)
-                    .await?;
+                currency.add_channel_all(amount, 0).await?;
 
                 if amount >= 0 {
                     ctx.privmsg(format!(

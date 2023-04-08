@@ -162,11 +162,11 @@ impl PlayerInternal {
     async fn send_pause_command(&mut self) {
         match self.player {
             PlayerKind::Spotify => {
-                tracing::trace!("pausing spotify player");
+                tracing::trace!("Pausing Spotify player");
                 self.connect_player.pause().await;
             }
             PlayerKind::YouTube => {
-                tracing::trace!("pausing youtube player");
+                tracing::trace!("Pausing YouTube player");
                 self.youtube_player.pause().await;
             }
             _ => (),

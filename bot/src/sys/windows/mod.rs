@@ -52,21 +52,21 @@ impl System {
     /// Clear the current state.
     pub fn clear(&self) {
         if let Err(e) = self.events.send(Event::Cleared) {
-            tracing::error!("failed to send clear: {}", e);
+            tracing::error!("Failed to send clear: {}", e);
         }
     }
 
     /// Set an error.
     pub fn error(&self, error: String) {
         if let Err(e) = self.events.send(Event::Errored(error)) {
-            tracing::error!("failed to send clear: {}", e);
+            tracing::error!("Failed to send clear: {}", e);
         }
     }
 
     /// Send the given notification.
     pub fn notification(&self, n: Notification) {
         if let Err(e) = self.events.send(Event::Notification(n)) {
-            tracing::error!("failed to send notification: {}", e);
+            tracing::error!("Failed to send notification: {}", e);
         }
     }
 

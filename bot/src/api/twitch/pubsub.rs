@@ -128,7 +128,7 @@ impl State {
     async fn disconnect(&mut self) {
         if let Some(client) = self.client.as_inner_mut() {
             if let Err(e) = client.stream.close(None).await {
-                log_error!(e, "error when closing stream");
+                log_error!(e, "Error when closing stream");
             }
 
             tracing::info!("Disconnected from Twitch Pub/Sub!");
@@ -153,7 +153,7 @@ impl State {
         if self.enabled {
             tracing::info!("Attempting to reconnect");
             let backoff = self.reconnect_backoff.next_backoff().unwrap_or_default();
-            tracing::warn!("reconnecting in {:?}", backoff);
+            tracing::warn!("Reconnecting in {:?}", backoff);
             self.reconnect.set(Box::pin(time::sleep(backoff)));
         }
     }
@@ -181,7 +181,7 @@ impl State {
                 self.client.set(client);
             }
             Err(e) => {
-                log_error!(e, "failed to build pub/sub client");
+                log_error!(e, "Failed to build pub/sub client");
                 self.recover().await;
             }
         };
@@ -238,7 +238,7 @@ impl State {
         match frame {
             self::transport::Frame::Response(response) => {
                 if let Some(error) = response.error {
-                    tracing::warn!("got error `{}`, disconnecting", error);
+                    tracing::warn!("Got error `{}`, disconnecting", error);
                     self.recover().await;
                 } else if response.nonce.as_deref() == Some("initialize") {
                     tracing::info!("Connected to Twitch Pub/Sub!");
@@ -318,20 +318,20 @@ async fn task(settings: crate::Settings, injector: Injector) -> Result<()> {
                     Some(message) => match message {
                         Ok(message) => message,
                         Err(e) => {
-                            log_error!(e, "error in websocket");
+                            log_error!(e, "Error in websocket");
                             state.recover().await;
                             continue;
                         }
                     }
                     None => {
-                        tracing::error!("end of websocket stream");
+                        tracing::error!("End of websocket stream");
                         state.recover().await;
                         continue;
                     },
                 };
 
                 if let Err(e) = state.handle_frame(&message).await {
-                    log_error!(e, "failed to handle message");
+                    log_error!(e, "Failed to handle message");
                 }
             }
             enabled = enabled_stream.recv() => {

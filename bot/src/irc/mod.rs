@@ -74,7 +74,7 @@ impl Irc {
                     }
                     Err(e) => {
                         let backoff = error_backoff.next_backoff().unwrap_or_default();
-                        log_error!(e, "chat component crashed, restarting in {:?}", backoff);
+                        log_error!(e, "Chat component crashed, restarting in {:?}", backoff);
                         tokio::time::sleep(backoff).await;
                         continue;
                     }
@@ -191,11 +191,8 @@ impl IrcLoop<'_> {
         let mut futures = crate::utils::Futures::new();
 
         let stream_info = {
-            let (stream_info, future) = stream_info::setup(
-                streamer.user.clone(),
-                streamer.client.clone(),
-                stream_state_tx.clone(),
-            );
+            let (stream_info, future) =
+                stream_info::setup(streamer.clone(), stream_state_tx.clone());
 
             futures.push(Box::pin(future));
             stream_info
@@ -227,7 +224,7 @@ impl IrcLoop<'_> {
         };
 
         for module in modules {
-            tracing::trace!("initializing module: {}", module.ty());
+            tracing::trace!("Initializing module: {}", module.ty());
 
             let result = module
                 .hook(module::HookContext {
@@ -235,8 +232,7 @@ impl IrcLoop<'_> {
                     futures: &mut futures,
                     stream_info: &stream_info,
                     idle: &idle,
-                    twitch: &bot.client,
-                    streamer_twitch: &streamer.client,
+                    streamer: &streamer,
                     sender: &sender,
                     settings: &settings,
                     injector,
@@ -249,6 +245,7 @@ impl IrcLoop<'_> {
         let currency_handler = currency_admin::setup(injector).await?;
 
         let future = currency_loop(
+            bot.clone(),
             streamer.clone(),
             sender.clone(),
             idle.clone(),
@@ -359,7 +356,7 @@ impl IrcLoop<'_> {
                 Some(ev) = scripts_watch_rx.recv() => {
                     if let Ok(ev) = ev {
                         if let Err(e) = handler.handle_script_filesystem_event(ev) {
-                            log_error!(e, "failed to handle script filesystem event");
+                            log_error!(e, "Failed to handle script filesystem event");
                         }
                     }
                 }
@@ -458,6 +455,7 @@ impl IrcLoop<'_> {
 /// Set up a reward loop.
 #[tracing::instrument(skip_all)]
 async fn currency_loop(
+    bot: api::TwitchAndUser,
     streamer: api::TwitchAndUser,
     sender: Sender,
     idle: idle::Idle,
@@ -501,7 +499,12 @@ async fn currency_loop(
 
     let (mut db_stream, db) = injector.stream::<db::Database>().await;
 
-    let mut builder = CurrencyBuilder::new(streamer.client.clone(), mysql_schema, injector.clone());
+    let mut builder = CurrencyBuilder::new(
+        bot.clone(),
+        streamer.clone(),
+        mysql_schema,
+        injector.clone(),
+    );
 
     builder.db = db;
     builder.ty = ty;
@@ -571,11 +574,11 @@ async fn currency_loop(
 
                     let seconds = reward_interval.num_seconds() as i64;
 
-                    tracing::trace!("running reward loop");
+                    tracing::trace!("Running reward loop");
 
                     let reward = (reward * reward_percentage.load().await as i64) / 100i64;
                     let count = currency
-                        .add_channel_all(&streamer.user.login, reward, seconds)
+                        .add_channel_all(reward, seconds)
                         .await?;
 
                     if notify_rewards && count > 0 && !idle.is_idle().await {
@@ -647,7 +650,7 @@ impl Handler<'_> {
     fn handle_script_filesystem_event(&mut self, ev: notify::Event) -> Result<()> {
         use notify::event::{CreateKind, EventKind::*, ModifyKind, RemoveKind, RenameMode};
 
-        tracing::trace!("filesystem event: {:?}", ev);
+        tracing::trace!("Filesystem event: {:?}", ev);
 
         let kind = match ev.kind {
             Create(CreateKind::File) => Kind::Load,
@@ -664,18 +667,18 @@ impl Handler<'_> {
         match kind {
             Kind::Load => {
                 for p in &ev.paths {
-                    tracing::info!("loading script: {}", p.display());
+                    tracing::info!("Loading script: {}", p.display());
 
                     let p = p.canonicalize()?;
 
                     if let Err(e) = self.scripts.reload(&p) {
-                        log_error!(e, "failed to reload: {}", p.display());
+                        log_error!(e, "Failed to reload: {}", p.display());
                     }
                 }
             }
             Kind::Remove => {
                 for p in &ev.paths {
-                    tracing::info!("unloading script: {}", p.display());
+                    tracing::info!("Unloading script: {}", p.display());
 
                     let p = p.canonicalize()?;
                     self.scripts.unload(&p);
@@ -794,7 +797,7 @@ impl<'a> Handler<'a> {
                 if let Some(why) = word.why.as_ref() {
                     let why = why.render_to_string(&BadWordsVars {
                         name: user.display_name(),
-                        target: user.channel(),
+                        target: &self.streamer.user.login,
                     });
 
                     match why {
@@ -802,7 +805,7 @@ impl<'a> Handler<'a> {
                             self.sender.privmsg(&why).await;
                         }
                         Err(e) => {
-                            log_error!(e, "failed to render response");
+                            log_error!(e, "Failed to render response");
                         }
                     }
                 }
@@ -890,7 +893,10 @@ impl<'a> Handler<'a> {
         let mut path = Vec::new();
 
         if let Some(aliases) = self.aliases.as_ref() {
-            while let Some((key, next)) = aliases.resolve(user.channel(), message.clone()).await {
+            while let Some((key, next)) = aliases
+                .resolve(&self.streamer.user.login, message.clone())
+                .await
+            {
                 path.push(key.to_string());
 
                 if !seen.insert(key.clone()) {
@@ -911,7 +917,7 @@ impl<'a> Handler<'a> {
 
         if let Some(commands) = self.commands.as_ref() {
             if let Some((command, captures)) = commands
-                .resolve(user.channel(), first.as_deref(), &it)
+                .resolve(&self.streamer.user.login, first.as_deref(), &it)
                 .await
             {
                 if command.has_var("count") {
@@ -920,7 +926,7 @@ impl<'a> Handler<'a> {
 
                 let vars = CommandVars {
                     name: user.display_name(),
-                    target: user.channel(),
+                    target: &self.streamer.user.login,
                     count: command.count(),
                     captures,
                 };
@@ -949,7 +955,7 @@ impl<'a> Handler<'a> {
                 );
 
                 if let Err(e) = result.await {
-                    log_error!(e, "failed to process command");
+                    log_error!(e, "Failed to process command");
                 }
             }
         }
@@ -970,7 +976,7 @@ impl<'a> Handler<'a> {
                 tags,
                 sender: self.sender.clone(),
                 principal: Principal::Injected,
-                streamer: self.streamer.user.clone(),
+                streamer_login: self.streamer.user.login.clone(),
                 moderators: self.moderators.clone(),
                 vips: self.vips.clone(),
                 stream_info: self.stream_info.clone(),
@@ -1008,8 +1014,8 @@ impl<'a> Handler<'a> {
                     inner: Arc::new(UserInner {
                         tags,
                         sender: self.sender.clone(),
-                        principal: Principal::User { name },
-                        streamer: self.streamer.user.clone(),
+                        principal: Principal::User { login: name },
+                        streamer_login: self.streamer.user.id.clone(),
                         moderators: self.moderators.clone(),
                         vips: self.vips.clone(),
                         stream_info: self.stream_info.clone(),
@@ -1076,10 +1082,10 @@ impl<'a> Handler<'a> {
                         *self.vips.write() = parse_room_members(message);
                     }
                     Some(msg_id) => {
-                        tracing::info!("unhandled notice w/ msg_id: {:?}: {:?}", msg_id, m);
+                        tracing::info!("Unhandled notice w/ msg_id: {:?}: {:?}", msg_id, m);
                     }
                     None => {
-                        tracing::info!("unhandled notice: {:?}", m);
+                        tracing::info!("Unhandled notice: {:?}", m);
                     }
                 }
             }
@@ -1108,7 +1114,7 @@ impl<'a> Handler<'a> {
                 }
             },
             _ => {
-                tracing::info!("unhandled: {:?}", m);
+                tracing::info!("Unhandled: {:?}", m);
             }
         }
 
@@ -1122,8 +1128,8 @@ impl<'a> Handler<'a> {
 pub struct RealUser<'a> {
     tags: &'a Tags,
     sender: &'a Sender,
-    name: &'a str,
-    streamer: &'a api::User,
+    login: &'a str,
+    streamer_login: &'a str,
     moderators: &'a RwLock<HashSet<String>>,
     vips: &'a RwLock<HashSet<String>>,
     stream_info: &'a stream_info::StreamInfo,
@@ -1131,19 +1137,14 @@ pub struct RealUser<'a> {
 }
 
 impl<'a> RealUser<'a> {
-    /// Get the channel the user is associated with.
-    pub fn channel(&self) -> &str {
-        self.sender.channel()
-    }
-
     /// Get the name of the user.
-    pub fn name(&self) -> &'a str {
-        self.name
+    pub fn login(&self) -> &'a str {
+        self.login
     }
 
     /// Get the display name of the user.
     pub fn display_name(&self) -> &'a str {
-        self.tags.display_name.as_deref().unwrap_or(self.name)
+        self.tags.display_name.as_deref().unwrap_or(self.login)
     }
 
     /// Respond to the user with a message.
@@ -1155,27 +1156,27 @@ impl<'a> RealUser<'a> {
 
     /// Test if the current user is the given user.
     pub fn is(&self, name: &str) -> bool {
-        self.name == name.to_lowercase()
+        self.login == name.to_lowercase()
     }
 
     /// Test if streamer.
     fn is_streamer(&self) -> bool {
-        self.name == self.streamer.login
+        self.login == self.streamer_login
     }
 
     /// Test if moderator.
     fn is_moderator(&self) -> bool {
-        self.moderators.read().contains(self.name)
+        self.moderators.read().contains(self.login)
     }
 
     /// Test if user is a subscriber.
     fn is_subscriber(&self) -> bool {
-        self.is_streamer() || self.stream_info.is_subscriber(self.name)
+        self.is_streamer() || self.stream_info.is_subscriber(self.login)
     }
 
     /// Test if vip.
     fn is_vip(&self) -> bool {
-        self.vips.read().contains(self.name)
+        self.vips.read().contains(self.login)
     }
 
     /// Get a list of all roles the current requester belongs to.
@@ -1204,13 +1205,13 @@ impl<'a> RealUser<'a> {
 
     /// Test if the current user has the given scope.
     pub async fn has_scope(&self, scope: Scope) -> bool {
-        self.auth.test_any(scope, self.name, self.roles()).await
+        self.auth.test_any(scope, self.login, self.roles()).await
     }
 }
 
 /// Information about the user.
 pub enum Principal {
-    User { name: String },
+    User { login: String },
     Injected,
 }
 
@@ -1219,7 +1220,7 @@ struct UserInner {
     tags: Tags,
     sender: Sender,
     principal: Principal,
-    streamer: Arc<api::User>,
+    streamer_login: String,
     moderators: Arc<RwLock<HashSet<String>>>,
     vips: Arc<RwLock<HashSet<String>>>,
     stream_info: stream_info::StreamInfo,
@@ -1235,11 +1236,11 @@ impl User {
     /// Access the user as a real user.
     pub fn real(&self) -> Option<RealUser<'_>> {
         match self.inner.principal {
-            Principal::User { ref name } => Some(RealUser {
+            Principal::User { login: ref name } => Some(RealUser {
                 tags: &self.inner.tags,
                 sender: &self.inner.sender,
-                name,
-                streamer: &self.inner.streamer,
+                login: name,
+                streamer_login: &self.inner.streamer_login,
                 moderators: &self.inner.moderators,
                 vips: &self.inner.vips,
                 stream_info: &self.inner.stream_info,
@@ -1250,6 +1251,7 @@ impl User {
     }
 
     /// Get the channel the user is associated with.
+    #[deprecated = "figure out context from streamer TwichAndUser instead"]
     pub fn channel(&self) -> &str {
         self.inner.sender.channel()
     }
@@ -1257,7 +1259,9 @@ impl User {
     /// Get the name of the user.
     pub fn name(&self) -> Option<&str> {
         match self.inner.principal {
-            Principal::User { ref name, .. } => Some(name),
+            Principal::User {
+                login: ref name, ..
+            } => Some(name),
             Principal::Injected => None,
         }
     }
@@ -1279,11 +1283,6 @@ impl User {
     /// Access the sender associated with the user.
     pub fn sender(&self) -> &Sender {
         &self.inner.sender
-    }
-
-    /// Get the name of the streamer.
-    pub fn streamer(&self) -> &api::User {
-        &self.inner.streamer
     }
 
     /// Test if the current user is the given user.
@@ -1566,7 +1565,7 @@ async fn refresh_mods_future(sender: Sender) -> Result<()> {
 
     loop {
         interval.tick().await;
-        tracing::trace!("refreshing mods and vips");
+        tracing::trace!("Refreshing mods and vips");
         sender.mods();
         sender.vips();
     }

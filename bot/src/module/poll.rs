@@ -150,7 +150,7 @@ impl command::MessageHook for ActivePoll {
             None => return Ok(()),
         };
 
-        if inner.voted.contains(user.name()) {
+        if inner.voted.contains(user.login()) {
             return Ok(());
         }
 
@@ -160,7 +160,7 @@ impl command::MessageHook for ActivePoll {
             }
 
             *inner.votes.entry(word.to_string()).or_default() += 1;
-            inner.voted.insert(user.name().to_string());
+            inner.voted.insert(user.login().to_string());
             break;
         }
 

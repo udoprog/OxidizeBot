@@ -51,7 +51,7 @@ impl command::Handler for AfterStream {
         }
 
         after_streams
-            .push(ctx.channel(), user.name(), ctx.rest())
+            .push(ctx.channel(), user.login(), ctx.rest())
             .await?;
         respond!(ctx, "Reminder added.");
         Ok(())
