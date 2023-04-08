@@ -1,5 +1,6 @@
 use crate::api;
 use crate::bus;
+use crate::channel::Channel;
 use crate::db;
 use crate::prelude::*;
 use crate::song_file::SongFile;
@@ -483,7 +484,11 @@ impl Player {
     }
 
     /// Play a theme track.
-    pub(crate) async fn play_theme(&self, channel: &str, name: &str) -> Result<(), PlayThemeError> {
+    pub(crate) async fn play_theme(
+        &self,
+        channel: &Channel,
+        name: &str,
+    ) -> Result<(), PlayThemeError> {
         let mut inner = self.inner.write().await;
 
         let themes = match inner.themes.load().await {

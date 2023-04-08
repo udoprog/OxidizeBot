@@ -1,8 +1,10 @@
+use anyhow::Result;
+use diesel::prelude::*;
+
+use crate::channel::Channel;
 use crate::db;
 use crate::db::models;
 use crate::db::schema;
-use anyhow::Result;
-use diesel::prelude::*;
 
 pub(crate) use self::models::AfterStream;
 
@@ -18,17 +20,17 @@ impl AfterStreams {
     }
 
     /// Push the given afterstream message.
-    pub(crate) async fn push(&self, channel: &str, user: &str, text: &str) -> Result<()> {
+    pub(crate) async fn push(&self, channel: &Channel, user: &str, text: &str) -> Result<()> {
         use self::schema::after_streams::dsl;
 
-        let channel = channel.to_string();
+        let channel = channel.to_owned();
         let user = user.to_string();
         let text = text.to_string();
 
         self.db
             .asyncify(move |c| {
                 let after_stream = models::InsertAfterStream {
-                    channel: Some(channel),
+                    channel: Some(channel.to_string()),
                     user,
                     text,
                 };

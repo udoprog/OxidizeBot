@@ -98,6 +98,10 @@ impl SyncToken {
     /// Wait until an underlying connection is available.
     #[tracing::instrument(skip_all)]
     pub(crate) async fn wait_until_ready(&self) -> Result<(), CancelledToken> {
+        if self.inner.read().await.connection.is_some() {
+            return Ok(());
+        }
+
         let rx = {
             let mut lock = self.inner.write().await;
 

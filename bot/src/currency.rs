@@ -7,6 +7,7 @@ use anyhow::{Error, Result};
 use thiserror::Error;
 
 use crate::api;
+use crate::channel::Channel;
 pub(crate) use crate::db::models::Balance;
 use crate::db::Database;
 use crate::injector::Injector;
@@ -96,7 +97,7 @@ impl CurrencyBuilder {
                 Backend::BuiltIn(backend)
             }
             BackendType::Mysql => {
-                let channel = String::from("");
+                let channel = Channel::new("#").to_owned();
                 let url = self.mysql_url.clone()?;
                 let schema = self.mysql_schema.clone();
 
@@ -111,7 +112,7 @@ impl CurrencyBuilder {
                 Backend::MySql(backend)
             }
             BackendType::Honkos => {
-                let channel = String::from("");
+                let channel = Channel::new("#").to_owned();
                 let url = self.mysql_url.clone()?;
                 let schema = Schema {
                     table: String::from("honkos"),
@@ -162,7 +163,7 @@ impl Backend {
     /// Add (or subtract) from the balance for a single user.
     pub(crate) async fn balance_transfer(
         &self,
-        channel: &str,
+        channel: &Channel,
         giver: &str,
         taker: &str,
         amount: i64,
@@ -205,7 +206,11 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub(crate) async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>> {
+    pub(crate) async fn balance_of(
+        &self,
+        channel: &Channel,
+        user: &str,
+    ) -> Result<Option<BalanceOf>> {
         use self::Backend::*;
 
         match *self {
@@ -215,7 +220,12 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub(crate) async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<()> {
+    pub(crate) async fn balance_add(
+        &self,
+        channel: &Channel,
+        user: &str,
+        amount: i64,
+    ) -> Result<()> {
         use self::Backend::*;
 
         match *self {
@@ -228,7 +238,7 @@ impl Backend {
     #[tracing::instrument(skip(self, users))]
     pub(crate) async fn balances_increment<I>(
         &self,
-        channel: &str,
+        channel: &Channel,
         users: I,
         amount: i64,
         watch_time: i64,
@@ -268,6 +278,7 @@ impl Currency {
     #[tracing::instrument(skip(self))]
     pub(crate) async fn add_channel_all(
         &self,
+        channel: &Channel,
         reward: i64,
         watch_time: i64,
     ) -> Result<usize, anyhow::Error> {
@@ -290,12 +301,7 @@ impl Currency {
 
         self.inner
             .backend
-            .balances_increment(
-                self.inner.streamer.user.login.as_str(),
-                users,
-                reward,
-                watch_time,
-            )
+            .balances_increment(channel, users, reward, watch_time)
             .await?;
 
         Ok(len)
@@ -304,6 +310,7 @@ impl Currency {
     /// Add (or subtract) from the balance for a single user.
     pub(crate) async fn balance_transfer(
         &self,
+        channel: &Channel,
         giver: &str,
         taker: &str,
         amount: i64,
@@ -311,13 +318,7 @@ impl Currency {
     ) -> Result<(), BalanceTransferError> {
         self.inner
             .backend
-            .balance_transfer(
-                &self.inner.streamer.user.login,
-                giver,
-                taker,
-                amount,
-                override_balance,
-            )
+            .balance_transfer(channel, giver, taker, amount, override_balance)
             .await
     }
 
@@ -332,24 +333,28 @@ impl Currency {
     }
 
     /// Find user balance.
-    pub(crate) async fn balance_of(&self, user: &str) -> Result<Option<BalanceOf>> {
-        self.inner
-            .backend
-            .balance_of(&self.inner.streamer.user.login, user)
-            .await
+    pub(crate) async fn balance_of(
+        &self,
+        channel: &Channel,
+        user: &str,
+    ) -> Result<Option<BalanceOf>> {
+        self.inner.backend.balance_of(channel, user).await
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub(crate) async fn balance_add(&self, user: &str, amount: i64) -> Result<()> {
-        self.inner
-            .backend
-            .balance_add(&self.inner.streamer.user.login, user, amount)
-            .await
+    pub(crate) async fn balance_add(
+        &self,
+        channel: &Channel,
+        user: &str,
+        amount: i64,
+    ) -> Result<()> {
+        self.inner.backend.balance_add(channel, user, amount).await
     }
 
     /// Add balance to users.
     pub(crate) async fn balances_increment<I>(
         &self,
+        channel: &Channel,
         users: I,
         amount: i64,
         watch_time: i64,
@@ -360,7 +365,7 @@ impl Currency {
     {
         self.inner
             .backend
-            .balances_increment(&self.inner.streamer.user.login, users, amount, watch_time)
+            .balances_increment(channel, users, amount, watch_time)
             .await
     }
 }

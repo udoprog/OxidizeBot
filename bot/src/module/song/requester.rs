@@ -1,13 +1,16 @@
+use std::fmt;
+use std::sync::Arc;
+
+use anyhow::Result;
+
 use crate::auth::Scope;
+use crate::channel::Channel;
 use crate::currency::Currency;
 use crate::irc::RealUser;
 use crate::module::song::Constraint;
 use crate::player::{AddTrackError, Player};
 use crate::settings;
 use crate::track_id::{self, TrackId};
-use anyhow::Result;
-use std::fmt;
-use std::sync::Arc;
 
 pub(crate) enum RequestCurrency<'a> {
     /// Use bot currency.
@@ -40,6 +43,7 @@ impl SongRequester {
     /// Perform the given song request.
     pub(crate) async fn request(
         &self,
+        channel: &Channel,
         q: &str,
         user: &str,
         real_user: Option<&RealUser<'_>>,
@@ -50,6 +54,7 @@ impl SongRequester {
             return Err(RequestError::BadRequest(None));
         }
 
+        let channel = channel.to_owned();
         let request_reward = self.request_reward.load().await;
         let spotify = self.spotify.clone();
         let youtube = self.youtube.clone();
@@ -135,7 +140,7 @@ impl SongRequester {
                             };
 
                             let balance = currency
-                                .balance_of(user)
+                                .balance_of(&channel, user)
                                 .await
                                 .map_err(RequestError::Error)?
                                 .unwrap_or_default();
@@ -179,7 +184,7 @@ impl SongRequester {
         };
 
         currency
-            .balance_add(user, request_reward as i64)
+            .balance_add(&channel, user, request_reward as i64)
             .await
             .map_err(RequestError::Error)?;
 

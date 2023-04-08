@@ -1,12 +1,15 @@
+use chrono::NaiveDateTime;
+use diesel::{Insertable, Queryable};
+use serde::{Deserialize, Serialize};
+
 use super::schema::{
     after_streams, aliases, bad_words, balances, commands, promotions, script_keys, songs, themes,
 };
-use crate::track_id::TrackId;
-use chrono::NaiveDateTime;
+use crate::{channel::OwnedChannel, track_id::TrackId};
 
-#[derive(serde::Serialize, serde::Deserialize, diesel::Queryable, diesel::Insertable)]
+#[derive(Serialize, Deserialize, Queryable, Insertable)]
 pub(crate) struct Balance {
-    pub(crate) channel: String,
+    pub(crate) channel: OwnedChannel,
     pub(crate) user: String,
     #[serde(default)]
     pub(crate) amount: i64,
@@ -26,10 +29,10 @@ impl Balance {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Queryable, Insertable)]
 pub(crate) struct Command {
     /// The channel the command belongs to.
-    pub(crate) channel: String,
+    pub(crate) channel: OwnedChannel,
     /// The name of the command.
     pub(crate) name: String,
     /// The regular expression pattern to match for the given command.
@@ -53,11 +56,11 @@ pub(crate) struct UpdateCommand<'a> {
     pub(crate) disabled: Option<bool>,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Queryable, Insertable)]
 #[diesel(table_name = aliases)]
 pub(crate) struct Alias {
     /// The channel the alias belongs to.
-    pub(crate) channel: String,
+    pub(crate) channel: OwnedChannel,
     /// The name of the alias.
     pub(crate) name: String,
     /// The regular expression pattern to match for the given alias.
@@ -70,10 +73,10 @@ pub(crate) struct Alias {
     pub(crate) disabled: bool,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Insertable)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Insertable)]
 #[diesel(table_name = aliases)]
 pub(crate) struct InsertAlias {
-    pub(crate) channel: String,
+    pub(crate) channel: OwnedChannel,
     pub(crate) name: String,
     pub(crate) text: String,
 }
@@ -86,12 +89,12 @@ pub(crate) struct UpdateAlias<'a> {
     pub(crate) disabled: Option<bool>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, diesel::Queryable)]
+#[derive(Debug, Clone, Serialize, Deserialize, Queryable)]
 pub(crate) struct AfterStream {
     /// The unique identifier of the afterstream message.
     pub(crate) id: i32,
     /// The channel the afterstream message belongs to.
-    pub(crate) channel: Option<String>,
+    pub(crate) channel: Option<OwnedChannel>,
     /// When the afterstream was added.
     pub(crate) added_at: NaiveDateTime,
     /// The user that added the afterstream.
@@ -101,7 +104,7 @@ pub(crate) struct AfterStream {
 }
 
 /// Insert model for afterstreams.
-#[derive(diesel::Insertable)]
+#[derive(Insertable)]
 #[diesel(table_name = after_streams)]
 pub(crate) struct InsertAfterStream {
     pub(crate) channel: Option<String>,
@@ -109,13 +112,13 @@ pub(crate) struct InsertAfterStream {
     pub(crate) text: String,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Queryable, Insertable)]
 pub(crate) struct BadWord {
     pub(crate) word: String,
     pub(crate) why: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, diesel::Queryable)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable)]
 pub(crate) struct Song {
     /// ID of the song request.
     pub(crate) id: i32,
@@ -135,7 +138,7 @@ pub(crate) struct Song {
     pub(crate) user: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, diesel::Insertable)]
+#[derive(Debug, Clone, PartialEq, Eq, Insertable)]
 #[diesel(table_name = songs)]
 pub(crate) struct AddSong {
     /// The track id of the song.
@@ -146,10 +149,10 @@ pub(crate) struct AddSong {
     pub(crate) user: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Queryable, Insertable)]
 pub(crate) struct Promotion {
     /// The channel the promotion belongs to.
-    pub(crate) channel: String,
+    pub(crate) channel: OwnedChannel,
     /// The name of the promotion.
     pub(crate) name: String,
     /// The frequency in seconds at which the promotion is posted.
@@ -174,10 +177,10 @@ pub(crate) struct UpdatePromotion<'a> {
     pub(crate) disabled: Option<bool>,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Queryable, Insertable)]
 pub(crate) struct Theme {
     /// The channel the theme belongs to.
-    pub(crate) channel: String,
+    pub(crate) channel: OwnedChannel,
     /// The name of the theme.
     pub(crate) name: String,
     /// If track id of the theme.
@@ -202,9 +205,9 @@ pub(crate) struct UpdateTheme<'a> {
     pub(crate) disabled: Option<bool>,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, diesel::Queryable, diesel::Insertable)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Queryable, Insertable)]
 pub(crate) struct ScriptKey {
-    pub(crate) channel: String,
+    pub(crate) channel: OwnedChannel,
     pub(crate) key: Vec<u8>,
     pub(crate) value: Vec<u8>,
 }

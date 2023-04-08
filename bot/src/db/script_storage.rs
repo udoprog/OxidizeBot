@@ -1,18 +1,22 @@
 use anyhow::Result;
 use diesel::prelude::*;
 
+use crate::channel::{Channel, OwnedChannel};
 use crate::db;
 
 #[derive(Clone)]
 pub(crate) struct ScriptStorage {
-    channel: String,
+    channel: OwnedChannel,
     db: db::Database,
 }
 
 impl ScriptStorage {
     /// Open the script storage database.
-    pub(crate) async fn load(channel: String, db: db::Database) -> Result<Self> {
-        Ok(Self { channel, db })
+    pub(crate) fn new(channel: &Channel, db: db::Database) -> Self {
+        Self {
+            channel: channel.to_owned(),
+            db,
+        }
     }
 
     /// Set the given key.

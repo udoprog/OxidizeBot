@@ -1,14 +1,18 @@
-use crate::db;
-use crate::template;
-use crate::utils;
-use anyhow::{anyhow, Context as _};
-use chrono::{DateTime, Utc};
-use diesel::prelude::*;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
+
+use anyhow::{anyhow, Context as _};
+use chrono::{DateTime, Utc};
+use diesel::prelude::*;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::RwLock;
+
+use crate::channel::{Channel, OwnedChannel};
+use crate::db;
+use crate::template;
+use crate::utils;
 
 #[derive(Debug, Error)]
 pub(crate) enum BumpError {
@@ -49,7 +53,7 @@ impl Database {
                 match b {
                     None => {
                         let command = db::models::Promotion {
-                            channel: key.channel.to_string(),
+                            channel: key.channel.to_owned(),
                             name: key.name.to_string(),
                             frequency,
                             promoted_at: None,
@@ -136,7 +140,7 @@ impl Promotions {
     /// Insert a word into the bad words list.
     pub(crate) async fn edit(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         frequency: utils::Duration,
         template: template::Template,
@@ -190,22 +194,22 @@ impl Promotions {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct Key {
-    pub(crate) channel: String,
+    pub(crate) channel: OwnedChannel,
     pub(crate) name: String,
 }
 
 impl Key {
-    pub(crate) fn new(channel: &str, name: &str) -> Self {
+    pub(crate) fn new(channel: &Channel, name: &str) -> Self {
         Self {
-            channel: channel.to_string(),
+            channel: channel.to_owned(),
             name: name.to_lowercase(),
         }
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct Promotion {
     pub(crate) key: Key,
     pub(crate) frequency: utils::Duration,
@@ -241,7 +245,7 @@ impl Promotion {
     /// Render the given promotion.
     pub(crate) fn render<T>(&self, data: &T) -> Result<String, anyhow::Error>
     where
-        T: serde::Serialize,
+        T: Serialize,
     {
         self.template.render_to_string(data)
     }

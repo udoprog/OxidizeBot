@@ -1,10 +1,12 @@
 use crate::auth;
+use crate::channel::Channel;
 use crate::command;
 use crate::db;
 use crate::irc;
 use crate::module;
 use crate::prelude::*;
 use crate::utils;
+
 use chrono::Utc;
 
 pub(crate) struct Handler {
@@ -147,7 +149,7 @@ async fn promote(promotions: db::Promotions, sender: irc::Sender) -> Result<(), 
 
 #[derive(Debug, serde::Serialize)]
 struct PromoData<'a> {
-    channel: &'a str,
+    channel: &'a Channel,
 }
 
 /// Pick the best promo.

@@ -39,9 +39,7 @@ impl StreamInfo {
         let subs = {
             let mut out = Vec::new();
 
-            let stream = streamer
-                .client
-                .new_stream_subscriptions(&streamer.user.id, vec![]);
+            let stream = streamer.client.subscriptions(&streamer.user.id, vec![]);
             tokio::pin!(stream);
 
             while let Some(sub) = stream.next().await.transpose()? {
@@ -64,8 +62,11 @@ impl StreamInfo {
 
     /// Refresh channel.
     #[tracing::instrument(skip_all, fields(id = ?streamer.user.id))]
-    pub(crate) async fn refresh<'a>(&'a self, streamer: &'a api::TwitchAndUser) -> Result<()> {
-        let channel = match streamer.client.new_channel_by_id(&streamer.user.id).await {
+    pub(crate) async fn refresh_channel<'a>(
+        &'a self,
+        streamer: &'a api::TwitchAndUser,
+    ) -> Result<()> {
+        let channel = match streamer.client.channels(&streamer.user.id).await {
             Ok(Some(channel)) => channel,
             Ok(None) => {
                 tracing::warn!("No channel matching the given id`");
@@ -84,22 +85,18 @@ impl StreamInfo {
     }
 
     /// Refresh the stream info.
+    #[tracing::instrument(skip_all, fields(id = ?streamer.user.id))]
     pub(crate) async fn refresh_stream<'a>(
         &'a self,
         streamer: &'a api::TwitchAndUser,
         stream_state_tx: &'a mpsc::Sender<StreamState>,
     ) -> Result<()> {
-        let stream = match streamer.client.new_stream_by_id(&streamer.user.id).await {
-            Ok(stream) => stream,
-            Err(e) => {
-                log_error!(e, "Failed to refresh stream");
-                return Ok(());
-            }
-        };
+        let streams = streamer.client.streams(&streamer.user.id).await;
+        tokio::pin!(streams);
 
-        let stream_is_some = self.data.read().stream.is_some();
+        let stream = streams.next().await.transpose()?;
 
-        let update = match (stream_is_some, stream.is_some()) {
+        let update = match (self.data.read().stream.is_some(), stream.is_some()) {
             (true, false) => Some(StreamState::Stopped),
             (false, true) => Some(StreamState::Started),
             _ => None,
@@ -112,8 +109,11 @@ impl StreamInfo {
                 .map_err(|_| anyhow!("failed to send stream state update"))?;
         }
 
-        let mut info = self.data.write();
-        info.stream = stream;
+        if self.data.read().stream == stream {
+            return Ok(());
+        }
+
+        self.data.write().stream = stream;
         Ok(())
     }
 }
@@ -130,30 +130,37 @@ pub(crate) fn setup(
     let mut stream_interval = tokio::time::interval(time::Duration::from_secs(30));
     let mut subs_interval = tokio::time::interval(time::Duration::from_secs(60 * 10));
 
-    let future_info = stream_info.clone();
+    let stream_info2 = stream_info.clone();
 
     let future = async move {
-        streamer.client.token.wait_until_ready().await?;
-
         loop {
+            streamer.client.token.wait_until_ready().await?;
+
             tokio::select! {
                 _ = subs_interval.tick() => {
-                    if let Err(e) = future_info.refresh_subs(&streamer).await {
-                        log_error!(e, "Failed to refresh subscriptions");
+                    if let Err(error) = stream_info.refresh_subs(&streamer).await {
+                        log_error!(error, "Failed to refresh subscriptions");
                     }
                 }
                 _ = stream_interval.tick() => {
-                    let stream = future_info
+                    let stream = stream_info
                         .refresh_stream(&streamer, &stream_state_tx);
+                    let channel = stream_info
+                        .refresh_channel(&streamer);
 
-                    let channel = future_info
-                        .refresh(&streamer);
+                    let (stream, channel) = tokio::join!(stream, channel);
 
-                    tokio::try_join!(stream, channel)?;
+                    if let Err(error) = stream {
+                        log_error!(error, "Failed to referesh stream");
+                    }
+
+                    if let Err(error) = channel {
+                        log_error!(error, "Failed to referesh channel");
+                    }
                 }
             }
         }
     };
 
-    (stream_info, future.in_current_span())
+    (stream_info2, future.in_current_span())
 }

@@ -1,3 +1,4 @@
+use crate::channel::Channel;
 use crate::db;
 use crate::template;
 use crate::utils;
@@ -31,7 +32,7 @@ impl Database {
                 match filter.first::<db::models::Command>(c).optional()? {
                     None => {
                         let command = db::models::Command {
-                            channel: key.channel.to_string(),
+                            channel: key.channel.to_owned(),
                             pattern: None,
                             name: key.name.to_string(),
                             count: 0,
@@ -132,7 +133,7 @@ impl Commands {
     /// Insert a word into the bad words list.
     pub(crate) async fn edit(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         template: template::Template,
     ) -> Result<(), Error> {
@@ -165,7 +166,7 @@ impl Commands {
     /// Edit the pattern for the given command.
     pub(crate) async fn edit_pattern(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         pattern: Option<regex::Regex>,
     ) -> Result<bool, anyhow::Error> {
@@ -187,7 +188,7 @@ impl Commands {
     /// Resolve the given command.
     pub(crate) async fn resolve<'a>(
         &self,
-        channel: &'a str,
+        channel: &'a Channel,
         first: Option<&'a str>,
         it: &'a utils::Words,
     ) -> Option<(Arc<Command>, db::Captures<'a>)> {

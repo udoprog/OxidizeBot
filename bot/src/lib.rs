@@ -132,6 +132,7 @@ pub(crate) mod api;
 pub(crate) mod auth;
 mod backoff;
 pub(crate) mod bus;
+pub(crate) mod channel;
 pub mod cli;
 mod command;
 pub(crate) mod currency;

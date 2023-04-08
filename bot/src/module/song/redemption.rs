@@ -1,10 +1,11 @@
+use anyhow::Result;
+
 use crate::api;
 use crate::api::twitch::pubsub;
 use crate::irc;
 use crate::module::song::requester::{RequestCurrency, SongRequester};
 use crate::player::Player;
 use crate::prelude::*;
-use anyhow::Result;
 
 /// Task used to react to redemptions as song requests.
 pub(crate) async fn task(
@@ -26,7 +27,7 @@ pub(crate) async fn task(
         streamer,
         player,
         pubsub,
-        sender,
+        sender: sender.clone(),
         request_redemption: request_redemption.map(Into::into),
         redemptions_stream: Fuse::empty(),
     };
@@ -49,7 +50,7 @@ pub(crate) async fn task(
             }
             Some(redemption) = state.redemptions_stream.next() => {
                 tracing::info!("Got redemption");
-                state.process_redemption(redemption).await;
+                state.process_redemption(&sender, redemption).await;
             }
         }
     }
@@ -82,18 +83,24 @@ impl State {
     }
 
     /// Process a single incoming redemption.
-    async fn process_redemption(&mut self, redemption: pubsub::Redemption) {
+    async fn process_redemption(&mut self, sender: &irc::Sender, redemption: pubsub::Redemption) {
         match &self.request_redemption {
             Some(title) if title.as_ref() == redemption.reward.title => {
                 let title = title.clone();
-                self.request_redemption(title.as_ref(), redemption).await;
+                self.request_redemption(sender, title.as_ref(), redemption)
+                    .await;
             }
             _ => (),
         }
     }
 
     /// Process song request redemptions.
-    async fn request_redemption(&mut self, title: &str, redemption: pubsub::Redemption) {
+    async fn request_redemption(
+        &mut self,
+        sender: &irc::Sender,
+        title: &str,
+        redemption: pubsub::Redemption,
+    ) {
         let input = match redemption.user_input.as_ref() {
             Some(input) => input,
             None => {
@@ -121,6 +128,7 @@ impl State {
         let result = self
             .requester
             .request(
+                sender.channel(),
                 input,
                 &redemption.user.login,
                 None,
@@ -148,7 +156,7 @@ impl State {
         let result = self
             .streamer
             .client
-            .new_update_redemption_status(&self.streamer.user.id, &redemption, status)
+            .patch_redemptions(&self.streamer.user.id, &redemption, status)
             .await;
 
         if let Err(e) = result {

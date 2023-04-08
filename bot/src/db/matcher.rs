@@ -1,8 +1,12 @@
-use crate::utils;
-use anyhow::Error;
 use std::collections::{hash_map, HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
+
+use crate::channel::{Channel, OwnedChannel};
+use crate::utils;
+
+use anyhow::Error;
+use serde::{Serialize, Serializer};
 
 /// Trait over something that has a matchable pattern.
 pub(crate) trait Matchable {
@@ -22,7 +26,7 @@ where
     /// Commands indexed by name.
     by_name: HashSet<Key>,
     /// Regular expression commands indexed by channel.
-    by_channel_regex: HashMap<String, HashSet<Key>>,
+    by_channel_regex: HashMap<OwnedChannel, HashSet<Key>>,
 }
 
 impl<T> Matcher<T>
@@ -147,7 +151,7 @@ where
     /// Resolve the given command.
     pub(crate) fn resolve<'a>(
         &self,
-        channel: &str,
+        channel: &'a Channel,
         first: Option<&'a str>,
         it: &'a utils::Words,
     ) -> Option<(&Arc<T>, Captures<'a>)> {
@@ -181,16 +185,16 @@ where
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub(crate) struct Key {
-    pub(crate) channel: String,
+    pub(crate) channel: OwnedChannel,
     pub(crate) name: String,
 }
 
 impl Key {
-    pub(crate) fn new(channel: &str, name: &str) -> Self {
+    pub(crate) fn new(channel: &Channel, name: &str) -> Self {
         Self {
-            channel: channel.to_string(),
+            channel: channel.to_owned(),
             name: name.to_lowercase(),
         }
     }
@@ -203,7 +207,7 @@ impl fmt::Display for Key {
 }
 
 /// How to match the given value.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 pub(crate) enum Pattern {
     #[serde(rename = "name")]
@@ -250,7 +254,7 @@ impl fmt::Display for Pattern {
 /// Serialize a regular expression.
 fn serialize_regex<S>(regex: &regex::Regex, s: S) -> Result<S::Ok, S::Error>
 where
-    S: serde::Serializer,
+    S: Serializer,
 {
     s.collect_str(regex)
 }
@@ -271,10 +275,10 @@ impl<'a> Captures<'a> {
     }
 }
 
-impl serde::Serialize for Captures<'_> {
+impl Serialize for Captures<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer,
+        S: Serializer,
     {
         use serde::ser::SerializeMap as _;
 

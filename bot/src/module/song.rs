@@ -47,6 +47,7 @@ impl Handler {
         match self
             .requester
             .request(
+                ctx.channel(),
                 &q,
                 user.login(),
                 Some(&user),
@@ -128,10 +129,7 @@ impl command::Handler for Handler {
                 ctx.check_scope(Scope::SongTheme).await?;
                 let name = ctx.next_str("<name>")?;
 
-                match player
-                    .play_theme(&self.streamer.user.login, name.as_str())
-                    .await
-                {
+                match player.play_theme(ctx.channel(), name.as_str()).await {
                     Ok(()) => (),
                     Err(PlayThemeError::NoSuchTheme) => {
                         ctx.user.respond("No such theme :(").await;

@@ -563,10 +563,7 @@ impl Handler {
         let player = self.player.load().await;
 
         if let Some(player) = player {
-            let target = ctx.channel().to_string();
-            let id = id.to_string();
-
-            match player.play_theme(target.as_str(), id.as_str()).await {
+            match player.play_theme(ctx.channel(), id).await {
                 Ok(()) => (),
                 Err(player::PlayThemeError::NoSuchTheme) => {
                     tracing::error!("You need to configure the theme `{}`", id);
@@ -977,7 +974,10 @@ impl command::Handler for Handler {
         let tx = self.tx.clone();
 
         if let Some(real) = ctx.user.real() {
-            let balance = currency.balance_of(real.login()).await?.unwrap_or_default();
+            let balance = currency
+                .balance_of(ctx.channel(), real.login())
+                .await?
+                .unwrap_or_default();
 
             let balance = if balance.balance < 0 {
                 0u32
@@ -1001,7 +1001,9 @@ impl command::Handler for Handler {
                 return Ok(());
             }
 
-            currency.balance_add(real.login(), -(cost as i64)).await?;
+            currency
+                .balance_add(ctx.channel(), real.login(), -(cost as i64))
+                .await?;
         }
 
         if self.success_feedback.load().await {

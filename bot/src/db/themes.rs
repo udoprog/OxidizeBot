@@ -1,11 +1,14 @@
-use crate::db;
-use crate::track_id::TrackId;
-use crate::utils;
-use diesel::prelude::*;
 use std::collections::{hash_map, HashMap};
 use std::fmt;
 use std::sync::Arc;
+
+use diesel::prelude::*;
 use tokio::sync::RwLock;
+
+use crate::channel::{Channel, OwnedChannel};
+use crate::db;
+use crate::track_id::TrackId;
+use crate::utils;
 
 /// Local database wrapper.
 #[derive(Clone)]
@@ -34,7 +37,7 @@ impl Database {
                 match first {
                     None => {
                         let theme = db::models::Theme {
-                            channel: key.channel.to_string(),
+                            channel: key.channel.to_owned(),
                             name: key.name.to_string(),
                             track_id,
                             start: Default::default(),
@@ -118,7 +121,7 @@ impl Themes {
     /// Insert a word into the bad words list.
     pub(crate) async fn edit(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         track_id: TrackId,
     ) -> Result<(), anyhow::Error> {
@@ -151,7 +154,7 @@ impl Themes {
     /// Edit the duration of the given theme.
     pub(crate) async fn edit_duration(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         start: utils::Offset,
         end: Option<utils::Offset>,
@@ -176,14 +179,14 @@ impl Themes {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 pub(crate) struct Key {
-    pub(crate) channel: String,
+    pub(crate) channel: OwnedChannel,
     pub(crate) name: String,
 }
 
 impl Key {
-    pub(crate) fn new(channel: &str, name: &str) -> Self {
+    pub(crate) fn new(channel: &Channel, name: &str) -> Self {
         Self {
-            channel: channel.to_string(),
+            channel: channel.to_owned(),
             name: name.to_lowercase(),
         }
     }

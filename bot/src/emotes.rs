@@ -303,12 +303,7 @@ impl Emotes {
 
     /// Construct a set of room emotes from twitch.
     async fn emote_sets_from_twitch(&self, emote_sets: &str) -> Result<EmoteByCode, Error> {
-        let sets = self
-            .inner
-            .streamer
-            .client
-            .new_emote_sets(emote_sets)
-            .await?;
+        let sets = self.inner.streamer.client.emote_set(emote_sets).await?;
 
         let mut emotes = EmoteByCode::default();
 

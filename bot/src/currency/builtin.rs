@@ -1,5 +1,6 @@
 //! Module for the built-in currency which uses the regular databse support.
 
+use crate::channel::Channel;
 use crate::currency::{BalanceOf, BalanceTransferError};
 use crate::db::{models, schema, user_id, Database};
 
@@ -19,7 +20,7 @@ impl Backend {
     /// Add (or subtract) from the balance for a single user.
     pub(crate) async fn balance_transfer(
         &self,
-        channel: &str,
+        channel: &Channel,
         giver: &str,
         taker: &str,
         amount: i64,
@@ -27,7 +28,7 @@ impl Backend {
     ) -> Result<(), BalanceTransferError> {
         use self::schema::balances::dsl;
 
-        let channel = channel_id(channel);
+        let channel = channel.to_owned();
         let giver = giver.to_string();
         let taker = taker.to_string();
         let taker = user_id(&taker);
@@ -36,8 +37,8 @@ impl Backend {
         self.db
             .asyncify(move |c| {
                 c.transaction(move |c| {
-                    let giver_filter = dsl::balances
-                        .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&giver)));
+                    let giver_filter =
+                        dsl::balances.filter(dsl::channel.eq(&channel).and(dsl::user.eq(&giver)));
 
                     let balance = giver_filter
                         .select(dsl::amount)
@@ -77,11 +78,10 @@ impl Backend {
             .asyncify(move |c| {
                 for balance in balances {
                     let balance = balance.checked();
-                    let channel = channel_id(&balance.channel);
 
                     let filter = dsl::balances.filter(
                         dsl::channel
-                            .eq(channel.as_str())
+                            .eq(&balance.channel)
                             .and(dsl::user.eq(&balance.user)),
                     );
 
@@ -110,10 +110,14 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub(crate) async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>> {
+    pub(crate) async fn balance_of(
+        &self,
+        channel: &Channel,
+        user: &str,
+    ) -> Result<Option<BalanceOf>> {
         use self::schema::balances::dsl;
 
-        let channel = channel_id(channel);
+        let channel = channel.to_owned();
         let user = user_id(user);
 
         self.db
@@ -138,8 +142,13 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub(crate) async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<()> {
-        let channel = channel_id(channel);
+    pub(crate) async fn balance_add(
+        &self,
+        channel: &Channel,
+        user: &str,
+        amount: i64,
+    ) -> Result<()> {
+        let channel = channel.to_owned();
         let user = user_id(user);
 
         self.db
@@ -150,7 +159,7 @@ impl Backend {
     /// Add balance to users.
     pub(crate) async fn balances_increment<I>(
         &self,
-        channel: &str,
+        channel: &Channel,
         users: I,
         amount: i64,
         watch_time: i64,
@@ -161,23 +170,22 @@ impl Backend {
     {
         use self::schema::balances::dsl;
 
-        // NB: for legacy reasons, channel is stored with a hash.
-        let channel = format!("#{}", channel);
+        let channel = channel.to_owned();
 
         self.db
             .asyncify(move |c| {
                 for user in users {
                     let user = user_id(&user);
 
-                    let filter = dsl::balances
-                        .filter(dsl::channel.eq(channel.as_str()).and(dsl::user.eq(&user)));
+                    let filter =
+                        dsl::balances.filter(dsl::channel.eq(&channel).and(dsl::user.eq(&user)));
 
                     let b = filter.first::<models::Balance>(c).optional()?;
 
                     match b {
                         None => {
                             let balance = models::Balance {
-                                channel: channel.to_string(),
+                                channel: channel.to_owned(),
                                 user: user.clone(),
                                 amount,
                                 watch_time,
@@ -205,15 +213,20 @@ impl Backend {
 }
 
 /// Common function to modify the balance for the given user.
-fn modify_balance(c: &mut SqliteConnection, channel: &str, user: &str, amount: i64) -> Result<()> {
+fn modify_balance(
+    c: &mut SqliteConnection,
+    channel: &Channel,
+    user: &str,
+    amount: i64,
+) -> Result<()> {
     use self::schema::balances::dsl;
 
-    let filter = dsl::balances.filter(dsl::channel.eq(channel).and(dsl::user.eq(user)));
+    let filter = dsl::balances.filter(dsl::channel.eq(&channel).and(dsl::user.eq(user)));
 
     match filter.first::<models::Balance>(c).optional()? {
         None => {
             let balance = models::Balance {
-                channel: channel.to_string(),
+                channel: channel.to_owned(),
                 user: user.to_string(),
                 amount,
                 watch_time: 0,
@@ -233,9 +246,4 @@ fn modify_balance(c: &mut SqliteConnection, channel: &str, user: &str, amount: i
     }
 
     Ok(())
-}
-
-/// Normalize channel.
-fn channel_id(channel: &str) -> String {
-    format!("#{}", channel.trim_start_matches('#'))
 }

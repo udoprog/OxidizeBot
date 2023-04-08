@@ -1,6 +1,7 @@
 //! Traits and shared plumbing for bot commands (e.g. `!uptime`)
 
 use crate::auth::Scope;
+use crate::channel::Channel;
 use crate::irc;
 use crate::prelude::*;
 use crate::utils;
@@ -116,7 +117,7 @@ impl Context {
     }
 
     /// Get the channel.
-    pub(crate) fn channel(&self) -> &str {
+    pub(crate) fn channel(&self) -> &Channel {
         self.inner.sender.channel()
     }
 

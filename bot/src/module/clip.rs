@@ -37,7 +37,7 @@ impl command::Handler for Clip {
         match self
             .streamer
             .client
-            .new_create_clip(&self.streamer.user.id)
+            .create_clip(&self.streamer.user.id)
             .await?
         {
             Some(clip) => {

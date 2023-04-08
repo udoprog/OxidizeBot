@@ -1,8 +1,27 @@
+mod cache;
+mod chat;
+mod settings;
+
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::fmt;
+use std::net::SocketAddr;
+use std::sync::Arc;
+
+use anyhow::{bail, Result};
+use tokio::sync::{RwLock, RwLockReadGuard};
+use tracing::Instrument;
+use warp::{body, filters, path, Filter as _};
+
 use self::assets::Asset;
+use self::cache::Cache;
+use self::chat::Chat;
+use self::settings::Settings;
 use crate::api;
 use crate::api::setbac::ConnectionMeta;
 use crate::auth;
 use crate::bus;
+use crate::channel::Channel;
 use crate::currency::Currency;
 use crate::db;
 use crate::injector;
@@ -12,21 +31,6 @@ use crate::prelude::*;
 use crate::template;
 use crate::track_id::TrackId;
 use crate::utils;
-use anyhow::{bail, Result};
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::fmt;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use tokio::sync::{RwLock, RwLockReadGuard};
-use tracing::Instrument;
-use warp::{body, filters, path, Filter as _};
-
-mod cache;
-mod chat;
-mod settings;
-
-use self::{cache::Cache, chat::Chat, settings::Settings};
 
 pub(crate) const URL: &str = "http://localhost:12345";
 
@@ -107,7 +111,7 @@ impl Aliases {
                 let api = api.clone();
                 move |channel: Fragment| {
                     let api = api.clone();
-                    async move { api.list(channel.as_str()).await.map_err(custom_reject) }
+                    async move { api.list(channel.as_channel()).await.map_err(custom_reject) }
                 }
             });
 
@@ -118,7 +122,7 @@ impl Aliases {
                 move |channel: Fragment, name: Fragment| {
                     let api = api.clone();
                     async move {
-                        api.delete(channel.as_str(), name.as_str())
+                        api.delete(channel.as_channel(), name.as_str())
                             .await
                             .map_err(custom_reject)
                     }
@@ -133,7 +137,7 @@ impl Aliases {
                 move |channel: Fragment, name: Fragment, body: PutAlias| {
                     let api = api.clone();
                     async move {
-                        api.edit(channel.as_str(), name.as_str(), body.template)
+                        api.edit(channel.as_channel(), name.as_str(), body.template)
                             .await
                             .map_err(custom_reject)
                     }
@@ -147,7 +151,7 @@ impl Aliases {
                 move |channel: Fragment, name: Fragment, body: DisabledBody| {
                     let api = api.clone();
                     async move {
-                        api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
+                        api.edit_disabled(channel.as_channel(), name.as_str(), body.disabled)
                             .await
                             .map_err(custom_reject)
                     }
@@ -171,7 +175,7 @@ impl Aliases {
     }
 
     /// Get the list of all aliases.
-    async fn list(&self, channel: &str) -> Result<impl warp::Reply> {
+    async fn list(&self, channel: &Channel) -> Result<impl warp::Reply> {
         let aliases = self.aliases().await?.list_all(channel).await?;
         Ok(warp::reply::json(&aliases))
     }
@@ -179,7 +183,7 @@ impl Aliases {
     /// Edit the given alias by key.
     async fn edit(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         template: template::Template,
     ) -> Result<impl warp::Reply> {
@@ -190,7 +194,7 @@ impl Aliases {
     /// Set the given alias's disabled status.
     async fn edit_disabled(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         disabled: bool,
     ) -> Result<impl warp::Reply> {
@@ -206,7 +210,7 @@ impl Aliases {
     }
 
     /// Delete the given alias by key.
-    async fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply> {
+    async fn delete(&self, channel: &Channel, name: &str) -> Result<impl warp::Reply> {
         self.aliases().await?.delete(channel, name).await?;
         Ok(warp::reply::json(&EMPTY))
     }
@@ -226,7 +230,7 @@ impl Commands {
                 let api = api.clone();
                 move |channel: Fragment| {
                     let api = api.clone();
-                    async move { api.list(channel.as_str()).await.map_err(custom_reject) }
+                    async move { api.list(channel.as_channel()).await.map_err(custom_reject) }
                 }
             });
 
@@ -237,7 +241,7 @@ impl Commands {
                 move |channel: Fragment, name: Fragment| {
                     let api = api.clone();
                     async move {
-                        api.delete(channel.as_str(), name.as_str())
+                        api.delete(channel.as_channel(), name.as_str())
                             .await
                             .map_err(custom_reject)
                     }
@@ -253,7 +257,7 @@ impl Commands {
                     let api = api.clone();
 
                     async move {
-                        api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
+                        api.edit_disabled(channel.as_channel(), name.as_str(), body.disabled)
                             .await
                             .map_err(custom_reject)
                     }
@@ -267,7 +271,7 @@ impl Commands {
                 move |channel: Fragment, name: Fragment, body: PutCommand| {
                     let api = api.clone();
                     async move {
-                        api.edit(channel.as_str(), name.as_str(), body.template)
+                        api.edit(channel.as_channel(), name.as_str(), body.template)
                             .await
                             .map_err(custom_reject)
                     }
@@ -291,7 +295,7 @@ impl Commands {
     }
 
     /// Get the list of all commands.
-    async fn list(&self, channel: &str) -> Result<impl warp::Reply> {
+    async fn list(&self, channel: &Channel) -> Result<impl warp::Reply> {
         let commands = self.commands().await?.list_all(channel).await?;
         Ok(warp::reply::json(&commands))
     }
@@ -299,7 +303,7 @@ impl Commands {
     /// Edit the given command by key.
     async fn edit(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         template: template::Template,
     ) -> Result<impl warp::Reply> {
@@ -310,7 +314,7 @@ impl Commands {
     /// Set the given command's disabled status.
     async fn edit_disabled(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         disabled: bool,
     ) -> Result<impl warp::Reply> {
@@ -326,7 +330,7 @@ impl Commands {
     }
 
     /// Delete the given command by key.
-    async fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply> {
+    async fn delete(&self, channel: &Channel, name: &str) -> Result<impl warp::Reply> {
         self.commands().await?.delete(channel, name).await?;
         Ok(warp::reply::json(&EMPTY))
     }
@@ -348,7 +352,7 @@ impl Promotions {
                 let api = api.clone();
                 move |channel: Fragment| {
                     let api = api.clone();
-                    async move { api.list(channel.as_str()).await.map_err(custom_reject) }
+                    async move { api.list(channel.as_channel()).await.map_err(custom_reject) }
                 }
             });
 
@@ -360,7 +364,7 @@ impl Promotions {
                     let api = api.clone();
 
                     async move {
-                        api.delete(channel.as_str(), name.as_str())
+                        api.delete(channel.as_channel(), name.as_str())
                             .await
                             .map_err(custom_reject)
                     }
@@ -377,7 +381,7 @@ impl Promotions {
 
                     async move {
                         api.edit(
-                            channel.as_str(),
+                            channel.as_channel(),
                             name.as_str(),
                             body.frequency,
                             body.template,
@@ -396,7 +400,7 @@ impl Promotions {
                     let api = api.clone();
 
                     async move {
-                        api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
+                        api.edit_disabled(channel.as_channel(), name.as_str(), body.disabled)
                             .await
                             .map_err(custom_reject)
                     }
@@ -421,7 +425,7 @@ impl Promotions {
     }
 
     /// Get the list of all promotions.
-    async fn list(&self, channel: &str) -> Result<impl warp::Reply> {
+    async fn list(&self, channel: &Channel) -> Result<impl warp::Reply> {
         let promotions = self.promotions().await?.list_all(channel).await?;
         Ok(warp::reply::json(&promotions))
     }
@@ -429,7 +433,7 @@ impl Promotions {
     /// Edit the given promotion by key.
     async fn edit(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         frequency: utils::Duration,
         template: template::Template,
@@ -444,7 +448,7 @@ impl Promotions {
     /// Set the given promotion's disabled status.
     async fn edit_disabled(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         disabled: bool,
     ) -> Result<impl warp::Reply> {
@@ -460,7 +464,7 @@ impl Promotions {
     }
 
     /// Delete the given promotion by key.
-    async fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply> {
+    async fn delete(&self, channel: &Channel, name: &str) -> Result<impl warp::Reply> {
         self.promotions().await?.delete(channel, name).await?;
         Ok(warp::reply::json(&EMPTY))
     }
@@ -480,7 +484,7 @@ impl Themes {
                 let api = api.clone();
                 move |channel: Fragment| {
                     let api = api.clone();
-                    async move { api.list(channel.as_str()).await.map_err(custom_reject) }
+                    async move { api.list(channel.as_channel()).await.map_err(custom_reject) }
                 }
             });
 
@@ -492,7 +496,7 @@ impl Themes {
                     let api = api.clone();
 
                     async move {
-                        api.delete(channel.as_str(), name.as_str())
+                        api.delete(channel.as_channel(), name.as_str())
                             .await
                             .map_err(custom_reject)
                     }
@@ -508,7 +512,7 @@ impl Themes {
                     let api = api.clone();
 
                     async move {
-                        api.edit(channel.as_str(), name.as_str(), body.track_id)
+                        api.edit(channel.as_channel(), name.as_str(), body.track_id)
                             .await
                             .map_err(custom_reject)
                     }
@@ -523,7 +527,7 @@ impl Themes {
                     let api = api.clone();
 
                     async move {
-                        api.edit_disabled(channel.as_str(), name.as_str(), body.disabled)
+                        api.edit_disabled(channel.as_channel(), name.as_str(), body.disabled)
                             .await
                             .map_err(custom_reject)
                     }
@@ -547,13 +551,18 @@ impl Themes {
     }
 
     /// Get the list of all promotions.
-    async fn list(&self, channel: &str) -> Result<impl warp::Reply> {
+    async fn list(&self, channel: &Channel) -> Result<impl warp::Reply> {
         let promotions = self.themes().await?.list_all(channel).await?;
         Ok(warp::reply::json(&promotions))
     }
 
     /// Edit the given promotion by key.
-    async fn edit(&self, channel: &str, name: &str, track_id: TrackId) -> Result<impl warp::Reply> {
+    async fn edit(
+        &self,
+        channel: &Channel,
+        name: &str,
+        track_id: TrackId,
+    ) -> Result<impl warp::Reply> {
         self.themes().await?.edit(channel, name, track_id).await?;
         Ok(warp::reply::json(&EMPTY))
     }
@@ -561,7 +570,7 @@ impl Themes {
     /// Set the given promotion's disabled status.
     async fn edit_disabled(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         disabled: bool,
     ) -> Result<impl warp::Reply> {
@@ -577,7 +586,7 @@ impl Themes {
     }
 
     /// Delete the given promotion by key.
-    async fn delete(&self, channel: &str, name: &str) -> Result<impl warp::Reply> {
+    async fn delete(&self, channel: &Channel, name: &str) -> Result<impl warp::Reply> {
         self.themes().await?.delete(channel, name).await?;
         Ok(warp::reply::json(&EMPTY))
     }
@@ -1183,6 +1192,11 @@ impl Fragment {
     /// Borrow as a string slice.
     pub(crate) fn as_str(&self) -> &str {
         self.string.as_str()
+    }
+
+    /// Borrow as a string slice.
+    pub(crate) fn as_channel(&self) -> &Channel {
+        Channel::new(self.string.as_str())
     }
 }
 

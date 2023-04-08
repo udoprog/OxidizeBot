@@ -1,9 +1,11 @@
-use crate::command;
-use crate::db;
 use anyhow::Result;
 use std::path::Path;
 
-pub(crate) async fn load_dir<I>(_channel: String, _db: db::Database, _paths: I) -> Result<Scripts>
+use crate::channel::Channel;
+use crate::command;
+use crate::db;
+
+pub(crate) async fn load_dir<I>(_channel: &Channel, _db: db::Database, _paths: I) -> Result<Scripts>
 where
     I: IntoIterator,
     I::Item: AsRef<Path>,

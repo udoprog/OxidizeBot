@@ -100,7 +100,10 @@ impl command::Handler for Handler {
                 ))
                 .await;
 
-                if let Err(e) = currency.balance_add(&reward.user, -reward.amount).await {
+                if let Err(e) = currency
+                    .balance_add(ctx.channel(), &reward.user, -reward.amount)
+                    .await
+                {
                     tracing::error!("Failed to undo water from database: {}", e);
                 }
             }
@@ -138,7 +141,10 @@ impl command::Handler for Handler {
                     currency = currency.name
                 );
 
-                if let Err(e) = currency.balance_add(user.login(), amount).await {
+                if let Err(e) = currency
+                    .balance_add(ctx.channel(), user.login(), amount)
+                    .await
+                {
                     tracing::error!("Failed to appply water balance: {}", e);
                 }
             }

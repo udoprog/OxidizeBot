@@ -52,6 +52,30 @@ impl Twitch {
         })
     }
 
+    /// Get display badges through GQL.
+    pub(crate) async fn gql_display_badges(
+        &self,
+        login: &str,
+        channel: &str,
+    ) -> Result<Option<gql::badges::ResponseData>> {
+        use graphql_client::{GraphQLQuery as _, Response};
+
+        let body = gql::Badges::build_query(gql::badges::Variables {
+            login: login.to_string(),
+            channel_login: channel.to_string(),
+        });
+
+        let res = self
+            .gql()
+            .body(serde_json::to_vec(&body)?)
+            .execute()
+            .await?
+            .json::<Response<gql::badges::ResponseData>>()?
+            .data;
+
+        Ok(res)
+    }
+
     /// Get chatters for the given broadcaster.
     pub(crate) fn chatters(
         &self,
@@ -83,44 +107,18 @@ impl Twitch {
         page(req)
     }
 
-    /// Get display badges through GQL.
-    pub(crate) async fn gql_display_badges(
-        &self,
-        login: &str,
-        channel: &str,
-    ) -> Result<Option<gql::badges::ResponseData>> {
-        use graphql_client::{GraphQLQuery as _, Response};
-
-        let body = gql::Badges::build_query(gql::badges::Variables {
-            login: login.to_string(),
-            channel_login: channel.to_string(),
-        });
-
-        let res = self
-            .gql()
-            .body(serde_json::to_vec(&body)?)
-            .execute()
-            .await?
-            .json::<Response<gql::badges::ResponseData>>()?
-            .data;
-
-        Ok(res)
-    }
-
     /// Search for a category with the given name.
-    pub(crate) fn new_search_categories<'a>(
+    pub(crate) fn categories<'a>(
         &'a self,
         query: &str,
     ) -> impl Stream<Item = Result<new::Category>> + 'a {
         let mut req = self.new_api(Method::GET, &["search", "categories"]);
-
         req.query_param("query", query);
-
         page(req)
     }
 
     /// Get information on a user.
-    pub(crate) fn new_stream_subscriptions<'a>(
+    pub(crate) fn subscriptions<'a>(
         &'a self,
         broadcaster_id: &str,
         user_ids: Vec<String>,
@@ -136,7 +134,7 @@ impl Twitch {
     }
 
     /// Create a clip for the given broadcaster.
-    pub(crate) async fn new_create_clip(&self, broadcaster_id: &str) -> Result<Option<new::Clip>> {
+    pub(crate) async fn create_clip(&self, broadcaster_id: &str) -> Result<Option<new::Clip>> {
         let res = self
             .new_api(Method::POST, &["clips"])
             .query_param(BROADCASTER_ID, broadcaster_id)
@@ -148,19 +146,17 @@ impl Twitch {
     }
 
     /// Get stream information.
-    pub(crate) async fn new_stream_by_id(&self, id: &str) -> Result<Option<new::Stream>> {
-        let res = self
-            .new_api(Method::GET, &["streams"])
-            .query_param("user_id", id)
-            .execute()
-            .await?
-            .json::<Data<Vec<new::Stream>>>()?;
-
-        Ok(res.data.into_iter().next())
+    pub(crate) async fn streams(
+        &self,
+        user_id: &str,
+    ) -> impl Stream<Item = Result<new::Stream>> + '_ {
+        let mut req = self.new_api(Method::GET, &["streams"]);
+        req.query_param("user_id", user_id);
+        page(req)
     }
 
     /// Update the status of a redemption.
-    pub(crate) async fn new_update_redemption_status(
+    pub(crate) async fn patch_redemptions(
         &self,
         broadcaster_id: &str,
         redemption: &pubsub::Redemption,
@@ -193,7 +189,7 @@ impl Twitch {
     }
 
     /// Get the channel associated with the current authentication.
-    pub(crate) async fn new_user_by_bearer(&self) -> Result<new::User> {
+    pub(crate) async fn user(&self) -> Result<new::User> {
         let req = self.new_api(Method::GET, &["users"]);
         let data = req.execute().await?.json::<Data<Vec<new::User>>>()?;
         let user = data.data.into_iter().next().ok_or(Error::MissingUser)?;
@@ -201,26 +197,22 @@ impl Twitch {
     }
 
     /// Get the channel associated with the specified broadcaster id.
-    pub(crate) async fn new_channel_by_id(
-        &self,
-        broadcaster_id: &str,
-    ) -> Result<Option<new::Channel>> {
+    pub(crate) async fn channels(&self, broadcaster_id: &str) -> Result<Option<new::Channel>> {
         let mut req = self.new_api(Method::GET, &["channels"]);
         req.query_param(BROADCASTER_ID, broadcaster_id);
-
         let result = req.execute().await?.json::<Data<Vec<new::Channel>>>()?;
         Ok(result.data.into_iter().next())
     }
 
     /// Get emotes by sets.
-    pub(crate) async fn new_emote_sets(&self, id: &str) -> Result<Vec<new::Emote>> {
+    pub(crate) async fn emote_set(&self, id: &str) -> Result<Vec<new::Emote>> {
         let mut req = self.new_api(Method::GET, &["chat", "emotes", "set"]);
         req.query_param("emote_set_id", id);
         Ok(req.execute().await?.json::<Data<Vec<new::Emote>>>()?.data)
     }
 
     /// Update the channel information.
-    pub(crate) async fn new_modify_channel(
+    pub(crate) async fn patch_channel(
         &self,
         broadcaster_id: &str,
         request: new::ModifyChannelRequest<'_>,

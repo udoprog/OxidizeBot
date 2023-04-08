@@ -97,7 +97,7 @@ impl TwitchAndUserProvider {
         // accordingly.
         let client = api::Twitch::new(token)?;
 
-        let user = match client.new_user_by_bearer().await {
+        let user = match client.user().await {
             Ok(user) => user,
             Err(e) => {
                 client.token.force_refresh().await?;

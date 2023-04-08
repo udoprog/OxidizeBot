@@ -1,3 +1,4 @@
+use crate::channel::Channel;
 use crate::db;
 use crate::template;
 use crate::utils;
@@ -29,7 +30,7 @@ impl Database {
                 match first {
                     None => {
                         let alias = db::models::Alias {
-                            channel: key.channel.to_string(),
+                            channel: key.channel.clone(),
                             pattern: None,
                             name: key.name.to_string(),
                             text: text.to_string(),
@@ -109,7 +110,7 @@ impl Aliases {
     /// Resolve the given command.
     pub(crate) async fn resolve(
         &self,
-        channel: &str,
+        channel: &Channel,
         message: Arc<String>,
     ) -> Option<(db::Key, String)> {
         let mut it = utils::Words::new(message);
@@ -137,7 +138,7 @@ impl Aliases {
     /// Insert a word into the bad words list.
     pub(crate) async fn edit(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         template: template::Template,
     ) -> Result<(), anyhow::Error> {
@@ -167,7 +168,7 @@ impl Aliases {
     /// Edit the pattern for the given command.
     pub(crate) async fn edit_pattern(
         &self,
-        channel: &str,
+        channel: &Channel,
         name: &str,
         pattern: Option<regex::Regex>,
     ) -> Result<bool, anyhow::Error> {

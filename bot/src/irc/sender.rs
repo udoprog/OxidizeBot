@@ -1,14 +1,17 @@
+use std::fmt;
+use std::sync::Arc;
+use std::time;
+
 use crate::api;
+use crate::channel::Channel;
 use crate::injector;
 use crate::settings;
+
 use anyhow::Result;
 use irc::client;
 use irc::proto::command::{CapSubCommand, Command};
 use irc::proto::message::Message;
 use leaky_bucket::RateLimiter;
-use std::fmt;
-use std::sync::Arc;
-use std::time;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, Default)]
 pub(crate) enum Type {
@@ -65,8 +68,8 @@ impl Sender {
     }
 
     /// Get the channel this sender is associated with.
-    pub(crate) fn channel(&self) -> &str {
-        self.inner.target.as_str()
+    pub(crate) fn channel(&self) -> &Channel {
+        Channel::new(self.inner.target.as_str())
     }
 
     /// Delete the given message by id.

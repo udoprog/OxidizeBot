@@ -67,7 +67,7 @@ pub(crate) struct Subscription {
     pub(crate) user_name: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct Stream {
     pub(crate) id: String,
     pub(crate) user_id: String,

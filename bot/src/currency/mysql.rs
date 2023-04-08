@@ -7,6 +7,7 @@
 //! 1) Name the table to use.
 //! 2) Name the fields holding channel, user, and amount.
 
+use crate::channel::{Channel, OwnedChannel};
 use crate::currency::{BalanceOf, BalanceTransferError};
 use crate::db::{models::Balance, user_id};
 
@@ -177,14 +178,14 @@ impl Queries {
 }
 
 pub(crate) struct Backend {
-    channel: Arc<String>,
+    channel: Arc<OwnedChannel>,
     pool: mysql::Pool,
     queries: Arc<Queries>,
 }
 
 impl Backend {
     /// Construct a new built-in backend.
-    pub(crate) fn connect(channel: String, url: String, schema: Schema) -> Result<Self> {
+    pub(crate) fn connect(channel: OwnedChannel, url: String, schema: Schema) -> Result<Self> {
         let channel = Arc::new(channel);
         let opts = mysql::Opts::from_url(&url)?;
         let pool = mysql::Pool::new(opts);
@@ -200,7 +201,7 @@ impl Backend {
     /// Add (or subtract) from the balance for a single user.
     pub(crate) async fn balance_transfer(
         &self,
-        _channel: &str,
+        _channel: &Channel,
         giver: &str,
         taker: &str,
         amount: i64,
@@ -232,7 +233,7 @@ impl Backend {
 
     /// Get balances for all users.
     pub(crate) async fn export_balances(&self) -> Result<Vec<Balance>> {
-        let channel = self.channel.to_string();
+        let channel = self.channel.to_owned();
         let mut output = Vec::new();
 
         let opts = mysql::TxOpts::new();
@@ -242,7 +243,7 @@ impl Backend {
 
         for (user, balance) in balances {
             output.push(Balance {
-                channel: channel.clone(),
+                channel: (*channel).to_owned(),
                 user,
                 amount: balance as i64,
                 watch_time: 0,
@@ -274,7 +275,11 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub(crate) async fn balance_of(&self, _channel: &str, user: &str) -> Result<Option<BalanceOf>> {
+    pub(crate) async fn balance_of(
+        &self,
+        _channel: &Channel,
+        user: &str,
+    ) -> Result<Option<BalanceOf>> {
         let user = user_id(user);
         let opts = mysql::TxOpts::new();
         let mut tx = self.pool.start_transaction(opts).await?;
@@ -293,7 +298,12 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub(crate) async fn balance_add(&self, _channel: &str, user: &str, amount: i64) -> Result<()> {
+    pub(crate) async fn balance_add(
+        &self,
+        _channel: &Channel,
+        user: &str,
+        amount: i64,
+    ) -> Result<()> {
         let user = user_id(user);
         let amount = amount.try_into()?;
 
@@ -307,7 +317,7 @@ impl Backend {
     /// Add balance to users.
     pub(crate) async fn balances_increment<I>(
         &self,
-        _channel: &str,
+        _channel: &Channel,
         users: I,
         amount: i64,
     ) -> Result<()>

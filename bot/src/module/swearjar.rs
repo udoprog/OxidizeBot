@@ -65,10 +65,11 @@ impl command::Handler for Handler {
         let total_reward = reward * users.len() as i64;
 
         currency
-            .balance_add(&self.streamer.user.login, -total_reward)
+            .balance_add(ctx.channel(), &self.streamer.user.login, -total_reward)
             .await?;
-
-        currency.balances_increment(users, reward, 0).await?;
+        currency
+            .balances_increment(ctx.channel(), users, reward, 0)
+            .await?;
 
         user.sender().privmsg(format!(
             "/me has taken {} {currency} from {streamer} and given it to the viewers for listening to their bad mouth!",

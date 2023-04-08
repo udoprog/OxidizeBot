@@ -1,5 +1,8 @@
-use crate::command;
-use crate::db;
+use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
 use anyhow::{anyhow, Result};
 use ignore::Walk;
 use rune::runtime::{ConstValue, Protocol, RuntimeContext, SyncFunction};
@@ -7,15 +10,15 @@ use rune::termcolor;
 use rune::{
     Any, Context, ContextError, Diagnostics, FromValue, Module, Options, Source, Sources, Vm,
 };
-use std::collections::HashMap;
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+
+use crate::channel::Channel;
+use crate::command;
+use crate::db;
 
 mod io;
 
 /// Load all scripts from the given directory.
-pub(crate) async fn load_dir<I>(channel: String, db: db::Database, paths: I) -> Result<Scripts>
+pub(crate) async fn load_dir<I>(channel: &Channel, db: db::Database, paths: I) -> Result<Scripts>
 where
     I: IntoIterator,
     I::Item: AsRef<Path>,
@@ -65,10 +68,10 @@ struct Db {
 }
 
 impl Db {
-    async fn open(channel: String, db: db::Database) -> Result<Self> {
-        Ok(Self {
-            db: db::ScriptStorage::load(channel, db).await?,
-        })
+    fn new(channel: &Channel, db: db::Database) -> Self {
+        Self {
+            db: db::ScriptStorage::new(channel, db),
+        }
     }
 
     /// Scope the db.
@@ -150,7 +153,7 @@ pub(crate) struct Scripts {
 
 impl Scripts {
     /// Construct a new script handler.
-    async fn new(channel: String, db: db::Database) -> Result<Self> {
+    async fn new(channel: &Channel, db: db::Database) -> Result<Self> {
         let context = Self::context()?;
         let runtime = Arc::new(context.runtime());
 
@@ -158,7 +161,7 @@ impl Scripts {
             context,
             runtime,
             options: Default::default(),
-            db: Db::open(channel, db).await?,
+            db: Db::new(channel, db),
             handlers: HashMap::new(),
             handlers_by_path: HashMap::new(),
         })

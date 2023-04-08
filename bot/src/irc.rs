@@ -23,6 +23,7 @@ pub(crate) use self::sender::Sender;
 use crate::api;
 use crate::auth::{Auth, Role, Scope};
 use crate::bus;
+use crate::channel::Channel;
 use crate::command;
 use crate::db;
 use crate::idle;
@@ -201,8 +202,9 @@ impl IrcLoop<'_> {
 
         let mut handlers = module::Handlers::default();
 
-        let scripts =
-            script::load_dir(streamer.user.login.clone(), db.clone(), script_dirs).await?;
+        let channel = Channel::from_string(&streamer.user.login);
+
+        let scripts = script::load_dir(channel.as_ref(), db.clone(), script_dirs).await?;
 
         let (scripts_watch_tx, mut scripts_watch_rx) = sync::mpsc::unbounded_channel();
 
@@ -742,13 +744,17 @@ impl<'a> Handler<'a> {
         let mut path = Vec::new();
 
         if let Some(aliases) = self.aliases.as_ref() {
+            tracing::trace!(?message, channel = ?user.sender().channel(), "Resolving aliases");
+
             while let Some((key, next)) = aliases
-                .resolve(&self.streamer.user.login, message.clone())
+                .resolve(user.sender().channel(), message.clone())
                 .await
             {
                 path.push(key.to_string());
 
                 if !seen.insert(key.clone()) {
+                    tracing::error!(?message, ?path, "Recursion found in alias expansion");
+
                     respond!(
                         user,
                         "Recursion found in alias expansion: {} :(",
@@ -757,6 +763,7 @@ impl<'a> Handler<'a> {
                     return Ok(());
                 }
 
+                tracing::trace!(?message, ?next, "Resolved alias");
                 message = Arc::new(next);
             }
         }
@@ -766,7 +773,7 @@ impl<'a> Handler<'a> {
 
         if let Some(commands) = self.commands.as_ref() {
             if let Some((command, captures)) = commands
-                .resolve(&self.streamer.user.login, first.as_deref(), &it)
+                .resolve(user.sender().channel(), first.as_deref(), &it)
                 .await
             {
                 if command.has_var("count") {
@@ -885,8 +892,7 @@ impl<'a> Handler<'a> {
             }
             Command::PING(server, other) => {
                 tracing::trace!("Received PING, responding with PONG");
-                self.sender
-                    .send_immediate(Command::PONG(server.clone(), other.clone()));
+                self.sender.send_immediate(Command::PONG(server, other));
             }
             Command::PONG(..) => {
                 tracing::trace!("Received PONG, clearing PING timeout");
