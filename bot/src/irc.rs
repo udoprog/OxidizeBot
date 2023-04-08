@@ -1357,42 +1357,65 @@ pub(crate) struct CommandVars<'a> {
     captures: db::Captures<'a>,
 }
 
-// Future to refresh moderators every 5 minutes.
+// Future to populate moderators and VIPs.
 #[tracing::instrument(skip_all)]
 async fn refresh_roles(
     context: Arc<command::ContextInner>,
     streamer: api::TwitchAndUser,
 ) -> Result<()> {
+    async fn update_set<F, O>(
+        what: &str,
+        f: F,
+        out: &parking_lot::RwLock<HashSet<String>>,
+    ) -> Result<()>
+    where
+        F: FnOnce() -> O,
+        O: crate::stream::Stream<Item = Result<api::twitch::Chatter>>,
+    {
+        let stream = f();
+        tokio::pin!(stream);
+
+        let mut set = HashSet::new();
+
+        while let Some(chatter) = stream.next().await.transpose()? {
+            set.insert(chatter.user_login);
+        }
+
+        if *out.read() != set {
+            tracing::info!(?set, "Updating {what}");
+            *out.write() = set;
+        }
+
+        Ok(())
+    }
+
     let mut interval = tokio::time::interval(time::Duration::from_secs(60 * 5));
 
     loop {
+        tracing::trace!("Refreshing moderators and VIPs");
+
+        let mods = update_set(
+            "Moderators",
+            || streamer.client.moderators(&streamer.user.id),
+            &context.moderators,
+        );
+
+        let vips = update_set(
+            "VIPs",
+            || streamer.client.vips(&streamer.user.id),
+            &context.vips,
+        );
+
+        let (mods, vips) = tokio::join!(mods, vips);
+
+        if let Err(error) = mods {
+            log_error!(error, "Failed to update Moderators");
+        }
+
+        if let Err(error) = vips {
+            log_error!(error, "Failed to update VIPs");
+        }
+
         interval.tick().await;
-        tracing::trace!("Refreshing mods and vips");
-
-        let mods = streamer.client.moderators(&streamer.user.id);
-        let vips = streamer.client.vips(&streamer.user.id);
-
-        tokio::pin!(mods);
-        tokio::pin!(vips);
-
-        let mut set = HashSet::new();
-
-        while let Some(chatter) = mods.next().await.transpose()? {
-            set.insert(chatter.user_login);
-        }
-
-        if *context.moderators.read() != set {
-            *context.moderators.write() = set;
-        }
-
-        let mut set = HashSet::new();
-
-        while let Some(chatter) = vips.next().await.transpose()? {
-            set.insert(chatter.user_login);
-        }
-
-        if *context.vips.read() != set {
-            *context.vips.write() = set;
-        }
     }
 }
