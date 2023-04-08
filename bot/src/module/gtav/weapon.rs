@@ -4,14 +4,14 @@ macro_rules! weapons {
     ($($variant:ident, $id:expr, $cost:expr,)*) => {
         #[derive(Clone, Copy)]
         #[allow(clippy::upper_case_acronyms)]
-        pub enum Weapon {
+        pub(crate) enum Weapon {
             Random,
             $($variant,)*
         }
 
         impl Weapon {
             /// Human-readable display of this vehicle.
-            pub fn display(&self) -> String {
+            pub(crate) fn display(&self) -> String {
                 use self::Weapon::*;
 
                 match *self {
@@ -21,7 +21,7 @@ macro_rules! weapons {
             }
 
             /// Map an id to a vehicle.
-            pub fn from_id(id: impl AsRef<str>) -> Option<Weapon> {
+            pub(crate) fn from_id(id: impl AsRef<str>) -> Option<Weapon> {
                 use self::Weapon::*;
 
                 let id = id.as_ref().to_lowercase();
@@ -40,7 +40,7 @@ macro_rules! weapons {
             /**
              * Get the cost of a vehicle.
              */
-            pub fn cost(&self) -> u32 {
+            pub(crate) fn cost(&self) -> u32 {
                 use self::Weapon::*;
 
                 match *self {

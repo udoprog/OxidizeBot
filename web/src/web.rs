@@ -46,23 +46,23 @@ macro_rules! log_error {
 static SPOTIFY_TRACK_URL: &str = "https://open.spotify.com/track";
 
 #[derive(Debug, Clone, serde::Deserialize)]
-pub struct Config {
+pub(crate) struct Config {
     #[serde(default)]
-    pub verify_connection: bool,
-    pub database: RelativePathBuf,
-    pub base_url: Url,
+    pub(crate) verify_connection: bool,
+    pub(crate) database: RelativePathBuf,
+    pub(crate) base_url: Url,
     #[serde(default)]
-    pub session: session::Config,
-    pub oauth2: oauth2::Config,
+    pub(crate) session: session::Config,
+    pub(crate) oauth2: oauth2::Config,
 }
 
 mod assets {
     #[derive(rust_embed::RustEmbed)]
     #[folder = "$CARGO_MANIFEST_DIR/../web-ui/dist"]
-    pub struct Asset;
+    pub(crate) struct Asset;
 }
 
-pub fn setup(
+pub(crate) fn setup(
     db: db::Database,
     host: String,
     port: u32,
@@ -126,7 +126,7 @@ pub fn setup(
 }
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub(crate) enum Error {
     /// Client performed a bad request.
     #[error("bad request")]
     BadRequest(String),
@@ -143,7 +143,7 @@ pub enum Error {
 
 impl Error {
     /// Construct a new bad request error.
-    pub fn bad_request(s: impl AsRef<str>) -> Self {
+    pub(crate) fn bad_request(s: impl AsRef<str>) -> Self {
         Self::BadRequest(s.as_ref().to_string())
     }
 }
@@ -177,19 +177,19 @@ impl<T> From<T> for Data<T> {
 }
 
 #[derive(Debug)]
-pub struct RegisterOrLogin {
+pub(crate) struct RegisterOrLogin {
     return_to: Option<Url>,
 }
 
 #[derive(Debug)]
-pub struct Connect {
+pub(crate) struct Connect {
     user_id: String,
     id: String,
     return_to: Option<Url>,
 }
 
 #[derive(Debug)]
-pub enum Action {
+pub(crate) enum Action {
     /// Register or login an existing user.
     RegisterOrLogin(RegisterOrLogin),
     /// Create a connection.
@@ -197,18 +197,18 @@ pub enum Action {
 }
 
 #[derive(Debug)]
-pub struct PendingToken {
+pub(crate) struct PendingToken {
     /// When the pending request was created.
-    pub created_at: DateTime<Utc>,
+    pub(crate) created_at: DateTime<Utc>,
     /// The flow for the pending token.
-    pub flow: Arc<oauth2::Flow>,
+    pub(crate) flow: Arc<oauth2::Flow>,
     /// The exchange token used.
-    pub exchange_token: oauth2::ExchangeToken,
+    pub(crate) exchange_token: oauth2::ExchangeToken,
     /// The action to take when the pending token resolved.
-    pub action: Action,
+    pub(crate) action: Action,
 }
 
-pub struct Handler {
+pub(crate) struct Handler {
     db: db::Database,
     config: Config,
     session: session::Session,
@@ -224,7 +224,7 @@ pub struct Handler {
 
 impl Handler {
     /// Construct a new server.
-    pub fn new(
+    pub(crate) fn new(
         fallback: EmbeddedFile,
         db: db::Database,
         config: Config,
@@ -449,7 +449,7 @@ impl fmt::Display for RemoteAddressFmt<'_> {
 }
 
 #[derive(Serialize)]
-pub struct Connection<'a> {
+pub(crate) struct Connection<'a> {
     #[serde(rename = "type")]
     ty: oauth2::FlowType,
     id: &'a str,
@@ -465,7 +465,7 @@ pub struct Connection<'a> {
 
 /// Only contains metadata for a specific connection.
 #[derive(Serialize)]
-pub struct ConnectionMeta<'a> {
+pub(crate) struct ConnectionMeta<'a> {
     #[serde(rename = "type")]
     ty: oauth2::FlowType,
     id: &'a str,
@@ -523,7 +523,7 @@ impl Handler {
         }
 
         #[derive(Deserialize)]
-        pub struct Query {
+        pub(crate) struct Query {
             format: Option<String>,
         }
     }
@@ -647,7 +647,7 @@ impl Handler {
         return json_ok(&out);
 
         #[derive(Deserialize)]
-        pub struct Query {
+        pub(crate) struct Query {
             format: Option<String>,
         }
     }
@@ -705,7 +705,7 @@ impl Handler {
         return Ok(r);
 
         #[derive(Serialize)]
-        pub struct Login<'a> {
+        pub(crate) struct Login<'a> {
             auth_url: &'a Url,
         }
     }
@@ -1015,7 +1015,7 @@ impl Handler {
         };
 
         #[derive(Serialize)]
-        pub struct Empty {}
+        pub(crate) struct Empty {}
     }
 
     /// Decode query parameters using the specified model.
@@ -1060,7 +1060,7 @@ fn referer<B>(req: &Request<B>) -> Result<Option<Url>, Error> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Item {
+pub(crate) struct Item {
     /// Name of the song.
     name: String,
     /// Artists of the song.
@@ -1078,7 +1078,7 @@ pub struct Item {
 }
 
 impl Item {
-    pub fn into_player_item(self) -> db::PlayerItem {
+    pub(crate) fn into_player_item(self) -> db::PlayerItem {
         let track_id = self.track_id;
 
         db::PlayerItem {
@@ -1094,7 +1094,7 @@ impl Item {
 }
 
 /// Construct a JSON OK response.
-pub fn http_error(status: StatusCode, message: &str) -> Result<Response<Body>, Error> {
+pub(crate) fn http_error(status: StatusCode, message: &str) -> Result<Response<Body>, Error> {
     let body = serde_json::to_string(&Error {
         status: status.as_u16(),
         message,
@@ -1146,7 +1146,7 @@ where
 }
 
 /// Construct a HTML response.
-pub fn html(body: String) -> Result<Response<Body>, Error> {
+pub(crate) fn html(body: String) -> Result<Response<Body>, Error> {
     let mut r = Response::new(Body::from(body));
 
     r.headers_mut().insert(
@@ -1160,7 +1160,7 @@ pub fn html(body: String) -> Result<Response<Body>, Error> {
 }
 
 /// Construct a JSON OK response.
-pub fn json_ok(body: impl Serialize) -> Result<Response<Body>, Error> {
+pub(crate) fn json_ok(body: impl Serialize) -> Result<Response<Body>, Error> {
     let body = serde_json::to_string(&body).map_err(anyhow::Error::from)?;
 
     let mut r = Response::new(Body::from(body));
@@ -1182,7 +1182,7 @@ fn json_empty() -> Result<Response<Body>, Error> {
 }
 
 #[derive(Debug)]
-pub struct ReceivedToken {
-    pub code: String,
-    pub state: String,
+pub(crate) struct ReceivedToken {
+    pub(crate) code: String,
+    pub(crate) state: String,
 }

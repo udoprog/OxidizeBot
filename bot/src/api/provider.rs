@@ -9,21 +9,22 @@
 //! Note: moving it out of the `irc` module now means that this can be used by
 //! other bot components - not just chat modules.
 
+use anyhow::Result;
+
 use crate::api;
 use crate::oauth2;
 use crate::prelude::*;
 use crate::tags;
-use anyhow::{Error, Result};
 
 /// The injected user information.
 #[derive(Debug)]
-pub struct User {
+pub(crate) struct User {
     /// Identifier of the user.
-    pub id: String,
+    pub(crate) id: String,
     /// The login of the user.
-    pub login: String,
+    pub(crate) login: String,
     /// The display name of the user.
-    pub display_name: String,
+    pub(crate) display_name: String,
 }
 
 impl User {
@@ -36,31 +37,19 @@ impl User {
     }
 }
 
-/// The injected channel information.
-#[derive(Debug)]
-pub struct Channel {}
-
-impl Channel {
-    fn from_api(_: api::twitch::new::Channel) -> Self {
-        Self {}
-    }
-}
-
 /// The injected structure for a connected twitch client.
 #[derive(Clone)]
-pub struct TwitchAndUser {
+pub(crate) struct TwitchAndUser {
     /// The user the connection refers to.
-    pub user: Arc<api::User>,
-    /// Channel associated with the api client.
-    pub channel: Option<Arc<api::Channel>>,
+    pub(crate) user: Arc<api::User>,
     /// The client connection.
-    pub client: api::Twitch,
+    pub(crate) client: api::Twitch,
 }
 
 /// Set up the task to provide various twitch clients.
-pub async fn twitch_clients_task(injector: Injector) -> Result<()> {
-    let streamer = TwitchAndUserProvider::run(injector.clone(), tags::Twitch::Streamer, true);
-    let bot = TwitchAndUserProvider::run(injector.clone(), tags::Twitch::Bot, false);
+pub(crate) async fn twitch_clients_task(injector: Injector) -> Result<()> {
+    let streamer = TwitchAndUserProvider::run(injector.clone(), tags::Twitch::Streamer);
+    let bot = TwitchAndUserProvider::run(injector.clone(), tags::Twitch::Bot);
     tokio::try_join!(streamer, bot)?;
     Ok(())
 }
@@ -70,12 +59,10 @@ struct TwitchAndUserProvider {
     injector: Injector,
     /// Currently known user id.
     user_id: Option<Box<str>>,
-    /// If we want to include channel information.
-    channel: bool,
 }
 
 impl TwitchAndUserProvider {
-    pub async fn run(injector: Injector, id: tags::Twitch, channel: bool) -> Result<()> {
+    pub(crate) async fn run(injector: Injector, id: tags::Twitch) -> Result<()> {
         let (mut token_stream, token) = injector
             .stream_key(&Key::<oauth2::SyncToken>::tagged(tags::Token::Twitch(id))?)
             .await;
@@ -84,7 +71,6 @@ impl TwitchAndUserProvider {
             key: Key::<TwitchAndUser>::tagged(id)?,
             injector,
             user_id: None,
-            channel,
         };
 
         this.update(token).await?;
@@ -111,34 +97,16 @@ impl TwitchAndUserProvider {
         // accordingly.
         let client = api::Twitch::new(token)?;
 
-        let (user, channel) = if self.channel {
-            let fut = async {
-                let user = client.new_user_by_bearer().await?;
-                let channel = client.new_channel_by_id(&user.id).await?;
-                Ok::<_, Error>((user, channel))
-            };
-
-            match fut.await {
-                Ok((user, channel)) => (user, channel),
-                Err(e) => {
-                    client.token.force_refresh().await?;
-                    log_warn!(e, "failed to get twitch user information");
-                    return Ok(());
-                }
-            }
-        } else {
-            match client.new_user_by_bearer().await {
-                Ok(user) => (user, None),
-                Err(e) => {
-                    client.token.force_refresh().await?;
-                    log_warn!(e, "failed to get twitch user information");
-                    return Ok(());
-                }
+        let user = match client.new_user_by_bearer().await {
+            Ok(user) => user,
+            Err(e) => {
+                client.token.force_refresh().await?;
+                log_warn!(e, "failed to get twitch user information");
+                return Ok(());
             }
         };
 
         let user = User::from_api(user);
-        let channel = channel.map(Channel::from_api);
 
         if Some(user.id.as_str()) == self.user_id.as_deref() {
             // Client w/ same user id. Do not update.
@@ -153,7 +121,6 @@ impl TwitchAndUserProvider {
                 &self.key,
                 TwitchAndUser {
                     user: Arc::new(user),
-                    channel: channel.map(Arc::new),
                     client,
                 },
             )

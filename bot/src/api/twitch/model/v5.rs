@@ -3,103 +3,103 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct UpdateChannelRequest {
-    pub channel: UpdateChannel,
+pub(crate) struct UpdateChannelRequest {
+    pub(crate) channel: UpdateChannel,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct UpdateChannel {
+pub(crate) struct UpdateChannel {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    pub(crate) status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub game: Option<String>,
+    pub(crate) game: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delay: Option<String>,
+    pub(crate) delay: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub channel_feed_enabled: Option<bool>,
+    pub(crate) channel_feed_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct User {
+pub(crate) struct User {
     #[serde(rename = "_id")]
-    pub id: String,
-    pub name: String,
-    pub display_name: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) display_name: String,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
     #[serde(default)]
-    pub bio: Option<String>,
-    pub email: String,
-    pub email_verified: bool,
+    pub(crate) bio: Option<String>,
+    pub(crate) email: String,
+    pub(crate) email_verified: bool,
     #[serde(default)]
-    pub logo: Option<String>,
-    pub notifications: HashMap<String, bool>,
-    pub partnered: bool,
-    pub twitter_connected: bool,
+    pub(crate) logo: Option<String>,
+    pub(crate) notifications: HashMap<String, bool>,
+    pub(crate) partnered: bool,
+    pub(crate) twitter_connected: bool,
     #[serde(rename = "type")]
-    pub ty: String,
+    pub(crate) ty: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Channel {
-    pub mature: bool,
-    pub status: Option<String>,
+pub(crate) struct Channel {
+    pub(crate) mature: bool,
+    pub(crate) status: Option<String>,
     #[serde(default)]
-    pub broadcaster_language: Option<String>,
+    pub(crate) broadcaster_language: Option<String>,
     #[serde(default)]
-    pub display_name: Option<String>,
+    pub(crate) display_name: Option<String>,
     #[serde(default)]
-    pub game: Option<String>,
+    pub(crate) game: Option<String>,
     #[serde(default)]
-    pub language: Option<String>,
+    pub(crate) language: Option<String>,
     #[serde(rename = "_id")]
-    pub id: String,
-    pub name: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub partner: bool,
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
+    pub(crate) partner: bool,
     #[serde(default)]
-    pub logo: Option<String>,
+    pub(crate) logo: Option<String>,
     #[serde(default)]
-    pub video_banner: Option<String>,
+    pub(crate) video_banner: Option<String>,
     #[serde(default)]
-    pub profile_banner: Option<String>,
+    pub(crate) profile_banner: Option<String>,
     #[serde(default)]
-    pub profile_banner_background_color: Option<String>,
-    pub url: String,
-    pub views: u64,
-    pub followers: u64,
+    pub(crate) profile_banner_background_color: Option<String>,
+    pub(crate) url: String,
+    pub(crate) views: u64,
+    pub(crate) followers: u64,
     #[serde(default)]
-    pub broadcaster_type: Option<String>,
+    pub(crate) broadcaster_type: Option<String>,
     #[serde(default)]
-    pub stream_key: Option<String>,
+    pub(crate) stream_key: Option<String>,
     #[serde(default)]
-    pub email: Option<String>,
+    pub(crate) email: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Emote {
-    pub code: String,
-    pub id: u64,
+pub(crate) struct Emote {
+    pub(crate) code: String,
+    pub(crate) id: u64,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct EmoticonSets {
-    pub emoticon_sets: HashMap<String, Vec<Emote>>,
+pub(crate) struct EmoticonSets {
+    pub(crate) emoticon_sets: HashMap<String, Vec<Emote>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct BadgeTypes {
+pub(crate) struct BadgeTypes {
     #[serde(default)]
-    pub alpha: Option<String>,
+    pub(crate) alpha: Option<String>,
     #[serde(default)]
-    pub image: Option<String>,
+    pub(crate) image: Option<String>,
     #[serde(default)]
-    pub svg: Option<String>,
+    pub(crate) svg: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ChatBadges {
+pub(crate) struct ChatBadges {
     #[serde(flatten)]
-    pub badges: HashMap<String, BadgeTypes>,
+    pub(crate) badges: HashMap<String, BadgeTypes>,
 }

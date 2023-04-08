@@ -12,12 +12,12 @@ use crate::stream_info;
 use crate::utils;
 
 #[derive(Clone)]
-pub struct Reward {
+pub(crate) struct Reward {
     user: String,
     amount: i64,
 }
 
-pub struct Handler {
+pub(crate) struct Handler {
     enabled: settings::Var<bool>,
     cooldown: settings::Var<utils::Cooldown>,
     currency: injector::Ref<Currency>,
@@ -151,7 +151,7 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

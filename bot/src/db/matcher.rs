@@ -5,7 +5,7 @@ use std::fmt;
 use std::sync::Arc;
 
 /// Trait over something that has a matchable pattern.
-pub trait Matchable {
+pub(crate) trait Matchable {
     /// Get the key for the matchable element.
     fn key(&self) -> &Key;
 
@@ -13,7 +13,7 @@ pub trait Matchable {
     fn pattern(&self) -> &Pattern;
 }
 
-pub struct Matcher<T>
+pub(crate) struct Matcher<T>
 where
     T: Matchable,
 {
@@ -145,7 +145,7 @@ where
     }
 
     /// Resolve the given command.
-    pub fn resolve<'a>(
+    pub(crate) fn resolve<'a>(
         &self,
         channel: &str,
         first: Option<&'a str>,
@@ -182,13 +182,13 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
-pub struct Key {
-    pub channel: String,
-    pub name: String,
+pub(crate) struct Key {
+    pub(crate) channel: String,
+    pub(crate) name: String,
 }
 
 impl Key {
-    pub fn new(channel: &str, name: &str) -> Self {
+    pub(crate) fn new(channel: &str, name: &str) -> Self {
         Self {
             channel: channel.to_string(),
             name: name.to_lowercase(),
@@ -205,7 +205,7 @@ impl fmt::Display for Key {
 /// How to match the given value.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
-pub enum Pattern {
+pub(crate) enum Pattern {
     #[serde(rename = "name")]
     Name,
     #[serde(rename = "regex")]
@@ -217,12 +217,12 @@ pub enum Pattern {
 
 impl Pattern {
     /// Construct a new pattern from a regular expression.
-    pub fn regex(pattern: regex::Regex) -> Self {
+    pub(crate) fn regex(pattern: regex::Regex) -> Self {
         Self::Regex { pattern }
     }
 
     /// Convert a database pattern into a matchable pattern here.
-    pub fn from_db(pattern: Option<impl AsRef<str>>) -> Result<Self, Error> {
+    pub(crate) fn from_db(pattern: Option<impl AsRef<str>>) -> Result<Self, Error> {
         Ok(match pattern {
             Some(pattern) => Pattern::Regex {
                 pattern: regex::Regex::new(pattern.as_ref())?,
@@ -256,7 +256,7 @@ where
 }
 
 #[derive(Debug)]
-pub enum Captures<'a> {
+pub(crate) enum Captures<'a> {
     Prefix { rest: &'a str },
     Regex { captures: regex::Captures<'a> },
 }

@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// Asyncify the given task.
-pub async fn asyncify<F, T, E>(task: F) -> Result<T, E>
+pub(crate) async fn asyncify<F, T, E>(task: F) -> Result<T, E>
 where
     F: FnOnce() -> Result<T, E> + Send + 'static,
     T: Send + 'static,
@@ -17,7 +17,7 @@ where
     }
 }
 
-pub struct Handle<T> {
+pub(crate) struct Handle<T> {
     handle: tokio::task::JoinHandle<T>,
 }
 
@@ -33,7 +33,7 @@ impl<T> Future for Handle<T> {
 }
 
 /// Spawn the given task in the background.
-pub fn spawn<F>(future: F) -> Handle<F::Output>
+pub(crate) fn spawn<F>(future: F) -> Handle<F::Output>
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,

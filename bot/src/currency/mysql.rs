@@ -18,10 +18,10 @@ use std::sync::Arc;
 use mysql::prelude::*;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Schema {
-    pub table: String,
-    pub balance_column: String,
-    pub user_column: String,
+pub(crate) struct Schema {
+    pub(crate) table: String,
+    pub(crate) balance_column: String,
+    pub(crate) user_column: String,
 }
 
 impl Default for Schema {
@@ -176,7 +176,7 @@ impl Queries {
     }
 }
 
-pub struct Backend {
+pub(crate) struct Backend {
     channel: Arc<String>,
     pool: mysql::Pool,
     queries: Arc<Queries>,
@@ -184,7 +184,7 @@ pub struct Backend {
 
 impl Backend {
     /// Construct a new built-in backend.
-    pub fn connect(channel: String, url: String, schema: Schema) -> Result<Self> {
+    pub(crate) fn connect(channel: String, url: String, schema: Schema) -> Result<Self> {
         let channel = Arc::new(channel);
         let opts = mysql::Opts::from_url(&url)?;
         let pool = mysql::Pool::new(opts);
@@ -198,7 +198,7 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_transfer(
+    pub(crate) async fn balance_transfer(
         &self,
         _channel: &str,
         giver: &str,
@@ -231,7 +231,7 @@ impl Backend {
     }
 
     /// Get balances for all users.
-    pub async fn export_balances(&self) -> Result<Vec<Balance>> {
+    pub(crate) async fn export_balances(&self) -> Result<Vec<Balance>> {
         let channel = self.channel.to_string();
         let mut output = Vec::new();
 
@@ -253,7 +253,7 @@ impl Backend {
     }
 
     /// Import balances for all users.
-    pub async fn import_balances(&self, balances: Vec<Balance>) -> Result<()> {
+    pub(crate) async fn import_balances(&self, balances: Vec<Balance>) -> Result<()> {
         let opts = mysql::TxOpts::new();
         let mut tx = self.pool.start_transaction(opts).await?;
 
@@ -274,7 +274,7 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, _channel: &str, user: &str) -> Result<Option<BalanceOf>> {
+    pub(crate) async fn balance_of(&self, _channel: &str, user: &str) -> Result<Option<BalanceOf>> {
         let user = user_id(user);
         let opts = mysql::TxOpts::new();
         let mut tx = self.pool.start_transaction(opts).await?;
@@ -293,7 +293,7 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(&self, _channel: &str, user: &str, amount: i64) -> Result<()> {
+    pub(crate) async fn balance_add(&self, _channel: &str, user: &str, amount: i64) -> Result<()> {
         let user = user_id(user);
         let amount = amount.try_into()?;
 
@@ -305,7 +305,12 @@ impl Backend {
     }
 
     /// Add balance to users.
-    pub async fn balances_increment<I>(&self, _channel: &str, users: I, amount: i64) -> Result<()>
+    pub(crate) async fn balances_increment<I>(
+        &self,
+        _channel: &str,
+        users: I,
+        amount: i64,
+    ) -> Result<()>
     where
         I: IntoIterator<Item = String> + Send,
         I::IntoIter: Send,

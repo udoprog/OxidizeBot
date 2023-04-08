@@ -90,7 +90,7 @@ impl Database {
 }
 
 #[derive(Clone)]
-pub struct Themes {
+pub(crate) struct Themes {
     inner: Arc<RwLock<HashMap<Key, Arc<Theme>>>>,
     db: Database,
 }
@@ -99,7 +99,7 @@ impl Themes {
     database_group_fns!(Theme, Key);
 
     /// Construct a new commands store with a db.
-    pub async fn load(db: db::Database) -> Result<Themes, anyhow::Error> {
+    pub(crate) async fn load(db: db::Database) -> Result<Themes, anyhow::Error> {
         let mut inner = HashMap::new();
 
         let db = Database(db);
@@ -116,7 +116,7 @@ impl Themes {
     }
 
     /// Insert a word into the bad words list.
-    pub async fn edit(
+    pub(crate) async fn edit(
         &self,
         channel: &str,
         name: &str,
@@ -149,7 +149,7 @@ impl Themes {
     }
 
     /// Edit the duration of the given theme.
-    pub async fn edit_duration(
+    pub(crate) async fn edit_duration(
         &self,
         channel: &str,
         name: &str,
@@ -175,13 +175,13 @@ impl Themes {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
-pub struct Key {
-    pub channel: String,
-    pub name: String,
+pub(crate) struct Key {
+    pub(crate) channel: String,
+    pub(crate) name: String,
 }
 
 impl Key {
-    pub fn new(channel: &str, name: &str) -> Self {
+    pub(crate) fn new(channel: &str, name: &str) -> Self {
         Self {
             channel: channel.to_string(),
             name: name.to_lowercase(),
@@ -190,20 +190,20 @@ impl Key {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct Theme {
-    pub key: Key,
-    pub track_id: TrackId,
-    pub start: utils::Offset,
-    pub end: Option<utils::Offset>,
-    pub group: Option<String>,
-    pub disabled: bool,
+pub(crate) struct Theme {
+    pub(crate) key: Key,
+    pub(crate) track_id: TrackId,
+    pub(crate) start: utils::Offset,
+    pub(crate) end: Option<utils::Offset>,
+    pub(crate) group: Option<String>,
+    pub(crate) disabled: bool,
 }
 
 impl Theme {
-    pub const NAME: &'static str = "theme";
+    pub(crate) const NAME: &'static str = "theme";
 
     /// Convert a database theme into an in-memory theme.
-    pub fn from_db(theme: &db::models::Theme) -> Result<Theme, anyhow::Error> {
+    pub(crate) fn from_db(theme: &db::models::Theme) -> Result<Theme, anyhow::Error> {
         let key = Key::new(&theme.channel, &theme.name);
 
         let start = utils::Offset::milliseconds(theme.start as u32);

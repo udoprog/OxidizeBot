@@ -6,18 +6,18 @@ use crate::db::{models, schema, user_id, Database};
 use anyhow::Result;
 use diesel::prelude::*;
 
-pub struct Backend {
+pub(crate) struct Backend {
     db: Database,
 }
 
 impl Backend {
     /// Construct a new built-in backend.
-    pub fn new(db: Database) -> Self {
+    pub(crate) fn new(db: Database) -> Self {
         Self { db }
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_transfer(
+    pub(crate) async fn balance_transfer(
         &self,
         channel: &str,
         giver: &str,
@@ -58,7 +58,7 @@ impl Backend {
     }
 
     /// Get balances for all users.
-    pub async fn export_balances(&self) -> Result<Vec<models::Balance>> {
+    pub(crate) async fn export_balances(&self) -> Result<Vec<models::Balance>> {
         use self::schema::balances::dsl;
 
         self.db
@@ -70,7 +70,7 @@ impl Backend {
     }
 
     /// Import balances for all users.
-    pub async fn import_balances(&self, balances: Vec<models::Balance>) -> Result<()> {
+    pub(crate) async fn import_balances(&self, balances: Vec<models::Balance>) -> Result<()> {
         use self::schema::balances::dsl;
 
         self.db
@@ -110,7 +110,7 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>> {
+    pub(crate) async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>> {
         use self::schema::balances::dsl;
 
         let channel = channel_id(channel);
@@ -138,7 +138,7 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<()> {
+    pub(crate) async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<()> {
         let channel = channel_id(channel);
         let user = user_id(user);
 
@@ -148,7 +148,7 @@ impl Backend {
     }
 
     /// Add balance to users.
-    pub async fn balances_increment<I>(
+    pub(crate) async fn balances_increment<I>(
         &self,
         channel: &str,
         users: I,

@@ -6,4 +6,4 @@ use graphql_client::GraphQLQuery;
     query_path = "gql/query_badges.graphql",
     response_derives = "Debug, Clone, Serialize"
 )]
-pub struct Badges;
+pub(crate) struct Badges;

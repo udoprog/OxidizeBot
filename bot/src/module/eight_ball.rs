@@ -27,7 +27,7 @@ static MAGIC_8BALL_ANSWER: &[&str] = &[
 ];
 
 /// Handler for the !8ball command.
-pub struct EightBall {
+pub(crate) struct EightBall {
     enabled: settings::Var<bool>,
 }
 
@@ -61,7 +61,7 @@ impl command::Handler for EightBall {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

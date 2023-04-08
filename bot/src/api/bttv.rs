@@ -9,14 +9,14 @@ const V2_URL: &str = "https://api.betterttv.net/2";
 
 /// API integration.
 #[derive(Clone, Debug)]
-pub struct BetterTTV {
+pub(crate) struct BetterTTV {
     client: Client,
     v2_url: Url,
 }
 
 impl BetterTTV {
     /// Create a new API integration.
-    pub fn new() -> Result<Self> {
+    pub(crate) fn new() -> Result<Self> {
         Ok(Self {
             client: Client::new(),
             v2_url: str::parse::<Url>(V2_URL)?,
@@ -41,13 +41,13 @@ impl BetterTTV {
     }
 
     /// Get the set associated with the room.
-    pub async fn channels(&self, channel: &str) -> Result<Option<Channel>> {
+    pub(crate) async fn channels(&self, channel: &str) -> Result<Option<Channel>> {
         let req = self.v2(Method::GET, &["channels", channel]);
         let data = req.execute().await?.not_found().json()?;
         Ok(data)
     }
 
-    pub async fn emotes(&self) -> Result<Emotes> {
+    pub(crate) async fn emotes(&self) -> Result<Emotes> {
         let req = self.v2(Method::GET, &["emotes"]);
         let data = req.execute().await?.json()?;
         Ok(data)
@@ -56,26 +56,26 @@ impl BetterTTV {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Channel {
-    pub url_template: String,
-    pub bots: HashSet<String>,
-    pub emotes: Vec<Emote>,
+pub(crate) struct Channel {
+    pub(crate) url_template: String,
+    pub(crate) bots: HashSet<String>,
+    pub(crate) emotes: Vec<Emote>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Emotes {
+pub(crate) struct Emotes {
     #[serde(default)]
-    pub status: Option<u32>,
-    pub url_template: String,
-    pub emotes: Vec<Emote>,
+    pub(crate) status: Option<u32>,
+    pub(crate) url_template: String,
+    pub(crate) emotes: Vec<Emote>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Emote {
-    pub id: String,
-    pub channel: Option<String>,
-    pub code: String,
-    pub image_type: String,
+pub(crate) struct Emote {
+    pub(crate) id: String,
+    pub(crate) channel: Option<String>,
+    pub(crate) code: String,
+    pub(crate) image_type: String,
 }

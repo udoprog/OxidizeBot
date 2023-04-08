@@ -5,14 +5,14 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
 
-pub trait Message: 'static + Clone + Send + Sync + serde::Serialize {
+pub(crate) trait Message: 'static + Clone + Send + Sync + serde::Serialize {
     /// The ID of a bussed message.
     fn id(&self) -> Option<&'static str> {
         None
     }
 }
 
-pub type Reader<T> = broadcast::Receiver<T>;
+pub(crate) type Reader<T> = broadcast::Receiver<T>;
 
 struct Inner<T>
 where
@@ -25,7 +25,7 @@ where
 
 /// Bus system.
 #[derive(Clone)]
-pub struct Bus<T>
+pub(crate) struct Bus<T>
 where
     T: Clone,
 {
@@ -37,7 +37,7 @@ where
     T: Clone,
 {
     /// Create a new notifier.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             inner: Arc::new(Inner {
                 subs: broadcast::channel(64).0,
@@ -47,7 +47,7 @@ where
     }
 
     /// Send a message through the bus.
-    pub async fn send(&self, m: T)
+    pub(crate) async fn send(&self, m: T)
     where
         T: Message,
     {
@@ -60,7 +60,7 @@ where
     }
 
     /// Send a synced and cloneable message.
-    pub fn send_sync(&self, m: T)
+    pub(crate) fn send_sync(&self, m: T)
     where
         T: 'static + Clone + Send + Sync,
     {
@@ -68,7 +68,7 @@ where
     }
 
     /// Get the latest messages received.
-    pub async fn latest(&self) -> Vec<T>
+    pub(crate) async fn latest(&self) -> Vec<T>
     where
         T: Clone,
     {
@@ -77,7 +77,7 @@ where
     }
 
     /// Create a receiver of the bus.
-    pub fn subscribe(&self) -> Reader<T> {
+    pub(crate) fn subscribe(&self) -> Reader<T> {
         self.inner.subs.subscribe()
     }
 }
@@ -93,7 +93,7 @@ where
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
-pub enum YouTubeEvent {
+pub(crate) enum YouTubeEvent {
     /// Play a new song.
     #[serde(rename = "play")]
     Play {
@@ -112,7 +112,7 @@ pub enum YouTubeEvent {
 /// Events for driving the YouTube player.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
-pub enum YouTube {
+pub(crate) enum YouTube {
     #[serde(rename = "youtube/current")]
     YouTubeCurrent { event: YouTubeEvent },
     #[serde(rename = "youtube/volume")]
@@ -134,7 +134,7 @@ impl Message for YouTube {
 /// Messages that go on the global bus.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
-pub enum Global {
+pub(crate) enum Global {
     #[serde(rename = "firework")]
     Firework,
     #[serde(rename = "ping")]
@@ -174,7 +174,7 @@ impl Message for Global {
 
 impl Global {
     /// Construct a message about song progress.
-    pub fn song_progress(song: Option<&player::Song>) -> Self {
+    pub(crate) fn song_progress(song: Option<&player::Song>) -> Self {
         let song = match song {
             Some(song) => song,
             None => {
@@ -194,7 +194,7 @@ impl Global {
     }
 
     /// Construct a message that the given song is running.
-    pub fn song(song: Option<&player::Song>) -> Result<Self, anyhow::Error> {
+    pub(crate) fn song(song: Option<&player::Song>) -> Result<Self, anyhow::Error> {
         let song = match song {
             Some(song) => song,
             None => {
@@ -223,7 +223,7 @@ impl Global {
 /// Events for running commands externally.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type")]
-pub enum Command {
+pub(crate) enum Command {
     /// Run a raw command.
     #[serde(rename = "raw")]
     Raw { command: String },

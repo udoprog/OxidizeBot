@@ -7,7 +7,7 @@ use crate::prelude::*;
 use crate::utils;
 use chrono::Utc;
 
-pub struct Handler {
+pub(crate) struct Handler {
     enabled: settings::Var<bool>,
     promotions: injector::Ref<db::Promotions>,
 }
@@ -51,7 +51,7 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

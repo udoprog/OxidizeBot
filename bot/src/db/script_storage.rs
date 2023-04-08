@@ -3,22 +3,22 @@ use crate::db::models;
 use anyhow::Result;
 use diesel::prelude::*;
 
-pub use self::models::AfterStream;
+pub(crate) use self::models::AfterStream;
 
 #[derive(Clone)]
-pub struct ScriptStorage {
+pub(crate) struct ScriptStorage {
     channel: String,
     db: db::Database,
 }
 
 impl ScriptStorage {
     /// Open the script storage database.
-    pub async fn load(channel: String, db: db::Database) -> Result<Self> {
+    pub(crate) async fn load(channel: String, db: db::Database) -> Result<Self> {
         Ok(Self { channel, db })
     }
 
     /// Set the given key.
-    pub async fn set<K, V>(&self, key: K, value: V) -> Result<()>
+    pub(crate) async fn set<K, V>(&self, key: K, value: V) -> Result<()>
     where
         K: 'static + Send + serde::Serialize,
         V: 'static + Send + serde::Serialize,
@@ -62,7 +62,7 @@ impl ScriptStorage {
     }
 
     /// Get the given key.
-    pub async fn get<K, V>(&self, key: K) -> Result<Option<V>>
+    pub(crate) async fn get<K, V>(&self, key: K) -> Result<Option<V>>
     where
         K: 'static + Send + serde::Serialize,
         for<'de> V: 'static + Send + serde::Deserialize<'de>,

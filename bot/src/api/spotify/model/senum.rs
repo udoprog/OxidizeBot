@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AlbumType {
+pub(crate) enum AlbumType {
     Album,
     Single,
     AppearsOn,
@@ -13,7 +13,7 @@ pub enum AlbumType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum Type {
+pub(crate) enum Type {
     Artist,
     Album,
     Track,
@@ -25,7 +25,7 @@ pub enum Type {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TimeRange {
+pub(crate) enum TimeRange {
     LongTerm,
     MediumTerm,
     ShortTerm,
@@ -35,7 +35,7 @@ pub enum TimeRange {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RepeatState {
+pub(crate) enum RepeatState {
     Off,
     Track,
     Context,
@@ -45,7 +45,7 @@ pub enum RepeatState {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum SearchType {
+pub(crate) enum SearchType {
     Artist,
     Album,
     Track,
@@ -55,7 +55,7 @@ pub enum SearchType {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum DeviceType {
+pub(crate) enum DeviceType {
     Computer,
     Smartphone,
     Speaker,

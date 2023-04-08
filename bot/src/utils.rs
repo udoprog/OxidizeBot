@@ -16,10 +16,10 @@ pub(crate) use self::duration::Duration;
 pub(crate) use self::respond::respond;
 
 /// Collection of boxed futures to drive.
-pub type Futures<'a> =
+pub(crate) type Futures<'a> =
     ::futures_util::stream::FuturesUnordered<BoxFuture<'a, Result<(), anyhow::Error>>>;
 
-pub trait Driver<'a> {
+pub(crate) trait Driver<'a> {
     /// Drive the given future.
     fn drive<F>(&mut self, future: F)
     where
@@ -35,13 +35,13 @@ impl<'a> Driver<'a> for Vec<BoxFuture<'a, Result<(), anyhow::Error>>> {
     }
 }
 
-pub struct Urls<'a> {
+pub(crate) struct Urls<'a> {
     message: &'a str,
 }
 
 impl<'a> Urls<'a> {
     /// Extract all URLs from the given message.
-    pub fn new(message: &'a str) -> Urls<'a> {
+    pub(crate) fn new(message: &'a str) -> Urls<'a> {
         Urls {
             message: message.trim(),
         }
@@ -78,11 +78,11 @@ impl<'a> Iterator for Urls<'a> {
 }
 
 /// Decode a query string.
-pub fn query_pairs(query: &str) -> QueryPairs<'_> {
+pub(crate) fn query_pairs(query: &str) -> QueryPairs<'_> {
     QueryPairs { query }
 }
 
-pub struct QueryPairs<'a> {
+pub(crate) struct QueryPairs<'a> {
     query: &'a str,
 }
 
@@ -121,7 +121,7 @@ impl<'a> Iterator for QueryPairs<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub enum WordsStorage {
+pub(crate) enum WordsStorage {
     Shared(Arc<String>),
     Static(&'static str),
 }
@@ -150,7 +150,7 @@ impl From<Arc<String>> for WordsStorage {
 }
 
 #[derive(Debug, Clone)]
-pub struct Words {
+pub(crate) struct Words {
     string: WordsStorage,
     off: usize,
     /// one character lookahead.
@@ -160,7 +160,7 @@ pub struct Words {
 
 impl Words {
     /// Construct an empty iterator over words.
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self {
             string: WordsStorage::Static(""),
             off: 0,
@@ -172,7 +172,7 @@ impl Words {
 
 impl Words {
     /// Split the given string.
-    pub fn new(string: impl Into<WordsStorage>) -> Words {
+    pub(crate) fn new(string: impl Into<WordsStorage>) -> Words {
         let string = string.into();
         let mut it = string.char_indices();
         let b0 = it.next();
@@ -187,12 +187,12 @@ impl Words {
     }
 
     /// Access the underlying string.
-    pub fn string(&self) -> &str {
+    pub(crate) fn string(&self) -> &str {
         &self.string
     }
 
     /// Take the next character.
-    pub fn take(&mut self) -> Option<(usize, char)> {
+    pub(crate) fn take(&mut self) -> Option<(usize, char)> {
         let s = &self.string[self.off..];
         let mut it = s.char_indices();
         let next = it.next().map(|(_, c)| (self.off, c));
@@ -205,12 +205,12 @@ impl Words {
     }
 
     /// Look at the next character.
-    pub fn peek(&self) -> Option<(usize, char)> {
+    pub(crate) fn peek(&self) -> Option<(usize, char)> {
         self.b0
     }
 
     /// The rest of the input.
-    pub fn rest(&self) -> &str {
+    pub(crate) fn rest(&self) -> &str {
         self.b0.map(|(n, _)| &self.string[n..]).unwrap_or_default()
     }
 
@@ -285,13 +285,13 @@ impl Iterator for Words {
 }
 
 #[derive(Debug)]
-pub struct TrimmedWords<'a> {
+pub(crate) struct TrimmedWords<'a> {
     string: &'a str,
 }
 
 impl<'a> TrimmedWords<'a> {
     /// Split the commandline.
-    pub fn new(string: &str) -> TrimmedWords<'_> {
+    pub(crate) fn new(string: &str) -> TrimmedWords<'_> {
         TrimmedWords {
             string: string.trim_start_matches(is_trim_separator),
         }
@@ -352,10 +352,10 @@ fn partition(duration: time::Duration) -> DurationParts {
 }
 
 #[derive(Clone, Copy)]
-pub struct Percentage(u32, u32);
+pub(crate) struct Percentage(u32, u32);
 
 /// Format the given part and whole as a percentage.
-pub fn percentage(part: u32, total: u32) -> Percentage {
+pub(crate) fn percentage(part: u32, total: u32) -> Percentage {
     Percentage(part, total)
 }
 
@@ -381,7 +381,7 @@ impl fmt::Display for Percentage {
 }
 
 /// Format the given number of seconds as a compact human time.
-pub fn compact_duration(duration: time::Duration) -> String {
+pub(crate) fn compact_duration(duration: time::Duration) -> String {
     let mut parts = Vec::new();
 
     let p = partition(duration);
@@ -418,7 +418,7 @@ pub fn compact_duration(duration: time::Duration) -> String {
 }
 
 /// Format the given number of seconds as a long human time.
-pub fn long_duration(duration: time::Duration) -> String {
+pub(crate) fn long_duration(duration: time::Duration) -> String {
     let mut parts = Vec::new();
 
     let p = partition(duration);
@@ -449,7 +449,7 @@ pub fn long_duration(duration: time::Duration) -> String {
 }
 
 /// Format the given number of seconds as a digital duration.
-pub fn digital_duration(duration: time::Duration) -> String {
+pub(crate) fn digital_duration(duration: time::Duration) -> String {
     let mut parts = Vec::new();
 
     let p = partition(duration);
@@ -466,7 +466,7 @@ pub fn digital_duration(duration: time::Duration) -> String {
 }
 
 /// Format the given number as a string according to english conventions.
-pub fn english_num(n: u64) -> Cow<'static, str> {
+pub(crate) fn english_num(n: u64) -> Cow<'static, str> {
     let n = match n {
         1 => "one",
         2 => "two",
@@ -484,7 +484,7 @@ pub fn english_num(n: u64) -> Cow<'static, str> {
 }
 
 /// Render artists in a human readable form INCLUDING an oxford comma.
-pub fn human_artists(artists: &[api::spotify::SimplifiedArtist]) -> Option<String> {
+pub(crate) fn human_artists(artists: &[api::spotify::SimplifiedArtist]) -> Option<String> {
     if artists.is_empty() {
         return None;
     }
@@ -512,7 +512,7 @@ pub fn human_artists(artists: &[api::spotify::SimplifiedArtist]) -> Option<Strin
 }
 
 /// Formats the given list of strings as a comma-separated set of values.
-pub fn human_list(list: &[String]) -> Option<String> {
+pub(crate) fn human_list(list: &[String]) -> Option<String> {
     if list.is_empty() {
         return None;
     }
@@ -556,7 +556,7 @@ fn is_url_character(c: char) -> bool {
 ///
 /// Stored field is in milliseconds.
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Offset(u32);
+pub(crate) struct Offset(u32);
 
 impl std::str::FromStr for Offset {
     type Err = anyhow::Error;
@@ -606,17 +606,17 @@ impl serde::Serialize for Offset {
 
 impl Offset {
     /// An offset from milliseconds.
-    pub fn milliseconds(ms: u32) -> Self {
+    pub(crate) fn milliseconds(ms: u32) -> Self {
         Offset(ms)
     }
 
     /// Convert to seconds.
-    pub fn as_milliseconds(&self) -> u32 {
+    pub(crate) fn as_milliseconds(&self) -> u32 {
         self.0
     }
 
     /// Treat offset as duration.
-    pub fn as_duration(&self) -> time::Duration {
+    pub(crate) fn as_duration(&self) -> time::Duration {
         time::Duration::from_millis(self.0 as u64)
     }
 }
@@ -639,14 +639,14 @@ impl fmt::Display for Offset {
 
 /// A cooldown implementation that prevents an action from being executed too frequently.
 #[derive(Debug, Clone, Default)]
-pub struct Cooldown {
+pub(crate) struct Cooldown {
     last_action_at: Option<time::Instant>,
-    pub cooldown: Duration,
+    pub(crate) cooldown: Duration,
 }
 
 impl Cooldown {
     /// Create a cooldown from the given duration.
-    pub fn from_duration(duration: Duration) -> Self {
+    pub(crate) fn from_duration(duration: Duration) -> Self {
         Self {
             last_action_at: None,
             cooldown: duration,
@@ -654,7 +654,7 @@ impl Cooldown {
     }
 
     /// Test if we are allowed to perform the action based on the cooldown in effect.
-    pub fn is_open(&mut self) -> bool {
+    pub(crate) fn is_open(&mut self) -> bool {
         let now = time::Instant::now();
 
         match self.check(now) {
@@ -667,7 +667,7 @@ impl Cooldown {
     }
 
     /// Test how much time remains until cooldown is open.
-    pub fn check(&mut self, now: time::Instant) -> Option<time::Duration> {
+    pub(crate) fn check(&mut self, now: time::Instant) -> Option<time::Duration> {
         if let Some(last_action_at) = self.last_action_at.as_ref() {
             let since_last_action = now - *last_action_at;
             let cooldown = self.cooldown.as_std();
@@ -681,7 +681,7 @@ impl Cooldown {
     }
 
     /// Poke the cooldown with the current time
-    pub fn poke(&mut self, now: time::Instant) {
+    pub(crate) fn poke(&mut self, now: time::Instant) {
         self.last_action_at = Some(now);
     }
 }
@@ -707,13 +707,13 @@ impl<'de> serde::Deserialize<'de> for Cooldown {
 
 /// Helper to handle shutdowns.
 #[derive(Clone)]
-pub struct Restart {
+pub(crate) struct Restart {
     sender: Arc<Mutex<Option<oneshot::Sender<()>>>>,
 }
 
 impl Restart {
     /// Construct a new shutdown handler.
-    pub fn new() -> (Self, oneshot::Receiver<()>) {
+    pub(crate) fn new() -> (Self, oneshot::Receiver<()>) {
         let (tx, rx) = oneshot::channel();
         (
             Self {
@@ -724,7 +724,7 @@ impl Restart {
     }
 
     /// Execute the shutdown handler.
-    pub async fn restart(&self) -> bool {
+    pub(crate) async fn restart(&self) -> bool {
         if let Some(sender) = self.sender.lock().await.take() {
             sender.send(()).expect("no listener");
             return true;
@@ -737,16 +737,16 @@ impl Restart {
 
 /// PT-formatted duration.
 #[derive(Debug, Clone)]
-pub struct PtDuration(time::Duration);
+pub(crate) struct PtDuration(time::Duration);
 
 impl PtDuration {
     /// Access the inner duration.
-    pub fn as_std(&self) -> time::Duration {
+    pub(crate) fn as_std(&self) -> time::Duration {
         self.0
     }
 
     /// Convert into inner duration.
-    pub fn into_std(self) -> time::Duration {
+    pub(crate) fn into_std(self) -> time::Duration {
         self.0
     }
 }
@@ -848,7 +848,7 @@ mod tests {
     use super::{Offset, TrimmedWords, Urls, Words};
 
     #[test]
-    pub fn test_offset() -> Result<(), anyhow::Error> {
+    pub(crate) fn test_offset() -> Result<(), anyhow::Error> {
         assert_eq!(Offset::milliseconds(1_000), str::parse::<Offset>("1")?);
         assert_eq!(Offset::milliseconds(1_000), str::parse::<Offset>("01")?);
         assert_eq!(Offset::milliseconds(61_000), str::parse::<Offset>("01:01")?);
@@ -860,13 +860,13 @@ mod tests {
     }
 
     #[test]
-    pub fn test_trimmed_words() {
+    pub(crate) fn test_trimmed_words() {
         let out = TrimmedWords::new("hello, do you feel alive?").collect::<Vec<_>>();
         assert_eq!(out, vec!["hello", "do", "you", "feel", "alive"]);
     }
 
     #[test]
-    pub fn test_trimmed_words_unicode() {
+    pub(crate) fn test_trimmed_words_unicode() {
         let it = TrimmedWords::new(" 👌👌 foo");
 
         assert_eq!(
@@ -876,13 +876,13 @@ mod tests {
     }
 
     #[test]
-    pub fn test_split_escape() {
+    pub(crate) fn test_split_escape() {
         let out = Words::new("   foo bar   baz   ").collect::<Vec<_>>();
         assert_eq!(out, vec!["foo", "bar", "baz"]);
     }
 
     #[test]
-    pub fn test_split_quoted() {
+    pub(crate) fn test_split_quoted() {
         let out = Words::new("   foo bar   \"baz  biz\" ").collect::<Vec<_>>();
         assert_eq!(out, vec!["foo", "bar", "baz  biz"]);
 
@@ -899,7 +899,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_unicode() {
+    pub(crate) fn test_unicode() {
         let it = Words::new("👌👌 foo");
 
         assert_eq!(
@@ -909,7 +909,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_urls() {
+    pub(crate) fn test_urls() {
         let u: Vec<url::Url> =
             Urls::new("here:https://google.se/test+this, and this:http://example.com").collect();
 

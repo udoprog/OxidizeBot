@@ -12,12 +12,12 @@ use url::Url;
 
 /// The configuration for a single flow.
 #[derive(Debug, Clone, Deserialize)]
-pub struct FlowConfig {
-    pub id: String,
+pub(crate) struct FlowConfig {
+    pub(crate) id: String,
     #[serde(rename = "type")]
-    pub ty: FlowType,
-    pub title: String,
-    pub description: String,
+    pub(crate) ty: FlowType,
+    pub(crate) title: String,
+    pub(crate) description: String,
     client_id: String,
     client_secret: ClientSecret,
     auth_url: Url,
@@ -30,7 +30,7 @@ pub struct FlowConfig {
 
 impl FlowConfig {
     /// Convert configuration into Flow.
-    pub fn as_flow(&self, base_url: &Url, config: &Config) -> Result<Flow, Error> {
+    pub(crate) fn as_flow(&self, base_url: &Url, config: &Config) -> Result<Flow, Error> {
         let http_client = reqwest::Client::new();
 
         let mut client = Client::new(
@@ -63,34 +63,34 @@ impl FlowConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Config {
-    pub redirect_path: String,
-    pub login: FlowConfig,
-    pub flows: Vec<FlowConfig>,
+pub(crate) struct Config {
+    pub(crate) redirect_path: String,
+    pub(crate) login: FlowConfig,
+    pub(crate) flows: Vec<FlowConfig>,
 }
 
 /// A token that comes out of a token workflow.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct SavedToken {
+pub(crate) struct SavedToken {
     /// The ID of the flow used for the token.
-    pub flow_id: String,
+    pub(crate) flow_id: String,
     /// The client id that generated the token.
-    pub client_id: String,
+    pub(crate) client_id: String,
     /// Store the known refresh token.
-    pub refresh_token: RefreshToken,
+    pub(crate) refresh_token: RefreshToken,
     /// Access token.
-    pub access_token: AccessToken,
+    pub(crate) access_token: AccessToken,
     /// When the token was refreshed.
-    pub refreshed_at: DateTime<Utc>,
+    pub(crate) refreshed_at: DateTime<Utc>,
     /// Expires in seconds.
-    pub expires_in: Option<u64>,
+    pub(crate) expires_in: Option<u64>,
     /// Scopes associated with token.
-    pub scopes: Vec<Scope>,
+    pub(crate) scopes: Vec<Scope>,
 }
 
 impl SavedToken {
     /// Convert into an exported variant.
-    pub fn as_exported(&self) -> ExportedToken<'_> {
+    pub(crate) fn as_exported(&self) -> ExportedToken<'_> {
         ExportedToken {
             flow_id: &self.flow_id,
             client_id: &self.client_id,
@@ -102,7 +102,7 @@ impl SavedToken {
     }
 
     /// Generate a unique hash corresponding to this token.
-    pub fn hash(&self) -> Result<String, Error> {
+    pub(crate) fn hash(&self) -> Result<String, Error> {
         use base64::prelude::*;
         let bytes = serde_cbor::to_vec(&[&self.client_id, &*self.access_token])?;
         let digest = ring::digest::digest(&ring::digest::SHA256, &bytes);
@@ -112,25 +112,25 @@ impl SavedToken {
 
 /// A token that has been exported from this system.
 #[derive(Clone, Debug, Serialize)]
-pub struct ExportedToken<'a> {
+pub(crate) struct ExportedToken<'a> {
     /// The ID of the flow used for the token.
-    pub flow_id: &'a str,
+    pub(crate) flow_id: &'a str,
     /// The exported client id.
-    pub client_id: &'a str,
+    pub(crate) client_id: &'a str,
     /// Access token.
-    pub access_token: &'a AccessToken,
+    pub(crate) access_token: &'a AccessToken,
     /// When the token was refreshed.
-    pub refreshed_at: &'a DateTime<Utc>,
+    pub(crate) refreshed_at: &'a DateTime<Utc>,
     /// Expires in seconds.
-    pub expires_in: Option<u64>,
+    pub(crate) expires_in: Option<u64>,
     /// Scopes associated with token.
-    pub scopes: &'a [Scope],
+    pub(crate) scopes: &'a [Scope],
 }
 
 type Flows = (Arc<Flow>, HashMap<String, Arc<Flow>>);
 
 /// Setup all required flows.
-pub fn setup_flows(base_url: &Url, config: &Config) -> Result<Flows, Error> {
+pub(crate) fn setup_flows(base_url: &Url, config: &Config) -> Result<Flows, Error> {
     let mut out = HashMap::new();
 
     let login_flow = Arc::new(config.login.as_flow(base_url, config)?);
@@ -144,19 +144,19 @@ pub fn setup_flows(base_url: &Url, config: &Config) -> Result<Flows, Error> {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct TokenQuery {
-    pub code: AuthorizationCode,
-    pub state: State,
+pub(crate) struct TokenQuery {
+    pub(crate) code: AuthorizationCode,
+    pub(crate) state: State,
 }
 
 #[derive(Debug)]
-pub struct ExchangeToken {
-    pub state: State,
-    pub auth_url: Url,
+pub(crate) struct ExchangeToken {
+    pub(crate) state: State,
+    pub(crate) auth_url: Url,
 }
 
 #[derive(Clone, Debug, Copy, Serialize, Deserialize)]
-pub enum FlowType {
+pub(crate) enum FlowType {
     #[serde(rename = "twitch")]
     Twitch,
     #[serde(rename = "youtube")]
@@ -168,16 +168,16 @@ pub enum FlowType {
 }
 
 #[derive(Debug)]
-pub struct Flow {
+pub(crate) struct Flow {
     http_client: reqwest::Client,
     client: Client,
     extra_params: Vec<(String, String)>,
-    pub config: FlowConfig,
+    pub(crate) config: FlowConfig,
 }
 
 impl Flow {
     /// Construct a new web integration.
-    pub fn new(http_client: reqwest::Client, client: Client, config: FlowConfig) -> Self {
+    pub(crate) fn new(http_client: reqwest::Client, client: Client, config: FlowConfig) -> Self {
         Flow {
             http_client,
             client,
@@ -187,7 +187,7 @@ impl Flow {
     }
 
     /// Check if saved token is compatible with the specified token.
-    pub fn is_compatible_with(&self, token: &SavedToken) -> bool {
+    pub(crate) fn is_compatible_with(&self, token: &SavedToken) -> bool {
         let mut scopes = HashSet::new();
         scopes.extend(self.config.scopes.iter().cloned());
 
@@ -207,18 +207,18 @@ impl Flow {
     }
 
     /// Access scopes configured for this flow.
-    pub fn scopes(&self) -> &[Scope] {
+    pub(crate) fn scopes(&self) -> &[Scope] {
         &self.config.scopes
     }
 
     /// Append an extra parameter to the given flow.
-    pub fn extra_param(&mut self, key: impl AsRef<str>, value: impl AsRef<str>) {
+    pub(crate) fn extra_param(&mut self, key: impl AsRef<str>, value: impl AsRef<str>) {
         self.extra_params
             .push((key.as_ref().to_string(), value.as_ref().to_string()));
     }
 
     /// Exchange token with the given client.
-    pub fn exchange_token(&self) -> ExchangeToken {
+    pub(crate) fn exchange_token(&self) -> ExchangeToken {
         let state = State::new_random();
         let mut auth_url = self.client.authorize_url(&state);
 
@@ -230,7 +230,7 @@ impl Flow {
     }
 
     /// Handle a received token.
-    pub async fn handle_received_token(
+    pub(crate) async fn handle_received_token(
         &self,
         exchange: ExchangeToken,
         received_token: TokenQuery,
@@ -311,7 +311,7 @@ impl Flow {
     }
 
     /// Refresh the specified token.
-    pub async fn refresh_token(
+    pub(crate) async fn refresh_token(
         &self,
         refresh_token: &RefreshToken,
     ) -> Result<SavedToken, ExecuteError> {
@@ -371,7 +371,7 @@ impl Flow {
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
-pub struct TwitchToken {
+pub(crate) struct TwitchToken {
     access_token: AccessToken,
     token_type: TokenType,
     #[serde(skip_serializing_if = "Option::is_none")]

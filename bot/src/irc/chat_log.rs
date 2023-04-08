@@ -7,7 +7,7 @@ use crate::settings;
 use crate::storage::Cache;
 use anyhow::Result;
 
-pub struct Builder {
+pub(crate) struct Builder {
     twitch: Twitch,
     pub(crate) message_log: message_log::MessageLog,
     pub(crate) cache_stream: injector::Stream<Cache>,
@@ -19,7 +19,7 @@ pub struct Builder {
 }
 
 impl Builder {
-    pub async fn new(
+    pub(crate) async fn new(
         twitch: Twitch,
         injector: &Injector,
         message_log: message_log::MessageLog,
@@ -47,7 +47,7 @@ impl Builder {
     }
 
     /// Update builder.
-    pub async fn update(&mut self) -> Result<Option<ChatLog>> {
+    pub(crate) async fn update(&mut self) -> Result<Option<ChatLog>> {
         tokio::select! {
             cache = self.cache_stream.recv() => {
                 self.cache = cache;
@@ -66,7 +66,7 @@ impl Builder {
     }
 
     /// Construct a new chat log with the specified configuration.
-    pub fn build(&self) -> Result<Option<ChatLog>> {
+    pub(crate) fn build(&self) -> Result<Option<ChatLog>> {
         if !self.enabled {
             return Ok(None);
         }
@@ -84,15 +84,21 @@ impl Builder {
 }
 
 #[derive(Clone)]
-pub struct ChatLog {
+pub(crate) struct ChatLog {
     /// Log to add messages to.
-    pub message_log: message_log::MessageLog,
+    pub(crate) message_log: message_log::MessageLog,
     /// Handler of emotes.
     emotes: Option<emotes::Emotes>,
 }
 
 impl ChatLog {
-    pub async fn observe(&self, tags: &irc::Tags, user: &api::User, name: &str, message: &str) {
+    pub(crate) async fn observe(
+        &self,
+        tags: &irc::Tags,
+        user: &api::User,
+        name: &str,
+        message: &str,
+    ) {
         let rendered = match self.emotes.as_ref() {
             Some(emotes) => match emotes.render(tags, user, name, message).await {
                 Ok(rendered) => Some(rendered),

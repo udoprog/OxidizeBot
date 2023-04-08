@@ -12,13 +12,13 @@ struct CommandQuery {
 
 /// Chat endpoint.
 #[derive(Clone)]
-pub struct Chat {
+pub(crate) struct Chat {
     bus: bus::Bus<bus::Command>,
     message_log: message_log::MessageLog,
 }
 
 impl Chat {
-    pub fn route(
+    pub(crate) fn route(
         bus: bus::Bus<bus::Command>,
         message_log: message_log::MessageLog,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {

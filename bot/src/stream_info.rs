@@ -9,33 +9,33 @@ use std::time;
 use tracing::Instrument;
 
 #[derive(Debug, Default)]
-pub struct Data {
-    pub stream: Option<twitch::new::Stream>,
-    pub title: Option<String>,
-    pub game: Option<String>,
-    pub subs: Vec<twitch::new::Subscription>,
-    pub subs_set: HashSet<String>,
+pub(crate) struct Data {
+    pub(crate) stream: Option<twitch::new::Stream>,
+    pub(crate) title: Option<String>,
+    pub(crate) game: Option<String>,
+    pub(crate) subs: Vec<twitch::new::Subscription>,
+    pub(crate) subs_set: HashSet<String>,
 }
 
 /// Notify on changes in stream state.
-pub enum StreamState {
+pub(crate) enum StreamState {
     Started,
     Stopped,
 }
 
 #[derive(Debug, Clone)]
-pub struct StreamInfo {
-    pub data: Arc<RwLock<Data>>,
+pub(crate) struct StreamInfo {
+    pub(crate) data: Arc<RwLock<Data>>,
 }
 
 impl StreamInfo {
     /// Check if a name is a subscriber.
-    pub fn is_subscriber(&self, name: &str) -> bool {
+    pub(crate) fn is_subscriber(&self, name: &str) -> bool {
         self.data.read().subs_set.contains(name)
     }
 
     /// Refresh the known list of subscribers.
-    pub async fn refresh_subs(&self, streamer: &api::TwitchAndUser) -> Result<()> {
+    pub(crate) async fn refresh_subs(&self, streamer: &api::TwitchAndUser) -> Result<()> {
         let subs = {
             let mut out = Vec::new();
 
@@ -64,7 +64,10 @@ impl StreamInfo {
 
     /// Refresh channel.
     #[tracing::instrument(skip_all, fields(id = ?streamer.user.id))]
-    pub async fn refresh_channel<'a>(&'a self, streamer: &'a api::TwitchAndUser) -> Result<()> {
+    pub(crate) async fn refresh_channel<'a>(
+        &'a self,
+        streamer: &'a api::TwitchAndUser,
+    ) -> Result<()> {
         let channel = match streamer.client.new_channel_by_id(&streamer.user.id).await {
             Ok(Some(channel)) => channel,
             Ok(None) => {
@@ -84,7 +87,7 @@ impl StreamInfo {
     }
 
     /// Refresh the stream info.
-    pub async fn refresh_stream<'a>(
+    pub(crate) async fn refresh_stream<'a>(
         &'a self,
         streamer: &'a api::TwitchAndUser,
         stream_state_tx: &'a mpsc::Sender<StreamState>,
@@ -119,7 +122,7 @@ impl StreamInfo {
 }
 
 /// Set up a stream information loop.
-pub fn setup(
+pub(crate) fn setup(
     streamer: api::TwitchAndUser,
     stream_state_tx: mpsc::Sender<StreamState>,
 ) -> (StreamInfo, impl Future<Output = Result<()>>) {

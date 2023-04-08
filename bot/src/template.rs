@@ -12,7 +12,7 @@ lazy_static::lazy_static! {
 }
 
 #[derive(Debug, Clone)]
-pub struct Template {
+pub(crate) struct Template {
     source: String,
     template: handlebars::template::Template,
 }
@@ -75,7 +75,7 @@ impl serde::Serialize for Template {
 }
 
 impl Template {
-    pub fn compile(s: &str) -> Result<Template, anyhow::Error> {
+    pub(crate) fn compile(s: &str) -> Result<Template, anyhow::Error> {
         Ok(Template {
             source: s.to_string(),
             template: handlebars::Template::compile(s)?,
@@ -83,7 +83,7 @@ impl Template {
     }
 
     /// Render the template to the given output.
-    pub fn render(
+    pub(crate) fn render(
         &self,
         out: &mut impl io::Write,
         data: impl serde::Serialize,
@@ -93,14 +93,17 @@ impl Template {
     }
 
     /// Render the template to a string.
-    pub fn render_to_string(&self, data: impl serde::Serialize) -> Result<String, anyhow::Error> {
+    pub(crate) fn render_to_string(
+        &self,
+        data: impl serde::Serialize,
+    ) -> Result<String, anyhow::Error> {
         let mut output = StringOutput::new();
         self.render_internal(&mut output, data)?;
         output.into_string().map_err(Into::into)
     }
 
     /// Test if the template has the given variable.
-    pub fn vars(&self) -> HashSet<String> {
+    pub(crate) fn vars(&self) -> HashSet<String> {
         use handlebars::template::{HelperTemplate, Parameter, TemplateElement};
         use std::collections::VecDeque;
 
@@ -162,7 +165,7 @@ impl Template {
     }
 
     /// Access the source of the template.
-    pub fn source(&self) -> &str {
+    pub(crate) fn source(&self) -> &str {
         self.source.as_str()
     }
 
@@ -196,7 +199,7 @@ impl fmt::Display for Template {
     }
 }
 
-pub struct WriteOutput<W> {
+pub(crate) struct WriteOutput<W> {
     write: W,
 }
 
@@ -210,12 +213,12 @@ where
 }
 
 impl<W> WriteOutput<W> {
-    pub fn new(write: W) -> WriteOutput<W> {
+    pub(crate) fn new(write: W) -> WriteOutput<W> {
         WriteOutput { write }
     }
 }
 
-pub struct StringOutput {
+pub(crate) struct StringOutput {
     buf: Vec<u8>,
 }
 
@@ -227,13 +230,13 @@ impl handlebars::Output for StringOutput {
 }
 
 impl StringOutput {
-    pub fn new() -> StringOutput {
+    pub(crate) fn new() -> StringOutput {
         StringOutput {
             buf: Vec::with_capacity(1024),
         }
     }
 
-    pub fn into_string(self) -> Result<String, string::FromUtf8Error> {
+    pub(crate) fn into_string(self) -> Result<String, string::FromUtf8Error> {
         String::from_utf8(self.buf)
     }
 }
@@ -251,7 +254,7 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    pub fn test_template_vars() -> Result<(), Error> {
+    pub(crate) fn test_template_vars() -> Result<(), Error> {
         assert_eq!(
             vec!["foo", "bar", "baz"]
                 .into_iter()

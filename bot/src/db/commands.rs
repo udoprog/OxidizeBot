@@ -104,7 +104,7 @@ impl Database {
 }
 
 #[derive(Clone)]
-pub struct Commands {
+pub(crate) struct Commands {
     inner: Arc<RwLock<db::Matcher<Command>>>,
     db: Database,
 }
@@ -113,7 +113,7 @@ impl Commands {
     database_group_fns!(Command, db::Key);
 
     /// Construct a new commands store with a db.
-    pub async fn load(db: db::Database) -> Result<Commands, Error> {
+    pub(crate) async fn load(db: db::Database) -> Result<Commands, Error> {
         let db = Database(db);
 
         let mut matcher = db::Matcher::new();
@@ -130,7 +130,7 @@ impl Commands {
     }
 
     /// Insert a word into the bad words list.
-    pub async fn edit(
+    pub(crate) async fn edit(
         &self,
         channel: &str,
         name: &str,
@@ -163,7 +163,7 @@ impl Commands {
     }
 
     /// Edit the pattern for the given command.
-    pub async fn edit_pattern(
+    pub(crate) async fn edit_pattern(
         &self,
         channel: &str,
         name: &str,
@@ -178,14 +178,14 @@ impl Commands {
     }
 
     /// Increment the specified command.
-    pub async fn increment(&self, command: &Command) -> Result<(), Error> {
+    pub(crate) async fn increment(&self, command: &Command) -> Result<(), Error> {
         self.db.increment(&command.key).await?;
         command.count.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
     /// Resolve the given command.
-    pub async fn resolve<'a>(
+    pub(crate) async fn resolve<'a>(
         &self,
         channel: &'a str,
         first: Option<&'a str>,
@@ -200,18 +200,18 @@ impl Commands {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct Command {
+pub(crate) struct Command {
     /// Key for the command.
-    pub key: db::Key,
+    pub(crate) key: db::Key,
     /// Pattern to use for matching command.
-    pub pattern: db::Pattern,
+    pub(crate) pattern: db::Pattern,
     /// Count associated with the command.
     #[serde(serialize_with = "serialize_count")]
     count: Arc<AtomicUsize>,
-    pub template: template::Template,
+    pub(crate) template: template::Template,
     vars: HashSet<String>,
-    pub group: Option<String>,
-    pub disabled: bool,
+    pub(crate) group: Option<String>,
+    pub(crate) disabled: bool,
 }
 
 /// Serialize the atomic count.
@@ -227,10 +227,10 @@ where
 }
 
 impl Command {
-    pub const NAME: &'static str = "command";
+    pub(crate) const NAME: &'static str = "command";
 
     /// Load a command from the database.
-    pub fn from_db(command: &db::models::Command) -> Result<Command, Error> {
+    pub(crate) fn from_db(command: &db::models::Command) -> Result<Command, Error> {
         let template = template::Template::compile(&command.text)
             .with_context(|| anyhow!("failed to compile command `{:?}` from db", command))?;
 
@@ -252,12 +252,12 @@ impl Command {
     }
 
     /// Get the currenct count.
-    pub fn count(&self) -> i32 {
+    pub(crate) fn count(&self) -> i32 {
         self.count.load(Ordering::SeqCst) as i32
     }
 
     /// Render the given command.
-    pub fn render<T>(&self, data: &T) -> Result<String, Error>
+    pub(crate) fn render<T>(&self, data: &T) -> Result<String, Error>
     where
         T: serde::Serialize,
     {
@@ -265,7 +265,7 @@ impl Command {
     }
 
     /// Test if the rendered command has the given var.
-    pub fn has_var(&self, var: &str) -> bool {
+    pub(crate) fn has_var(&self, var: &str) -> bool {
         self.vars.contains(var)
     }
 }

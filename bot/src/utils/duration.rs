@@ -7,47 +7,47 @@ use std::time;
 ///
 /// Stored field is in seconds.
 #[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Duration(u64);
+pub(crate) struct Duration(u64);
 
 impl Duration {
     /// Construct a duration from the given number of seconds.
-    pub fn seconds(seconds: u64) -> Self {
+    pub(crate) fn seconds(seconds: u64) -> Self {
         Duration(seconds)
     }
 
     /// Construct a duration from the given number of hours.
-    pub fn hours(hours: u64) -> Self {
+    pub(crate) fn hours(hours: u64) -> Self {
         Duration(hours * 3600)
     }
 
     /// Test if the duration is empty.
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.0 == 0
     }
 
     /// Convert into a standard duration.
     #[inline]
-    pub fn as_std(&self) -> time::Duration {
+    pub(crate) fn as_std(&self) -> time::Duration {
         time::Duration::from_secs(self.0)
     }
 
     /// Convert into a chrono duration.
     #[inline]
-    pub fn as_chrono(&self) -> chrono::Duration {
+    pub(crate) fn as_chrono(&self) -> chrono::Duration {
         chrono::Duration::seconds(self.0 as i64)
     }
 
     /// Subtract another duration from this duration.
     ///
     /// This will saturate on overflows.
-    pub fn saturating_sub(&self, other: Self) -> Self {
+    pub(crate) fn saturating_sub(&self, other: Self) -> Self {
         Duration(self.0.saturating_sub(other.0))
     }
 
     /// Convert into a digital digit representation.
     ///
     /// Like `01:30:44`.
-    pub fn as_digital(&self) -> String {
+    pub(crate) fn as_digital(&self) -> String {
         let mut parts = Vec::new();
 
         let p = utils::partition(time::Duration::from_secs(self.0));
@@ -69,7 +69,7 @@ impl Duration {
     }
 
     /// Convert into seconds.
-    pub fn num_seconds(&self) -> u64 {
+    pub(crate) fn num_seconds(&self) -> u64 {
         self.0
     }
 }
@@ -182,7 +182,7 @@ mod tests {
     use super::Duration;
 
     #[test]
-    pub fn test_parse_duration() {
+    pub(crate) fn test_parse_duration() {
         assert_eq!(Duration::seconds(1), str::parse("1s").expect("duration"));
         assert_eq!(Duration::seconds(2), str::parse("2s").expect("duration"));
         assert_eq!(
@@ -192,7 +192,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_format_duration() {
+    pub(crate) fn test_format_duration() {
         assert_eq!("0s", Duration::default().to_string());
         assert_eq!("2s", Duration::seconds(2).to_string());
         assert_eq!("2m1s", Duration::seconds(2 * 60 + 1).to_string());

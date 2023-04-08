@@ -16,19 +16,19 @@ use tokio::time::{self, Interval, Sleep};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::Instrument;
 
-pub use self::model::*;
+pub(crate) use self::model::*;
 
 const URL: &str = "wss://pubsub-edge.twitch.tv";
 
 /// Websocket pub/sub integration for twitch.
 #[derive(Clone)]
-pub struct TwitchPubSub {
+pub(crate) struct TwitchPubSub {
     inner: Arc<Inner>,
 }
 
 impl TwitchPubSub {
     /// Subscribe for redemptions.
-    pub fn redemptions(&self) -> TwitchStream<Redemption> {
+    pub(crate) fn redemptions(&self) -> TwitchStream<Redemption> {
         use tokio::sync::broadcast::error::RecvError;
 
         let mut s = self.inner.redemptions.subscribe();
@@ -47,7 +47,7 @@ impl TwitchPubSub {
     }
 }
 
-pub struct TwitchStream<T> {
+pub(crate) struct TwitchStream<T> {
     stream: BoxStream<'static, T>,
 }
 
@@ -105,7 +105,7 @@ impl Client {
 
 /// Connect to the pub/sub websocket once available.
 #[tracing::instrument(skip_all)]
-pub fn connect(
+pub(crate) fn connect(
     settings: &crate::Settings,
     injector: &Injector,
 ) -> impl Future<Output = Result<()>> {
@@ -459,67 +459,67 @@ mod model {
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(tag = "type")]
-    pub enum Message {
+    pub(crate) enum Message {
         #[serde(rename = "reward-redeemed")]
         RewardRedeemed(Data<RewardRedeemed>),
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct User {
-        pub id: String,
-        pub login: String,
-        pub display_name: String,
+    pub(crate) struct User {
+        pub(crate) id: String,
+        pub(crate) login: String,
+        pub(crate) display_name: String,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Image {
-        pub url_1x: String,
-        pub url_2x: String,
-        pub url_4x: String,
+    pub(crate) struct Image {
+        pub(crate) url_1x: String,
+        pub(crate) url_2x: String,
+        pub(crate) url_4x: String,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Reward {
-        pub id: String,
-        pub channel_id: String,
-        pub title: String,
-        pub prompt: String,
-        pub cost: i64,
-        pub is_user_input_required: bool,
-        pub is_sub_only: bool,
+    pub(crate) struct Reward {
+        pub(crate) id: String,
+        pub(crate) channel_id: String,
+        pub(crate) title: String,
+        pub(crate) prompt: String,
+        pub(crate) cost: i64,
+        pub(crate) is_user_input_required: bool,
+        pub(crate) is_sub_only: bool,
         #[serde(default)]
-        pub image: Option<Image>,
-        pub default_image: Image,
-        pub background_color: String,
-        pub is_enabled: bool,
-        pub is_paused: bool,
-        pub is_in_stock: bool,
-        pub max_per_stream: MaxPerStream,
-        pub should_redemptions_skip_request_queue: bool,
+        pub(crate) image: Option<Image>,
+        pub(crate) default_image: Image,
+        pub(crate) background_color: String,
+        pub(crate) is_enabled: bool,
+        pub(crate) is_paused: bool,
+        pub(crate) is_in_stock: bool,
+        pub(crate) max_per_stream: MaxPerStream,
+        pub(crate) should_redemptions_skip_request_queue: bool,
         #[serde(default)]
-        pub template_id: Option<serde_json::Value>,
-        pub updated_for_indicator_at: DateTime<Utc>,
-        pub max_per_user_per_stream: MaxPerUserPerStream,
-        pub global_cooldown: GlobalCooldown,
+        pub(crate) template_id: Option<serde_json::Value>,
+        pub(crate) updated_for_indicator_at: DateTime<Utc>,
+        pub(crate) max_per_user_per_stream: MaxPerUserPerStream,
+        pub(crate) global_cooldown: GlobalCooldown,
         #[serde(default)]
-        pub redemptions_redeemed_current_stream: Option<serde_json::Value>,
-        pub cooldown_expires_at: Option<serde_json::Value>,
+        pub(crate) redemptions_redeemed_current_stream: Option<serde_json::Value>,
+        pub(crate) cooldown_expires_at: Option<serde_json::Value>,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct Redemption {
-        pub id: String,
-        pub user: User,
-        pub channel_id: String,
-        pub redeemed_at: DateTime<Utc>,
-        pub reward: Reward,
+    pub(crate) struct Redemption {
+        pub(crate) id: String,
+        pub(crate) user: User,
+        pub(crate) channel_id: String,
+        pub(crate) redeemed_at: DateTime<Utc>,
+        pub(crate) reward: Reward,
         #[serde(default)]
-        pub user_input: Option<String>,
-        pub status: Status,
+        pub(crate) user_input: Option<String>,
+        pub(crate) status: Status,
     }
 
     #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-    pub enum Status {
+    pub(crate) enum Status {
         #[serde(rename = "FULFILLED")]
         Fulfilled,
         #[serde(rename = "UNFULFILLED")]
@@ -529,26 +529,26 @@ mod model {
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct MaxPerStream {
-        pub is_enabled: bool,
-        pub max_per_stream: u64,
+    pub(crate) struct MaxPerStream {
+        pub(crate) is_enabled: bool,
+        pub(crate) max_per_stream: u64,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct MaxPerUserPerStream {
-        pub is_enabled: bool,
-        pub max_per_user_per_stream: u64,
+    pub(crate) struct MaxPerUserPerStream {
+        pub(crate) is_enabled: bool,
+        pub(crate) max_per_user_per_stream: u64,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct GlobalCooldown {
-        pub is_enabled: bool,
-        pub global_cooldown_seconds: u64,
+    pub(crate) struct GlobalCooldown {
+        pub(crate) is_enabled: bool,
+        pub(crate) global_cooldown_seconds: u64,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct RewardRedeemed {
-        pub timestamp: String,
-        pub redemption: Redemption,
+    pub(crate) struct RewardRedeemed {
+        pub(crate) timestamp: String,
+        pub(crate) redemption: Redemption,
     }
 }

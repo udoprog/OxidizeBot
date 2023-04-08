@@ -33,7 +33,7 @@ const ICON_MSG_ID: UINT = WM_USER + 1;
 thread_local!(static WININFO_STASH: RefCell<Option<WindowsLoopData>> = RefCell::new(None));
 
 /// Copy a wide string from a source to a destination.
-pub fn copy_wstring(dest: &mut [u16], source: &str) {
+pub(crate) fn copy_wstring(dest: &mut [u16], source: &str) {
     let source = source.to_wide_null();
     let len = usize::min(source.len(), dest.len());
     dest[..len].copy_from_slice(&source[..len]);
@@ -41,16 +41,16 @@ pub fn copy_wstring(dest: &mut [u16], source: &str) {
 
 #[derive(Clone)]
 struct WindowInfo {
-    pub hwnd: HWND,
-    pub hinstance: HINSTANCE,
-    pub hmenu: HMENU,
+    pub(crate) hwnd: HWND,
+    pub(crate) hinstance: HINSTANCE,
+    pub(crate) hmenu: HMENU,
 }
 
 unsafe impl Send for WindowInfo {}
 unsafe impl Sync for WindowInfo {}
 
 #[derive(Debug)]
-pub enum Event {
+pub(crate) enum Event {
     /// A meny item was clicked.
     MenuClicked(u32),
     /// Shutdown was requested.
@@ -63,8 +63,8 @@ pub enum Event {
 
 #[derive(Clone)]
 struct WindowsLoopData {
-    pub info: WindowInfo,
-    pub events_tx: mpsc::UnboundedSender<Event>,
+    pub(crate) info: WindowInfo,
+    pub(crate) events_tx: mpsc::UnboundedSender<Event>,
 }
 
 unsafe extern "system" fn window_proc(
@@ -262,7 +262,7 @@ unsafe fn run_loop() {
 }
 
 /// A windows application window.
-pub struct Window {
+pub(crate) struct Window {
     info: WindowInfo,
     shutdown_rx: Fuse<oneshot::Receiver<()>>,
     events_rx: mpsc::UnboundedReceiver<Event>,
@@ -271,7 +271,7 @@ pub struct Window {
 
 impl Window {
     /// Construct a new window.
-    pub async fn new(name: String) -> Result<Window, io::Error> {
+    pub(crate) async fn new(name: String) -> Result<Window, io::Error> {
         let (tx, rx) = oneshot::channel();
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let (events_tx, events_rx) = mpsc::unbounded_channel();
@@ -322,11 +322,11 @@ impl Window {
     }
 
     /// Tick the window a single event cycle.
-    pub fn tick(&mut self) -> TickFuture<'_> {
+    pub(crate) fn tick(&mut self) -> TickFuture<'_> {
         TickFuture { window: self }
     }
 
-    pub fn quit(&mut self) {
+    pub(crate) fn quit(&mut self) {
         unsafe {
             winuser::PostMessageW(self.info.hwnd, WM_DESTROY, 0 as WPARAM, 0 as LPARAM);
         }
@@ -337,7 +337,7 @@ impl Window {
     }
 
     /// Set the tooltip we get when hovering over the systray icon.
-    pub fn set_tooltip(&self, tooltip: &str) -> Result<(), Error> {
+    pub(crate) fn set_tooltip(&self, tooltip: &str) -> Result<(), Error> {
         self.raw_set_tooltip(tooltip)
             .with_context(|| anyhow!("failed to set tooltip `{}`", tooltip))
             .map_err(Error::from)
@@ -365,7 +365,7 @@ impl Window {
     }
 
     /// Add a menu entry.
-    pub fn add_menu_entry(
+    pub(crate) fn add_menu_entry(
         &self,
         item_idx: u32,
         item_name: &str,
@@ -406,7 +406,7 @@ impl Window {
     }
 
     /// Add a menu separator with the associated index.
-    pub fn add_menu_separator(&self, item_idx: u32) -> Result<(), Error> {
+    pub(crate) fn add_menu_separator(&self, item_idx: u32) -> Result<(), Error> {
         self.raw_add_menu_separator(item_idx)
             .with_context(|| anyhow!("failed to add menu separator"))
             .map_err(Error::from)
@@ -430,7 +430,7 @@ impl Window {
     }
 
     /// Send a notification.
-    pub fn send_notification(&self, n: Notification) -> Result<(), io::Error> {
+    pub(crate) fn send_notification(&self, n: Notification) -> Result<(), io::Error> {
         let mut nid = new_nid(self.info.hwnd);
         nid.uFlags = shellapi::NIF_INFO;
 
@@ -466,7 +466,7 @@ impl Window {
     }
 
     /// Set an icon from a resource.
-    pub fn set_icon_from_resource(&self, resource_name: &str) -> Result<(), io::Error> {
+    pub(crate) fn set_icon_from_resource(&self, resource_name: &str) -> Result<(), io::Error> {
         let resource_name = resource_name.to_wide_null();
 
         let icon = unsafe {
@@ -488,7 +488,7 @@ impl Window {
     }
 
     /// Set the process icon from a file.
-    pub fn set_icon_from_file(&self, icon_file: &str) -> Result<(), io::Error> {
+    pub(crate) fn set_icon_from_file(&self, icon_file: &str) -> Result<(), io::Error> {
         let wstr_icon_file = icon_file.to_wide_null();
 
         let hicon = unsafe {
@@ -512,7 +512,7 @@ impl Window {
     }
 
     /// Set an icon from a buffer.
-    pub fn set_icon_from_buffer(
+    pub(crate) fn set_icon_from_buffer(
         &self,
         buffer: &[u8],
         width: u32,
@@ -611,7 +611,7 @@ impl Window {
     }
 }
 
-pub struct TickFuture<'a> {
+pub(crate) struct TickFuture<'a> {
     window: &'a mut Window,
 }
 

@@ -17,11 +17,11 @@ use tokio::sync;
 
 #[derive(Debug, Error)]
 #[error("Command failed with: {0}")]
-pub struct Respond(pub(crate) Cow<'static, str>);
+pub(crate) struct Respond(pub(crate) Cow<'static, str>);
 
 /// An opaque identifier for a hook that has been inserted.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct HookId(usize);
+pub(crate) struct HookId(usize);
 
 impl fmt::Display for HookId {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -39,7 +39,7 @@ impl str::FromStr for HookId {
 
 #[async_trait]
 /// The handler trait for a given command.
-pub trait Handler
+pub(crate) trait Handler
 where
     Self: 'static + Send + Sync,
 {
@@ -54,7 +54,7 @@ where
 
 #[async_trait]
 /// A trait for peeking into chat messages.
-pub trait MessageHook: std::any::Any + Send + Sync {
+pub(crate) trait MessageHook: std::any::Any + Send + Sync {
     /// Peek the given message.
     async fn peek(&self, user: &irc::User, m: &str) -> Result<()>;
 }
@@ -72,7 +72,7 @@ pub(crate) struct ContextInner {
 
 /// Context for a single command invocation.
 #[derive(Clone)]
-pub struct Context {
+pub(crate) struct Context {
     pub(crate) api_url: Arc<Option<String>>,
     pub(crate) user: irc::User,
     pub(crate) it: utils::Words,
@@ -81,22 +81,22 @@ pub struct Context {
 
 impl Context {
     /// Access the last known API url.
-    pub fn api_url(&self) -> Option<&str> {
+    pub(crate) fn api_url(&self) -> Option<&str> {
         self.api_url.as_deref()
     }
 
     /// Get the channel.
-    pub fn channel(&self) -> &str {
+    pub(crate) fn channel(&self) -> &str {
         self.inner.sender.channel()
     }
 
     /// Signal that the bot should try to shut down.
-    pub async fn restart(&self) -> bool {
+    pub(crate) async fn restart(&self) -> bool {
         self.inner.restart.restart().await
     }
 
     /// Setup the specified hook.
-    pub async fn insert_hook<H>(&self, hook: H) -> HookId
+    pub(crate) async fn insert_hook<H>(&self, hook: H) -> HookId
     where
         H: MessageHook,
     {
@@ -106,7 +106,7 @@ impl Context {
     }
 
     /// Setup the specified hook.
-    pub async fn remove_hook(&self, id: HookId) {
+    pub(crate) async fn remove_hook(&self, id: HookId) {
         let mut hooks = self.inner.message_hooks.write().await;
 
         if hooks.contains(id.0) {
@@ -115,7 +115,7 @@ impl Context {
     }
 
     /// Verify that the current user has the associated scope.
-    pub async fn check_scope(&self, scope: Scope) -> Result<()> {
+    pub(crate) async fn check_scope(&self, scope: Scope) -> Result<()> {
         if !self.user.has_scope(scope).await {
             respond_bail!("Do you think this is a democracy? LUL");
         }
@@ -143,12 +143,12 @@ impl Context {
     }
 
     /// Respond to the user with a message.
-    pub async fn respond(&self, m: impl fmt::Display) {
+    pub(crate) async fn respond(&self, m: impl fmt::Display) {
         self.user.respond(m).await;
     }
 
     /// Render an iterable of results, that implements display.
-    pub async fn respond_lines<I>(&self, results: I, empty: &str)
+    pub(crate) async fn respond_lines<I>(&self, results: I, empty: &str)
     where
         I: IntoIterator,
         I::Item: fmt::Display,
@@ -157,22 +157,22 @@ impl Context {
     }
 
     /// Send a privmsg to the channel.
-    pub async fn privmsg(&self, m: impl fmt::Display) {
+    pub(crate) async fn privmsg(&self, m: impl fmt::Display) {
         self.inner.sender.privmsg(m).await;
     }
 
     /// Get the next argument.
-    pub fn next(&mut self) -> Option<String> {
+    pub(crate) fn next(&mut self) -> Option<String> {
         self.it.next()
     }
 
     /// Get the rest of the commandline.
-    pub fn rest(&self) -> &str {
+    pub(crate) fn rest(&self) -> &str {
         self.it.rest()
     }
 
     /// Take the next parameter and parse as the given type.
-    pub fn next_parse_optional<T>(&mut self) -> Result<Option<T>>
+    pub(crate) fn next_parse_optional<T>(&mut self) -> Result<Option<T>>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
@@ -189,7 +189,7 @@ impl Context {
     }
 
     /// Take the next parameter and parse as the given type.
-    pub fn next_parse<T, M>(&mut self, m: M) -> Result<T>
+    pub(crate) fn next_parse<T, M>(&mut self, m: M) -> Result<T>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
@@ -201,7 +201,7 @@ impl Context {
     }
 
     /// Take the rest and parse as the given type.
-    pub fn rest_parse<T, M>(&mut self, m: M) -> Result<T>
+    pub(crate) fn rest_parse<T, M>(&mut self, m: M) -> Result<T>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
@@ -221,7 +221,7 @@ impl Context {
     }
 
     /// Take the next parameter.
-    pub fn next_str<M>(&mut self, m: M) -> Result<String>
+    pub(crate) fn next_str<M>(&mut self, m: M) -> Result<String>
     where
         M: fmt::Display,
     {

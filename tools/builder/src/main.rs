@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use walkdir::WalkDir;
 
-pub struct SignTool {
+pub(crate) struct SignTool {
     root: PathBuf,
     signtool: PathBuf,
     password: String,
@@ -18,7 +18,7 @@ pub struct SignTool {
 
 impl SignTool {
     /// Construct a new signtool signer.
-    pub fn open(root: PathBuf, signtool: PathBuf, password: String) -> Option<Self> {
+    pub(crate) fn open(root: PathBuf, signtool: PathBuf, password: String) -> Option<Self> {
         if !signtool.is_file() {
             return None;
         }
@@ -107,7 +107,7 @@ impl WixBuilder {
         })
     }
 
-    pub fn build(&self, source: &Path, file_version: &str) -> Result<()> {
+    pub(crate) fn build(&self, source: &Path, file_version: &str) -> Result<()> {
         if self.wixobj_path.is_file() {
             return Ok(());
         }
@@ -139,7 +139,7 @@ impl WixBuilder {
     }
 
     /// Link the current project.
-    pub fn link(&self) -> Result<()> {
+    pub(crate) fn link(&self) -> Result<()> {
         if !self.wixobj_path.is_file() {
             bail!("missing: {}", self.wixobj_path.display());
         }
@@ -182,7 +182,7 @@ struct Version {
 
 impl Version {
     /// Open a version by matching it against the given string.
-    pub fn open(version: impl AsRef<str>) -> Result<Option<Version>> {
+    pub(crate) fn open(version: impl AsRef<str>) -> Result<Option<Version>> {
         let version_re = Regex::new(r"^(\d+)\.(\d+)\.(\d+)(-.+\.(\d+))?$")?;
         let version = version.as_ref();
 
@@ -210,7 +210,7 @@ impl Version {
     /// version range.
     ///
     /// The computed patch component must fit within 65535
-    pub fn as_windows_file_version(&self) -> Result<String> {
+    pub(crate) fn as_windows_file_version(&self) -> Result<String> {
         if self.patch > 64 {
             bail!("patch version must not be greater than 64: {}", self.patch);
         }

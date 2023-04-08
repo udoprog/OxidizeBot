@@ -10,41 +10,41 @@ use std::collections::HashMap;
 ///[artist object simplified](https://developer.spotify.com/web-api/object-model/#artist-object-simplified)
 /// Simplified Artist Object
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SimplifiedArtist {
-    pub external_urls: HashMap<String, String>,
-    pub href: Option<String>,
-    pub id: Option<String>,
-    pub name: String,
+pub(crate) struct SimplifiedArtist {
+    pub(crate) external_urls: HashMap<String, String>,
+    pub(crate) href: Option<String>,
+    pub(crate) id: Option<String>,
+    pub(crate) name: String,
     #[serde(rename = "type")]
-    pub _type: Type,
-    pub uri: Option<String>,
+    pub(crate) _type: Type,
+    pub(crate) uri: Option<String>,
 }
 
 ///[artist object full](https://developer.spotify.com/web-api/object-model/#artist-object-full)
 /// Full Artist Object
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FullArtist {
-    pub external_urls: HashMap<String, String>,
-    pub followers: HashMap<String, Option<Value>>,
-    pub genres: Vec<String>,
-    pub href: String,
-    pub id: String,
-    pub images: Vec<Image>,
-    pub name: String,
-    pub popularity: u32,
+pub(crate) struct FullArtist {
+    pub(crate) external_urls: HashMap<String, String>,
+    pub(crate) followers: HashMap<String, Option<Value>>,
+    pub(crate) genres: Vec<String>,
+    pub(crate) href: String,
+    pub(crate) id: String,
+    pub(crate) images: Vec<Image>,
+    pub(crate) name: String,
+    pub(crate) popularity: u32,
     #[serde(rename = "type")]
-    pub _type: Type,
-    pub uri: String,
+    pub(crate) _type: Type,
+    pub(crate) uri: String,
 }
 
 /// Full artist vector
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FullArtists {
-    pub artists: Vec<FullArtist>,
+pub(crate) struct FullArtists {
+    pub(crate) artists: Vec<FullArtist>,
 }
 
 /// Full Artists vector wrapped by cursor-based-page object
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CursorPageFullArtists {
-    pub artists: CursorBasedPage<FullArtist>,
+pub(crate) struct CursorPageFullArtists {
+    pub(crate) artists: CursorBasedPage<FullArtist>,
 }

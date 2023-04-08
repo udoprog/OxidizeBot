@@ -6,8 +6,8 @@ use crate::prelude::*;
 use anyhow::Result;
 
 /// Handler for the !alias command.
-pub struct Handler {
-    pub aliases: injector::Ref<db::Aliases>,
+pub(crate) struct Handler {
+    pub(crate) aliases: injector::Ref<db::Aliases>,
 }
 
 #[async_trait]
@@ -67,7 +67,7 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

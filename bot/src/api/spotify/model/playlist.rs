@@ -11,52 +11,52 @@ use super::user::PublicUser;
 use serde::{Deserialize, Serialize};
 ///[playlist object simplified](https://developer.spotify.com/web-api/object-model/#playlist-object-simplified)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SimplifiedPlaylist {
-    pub collaborative: bool,
-    pub external_urls: HashMap<String, String>,
-    pub href: String,
-    pub id: String,
-    pub images: Vec<Image>,
-    pub name: String,
-    pub owner: PublicUser,
-    pub public: Option<bool>,
-    pub snapshot_id: String,
-    pub tracks: HashMap<String, Value>,
+pub(crate) struct SimplifiedPlaylist {
+    pub(crate) collaborative: bool,
+    pub(crate) external_urls: HashMap<String, String>,
+    pub(crate) href: String,
+    pub(crate) id: String,
+    pub(crate) images: Vec<Image>,
+    pub(crate) name: String,
+    pub(crate) owner: PublicUser,
+    pub(crate) public: Option<bool>,
+    pub(crate) snapshot_id: String,
+    pub(crate) tracks: HashMap<String, Value>,
     #[serde(rename = "type")]
-    pub _type: Type,
-    pub uri: String,
+    pub(crate) _type: Type,
+    pub(crate) uri: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FullPlaylist {
-    pub collaborative: bool,
-    pub description: String,
-    pub external_urls: HashMap<String, String>,
-    pub followers: Option<HashMap<String, Value>>,
-    pub href: String,
-    pub id: String,
-    pub images: Vec<Image>,
-    pub name: String,
-    pub owner: PublicUser,
-    pub public: Option<bool>,
-    pub snapshot_id: String,
-    pub tracks: Page<PlaylistTrack>,
+pub(crate) struct FullPlaylist {
+    pub(crate) collaborative: bool,
+    pub(crate) description: String,
+    pub(crate) external_urls: HashMap<String, String>,
+    pub(crate) followers: Option<HashMap<String, Value>>,
+    pub(crate) href: String,
+    pub(crate) id: String,
+    pub(crate) images: Vec<Image>,
+    pub(crate) name: String,
+    pub(crate) owner: PublicUser,
+    pub(crate) public: Option<bool>,
+    pub(crate) snapshot_id: String,
+    pub(crate) tracks: Page<PlaylistTrack>,
     #[serde(rename = "type")]
-    pub _type: Type,
-    pub uri: String,
+    pub(crate) _type: Type,
+    pub(crate) uri: String,
 }
 
 ///[playlist track object](https://developer.spotify.com/web-api/object-model/#playlist-track-object)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PlaylistTrack {
-    pub added_at: DateTime<Utc>,
-    pub added_by: Option<PublicUser>,
-    pub is_local: bool,
-    pub track: FullTrack,
+pub(crate) struct PlaylistTrack {
+    pub(crate) added_at: DateTime<Utc>,
+    pub(crate) added_by: Option<PublicUser>,
+    pub(crate) is_local: bool,
+    pub(crate) track: FullTrack,
 }
 ///[get list featured playlists](https://developer.spotify.com/web-api/get-list-featured-playlists/)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FeaturedPlaylists {
-    pub message: String,
-    pub playlists: Page<SimplifiedPlaylist>,
+pub(crate) struct FeaturedPlaylists {
+    pub(crate) message: String,
+    pub(crate) playlists: Page<SimplifiedPlaylist>,
 }

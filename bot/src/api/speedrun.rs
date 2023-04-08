@@ -11,14 +11,14 @@ const V1_URL: &str = "https://speedrun.com/api/v1";
 
 /// API integration.
 #[derive(Clone, Debug)]
-pub struct Speedrun {
+pub(crate) struct Speedrun {
     client: Client,
     v1_url: Url,
 }
 
 impl Speedrun {
     /// Create a new API integration.
-    pub fn new() -> Result<Speedrun> {
+    pub(crate) fn new() -> Result<Speedrun> {
         Ok(Speedrun {
             client: Client::new(),
             v1_url: str::parse::<Url>(V1_URL)?,
@@ -43,7 +43,7 @@ impl Speedrun {
     }
 
     /// Fetch the user by id.
-    pub async fn user_by_id(&self, user: &str) -> Result<Option<User>> {
+    pub(crate) async fn user_by_id(&self, user: &str) -> Result<Option<User>> {
         let req = self.v1(Method::GET, &["users", user]);
         let data: Option<Data<User>> = req
             .execute()
@@ -54,7 +54,7 @@ impl Speedrun {
     }
 
     /// Fetch the user by id.
-    pub async fn user_personal_bests(
+    pub(crate) async fn user_personal_bests(
         &self,
         user_id: &str,
         embeds: &Embeds,
@@ -74,7 +74,7 @@ impl Speedrun {
     }
 
     /// Get a game by id.
-    pub async fn game_by_id(&self, game: &str) -> Result<Option<Game>> {
+    pub(crate) async fn game_by_id(&self, game: &str) -> Result<Option<Game>> {
         let req = self.v1(Method::GET, &["games", game]);
         let data: Option<Data<Game>> = req
             .execute()
@@ -85,7 +85,7 @@ impl Speedrun {
     }
 
     /// Get game categories by game id.
-    pub async fn game_categories_by_id(
+    pub(crate) async fn game_categories_by_id(
         &self,
         game_id: &str,
         embeds: &Embeds,
@@ -105,7 +105,7 @@ impl Speedrun {
     }
 
     /// Get game levels.
-    pub async fn game_levels(&self, game_id: &str) -> Result<Option<Vec<Level>>> {
+    pub(crate) async fn game_levels(&self, game_id: &str) -> Result<Option<Vec<Level>>> {
         let request = self.v1(Method::GET, &["games", game_id, "levels"]);
         let data: Option<Data<Vec<Level>>> = request
             .execute()
@@ -116,7 +116,7 @@ impl Speedrun {
     }
 
     /// Get all variables associated with a category.
-    pub async fn category_variables(&self, category: &str) -> Result<Option<Vec<Variable>>> {
+    pub(crate) async fn category_variables(&self, category: &str) -> Result<Option<Vec<Variable>>> {
         let req = self.v1(Method::GET, &["categories", category, "variables"]);
         let data: Option<Data<Vec<Variable>>> = req
             .execute()
@@ -127,7 +127,7 @@ impl Speedrun {
     }
 
     /// Get all records associated with a category.
-    pub async fn category_records_by_id(
+    pub(crate) async fn category_records_by_id(
         &self,
         category_id: &str,
         top: u32,
@@ -143,7 +143,7 @@ impl Speedrun {
     }
 
     /// Get all records associated with a category.
-    pub async fn leaderboard(
+    pub(crate) async fn leaderboard(
         &self,
         game_id: &str,
         category_id: &str,
@@ -176,7 +176,7 @@ impl Speedrun {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct Names {
+pub(crate) struct Names {
     international: String,
     #[serde(default)]
     japanese: Option<String>,
@@ -186,7 +186,7 @@ pub struct Names {
 
 impl Names {
     /// Get as printable name.
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         match self.japanese.as_ref() {
             Some(name) => name,
             None => &self.international,
@@ -194,7 +194,7 @@ impl Names {
     }
 
     /// Check if the given name matches any of the provided names.
-    pub fn matches(&self, pattern: &str) -> bool {
+    pub(crate) fn matches(&self, pattern: &str) -> bool {
         if self.international.to_lowercase().contains(pattern) {
             return true;
         }
@@ -216,18 +216,18 @@ impl Names {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
-pub struct Variables(BTreeMap<String, String>);
+pub(crate) struct Variables(BTreeMap<String, String>);
 
 impl Variables {
     /// Insert a variable to query for.
-    pub fn insert(&mut self, key: impl AsRef<str>, value: impl AsRef<str>) {
+    pub(crate) fn insert(&mut self, key: impl AsRef<str>, value: impl AsRef<str>) {
         self.0
             .insert(key.as_ref().to_string(), value.as_ref().to_string());
     }
 }
 
 #[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, serde::Serialize)]
-pub enum Embed {
+pub(crate) enum Embed {
     Category,
     Game,
     Players,
@@ -236,7 +236,7 @@ pub enum Embed {
 
 impl Embed {
     /// Get the id of this embed.
-    pub fn id(&self) -> &'static str {
+    pub(crate) fn id(&self) -> &'static str {
         use self::Embed::*;
 
         match *self {
@@ -249,11 +249,11 @@ impl Embed {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize)]
-pub struct Embeds(BTreeSet<Embed>);
+pub(crate) struct Embeds(BTreeSet<Embed>);
 
 impl Embeds {
     /// Convert into a query.
-    pub fn to_query(&self) -> Option<String> {
+    pub(crate) fn to_query(&self) -> Option<String> {
         let mut it = self.0.iter().peekable();
 
         it.peek()?;
@@ -272,21 +272,21 @@ impl Embeds {
     }
 
     /// Add the given embed parameter.
-    pub fn push(&mut self, embed: Embed) {
+    pub(crate) fn push(&mut self, embed: Embed) {
         self.0.insert(embed);
     }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case", tag = "style")]
-pub struct Color {
+pub(crate) struct Color {
     light: String,
     dark: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "style")]
-pub enum NameStyle {
+pub(crate) enum NameStyle {
     #[serde(rename = "gradient", rename_all = "kebab-case")]
     Gradient { color_from: Color, color_to: Color },
     #[serde(rename = "solid", rename_all = "kebab-case")]
@@ -295,66 +295,66 @@ pub enum NameStyle {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Country {
-    pub code: String,
-    pub names: Names,
+pub(crate) struct Country {
+    pub(crate) code: String,
+    pub(crate) names: Names,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Location {
-    pub country: Country,
+pub(crate) struct Location {
+    pub(crate) country: Country,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Uri {
-    pub uri: String,
+pub(crate) struct Uri {
+    pub(crate) uri: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Link {
-    pub rel: String,
-    pub uri: String,
+pub(crate) struct Link {
+    pub(crate) rel: String,
+    pub(crate) uri: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Asset {
-    pub uri: String,
-    pub width: Option<u32>,
-    pub height: Option<u32>,
+pub(crate) struct Asset {
+    pub(crate) uri: String,
+    pub(crate) width: Option<u32>,
+    pub(crate) height: Option<u32>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct User {
-    pub id: String,
-    pub names: Names,
-    pub weblink: String,
-    pub name_style: NameStyle,
-    pub role: String,
-    pub signup: DateTime<Utc>,
+pub(crate) struct User {
+    pub(crate) id: String,
+    pub(crate) names: Names,
+    pub(crate) weblink: String,
+    pub(crate) name_style: NameStyle,
+    pub(crate) role: String,
+    pub(crate) signup: DateTime<Utc>,
     #[serde(default)]
-    pub location: Option<Location>,
+    pub(crate) location: Option<Location>,
     #[serde(default)]
-    pub twitch: Option<Uri>,
+    pub(crate) twitch: Option<Uri>,
     #[serde(default)]
-    pub hitbox: Option<Uri>,
+    pub(crate) hitbox: Option<Uri>,
     #[serde(default)]
-    pub youtube: Option<Uri>,
+    pub(crate) youtube: Option<Uri>,
     #[serde(default)]
-    pub twitter: Option<Uri>,
+    pub(crate) twitter: Option<Uri>,
     #[serde(default)]
-    pub speedrunslive: Option<Uri>,
+    pub(crate) speedrunslive: Option<Uri>,
     #[serde(default)]
-    pub links: Vec<Link>,
+    pub(crate) links: Vec<Link>,
 }
 
 impl User {
     /// Check if the given user matches the given string.
-    pub fn matches(&self, s: &str) -> bool {
+    pub(crate) fn matches(&self, s: &str) -> bool {
         if self.names.matches(s) {
             return true;
         }
@@ -367,7 +367,7 @@ impl User {
     }
 
     /// Test if Twitch matches.
-    pub fn twitch_matches(&self, s: &str) -> bool {
+    pub(crate) fn twitch_matches(&self, s: &str) -> bool {
         let twitch = match self.twitch.as_ref() {
             Some(twitch) => twitch,
             None => return false,
@@ -394,15 +394,15 @@ impl User {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Guest {
-    pub name: String,
+pub(crate) struct Guest {
+    pub(crate) name: String,
     #[serde(default)]
-    pub links: Vec<Link>,
+    pub(crate) links: Vec<Link>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "rel")]
-pub enum Players {
+pub(crate) enum Players {
     #[serde(rename = "user")]
     User(Box<User>),
     #[serde(rename = "guest")]
@@ -411,24 +411,24 @@ pub enum Players {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Videos {
+pub(crate) struct Videos {
     #[serde(default)]
-    pub links: Vec<Uri>,
+    pub(crate) links: Vec<Uri>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Status {
-    pub status: String,
+pub(crate) struct Status {
+    pub(crate) status: String,
     #[serde(default)]
-    pub examiner: Option<String>,
+    pub(crate) examiner: Option<String>,
     #[serde(default)]
-    pub verify_date: Option<DateTime<Utc>>,
+    pub(crate) verify_date: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "rel")]
-pub enum RelatedPlayer {
+pub(crate) enum RelatedPlayer {
     #[serde(rename = "user")]
     Player(RelatedUser),
     #[serde(rename = "guest")]
@@ -437,211 +437,211 @@ pub enum RelatedPlayer {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct RelatedUser {
-    pub id: String,
-    pub uri: String,
+pub(crate) struct RelatedUser {
+    pub(crate) id: String,
+    pub(crate) uri: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct RelatedGuest {
-    pub name: String,
-    pub uri: String,
+pub(crate) struct RelatedGuest {
+    pub(crate) name: String,
+    pub(crate) uri: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct Times {
-    pub primary: PtDuration,
-    pub primary_t: serde_json::Number,
-    pub realtime: Option<PtDuration>,
-    pub realtime_t: serde_json::Number,
-    pub realtime_noloads: Option<PtDuration>,
-    pub realtime_noloads_t: serde_json::Number,
-    pub ingame: Option<PtDuration>,
-    pub ingame_t: serde_json::Number,
+pub(crate) struct Times {
+    pub(crate) primary: PtDuration,
+    pub(crate) primary_t: serde_json::Number,
+    pub(crate) realtime: Option<PtDuration>,
+    pub(crate) realtime_t: serde_json::Number,
+    pub(crate) realtime_noloads: Option<PtDuration>,
+    pub(crate) realtime_noloads_t: serde_json::Number,
+    pub(crate) ingame: Option<PtDuration>,
+    pub(crate) ingame_t: serde_json::Number,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct System {
+pub(crate) struct System {
     #[serde(default)]
-    pub platform: Option<String>,
-    pub emulated: bool,
+    pub(crate) platform: Option<String>,
+    pub(crate) emulated: bool,
     #[serde(default)]
-    pub region: Option<String>,
+    pub(crate) region: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct Splits {
-    pub rel: String,
-    pub uri: String,
-}
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct RunInfo {
-    pub id: String,
-    pub weblink: String,
-    pub game: String,
-    #[serde(default)]
-    pub level: Option<String>,
-    pub category: String,
-    #[serde(default)]
-    pub videos: Option<Videos>,
-    #[serde(default)]
-    pub comment: Option<String>,
-    pub status: Status,
-    #[serde(default)]
-    pub players: Vec<RelatedPlayer>,
-    #[serde(default)]
-    pub date: Option<NaiveDate>,
-    #[serde(default)]
-    pub submitted: Option<DateTime<Utc>>,
-    pub times: Times,
-    pub system: System,
-    pub splits: Option<Splits>,
-    #[serde(default)]
-    pub values: HashMap<String, String>,
+pub(crate) struct Splits {
+    pub(crate) rel: String,
+    pub(crate) uri: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Run {
-    pub place: u32,
-    pub run: RunInfo,
+pub(crate) struct RunInfo {
+    pub(crate) id: String,
+    pub(crate) weblink: String,
+    pub(crate) game: String,
+    #[serde(default)]
+    pub(crate) level: Option<String>,
+    pub(crate) category: String,
+    #[serde(default)]
+    pub(crate) videos: Option<Videos>,
+    #[serde(default)]
+    pub(crate) comment: Option<String>,
+    pub(crate) status: Status,
+    #[serde(default)]
+    pub(crate) players: Vec<RelatedPlayer>,
+    #[serde(default)]
+    pub(crate) date: Option<NaiveDate>,
+    #[serde(default)]
+    pub(crate) submitted: Option<DateTime<Utc>>,
+    pub(crate) times: Times,
+    pub(crate) system: System,
+    pub(crate) splits: Option<Splits>,
+    #[serde(default)]
+    pub(crate) values: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct Run {
+    pub(crate) place: u32,
+    pub(crate) run: RunInfo,
     /// Annotated information on players, if embed=game was requested.
     #[serde(default)]
-    pub game: Option<Data<Game>>,
+    pub(crate) game: Option<Data<Game>>,
     /// Annotated information on players, if embed=category was requested.
     #[serde(default)]
-    pub category: Option<Data<Category>>,
+    pub(crate) category: Option<Data<Category>>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct VariableFlags {
+pub(crate) struct VariableFlags {
     #[serde(default)]
-    pub miscellaneous: Option<bool>,
+    pub(crate) miscellaneous: Option<bool>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct VariableValue {
-    pub label: String,
-    pub rule: Option<String>,
+pub(crate) struct VariableValue {
+    pub(crate) label: String,
+    pub(crate) rule: Option<String>,
     #[serde(default)]
-    pub flags: VariableFlags,
+    pub(crate) flags: VariableFlags,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct VariableValues {
+pub(crate) struct VariableValues {
     #[serde(rename = "_note")]
-    pub note: Option<String>,
+    pub(crate) note: Option<String>,
     #[serde(default)]
-    pub choices: HashMap<String, String>,
+    pub(crate) choices: HashMap<String, String>,
     #[serde(default)]
-    pub values: HashMap<String, VariableValue>,
+    pub(crate) values: HashMap<String, VariableValue>,
     #[serde(default)]
-    pub default: Option<String>,
+    pub(crate) default: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Variable {
-    pub id: String,
-    pub name: String,
+pub(crate) struct Variable {
+    pub(crate) id: String,
+    pub(crate) name: String,
     #[serde(default)]
-    pub category: Option<String>,
-    pub scope: Scope,
-    pub mandatory: bool,
-    pub user_defined: bool,
-    pub obsoletes: bool,
-    pub values: VariableValues,
-    pub is_subcategory: bool,
+    pub(crate) category: Option<String>,
+    pub(crate) scope: Scope,
+    pub(crate) mandatory: bool,
+    pub(crate) user_defined: bool,
+    pub(crate) obsoletes: bool,
+    pub(crate) values: VariableValues,
+    pub(crate) is_subcategory: bool,
     #[serde(default)]
-    pub links: Vec<Link>,
+    pub(crate) links: Vec<Link>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct GameRecord {
-    pub weblink: String,
-    pub game: String,
-    pub category: String,
+pub(crate) struct GameRecord {
+    pub(crate) weblink: String,
+    pub(crate) game: String,
+    pub(crate) category: String,
     #[serde(default)]
-    pub level: Option<String>,
+    pub(crate) level: Option<String>,
     #[serde(default)]
-    pub platform: Option<String>,
+    pub(crate) platform: Option<String>,
     #[serde(default)]
-    pub region: Option<String>,
+    pub(crate) region: Option<String>,
     #[serde(default)]
-    pub emulators: serde_json::Value,
-    pub video_only: bool,
+    pub(crate) emulators: serde_json::Value,
+    pub(crate) video_only: bool,
     #[serde(default)]
-    pub timing: serde_json::Value,
+    pub(crate) timing: serde_json::Value,
     #[serde(default)]
-    pub values: serde_json::Value,
+    pub(crate) values: serde_json::Value,
     #[serde(default)]
-    pub runs: Vec<Run>,
+    pub(crate) runs: Vec<Run>,
     #[serde(default)]
-    pub links: Vec<Link>,
+    pub(crate) links: Vec<Link>,
     /// Annotated information on players, if embed=players was requested.
     #[serde(default)]
-    pub players: Option<Data<Vec<Players>>>,
+    pub(crate) players: Option<Data<Vec<Players>>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct RuleSet {
-    pub show_milliseconds: bool,
-    pub require_verification: bool,
-    pub require_video: bool,
-    pub run_times: Vec<String>,
-    pub default_time: String,
-    pub emulators_allowed: bool,
+pub(crate) struct RuleSet {
+    pub(crate) show_milliseconds: bool,
+    pub(crate) require_verification: bool,
+    pub(crate) require_video: bool,
+    pub(crate) run_times: Vec<String>,
+    pub(crate) default_time: String,
+    pub(crate) emulators_allowed: bool,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum Role {
+pub(crate) enum Role {
     SuperModerator,
     Moderator,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Moderators {
+pub(crate) struct Moderators {
     #[serde(flatten)]
-    pub map: HashMap<String, Role>,
+    pub(crate) map: HashMap<String, Role>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Game {
-    pub id: String,
-    pub names: Names,
-    pub abbreviation: String,
-    pub weblink: String,
-    pub released: u32,
-    pub release_date: NaiveDate,
-    pub ruleset: RuleSet,
-    pub romhack: bool,
-    pub gametypes: Vec<serde_json::Value>,
-    pub platforms: Vec<String>,
-    pub regions: Vec<String>,
-    pub genres: Vec<String>,
-    pub engines: Vec<String>,
-    pub developers: Vec<String>,
-    pub publishers: Vec<String>,
-    pub moderators: Moderators,
-    pub created: Option<DateTime<Utc>>,
-    pub assets: HashMap<String, Option<Asset>>,
-    pub links: Vec<Link>,
+pub(crate) struct Game {
+    pub(crate) id: String,
+    pub(crate) names: Names,
+    pub(crate) abbreviation: String,
+    pub(crate) weblink: String,
+    pub(crate) released: u32,
+    pub(crate) release_date: NaiveDate,
+    pub(crate) ruleset: RuleSet,
+    pub(crate) romhack: bool,
+    pub(crate) gametypes: Vec<serde_json::Value>,
+    pub(crate) platforms: Vec<String>,
+    pub(crate) regions: Vec<String>,
+    pub(crate) genres: Vec<String>,
+    pub(crate) engines: Vec<String>,
+    pub(crate) developers: Vec<String>,
+    pub(crate) publishers: Vec<String>,
+    pub(crate) moderators: Moderators,
+    pub(crate) created: Option<DateTime<Utc>>,
+    pub(crate) assets: HashMap<String, Option<Asset>>,
+    pub(crate) links: Vec<Link>,
 }
 
 impl Game {
     /// Test if game matches the given identifying string.
-    pub fn matches(&self, s: &str) -> bool {
+    pub(crate) fn matches(&self, s: &str) -> bool {
         if self.id == s {
             return true;
         }
@@ -660,7 +660,7 @@ impl Game {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-pub enum CategoryPlayers {
+pub(crate) enum CategoryPlayers {
     #[serde(rename = "exactly")]
     Exactly { value: u32 },
     #[serde(rename = "up-to")]
@@ -669,14 +669,14 @@ pub enum CategoryPlayers {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum CategoryType {
+pub(crate) enum CategoryType {
     PerGame,
     PerLevel,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
-pub enum Scope {
+pub(crate) enum Scope {
     #[serde(rename_all = "kebab-case")]
     FullGame {},
     #[serde(rename_all = "kebab-case")]
@@ -689,39 +689,39 @@ pub enum Scope {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Category {
-    pub id: String,
-    pub name: String,
-    pub weblink: String,
+pub(crate) struct Category {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) weblink: String,
     #[serde(rename = "type")]
-    pub ty: CategoryType,
+    pub(crate) ty: CategoryType,
     #[serde(default)]
-    pub rules: Option<String>,
-    pub players: CategoryPlayers,
-    pub miscellaneous: bool,
+    pub(crate) rules: Option<String>,
+    pub(crate) players: CategoryPlayers,
+    pub(crate) miscellaneous: bool,
     #[serde(default)]
-    pub links: Vec<Link>,
+    pub(crate) links: Vec<Link>,
     /// This is included in case we have the `variables` embed.
     #[serde(default)]
-    pub variables: Option<Data<Vec<Variable>>>,
+    pub(crate) variables: Option<Data<Vec<Variable>>>,
     /// Annotated information on players, if embed=game was requested.
     #[serde(default)]
-    pub game: Option<Data<Game>>,
+    pub(crate) game: Option<Data<Game>>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Level {
-    pub id: String,
-    pub name: String,
-    pub weblink: String,
-    pub rules: Option<String>,
-    pub links: Vec<Link>,
+pub(crate) struct Level {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) weblink: String,
+    pub(crate) rules: Option<String>,
+    pub(crate) links: Vec<Link>,
 }
 
 impl Level {
     /// Test if level matches the given identifying string.
-    pub fn matches(&self, s: &str) -> bool {
+    pub(crate) fn matches(&self, s: &str) -> bool {
         if self.id == s {
             return true;
         }
@@ -736,24 +736,24 @@ impl Level {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Data<T> {
-    pub data: T,
+pub(crate) struct Data<T> {
+    pub(crate) data: T,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Pagination {
-    pub offset: u64,
-    pub max: u64,
-    pub size: u64,
+pub(crate) struct Pagination {
+    pub(crate) offset: u64,
+    pub(crate) max: u64,
+    pub(crate) size: u64,
     #[serde(default)]
-    pub links: Vec<Link>,
+    pub(crate) links: Vec<Link>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct Page<T> {
-    pub data: Vec<T>,
+pub(crate) struct Page<T> {
+    pub(crate) data: Vec<T>,
     #[serde(default)]
-    pub pagination: Option<Pagination>,
+    pub(crate) pagination: Option<Pagination>,
 }

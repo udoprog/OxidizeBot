@@ -8,7 +8,7 @@ use tokio::sync::{RwLock, RwLockReadGuard};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
-pub enum Event {
+pub(crate) enum Event {
     /// Indicates if the system is enabled or not.
     #[serde(rename = "enabled")]
     Enabled { enabled: bool },
@@ -38,14 +38,14 @@ impl bus::Message for Event {
 
 /// A builder for MessageLog.
 #[derive(Default)]
-pub struct Builder {
+pub(crate) struct Builder {
     limit: Option<usize>,
     bus: Option<bus::Bus<Event>>,
 }
 
 impl Builder {
     /// How many messages to store.
-    pub fn limit(self, limit: usize) -> Self {
+    pub(crate) fn limit(self, limit: usize) -> Self {
         Self {
             limit: Some(limit),
             ..self
@@ -53,7 +53,7 @@ impl Builder {
     }
 
     /// Associate a bus with the log.
-    pub fn bus(self, bus: bus::Bus<Event>) -> Self {
+    pub(crate) fn bus(self, bus: bus::Bus<Event>) -> Self {
         Self {
             bus: Some(bus),
             ..self
@@ -61,7 +61,7 @@ impl Builder {
     }
 
     /// Construct a new message log.
-    pub fn build(self) -> MessageLog {
+    pub(crate) fn build(self) -> MessageLog {
         MessageLog {
             inner: Arc::new(RwLock::new(Inner {
                 enabled: true,
@@ -73,7 +73,7 @@ impl Builder {
     }
 }
 
-pub struct Inner {
+pub(crate) struct Inner {
     enabled: bool,
     limit: Option<usize>,
     bus: Option<bus::Bus<Event>>,
@@ -82,30 +82,30 @@ pub struct Inner {
 
 /// In-memory log of commands.
 #[derive(Clone)]
-pub struct MessageLog {
+pub(crate) struct MessageLog {
     inner: Arc<RwLock<Inner>>,
 }
 
 impl MessageLog {
     /// Get a new builder for a message log.
-    pub fn builder() -> Builder {
+    pub(crate) fn builder() -> Builder {
         Builder::default()
     }
 
     /// Get a copy of all the messages.
-    pub async fn messages(&self) -> RwLockReadGuard<'_, VecDeque<Message>> {
+    pub(crate) async fn messages(&self) -> RwLockReadGuard<'_, VecDeque<Message>> {
         RwLockReadGuard::map(self.inner.read().await, |i| &i.messages)
     }
 
     /// Indicate if the log is enabled or not.
-    pub async fn enabled(&self, enabled: bool) {
+    pub(crate) async fn enabled(&self, enabled: bool) {
         if let Some(bus) = self.inner.read().await.bus.as_ref() {
             bus.send(Event::Enabled { enabled }).await;
         }
     }
 
     /// Mark the given message as deleted.
-    pub async fn delete_by_id(&self, id: &str) {
+    pub(crate) async fn delete_by_id(&self, id: &str) {
         let mut inner = self.inner.write().await;
 
         for m in &mut inner.messages {
@@ -120,7 +120,7 @@ impl MessageLog {
     }
 
     /// Mark all messages by the given user as deleted.
-    pub async fn delete_by_user(&self, name: &str) {
+    pub(crate) async fn delete_by_user(&self, name: &str) {
         let mut inner = self.inner.write().await;
 
         for m in &mut inner.messages {
@@ -138,7 +138,7 @@ impl MessageLog {
     }
 
     /// Delete all messages in chat.
-    pub async fn delete_all(&self) {
+    pub(crate) async fn delete_all(&self) {
         let mut inner = self.inner.write().await;
 
         for m in &mut inner.messages {
@@ -151,7 +151,7 @@ impl MessageLog {
     }
 
     /// Push a message to the back of the log.
-    pub async fn push_back(
+    pub(crate) async fn push_back(
         &self,
         tags: &irc::Tags,
         name: &str,
@@ -210,7 +210,7 @@ impl MessageLog {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct User {
+pub(crate) struct User {
     user_id: String,
     name: String,
     display_name: String,
@@ -218,7 +218,7 @@ pub struct User {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Message {
+pub(crate) struct Message {
     timestamp: DateTime<Utc>,
     id: String,
     user: User,

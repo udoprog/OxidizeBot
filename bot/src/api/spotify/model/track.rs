@@ -11,76 +11,76 @@ use serde::{Deserialize, Serialize};
 
 ///[track object full](https://developer.spotify.com/web-api/object-model/#track-object-full)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FullTrack {
-    pub album: SimplifiedAlbum,
-    pub artists: Vec<SimplifiedArtist>,
+pub(crate) struct FullTrack {
+    pub(crate) album: SimplifiedAlbum,
+    pub(crate) artists: Vec<SimplifiedArtist>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub available_markets: Vec<String>,
-    pub disc_number: i32,
-    pub duration_ms: u32,
-    pub explicit: bool,
-    pub external_ids: HashMap<String, String>,
-    pub external_urls: HashMap<String, String>,
-    pub href: Option<String>,
-    pub id: Option<String>,
-    pub is_local: bool,
+    pub(crate) available_markets: Vec<String>,
+    pub(crate) disc_number: i32,
+    pub(crate) duration_ms: u32,
+    pub(crate) explicit: bool,
+    pub(crate) external_ids: HashMap<String, String>,
+    pub(crate) external_urls: HashMap<String, String>,
+    pub(crate) href: Option<String>,
+    pub(crate) id: Option<String>,
+    pub(crate) is_local: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub is_playable: Option<bool>,
+    pub(crate) is_playable: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub linked_from: Option<TrackLink>,
+    pub(crate) linked_from: Option<TrackLink>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub restrictions: Option<Restrictions>,
-    pub name: String,
-    pub popularity: u32,
-    pub preview_url: Option<String>,
-    pub track_number: u32,
+    pub(crate) restrictions: Option<Restrictions>,
+    pub(crate) name: String,
+    pub(crate) popularity: u32,
+    pub(crate) preview_url: Option<String>,
+    pub(crate) track_number: u32,
     #[serde(rename = "type")]
-    pub _type: Type,
-    pub uri: String,
+    pub(crate) _type: Type,
+    pub(crate) uri: String,
 }
 
 /// [link to track link] https://developer.spotify.com/documentation/web-api/reference/object-model/#track-link
 /// Track Link
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TrackLink {
-    pub external_urls: HashMap<String, String>,
-    pub href: String,
-    pub id: String,
+pub(crate) struct TrackLink {
+    pub(crate) external_urls: HashMap<String, String>,
+    pub(crate) href: String,
+    pub(crate) id: String,
     #[serde(rename = "type")]
-    pub _type: Type,
-    pub uri: String,
+    pub(crate) _type: Type,
+    pub(crate) uri: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct FullTracks {
-    pub tracks: Vec<FullTrack>,
+pub(crate) struct FullTracks {
+    pub(crate) tracks: Vec<FullTrack>,
 }
 
 ///[track object simplified](https://developer.spotify.com/web-api/object-model/#track-object-simplified)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SimplifiedTrack {
-    pub artists: Vec<SimplifiedArtist>,
-    pub available_markets: Option<Vec<String>>,
-    pub disc_number: i32,
-    pub duration_ms: u32,
-    pub explicit: bool,
-    pub external_urls: HashMap<String, String>,
+pub(crate) struct SimplifiedTrack {
+    pub(crate) artists: Vec<SimplifiedArtist>,
+    pub(crate) available_markets: Option<Vec<String>>,
+    pub(crate) disc_number: i32,
+    pub(crate) duration_ms: u32,
+    pub(crate) explicit: bool,
+    pub(crate) external_urls: HashMap<String, String>,
     #[serde(default)]
-    pub href: Option<String>,
-    pub id: Option<String>,
-    pub is_local: bool,
-    pub name: String,
-    pub preview_url: Option<String>,
-    pub track_number: u32,
+    pub(crate) href: Option<String>,
+    pub(crate) id: Option<String>,
+    pub(crate) is_local: bool,
+    pub(crate) name: String,
+    pub(crate) preview_url: Option<String>,
+    pub(crate) track_number: u32,
     #[serde(rename = "type")]
-    pub _type: Type,
-    pub uri: String,
+    pub(crate) _type: Type,
+    pub(crate) uri: String,
 }
 
 ///[saved track object](https://developer.spotify.com/web-api/object-model/#saved-track-object)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SavedTrack {
-    pub added_at: DateTime<Utc>,
-    pub track: FullTrack,
+pub(crate) struct SavedTrack {
+    pub(crate) added_at: DateTime<Utc>,
+    pub(crate) track: FullTrack,
 }

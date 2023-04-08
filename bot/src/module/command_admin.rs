@@ -4,9 +4,9 @@ use crate::db;
 use crate::module;
 use crate::prelude::*;
 
-pub struct Handler {
-    pub enabled: settings::Var<bool>,
-    pub commands: injector::Ref<db::Commands>,
+pub(crate) struct Handler {
+    pub(crate) enabled: settings::Var<bool>,
+    pub(crate) commands: injector::Ref<db::Commands>,
 }
 
 #[async_trait]
@@ -74,7 +74,7 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

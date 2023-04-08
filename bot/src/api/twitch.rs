@@ -9,7 +9,7 @@ use reqwest::{header, Client, Method, Url};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
-pub const CLIPS_URL: &str = "http://clips.twitch.tv";
+pub(crate) const CLIPS_URL: &str = "http://clips.twitch.tv";
 const API_TWITCH_URL: &str = "https://api.twitch.tv";
 const GQL_URL: &str = "https://gql.twitch.tv/gql";
 
@@ -19,7 +19,7 @@ const BROADCASTER_ID: &str = "broadcaster_id";
 
 mod gql;
 mod model;
-pub mod pubsub;
+pub(crate) mod pubsub;
 
 #[derive(Debug, Error)]
 pub(crate) enum Error {
@@ -27,21 +27,21 @@ pub(crate) enum Error {
     MissingUser,
 }
 
-pub use self::model::*;
+pub(crate) use self::model::*;
 
 /// Twitch API client.
 #[derive(Clone, Debug)]
-pub struct Twitch {
+pub(crate) struct Twitch {
     client: Client,
     client_id_header: header::HeaderName,
     api_url: Url,
     gql_url: Url,
-    pub token: oauth2::SyncToken,
+    pub(crate) token: oauth2::SyncToken,
 }
 
 impl Twitch {
     /// Create a new Twitch API client.
-    pub fn new(token: oauth2::SyncToken) -> Result<Self> {
+    pub(crate) fn new(token: oauth2::SyncToken) -> Result<Self> {
         Ok(Self {
             client: Client::new(),
             client_id_header: str::parse::<header::HeaderName>("Client-ID")?,
@@ -90,7 +90,7 @@ impl Twitch {
     }
 
     /// Search for a category with the given name.
-    pub fn new_search_categories<'a>(
+    pub(crate) fn new_search_categories<'a>(
         &'a self,
         query: &str,
     ) -> impl Stream<Item = Result<new::Category>> + 'a {
@@ -102,7 +102,7 @@ impl Twitch {
     }
 
     /// Get information on a user.
-    pub fn new_stream_subscriptions<'a>(
+    pub(crate) fn new_stream_subscriptions<'a>(
         &'a self,
         broadcaster_id: &str,
         user_ids: Vec<String>,

@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 /// Information on current song.
 #[derive(Debug, Clone)]
-pub struct Song {
-    pub item: Arc<Item>,
+pub(crate) struct Song {
+    pub(crate) item: Arc<Item>,
     /// Since the last time it was unpaused, what was the initial elapsed duration.
     elapsed: Duration,
     /// When the current song started playing.
@@ -19,7 +19,7 @@ pub struct Song {
 
 impl Song {
     /// Create a new current song.
-    pub fn new(item: Arc<Item>, elapsed: Duration) -> Self {
+    pub(crate) fn new(item: Arc<Item>, elapsed: Duration) -> Self {
         Self {
             item,
             elapsed,
@@ -28,7 +28,7 @@ impl Song {
     }
 
     /// Test if the two songs reference roughly the same song.
-    pub fn is_same(&self, song: &Self) -> bool {
+    pub(crate) fn is_same(&self, song: &Self) -> bool {
         if self.item.track_id != song.item.track_id {
             return false;
         }
@@ -45,7 +45,7 @@ impl Song {
     }
 
     /// Convert a playback information into a Song struct.
-    pub fn from_playback(playback: &api::spotify::FullPlayingContext) -> Option<Self> {
+    pub(crate) fn from_playback(playback: &api::spotify::FullPlayingContext) -> Option<Self> {
         let progress_ms = playback.progress_ms.unwrap_or_default();
 
         let track = match playback.item.clone() {
@@ -100,19 +100,19 @@ impl Song {
     }
 
     /// Get the deadline for when this song will end, assuming it is currently playing.
-    pub fn deadline(&self) -> Instant {
+    pub(crate) fn deadline(&self) -> Instant {
         Instant::now() + self.remaining()
     }
 
     /// Duration of the current song.
-    pub fn duration(&self) -> Duration {
+    pub(crate) fn duration(&self) -> Duration {
         self.item.duration
     }
 
     /// Elapsed time on current song.
     ///
     /// Elapsed need to take started at into account.
-    pub fn elapsed(&self) -> Duration {
+    pub(crate) fn elapsed(&self) -> Duration {
         let when = self
             .started_at
             .and_then(|started_at| {
@@ -130,7 +130,7 @@ impl Song {
     }
 
     /// Remaining time of the current song.
-    pub fn remaining(&self) -> Duration {
+    pub(crate) fn remaining(&self) -> Duration {
         self.item
             .duration
             .checked_sub(self.elapsed())
@@ -138,7 +138,7 @@ impl Song {
     }
 
     /// Get serializable data for this item.
-    pub fn data(&self, state: State) -> Result<CurrentData<'_>> {
+    pub(crate) fn data(&self, state: State) -> Result<CurrentData<'_>> {
         let artists = self.item.track.artists();
 
         Ok(CurrentData {
@@ -153,7 +153,7 @@ impl Song {
     }
 
     /// Check if the song is currently playing.
-    pub fn state(&self) -> State {
+    pub(crate) fn state(&self) -> State {
         if self.started_at.is_some() {
             State::Playing
         } else {
@@ -162,7 +162,7 @@ impl Song {
     }
 
     /// Get the player kind for the current song.
-    pub fn player(&self) -> PlayerKind {
+    pub(crate) fn player(&self) -> PlayerKind {
         match self.item.track_id {
             TrackId::Spotify(..) => PlayerKind::Spotify,
             TrackId::YouTube(..) => PlayerKind::YouTube,
@@ -171,14 +171,14 @@ impl Song {
 
     /// Set the started_at time to now.
     /// For safety, update the current `elapsed` time based on any prior `started_at`.
-    pub fn play(&mut self) {
+    pub(crate) fn play(&mut self) {
         let duration = self.take_started_at();
         self.elapsed += duration;
         self.started_at = Some(Instant::now());
     }
 
     /// Update the elapsed time based on when this song was started.
-    pub fn pause(&mut self) {
+    pub(crate) fn pause(&mut self) {
         let duration = self.take_started_at();
         self.elapsed += duration;
     }
@@ -201,7 +201,7 @@ impl Song {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct CurrentData<'a> {
+pub(crate) struct CurrentData<'a> {
     paused: bool,
     track_id: &'a TrackId,
     name: String,

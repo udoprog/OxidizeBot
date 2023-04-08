@@ -16,21 +16,21 @@ use tokio::sync::RwLock;
 const SCHEMA: &[u8] = include_bytes!("auth.yaml");
 
 #[derive(Debug, Clone, serde::Deserialize)]
-pub struct Schema {
+pub(crate) struct Schema {
     roles: HashMap<Role, RoleData>,
     scopes: HashMap<Scope, ScopeData>,
 }
 
 impl Schema {
     /// Load schema from the given set of bytes.
-    pub fn load_static() -> Result<Schema, anyhow::Error> {
+    pub(crate) fn load_static() -> Result<Schema, anyhow::Error> {
         serde_yaml::from_slice(SCHEMA).context("failed to load auth.yaml")
     }
 }
 
 /// A role or a user.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RoleOrUser {
+pub(crate) enum RoleOrUser {
     Role(Role),
     User(String),
 }
@@ -59,14 +59,14 @@ impl std::str::FromStr for RoleOrUser {
 
 /// A grant that has been temporarily given.
 struct TemporaryGrant {
-    pub scope: Scope,
-    pub principal: RoleOrUser,
-    pub expires_at: DateTime<Utc>,
+    pub(crate) scope: Scope,
+    pub(crate) principal: RoleOrUser,
+    pub(crate) expires_at: DateTime<Utc>,
 }
 
 impl TemporaryGrant {
     /// Test if the grant is expired.
-    pub fn is_expired(&self, now: &DateTime<Utc>) -> bool {
+    pub(crate) fn is_expired(&self, now: &DateTime<Utc>) -> bool {
         *now >= self.expires_at
     }
 }
@@ -83,12 +83,12 @@ struct Inner {
 
 /// A container for scopes and their grants.
 #[derive(Clone)]
-pub struct Auth {
+pub(crate) struct Auth {
     inner: Arc<Inner>,
 }
 
 impl Auth {
-    pub async fn new(db: db::Database, schema: Schema) -> Result<Self, Error> {
+    pub(crate) async fn new(db: db::Database, schema: Schema) -> Result<Self, Error> {
         use db::schema::grants::dsl;
 
         let grants = db
@@ -132,14 +132,14 @@ impl Auth {
     }
 
     /// Return all temporary scopes belonging to the specified user.
-    pub async fn scopes_for_user(&self, user: &str) -> Vec<Scope> {
+    pub(crate) async fn scopes_for_user(&self, user: &str) -> Vec<Scope> {
         let now = Utc::now();
         self.temporary_scopes(&now, RoleOrUser::User(user.to_string()))
             .await
     }
 
     /// Return all temporary scopes belonging to the specified user.
-    pub async fn scopes_for_role(&self, needle: Role) -> Vec<Scope> {
+    pub(crate) async fn scopes_for_role(&self, needle: Role) -> Vec<Scope> {
         let now = Utc::now();
         let mut out = self.temporary_scopes(&now, RoleOrUser::Role(needle)).await;
 
@@ -155,7 +155,7 @@ impl Auth {
     }
 
     /// Construct scope cooldowns.
-    pub fn scope_cooldowns(&self) -> HashMap<Scope, Cooldown> {
+    pub(crate) fn scope_cooldowns(&self) -> HashMap<Scope, Cooldown> {
         let mut cooldowns = HashMap::new();
 
         for (scope, schema) in self.inner.schema.scopes.iter() {
@@ -222,7 +222,7 @@ impl Auth {
     }
 
     /// Insert a temporary grant.
-    pub async fn insert_temporary(
+    pub(crate) async fn insert_temporary(
         &self,
         scope: Scope,
         principal: RoleOrUser,
@@ -240,7 +240,7 @@ impl Auth {
     }
 
     /// Insert an assignment.
-    pub async fn insert(&self, scope: Scope, role: Role) -> Result<(), Error> {
+    pub(crate) async fn insert(&self, scope: Scope, role: Role) -> Result<(), Error> {
         use db::schema::grants::dsl;
 
         self.inner
@@ -258,7 +258,7 @@ impl Auth {
     }
 
     /// Delete an assignment.
-    pub async fn delete(&self, scope: Scope, role: Role) -> Result<(), Error> {
+    pub(crate) async fn delete(&self, scope: Scope, role: Role) -> Result<(), Error> {
         use db::schema::grants::dsl;
 
         if self.inner.grants.write().await.remove(&(scope, role)) {
@@ -313,7 +313,7 @@ impl Auth {
     }
 
     /// Test if the given assignment exists.
-    pub async fn test(&self, scope: Scope, user: &str, role: Role) -> bool {
+    pub(crate) async fn test(&self, scope: Scope, user: &str, role: Role) -> bool {
         if self.inner.grants.read().await.contains(&(scope, role)) {
             return true;
         }
@@ -338,7 +338,7 @@ impl Auth {
     }
 
     /// Test if the given assignment exists.
-    pub async fn test_any(
+    pub(crate) async fn test_any(
         &self,
         scope: Scope,
         user: &str,
@@ -374,7 +374,7 @@ impl Auth {
     }
 
     /// Get a list of scopes and extra information associated with them.
-    pub fn scopes(&self) -> Vec<ScopeInfo> {
+    pub(crate) fn scopes(&self) -> Vec<ScopeInfo> {
         let mut out = Vec::new();
 
         for scope in Scope::list() {
@@ -393,7 +393,7 @@ impl Auth {
     }
 
     /// Get a list of roles.
-    pub fn roles(&self) -> Vec<RoleInfo> {
+    pub(crate) fn roles(&self) -> Vec<RoleInfo> {
         let mut out = Vec::new();
 
         for role in Role::list() {
@@ -412,7 +412,7 @@ impl Auth {
     }
 
     /// Get a list of all grants.
-    pub async fn list(&self) -> Vec<(Scope, Role)> {
+    pub(crate) async fn list(&self) -> Vec<(Scope, Role)> {
         self.inner.grants.read().await.iter().cloned().collect()
     }
 }
@@ -434,7 +434,7 @@ macro_rules! scopes {
         diesel::AsExpression,
     )]
     #[diesel(sql_type = diesel::sql_types::Text)]
-    pub enum Scope {
+    pub(crate) enum Scope {
         $(#[serde(rename = $scope)] $variant,)*
         Unknown,
     }
@@ -450,7 +450,7 @@ macro_rules! scopes {
 
     impl Scope {
         /// Get a list of all scopes.
-        pub fn list() -> Vec<Scope> {
+        pub(crate) fn list() -> Vec<Scope> {
             vec![
                 $(Scope::$variant,)*
             ]
@@ -514,14 +514,14 @@ macro_rules! roles {
         diesel::AsExpression,
     )]
     #[diesel(sql_type = diesel::sql_types::Text)]
-    pub enum Role {
+    pub(crate) enum Role {
         $(#[serde(rename = $role)] $variant,)*
         Unknown,
     }
 
     impl Role {
         /// Get a list of all roles.
-        pub fn list() -> Vec<Role> {
+        pub(crate) fn list() -> Vec<Role> {
             vec![
                 $(Role::$variant,)*
             ]
@@ -570,7 +570,7 @@ macro_rules! roles {
 
 /// The risk of a given scope.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, Default)]
-pub enum Risk {
+pub(crate) enum Risk {
     #[serde(rename = "high")]
     High,
     #[serde(rename = "default", other)]
@@ -621,27 +621,27 @@ scopes! {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ScopeInfo {
+pub(crate) struct ScopeInfo {
     scope: Scope,
     #[serde(flatten)]
     data: ScopeData,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ScopeData {
+pub(crate) struct ScopeData {
     /// Documentation for this scope.
-    pub doc: String,
+    pub(crate) doc: String,
     /// How risky is this scope to grant.
     /// High risk grants should be prompted with a warning before granted.
     #[serde(default)]
-    pub risk: Risk,
+    pub(crate) risk: Risk,
     /// Version of the schema.
     /// A change in version will cause the default grants to be applied.
-    pub version: String,
+    pub(crate) version: String,
     /// Default grants for the scope.
-    pub allow: Vec<Role>,
+    pub(crate) allow: Vec<Role>,
     /// Cooldown in effect for the given scope.
-    pub cooldown: Option<Duration>,
+    pub(crate) cooldown: Option<Duration>,
 }
 
 roles! {
@@ -653,14 +653,14 @@ roles! {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct RoleInfo {
+pub(crate) struct RoleInfo {
     role: Role,
     #[serde(flatten)]
     data: RoleData,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct RoleData {
+pub(crate) struct RoleData {
     /// Documentation for this role.
-    pub doc: String,
+    pub(crate) doc: String,
 }

@@ -12,7 +12,7 @@ const V2_URL: &str = "http://api.openweathermap.org/data/2.5";
 
 /// API integration.
 #[derive(Clone, Debug)]
-pub struct OpenWeatherMap {
+pub(crate) struct OpenWeatherMap {
     client: Client,
     v2_url: Url,
     api_key: Arc<String>,
@@ -20,12 +20,12 @@ pub struct OpenWeatherMap {
 
 struct Builder {
     injector: Injector,
-    pub api_key: Option<String>,
+    pub(crate) api_key: Option<String>,
 }
 
 impl Builder {
     /// Inject a newly build value.
-    pub async fn build_and_inject(&self) -> Result<()> {
+    pub(crate) async fn build_and_inject(&self) -> Result<()> {
         match &self.api_key {
             Some(api_key) => {
                 self.injector
@@ -42,7 +42,7 @@ impl Builder {
 }
 
 /// Hook up open weather api if all necessary settings are available.
-pub async fn setup(
+pub(crate) async fn setup(
     settings: crate::Settings,
     injector: Injector,
 ) -> Result<impl Future<Output = Result<()>>> {
@@ -65,7 +65,7 @@ pub async fn setup(
 
 impl OpenWeatherMap {
     /// Create a new API integration.
-    pub fn new(api_key: String) -> Result<OpenWeatherMap> {
+    pub(crate) fn new(api_key: String) -> Result<OpenWeatherMap> {
         Ok(OpenWeatherMap {
             client: Client::new(),
             v2_url: str::parse::<Url>(V2_URL)?,
@@ -91,7 +91,7 @@ impl OpenWeatherMap {
         req
     }
 
-    pub async fn current(&self, q: String) -> Result<Option<Current>> {
+    pub(crate) async fn current(&self, q: String) -> Result<Option<Current>> {
         let mut req = self.v2(Method::GET, &["weather"]);
         req.query_param("q", &q);
         req.execute().await?.not_found().json()
@@ -99,47 +99,47 @@ impl OpenWeatherMap {
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Current {
-    pub coord: Coord,
-    pub sys: Sys,
-    pub weather: Vec<Weather>,
-    pub main: Main,
+pub(crate) struct Current {
+    pub(crate) coord: Coord,
+    pub(crate) sys: Sys,
+    pub(crate) weather: Vec<Weather>,
+    pub(crate) main: Main,
     #[serde(default)]
-    pub visibility: Option<u32>,
-    pub wind: Wind,
+    pub(crate) visibility: Option<u32>,
+    pub(crate) wind: Wind,
     #[serde(default)]
-    pub rain: Option<Precipitation>,
+    pub(crate) rain: Option<Precipitation>,
     #[serde(default)]
-    pub snow: Option<Precipitation>,
-    pub clouds: Clouds,
-    pub dt: u64,
-    pub id: u64,
-    pub name: String,
-    pub cod: u64,
+    pub(crate) snow: Option<Precipitation>,
+    pub(crate) clouds: Clouds,
+    pub(crate) dt: u64,
+    pub(crate) id: u64,
+    pub(crate) name: String,
+    pub(crate) cod: u64,
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Coord {
-    pub lon: f32,
-    pub lat: f32,
+pub(crate) struct Coord {
+    pub(crate) lon: f32,
+    pub(crate) lat: f32,
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Sys {
-    pub country: String,
-    pub sunrise: u64,
-    pub sunset: u64,
+pub(crate) struct Sys {
+    pub(crate) country: String,
+    pub(crate) sunrise: u64,
+    pub(crate) sunset: u64,
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Weather {
-    pub id: u64,
-    pub main: String,
-    pub description: String,
-    pub icon: String,
+pub(crate) struct Weather {
+    pub(crate) id: u64,
+    pub(crate) main: String,
+    pub(crate) description: String,
+    pub(crate) icon: String,
 }
 
 impl fmt::Display for Weather {
@@ -165,42 +165,42 @@ impl fmt::Display for Weather {
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Main {
-    pub temp: f32,
+pub(crate) struct Main {
+    pub(crate) temp: f32,
     #[serde(default)]
-    pub humidity: Option<u64>,
+    pub(crate) humidity: Option<u64>,
     #[serde(default)]
-    pub pressure: Option<u64>,
+    pub(crate) pressure: Option<u64>,
     #[serde(default)]
-    pub temp_min: Option<f32>,
+    pub(crate) temp_min: Option<f32>,
     #[serde(default)]
-    pub temp_max: Option<f32>,
+    pub(crate) temp_max: Option<f32>,
     #[serde(default)]
-    pub sea_level: Option<u64>,
+    pub(crate) sea_level: Option<u64>,
     #[serde(default)]
-    pub grnd_level: Option<u64>,
+    pub(crate) grnd_level: Option<u64>,
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Wind {
+pub(crate) struct Wind {
     #[serde(default)]
-    pub speed: Option<f32>,
+    pub(crate) speed: Option<f32>,
     #[serde(default)]
-    pub deg: Option<f32>,
+    pub(crate) deg: Option<f32>,
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Precipitation {
+pub(crate) struct Precipitation {
     #[serde(rename = "1h", default)]
-    pub _1h: Option<f32>,
+    pub(crate) _1h: Option<f32>,
     #[serde(rename = "3h", default)]
-    pub _3h: Option<f32>,
+    pub(crate) _3h: Option<f32>,
 }
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Clouds {
-    pub all: u64,
+pub(crate) struct Clouds {
+    pub(crate) all: u64,
 }

@@ -26,10 +26,10 @@ use std::fmt;
 use std::str;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SpotifyId(u128);
+pub(crate) struct SpotifyId(u128);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct SpotifyIdError;
+pub(crate) struct SpotifyIdError;
 
 impl fmt::Display for SpotifyIdError {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -40,7 +40,7 @@ impl fmt::Display for SpotifyIdError {
 const BASE62_DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 impl SpotifyId {
-    pub fn from_base62(id: &str) -> Result<SpotifyId, SpotifyIdError> {
+    pub(crate) fn from_base62(id: &str) -> Result<SpotifyId, SpotifyIdError> {
         let data = id.as_bytes();
 
         let mut n = 0u128;
@@ -57,7 +57,7 @@ impl SpotifyId {
         Ok(SpotifyId(n))
     }
 
-    pub fn to_base62(self) -> String {
+    pub(crate) fn to_base62(self) -> String {
         let SpotifyId(mut n) = self;
 
         let mut data = [0u8; 22];

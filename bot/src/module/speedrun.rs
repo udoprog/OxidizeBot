@@ -15,7 +15,7 @@ use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 
 /// Handler for the !speedrun command.
-pub struct Speedrun {
+pub(crate) struct Speedrun {
     speedrun: CachedSpeedrun,
     enabled: settings::Var<bool>,
     top: settings::Var<u32>,
@@ -233,7 +233,7 @@ impl Speedrun {
         }
 
         impl Group {
-            pub fn new(game: Game) -> Self {
+            pub(crate) fn new(game: Game) -> Self {
                 Self {
                     game,
                     runs: Vec::new(),
@@ -509,7 +509,7 @@ impl command::Handler for Speedrun {
 
 #[derive(serde::Serialize)]
 #[serde(tag = "method")]
-pub enum Key<'a> {
+pub(crate) enum Key<'a> {
     UserById {
         user: &'a str,
     },
@@ -551,7 +551,7 @@ struct CachedSpeedrun {
 
 impl CachedSpeedrun {
     /// Get cached user information by ID.
-    pub async fn user_by_id(&self, user: &str) -> Result<Option<Box<User>>> {
+    pub(crate) async fn user_by_id(&self, user: &str) -> Result<Option<Box<User>>> {
         let result = self
             .cache
             .wrap(
@@ -565,7 +565,7 @@ impl CachedSpeedrun {
     }
 
     /// Get personal bests by user.
-    pub async fn user_personal_bests(
+    pub(crate) async fn user_personal_bests(
         &self,
         user_id: &str,
         embeds: &Embeds,
@@ -583,7 +583,10 @@ impl CachedSpeedrun {
     }
 
     /// Get the variables of a category.
-    pub async fn category_variables(&self, category_id: &str) -> Result<Option<Vec<Variable>>> {
+    pub(crate) async fn category_variables(
+        &self,
+        category_id: &str,
+    ) -> Result<Option<Vec<Variable>>> {
         let result = self
             .cache
             .wrap(
@@ -598,7 +601,7 @@ impl CachedSpeedrun {
 
     /// Get cached user information by ID.
     #[allow(unused)]
-    pub async fn category_records_by_id(
+    pub(crate) async fn category_records_by_id(
         &self,
         category_id: &str,
         top: u32,
@@ -616,7 +619,7 @@ impl CachedSpeedrun {
     }
 
     /// Get cached game record by ID.
-    pub async fn game_by_id(&self, game_id: &str) -> Result<Option<Game>> {
+    pub(crate) async fn game_by_id(&self, game_id: &str) -> Result<Option<Game>> {
         let result = self
             .cache
             .wrap(
@@ -630,7 +633,7 @@ impl CachedSpeedrun {
     }
 
     /// Get cached game categories by ID.
-    pub async fn game_categories_by_id(
+    pub(crate) async fn game_categories_by_id(
         &self,
         game_id: &str,
         embeds: &Embeds,
@@ -648,7 +651,7 @@ impl CachedSpeedrun {
     }
 
     /// Get cached game levels by ID.
-    pub async fn game_levels(&self, game_id: &str) -> Result<Option<Vec<Level>>> {
+    pub(crate) async fn game_levels(&self, game_id: &str) -> Result<Option<Vec<Level>>> {
         let result = self
             .cache
             .wrap(
@@ -662,7 +665,7 @@ impl CachedSpeedrun {
     }
 
     /// Get the specified leaderboard.
-    pub async fn leaderboard(
+    pub(crate) async fn leaderboard(
         &self,
         game_id: &str,
         category_id: &str,
@@ -690,7 +693,7 @@ impl CachedSpeedrun {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {
@@ -848,7 +851,7 @@ fn abbreviate_text(mut text: &str) -> String {
 }
 
 /// A filter over categories.
-pub struct CategoryFilter {
+pub(crate) struct CategoryFilter {
     /// The category type to filter for.
     ty: Option<CategoryType>,
     /// Match main categories.

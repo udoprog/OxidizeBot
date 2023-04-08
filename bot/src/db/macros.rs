@@ -2,7 +2,7 @@
 macro_rules! database_group_fns {
     ($thing:ty, $key:ty) => {
         /// Set which group the thing belongs to.
-        pub async fn edit_group(
+        pub(crate) async fn edit_group(
             &self,
             channel: &str,
             name: &str,
@@ -23,7 +23,11 @@ macro_rules! database_group_fns {
         }
 
         /// Enable the given thing.
-        pub async fn enable(&self, channel: &str, name: &str) -> Result<bool, anyhow::Error> {
+        pub(crate) async fn enable(
+            &self,
+            channel: &str,
+            name: &str,
+        ) -> Result<bool, anyhow::Error> {
             let key = <$key>::new(channel, name);
 
             let thing = match self.db.fetch(&key).await? {
@@ -40,7 +44,11 @@ macro_rules! database_group_fns {
         }
 
         /// Disable the given thing.
-        pub async fn disable(&self, channel: &str, name: &str) -> Result<bool, anyhow::Error> {
+        pub(crate) async fn disable(
+            &self,
+            channel: &str,
+            name: &str,
+        ) -> Result<bool, anyhow::Error> {
             let key = <$key>::new(channel, name);
             let mut inner = self.inner.write().await;
 
@@ -53,7 +61,11 @@ macro_rules! database_group_fns {
         }
 
         /// Enable all things in the given group.
-        pub async fn enable_group(&self, channel: &str, group: &str) -> Result<(), anyhow::Error> {
+        pub(crate) async fn enable_group(
+            &self,
+            channel: &str,
+            group: &str,
+        ) -> Result<(), anyhow::Error> {
             self.db.set_group_disabled(channel, group, false).await?;
 
             let mut inner = self.inner.write().await;
@@ -67,7 +79,11 @@ macro_rules! database_group_fns {
         }
 
         /// Disable all things in the given group.
-        pub async fn disable_group(&self, channel: &str, group: &str) -> Result<(), anyhow::Error> {
+        pub(crate) async fn disable_group(
+            &self,
+            channel: &str,
+            group: &str,
+        ) -> Result<(), anyhow::Error> {
             self.db.set_group_disabled(channel, group, true).await?;
 
             let mut inner = self.inner.write().await;
@@ -88,7 +104,7 @@ macro_rules! database_group_fns {
         }
 
         /// Get a list of all members.
-        pub async fn list_all(&self, channel: &str) -> Result<Vec<$thing>, anyhow::Error> {
+        pub(crate) async fn list_all(&self, channel: &str) -> Result<Vec<$thing>, anyhow::Error> {
             let mut out = Vec::new();
 
             for p in self.db.list_all(channel).await? {
@@ -99,7 +115,11 @@ macro_rules! database_group_fns {
         }
 
         /// Remove thing.
-        pub async fn delete(&self, channel: &str, name: &str) -> Result<bool, anyhow::Error> {
+        pub(crate) async fn delete(
+            &self,
+            channel: &str,
+            name: &str,
+        ) -> Result<bool, anyhow::Error> {
             let key = <$key>::new(channel, name);
 
             if !self.db.delete(&key).await? {
@@ -111,7 +131,7 @@ macro_rules! database_group_fns {
         }
 
         /// Get the given thing by name.
-        pub async fn get(&self, channel: &str, name: &str) -> Option<Arc<$thing>> {
+        pub(crate) async fn get(&self, channel: &str, name: &str) -> Option<Arc<$thing>> {
             let key = <$key>::new(channel, name);
 
             let inner = self.inner.read().await;
@@ -124,7 +144,7 @@ macro_rules! database_group_fns {
         }
 
         /// Get the given thing by name directly from the database.
-        pub async fn get_any(
+        pub(crate) async fn get_any(
             &self,
             channel: &str,
             name: &str,
@@ -138,7 +158,7 @@ macro_rules! database_group_fns {
         }
 
         /// Get a list of all things.
-        pub async fn list(&self, channel: &str) -> Vec<Arc<$thing>> {
+        pub(crate) async fn list(&self, channel: &str) -> Vec<Arc<$thing>> {
             let inner = self.inner.read().await;
 
             let mut out = Vec::new();
@@ -155,7 +175,7 @@ macro_rules! database_group_fns {
         }
 
         /// Try to rename the thing.
-        pub async fn rename(
+        pub(crate) async fn rename(
             &self,
             channel: &str,
             from: &str,

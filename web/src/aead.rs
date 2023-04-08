@@ -7,7 +7,7 @@ use std::num;
 /// A helper type to seal and unseal messages using AEAD.
 ///
 /// A sealed message is both encrypted and signed in one go.
-pub struct AeadSealer {
+pub(crate) struct AeadSealer {
     random: SystemRandom,
     alg: &'static aead::Algorithm,
     key: aead::LessSafeKey,
@@ -15,7 +15,10 @@ pub struct AeadSealer {
 
 impl AeadSealer {
     /// Create a new sealer from a secret which isn't necessarily as long as the expected key.
-    pub fn from_secret(alg: &'static aead::Algorithm, secret: &[u8]) -> Result<AeadSealer, Error> {
+    pub(crate) fn from_secret(
+        alg: &'static aead::Algorithm,
+        secret: &[u8],
+    ) -> Result<AeadSealer, Error> {
         // Keys are sent as &[T] and must have 32 bytes
         let mut key = vec![0u8; alg.key_len()];
 
@@ -37,7 +40,7 @@ impl AeadSealer {
     }
 
     /// Create a new store with a random key.
-    pub fn random(alg: &'static aead::Algorithm) -> Result<AeadSealer, Error> {
+    pub(crate) fn random(alg: &'static aead::Algorithm) -> Result<AeadSealer, Error> {
         let random = SystemRandom::new();
         let mut key = vec![0u8; alg.key_len()];
 
@@ -64,7 +67,7 @@ impl AeadSealer {
     }
 
     /// Encrypt the given message.
-    pub fn encrypt(&self, message: &[u8]) -> Result<Vec<u8>, Error> {
+    pub(crate) fn encrypt(&self, message: &[u8]) -> Result<Vec<u8>, Error> {
         let mut nonce_buf = [0u8; 12];
         self.random
             .fill(&mut nonce_buf)
@@ -87,7 +90,7 @@ impl AeadSealer {
     }
 
     /// Decrypt the given ciphertext.
-    pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Option<Vec<u8>>, Error> {
+    pub(crate) fn decrypt(&self, ciphertext: &[u8]) -> Result<Option<Vec<u8>>, Error> {
         let nonce_len = self.alg.nonce_len();
         let tag_len = self.alg.tag_len();
 

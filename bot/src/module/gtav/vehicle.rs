@@ -4,7 +4,7 @@ macro_rules! vehicles {
     ($($variant:ident, $id:expr, $cost:expr,)*) => {
         #[derive(Clone, Copy)]
         #[allow(clippy::upper_case_acronyms)]
-        pub enum Vehicle {
+        pub(crate) enum Vehicle {
             Random,
             Slow,
             Normal,
@@ -20,7 +20,7 @@ macro_rules! vehicles {
 
         impl Vehicle {
             /// Human-readable display of this vehicle.
-            pub fn display(&self) -> String {
+            pub(crate) fn display(&self) -> String {
                 use self::Vehicle::*;
 
                 match *self {
@@ -39,7 +39,7 @@ macro_rules! vehicles {
             }
 
             /// Map an id to a vehicle.
-            pub fn from_id(id: impl AsRef<str>) -> Option<Vehicle> {
+            pub(crate) fn from_id(id: impl AsRef<str>) -> Option<Vehicle> {
                 use self::Vehicle::*;
 
                 match id.as_ref() {
@@ -61,7 +61,7 @@ macro_rules! vehicles {
             /**
              * Get the cost of a vehicle.
              */
-            pub fn cost(&self) -> u32 {
+            pub(crate) fn cost(&self) -> u32 {
                 use self::Vehicle::*;
 
                 match *self {
@@ -80,13 +80,13 @@ macro_rules! vehicles {
             }
 
             /// Get a list of all cars.
-            pub fn cars() -> Vec<Vehicle> {
+            pub(crate) fn cars() -> Vec<Vehicle> {
                 use self::Vehicle::*;
                 vec![Slow, Normal, Fast]
             }
 
             /// Get a list of all vehicles.
-            pub fn categories() -> Vec<Vehicle> {
+            pub(crate) fn categories() -> Vec<Vehicle> {
                 use self::Vehicle::*;
 
                 vec![
@@ -96,7 +96,7 @@ macro_rules! vehicles {
             }
 
             /// Get a random car.
-            pub fn random_car() -> Vehicle {
+            pub(crate) fn random_car() -> Vehicle {
                 use rand::Rng as _;
                 let mut rng = rand::thread_rng();
                 let cars = Self::cars();

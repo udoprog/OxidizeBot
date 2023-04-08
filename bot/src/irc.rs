@@ -1,8 +1,27 @@
+mod chat_log;
+mod currency;
+mod currency_admin;
+mod sender;
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time;
+
+use anyhow::{anyhow, bail, Context as _, Result};
+use irc::client::{self, Client};
+use irc::proto::command::{CapSubCommand, Command};
+use irc::proto::message::{Message, Tag};
+use notify::{recommended_watcher, RecommendedWatcher, Watcher};
+use parking_lot::RwLock;
+use std::collections::HashSet;
+use std::fmt;
+use tokio::sync;
+
+pub(crate) use self::sender::Sender;
 use crate::api;
 use crate::auth::{Auth, Role, Scope};
 use crate::bus;
 use crate::command;
-use crate::currency::CurrencyBuilder;
 use crate::db;
 use crate::idle;
 use crate::message_log::MessageLog;
@@ -13,44 +32,23 @@ use crate::script;
 use crate::stream_info;
 use crate::tags;
 use crate::task;
-use crate::utils::{self, Cooldown, Duration};
-use anyhow::{anyhow, bail, Context as _, Result};
-use irc::client::{self, Client};
-use irc::proto::command::{CapSubCommand, Command};
-use irc::proto::message::{Message, Tag};
-use notify::{recommended_watcher, RecommendedWatcher, Watcher};
-use parking_lot::RwLock;
-use std::collections::HashSet;
-use std::fmt;
-use tracing::Instrument;
-
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time;
-use tokio::sync;
-
-// re-exports
-pub use self::sender::Sender;
-
-mod chat_log;
-mod currency_admin;
-mod sender;
+use crate::utils::{self, Cooldown};
 
 const SERVER: &str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &str = "twitch.tv/tags";
 const TWITCH_COMMANDS_CAP: &str = "twitch.tv/commands";
 
 /// Helper struct to construct IRC integration.
-pub struct Irc {
-    pub modules: Vec<Box<dyn module::Module>>,
-    pub injector: Injector,
-    pub stream_state_tx: mpsc::Sender<stream_info::StreamState>,
-    pub script_dirs: Vec<PathBuf>,
+pub(crate) struct Irc {
+    pub(crate) modules: Vec<Box<dyn module::Module>>,
+    pub(crate) injector: Injector,
+    pub(crate) stream_state_tx: mpsc::Sender<stream_info::StreamState>,
+    pub(crate) script_dirs: Vec<PathBuf>,
 }
 
 impl Irc {
     #[tracing::instrument(skip_all)]
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         use backoff::backoff::Backoff as _;
 
         let mut provider = Setup::provider(&self.injector).await?;
@@ -145,14 +143,6 @@ impl IrcLoop<'_> {
             ..
         } = irc;
 
-        let streamer_channel = match &streamer.channel {
-            Some(channel) => channel,
-            None => {
-                bail!("missing channel information for streamer");
-            }
-        };
-
-        tracing::trace!("Channel: {:?}", streamer_channel);
         tracing::trace!("Streamer: {:?}", streamer.user.display_name);
         tracing::trace!("Bot: {:?}", bot.user.display_name);
 
@@ -244,7 +234,7 @@ impl IrcLoop<'_> {
 
         let currency_handler = currency_admin::setup(injector).await?;
 
-        let future = currency_loop(
+        let future = currency::setup(
             bot.clone(),
             streamer.clone(),
             sender.clone(),
@@ -450,149 +440,6 @@ impl IrcLoop<'_> {
 
         Ok(())
     }
-}
-
-/// Set up a reward loop.
-#[tracing::instrument(skip_all)]
-async fn currency_loop(
-    bot: api::TwitchAndUser,
-    streamer: api::TwitchAndUser,
-    sender: Sender,
-    idle: idle::Idle,
-    injector: Injector,
-    chat_settings: crate::Settings,
-    settings: crate::Settings,
-) -> Result<impl Future<Output = Result<()>>> {
-    tracing::trace!("Setting up currency loop");
-
-    let reward = 10;
-    let default_interval = Duration::seconds(60 * 10);
-
-    let (mut interval_stream, mut reward_interval) = chat_settings
-        .stream("viewer-reward/interval")
-        .or_with(default_interval)
-        .await?;
-
-    let reward_percentage = chat_settings.var("viewer-reward%", 100).await?;
-    let (mut viewer_reward_stream, viewer_reward) = chat_settings
-        .stream("viewer-reward/enabled")
-        .or_with(false)
-        .await?;
-    let (mut notify_rewards_stream, mut notify_rewards) = settings
-        .stream("currency/notify-rewards")
-        .or_with(true)
-        .await?;
-
-    let (mut ty_stream, ty) = settings.stream("currency/type").or_default().await?;
-    let (mut enabled_stream, enabled) = settings.stream("currency/enabled").or_default().await?;
-    let (mut name_stream, name) = settings.stream("currency/name").optional().await?;
-    let (mut command_enabled_stream, command_enabled) = settings
-        .stream("currency/command-enabled")
-        .or_with(true)
-        .await?;
-    let (mut mysql_url_stream, mysql_url) =
-        settings.stream("currency/mysql/url").optional().await?;
-    let (mut mysql_schema_stream, mysql_schema) = settings
-        .stream("currency/mysql/schema")
-        .or_default()
-        .await?;
-
-    let (mut db_stream, db) = injector.stream::<db::Database>().await;
-
-    let mut builder = CurrencyBuilder::new(
-        bot.clone(),
-        streamer.clone(),
-        mysql_schema,
-        injector.clone(),
-    );
-
-    builder.db = db;
-    builder.ty = ty;
-    builder.enabled = enabled;
-    builder.command_enabled = command_enabled;
-    builder.name = name.map(Arc::new);
-    builder.mysql_url = mysql_url;
-
-    let mut currency = builder.build_and_inject().await;
-
-    let future = async move {
-        let new_timer = |interval: &Duration, viewer_reward: bool| {
-            if viewer_reward && !interval.is_empty() {
-                Fuse::new(tokio::time::interval(interval.as_std()))
-            } else {
-                Fuse::empty()
-            }
-        };
-
-        let mut timer = new_timer(&reward_interval, viewer_reward);
-
-        loop {
-            tokio::select! {
-                update = interval_stream.recv() => {
-                    reward_interval = update;
-                    timer = new_timer(&reward_interval, viewer_reward);
-                }
-                update = notify_rewards_stream.recv() => {
-                    notify_rewards = update;
-                }
-                update = db_stream.recv() => {
-                    builder.db = update;
-                    currency = builder.build_and_inject().await;
-                }
-                enabled = enabled_stream.recv() => {
-                    builder.enabled = enabled;
-                    currency = builder.build_and_inject().await;
-                }
-                update = ty_stream.recv() => {
-                    builder.ty = update;
-                    currency = builder.build_and_inject().await;
-                }
-                name = name_stream.recv() => {
-                    builder.name = name.map(Arc::new);
-                    currency = builder.build_and_inject().await;
-                }
-                mysql_url = mysql_url_stream.recv() => {
-                    builder.mysql_url = mysql_url;
-                    currency = builder.build_and_inject().await;
-                }
-                update = mysql_schema_stream.recv() => {
-                    builder.mysql_schema = update;
-                    currency = builder.build_and_inject().await;
-                }
-                command_enabled = command_enabled_stream.recv() => {
-                    builder.command_enabled = command_enabled;
-                    currency = builder.build_and_inject().await;
-                }
-                viewer_reward = viewer_reward_stream.recv() => {
-                    timer = new_timer(&reward_interval, viewer_reward);
-                }
-                _ = timer.as_pin_mut().poll_inner(|mut i, cx| i.poll_tick(cx)) => {
-                    let currency = match currency.as_ref() {
-                        Some(currency) => currency,
-                        None => continue,
-                    };
-
-                    let seconds = reward_interval.num_seconds() as i64;
-
-                    tracing::trace!("Running reward loop");
-
-                    let reward = (reward * reward_percentage.load().await as i64) / 100i64;
-                    let count = currency
-                        .add_channel_all(reward, seconds)
-                        .await?;
-
-                    if notify_rewards && count > 0 && !idle.is_idle().await {
-                        sender.privmsg(format!(
-                            "/me has given {} {} to all viewers!",
-                            reward, currency.name
-                        )).await;
-                    }
-                }
-            }
-        }
-    };
-
-    Ok(future.in_current_span())
 }
 
 /// Handler for incoming messages.
@@ -865,7 +712,11 @@ impl<'a> Handler<'a> {
     }
 
     /// Process the given command.
-    pub async fn process_message(&mut self, user: &User, mut message: Arc<String>) -> Result<()> {
+    pub(crate) async fn process_message(
+        &mut self,
+        user: &User,
+        mut message: Arc<String>,
+    ) -> Result<()> {
         // Run message hooks.
         task::spawn({
             let user = user.clone();
@@ -968,7 +819,7 @@ impl<'a> Handler<'a> {
     }
 
     /// Run the given raw command.
-    pub async fn raw(&mut self, message: String) -> Result<()> {
+    pub(crate) async fn raw(&mut self, message: String) -> Result<()> {
         let tags = Tags::default();
 
         let user = User {
@@ -988,7 +839,7 @@ impl<'a> Handler<'a> {
     }
 
     /// Handle the given command.
-    pub async fn handle(&mut self, mut m: Message) -> Result<()> {
+    pub(crate) async fn handle(&mut self, mut m: Message) -> Result<()> {
         match m.command {
             Command::PRIVMSG(_, ref mut message) => {
                 let message = Arc::new(std::mem::take(message));
@@ -1125,7 +976,7 @@ impl<'a> Handler<'a> {
 /// Struct representing a real user.
 ///
 /// For example, an injected command does not have a real user associated with it.
-pub struct RealUser<'a> {
+pub(crate) struct RealUser<'a> {
     tags: &'a Tags,
     sender: &'a Sender,
     login: &'a str,
@@ -1138,24 +989,24 @@ pub struct RealUser<'a> {
 
 impl<'a> RealUser<'a> {
     /// Get the name of the user.
-    pub fn login(&self) -> &'a str {
+    pub(crate) fn login(&self) -> &'a str {
         self.login
     }
 
     /// Get the display name of the user.
-    pub fn display_name(&self) -> &'a str {
+    pub(crate) fn display_name(&self) -> &'a str {
         self.tags.display_name.as_deref().unwrap_or(self.login)
     }
 
     /// Respond to the user with a message.
-    pub async fn respond(&self, m: impl fmt::Display) {
+    pub(crate) async fn respond(&self, m: impl fmt::Display) {
         self.sender
             .privmsg(crate::utils::respond(self.display_name(), m))
             .await;
     }
 
     /// Test if the current user is the given user.
-    pub fn is(&self, name: &str) -> bool {
+    pub(crate) fn is(&self, name: &str) -> bool {
         self.login == name.to_lowercase()
     }
 
@@ -1180,7 +1031,7 @@ impl<'a> RealUser<'a> {
     }
 
     /// Get a list of all roles the current requester belongs to.
-    pub fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
+    pub(crate) fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
         let mut roles = smallvec::SmallVec::new();
 
         if self.is_streamer() {
@@ -1204,13 +1055,13 @@ impl<'a> RealUser<'a> {
     }
 
     /// Test if the current user has the given scope.
-    pub async fn has_scope(&self, scope: Scope) -> bool {
+    pub(crate) async fn has_scope(&self, scope: Scope) -> bool {
         self.auth.test_any(scope, self.login, self.roles()).await
     }
 }
 
 /// Information about the user.
-pub enum Principal {
+pub(crate) enum Principal {
     User { login: String },
     Injected,
 }
@@ -1228,13 +1079,13 @@ struct UserInner {
 }
 
 #[derive(Clone)]
-pub struct User {
+pub(crate) struct User {
     inner: Arc<UserInner>,
 }
 
 impl User {
     /// Access the user as a real user.
-    pub fn real(&self) -> Option<RealUser<'_>> {
+    pub(crate) fn real(&self) -> Option<RealUser<'_>> {
         match self.inner.principal {
             Principal::User { login: ref name } => Some(RealUser {
                 tags: &self.inner.tags,
@@ -1252,12 +1103,12 @@ impl User {
 
     /// Get the channel the user is associated with.
     #[deprecated = "figure out context from streamer TwichAndUser instead"]
-    pub fn channel(&self) -> &str {
+    pub(crate) fn channel(&self) -> &str {
         self.inner.sender.channel()
     }
 
     /// Get the name of the user.
-    pub fn name(&self) -> Option<&str> {
+    pub(crate) fn name(&self) -> Option<&str> {
         match self.inner.principal {
             Principal::User {
                 login: ref name, ..
@@ -1267,7 +1118,7 @@ impl User {
     }
 
     /// Get the display name of the user.
-    pub fn display_name(&self) -> Option<&str> {
+    pub(crate) fn display_name(&self) -> Option<&str> {
         self.inner
             .tags
             .display_name
@@ -1276,17 +1127,17 @@ impl User {
     }
 
     /// Get tags associated with the message.
-    pub fn tags(&self) -> &Tags {
+    pub(crate) fn tags(&self) -> &Tags {
         &self.inner.tags
     }
 
     /// Access the sender associated with the user.
-    pub fn sender(&self) -> &Sender {
+    pub(crate) fn sender(&self) -> &Sender {
         &self.inner.sender
     }
 
     /// Test if the current user is the given user.
-    pub fn is(&self, name: &str) -> bool {
+    pub(crate) fn is(&self, name: &str) -> bool {
         self.real().map(|u| u.is(name)).unwrap_or(false)
     }
 
@@ -1301,7 +1152,7 @@ impl User {
     }
 
     /// Respond to the user with a message.
-    pub async fn respond(&self, m: impl fmt::Display) {
+    pub(crate) async fn respond(&self, m: impl fmt::Display) {
         match self.display_name() {
             Some(name) => {
                 self.inner
@@ -1316,7 +1167,7 @@ impl User {
     }
 
     /// Render an iterable of results, that implements display.
-    pub async fn respond_lines<I>(&self, results: I, empty: &str)
+    pub(crate) async fn respond_lines<I>(&self, results: I, empty: &str)
     where
         I: IntoIterator,
         I::Item: fmt::Display,
@@ -1338,7 +1189,7 @@ impl User {
     }
 
     /// Get a list of all roles the current requester belongs to.
-    pub fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
+    pub(crate) fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
         match self.real().map(|u| u.roles()) {
             Some(roles) => roles,
             None => {
@@ -1353,7 +1204,7 @@ impl User {
     }
 
     /// Test if the current user has the given scope.
-    pub async fn has_scope(&self, scope: Scope) -> bool {
+    pub(crate) async fn has_scope(&self, scope: Scope) -> bool {
         let user = match self.real() {
             Some(user) => user,
             None => return false,
@@ -1449,21 +1300,21 @@ where
 
 /// Struct of tags.
 #[derive(Debug, Clone, Default)]
-pub struct Tags {
+pub(crate) struct Tags {
     /// Contents of the id tag if present.
-    pub id: Option<String>,
+    pub(crate) id: Option<String>,
     /// Contents of the msg-id tag if present.
-    pub msg_id: Option<String>,
+    pub(crate) msg_id: Option<String>,
     /// The display name of the user.
-    pub display_name: Option<String>,
+    pub(crate) display_name: Option<String>,
     /// The ID of the user.
-    pub user_id: Option<String>,
+    pub(crate) user_id: Option<String>,
     /// Color of the user.
-    pub color: Option<String>,
+    pub(crate) color: Option<String>,
     /// Emotes part of the message.
-    pub emotes: Option<String>,
+    pub(crate) emotes: Option<String>,
     /// Badges part of the message.
-    pub badges: Option<String>,
+    pub(crate) badges: Option<String>,
 }
 
 impl Tags {
@@ -1538,19 +1389,19 @@ impl ClearMsgTags {
 }
 
 #[derive(Debug)]
-pub enum SenderThreadItem {
+pub(crate) enum SenderThreadItem {
     Exit,
     Send(Box<Message>),
 }
 
 #[derive(serde::Serialize)]
-pub struct BadWordsVars<'a> {
+pub(crate) struct BadWordsVars<'a> {
     name: Option<&'a str>,
     target: &'a str,
 }
 
 #[derive(serde::Serialize)]
-pub struct CommandVars<'a> {
+pub(crate) struct CommandVars<'a> {
     name: Option<&'a str>,
     target: &'a str,
     count: i32,

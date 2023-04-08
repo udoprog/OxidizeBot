@@ -8,7 +8,7 @@ use crate::utils::{Cooldown, Duration};
 use anyhow::{bail, Result};
 use std::collections::HashSet;
 
-pub struct Handler {
+pub(crate) struct Handler {
     enabled: settings::Var<bool>,
     reward: settings::Var<i64>,
     cooldown: settings::Var<Cooldown>,
@@ -79,7 +79,7 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

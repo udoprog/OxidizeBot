@@ -8,24 +8,24 @@ use serde::{Deserialize, Serialize};
 
 ///[search item](https://developer.spotify.com/web-api/search-item/)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SearchPlaylists {
-    pub playlists: Page<SimplifiedPlaylist>,
+pub(crate) struct SearchPlaylists {
+    pub(crate) playlists: Page<SimplifiedPlaylist>,
 }
 
 ///[search item](https://developer.spotify.com/web-api/search-item/)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SearchAlbums {
-    pub albums: Page<SimplifiedAlbum>,
+pub(crate) struct SearchAlbums {
+    pub(crate) albums: Page<SimplifiedAlbum>,
 }
 
 ///[search item](https://developer.spotify.com/web-api/search-item/)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SearchArtists {
-    pub artists: Page<FullArtist>,
+pub(crate) struct SearchArtists {
+    pub(crate) artists: Page<FullArtist>,
 }
 
 ///[search item](https://developer.spotify.com/web-api/search-item/)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SearchTracks {
-    pub tracks: Page<FullTrack>,
+pub(crate) struct SearchTracks {
+    pub(crate) tracks: Page<FullTrack>,
 }

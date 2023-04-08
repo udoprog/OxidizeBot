@@ -17,7 +17,7 @@ const DEFAULT_BADGE_SIZE: u32 = 18;
 const BTTV_BOT_BADGE: &str = "https://cdn.betterttv.net/tags/bot.png";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Url {
+pub(crate) struct Url {
     url: String,
     size: Option<Size>,
 }
@@ -29,7 +29,7 @@ impl From<String> for Url {
 }
 
 #[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Urls {
+pub(crate) struct Urls {
     small: Option<Url>,
     medium: Option<Url>,
     large: Option<Url>,
@@ -74,13 +74,13 @@ impl From<Url> for Urls {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Size {
+pub(crate) struct Size {
     width: u32,
     height: u32,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Emote {
+pub(crate) struct Emote {
     urls: Urls,
 }
 
@@ -134,13 +134,13 @@ struct Inner {
 }
 
 #[derive(Clone)]
-pub struct Emotes {
+pub(crate) struct Emotes {
     inner: Arc<Inner>,
 }
 
 impl Emotes {
     /// Construct a new emoticon handler.
-    pub fn new(cache: Cache, twitch: Twitch) -> Result<Self, Error> {
+    pub(crate) fn new(cache: Cache, twitch: Twitch) -> Result<Self, Error> {
         Ok(Self {
             inner: Arc::new(Inner {
                 cache: cache.namespaced(&"emotes")?,
@@ -663,7 +663,7 @@ impl Emotes {
             .await
     }
 
-    pub async fn render(
+    pub(crate) async fn render(
         &self,
         tags: &irc::Tags,
         user: &api::User,
@@ -699,7 +699,7 @@ enum Item {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Badge {
+pub(crate) struct Badge {
     /// Title for badge.
     title: String,
     /// Add a link to the badge.
@@ -729,7 +729,7 @@ impl<'a> From<(u32, u32, &'a TduvaBadge)> for Badge {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Rendered {
+pub(crate) struct Rendered {
     badges: SmallVec<[Badge; INLINED_BADGES]>,
     items: Vec<Item>,
     emotes: HashMap<String, Arc<Emote>>,
@@ -819,14 +819,14 @@ impl Rendered {
 }
 
 #[derive(Debug)]
-pub struct Words<'a> {
+pub(crate) struct Words<'a> {
     string: &'a str,
     n: usize,
 }
 
 impl<'a> Words<'a> {
     /// Split a string into words.
-    pub fn new(string: &str) -> Words<'_> {
+    pub(crate) fn new(string: &str) -> Words<'_> {
         Words { string, n: 0 }
     }
 }
@@ -871,7 +871,7 @@ mod tests {
     use super::Words;
 
     #[test]
-    pub fn test_words() {
+    pub(crate) fn test_words() {
         let w = Words::new("");
         assert_eq!(Vec::<(usize, &str)>::new(), w.collect::<Vec<_>>());
 

@@ -1,14 +1,14 @@
 //! Spotify API helpers.
 
-pub use self::model::artist::SimplifiedArtist;
-pub use self::model::context::FullPlayingContext;
-pub use self::model::device::Device;
-pub use self::model::page::Page;
-pub use self::model::playlist::{FullPlaylist, SimplifiedPlaylist};
-pub use self::model::search::SearchTracks;
-pub use self::model::senum::DeviceType;
-pub use self::model::track::{FullTrack, SavedTrack};
-pub use self::model::user::PrivateUser;
+pub(crate) use self::model::artist::SimplifiedArtist;
+pub(crate) use self::model::context::FullPlayingContext;
+pub(crate) use self::model::device::Device;
+pub(crate) use self::model::page::Page;
+pub(crate) use self::model::playlist::{FullPlaylist, SimplifiedPlaylist};
+pub(crate) use self::model::search::SearchTracks;
+pub(crate) use self::model::senum::DeviceType;
+pub(crate) use self::model::track::{FullTrack, SavedTrack};
+pub(crate) use self::model::user::PrivateUser;
 use crate::api::RequestBuilder;
 use crate::oauth2;
 use crate::spotify_id::SpotifyId;
@@ -26,15 +26,15 @@ const DEFAULT_LIMIT: usize = 50;
 
 /// API integration.
 #[derive(Clone, Debug)]
-pub struct Spotify {
+pub(crate) struct Spotify {
     client: Client,
     api_url: Url,
-    pub token: oauth2::SyncToken,
+    pub(crate) token: oauth2::SyncToken,
 }
 
 impl Spotify {
     /// Create a new API integration.
-    pub fn new(token: oauth2::SyncToken) -> Result<Spotify> {
+    pub(crate) fn new(token: oauth2::SyncToken) -> Result<Spotify> {
         Ok(Spotify {
             client: Client::new(),
             api_url: str::parse::<Url>(API_URL)?,
@@ -60,14 +60,18 @@ impl Spotify {
     }
 
     /// Get user info.
-    pub async fn me(&self) -> Result<PrivateUser> {
+    pub(crate) async fn me(&self) -> Result<PrivateUser> {
         let req = self.request(Method::GET, &["me"]);
 
         req.execute().await?.json()
     }
 
     /// Get my playlists.
-    pub async fn playlist(&self, id: SpotifyId, market: Option<&str>) -> Result<FullPlaylist> {
+    pub(crate) async fn playlist(
+        &self,
+        id: SpotifyId,
+        market: Option<&str>,
+    ) -> Result<FullPlaylist> {
         let mut req = self.request(Method::GET, &["playlists", id.to_string().as_str()]);
 
         req.query_param("limit", &DEFAULT_LIMIT.to_string());
@@ -80,7 +84,7 @@ impl Spotify {
     }
 
     /// Get my devices.
-    pub async fn my_player_devices(&self) -> Result<Vec<Device>> {
+    pub(crate) async fn my_player_devices(&self) -> Result<Vec<Device>> {
         let req = self.request(Method::GET, &["me", "player", "devices"]);
         let r = req.execute().await?.json::<Response>()?;
         return Ok(r.devices);
@@ -92,7 +96,11 @@ impl Spotify {
     }
 
     /// Set player volume.
-    pub async fn me_player_volume(&self, device_id: Option<&str>, volume: f32) -> Result<bool> {
+    pub(crate) async fn me_player_volume(
+        &self,
+        device_id: Option<&str>,
+        volume: f32,
+    ) -> Result<bool> {
         let volume = u32::min(100, (volume * 100f32).round() as u32).to_string();
 
         let mut req = self.request(Method::PUT, &["me", "player", "volume"]);
@@ -110,7 +118,7 @@ impl Spotify {
     }
 
     /// Start playing a track.
-    pub async fn me_player_pause(&self, device_id: Option<&str>) -> Result<bool> {
+    pub(crate) async fn me_player_pause(&self, device_id: Option<&str>) -> Result<bool> {
         let mut req = self.request(Method::PUT, &["me", "player", "pause"]);
 
         if let Some(device_id) = device_id {
@@ -125,7 +133,7 @@ impl Spotify {
     }
 
     /// Information on the current playback.
-    pub async fn me_player(&self) -> Result<Option<FullPlayingContext>> {
+    pub(crate) async fn me_player(&self) -> Result<Option<FullPlayingContext>> {
         let req = self.request(Method::GET, &["me", "player"]);
 
         req.execute()
@@ -136,7 +144,7 @@ impl Spotify {
     }
 
     /// Start playing a track.
-    pub async fn me_player_play(
+    pub(crate) async fn me_player_play(
         &self,
         device_id: Option<&str>,
         track_uri: Option<&str>,
@@ -187,7 +195,11 @@ impl Spotify {
     }
 
     /// Enqueue the specified track.
-    pub async fn me_player_queue(&self, device_id: Option<&str>, track_uri: &str) -> Result<bool> {
+    pub(crate) async fn me_player_queue(
+        &self,
+        device_id: Option<&str>,
+        track_uri: &str,
+    ) -> Result<bool> {
         let mut r = self.request(Method::POST, &["me", "player", "queue"]);
 
         if let Some(device_id) = device_id {
@@ -202,7 +214,7 @@ impl Spotify {
     }
 
     /// Skip to the next song.
-    pub async fn me_player_next(&self, device_id: Option<&str>) -> Result<bool> {
+    pub(crate) async fn me_player_next(&self, device_id: Option<&str>) -> Result<bool> {
         let mut r = self.request(Method::POST, &["me", "player", "next"]);
 
         if let Some(device_id) = device_id {
@@ -216,20 +228,20 @@ impl Spotify {
     }
 
     /// Get my playlists.
-    pub async fn my_playlists(&self) -> Result<Page<SimplifiedPlaylist>> {
+    pub(crate) async fn my_playlists(&self) -> Result<Page<SimplifiedPlaylist>> {
         let req = self.request(Method::GET, &["me", "playlists"]);
         req.execute().await?.json()
     }
 
     /// Get my songs.
-    pub async fn my_tracks(&self) -> Result<Page<SavedTrack>> {
+    pub(crate) async fn my_tracks(&self) -> Result<Page<SavedTrack>> {
         let mut req = self.request(Method::GET, &["me", "tracks"]);
         req.query_param("limit", &DEFAULT_LIMIT.to_string());
         req.execute().await?.json()
     }
 
     /// Get the full track by ID.
-    pub async fn track(&self, id: String, market: Option<&str>) -> Result<FullTrack> {
+    pub(crate) async fn track(&self, id: String, market: Option<&str>) -> Result<FullTrack> {
         let mut req = self.request(Method::GET, &["tracks", id.as_str()]);
 
         if let Some(market) = market {
@@ -240,7 +252,7 @@ impl Spotify {
     }
 
     /// Search for tracks.
-    pub async fn search_track(&self, q: &str, limit: u32) -> Result<SearchTracks> {
+    pub(crate) async fn search_track(&self, q: &str, limit: u32) -> Result<SearchTracks> {
         self.request(Method::GET, &["search"])
             .query_param("type", "track")
             .query_param("q", q)
@@ -251,7 +263,10 @@ impl Spotify {
     }
 
     /// Convert a page object into a stream.
-    pub fn page_as_stream<'a, T: 'a>(&'a self, page: Page<T>) -> impl Stream<Item = Result<T>> + 'a
+    pub(crate) fn page_as_stream<'a, T: 'a>(
+        &'a self,
+        page: Page<T>,
+    ) -> impl Stream<Item = Result<T>> + 'a
     where
         T: Send + DeserializeOwned,
     {

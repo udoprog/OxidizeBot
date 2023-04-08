@@ -108,7 +108,7 @@ extern crate diesel_migrations;
 #[macro_use]
 extern crate smallvec;
 
-pub use async_injector as injector;
+pub(crate) use async_injector as injector;
 
 /// Get the version number of the project.
 macro_rules! version_str {
@@ -124,60 +124,61 @@ macro_rules! user_agent_str {
     };
 }
 
-pub const VERSION: &str = version_str!();
+pub(crate) const VERSION: &str = version_str!();
 
 #[macro_use]
 mod macros;
-pub mod api;
-pub mod auth;
+pub(crate) mod api;
+pub(crate) mod auth;
 mod backoff;
-pub mod bus;
+pub(crate) mod bus;
+pub mod cli;
 mod command;
-pub mod currency;
-pub mod db;
-pub mod emotes;
+pub(crate) mod currency;
+pub(crate) mod db;
+pub(crate) mod emotes;
 mod idle;
-pub mod irc;
-pub mod message_log;
-pub mod module;
-pub mod oauth2;
+pub(crate) mod irc;
+pub(crate) mod message_log;
+pub(crate) mod module;
+pub(crate) mod oauth2;
 mod panic_logger;
-pub mod player;
+pub(crate) mod player;
 pub(crate) mod prelude;
 #[cfg(feature = "scripting")]
 mod script;
 #[cfg(not(feature = "scripting"))]
 #[path = "script/mock.rs"]
 mod script;
-pub mod settings;
+pub(crate) mod settings;
 mod song_file;
 mod spotify_id;
-pub mod storage;
-pub mod stream_info;
-pub mod sys;
-pub mod tags;
+pub(crate) mod storage;
+pub(crate) mod stream_info;
+pub(crate) mod sys;
+pub(crate) mod tags;
 mod task;
-pub mod template;
+pub(crate) mod template;
 mod track_id;
-pub mod updater;
+pub(crate) mod updater;
 mod uri;
-pub mod utils;
-pub mod web;
+pub(crate) mod utils;
+pub(crate) mod web;
 pub(crate) use tokio_stream as stream;
 
-pub use self::panic_logger::panic_logger;
+pub(crate) use self::panic_logger::panic_logger;
 use self::uri::Uri;
 
 /// The local schema alias.
 pub(crate) type Schema = crate::settings::Schema<crate::auth::Scope>;
 /// The local settings alias.
-pub type Settings = crate::settings::Settings<crate::auth::Scope>;
+pub(crate) type Settings = crate::settings::Settings<crate::auth::Scope>;
 /// The local setting alias.
 pub(crate) type Setting = crate::settings::Setting<crate::auth::Scope>;
 
-pub const SCHEMA: &[u8] = include_bytes!("settings.yaml");
+pub(crate) const SCHEMA: &[u8] = include_bytes!("settings.yaml");
 
 /// Load the settings schema to use.
-pub fn load_schema() -> Result<crate::Schema, crate::settings::Error> {
+pub(crate) fn load_schema() -> Result<crate::Schema, crate::settings::Error> {
     crate::settings::Schema::load_bytes(SCHEMA)
 }

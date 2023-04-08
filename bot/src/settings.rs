@@ -25,24 +25,24 @@ const SEP: char = '/';
 type Update = Event<serde_json::Value>;
 
 /// Required traits for a scope.
-pub trait Scope: 'static + Clone + Send + Sync + Default {}
+pub(crate) trait Scope: 'static + Clone + Send + Sync + Default {}
 
 /// A synchronized variable from settings.
 #[derive(Debug)]
-pub struct Var<T> {
+pub(crate) struct Var<T> {
     value: Arc<RwLock<T>>,
 }
 
 impl<T> Var<T> {
     /// Construct a new var.
-    pub fn new(value: T) -> Self {
+    pub(crate) fn new(value: T) -> Self {
         Self {
             value: Arc::new(RwLock::new(value)),
         }
     }
 
     /// Load the given var.
-    pub async fn load(&self) -> T
+    pub(crate) async fn load(&self) -> T
     where
         T: Clone,
     {
@@ -50,12 +50,12 @@ impl<T> Var<T> {
     }
 
     /// Read the synchronized var.
-    pub async fn read(&self) -> RwLockReadGuard<'_, T> {
+    pub(crate) async fn read(&self) -> RwLockReadGuard<'_, T> {
         self.value.read().await
     }
 
     /// Write to the synchronized var.
-    pub async fn write(&self) -> RwLockWriteGuard<'_, T> {
+    pub(crate) async fn write(&self) -> RwLockWriteGuard<'_, T> {
         self.value.write().await
     }
 }
@@ -69,7 +69,7 @@ impl<T> Clone for Var<T> {
 }
 
 #[derive(Debug)]
-pub enum Error {
+pub(crate) enum Error {
     /// Failed to perform work due to injector shutting down.
     Shutdown,
     /// Unexpected end of driver stream.
@@ -178,7 +178,7 @@ impl From<tokio::task::JoinError> for Error {
 
 /// Update events for a given key.
 #[derive(Debug, Clone)]
-pub enum Event<T> {
+pub(crate) enum Event<T> {
     /// Indicate that the given key was cleared.
     Clear,
     /// Indicate that the given key was updated.
@@ -186,17 +186,17 @@ pub enum Event<T> {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Setting<S>
+pub(crate) struct Setting<S>
 where
     S: Scope,
 {
-    pub schema: SchemaType<S>,
-    pub key: String,
-    pub value: serde_json::Value,
+    pub(crate) schema: SchemaType<S>,
+    pub(crate) key: String,
+    pub(crate) value: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SettingRef<'settings, 'key, S, T>
+pub(crate) struct SettingRef<'settings, 'key, S, T>
 where
     S: Scope,
 {
@@ -210,7 +210,7 @@ where
     S: Scope,
 {
     /// Convert into an owned value.
-    pub fn to_owned(&self) -> Setting<S> {
+    pub(crate) fn to_owned(&self) -> Setting<S> {
         Setting {
             schema: self.schema.clone(),
             key: self.key.to_string(),
@@ -227,47 +227,47 @@ where
     S: Scope,
 {
     /// Access the underlying key this setting references.
-    pub fn key(&self) -> &str {
+    pub(crate) fn key(&self) -> &str {
         &self.key
     }
 
     /// Access the underlying schema this setting references.
-    pub fn schema(&self) -> &SchemaType<S> {
+    pub(crate) fn schema(&self) -> &SchemaType<S> {
         self.schema
     }
 
     /// Access the raw value this setting references.
-    pub fn value(&self) -> Option<&T> {
+    pub(crate) fn value(&self) -> Option<&T> {
         self.value.as_ref()
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SchemaType<S>
+pub(crate) struct SchemaType<S>
 where
     S: Scope,
 {
     /// Documentation for this type.
-    pub doc: String,
+    pub(crate) doc: String,
     /// Scope required to modify variable.
     #[serde(default)]
-    pub scope: Option<S>,
+    pub(crate) scope: Option<S>,
     /// The type.
     #[serde(rename = "type")]
-    pub ty: Type,
+    pub(crate) ty: Type,
     /// If the value is a secret value or not.
     #[serde(default)]
-    pub secret: bool,
+    pub(crate) secret: bool,
     /// If the setting is a feature toggle.
     #[serde(default)]
-    pub feature: bool,
+    pub(crate) feature: bool,
     /// A human-readable title for the setting.
     #[serde(default)]
-    pub title: Option<String>,
+    pub(crate) title: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Schema<S>
+pub(crate) struct Schema<S>
 where
     S: Scope,
 {
@@ -320,14 +320,14 @@ where
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Migration {
+pub(crate) struct Migration {
     /// Treat the migration as a prefix migration.
     #[serde(default)]
-    pub prefix: bool,
+    pub(crate) prefix: bool,
     /// Key to migrate from.
-    pub from: String,
+    pub(crate) from: String,
     /// Key to migrate to.
-    pub to: String,
+    pub(crate) to: String,
 }
 
 impl<S> Schema<S>
@@ -335,7 +335,7 @@ where
     S: Scope + de::DeserializeOwned,
 {
     /// Load schema from the given set of bytes.
-    pub fn load_bytes(bytes: &[u8]) -> Result<Schema<S>, Error> {
+    pub(crate) fn load_bytes(bytes: &[u8]) -> Result<Schema<S>, Error> {
         serde_yaml::from_slice(bytes).map_err(Error::FailedToLoadSchema)
     }
 }
@@ -345,12 +345,12 @@ where
     S: Scope,
 {
     /// Lookup the given type by key.
-    pub fn lookup(&self, key: &str) -> Option<SchemaType<S>> {
+    pub(crate) fn lookup(&self, key: &str) -> Option<SchemaType<S>> {
         self.types.get(key).cloned()
     }
 
     /// Test if schema contains the given key.
-    pub fn contains(&self, key: &str) -> bool {
+    pub(crate) fn contains(&self, key: &str) -> bool {
         self.types.contains_key(key)
     }
 }
@@ -375,7 +375,7 @@ impl Future for Driver {
     }
 }
 
-pub struct Inner<S>
+pub(crate) struct Inner<S>
 where
     S: Scope,
 {
@@ -394,7 +394,7 @@ where
 
 /// A container for settings from which we can subscribe for updates.
 #[derive(Clone)]
-pub struct Settings<S>
+pub(crate) struct Settings<S>
 where
     S: Scope,
 {
@@ -406,7 +406,7 @@ impl<S> Settings<S>
 where
     S: Scope,
 {
-    pub fn new(db: db::Database, schema: Schema<S>) -> Self {
+    pub(crate) fn new(db: db::Database, schema: Schema<S>) -> Self {
         let prefixes = schema.as_prefixes();
         let subscriptions = schema.as_subscriptions();
         let (drivers, drivers_rx) = mpsc::unbounded_channel();
@@ -425,7 +425,7 @@ where
     }
 
     /// Run all settings migrations.
-    pub async fn run_migrations(&self) -> Result<(), Error> {
+    pub(crate) async fn run_migrations(&self) -> Result<(), Error> {
         for m in &self.inner.schema.migrations {
             if m.prefix {
                 self.migrate_prefix(&m.from, &m.to).await?;
@@ -515,13 +515,13 @@ where
     }
 
     /// Lookup the given schema.
-    pub fn lookup(&self, key: &str) -> Option<&SchemaType<S>> {
+    pub(crate) fn lookup(&self, key: &str) -> Option<&SchemaType<S>> {
         let key = self.key(key);
         self.inner.schema.types.get(&*key)
     }
 
     /// Get a setting by prefix.
-    pub async fn list_by_prefix(&self, prefix: &str) -> Result<Vec<Setting<S>>, Error> {
+    pub(crate) async fn list_by_prefix(&self, prefix: &str) -> Result<Vec<Setting<S>>, Error> {
         use self::db::schema::settings::dsl;
 
         let prefix = self.key(prefix);
@@ -572,7 +572,7 @@ where
     /// Get the given setting.
     ///
     /// This includes the schema of the setting as well.
-    pub async fn setting<'settings, 'key, T>(
+    pub(crate) async fn setting<'settings, 'key, T>(
         &'settings self,
         key: &'key str,
     ) -> Result<Option<SettingRef<'settings, 'key, S, T>>, Error>
@@ -591,13 +591,13 @@ where
     }
 
     /// Test if the given key exists in the database.
-    pub async fn has(&self, key: &str) -> Result<bool, Error> {
+    pub(crate) async fn has(&self, key: &str) -> Result<bool, Error> {
         let key = self.key(key);
         Ok(self.inner_get::<serde_json::Value>(&key).await?.is_some())
     }
 
     /// Get the value of the given key from the database.
-    pub async fn get<T>(&self, key: &str) -> Result<Option<T>, Error>
+    pub(crate) async fn get<T>(&self, key: &str) -> Result<Option<T>, Error>
     where
         T: Serialize + de::DeserializeOwned,
     {
@@ -606,7 +606,7 @@ where
     }
 
     /// Insert the given setting without sending an update notification to other components.
-    pub async fn set_silent<T>(&self, key: &str, value: T) -> Result<(), Error>
+    pub(crate) async fn set_silent<T>(&self, key: &str, value: T) -> Result<(), Error>
     where
         T: Serialize,
     {
@@ -615,7 +615,7 @@ where
     }
 
     /// Insert the given setting.
-    pub async fn set<T>(&self, key: &str, value: T) -> Result<(), Error>
+    pub(crate) async fn set<T>(&self, key: &str, value: T) -> Result<(), Error>
     where
         T: Serialize,
     {
@@ -624,7 +624,7 @@ where
     }
 
     /// Insert the given setting as raw JSON.
-    pub async fn set_json(&self, key: &str, value: serde_json::Value) -> Result<(), Error> {
+    pub(crate) async fn set_json(&self, key: &str, value: serde_json::Value) -> Result<(), Error> {
         let key = self.key(key);
         self.inner_set_json(key.as_ref(), value, true).await
     }
@@ -682,7 +682,7 @@ where
     }
 
     /// Insert the given setting.
-    pub async fn list(&self) -> Result<Vec<Setting<S>>, Error> {
+    pub(crate) async fn list(&self) -> Result<Vec<Setting<S>>, Error> {
         use self::db::schema::settings::dsl;
 
         let inner = self.inner.clone();
@@ -719,7 +719,7 @@ where
     }
 
     /// Clear the given setting. Returning `true` if it was removed.
-    pub async fn clear(&self, key: &str) -> Result<bool, Error> {
+    pub(crate) async fn clear(&self, key: &str) -> Result<bool, Error> {
         let key = self.key(key);
         self.inner_clear(&key).await
     }
@@ -742,7 +742,7 @@ where
     }
 
     /// Create a scoped setting.
-    pub fn scoped(&self, s: &str) -> Settings<S> {
+    pub(crate) fn scoped(&self, s: &str) -> Settings<S> {
         let mut it = s.split('/').filter(|s| !s.is_empty());
 
         let scope = if self.scope.is_empty() {
@@ -777,7 +777,7 @@ where
     }
 
     /// Initialize the value from the database.
-    pub fn stream<'settings, 'key, T>(
+    pub(crate) fn stream<'settings, 'key, T>(
         &'settings self,
         key: &'key str,
     ) -> StreamBuilder<'settings, 'key, S, T> {
@@ -791,7 +791,7 @@ where
     }
 
     /// Get a synchronized variable for the given configuration key.
-    pub async fn var<T>(&self, key: &str, default: T) -> Result<Var<T>, Error>
+    pub(crate) async fn var<T>(&self, key: &str, default: T) -> Result<Var<T>, Error>
     where
         T: 'static + fmt::Debug + Send + Sync + Clone + Serialize + de::DeserializeOwned,
     {
@@ -817,7 +817,7 @@ where
     }
 
     /// Get an optional synchronized variable for the given configuration key.
-    pub async fn optional<T>(&self, key: &str) -> Result<Var<Option<T>>, Error>
+    pub(crate) async fn optional<T>(&self, key: &str) -> Result<Var<Option<T>>, Error>
     where
         T: 'static + fmt::Debug + Send + Sync + Clone + Serialize + de::DeserializeOwned,
     {
@@ -846,7 +846,7 @@ where
     ///
     /// This has to be called for the injector to perform important tasks.
     #[tracing::instrument(skip_all)]
-    pub async fn drive(self) -> Result<(), Error> {
+    pub(crate) async fn drive(self) -> Result<(), Error> {
         let mut rx = self
             .inner
             .drivers_rx
@@ -1015,7 +1015,7 @@ impl ops::Deref for Key<'_, '_> {
 }
 
 #[must_use = "Must consume to drive decide how to handle stream"]
-pub struct StreamBuilder<'settings, 'key, S, T>
+pub(crate) struct StreamBuilder<'settings, 'key, S, T>
 where
     S: Scope,
 {
@@ -1030,7 +1030,7 @@ where
     T: Serialize + de::DeserializeOwned,
 {
     /// Make the setting required, falling back to using and storing the default value if necessary.
-    pub async fn or_default(self) -> Result<(Stream<T>, T), Error>
+    pub(crate) async fn or_default(self) -> Result<(Stream<T>, T), Error>
     where
         T: Clone + Default,
     {
@@ -1038,7 +1038,7 @@ where
     }
 
     /// Make the setting required, falling back to using and storing the specified value if necessary.
-    pub async fn or_with(self, value: T) -> Result<(Stream<T>, T), Error>
+    pub(crate) async fn or_with(self, value: T) -> Result<(Stream<T>, T), Error>
     where
         T: Clone,
     {
@@ -1046,7 +1046,7 @@ where
     }
 
     /// Make the setting required, falling back to using and storing the specified value if necessary.
-    pub async fn or_with_else<F>(self, value: F) -> Result<(Stream<T>, T), Error>
+    pub(crate) async fn or_with_else<F>(self, value: F) -> Result<(Stream<T>, T), Error>
     where
         T: Clone,
         F: FnOnce() -> T,
@@ -1065,7 +1065,7 @@ where
     }
 
     /// Make the setting optional.
-    pub async fn optional(self) -> Result<(OptionStream<T>, Option<T>), Error> {
+    pub(crate) async fn optional(self) -> Result<(OptionStream<T>, Option<T>), Error> {
         let value = self.settings.inner_get::<T>(&self.key).await?;
 
         let value = match value {
@@ -1084,12 +1084,12 @@ where
     }
 
     /// Add a potential fallback value when the type is optional.
-    pub fn or(self, other: Option<T>) -> Self {
+    pub(crate) fn or(self, other: Option<T>) -> Self {
         self.or_else(move || other)
     }
 
     /// Add a potential fallback value when the type is optional.
-    pub fn or_else<F>(mut self, other: F) -> Self
+    pub(crate) fn or_else<F>(mut self, other: F) -> Self
     where
         F: FnOnce() -> Option<T>,
     {
@@ -1103,7 +1103,7 @@ where
 }
 
 /// Get updates for a specific setting.
-pub struct Stream<T> {
+pub(crate) struct Stream<T> {
     default: T,
     option_stream: OptionStream<T>,
 }
@@ -1113,7 +1113,7 @@ where
     T: Clone + de::DeserializeOwned,
 {
     /// Recv the next update to the setting associated with the stream.
-    pub async fn recv(&mut self) -> T {
+    pub(crate) async fn recv(&mut self) -> T {
         if let Some(value) = self.option_stream.recv().await {
             value
         } else {
@@ -1123,7 +1123,7 @@ where
 }
 
 /// Get updates for a specific setting.
-pub struct OptionStream<T> {
+pub(crate) struct OptionStream<T> {
     key: Box<str>,
     rx: broadcast::Receiver<Update>,
     marker: marker::PhantomData<T>,
@@ -1134,7 +1134,7 @@ where
     T: de::DeserializeOwned,
 {
     /// Recv the next update to the setting associated with the stream.
-    pub async fn recv(&mut self) -> Option<T> {
+    pub(crate) async fn recv(&mut self) -> Option<T> {
         let item = match self.rx.recv().await {
             Ok(item) => item,
             Err(e) => {
@@ -1159,7 +1159,7 @@ where
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[derive(Default)]
-pub enum Format {
+pub(crate) enum Format {
     #[serde(rename = "regex")]
     Regex { pattern: String },
     #[serde(rename = "time-zone")]
@@ -1170,23 +1170,23 @@ pub enum Format {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Type {
+pub(crate) struct Type {
     #[serde(default)]
-    pub optional: bool,
+    pub(crate) optional: bool,
     #[serde(flatten)]
-    pub kind: Kind,
+    pub(crate) kind: Kind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Field {
-    pub title: String,
-    pub field: String,
+pub(crate) struct Field {
+    pub(crate) title: String,
+    pub(crate) field: String,
     #[serde(rename = "type")]
-    pub ty: Box<Type>,
+    pub(crate) ty: Box<Type>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
-pub enum SelectVariant {
+pub(crate) enum SelectVariant {
     #[serde(rename = "typeahead")]
     Typeahead,
     #[serde(rename = "default")]
@@ -1195,14 +1195,14 @@ pub enum SelectVariant {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SelectOption {
+pub(crate) struct SelectOption {
     title: String,
     value: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "id")]
-pub enum Kind {
+pub(crate) enum Kind {
     #[serde(rename = "raw")]
     Raw,
     #[serde(rename = "duration")]
@@ -1240,7 +1240,7 @@ pub enum Kind {
 
 impl Type {
     /// Construct a set with the specified inner value.
-    pub fn set(ty: Type) -> Type {
+    pub(crate) fn set(ty: Type) -> Type {
         Type {
             optional: false,
             kind: Kind::Set {
@@ -1250,7 +1250,7 @@ impl Type {
     }
 
     /// Parse the given string as the current type and convert into JSON.
-    pub fn parse_as_json(&self, s: &str) -> Result<serde_json::Value, Error> {
+    pub(crate) fn parse_as_json(&self, s: &str) -> Result<serde_json::Value, Error> {
         use self::Kind::*;
         use serde_json::Value;
 
@@ -1339,7 +1339,7 @@ impl Type {
     }
 
     /// Test if JSON value is compatible with the current type.
-    pub fn is_compatible_with_json(&self, other: &serde_json::Value) -> bool {
+    pub(crate) fn is_compatible_with_json(&self, other: &serde_json::Value) -> bool {
         use self::Kind::*;
         use serde_json::Value;
 

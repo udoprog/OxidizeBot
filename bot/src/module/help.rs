@@ -7,7 +7,7 @@ use url::Url;
 const DEFAULT_URL: &str = "https://setbac.tv/help";
 
 /// Handler for the !help command.
-pub struct Help {
+pub(crate) struct Help {
     enabled: settings::Var<bool>,
     url: settings::Var<Url>,
 }
@@ -40,7 +40,7 @@ impl command::Handler for Help {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

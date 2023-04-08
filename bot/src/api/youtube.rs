@@ -12,16 +12,16 @@ const GET_VIDEO_INFO_URL: &str = "https://www.youtube.com/get_video_info";
 
 /// API integration.
 #[derive(Clone, Debug)]
-pub struct YouTube {
+pub(crate) struct YouTube {
     client: Client,
     v3_url: Url,
     get_video_info_url: Url,
-    pub token: oauth2::SyncToken,
+    pub(crate) token: oauth2::SyncToken,
 }
 
 impl YouTube {
     /// Create a new API integration.
-    pub fn new(token: oauth2::SyncToken) -> Result<Self> {
+    pub(crate) fn new(token: oauth2::SyncToken) -> Result<Self> {
         Ok(Self {
             client: Client::new(),
             v3_url: str::parse::<Url>(V3_URL)?,
@@ -48,7 +48,7 @@ impl YouTube {
     }
 
     /// Update the channel information.
-    pub async fn videos_by_id(&self, video_id: &str, part: &str) -> Result<Option<Video>> {
+    pub(crate) async fn videos_by_id(&self, video_id: &str, part: &str) -> Result<Option<Video>> {
         let mut req = self.v3(Method::GET, &["videos"]);
 
         req.query_param("part", part).query_param("id", video_id);
@@ -62,7 +62,7 @@ impl YouTube {
     }
 
     /// Search YouTube.
-    pub async fn search(&self, q: &str) -> Result<SearchResults> {
+    pub(crate) async fn search(&self, q: &str) -> Result<SearchResults> {
         let mut req = self.v3(Method::GET, &["search"]);
 
         req.query_param("part", "snippet").query_param("q", q);
@@ -74,7 +74,7 @@ impl YouTube {
     }
 
     /// Get video info of a video.
-    pub async fn get_video_info(&self, video_id: String) -> Result<Option<VideoInfo>> {
+    pub(crate) async fn get_video_info(&self, video_id: String) -> Result<Option<VideoInfo>> {
         let mut url = self.get_video_info_url.clone();
         url.query_pairs_mut()
             .append_pair("video_id", video_id.as_str());
@@ -94,27 +94,27 @@ impl YouTube {
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
-pub struct Empty {}
+pub(crate) struct Empty {}
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PageInfo {
-    pub total_results: u32,
-    pub results_per_page: u32,
+pub(crate) struct PageInfo {
+    pub(crate) total_results: u32,
+    pub(crate) results_per_page: u32,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Videos {
-    pub kind: String,
-    pub etag: String,
-    pub page_info: PageInfo,
+pub(crate) struct Videos {
+    pub(crate) kind: String,
+    pub(crate) etag: String,
+    pub(crate) page_info: PageInfo,
     #[serde(default)]
-    pub items: Vec<Video>,
+    pub(crate) items: Vec<Video>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub enum Kind {
+pub(crate) enum Kind {
     #[serde(rename = "youtube#channel")]
     Channel,
     #[serde(rename = "youtube#video")]
@@ -125,140 +125,140 @@ pub enum Kind {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Id {
-    pub kind: Kind,
-    pub video_id: Option<String>,
-    pub channel_id: Option<String>,
+pub(crate) struct Id {
+    pub(crate) kind: Kind,
+    pub(crate) video_id: Option<String>,
+    pub(crate) channel_id: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SearchResult {
-    pub kind: String,
-    pub etag: String,
-    pub id: Id,
+pub(crate) struct SearchResult {
+    pub(crate) kind: String,
+    pub(crate) etag: String,
+    pub(crate) id: Id,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SearchResults {
-    pub kind: String,
-    pub etag: String,
-    pub next_page_token: Option<String>,
-    pub region_code: Option<String>,
-    pub page_info: PageInfo,
+pub(crate) struct SearchResults {
+    pub(crate) kind: String,
+    pub(crate) etag: String,
+    pub(crate) next_page_token: Option<String>,
+    pub(crate) region_code: Option<String>,
+    pub(crate) page_info: PageInfo,
     #[serde(default)]
-    pub items: Vec<SearchResult>,
+    pub(crate) items: Vec<SearchResult>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Thumbnail {
-    pub url: String,
-    pub width: u32,
-    pub height: u32,
+pub(crate) struct Thumbnail {
+    pub(crate) url: String,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Snippet {
+pub(crate) struct Snippet {
     #[serde(default)]
-    pub published_at: Option<DateTime<Utc>>,
-    pub channel_id: String,
-    pub title: String,
+    pub(crate) published_at: Option<DateTime<Utc>>,
+    pub(crate) channel_id: String,
+    pub(crate) title: String,
     #[serde(default)]
-    pub description: Option<String>,
+    pub(crate) description: Option<String>,
     #[serde(default)]
-    pub thumbnails: HashMap<String, Thumbnail>,
+    pub(crate) thumbnails: HashMap<String, Thumbnail>,
     #[serde(default)]
-    pub channel_title: Option<String>,
+    pub(crate) channel_title: Option<String>,
     #[serde(default)]
-    pub tags: Vec<String>,
+    pub(crate) tags: Vec<String>,
     #[serde(default)]
-    pub category_id: Option<String>,
+    pub(crate) category_id: Option<String>,
     #[serde(default)]
-    pub live_broadcast_content: Option<String>,
+    pub(crate) live_broadcast_content: Option<String>,
     #[serde(default)]
-    pub default_language: Option<String>,
+    pub(crate) default_language: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ContentDetails {
+pub(crate) struct ContentDetails {
     #[serde(default)]
-    pub published_at: Option<DateTime<Utc>>,
-    pub duration: String,
+    pub(crate) published_at: Option<DateTime<Utc>>,
+    pub(crate) duration: String,
     #[serde(default)]
-    pub dimension: Option<String>,
+    pub(crate) dimension: Option<String>,
     #[serde(default)]
-    pub definition: Option<String>,
-    pub caption: Option<String>,
+    pub(crate) definition: Option<String>,
+    pub(crate) caption: Option<String>,
     #[serde(default)]
-    pub licensed_content: bool,
+    pub(crate) licensed_content: bool,
     #[serde(default)]
-    pub projection: Option<String>,
+    pub(crate) projection: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Video {
-    pub kind: String,
-    pub etag: String,
-    pub id: String,
+pub(crate) struct Video {
+    pub(crate) kind: String,
+    pub(crate) etag: String,
+    pub(crate) id: String,
     #[serde(default)]
-    pub snippet: Option<Snippet>,
+    pub(crate) snippet: Option<Snippet>,
     #[serde(default)]
-    pub content_details: Option<ContentDetails>,
+    pub(crate) content_details: Option<ContentDetails>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct RawVideoInfo {
-    pub author: Option<String>,
-    pub video_id: String,
-    pub status: String,
-    pub title: String,
+pub(crate) struct RawVideoInfo {
+    pub(crate) author: Option<String>,
+    pub(crate) video_id: String,
+    pub(crate) status: String,
+    pub(crate) title: String,
     #[serde(default)]
-    pub thumbnail_url: Option<String>,
-    pub url_encoded_fmt_stream_map: String,
+    pub(crate) thumbnail_url: Option<String>,
+    pub(crate) url_encoded_fmt_stream_map: String,
     #[serde(default)]
-    pub view_count: Option<usize>,
+    pub(crate) view_count: Option<usize>,
     #[serde(default)]
-    pub adaptive_fmts: Option<String>,
+    pub(crate) adaptive_fmts: Option<String>,
     #[serde(default)]
-    pub hlsvp: Option<String>,
+    pub(crate) hlsvp: Option<String>,
     #[serde(default)]
-    pub player_response: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AudioConfig {
-    pub loudness_db: f32,
-    pub perceptual_loudness_db: f32,
+    pub(crate) player_response: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PlayerConfig {
-    #[serde(default)]
-    pub audio_config: Option<AudioConfig>,
+pub(crate) struct AudioConfig {
+    pub(crate) loudness_db: f32,
+    pub(crate) perceptual_loudness_db: f32,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PlayerResponse {
+pub(crate) struct PlayerConfig {
     #[serde(default)]
-    pub player_config: Option<PlayerConfig>,
+    pub(crate) audio_config: Option<AudioConfig>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PlayerResponse {
+    #[serde(default)]
+    pub(crate) player_config: Option<PlayerConfig>,
 }
 
 #[derive(Debug, Clone)]
-pub struct VideoInfo {
-    pub player_response: Option<PlayerResponse>,
+pub(crate) struct VideoInfo {
+    pub(crate) player_response: Option<PlayerResponse>,
 }
 
 impl RawVideoInfo {
     /// Convert into a decoded version.
-    pub fn into_decoded(self) -> Result<VideoInfo> {
+    pub(crate) fn into_decoded(self) -> Result<VideoInfo> {
         let player_response = match self.player_response.as_ref() {
             Some(player_response) => Some(serde_json::from_str(player_response)?),
             None => None,

@@ -8,14 +8,14 @@ const URL: &str = "https://tduva.com";
 
 /// API integration.
 #[derive(Clone, Debug)]
-pub struct Tduva {
+pub(crate) struct Tduva {
     client: Client,
     url: Url,
 }
 
 impl Tduva {
     /// Create a new API integration.
-    pub fn new() -> Result<Self> {
+    pub(crate) fn new() -> Result<Self> {
         Ok(Self {
             client: Client::new(),
             url: str::parse::<Url>(URL)?,
@@ -40,7 +40,7 @@ impl Tduva {
     }
 
     /// Access resource badges.
-    pub async fn res_badges(&self) -> Result<Vec<Badge>> {
+    pub(crate) async fn res_badges(&self) -> Result<Vec<Badge>> {
         let req = self.request(Method::GET, &["res", "badges"]);
 
         req.execute().await?.json()
@@ -48,12 +48,12 @@ impl Tduva {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct Badge {
-    pub id: String,
-    pub version: String,
-    pub image_url: String,
-    pub color: Option<String>,
-    pub meta_title: String,
-    pub meta_url: Option<String>,
-    pub usernames: Vec<String>,
+pub(crate) struct Badge {
+    pub(crate) id: String,
+    pub(crate) version: String,
+    pub(crate) image_url: String,
+    pub(crate) color: Option<String>,
+    pub(crate) meta_title: String,
+    pub(crate) meta_url: Option<String>,
+    pub(crate) usernames: Vec<String>,
 }

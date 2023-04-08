@@ -20,40 +20,40 @@ const DEFAULT_API_URL: &str = "https://setbac.tv";
 
 /// A token that comes out of a token workflow.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Token {
+pub(crate) struct Token {
     /// The client identifier that generated the token.
-    pub client_id: String,
+    pub(crate) client_id: String,
     /// Flow that generated the token.
-    pub flow_id: String,
+    pub(crate) flow_id: String,
     /// Access token.
-    pub access_token: String,
+    pub(crate) access_token: String,
     /// When the token was refreshed.
-    pub refreshed_at: DateTime<Utc>,
+    pub(crate) refreshed_at: DateTime<Utc>,
     /// Expires in seconds.
-    pub expires_in: Option<u64>,
+    pub(crate) expires_in: Option<u64>,
     /// Scopes associated with token.
-    pub scopes: Vec<String>,
+    pub(crate) scopes: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
-pub struct ConnectionMeta {
-    pub id: String,
-    pub title: String,
-    pub description: String,
-    pub hash: String,
+pub(crate) struct ConnectionMeta {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) description: String,
+    pub(crate) hash: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Connection {
-    pub id: String,
-    pub title: String,
-    pub description: String,
-    pub hash: String,
-    pub token: Token,
+pub(crate) struct Connection {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    pub(crate) description: String,
+    pub(crate) hash: String,
+    pub(crate) token: Token,
 }
 
 impl Connection {
-    pub fn as_meta(&self) -> ConnectionMeta {
+    pub(crate) fn as_meta(&self) -> ConnectionMeta {
         ConnectionMeta {
             id: self.id.clone(),
             title: self.title.clone(),
@@ -65,17 +65,17 @@ impl Connection {
 
 impl Token {
     /// The client id that generated the token.
-    pub fn client_id(&self) -> &str {
+    pub(crate) fn client_id(&self) -> &str {
         &self.client_id
     }
 
     /// Get the current access token.
-    pub fn access_token(&self) -> &str {
+    pub(crate) fn access_token(&self) -> &str {
         &self.access_token
     }
 
     /// Return `true` if the token expires within 30 minutes.
-    pub fn expires_within(&self, within: Duration) -> Result<bool> {
+    pub(crate) fn expires_within(&self, within: Duration) -> Result<bool> {
         let out = match self.expires_in {
             Some(expires_in) => {
                 let expires_in = chrono::Duration::seconds(expires_in as i64);
@@ -89,7 +89,7 @@ impl Token {
     }
 
     /// Test that token has all the specified scopes.
-    pub fn has_scopes(&self, scopes: &[String]) -> bool {
+    pub(crate) fn has_scopes(&self, scopes: &[String]) -> bool {
         use std::collections::HashSet;
 
         let mut scopes = scopes
@@ -164,7 +164,7 @@ struct Remote {
 
 /// Run update loop shipping information to the remote server.
 #[tracing::instrument(skip_all)]
-pub async fn run(
+pub(crate) async fn run(
     settings: &crate::Settings,
     injector: &Injector,
     global_bus: bus::Bus<bus::Global>,
@@ -265,7 +265,7 @@ pub async fn run(
     Ok(future.in_current_span())
 }
 
-pub struct Inner {
+pub(crate) struct Inner {
     client: Client,
     api_url: Url,
     streamer_token: Option<oauth2::SyncToken>,
@@ -274,13 +274,13 @@ pub struct Inner {
 
 /// API integration.
 #[derive(Clone)]
-pub struct Setbac {
+pub(crate) struct Setbac {
     inner: Arc<Inner>,
 }
 
 impl Setbac {
     /// Create a new API integration.
-    pub fn new(
+    pub(crate) fn new(
         streamer_token: Option<oauth2::SyncToken>,
         secret_key: Option<String>,
         api_url: Url,
@@ -319,7 +319,7 @@ impl Setbac {
     }
 
     /// Update the channel information.
-    pub async fn player_update(&self, request: PlayerUpdate) -> Result<()> {
+    pub(crate) async fn player_update(&self, request: PlayerUpdate) -> Result<()> {
         let body = serde_json::to_vec(&request)?;
 
         let mut req = self.request(Method::POST, &["api", "player"]);
@@ -332,7 +332,7 @@ impl Setbac {
     }
 
     /// Get the token corresponding to the given flow.
-    pub async fn get_connection(&self, id: &str) -> Result<Option<Connection>> {
+    pub(crate) async fn get_connection(&self, id: &str) -> Result<Option<Connection>> {
         let mut req = self.request(Method::GET, &["api", "connections", id]);
 
         req.header(header::CONTENT_TYPE, "application/json");
@@ -342,7 +342,10 @@ impl Setbac {
     }
 
     /// Get the token corresponding to the given flow.
-    pub async fn get_connection_meta(&self, flow_id: &str) -> Result<Option<ConnectionMeta>> {
+    pub(crate) async fn get_connection_meta(
+        &self,
+        flow_id: &str,
+    ) -> Result<Option<ConnectionMeta>> {
         let mut req = self.request(Method::GET, &["api", "connections", flow_id]);
 
         req.query_param("format", "meta")
@@ -353,7 +356,7 @@ impl Setbac {
     }
 
     /// Get meta for all available connections.
-    pub async fn get_connections_meta(&self) -> Result<Vec<ConnectionMeta>> {
+    pub(crate) async fn get_connections_meta(&self) -> Result<Vec<ConnectionMeta>> {
         let mut req = self.request(Method::GET, &["api", "connections"]);
 
         req.query_param("format", "meta")
@@ -364,7 +367,7 @@ impl Setbac {
     }
 
     /// Refresh the token corresponding to the given flow.
-    pub async fn refresh_connection(&self, id: &str) -> Result<Option<Connection>> {
+    pub(crate) async fn refresh_connection(&self, id: &str) -> Result<Option<Connection>> {
         let mut req = self.request(Method::POST, &["api", "connections", id, "refresh"]);
 
         req.header(header::CONTENT_TYPE, "application/json");
@@ -375,7 +378,7 @@ impl Setbac {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Data<T> {
+pub(crate) struct Data<T> {
     data: Option<T>,
 }
 
@@ -386,7 +389,7 @@ impl<T> Default for Data<T> {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub struct PlayerUpdate {
+pub(crate) struct PlayerUpdate {
     /// Current song.
     #[serde(default)]
     current: Option<Item>,
@@ -396,7 +399,7 @@ pub struct PlayerUpdate {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Item {
+pub(crate) struct Item {
     /// Name of the song.
     name: String,
     /// Artists of the song.

@@ -5,7 +5,7 @@ use anyhow::Result;
 /// Information on a single track.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "type")]
-pub enum Track {
+pub(crate) enum Track {
     #[serde(rename = "spotify")]
     Spotify { track: Box<api::spotify::FullTrack> },
     #[serde(rename = "youtube")]
@@ -14,7 +14,7 @@ pub enum Track {
 
 impl Track {
     /// Get artists involved as a string.
-    pub fn artists(&self) -> Option<String> {
+    pub(crate) fn artists(&self) -> Option<String> {
         match *self {
             Self::Spotify { ref track } => utils::human_artists(&track.artists),
             Self::YouTube { ref video } => {
@@ -24,7 +24,7 @@ impl Track {
     }
 
     /// Get name of the track.
-    pub fn name(&self) -> String {
+    pub(crate) fn name(&self) -> String {
         match *self {
             Self::Spotify { ref track } => track.name.to_string(),
             Self::YouTube { ref video } => video
@@ -38,7 +38,7 @@ impl Track {
 
     /// Convert into JSON.
     /// TODO: this is a hack to avoid breaking web API.
-    pub fn to_json(&self) -> Result<serde_json::Value> {
+    pub(crate) fn to_json(&self) -> Result<serde_json::Value> {
         let json = match *self {
             Self::Spotify { ref track } => serde_json::to_value(track)?,
             Self::YouTube { ref video } => serde_json::to_value(video)?,

@@ -11,7 +11,7 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Error)]
-pub enum BumpError {
+pub(crate) enum BumpError {
     /// Trying to bump something which doesn't exist.
     #[error("promotion missing")]
     Missing,
@@ -108,7 +108,7 @@ impl Database {
 }
 
 #[derive(Clone)]
-pub struct Promotions {
+pub(crate) struct Promotions {
     inner: Arc<RwLock<HashMap<Key, Arc<Promotion>>>>,
     db: Database,
 }
@@ -117,7 +117,7 @@ impl Promotions {
     database_group_fns!(Promotion, Key);
 
     /// Construct a new promos store with a db.
-    pub async fn load(db: db::Database) -> Result<Promotions, anyhow::Error> {
+    pub(crate) async fn load(db: db::Database) -> Result<Promotions, anyhow::Error> {
         let db = Database(db);
 
         let mut inner = HashMap::new();
@@ -134,7 +134,7 @@ impl Promotions {
     }
 
     /// Insert a word into the bad words list.
-    pub async fn edit(
+    pub(crate) async fn edit(
         &self,
         channel: &str,
         name: &str,
@@ -167,7 +167,7 @@ impl Promotions {
     }
 
     /// Bump that the given promotion was last promoted right now.
-    pub async fn bump_promoted_at(&self, promotion: &Promotion) -> Result<(), BumpError> {
+    pub(crate) async fn bump_promoted_at(&self, promotion: &Promotion) -> Result<(), BumpError> {
         let mut inner = self.inner.write().await;
 
         let promotion = match inner.remove(&promotion.key) {
@@ -191,13 +191,13 @@ impl Promotions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct Key {
-    pub channel: String,
-    pub name: String,
+pub(crate) struct Key {
+    pub(crate) channel: String,
+    pub(crate) name: String,
 }
 
 impl Key {
-    pub fn new(channel: &str, name: &str) -> Self {
+    pub(crate) fn new(channel: &str, name: &str) -> Self {
         Self {
             channel: channel.to_string(),
             name: name.to_lowercase(),
@@ -206,19 +206,19 @@ impl Key {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Promotion {
-    pub key: Key,
-    pub frequency: utils::Duration,
-    pub promoted_at: Option<DateTime<Utc>>,
-    pub template: template::Template,
-    pub group: Option<String>,
-    pub disabled: bool,
+pub(crate) struct Promotion {
+    pub(crate) key: Key,
+    pub(crate) frequency: utils::Duration,
+    pub(crate) promoted_at: Option<DateTime<Utc>>,
+    pub(crate) template: template::Template,
+    pub(crate) group: Option<String>,
+    pub(crate) disabled: bool,
 }
 
 impl Promotion {
-    pub const NAME: &'static str = "promotion";
+    pub(crate) const NAME: &'static str = "promotion";
 
-    pub fn from_db(promotion: &db::models::Promotion) -> Result<Promotion, anyhow::Error> {
+    pub(crate) fn from_db(promotion: &db::models::Promotion) -> Result<Promotion, anyhow::Error> {
         let template = template::Template::compile(&promotion.text)
             .with_context(|| anyhow!("failed to compile promotion `{:?}` from db", promotion))?;
 
@@ -239,7 +239,7 @@ impl Promotion {
     }
 
     /// Render the given promotion.
-    pub fn render<T>(&self, data: &T) -> Result<String, anyhow::Error>
+    pub(crate) fn render<T>(&self, data: &T) -> Result<String, anyhow::Error>
     where
         T: serde::Serialize,
     {

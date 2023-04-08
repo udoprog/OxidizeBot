@@ -10,31 +10,31 @@ use serde::{Deserialize, Serialize};
 
 ///[public user object](https://developer.spotify.com/web-api/object-model/#user-object-public)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PublicUser {
-    pub display_name: Option<String>,
-    pub external_urls: HashMap<String, String>,
-    pub followers: Option<HashMap<String, Option<Value>>>,
-    pub href: String,
-    pub id: String,
-    pub images: Option<Vec<Image>>,
+pub(crate) struct PublicUser {
+    pub(crate) display_name: Option<String>,
+    pub(crate) external_urls: HashMap<String, String>,
+    pub(crate) followers: Option<HashMap<String, Option<Value>>>,
+    pub(crate) href: String,
+    pub(crate) id: String,
+    pub(crate) images: Option<Vec<Image>>,
     #[serde(rename = "type")]
-    pub _type: Type,
-    pub uri: String,
+    pub(crate) _type: Type,
+    pub(crate) uri: String,
 }
 
 ///[private user object](https://developer.spotify.com/web-api/object-model/#user-object-private)
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PrivateUser {
-    pub birthdate: Option<NaiveDate>,
-    pub country: Option<String>,
-    pub display_name: Option<String>,
-    pub email: Option<String>,
-    pub external_urls: HashMap<String, String>,
-    pub followers: Option<HashMap<String, Option<Value>>>,
-    pub href: String,
-    pub id: String,
-    pub images: Option<Vec<Image>>,
+pub(crate) struct PrivateUser {
+    pub(crate) birthdate: Option<NaiveDate>,
+    pub(crate) country: Option<String>,
+    pub(crate) display_name: Option<String>,
+    pub(crate) email: Option<String>,
+    pub(crate) external_urls: HashMap<String, String>,
+    pub(crate) followers: Option<HashMap<String, Option<Value>>>,
+    pub(crate) href: String,
+    pub(crate) id: String,
+    pub(crate) images: Option<Vec<Image>>,
     #[serde(rename = "type")]
-    pub _type: Type,
-    pub uri: String,
+    pub(crate) _type: Type,
+    pub(crate) uri: String,
 }

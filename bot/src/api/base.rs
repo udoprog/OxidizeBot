@@ -12,12 +12,12 @@ struct SendRequestError(#[source] reqwest::Error);
 #[error("error when receiving response")]
 struct ReceiveResponseError(#[source] reqwest::Error);
 
-pub const USER_AGENT: &str = user_agent_str!();
+pub(crate) const USER_AGENT: &str = user_agent_str!();
 
 /// Trait to deal with optional bodies.
 ///
 /// Fix and replace once we get HRTB's or HRT's :cry:
-pub trait BodyHelper {
+pub(crate) trait BodyHelper {
     type Value;
 
     /// Get a present body as an option.
@@ -41,7 +41,7 @@ impl BodyHelper for Option<Bytes> {
 }
 
 #[derive(Clone)]
-pub struct RequestBuilder<'a> {
+pub(crate) struct RequestBuilder<'a> {
     token: Option<&'a oauth2::SyncToken>,
     client: &'a Client,
     url: Url,
@@ -57,7 +57,7 @@ pub struct RequestBuilder<'a> {
 
 impl<'a> RequestBuilder<'a> {
     /// Construct a new request builder.
-    pub fn new(client: &'a Client, method: Method, url: Url) -> Self {
+    pub(crate) fn new(client: &'a Client, method: Method, url: Url) -> Self {
         Self {
             token: None,
             client,
@@ -72,43 +72,43 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Use the OAuth2 header instead of Bearer when sending authentication.
-    pub fn use_oauth2_header(&mut self) -> &mut Self {
+    pub(crate) fn use_oauth2_header(&mut self) -> &mut Self {
         self.use_bearer = false;
         self
     }
 
     /// Configure if empty bodies should have a Content-Type or not.
-    pub fn empty_body(&mut self) -> &mut Self {
+    pub(crate) fn empty_body(&mut self) -> &mut Self {
         self.empty_body = true;
         self
     }
 
     /// Use the specified Client-ID header.
-    pub fn client_id_header(&mut self, header: &'a header::HeaderName) -> &mut Self {
+    pub(crate) fn client_id_header(&mut self, header: &'a header::HeaderName) -> &mut Self {
         self.client_id_header = Some(header);
         self
     }
 
     /// Set the token to use.
-    pub fn token(&mut self, token: &'a oauth2::SyncToken) -> &mut Self {
+    pub(crate) fn token(&mut self, token: &'a oauth2::SyncToken) -> &mut Self {
         self.token = Some(token);
         self
     }
 
     /// Change the body of the request.
-    pub fn body(&mut self, body: impl Into<Bytes>) -> &mut Self {
+    pub(crate) fn body(&mut self, body: impl Into<Bytes>) -> &mut Self {
         self.body = body.into();
         self
     }
 
     /// Push a header.
-    pub fn header(&mut self, key: header::HeaderName, value: &str) -> &mut Self {
+    pub(crate) fn header(&mut self, key: header::HeaderName, value: &str) -> &mut Self {
         self.headers.push((key, value.to_owned()));
         self
     }
 
     /// Add a query parameter.
-    pub fn query_param<S>(&mut self, key: &str, value: S) -> &mut Self
+    pub(crate) fn query_param<S>(&mut self, key: &str, value: S) -> &mut Self
     where
         S: AsRef<str>,
     {
@@ -117,7 +117,7 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Send request and only return status.
-    pub async fn json_map<T>(
+    pub(crate) async fn json_map<T>(
         &self,
         m: impl FnOnce(StatusCode, &Bytes) -> Result<Option<T>>,
     ) -> Result<T>
@@ -143,7 +143,7 @@ impl<'a> RequestBuilder<'a> {
 
     /// Execute the request.
     #[allow(clippy::match_ref_pats)]
-    pub async fn execute(&self) -> Result<Response<Bytes>> {
+    pub(crate) async fn execute(&self) -> Result<Response<Bytes>> {
         // NB: scope to only lock the token over the request setup.
         tracing::trace!("Request: {}: {}", self.method, self.url);
         let mut req = self.client.request(self.method.clone(), self.url.clone());
@@ -212,7 +212,7 @@ impl<'a> RequestBuilder<'a> {
     }
 }
 
-pub struct Response<B> {
+pub(crate) struct Response<B> {
     method: Method,
     url: Url,
     status: StatusCode,
@@ -221,7 +221,7 @@ pub struct Response<B> {
 
 impl Response<Bytes> {
     /// Expect a successful response.
-    pub fn ok(self) -> Result<()> {
+    pub(crate) fn ok(self) -> Result<()> {
         if self.status.is_success() {
             return Ok(());
         }
@@ -238,7 +238,7 @@ impl Response<Bytes> {
     }
 
     /// Expect a JSON response of the given type.
-    pub fn json<T>(self) -> Result<T>
+    pub(crate) fn json<T>(self) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -272,7 +272,7 @@ impl Response<Bytes> {
 
 impl Response<Option<Bytes>> {
     /// Expect a JSON response of the given type.
-    pub fn json<T>(self) -> Result<Option<T>>
+    pub(crate) fn json<T>(self) -> Result<Option<T>>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -309,7 +309,7 @@ impl Response<Option<Bytes>> {
     }
 
     /// Access the underlying raw body.
-    pub fn body(self) -> Result<Option<Bytes>> {
+    pub(crate) fn body(self) -> Result<Option<Bytes>> {
         let body = match self.body {
             Some(body) => body,
             None => return Ok(None),
@@ -335,7 +335,7 @@ where
     B: BodyHelper,
 {
     /// Handle as empty if we encounter the given status code.
-    pub fn empty_on_status(self, status: StatusCode) -> Response<Option<B::Value>> {
+    pub(crate) fn empty_on_status(self, status: StatusCode) -> Response<Option<B::Value>> {
         let body = if self.status == status {
             None
         } else {
@@ -351,7 +351,7 @@ where
     }
 
     /// Test if the underlying status is not found.
-    pub fn not_found(self) -> Response<Option<B::Value>> {
+    pub(crate) fn not_found(self) -> Response<Option<B::Value>> {
         self.empty_on_status(StatusCode::NOT_FOUND)
     }
 }

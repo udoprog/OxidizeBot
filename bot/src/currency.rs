@@ -7,7 +7,7 @@ use thiserror::Error;
 use tokio_stream::StreamExt;
 
 use crate::api;
-pub use crate::db::models::Balance;
+pub(crate) use crate::db::models::Balance;
 use crate::db::Database;
 use crate::injector::Injector;
 use crate::utils::Duration;
@@ -17,14 +17,14 @@ mod mysql;
 
 /// Balance of a single user.
 #[derive(Default)]
-pub struct BalanceOf {
-    pub balance: i64,
-    pub watch_time: i64,
+pub(crate) struct BalanceOf {
+    pub(crate) balance: i64,
+    pub(crate) watch_time: i64,
 }
 
 impl BalanceOf {
     /// Get the current watch time for the specified balance as a duration.
-    pub fn watch_time(&self) -> Duration {
+    pub(crate) fn watch_time(&self) -> Duration {
         if self.watch_time < 0 {
             return Duration::default();
         }
@@ -34,22 +34,22 @@ impl BalanceOf {
 }
 
 /// Helper struct to construct a currency.
-pub struct CurrencyBuilder {
+pub(crate) struct CurrencyBuilder {
     bot: api::TwitchAndUser,
     streamer: api::TwitchAndUser,
-    pub mysql_schema: mysql::Schema,
+    pub(crate) mysql_schema: mysql::Schema,
     injector: Injector,
-    pub ty: BackendType,
-    pub enabled: bool,
-    pub command_enabled: bool,
-    pub name: Option<Arc<String>>,
-    pub db: Option<Database>,
-    pub mysql_url: Option<String>,
+    pub(crate) ty: BackendType,
+    pub(crate) enabled: bool,
+    pub(crate) command_enabled: bool,
+    pub(crate) name: Option<Arc<String>>,
+    pub(crate) db: Option<Database>,
+    pub(crate) mysql_url: Option<String>,
 }
 
 impl CurrencyBuilder {
     /// Construct a new currency builder.
-    pub fn new(
+    pub(crate) fn new(
         bot: api::TwitchAndUser,
         streamer: api::TwitchAndUser,
         mysql_schema: mysql::Schema,
@@ -70,7 +70,7 @@ impl CurrencyBuilder {
     }
 
     /// Inject the newly built value and return the result.
-    pub async fn build_and_inject(&self) -> Option<Currency> {
+    pub(crate) async fn build_and_inject(&self) -> Option<Currency> {
         match self.build() {
             Some(currency) => {
                 self.injector.update(currency.clone()).await;
@@ -84,7 +84,7 @@ impl CurrencyBuilder {
     }
 
     /// Build a new currency.
-    pub fn build(&self) -> Option<Currency> {
+    pub(crate) fn build(&self) -> Option<Currency> {
         use self::mysql::Schema;
 
         if !self.enabled {
@@ -146,7 +146,7 @@ impl CurrencyBuilder {
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, Default)]
-pub enum BackendType {
+pub(crate) enum BackendType {
     #[serde(rename = "builtin")]
     #[default]
     BuiltIn,
@@ -163,7 +163,7 @@ enum Backend {
 
 impl Backend {
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_transfer(
+    pub(crate) async fn balance_transfer(
         &self,
         channel: &str,
         giver: &str,
@@ -188,7 +188,7 @@ impl Backend {
     }
 
     /// Get balances for all users.
-    pub async fn export_balances(&self) -> Result<Vec<Balance>> {
+    pub(crate) async fn export_balances(&self) -> Result<Vec<Balance>> {
         use self::Backend::*;
 
         match *self {
@@ -198,7 +198,7 @@ impl Backend {
     }
 
     /// Import balances for all users.
-    pub async fn import_balances(&self, balances: Vec<Balance>) -> Result<()> {
+    pub(crate) async fn import_balances(&self, balances: Vec<Balance>) -> Result<()> {
         use self::Backend::*;
 
         match *self {
@@ -208,7 +208,7 @@ impl Backend {
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>> {
+    pub(crate) async fn balance_of(&self, channel: &str, user: &str) -> Result<Option<BalanceOf>> {
         use self::Backend::*;
 
         match *self {
@@ -218,7 +218,7 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<()> {
+    pub(crate) async fn balance_add(&self, channel: &str, user: &str, amount: i64) -> Result<()> {
         use self::Backend::*;
 
         match *self {
@@ -229,7 +229,7 @@ impl Backend {
 
     /// Add balance to users.
     #[tracing::instrument(skip(self, users))]
-    pub async fn balances_increment<I>(
+    pub(crate) async fn balances_increment<I>(
         &self,
         channel: &str,
         users: I,
@@ -261,16 +261,16 @@ struct Inner {
 
 /// The currency being used.
 #[derive(Clone)]
-pub struct Currency {
-    pub name: Arc<String>,
-    pub command_enabled: bool,
+pub(crate) struct Currency {
+    pub(crate) name: Arc<String>,
+    pub(crate) command_enabled: bool,
     inner: Arc<Inner>,
 }
 
 impl Currency {
     /// Reward all users.
     #[tracing::instrument(skip(self))]
-    pub async fn add_channel_all(
+    pub(crate) async fn add_channel_all(
         &self,
         reward: i64,
         watch_time: i64,
@@ -308,7 +308,7 @@ impl Currency {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_transfer(
+    pub(crate) async fn balance_transfer(
         &self,
         giver: &str,
         taker: &str,
@@ -328,17 +328,17 @@ impl Currency {
     }
 
     /// Get balances for all users.
-    pub async fn export_balances(&self) -> Result<Vec<Balance>> {
+    pub(crate) async fn export_balances(&self) -> Result<Vec<Balance>> {
         self.inner.backend.export_balances().await
     }
 
     /// Import balances for all users.
-    pub async fn import_balances(&self, balances: Vec<Balance>) -> Result<()> {
+    pub(crate) async fn import_balances(&self, balances: Vec<Balance>) -> Result<()> {
         self.inner.backend.import_balances(balances).await
     }
 
     /// Find user balance.
-    pub async fn balance_of(&self, user: &str) -> Result<Option<BalanceOf>> {
+    pub(crate) async fn balance_of(&self, user: &str) -> Result<Option<BalanceOf>> {
         self.inner
             .backend
             .balance_of(&self.inner.streamer.user.login, user)
@@ -346,7 +346,7 @@ impl Currency {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(&self, user: &str, amount: i64) -> Result<()> {
+    pub(crate) async fn balance_add(&self, user: &str, amount: i64) -> Result<()> {
         self.inner
             .backend
             .balance_add(&self.inner.streamer.user.login, user, amount)
@@ -354,7 +354,12 @@ impl Currency {
     }
 
     /// Add balance to users.
-    pub async fn balances_increment<I>(&self, users: I, amount: i64, watch_time: i64) -> Result<()>
+    pub(crate) async fn balances_increment<I>(
+        &self,
+        users: I,
+        amount: i64,
+        watch_time: i64,
+    ) -> Result<()>
     where
         I: IntoIterator<Item = String> + Send + 'static,
         I::IntoIter: Send + 'static,
@@ -367,7 +372,7 @@ impl Currency {
 }
 
 #[derive(Debug, Error)]
-pub enum BalanceTransferError {
+pub(crate) enum BalanceTransferError {
     #[error("missing balance for transfer")]
     NoBalance,
     #[error("other error: {}", _0)]

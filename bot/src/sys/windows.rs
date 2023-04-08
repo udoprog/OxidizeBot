@@ -24,14 +24,14 @@ const ICON: &[u8] = include_bytes!("../../res/icon.ico");
 const ICON_ERROR: &[u8] = include_bytes!("../../res/icon-error.ico");
 
 #[derive(Debug)]
-pub enum Event {
+pub(crate) enum Event {
     Cleared,
     Errored(String),
     Notification(Notification),
 }
 
 #[derive(Clone)]
-pub struct System {
+pub(crate) struct System {
     thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
     shutdown: broadcast::Sender<()>,
     restart: broadcast::Sender<()>,
@@ -40,38 +40,38 @@ pub struct System {
 
 impl System {
     /// Wait for system shutdown signal.
-    pub async fn wait_for_shutdown(&self) {
+    pub(crate) async fn wait_for_shutdown(&self) {
         let _ = self.shutdown.subscribe().recv().await;
     }
 
     /// Wait for system restart signal.
-    pub async fn wait_for_restart(&self) {
+    pub(crate) async fn wait_for_restart(&self) {
         let _ = self.restart.subscribe().recv().await;
     }
 
     /// Clear the current state.
-    pub fn clear(&self) {
+    pub(crate) fn clear(&self) {
         if let Err(e) = self.events.send(Event::Cleared) {
             tracing::error!("Failed to send clear: {}", e);
         }
     }
 
     /// Set an error.
-    pub fn error(&self, error: String) {
+    pub(crate) fn error(&self, error: String) {
         if let Err(e) = self.events.send(Event::Errored(error)) {
             tracing::error!("Failed to send clear: {}", e);
         }
     }
 
     /// Send the given notification.
-    pub fn notification(&self, n: Notification) {
+    pub(crate) fn notification(&self, n: Notification) {
         if let Err(e) = self.events.send(Event::Notification(n)) {
             tracing::error!("Failed to send notification: {}", e);
         }
     }
 
     /// Join the current thread.
-    pub fn join(&self) -> Result<(), Error> {
+    pub(crate) fn join(&self) -> Result<(), Error> {
         let _ = self.shutdown.send(());
 
         if let Some(thread) = self.thread.lock().take() {
@@ -95,7 +95,7 @@ impl System {
     }
 
     /// If the program is installed to run at startup.
-    pub fn is_installed(&self) -> Result<bool, Error> {
+    pub(crate) fn is_installed(&self) -> Result<bool, Error> {
         let key = self::registry::RegistryKey::current_user(
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
         )?;
@@ -108,7 +108,7 @@ impl System {
         Ok(Self::run_registry_entry()?.as_str() == path)
     }
 
-    pub fn install(&self) -> Result<(), Error> {
+    pub(crate) fn install(&self) -> Result<(), Error> {
         let key = self::registry::RegistryKey::current_user(
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
         )?;
@@ -117,7 +117,7 @@ impl System {
         Ok(())
     }
 
-    pub fn uninstall(&self) -> Result<(), Error> {
+    pub(crate) fn uninstall(&self) -> Result<(), Error> {
         let key = self::registry::RegistryKey::current_user(
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
         )?;
@@ -148,7 +148,7 @@ fn open_dir(path: &Path) -> io::Result<bool> {
     Ok(result as usize > 32)
 }
 
-pub fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
+pub(crate) fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
     let root = root.to_owned();
     let log_file = log_file.to_owned();
 

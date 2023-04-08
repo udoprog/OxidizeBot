@@ -81,7 +81,7 @@ impl Database {
 }
 
 #[derive(Clone)]
-pub struct Aliases {
+pub(crate) struct Aliases {
     inner: Arc<RwLock<db::Matcher<Alias>>>,
     db: Database,
 }
@@ -90,7 +90,7 @@ impl Aliases {
     database_group_fns!(Alias, db::Key);
 
     /// Construct a new commands store with a db.
-    pub async fn load(db: db::Database) -> Result<Aliases, anyhow::Error> {
+    pub(crate) async fn load(db: db::Database) -> Result<Aliases, anyhow::Error> {
         let mut inner = db::Matcher::new();
 
         let db = Database(db);
@@ -107,7 +107,11 @@ impl Aliases {
     }
 
     /// Resolve the given command.
-    pub async fn resolve(&self, channel: &str, message: Arc<String>) -> Option<(db::Key, String)> {
+    pub(crate) async fn resolve(
+        &self,
+        channel: &str,
+        message: Arc<String>,
+    ) -> Option<(db::Key, String)> {
         let mut it = utils::Words::new(message);
         let first = it.next();
 
@@ -131,7 +135,7 @@ impl Aliases {
     }
 
     /// Insert a word into the bad words list.
-    pub async fn edit(
+    pub(crate) async fn edit(
         &self,
         channel: &str,
         name: &str,
@@ -161,7 +165,7 @@ impl Aliases {
     }
 
     /// Edit the pattern for the given command.
-    pub async fn edit_pattern(
+    pub(crate) async fn edit_pattern(
         &self,
         channel: &str,
         name: &str,
@@ -177,12 +181,12 @@ impl Aliases {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct Alias {
-    pub key: db::Key,
-    pub pattern: db::Pattern,
-    pub template: template::Template,
-    pub group: Option<String>,
-    pub disabled: bool,
+pub(crate) struct Alias {
+    pub(crate) key: db::Key,
+    pub(crate) pattern: db::Pattern,
+    pub(crate) template: template::Template,
+    pub(crate) group: Option<String>,
+    pub(crate) disabled: bool,
 }
 
 impl db::Matchable for Alias {
@@ -196,10 +200,10 @@ impl db::Matchable for Alias {
 }
 
 impl Alias {
-    pub const NAME: &'static str = "alias";
+    pub(crate) const NAME: &'static str = "alias";
 
     /// Convert a database alias into an in-memory alias.
-    pub fn from_db(alias: &db::models::Alias) -> Result<Alias, anyhow::Error> {
+    pub(crate) fn from_db(alias: &db::models::Alias) -> Result<Alias, anyhow::Error> {
         let key = db::Key::new(&alias.channel, &alias.name);
         let pattern = db::Pattern::from_db(alias.pattern.as_ref())?;
         let template = template::Template::compile(&alias.text)?;

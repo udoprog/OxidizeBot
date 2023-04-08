@@ -5,50 +5,50 @@ use std::collections::HashMap;
 const URL: &str = "https://api.spotify.com";
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Followers {
+pub(crate) struct Followers {
     #[serde(default)]
     href: Option<String>,
     total: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Image {
+pub(crate) struct Image {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub height: Option<u64>,
+    pub(crate) height: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub width: Option<u64>,
-    pub url: String,
+    pub(crate) width: Option<u64>,
+    pub(crate) url: String,
 }
 
 /// Response from the validate token endpoint.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct User {
+pub(crate) struct User {
     #[serde(rename = "type")]
-    pub ty: String,
-    pub uri: String,
-    pub href: String,
+    pub(crate) ty: String,
+    pub(crate) uri: String,
+    pub(crate) href: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub country: Option<String>,
-    pub display_name: String,
+    pub(crate) country: Option<String>,
+    pub(crate) display_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub email: Option<String>,
-    pub external_urls: HashMap<String, String>,
-    pub followers: Followers,
+    pub(crate) email: Option<String>,
+    pub(crate) external_urls: HashMap<String, String>,
+    pub(crate) followers: Followers,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub product: Option<String>,
-    pub images: Vec<Image>,
+    pub(crate) product: Option<String>,
+    pub(crate) images: Vec<Image>,
 }
 
 /// Client for api.spotify.com
 #[derive(Clone, Debug)]
-pub struct Spotify {
+pub(crate) struct Spotify {
     client: Client,
     api_url: Url,
 }
 
 impl Spotify {
     /// Create a new Spotify client.
-    pub fn new() -> Result<Spotify, anyhow::Error> {
+    pub(crate) fn new() -> Result<Spotify, anyhow::Error> {
         Ok(Spotify {
             client: Client::new(),
             api_url: str::parse::<Url>(URL)?,
@@ -63,7 +63,7 @@ impl Spotify {
     }
 
     // Get user information about the token.
-    pub async fn v1_me(&self, token: &str) -> Result<User, anyhow::Error> {
+    pub(crate) async fn v1_me(&self, token: &str) -> Result<User, anyhow::Error> {
         let request = self
             .request(Method::GET, &["v1", "me"])
             .header(header::AUTHORIZATION, &format!("Bearer {}", token));

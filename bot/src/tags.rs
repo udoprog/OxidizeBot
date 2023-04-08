@@ -4,7 +4,7 @@ use serde::Serialize;
 
 /// Identifies the kind of token associated with a connection.
 #[derive(Debug, Clone, Copy, Serialize)]
-pub enum Token {
+pub(crate) enum Token {
     Twitch(Twitch),
     YouTube,
     NightBot,
@@ -13,13 +13,13 @@ pub enum Token {
 
 /// Identifies a kind of twitch client.
 #[derive(Debug, Clone, Copy, Serialize)]
-pub enum Twitch {
+pub(crate) enum Twitch {
     Streamer,
     Bot,
 }
 
 /// Identifiers a set of generic global variables.
 #[derive(Debug, Clone, Copy, Serialize)]
-pub enum Globals {
+pub(crate) enum Globals {
     Channel,
 }

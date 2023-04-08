@@ -1,4 +1,4 @@
-pub use crate::spotify_id::SpotifyId;
+pub(crate) use crate::spotify_id::SpotifyId;
 use diesel::backend::{Backend, RawValue};
 use diesel::serialize::IsNull;
 use diesel::sqlite::Sqlite;
@@ -12,7 +12,7 @@ static SPOTIFY_URL: &str = "https://open.spotify.com/track";
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, diesel::FromSqlRow, diesel::AsExpression,
 )]
 #[diesel(sql_type = diesel::sql_types::Text)]
-pub enum TrackId {
+pub(crate) enum TrackId {
     /// A Spotify track.
     Spotify(SpotifyId),
     /// A YouTube track.
@@ -20,7 +20,7 @@ pub enum TrackId {
 }
 
 #[derive(Debug, Error)]
-pub enum ParseTrackIdError {
+pub(crate) enum ParseTrackIdError {
     /// Requested a URI from a bad host, like youtube.com.
     #[error("bad host, expected: open.spotify.com")]
     BadHost(String),
@@ -77,12 +77,12 @@ impl fmt::Display for TrackId {
 
 impl TrackId {
     /// Test if this is a youtube track.
-    pub fn is_youtube(&self) -> bool {
+    pub(crate) fn is_youtube(&self) -> bool {
         matches!(self, TrackId::YouTube(..))
     }
 
     /// Get the URL for this track.
-    pub fn url(&self) -> String {
+    pub(crate) fn url(&self) -> String {
         match *self {
             TrackId::Spotify(ref id) => format!("{}/{}", SPOTIFY_URL, id.to_base62()),
             TrackId::YouTube(ref id) => format!("{}/{}", YOUTUBE_URL, id),
@@ -90,7 +90,7 @@ impl TrackId {
     }
 
     /// Used to load records from the database since they don't have a prefix.
-    pub fn parse_with_prefix_fallback(s: &str) -> Result<Self, ParseTrackIdError> {
+    pub(crate) fn parse_with_prefix_fallback(s: &str) -> Result<Self, ParseTrackIdError> {
         match str::parse::<Self>(s) {
             Err(ParseTrackIdError::MissingUriPrefix) => {
                 let id = SpotifyId::from_base62(s)
@@ -102,7 +102,7 @@ impl TrackId {
     }
 
     /// Parse by trying  URL forms first.
-    pub fn parse_with_urls(s: &str) -> Result<Self, ParseTrackIdError> {
+    pub(crate) fn parse_with_urls(s: &str) -> Result<Self, ParseTrackIdError> {
         // Parse a track id from a URL or URI.
         if let Ok(url) = str::parse::<url::Url>(s) {
             match url.host() {

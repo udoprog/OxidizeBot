@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 
 /// Handler for the !poll command.
-pub struct Poll {
+pub(crate) struct Poll {
     enabled: settings::Var<bool>,
     polls: Mutex<HashMap<command::HookId, ActivePoll>>,
 }
@@ -123,7 +123,7 @@ struct ActivePoll {
 
 impl ActivePoll {
     /// Close the poll.
-    pub async fn close(&self) -> Vec<(String, u32)> {
+    pub(crate) async fn close(&self) -> Vec<(String, u32)> {
         let inner = self.inner.read().await;
 
         let mut results = Vec::new();
@@ -168,7 +168,7 @@ impl command::MessageHook for ActivePoll {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

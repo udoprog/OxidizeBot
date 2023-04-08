@@ -12,11 +12,11 @@ use thiserror::Error;
 struct CommitError;
 
 #[derive(Serialize, Deserialize)]
-pub struct Connection {
-    pub id: String,
+pub(crate) struct Connection {
+    pub(crate) id: String,
     #[serde(default = "meta_default", skip_serializing_if = "meta_is_null")]
-    pub meta: serde_cbor::Value,
-    pub token: oauth2::SavedToken,
+    pub(crate) meta: serde_cbor::Value,
+    pub(crate) token: oauth2::SavedToken,
 }
 
 fn meta_default() -> serde_cbor::Value {
@@ -28,44 +28,44 @@ pub(crate) fn meta_is_null(value: &serde_cbor::Value) -> bool {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct User {
-    pub user_id: String,
-    pub login: String,
+pub(crate) struct User {
+    pub(crate) user_id: String,
+    pub(crate) login: String,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
-pub struct PlayerItem {
+pub(crate) struct PlayerItem {
     /// Name of the song.
-    pub name: String,
+    pub(crate) name: String,
     /// Artists of the song.
     #[serde(default)]
-    pub artists: Option<String>,
+    pub(crate) artists: Option<String>,
     /// The URL of a track.
-    pub track_url: String,
+    pub(crate) track_url: String,
     /// User who requested the song.
     #[serde(default)]
-    pub user: Option<String>,
+    pub(crate) user: Option<String>,
     /// Length of the song.
-    pub duration: String,
+    pub(crate) duration: String,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
-pub struct Player {
-    pub current: Option<PlayerItem>,
-    pub items: Vec<PlayerItem>,
+pub(crate) struct Player {
+    pub(crate) current: Option<PlayerItem>,
+    pub(crate) items: Vec<PlayerItem>,
     #[serde(default)]
-    pub last_update: Option<DateTime<Utc>>,
+    pub(crate) last_update: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct PlayerEntry {
-    pub user_login: String,
-    pub last_update: Option<DateTime<Utc>>,
+pub(crate) struct PlayerEntry {
+    pub(crate) user_login: String,
+    pub(crate) last_update: Option<DateTime<Utc>>,
 }
 
 /// Internal key serialization.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Key {
+pub(crate) enum Key {
     Players,
     Player {
         user_login: String,
@@ -98,12 +98,12 @@ pub enum Key {
 
 impl Key {
     /// Serialize the current key.
-    pub fn serialize(&self) -> Result<Vec<u8>> {
+    pub(crate) fn serialize(&self) -> Result<Vec<u8>> {
         Ok(serde_cbor::to_vec(self)?)
     }
 
     /// Deserialize a key.
-    pub fn deserialize(bytes: &[u8]) -> Result<Key> {
+    pub(crate) fn deserialize(bytes: &[u8]) -> Result<Key> {
         Ok(serde_cbor::from_slice(bytes)?)
     }
 }
@@ -262,18 +262,18 @@ impl serde::Serialize for Key {
 }
 
 #[derive(Clone)]
-pub struct Database {
+pub(crate) struct Database {
     tree: sled::Tree,
 }
 
 impl Database {
     /// Open a new database instance.
-    pub fn load(tree: sled::Tree) -> Result<Database> {
+    pub(crate) fn load(tree: sled::Tree) -> Result<Database> {
         Ok(Self { tree })
     }
 
     /// Get information on the given user.
-    pub fn list_players(&self) -> Result<Vec<PlayerEntry>> {
+    pub(crate) fn list_players(&self) -> Result<Vec<PlayerEntry>> {
         let key = Key::Players.serialize()?;
         let prefix = &key[..(key.len() - 1)];
 
@@ -298,13 +298,13 @@ impl Database {
         return Ok(out);
 
         #[derive(Debug, Deserialize, Serialize)]
-        pub struct PlayerPartial {
-            pub last_update: Option<DateTime<Utc>>,
+        pub(crate) struct PlayerPartial {
+            pub(crate) last_update: Option<DateTime<Utc>>,
         }
     }
 
     /// Get data for a single player.
-    pub fn get_player(&self, user_login: &str) -> Result<Option<Player>> {
+    pub(crate) fn get_player(&self, user_login: &str) -> Result<Option<Player>> {
         let key = Key::Player {
             user_login: user_login.to_string(),
         };
@@ -313,7 +313,7 @@ impl Database {
     }
 
     /// Get data for a single player.
-    pub fn insert_player(&self, user_login: &str, player: Player) -> Result<()> {
+    pub(crate) fn insert_player(&self, user_login: &str, player: Player) -> Result<()> {
         let key = Key::Player {
             user_login: user_login.to_string(),
         };
@@ -322,7 +322,7 @@ impl Database {
     }
 
     /// Get information on the given user.
-    pub fn insert_user(&self, user_id: &str, user: User) -> Result<()> {
+    pub(crate) fn insert_user(&self, user_id: &str, user: User) -> Result<()> {
         let key = Key::User {
             user_id: user_id.to_string(),
         };
@@ -331,7 +331,7 @@ impl Database {
     }
 
     /// Get information on the given user.
-    pub fn get_user(&self, user_id: &str) -> Result<Option<User>> {
+    pub(crate) fn get_user(&self, user_id: &str) -> Result<Option<User>> {
         let key = Key::User {
             user_id: user_id.to_string(),
         };
@@ -340,7 +340,7 @@ impl Database {
     }
 
     /// Get the current key by the specified user.
-    pub fn get_key(&self, user_id: &str) -> Result<Option<String>> {
+    pub(crate) fn get_key(&self, user_id: &str) -> Result<Option<String>> {
         let key = Key::UserIdToKey {
             user_id: user_id.to_string(),
         };
@@ -349,7 +349,7 @@ impl Database {
     }
 
     /// Get the user that corresponds to the given key.
-    pub fn get_user_by_key(&self, key: &str) -> Result<Option<User>> {
+    pub(crate) fn get_user_by_key(&self, key: &str) -> Result<Option<User>> {
         let key = Key::KeyToUserId {
             key: key.to_string(),
         };
@@ -365,7 +365,7 @@ impl Database {
     }
 
     /// Store the given key.
-    pub fn insert_key(&self, user_id: &str, key: &str) -> Result<()> {
+    pub(crate) fn insert_key(&self, user_id: &str, key: &str) -> Result<()> {
         let user_to_key = Key::UserIdToKey {
             user_id: user_id.to_string(),
         };
@@ -382,7 +382,7 @@ impl Database {
     }
 
     /// Delete the key associated with the specified user.
-    pub fn delete_key(&self, user_id: &str) -> Result<()> {
+    pub(crate) fn delete_key(&self, user_id: &str) -> Result<()> {
         let user_to_key = Key::UserIdToKey {
             user_id: user_id.to_string(),
         };
@@ -400,7 +400,7 @@ impl Database {
     }
 
     /// Get the connection with the specified ID.
-    pub fn get_connection(&self, user_id: &str, id: &str) -> Result<Option<Connection>> {
+    pub(crate) fn get_connection(&self, user_id: &str, id: &str) -> Result<Option<Connection>> {
         let key = Key::Connection {
             user_id: user_id.to_string(),
             id: id.to_string(),
@@ -410,7 +410,7 @@ impl Database {
     }
 
     /// Add the specified connection.
-    pub fn add_connection(&self, user_id: &str, connection: &Connection) -> Result<()> {
+    pub(crate) fn add_connection(&self, user_id: &str, connection: &Connection) -> Result<()> {
         let key = Key::Connection {
             user_id: user_id.to_string(),
             id: connection.id.clone(),
@@ -420,7 +420,7 @@ impl Database {
     }
 
     /// Delete the specified connection.
-    pub fn delete_connection(&self, user_id: &str, id: &str) -> Result<()> {
+    pub(crate) fn delete_connection(&self, user_id: &str, id: &str) -> Result<()> {
         let key = Key::Connection {
             user_id: user_id.to_string(),
             id: id.to_string(),
@@ -430,7 +430,7 @@ impl Database {
     }
 
     /// Get all connections for the specified user.
-    pub fn connections_by_user(&self, needle_user_id: &str) -> Result<Vec<Connection>> {
+    pub(crate) fn connections_by_user(&self, needle_user_id: &str) -> Result<Vec<Connection>> {
         let key = Key::ConnectionsByUserId {
             user_id: needle_user_id.to_string(),
         };
@@ -470,7 +470,7 @@ impl Database {
     }
 
     /// Get all github releases associated with the specified repository.
-    pub fn get_github_releases(
+    pub(crate) fn get_github_releases(
         &self,
         user: &str,
         repo: &str,
@@ -484,7 +484,7 @@ impl Database {
     }
 
     /// Write the current github releases.
-    pub fn write_github_releases(
+    pub(crate) fn write_github_releases(
         &self,
         user: &str,
         repo: &str,
@@ -556,7 +556,7 @@ impl Database {
     }
 }
 
-pub enum Operation {
+pub(crate) enum Operation {
     Remove(Vec<u8>),
     Insert(Vec<u8>, Vec<u8>),
 }
@@ -568,7 +568,7 @@ struct Transaction<'a> {
 
 impl Transaction<'_> {
     /// Insert the given key and value.
-    pub fn insert<T>(&mut self, key: &Key, value: &T) -> Result<()>
+    pub(crate) fn insert<T>(&mut self, key: &Key, value: &T) -> Result<()>
     where
         T: Serialize,
     {
@@ -579,14 +579,14 @@ impl Transaction<'_> {
     }
 
     /// Delete the given key.
-    pub fn remove(&mut self, key: &Key) -> Result<()> {
+    pub(crate) fn remove(&mut self, key: &Key) -> Result<()> {
         let key = key.serialize()?;
         self.ops.push(Operation::Remove(key));
         Ok(())
     }
 
     /// Commit the current transaction.
-    pub fn commit(self) -> sled::TransactionResult<()> {
+    pub(crate) fn commit(self) -> sled::TransactionResult<()> {
         let Transaction { tree, ops } = self;
 
         tree.transaction(move |tree| {

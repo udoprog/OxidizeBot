@@ -4,8 +4,8 @@ use crate::db;
 use crate::module;
 use crate::prelude::*;
 
-pub struct Handler {
-    pub themes: injector::Ref<db::Themes>,
+pub(crate) struct Handler {
+    pub(crate) themes: injector::Ref<db::Themes>,
 }
 
 #[async_trait]
@@ -52,7 +52,7 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

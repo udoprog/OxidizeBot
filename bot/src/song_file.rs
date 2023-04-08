@@ -10,17 +10,17 @@ static DEFAULT_CURRENT_SONG_TEMPLATE: &str = "Song: {{name}}{{#if artists}} by {
 static DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE: &str = "Not Playing";
 
 #[derive(Debug, Clone, Default)]
-pub struct SongFileBuilder {
-    pub enabled: bool,
-    pub path: Option<PathBuf>,
-    pub template: Option<Template>,
-    pub stopped_template: Option<Template>,
-    pub update_interval: utils::Duration,
+pub(crate) struct SongFileBuilder {
+    pub(crate) enabled: bool,
+    pub(crate) path: Option<PathBuf>,
+    pub(crate) template: Option<Template>,
+    pub(crate) stopped_template: Option<Template>,
+    pub(crate) update_interval: utils::Duration,
 }
 
 impl SongFileBuilder {
     /// Construct a new SongFile handler if all the necessary options are available.
-    pub fn build(&self) -> Option<SongFile> {
+    pub(crate) fn build(&self) -> Option<SongFile> {
         if !self.enabled {
             tracing::trace!("Not enabled");
             return None;
@@ -46,7 +46,7 @@ impl SongFileBuilder {
     }
 
     /// Initialize the given current song.
-    pub fn init(&self, value: &mut Fuse<SongFile>) {
+    pub(crate) fn init(&self, value: &mut Fuse<SongFile>) {
         let update = match self.build() {
             Some(update) => Fuse::new(update),
             None => Fuse::empty(),
@@ -58,7 +58,7 @@ impl SongFileBuilder {
     }
 }
 
-pub struct SongFile {
+pub(crate) struct SongFile {
     /// Path to render current song at.
     path: PathBuf,
     /// Message to render when a song is playing.
@@ -172,7 +172,7 @@ impl SongFile {
     }
 
     /// Blank the current file.
-    pub fn blank(&self) -> Result<(), anyhow::Error> {
+    pub(crate) fn blank(&self) -> Result<(), anyhow::Error> {
         use std::io::Write as _;
         let mut f = self.create_or_truncate()?;
 
@@ -186,7 +186,11 @@ impl SongFile {
     }
 
     /// Write the current song to a path.
-    pub fn write(&self, song: &player::Song, state: player::State) -> Result<(), anyhow::Error> {
+    pub(crate) fn write(
+        &self,
+        song: &player::Song,
+        state: player::State,
+    ) -> Result<(), anyhow::Error> {
         let mut f = self.create_or_truncate()?;
         let data = song.data(state)?;
         self.template.render(&mut f, &data)?;
@@ -194,7 +198,7 @@ impl SongFile {
     }
 
     /// Clear the old log.
-    pub fn blank_log(&self) {
+    pub(crate) fn blank_log(&self) {
         if let Err(e) = self.blank() {
             tracing::error!("Failed to blank file: {}: {}", self.path.display(), e);
         }

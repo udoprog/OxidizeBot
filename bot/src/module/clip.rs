@@ -8,11 +8,11 @@ use crate::utils::{Cooldown, Duration};
 use anyhow::Result;
 
 /// Handler for the `!clip` command.
-pub struct Clip {
-    pub enabled: settings::Var<bool>,
-    pub stream_info: stream_info::StreamInfo,
-    pub clip_cooldown: settings::Var<Cooldown>,
-    pub streamer: api::TwitchAndUser,
+pub(crate) struct Clip {
+    pub(crate) enabled: settings::Var<bool>,
+    pub(crate) stream_info: stream_info::StreamInfo,
+    pub(crate) clip_cooldown: settings::Var<Cooldown>,
+    pub(crate) streamer: api::TwitchAndUser,
 }
 
 #[async_trait]
@@ -64,7 +64,7 @@ impl command::Handler for Clip {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

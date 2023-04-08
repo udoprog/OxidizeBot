@@ -19,16 +19,16 @@ use diesel_migrations::{EmbeddedMigrations, HarnessWithOutput, MigrationHarness}
 use std::path::Path;
 use thiserror::Error;
 
-pub use self::after_streams::{AfterStream, AfterStreams};
-pub use self::aliases::{Alias, Aliases};
-pub use self::commands::{Command, Commands};
-pub use self::matcher::Captures;
-pub use self::promotions::{Promotion, Promotions};
-pub use self::script_storage::ScriptStorage;
-pub use self::themes::{Theme, Themes};
-pub use self::words::{Word, Words};
+pub(crate) use self::after_streams::{AfterStream, AfterStreams};
+pub(crate) use self::aliases::{Alias, Aliases};
+pub(crate) use self::commands::{Command, Commands};
+pub(crate) use self::matcher::Captures;
+pub(crate) use self::promotions::{Promotion, Promotions};
+pub(crate) use self::script_storage::ScriptStorage;
+pub(crate) use self::themes::{Theme, Themes};
+pub(crate) use self::words::{Word, Words};
 
-pub use self::matcher::Key;
+pub(crate) use self::matcher::Key;
 pub(crate) use self::matcher::{Matchable, Matcher, Pattern};
 
 use anyhow::{anyhow, Context as _, Error};
@@ -37,17 +37,17 @@ use diesel::prelude::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
+pub(crate) const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
 /// Database abstraction.
 #[derive(Clone)]
-pub struct Database {
+pub(crate) struct Database {
     pool: Arc<Mutex<SqliteConnection>>,
 }
 
 impl Database {
     /// Find posts by users.
-    pub fn open(path: &Path) -> Result<Database, Error> {
+    pub(crate) fn open(path: &Path) -> Result<Database, Error> {
         let url = path.display().to_string();
 
         tracing::info!("Using database: {}", url);
@@ -78,7 +78,7 @@ impl Database {
     }
 
     /// Run a blocking task with exlusive access to the database pool.
-    pub async fn asyncify<F, T, E>(&self, task: F) -> Result<T, E>
+    pub(crate) async fn asyncify<F, T, E>(&self, task: F) -> Result<T, E>
     where
         F: FnOnce(&mut SqliteConnection) -> Result<T, E> + Send + 'static,
         T: Send + 'static,
@@ -95,17 +95,20 @@ impl Database {
     }
 
     /// Access auth from the database.
-    pub async fn auth(&self, schema: crate::auth::Schema) -> Result<crate::auth::Auth, Error> {
+    pub(crate) async fn auth(
+        &self,
+        schema: crate::auth::Schema,
+    ) -> Result<crate::auth::Auth, Error> {
         crate::auth::Auth::new(self.clone(), schema).await
     }
 
     /// Access settings from the database.
-    pub fn settings(&self, schema: crate::Schema) -> Result<crate::Settings, Error> {
+    pub(crate) fn settings(&self, schema: crate::Schema) -> Result<crate::Settings, Error> {
         Ok(crate::settings::Settings::new(self.clone(), schema))
     }
 
     /// List all counters in backend.
-    pub async fn player_list(&self) -> Result<Vec<models::Song>, Error> {
+    pub(crate) async fn player_list(&self) -> Result<Vec<models::Song>, Error> {
         use self::schema::songs::dsl;
 
         self.asyncify(move |c| {
@@ -119,7 +122,7 @@ impl Database {
     }
 
     /// Insert the given song into the backend.
-    pub async fn player_push_back(&self, song: &models::AddSong) -> Result<(), Error> {
+    pub(crate) async fn player_push_back(&self, song: &models::AddSong) -> Result<(), Error> {
         use self::schema::songs::dsl;
 
         let song = song.clone();
@@ -132,7 +135,7 @@ impl Database {
     }
 
     /// Purge the songs database and return the number of items removed.
-    pub async fn player_song_purge(&self) -> Result<usize, Error> {
+    pub(crate) async fn player_song_purge(&self) -> Result<usize, Error> {
         use self::schema::songs::dsl;
 
         self.asyncify(move |c| {
@@ -148,7 +151,7 @@ impl Database {
     }
 
     /// Remove the song with the given ID.
-    pub async fn player_remove_song(
+    pub(crate) async fn player_remove_song(
         &self,
         track_id: &TrackId,
         played: bool,
@@ -180,7 +183,7 @@ impl Database {
     }
 
     /// Promote the track with the given ID.
-    pub async fn player_promote_song(
+    pub(crate) async fn player_promote_song(
         &self,
         user: Option<&str>,
         track_id: &TrackId,
@@ -216,7 +219,7 @@ impl Database {
     }
 
     /// Test if the song has been played within a given duration.
-    pub async fn player_last_song_within(
+    pub(crate) async fn player_last_song_within(
         &self,
         track_id: &TrackId,
         duration: utils::Duration,
@@ -250,12 +253,12 @@ impl Database {
 }
 
 /// Convert a user display name into a user id.
-pub fn user_id(user: &str) -> String {
+pub(crate) fn user_id(user: &str) -> String {
     user.trim_start_matches('@').to_lowercase()
 }
 
 #[derive(Debug, Error)]
-pub enum RenameError {
+pub(crate) enum RenameError {
     /// Trying to rename something to a conflicting name.
     #[error("conflict")]
     Conflict,

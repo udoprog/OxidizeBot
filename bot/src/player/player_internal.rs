@@ -64,7 +64,7 @@ pub(super) struct PlayerInternal {
 
 impl PlayerInternal {
     /// Initialize the internal player if necessary.
-    pub async fn initialize(&mut self) -> Result<()> {
+    pub(crate) async fn initialize(&mut self) -> Result<()> {
         if !self.initialized.playback_state {
             let p = self.spotify.me_player().await?;
 

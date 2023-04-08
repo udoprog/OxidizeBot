@@ -6,7 +6,7 @@ use tokio::sync::RwLockReadGuard;
 use warp::{body, filters, path, Filter as _};
 
 #[derive(serde::Deserialize)]
-pub struct PutSetting {
+pub(crate) struct PutSetting {
     value: serde_json::Value,
 }
 
@@ -22,10 +22,10 @@ struct SettingsQuery {
 
 /// Settings endpoint.
 #[derive(Clone)]
-pub struct Settings(injector::Ref<crate::Settings>);
+pub(crate) struct Settings(injector::Ref<crate::Settings>);
 
 impl Settings {
-    pub fn route(
+    pub(crate) fn route(
         settings: injector::Ref<crate::Settings>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Settings(settings);

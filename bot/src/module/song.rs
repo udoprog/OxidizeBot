@@ -21,7 +21,7 @@ mod requester;
 const EXAMPLE_SEARCH: &str = "queen we will rock you";
 
 /// Handler for the `!song` command.
-pub struct Handler {
+pub(crate) struct Handler {
     enabled: settings::Var<bool>,
     player: injector::Ref<Player>,
     request_help_cooldown: Mutex<Cooldown>,
@@ -481,7 +481,7 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl module::Module for Module {

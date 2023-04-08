@@ -15,10 +15,10 @@ struct DeleteRequest {
 
 /// Cache endpoints.
 #[derive(Clone)]
-pub struct Cache(injector::Ref<crate::storage::Cache>);
+pub(crate) struct Cache(injector::Ref<crate::storage::Cache>);
 
 impl Cache {
-    pub fn route(
+    pub(crate) fn route(
         cache: injector::Ref<crate::storage::Cache>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Cache(cache);

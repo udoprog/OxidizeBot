@@ -4,13 +4,13 @@ use anyhow::bail;
 use bytes::Bytes;
 use reqwest::{header, Client, Method, Url};
 
-pub mod github;
-pub mod spotify;
-pub mod twitch;
+pub(crate) mod github;
+pub(crate) mod spotify;
+pub(crate) mod twitch;
 
-pub use self::github::GitHub;
-pub use self::spotify::Spotify;
-pub use self::twitch::IdTwitchClient;
+pub(crate) use self::github::GitHub;
+pub(crate) use self::spotify::Spotify;
+pub(crate) use self::twitch::IdTwitchClient;
 
 const USER_AGENT: &str = "OxidizeWeb/0";
 
@@ -24,7 +24,7 @@ struct RequestBuilder {
 
 impl RequestBuilder {
     /// Create a new request.
-    pub fn new(client: Client, method: Method, url: Url) -> Self {
+    pub(crate) fn new(client: Client, method: Method, url: Url) -> Self {
         RequestBuilder {
             client,
             method,
@@ -35,7 +35,7 @@ impl RequestBuilder {
     }
 
     /// Execute the request.
-    pub async fn execute<T>(self) -> Result<T, anyhow::Error>
+    pub(crate) async fn execute<T>(self) -> Result<T, anyhow::Error>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -68,7 +68,7 @@ impl RequestBuilder {
     }
 
     /// Push a header.
-    pub fn header(mut self, key: header::HeaderName, value: &str) -> Self {
+    pub(crate) fn header(mut self, key: header::HeaderName, value: &str) -> Self {
         self.headers.push((key, value.to_string()));
         self
     }

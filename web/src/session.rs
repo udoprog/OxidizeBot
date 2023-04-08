@@ -7,24 +7,24 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Config {
+pub(crate) struct Config {
     #[serde(default)]
     secret: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct SessionData {
+pub(crate) struct SessionData {
     /// Twitch user id.
-    pub user_id: String,
+    pub(crate) user_id: String,
 }
 
-pub struct Session {
+pub(crate) struct Session {
     db: db::Database,
     sealer: AeadSealer,
 }
 
 impl Session {
-    pub fn new(db: db::Database, config: &Config) -> Result<Self, Error> {
+    pub(crate) fn new(db: db::Database, config: &Config) -> Result<Self, Error> {
         let sealer = match config.secret.as_ref() {
             Some(secret) => AeadSealer::from_secret(&ring::aead::AES_256_GCM, secret.as_bytes())?,
             None => AeadSealer::random(&ring::aead::AES_256_GCM)?,
@@ -34,7 +34,12 @@ impl Session {
     }
 
     /// Set the given cookie.
-    pub fn set_cookie<T>(&self, headers: &mut HeaderMap, name: &str, value: T) -> Result<(), Error>
+    pub(crate) fn set_cookie<T>(
+        &self,
+        headers: &mut HeaderMap,
+        name: &str,
+        value: T,
+    ) -> Result<(), Error>
     where
         T: Serialize,
     {
@@ -55,7 +60,7 @@ impl Session {
     }
 
     /// Delete a cookie from the given request and add the appropriate Set-Cookie to another set of headers.
-    pub fn delete_cookie(&self, headers: &mut HeaderMap, name: &str) -> Result<(), Error> {
+    pub(crate) fn delete_cookie(&self, headers: &mut HeaderMap, name: &str) -> Result<(), Error> {
         headers.insert(
             header::SET_COOKIE,
             self.cookie(name.to_string(), "")
@@ -70,7 +75,10 @@ impl Session {
     }
 
     /// Get cookies from the specified headers.
-    pub fn cookies_from_header<B>(&self, req: &Request<B>) -> Result<Option<CookieJar>, Error> {
+    pub(crate) fn cookies_from_header<B>(
+        &self,
+        req: &Request<B>,
+    ) -> Result<Option<CookieJar>, Error> {
         let value = match req.headers().get(header::COOKIE) {
             Some(value) => value,
             None => return Ok(None),
@@ -123,7 +131,7 @@ impl Session {
     }
 
     /// Verify the given request and return user information (if present).
-    pub fn verify<B>(&self, req: &Request<B>) -> Result<Option<db::User>, Error> {
+    pub(crate) fn verify<B>(&self, req: &Request<B>) -> Result<Option<db::User>, Error> {
         if let Some(authorization) = req.headers().get(header::AUTHORIZATION) {
             if let Some(user) = self.verify_authorization_header(authorization.to_str()?)? {
                 return Ok(Some(user));

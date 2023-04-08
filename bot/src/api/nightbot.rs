@@ -9,7 +9,7 @@ use reqwest::{header, Client, Method, Url};
 
 static NIGHTBOT_URL_V1: &str = "https://api.nightbot.tv/1";
 
-pub enum RequestError {
+pub(crate) enum RequestError {
     TooManyRequests,
     Other(Error),
 }
@@ -22,7 +22,7 @@ impl From<Error> for RequestError {
 
 /// API integration.
 #[derive(Clone, Debug)]
-pub struct NightBot {
+pub(crate) struct NightBot {
     client: Client,
     api_url: Url,
     token: oauth2::SyncToken,
@@ -30,7 +30,7 @@ pub struct NightBot {
 
 impl NightBot {
     /// Create a new API integration.
-    pub fn new(token: oauth2::SyncToken) -> Result<Self> {
+    pub(crate) fn new(token: oauth2::SyncToken) -> Result<Self> {
         Ok(Self {
             client: Client::new(),
             api_url: str::parse(NIGHTBOT_URL_V1)?,
@@ -40,7 +40,7 @@ impl NightBot {
 
     /// Run the stream that updates the nightbot client.
     #[tracing::instrument(skip_all)]
-    pub async fn run(injector: Injector) -> Result<()> {
+    pub(crate) async fn run(injector: Injector) -> Result<()> {
         #[derive(Provider)]
         struct Deps {
             #[dependency(tag = "tags::Token::NightBot")]
@@ -72,7 +72,7 @@ impl NightBot {
     }
 
     /// Update the channel information.
-    pub async fn channel_send(&self, message: String) -> Result<(), RequestError> {
+    pub(crate) async fn channel_send(&self, message: String) -> Result<(), RequestError> {
         let message = Message { message };
 
         let message = serde_json::to_string(&message).map_err(|e| RequestError::Other(e.into()))?;

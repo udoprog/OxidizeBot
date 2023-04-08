@@ -6,14 +6,14 @@ use winapi::um::{winnt, winreg};
 
 use super::convert::{FromWide as _, ToWide as _};
 
-pub struct RegistryKey(HKEY);
+pub(crate) struct RegistryKey(HKEY);
 
 unsafe impl Sync for RegistryKey {}
 unsafe impl Send for RegistryKey {}
 
 impl RegistryKey {
     /// Open the given key in the HKEY_CURRENT_USER scope.
-    pub fn current_user(key: &str) -> io::Result<RegistryKey> {
+    pub(crate) fn current_user(key: &str) -> io::Result<RegistryKey> {
         Self::open(winreg::HKEY_CURRENT_USER, key)
     }
 
@@ -40,7 +40,7 @@ impl RegistryKey {
     }
 
     /// Get the given value.
-    pub fn get(&self, name: &str) -> io::Result<Option<OsString>> {
+    pub(crate) fn get(&self, name: &str) -> io::Result<Option<OsString>> {
         let name = name.to_wide_null();
         let mut len = 0;
 
@@ -86,7 +86,7 @@ impl RegistryKey {
     }
 
     /// Set the given value.
-    pub fn set(&self, name: &str, value: impl AsRef<OsStr>) -> io::Result<()> {
+    pub(crate) fn set(&self, name: &str, value: impl AsRef<OsStr>) -> io::Result<()> {
         use std::convert::TryInto as _;
 
         let name = name.to_wide_null();
@@ -114,7 +114,7 @@ impl RegistryKey {
     }
 
     /// Delete the given value.
-    pub fn delete(&self, name: &str) -> io::Result<()> {
+    pub(crate) fn delete(&self, name: &str) -> io::Result<()> {
         let name = name.to_wide_null();
 
         let status = unsafe { winreg::RegDeleteKeyValueW(self.0, ptr::null_mut(), name.as_ptr()) };

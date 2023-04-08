@@ -13,7 +13,7 @@ mod windows;
 use windows as imp;
 
 #[derive(Debug, Clone, Copy)]
-pub enum NotificationIcon {
+pub(crate) enum NotificationIcon {
     Info,
     Warning,
     Error,
@@ -38,12 +38,12 @@ impl NotificationIcon {
 type Callback = Box<dyn FnMut() -> Result<(), Error> + Send + 'static>;
 
 /// A single notification.
-pub struct Notification {
-    pub message: String,
-    pub title: Option<String>,
-    pub icon: NotificationIcon,
-    pub timeout: Option<Duration>,
-    pub on_click: Option<Callback>,
+pub(crate) struct Notification {
+    pub(crate) message: String,
+    pub(crate) title: Option<String>,
+    pub(crate) icon: NotificationIcon,
+    pub(crate) timeout: Option<Duration>,
+    pub(crate) on_click: Option<Callback>,
 }
 
 impl fmt::Debug for Notification {
@@ -59,7 +59,7 @@ impl fmt::Debug for Notification {
 
 impl Notification {
     /// Create a new notification.
-    pub fn new<M>(message: M) -> Self
+    pub(crate) fn new<M>(message: M) -> Self
     where
         M: AsRef<str>,
     {
@@ -73,7 +73,7 @@ impl Notification {
     }
 
     /// Set the message for the notification.
-    pub fn title<T>(self, title: T) -> Self
+    pub(crate) fn title<T>(self, title: T) -> Self
     where
         T: AsRef<str>,
     {
@@ -84,7 +84,7 @@ impl Notification {
     }
 
     /// Set the notification timeout.
-    pub fn timeout(self, timeout: Duration) -> Self {
+    pub(crate) fn timeout(self, timeout: Duration) -> Self {
         Self {
             timeout: Some(timeout),
             ..self
@@ -92,7 +92,7 @@ impl Notification {
     }
 
     /// What should happen if we click the notification.
-    pub fn on_click<F>(self, on_click: F) -> Self
+    pub(crate) fn on_click<F>(self, on_click: F) -> Self
     where
         F: FnMut() -> Result<(), Error> + Send + 'static,
     {
@@ -103,9 +103,9 @@ impl Notification {
     }
 
     /// Set the notification icon.
-    pub fn icon(self, icon: NotificationIcon) -> Self {
+    pub(crate) fn icon(self, icon: NotificationIcon) -> Self {
         Self { icon, ..self }
     }
 }
 
-pub use self::imp::{setup, System};
+pub(crate) use self::imp::{setup, System};

@@ -4,14 +4,14 @@ use std::time::Duration;
 const GLOBAL_MAX: Duration = Duration::from_secs(120);
 
 /// An exponential backoff.
-pub struct Exponential {
+pub(crate) struct Exponential {
     initial: Duration,
     attempt: usize,
 }
 
 impl Exponential {
     /// Construct a new exponential backoff.
-    pub fn new(initial: Duration) -> Self {
+    pub(crate) fn new(initial: Duration) -> Self {
         Self {
             initial,
             attempt: 0,
@@ -19,7 +19,7 @@ impl Exponential {
     }
 
     /// Get the next duration and increment the attempt counter.
-    pub fn next(&mut self) -> Duration {
+    pub(crate) fn next(&mut self) -> Duration {
         let mut duration = self.initial;
 
         if self.attempt <= 4 {

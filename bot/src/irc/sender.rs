@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, Default)]
-pub enum Type {
+pub(crate) enum Type {
     #[serde(rename = "chat")]
     #[default]
     Chat,
@@ -28,14 +28,14 @@ struct Inner {
 }
 
 #[derive(Clone)]
-pub struct Sender {
+pub(crate) struct Sender {
     ty: settings::Var<Type>,
     inner: Arc<Inner>,
 }
 
 impl Sender {
     /// Create a new sender.
-    pub fn new(
+    pub(crate) fn new(
         ty: settings::Var<Type>,
         target: String,
         sender: client::Sender,
@@ -65,27 +65,27 @@ impl Sender {
     }
 
     /// Get the channel this sender is associated with.
-    pub fn channel(&self) -> &str {
+    pub(crate) fn channel(&self) -> &str {
         self.inner.target.as_str()
     }
 
     /// Delete the given message by id.
-    pub fn delete(&self, id: &str) {
+    pub(crate) fn delete(&self, id: &str) {
         self.privmsg_immediate(format!("/delete {}", id));
     }
 
     /// Get list of mods.
-    pub fn mods(&self) {
+    pub(crate) fn mods(&self) {
         self.privmsg_immediate("/mods");
     }
 
     /// Get list of VIPs.
-    pub fn vips(&self) {
+    pub(crate) fn vips(&self) {
         self.privmsg_immediate("/vips");
     }
 
     /// Only send to chat, with rate limiting.
-    pub async fn send(&self, m: impl Into<Message>) {
+    pub(crate) async fn send(&self, m: impl Into<Message>) {
         let m = m.into();
 
         self.inner.limiter.acquire(1).await;
@@ -96,14 +96,14 @@ impl Sender {
     }
 
     /// Send an immediate message, without taking rate limiting into account.
-    pub fn send_immediate(&self, m: impl Into<Message>) {
+    pub(crate) fn send_immediate(&self, m: impl Into<Message>) {
         if let Err(e) = self.inner.sender.send(m) {
             log_error!(e, "Failed to send message");
         }
     }
 
     /// Send a PRIVMSG.
-    pub async fn privmsg(&self, f: impl fmt::Display) {
+    pub(crate) async fn privmsg(&self, f: impl fmt::Display) {
         match self.ty.load().await {
             Type::NightBot => {
                 self.send_nightbot(&self.inner, f.to_string()).await;
@@ -116,12 +116,12 @@ impl Sender {
     }
 
     /// Send a PRIVMSG without rate limiting.
-    pub fn privmsg_immediate(&self, f: impl fmt::Display) {
+    pub(crate) fn privmsg_immediate(&self, f: impl fmt::Display) {
         self.send_immediate(Command::PRIVMSG(self.inner.target.clone(), f.to_string()))
     }
 
     /// Send a capability request.
-    pub async fn cap_req(&self, cap: &str) {
+    pub(crate) async fn cap_req(&self, cap: &str) {
         self.send(Command::CAP(
             None,
             CapSubCommand::REQ,

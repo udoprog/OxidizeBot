@@ -12,9 +12,9 @@ use anyhow::Result;
 use chrono::Utc;
 
 /// Handler for the `!uptime` command.
-pub struct Uptime {
-    pub enabled: settings::Var<bool>,
-    pub stream_info: stream_info::StreamInfo,
+pub(crate) struct Uptime {
+    pub(crate) enabled: settings::Var<bool>,
+    pub(crate) stream_info: stream_info::StreamInfo,
 }
 
 #[async_trait]
@@ -59,10 +59,10 @@ impl command::Handler for Uptime {
 }
 
 /// Handler for the `!title` command.
-pub struct Title {
-    pub enabled: settings::Var<bool>,
-    pub stream_info: stream_info::StreamInfo,
-    pub streamer: api::TwitchAndUser,
+pub(crate) struct Title {
+    pub(crate) enabled: settings::Var<bool>,
+    pub(crate) stream_info: stream_info::StreamInfo,
+    pub(crate) streamer: api::TwitchAndUser,
 }
 
 impl Title {
@@ -117,10 +117,10 @@ impl command::Handler for Title {
 }
 
 /// Handler for the `!game` command.
-pub struct Game {
-    pub enabled: settings::Var<bool>,
-    pub stream_info: stream_info::StreamInfo,
-    pub streamer: api::TwitchAndUser,
+pub(crate) struct Game {
+    pub(crate) enabled: settings::Var<bool>,
+    pub(crate) stream_info: stream_info::StreamInfo,
+    pub(crate) streamer: api::TwitchAndUser,
 }
 
 impl Game {
@@ -187,7 +187,7 @@ impl command::Handler for Game {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

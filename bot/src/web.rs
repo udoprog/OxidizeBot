@@ -28,12 +28,12 @@ mod settings;
 
 use self::{cache::Cache, chat::Chat, settings::Settings};
 
-pub const URL: &str = "http://localhost:12345";
+pub(crate) const URL: &str = "http://localhost:12345";
 
 mod assets {
     #[derive(rust_embed::RustEmbed)]
     #[folder = "$CARGO_MANIFEST_DIR/../bot-ui/dist"]
-    pub struct Asset;
+    pub(crate) struct Asset;
 }
 
 #[derive(Debug)]
@@ -84,12 +84,12 @@ struct AudioDevice {
 }
 
 #[derive(serde::Serialize)]
-pub struct Current {
+pub(crate) struct Current {
     channel: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
-pub struct DisabledBody {
+pub(crate) struct DisabledBody {
     disabled: bool,
 }
 
@@ -157,7 +157,7 @@ impl Aliases {
         return list.or(delete).or(edit).or(edit_disabled).boxed();
 
         #[derive(serde::Deserialize)]
-        pub struct PutAlias {
+        pub(crate) struct PutAlias {
             template: template::Template,
         }
     }
@@ -277,7 +277,7 @@ impl Commands {
         return list.or(delete).or(edit).or(edit_disabled).boxed();
 
         #[derive(serde::Deserialize)]
-        pub struct PutCommand {
+        pub(crate) struct PutCommand {
             template: template::Template,
         }
     }
@@ -406,7 +406,7 @@ impl Promotions {
         return list.or(delete).or(edit).or(edit_disabled).boxed();
 
         #[derive(serde::Deserialize)]
-        pub struct PutPromotion {
+        pub(crate) struct PutPromotion {
             frequency: utils::Duration,
             template: template::Template,
         }
@@ -533,7 +533,7 @@ impl Themes {
         return list.or(delete).or(edit).or(edit_disabled).boxed();
 
         #[derive(serde::Deserialize)]
-        pub struct PutTheme {
+        pub(crate) struct PutTheme {
             track_id: TrackId,
         }
     }
@@ -592,7 +592,7 @@ struct Auth {
 }
 
 #[derive(serde::Deserialize)]
-pub struct AuthKeyQuery {
+pub(crate) struct AuthKeyQuery {
     #[serde(default)]
     key: Option<Fragment>,
 }
@@ -707,7 +707,7 @@ impl Auth {
         return route;
 
         #[derive(serde::Deserialize)]
-        pub struct PutGrant {
+        pub(crate) struct PutGrant {
             scope: auth::Scope,
             role: auth::Role,
         }
@@ -785,7 +785,7 @@ struct Api {
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct Balance {
+pub(crate) struct Balance {
     name: String,
     #[serde(default)]
     balance: i64,
@@ -973,7 +973,7 @@ impl Api {
 
 /// Set up the web endpoint.
 #[tracing::instrument(skip_all)]
-pub async fn run(
+pub(crate) async fn run(
     injector: &Injector,
     message_log: message_log::MessageLog,
     message_bus: bus::Bus<message_log::Event>,
@@ -1175,13 +1175,13 @@ pub async fn run(
     }
 }
 
-pub struct Fragment {
+pub(crate) struct Fragment {
     string: String,
 }
 
 impl Fragment {
     /// Borrow as a string slice.
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         self.string.as_str()
     }
 }
@@ -1259,28 +1259,28 @@ struct ErrorMessage {
 
 /// Interface to the server.
 #[derive(Clone)]
-pub struct Server {
+pub(crate) struct Server {
     /// Callbacks for when we have received a token.
     active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
 }
 
 impl Server {
-    pub async fn update_connection(&self, id: &str, connection: ConnectionMeta) {
+    pub(crate) async fn update_connection(&self, id: &str, connection: ConnectionMeta) {
         self.active_connections
             .write()
             .await
             .insert(id.to_string(), connection);
     }
 
-    pub async fn clear_connection(&self, id: &str) {
+    pub(crate) async fn clear_connection(&self, id: &str) {
         let _ = self.active_connections.write().await.remove(id);
     }
 }
 
 #[derive(Debug)]
-pub struct ReceivedToken {
-    pub code: String,
-    pub state: String,
+pub(crate) struct ReceivedToken {
+    pub(crate) code: String,
+    pub(crate) state: String,
 }
 
 /// Connecting a bus to a websocket connection.

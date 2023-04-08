@@ -6,10 +6,10 @@ use crate::prelude::*;
 use crate::utils;
 
 /// Handler for the `!afterstream` command.
-pub struct AfterStream {
-    pub enabled: settings::Var<bool>,
-    pub cooldown: settings::Var<utils::Cooldown>,
-    pub after_streams: injector::Ref<db::AfterStreams>,
+pub(crate) struct AfterStream {
+    pub(crate) enabled: settings::Var<bool>,
+    pub(crate) cooldown: settings::Var<utils::Cooldown>,
+    pub(crate) after_streams: injector::Ref<db::AfterStreams>,
 }
 
 #[async_trait]
@@ -58,7 +58,7 @@ impl command::Handler for AfterStream {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

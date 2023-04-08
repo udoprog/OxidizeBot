@@ -538,12 +538,12 @@ impl fmt::Display for Command {
 
 #[derive(Clone)]
 #[allow(unused)]
-pub struct Reward {
+pub(crate) struct Reward {
     user: String,
     amount: i32,
 }
 
-pub struct Handler {
+pub(crate) struct Handler {
     enabled: settings::Var<bool>,
     player: injector::Ref<player::Player>,
     currency: injector::Ref<currency::Currency>,
@@ -1051,7 +1051,7 @@ async fn license(input: &str, ctx: &command::Context) -> Option<String> {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {
@@ -1197,7 +1197,7 @@ enum VehicleMod {
 
 impl VehicleMod {
     /// Human-readable display of this mod.
-    pub fn display(self) -> impl fmt::Display {
+    pub(crate) fn display(self) -> impl fmt::Display {
         match self {
             Self::Random => "random mods BlessRNG",
             Self::LowTier => "low tier mods",
@@ -1207,7 +1207,7 @@ impl VehicleMod {
     }
 
     /// Map an id to a mod.
-    pub fn from_id(id: &str) -> Option<VehicleMod> {
+    pub(crate) fn from_id(id: &str) -> Option<VehicleMod> {
         use self::VehicleMod::*;
 
         match id {
@@ -1259,14 +1259,14 @@ enum Control {
 
 impl Control {
     /// Human-readable display of this control.
-    pub fn display(self) -> impl fmt::Display {
+    pub(crate) fn display(self) -> impl fmt::Display {
         match self {
             Self::Steering => "steering",
         }
     }
 
     /// Map an id to a mod.
-    pub fn from_id(id: &str) -> Option<Control> {
+    pub(crate) fn from_id(id: &str) -> Option<Control> {
         use self::Control::*;
 
         match id {

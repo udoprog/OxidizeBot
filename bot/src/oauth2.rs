@@ -17,14 +17,14 @@ use tracing::Instrument;
 
 #[derive(Debug, Error)]
 #[error("Missing OAuth 2.0 Connection: {0}")]
-pub struct MissingTokenError(&'static str);
+pub(crate) struct MissingTokenError(&'static str);
 
 #[derive(Debug, Error)]
 #[error("Connection receive was cancelled")]
-pub struct CancelledToken(());
+pub(crate) struct CancelledToken(());
 
 #[derive(Debug, Default)]
-pub struct InnerSyncToken {
+pub(crate) struct InnerSyncToken {
     /// Stored connection.
     connection: Option<Box<Connection>>,
     /// Queue to notify when a connection is available.
@@ -32,7 +32,7 @@ pub struct InnerSyncToken {
 }
 
 #[derive(Clone, Debug)]
-pub struct SyncToken {
+pub(crate) struct SyncToken {
     /// Name of the flow associated with connection.
     flow_id: &'static str,
     /// The interior reference to the token.
@@ -43,7 +43,7 @@ pub struct SyncToken {
 
 impl SyncToken {
     /// Create a new SyncToken.
-    pub fn new(
+    pub(crate) fn new(
         flow_id: &'static str,
         force_refresh: mpsc::UnboundedSender<Option<Box<Connection>>>,
     ) -> Self {
@@ -55,7 +55,7 @@ impl SyncToken {
     }
 
     /// Set the connection and notify all waiters.
-    pub async fn update(&self, update: Box<Connection>) {
+    pub(crate) async fn update(&self, update: Box<Connection>) {
         tracing::info!("Updating connection");
         let mut lock = self.inner.write().await;
 
@@ -76,14 +76,14 @@ impl SyncToken {
 
     /// Clear the current connection.
     #[tracing::instrument(skip_all)]
-    pub async fn clear(&self) {
+    pub(crate) async fn clear(&self) {
         tracing::trace!("Clearing connection");
         self.inner.write().await.connection = None;
     }
 
     /// Force a connection refresh.
     #[tracing::instrument(skip_all)]
-    pub async fn force_refresh(&self) -> Result<(), Error> {
+    pub(crate) async fn force_refresh(&self) -> Result<(), Error> {
         tracing::trace!("Clearing refresh");
         let connection = self.inner.write().await.connection.take();
         self.force_refresh.send(connection)?;
@@ -91,13 +91,13 @@ impl SyncToken {
     }
 
     /// Check if connection is ready.
-    pub async fn is_ready(&self) -> bool {
+    pub(crate) async fn is_ready(&self) -> bool {
         self.inner.read().await.connection.is_some()
     }
 
     /// Wait until an underlying connection is available.
     #[tracing::instrument(skip_all)]
-    pub async fn wait_until_ready(&self) -> Result<(), CancelledToken> {
+    pub(crate) async fn wait_until_ready(&self) -> Result<(), CancelledToken> {
         let rx = {
             let mut lock = self.inner.write().await;
 
@@ -126,7 +126,7 @@ impl SyncToken {
     /// Read the synchronized connection.
     ///
     /// This results in an error if there is no connection to read.
-    pub async fn read(&self) -> Result<RwLockReadGuard<'_, Token>, MissingTokenError> {
+    pub(crate) async fn read(&self) -> Result<RwLockReadGuard<'_, Token>, MissingTokenError> {
         match RwLockReadGuard::try_map(self.inner.read().await, |i| {
             i.connection.as_ref().map(|c| &c.token)
         }) {
@@ -161,7 +161,7 @@ enum Validation {
 
 impl ConnectionFactory {
     /// Perform an update based on the existing state.
-    pub async fn update(&mut self) -> Result<(), Error> {
+    pub(crate) async fn update(&mut self) -> Result<(), Error> {
         match self.log_build().await {
             Validation::Ok => {
                 tracing::trace!("Connection ok")
@@ -210,7 +210,7 @@ impl ConnectionFactory {
 
     /// Set the connection from settings.
     #[tracing::instrument(skip_all)]
-    pub async fn update_from_settings(
+    pub(crate) async fn update_from_settings(
         &mut self,
         connection: Option<Box<Connection>>,
     ) -> Result<(), Error> {
@@ -257,7 +257,7 @@ impl ConnectionFactory {
     }
 
     /// Construct a new connection and log on failures.
-    pub async fn log_build(&mut self) -> Validation {
+    pub(crate) async fn log_build(&mut self) -> Validation {
         match self.build().await {
             Ok(connection) => connection,
             Err(e) => {
@@ -269,7 +269,7 @@ impl ConnectionFactory {
 
     /// Construct a new connection.
     #[tracing::instrument(skip_all)]
-    pub async fn build(&mut self) -> Result<Validation, Error> {
+    pub(crate) async fn build(&mut self) -> Result<Validation, Error> {
         let Some(setbac) = self.setbac.as_ref() else {
             tracing::trace!("No client to configure");
             return Ok(Validation::Ok);
@@ -397,7 +397,7 @@ impl fmt::Debug for ConnectionFactory {
 
 /// Setup a synchronized token and the future necessary to keep it up-to-date.
 #[tracing::instrument(skip_all, fields(id = flow_id))]
-pub async fn setup(
+pub(crate) async fn setup(
     flow_id: &'static str,
     parent: &crate::Settings,
     settings: crate::Settings,

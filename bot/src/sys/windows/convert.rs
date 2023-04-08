@@ -1,7 +1,7 @@
 use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::{OsStrExt as _, OsStringExt};
 
-pub trait ToWide {
+pub(crate) trait ToWide {
     /// Encode into a wide string.
     fn to_wide(&self) -> Vec<u16>;
 
@@ -22,7 +22,7 @@ where
     }
 }
 
-pub trait FromWide
+pub(crate) trait FromWide
 where
     Self: Sized,
 {

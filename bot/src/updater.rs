@@ -10,7 +10,7 @@ const USER: &str = "udoprog";
 const REPO: &str = "OxidizeBot";
 
 #[tracing::instrument(skip_all)]
-pub fn updater(
+pub(crate) fn updater(
     injector: &Injector,
 ) -> (
     settings::Var<Option<api::github::Release>>,

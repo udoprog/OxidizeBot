@@ -9,7 +9,7 @@ use chrono::Utc;
 use chrono_tz::{Etc, Tz};
 
 /// Handler for the !8ball command.
-pub struct Time {
+pub(crate) struct Time {
     enabled: settings::Var<bool>,
     timezone: settings::Var<Tz>,
     template: settings::Var<Template>,
@@ -88,7 +88,7 @@ impl command::Handler for Time {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

@@ -13,7 +13,7 @@ use thiserror::Error;
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, diesel::FromSqlRow, diesel::AsExpression,
 )]
 #[diesel(sql_type = diesel::sql_types::Text)]
-pub enum Uri {
+pub(crate) enum Uri {
     /// A Spotify track.
     SpotifyTrack(SpotifyId),
     /// A Spotify playlist.
@@ -23,7 +23,7 @@ pub enum Uri {
 }
 
 #[derive(Debug, Error)]
-pub enum ParseUriError {
+pub(crate) enum ParseUriError {
     /// Failed to parse an ID.
     #[error("bad spotify track id (expected base62): {}", _0)]
     BadBase62(String),

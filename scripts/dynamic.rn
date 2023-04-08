@@ -1,6 +1,6 @@
 const GREETING = "Howdy";
 
-pub fn main(reg) {
+pub(crate) fn main(reg) {
     reg.register("dynamic", handler);
 }
 

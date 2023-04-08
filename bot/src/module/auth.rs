@@ -7,7 +7,7 @@ use anyhow::Result;
 use chrono::Utc;
 
 /// Handler for the !auth command.
-pub struct Handler {
+pub(crate) struct Handler {
     auth: injector::Ref<auth::Auth>,
 }
 
@@ -101,10 +101,10 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 impl Module {
-    pub fn load() -> Self {
+    pub(crate) fn load() -> Self {
         Module
     }
 }

@@ -22,7 +22,7 @@ enum TemperatureUnit {
 
 impl TemperatureUnit {
     /// Format the given temperature.
-    pub fn with(self, t: ThermodynamicTemperature) -> String {
+    pub(crate) fn with(self, t: ThermodynamicTemperature) -> String {
         match self {
             TemperatureUnit::DegreesCelsius => format!(
                 "{:.1} {}",
@@ -42,7 +42,7 @@ impl TemperatureUnit {
 }
 
 /// Handler for the !weather command.
-pub struct Weather {
+pub(crate) struct Weather {
     enabled: settings::Var<bool>,
     temperature_unit: settings::Var<TemperatureUnit>,
     location: settings::Var<Option<String>>,
@@ -127,7 +127,7 @@ impl command::Handler for Weather {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tokio::sync::{RwLock, RwLockReadGuard};
 
 /// Tokenize the given word.
-pub fn tokenize(word: &str) -> String {
+pub(crate) fn tokenize(word: &str) -> String {
     let word = word.to_lowercase();
     inflector::string::singularize::to_singular(&word)
 }
@@ -104,14 +104,14 @@ impl Database {
 }
 
 #[derive(Clone)]
-pub struct Words {
+pub(crate) struct Words {
     inner: Arc<RwLock<Inner>>,
     db: Database,
 }
 
 impl Words {
     /// Load all words from the backend.
-    pub async fn load(db: db::Database) -> Result<Words, anyhow::Error> {
+    pub(crate) async fn load(db: db::Database) -> Result<Words, anyhow::Error> {
         let db = Database(db);
         let mut inner = Inner::default();
 
@@ -126,7 +126,7 @@ impl Words {
     }
 
     /// Insert a word into the bad words list.
-    pub async fn edit(&self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error> {
+    pub(crate) async fn edit(&self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error> {
         self.db.edit(word, why).await?;
         let mut inner = self.inner.write().await;
         inner.insert(word, why)?;
@@ -134,7 +134,7 @@ impl Words {
     }
 
     /// Remove a word from the bad words list.
-    pub async fn delete(&self, word: &str) -> Result<bool, anyhow::Error> {
+    pub(crate) async fn delete(&self, word: &str) -> Result<bool, anyhow::Error> {
         if !self.db.delete(word).await? {
             return Ok(false);
         }
@@ -145,7 +145,7 @@ impl Words {
     }
 
     /// Build a tester.
-    pub async fn tester(&self) -> Tester<'_> {
+    pub(crate) async fn tester(&self) -> Tester<'_> {
         let inner = self.inner.read().await;
 
         Tester { inner }
@@ -153,13 +153,13 @@ impl Words {
 }
 
 /// A locked tester.
-pub struct Tester<'a> {
+pub(crate) struct Tester<'a> {
     inner: RwLockReadGuard<'a, Inner>,
 }
 
 impl Tester<'_> {
     /// Test the given word.
-    pub fn test(&self, word: &str) -> Option<Arc<Word>> {
+    pub(crate) fn test(&self, word: &str) -> Option<Arc<Word>> {
         let word = tokenize(word);
 
         if let Some(w) = self.inner.hashed.get(&eudex::Hash::new(&word)) {
@@ -175,7 +175,7 @@ impl Tester<'_> {
 }
 
 #[derive(Debug)]
-pub struct Word {
-    pub word: String,
-    pub why: Option<template::Template>,
+pub(crate) struct Word {
+    pub(crate) word: String,
+    pub(crate) why: Option<template::Template>,
 }

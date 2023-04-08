@@ -15,7 +15,7 @@ enum Event {
     Clear,
 }
 
-pub struct Handler {
+pub(crate) struct Handler {
     sender: mpsc::UnboundedSender<Event>,
     enabled: settings::Var<bool>,
 }
@@ -68,7 +68,7 @@ impl command::Handler for Handler {
     }
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

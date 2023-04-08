@@ -7,7 +7,7 @@ use crate::settings;
 use anyhow::Result;
 
 /// Handler for the !admin command.
-pub struct Handler {
+pub(crate) struct Handler {
     settings: crate::Settings,
     aliases: injector::Ref<db::Aliases>,
     commands: injector::Ref<db::Commands>,
@@ -338,7 +338,7 @@ fn key(ctx: &mut command::Context) -> Result<String> {
     Ok(key)
 }
 
-pub struct Module;
+pub(crate) struct Module;
 
 #[async_trait]
 impl super::Module for Module {

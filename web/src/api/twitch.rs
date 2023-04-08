@@ -5,23 +5,23 @@ const ID_TWITCH_URL: &str = "https://id.twitch.tv";
 
 /// Response from the validate token endpoint.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ValidateToken {
-    pub client_id: String,
-    pub login: String,
-    pub scopes: Vec<String>,
-    pub user_id: String,
+pub(crate) struct ValidateToken {
+    pub(crate) client_id: String,
+    pub(crate) login: String,
+    pub(crate) scopes: Vec<String>,
+    pub(crate) user_id: String,
 }
 
 /// Client for id.twitch.tv
 #[derive(Clone, Debug)]
-pub struct IdTwitchClient {
+pub(crate) struct IdTwitchClient {
     client: Client,
     api_url: Url,
 }
 
 impl IdTwitchClient {
     /// Create a new API integration.
-    pub fn new() -> Result<IdTwitchClient, anyhow::Error> {
+    pub(crate) fn new() -> Result<IdTwitchClient, anyhow::Error> {
         Ok(IdTwitchClient {
             client: Client::new(),
             api_url: str::parse::<Url>(ID_TWITCH_URL)?,
@@ -36,7 +36,7 @@ impl IdTwitchClient {
     }
 
     // Validate the specified token through twitch validation API.
-    pub async fn validate_token(&self, token: &str) -> Result<ValidateToken, anyhow::Error> {
+    pub(crate) async fn validate_token(&self, token: &str) -> Result<ValidateToken, anyhow::Error> {
         let request = self
             .request(Method::GET, &["oauth2", "validate"])
             .header(header::AUTHORIZATION, &format!("OAuth {}", token));
