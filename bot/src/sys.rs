@@ -3,11 +3,14 @@ use std::fmt;
 use std::time::Duration;
 
 #[cfg(not(target_os = "windows"))]
-#[path = "noop.rs"]
-mod imp;
+mod noop;
+#[cfg(not(target_os = "windows"))]
+use noop as imp;
+
 #[cfg(target_os = "windows")]
-#[path = "windows/mod.rs"]
-mod imp;
+mod windows;
+#[cfg(target_os = "windows")]
+use windows as imp;
 
 #[derive(Debug, Clone, Copy)]
 pub enum NotificationIcon {

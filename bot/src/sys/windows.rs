@@ -20,8 +20,8 @@ mod convert;
 mod registry;
 mod window;
 
-const ICON: &[u8] = include_bytes!("../../../res/icon.ico");
-const ICON_ERROR: &[u8] = include_bytes!("../../../res/icon-error.ico");
+const ICON: &[u8] = include_bytes!("../../res/icon.ico");
+const ICON_ERROR: &[u8] = include_bytes!("../../res/icon-error.ico");
 
 #[derive(Debug)]
 pub enum Event {
