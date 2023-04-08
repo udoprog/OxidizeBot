@@ -5,7 +5,6 @@ use std::time;
 use anyhow::{anyhow, Context, Result};
 use backoff::backoff::Backoff as _;
 use tokio::sync::mpsc;
-use tokio_stream::StreamExt as _;
 
 use crate::api;
 use crate::auth;
@@ -18,6 +17,7 @@ use crate::module;
 use crate::oauth2;
 use crate::player;
 use crate::storage;
+use crate::stream::StreamExt;
 use crate::stream_info;
 use crate::sys;
 use crate::tags;

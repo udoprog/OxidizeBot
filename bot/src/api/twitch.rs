@@ -55,13 +55,13 @@ impl Twitch {
     /// Get chatters for the given channel using TMI.
     pub(crate) fn chatters(
         &self,
-        broadcaster_id: &str,
         moderator_id: &str,
+        broadcaster_id: &str,
     ) -> impl Stream<Item = Result<Chatter>> + '_ {
         let mut req = self.new_api(Method::GET, &["chat", "chatters"]);
 
-        req.query_param("broadcaster_id", broadcaster_id)
-            .query_param("moderator_id", moderator_id);
+        req.query_param("moderator_id", moderator_id)
+            .query_param("broadcaster_id", broadcaster_id);
 
         page(req)
     }
@@ -199,7 +199,6 @@ impl Twitch {
     pub(crate) async fn new_emote_sets(&self, id: &str) -> Result<Vec<new::Emote>> {
         let mut req = self.new_api(Method::GET, &["chat", "emotes", "set"]);
         req.query_param("emote_set_id", id);
-
         Ok(req.execute().await?.json::<Data<Vec<new::Emote>>>()?.data)
     }
 

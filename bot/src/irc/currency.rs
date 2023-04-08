@@ -14,7 +14,6 @@ use super::Sender;
 
 /// Set up a reward loop.
 pub(super) async fn setup(
-    bot: api::TwitchAndUser,
     streamer: api::TwitchAndUser,
     sender: Sender,
     idle: idle::Idle,
@@ -58,12 +57,7 @@ pub(super) async fn setup(
 
     let (mut db_stream, db) = injector.stream::<db::Database>().await;
 
-    let mut builder = CurrencyBuilder::new(
-        bot.clone(),
-        streamer.clone(),
-        mysql_schema,
-        injector.clone(),
-    );
+    let mut builder = CurrencyBuilder::new(streamer.clone(), mysql_schema, injector.clone());
 
     builder.db = db;
     builder.ty = ty;

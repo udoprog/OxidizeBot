@@ -11,6 +11,7 @@ use anyhow::{anyhow, bail, Context as _, Result};
 use irc::client::{self, Client};
 use irc::proto::command::{CapSubCommand, Command};
 use irc::proto::message::{Message, Tag};
+use irc::proto::Prefix;
 use notify::{recommended_watcher, RecommendedWatcher, Watcher};
 use parking_lot::RwLock;
 use std::collections::HashSet;
@@ -26,7 +27,6 @@ use crate::db;
 use crate::idle;
 use crate::message_log::MessageLog;
 use crate::module;
-use crate::oauth2;
 use crate::prelude::*;
 use crate::script;
 use crate::stream_info;
@@ -235,7 +235,6 @@ impl IrcLoop<'_> {
         let currency_handler = currency_admin::setup(injector).await?;
 
         let future = currency::setup(
-            bot.clone(),
             streamer.clone(),
             sender.clone(),
             idle.clone(),
@@ -267,7 +266,7 @@ impl IrcLoop<'_> {
             .unwrap_or_else(|| String::from("Leaving chat... VoHiYo"));
 
         let mut chat_log_builder = chat_log::Builder::new(
-            bot.client.clone(),
+            streamer.clone(),
             injector,
             message_log.clone(),
             settings.scoped("chat-log"),
@@ -295,7 +294,7 @@ impl IrcLoop<'_> {
             scripts,
             idle: &idle,
             pong_timeout: &mut pong_timeout,
-            token: &bot.client.token,
+            bot: &bot,
             handler_shutdown: false,
             stream_info: &stream_info,
             auth: &auth,
@@ -473,7 +472,7 @@ struct Handler<'a> {
     /// Pong timeout currently running.
     pong_timeout: &'a mut Fuse<Pin<Box<tokio::time::Sleep>>>,
     /// OAuth 2.0 Token used to authenticate with IRC.
-    token: &'a oauth2::SyncToken,
+    bot: &'a api::TwitchAndUser,
     /// Force a shutdown.
     handler_shutdown: bool,
     /// Stream information.
@@ -833,16 +832,16 @@ impl<'a> Handler<'a> {
     }
 
     /// Handle the given command.
-    pub(crate) async fn handle(&mut self, mut m: Message) -> Result<()> {
+    #[tracing::instrument(skip_all)]
+    pub(crate) async fn handle(&mut self, m: Message) -> Result<()> {
         match m.command {
-            Command::PRIVMSG(_, ref mut message) => {
-                let message = Arc::new(std::mem::take(message));
-                let tags = Tags::from_tags(m.tags.take());
+            Command::PRIVMSG(_, message) => {
+                let message = Arc::new(message);
+                let tags = Tags::from_tags(m.tags);
 
-                let name = m
-                    .source_nickname()
-                    .ok_or_else(|| anyhow!("expected user info"))?
-                    .to_string();
+                let Some(Prefix::Nickname(name, _, _)) = m.prefix else {
+                    bail!("Missing nickname");
+                };
 
                 if let Some(chat_log) = self.chat_log.as_ref().cloned() {
                     let tags = tags.clone();
@@ -870,7 +869,7 @@ impl<'a> Handler<'a> {
 
                 self.process_message(&user, message).await?;
             }
-            Command::CAP(_, CapSubCommand::ACK, _, ref what) => {
+            Command::CAP(_, CapSubCommand::ACK, _, what) => {
                 // twitch commands capabilities have been acknowledged.
                 // do what needs to happen with them (like `/mods`).
                 if let Some(TWITCH_COMMANDS_CAP) = what.as_deref() {
@@ -884,14 +883,18 @@ impl<'a> Handler<'a> {
                     what.as_ref().map(|w| w.as_str()).unwrap_or("*")
                 );
             }
-            Command::JOIN(ref channel, _, _) => {
-                let user = m.source_nickname().unwrap_or("?");
+            Command::JOIN(channel, _, _) => {
+                let user = match &m.prefix {
+                    Some(Prefix::Nickname(user, _, _)) => user,
+                    _ => "?",
+                };
+
                 tracing::trace!("{} joined {}", user, channel);
             }
             Command::Response(..) => {
                 tracing::trace!("Response: {}", m);
             }
-            Command::PING(ref server, ref other) => {
+            Command::PING(server, other) => {
                 tracing::trace!("Received PING, responding with PONG");
                 self.sender
                     .send_immediate(Command::PONG(server.clone(), other.clone()));
@@ -900,37 +903,39 @@ impl<'a> Handler<'a> {
                 tracing::trace!("Received PONG, clearing PING timeout");
                 self.pong_timeout.clear();
             }
-            Command::NOTICE(_, ref message) => {
-                let tags = Tags::from_tags(m.tags.take());
+            Command::NOTICE(_, message) => {
+                let tags = Tags::from_tags(m.tags);
 
                 match tags.msg_id.as_deref() {
                     _ if message == "Login authentication failed" => {
-                        self.token.force_refresh().await?;
+                        tracing::trace!("Authentication failed");
+                        self.bot.client.token.force_refresh().await?;
                         self.handler_shutdown = true;
                     }
                     Some("no_mods") => {
+                        tracing::trace!("No moderators");
                         self.moderators.write().clear();
                     }
                     // Response to /mods request.
                     Some("room_mods") => {
-                        *self.moderators.write() = parse_room_members(message);
+                        tracing::trace!(?message, "Got list of room mods");
+                        *self.moderators.write() = parse_room_members(&message);
                     }
                     Some("no_vips") => {
+                        tracing::trace!("No vips");
                         self.vips.write().clear();
                     }
                     // Response to /vips request.
                     Some("vips_success") => {
-                        *self.vips.write() = parse_room_members(message);
+                        tracing::trace!(?message, "Got list of vips");
+                        *self.vips.write() = parse_room_members(&message);
                     }
-                    Some(msg_id) => {
-                        tracing::info!("Unhandled notice w/ msg_id: {:?}: {:?}", msg_id, m);
-                    }
-                    None => {
-                        tracing::info!("Unhandled notice: {:?}", m);
+                    msg_id => {
+                        tracing::info!(?msg_id, message, "Unhandled notice");
                     }
                 }
             }
-            Command::Raw(ref command, ref tail) => match command.as_str() {
+            Command::Raw(command, tail) => match command.as_str() {
                 "CLEARMSG" => {
                     if let Some(chat_log) = self.chat_log.as_ref() {
                         if let Some(tags) = ClearMsgTags::from_tags(m.tags) {

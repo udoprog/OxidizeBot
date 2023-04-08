@@ -1,14 +1,15 @@
-use crate::api::{self, Twitch};
+use anyhow::Result;
+
+use crate::api;
 use crate::emotes;
-use crate::injector::{self, Injector};
+use crate::injector;
 use crate::irc;
 use crate::message_log;
 use crate::settings;
 use crate::storage::Cache;
-use anyhow::Result;
 
 pub(crate) struct Builder {
-    twitch: Twitch,
+    streamer: api::TwitchAndUser,
     pub(crate) message_log: message_log::MessageLog,
     pub(crate) cache_stream: injector::Stream<Cache>,
     pub(crate) cache: Option<Cache>,
@@ -20,8 +21,8 @@ pub(crate) struct Builder {
 
 impl Builder {
     pub(crate) async fn new(
-        twitch: Twitch,
-        injector: &Injector,
+        streamer: api::TwitchAndUser,
+        injector: &injector::Injector,
         message_log: message_log::MessageLog,
         settings: crate::Settings,
     ) -> Result<Self> {
@@ -35,7 +36,7 @@ impl Builder {
         message_log.enabled(enabled).await;
 
         Ok(Self {
-            twitch,
+            streamer,
             message_log,
             cache_stream,
             cache,
@@ -72,7 +73,7 @@ impl Builder {
         }
 
         let emotes = match (self.emotes_enabled, self.cache.as_ref()) {
-            (true, Some(cache)) => Some(emotes::Emotes::new(cache.clone(), self.twitch.clone())?),
+            (true, Some(cache)) => Some(emotes::Emotes::new(cache.clone(), self.streamer.clone())?),
             _ => None,
         };
 

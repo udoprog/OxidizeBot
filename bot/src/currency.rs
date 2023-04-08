@@ -1,15 +1,16 @@
 //! Stream currency configuration.
+
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use thiserror::Error;
-use tokio_stream::StreamExt;
 
 use crate::api;
 pub(crate) use crate::db::models::Balance;
 use crate::db::Database;
 use crate::injector::Injector;
+use crate::stream::StreamExt;
 use crate::utils::Duration;
 
 mod builtin;
@@ -35,7 +36,6 @@ impl BalanceOf {
 
 /// Helper struct to construct a currency.
 pub(crate) struct CurrencyBuilder {
-    bot: api::TwitchAndUser,
     streamer: api::TwitchAndUser,
     pub(crate) mysql_schema: mysql::Schema,
     injector: Injector,
@@ -50,13 +50,11 @@ pub(crate) struct CurrencyBuilder {
 impl CurrencyBuilder {
     /// Construct a new currency builder.
     pub(crate) fn new(
-        bot: api::TwitchAndUser,
         streamer: api::TwitchAndUser,
         mysql_schema: mysql::Schema,
         injector: Injector,
     ) -> Self {
         Self {
-            bot,
             streamer,
             mysql_schema,
             injector,
@@ -138,7 +136,6 @@ impl CurrencyBuilder {
             command_enabled: self.command_enabled,
             inner: Arc::new(Inner {
                 backend,
-                bot: self.bot.clone(),
                 streamer: self.streamer.clone(),
             }),
         })
@@ -255,7 +252,6 @@ impl Backend {
 
 struct Inner {
     backend: Backend,
-    bot: api::TwitchAndUser,
     streamer: api::TwitchAndUser,
 }
 
@@ -276,14 +272,12 @@ impl Currency {
         watch_time: i64,
     ) -> Result<usize, anyhow::Error> {
         tracing::trace!("Getting chatters");
-        let moderator_id = self.inner.bot.user.id.as_str();
 
         let chatters = self
             .inner
-            .bot
+            .streamer
             .client
-            .chatters(&self.inner.streamer.user.id, moderator_id);
-
+            .chatters(&self.inner.streamer.user.id, &self.inner.streamer.user.id);
         tokio::pin!(chatters);
 
         let mut users = HashSet::new();

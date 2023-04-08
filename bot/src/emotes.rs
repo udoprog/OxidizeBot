@@ -1,4 +1,4 @@
-use crate::api::{self, bttv, ffz, BetterTTV, FrankerFaceZ, Tduva, Twitch};
+use crate::api::{self, bttv, ffz, BetterTTV, FrankerFaceZ, Tduva};
 use crate::irc;
 use crate::storage::Cache;
 use crate::template;
@@ -126,11 +126,11 @@ struct TduvaData {
 
 struct Inner {
     cache: Cache,
+    streamer: api::TwitchAndUser,
     ffz: FrankerFaceZ,
     bttv: BetterTTV,
     tduva: Tduva,
     tduva_data: RwLock<Option<TduvaData>>,
-    twitch: Twitch,
 }
 
 #[derive(Clone)]
@@ -140,15 +140,15 @@ pub(crate) struct Emotes {
 
 impl Emotes {
     /// Construct a new emoticon handler.
-    pub(crate) fn new(cache: Cache, twitch: Twitch) -> Result<Self, Error> {
+    pub(crate) fn new(cache: Cache, streamer: api::TwitchAndUser) -> Result<Self, Error> {
         Ok(Self {
             inner: Arc::new(Inner {
                 cache: cache.namespaced(&"emotes")?,
+                streamer,
                 ffz: FrankerFaceZ::new()?,
                 bttv: BetterTTV::new()?,
                 tduva: Tduva::new()?,
                 tduva_data: Default::default(),
-                twitch,
             }),
         })
     }
@@ -303,7 +303,12 @@ impl Emotes {
 
     /// Construct a set of room emotes from twitch.
     async fn emote_sets_from_twitch(&self, emote_sets: &str) -> Result<EmoteByCode, Error> {
-        let sets = self.inner.twitch.new_emote_sets(emote_sets).await?;
+        let sets = self
+            .inner
+            .streamer
+            .client
+            .new_emote_sets(emote_sets)
+            .await?;
 
         let mut emotes = EmoteByCode::default();
 
@@ -523,7 +528,10 @@ impl Emotes {
                     name,
                 },
                 chrono::Duration::hours(72),
-                self.inner.twitch.gql_display_badges(&user.login, name),
+                self.inner
+                    .streamer
+                    .client
+                    .gql_display_badges(&user.login, name),
             )
             .await?;
 
