@@ -1,4 +1,6 @@
-mod cargo;
+mod command;
+mod sign_tool;
+mod wix_builder;
 
 use std::env;
 use std::env::consts;
@@ -7,7 +9,6 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::str::FromStr;
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -19,7 +20,8 @@ use chrono::Utc;
 use regex::Regex;
 use walkdir::WalkDir;
 
-use self::cargo::Cargo;
+use self::sign_tool::SignTool;
+use self::wix_builder::WixBuilder;
 
 const PACKAGE: &str = "oxidize";
 const BINARY: &str = "oxidize";
@@ -107,166 +109,6 @@ impl fmt::Display for Release {
                 )
             }
         }
-    }
-}
-
-pub(crate) struct SignTool {
-    root: PathBuf,
-    signtool: PathBuf,
-    password: String,
-}
-
-impl SignTool {
-    /// Construct a new signtool signer.
-    pub(crate) fn open(root: PathBuf, signtool: PathBuf, password: String) -> Option<Self> {
-        if !signtool.is_file() {
-            return None;
-        }
-
-        Some(Self {
-            root,
-            signtool,
-            password,
-        })
-    }
-
-    /// Sign the given path with the given description.
-    fn sign(&self, path: &Path, what: &str) -> Result<()> {
-        println!("Signing: {}", path.display());
-
-        let cert = self.root.join("bot/res/cert.pfx");
-
-        let status = Command::new(&self.signtool)
-            .args(["sign", "/f"])
-            .arg(&cert)
-            .args([
-                "/d",
-                what,
-                "/du",
-                "https://github.com/udoprog/OxidizeBot",
-                "/p",
-                self.password.as_str(),
-            ])
-            .arg(path)
-            .status()?;
-
-        if !status.success() {
-            bail!("failed to run signtool");
-        }
-
-        Ok(())
-    }
-}
-
-struct WixBuilder {
-    candle_bin: PathBuf,
-    light_bin: PathBuf,
-    wixobj_path: PathBuf,
-    installer_path: PathBuf,
-}
-
-impl WixBuilder {
-    /// Construct a new WIX builder.
-    fn new(out: &Path, release: &Release) -> Result<Self> {
-        let wix_bin = match env::var_os("WIX") {
-            Some(wix_bin) => PathBuf::from(wix_bin).join("bin"),
-            None => bail!("missing: WIX"),
-        };
-
-        if !wix_bin.is_dir() {
-            bail!("missing: {}", wix_bin.display());
-        }
-
-        let candle_bin = wix_bin.join("candle.exe");
-
-        if !candle_bin.is_file() {
-            bail!("missing: {}", candle_bin.display());
-        }
-
-        let light_bin = wix_bin.join("light.exe");
-
-        if !light_bin.is_file() {
-            bail!("missing: {}", light_bin.display());
-        }
-
-        let base = format!(
-            "oxidize-{release}-{os}-{arch}",
-            os = consts::OS,
-            arch = consts::ARCH
-        );
-
-        let wixobj_path = out.join(format!("{}.wixobj", base));
-        let installer_path = out.join(format!("{}.msi", base));
-
-        Ok(Self {
-            candle_bin,
-            light_bin,
-            wixobj_path,
-            installer_path,
-        })
-    }
-
-    pub(crate) fn build(&self, source: &Path, file_version: &str) -> Result<()> {
-        if self.wixobj_path.is_file() {
-            return Ok(());
-        }
-
-        let platform = match consts::ARCH {
-            "x86_64" => "x64",
-            _ => "x86",
-        };
-
-        let mut command = Command::new(&self.candle_bin);
-
-        command
-            .arg(format!("-dVersion={}", file_version))
-            .arg(format!("-dPlatform={}", platform))
-            .args(["-ext", "WixUtilExtension"])
-            .arg("-o")
-            .arg(&self.wixobj_path)
-            .arg(source);
-
-        println!("running: {:?}", command);
-
-        let status = command.status()?;
-
-        if !status.success() {
-            bail!("candle: failed: {}", status);
-        }
-
-        Ok(())
-    }
-
-    /// Link the current project.
-    pub(crate) fn link(&self) -> Result<()> {
-        if !self.wixobj_path.is_file() {
-            bail!("missing: {}", self.wixobj_path.display());
-        }
-
-        if self.installer_path.is_file() {
-            return Ok(());
-        }
-
-        let mut command = Command::new(&self.light_bin);
-
-        command
-            .arg("-spdb")
-            .args(["-ext", "WixUIExtension"])
-            .args(["-ext", "WixUtilExtension"])
-            .arg("-cultures:en-us")
-            .arg(&self.wixobj_path)
-            .arg("-out")
-            .arg(&self.installer_path);
-
-        println!("running: {:?}", command);
-
-        let status = command.status()?;
-
-        if !status.success() {
-            bail!("light: failed: {}", status);
-        }
-
-        Ok(())
     }
 }
 
@@ -392,10 +234,10 @@ fn build_msi(root: &Path, dist: &Path, exe: &Path, release: &Release) -> Result<
     let file_version = release.file_version()?;
     env::set_var("OXIDIZE_FILE_VERSION", &file_version);
 
+    let cert = root.join("bot").join("res").join("cert.pfx");
+
     let signer = match (env::var("SIGNTOOL"), env::var("CERTIFICATE_PASSWORD")) {
-        (Ok(signtool), Ok(password)) => {
-            SignTool::open(root.to_owned(), PathBuf::from(signtool), password)
-        }
+        (Ok(signtool), Ok(password)) => SignTool::open(signtool, password, cert),
         _ => None,
     };
 
@@ -422,7 +264,7 @@ fn build_msi(root: &Path, dist: &Path, exe: &Path, release: &Release) -> Result<
 /// Perform a Linux build.
 fn build_deb(root: &Path, upload: &Path, release: &Release) -> Result<()> {
     // Install cargo-deb for building the package below.
-    Cargo::with(&["install", "cargo-deb"]).run()?;
+    command::cargo().args(&["install", "cargo-deb"]).run()?;
 
     let deb_dir = root.join("deb");
 
@@ -430,7 +272,7 @@ fn build_deb(root: &Path, upload: &Path, release: &Release) -> Result<()> {
         fs::create_dir_all(&deb_dir).with_context(|| deb_dir.display().to_string())?;
     }
 
-    Cargo::new()
+    command::cargo()
         .args(["deb", "-p", PACKAGE])
         .arg("--output")
         .arg(&deb_dir)
@@ -517,7 +359,7 @@ fn main() -> Result<()> {
     }
 
     println!("Building: {}", exe.display());
-    Cargo::with(&build).run()?;
+    command::cargo().args(&build).run()?;
 
     if cfg!(target_os = "windows") {
         build_msi(&root, &dist, &exe, &release)?;

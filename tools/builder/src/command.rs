@@ -1,25 +1,27 @@
 use std::ffi::{OsStr, OsString};
-use std::process::Command;
 
 use anyhow::{bail, Result};
 
-pub(crate) struct Cargo {
+/// Construct a new cargo command.
+#[inline]
+pub(crate) fn cargo() -> Command {
+    Command::new("cargo")
+}
+
+pub(crate) struct Command {
+    command: OsString,
     args: Vec<OsString>,
 }
 
-impl Cargo {
-    pub(crate) fn new() -> Self {
-        Self { args: Vec::new() }
-    }
-
-    pub(crate) fn with<I>(args: I) -> Self
+impl Command {
+    pub(crate) fn new<C>(command: C) -> Self
     where
-        I: IntoIterator,
-        I::Item: AsRef<OsStr>,
+        C: AsRef<OsStr>,
     {
-        let mut cargo = Self::new();
-        cargo.args(args);
-        cargo
+        Self {
+            command: command.as_ref().into(),
+            args: Vec::new(),
+        }
     }
 
     pub(crate) fn args<I>(&mut self, args: I) -> &mut Self
@@ -43,7 +45,7 @@ impl Cargo {
     }
 
     pub(crate) fn run(&mut self) -> Result<()> {
-        let mut command = Command::new("cargo");
+        let mut command = std::process::Command::new(&self.command);
         let mut args = Vec::new();
 
         for arg in &self.args {
@@ -51,11 +53,11 @@ impl Cargo {
             args.push(arg.to_string_lossy());
         }
 
-        println!("cargo {}", args.join(" "));
+        println!("run: {} {}", self.command.to_string_lossy(), args.join(" "));
         let status = command.status()?;
 
         if !status.success() {
-            bail!("failed to run cargo");
+            bail!("{}: {status}", self.command.to_string_lossy());
         }
 
         Ok(())
