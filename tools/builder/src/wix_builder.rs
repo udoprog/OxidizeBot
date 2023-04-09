@@ -34,8 +34,8 @@ impl WixBuilder {
             arch = consts::ARCH
         );
 
-        let wixobj_path = out.join(&base).with_extension("wixobj");
-        let installer_path = out.join(&base).with_extension("msi");
+        let wixobj_path = out.join(format!("{base}.wixobj"));
+        let installer_path = out.join(format!("{base}.msi"));
 
         Ok(Self {
             candle_bin,
