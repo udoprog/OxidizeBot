@@ -7,11 +7,10 @@ use crate::Uri;
 use anyhow::Result;
 use std::pin::pin;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 /// Future associated with driving audio playback.
 pub(super) struct PlaybackFuture {
-    pub(super) internal: Arc<RwLock<PlayerInternal>>,
+    pub(super) internal: Arc<PlayerInternal>,
     pub(super) connect_stream: ConnectStream,
     pub(super) playback_mode_stream: settings::Stream<PlaybackMode>,
     /// Stream of settings if the player is detached.
@@ -65,13 +64,13 @@ impl PlaybackFuture {
                 }
                 /* player */
                 _ = &mut song_timeout => {
-                    self.internal.write().await.end_of_track().await?;
+                    self.internal.end_of_track().await?;
                 }
                 update = self.detached_stream.recv() => {
-                    self.internal.write().await.update_detached(update).await?;
+                    self.internal.update_detached(update).await?;
                 }
                 update = self.playback_mode_stream.recv() => {
-                    self.internal.write().await.update_playback_mode(update).await?;
+                    self.internal.update_playback_mode(update).await?;
                 }
                 value = self.song_update_interval_stream.recv() => {
                     song_update_interval = if value.is_empty() {
@@ -81,10 +80,10 @@ impl PlaybackFuture {
                     };
                 }
                 _ = song_update_interval.as_pin_mut().poll_inner(|mut i, cx| i.poll_tick(cx)) => {
-                    self.internal.write().await.song_update().await;
+                    self.internal.song_update().await;
                 }
                 event = self.connect_stream.recv() => {
-                    self.internal.write().await.handle_player_event(event).await?;
+                    self.internal.handle_player_event(event).await?;
                 }
                 fallback = fallback_stream.recv() => {
                     configure_fallback.set(Fuse::new(update_fallback_items_task(&self.internal, fallback)));
@@ -95,13 +94,10 @@ impl PlaybackFuture {
         }
 
         /// Update fallback item tasks.
-        async fn update_fallback_items_task(
-            internal: &RwLock<PlayerInternal>,
-            fallback: Option<Uri>,
-        ) {
+        async fn update_fallback_items_task(internal: &PlayerInternal, fallback: Option<Uri>) {
             retry_until_ok! {
                 "Loading fallback items", {
-                    let (what, items) = internal.read().await.load_fallback_items(fallback.as_ref()).await?;
+                    let (what, items) = internal.load_fallback_items(fallback.as_ref()).await?;
 
                     tracing::info!(
                         "Updated fallback queue with {} items from {}.",
@@ -109,7 +105,7 @@ impl PlaybackFuture {
                         what
                     );
 
-                    internal.write().await.update_fallback_items(items).await;
+                    internal.update_fallback_items(items).await;
                     Ok(())
                 }
             }

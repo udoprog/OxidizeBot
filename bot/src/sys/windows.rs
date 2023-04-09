@@ -86,7 +86,7 @@ impl System {
 
     /// Join the current thread.
     pub(crate) fn join(&self) -> Result<(), Error> {
-        let _ = self.notify.shutdown.add_permits(1);
+        self.notify.shutdown.add_permits(1);
 
         if let Some(thread) = self.thread.lock().take() {
             if thread.join().is_err() {
@@ -249,7 +249,7 @@ pub(crate) fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
         }
 
         window.quit();
-        let _ = notify.shutdown.add_permits(1);
+        notify.shutdown.add_permits(1);
         Ok::<_, Error>(())
     };
 

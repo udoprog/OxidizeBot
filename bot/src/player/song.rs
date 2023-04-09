@@ -1,20 +1,35 @@
+use std::fmt;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use anyhow::Result;
+
 use crate::api;
 use crate::player::{Item, PlayerKind, State, Track};
 use crate::spotify_id::SpotifyId;
 use crate::track_id::TrackId;
 use crate::utils;
-use anyhow::Result;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 /// Information on current song.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct Song {
     pub(crate) item: Arc<Item>,
     /// Since the last time it was unpaused, what was the initial elapsed duration.
     elapsed: Duration,
     /// When the current song started playing.
     started_at: Option<Instant>,
+}
+
+impl fmt::Debug for Song {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Song")
+            .field("track_id", &self.item.track_id)
+            .field("user", &self.item.user)
+            .field("duration", &self.item.duration)
+            .field("elapsed", &self.elapsed)
+            .field("started_at", &self.started_at)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Song {

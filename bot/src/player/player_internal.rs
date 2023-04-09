@@ -5,6 +5,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use futures_core::Stream;
+use parking_lot::Mutex;
 
 use crate::api;
 use crate::api::spotify::{FullTrack, PrivateUser};
@@ -24,29 +25,25 @@ use crate::utils;
 use crate::Uri;
 
 #[derive(Default)]
-pub(super) struct Initialized {
-    queue: bool,
-    playback_state: bool,
+pub(super) struct PlayerInitialize {
+    /// Queue is initialized.
+    pub(super) queue: bool,
+    /// Playback is initialized.
+    pub(super) playback: bool,
 }
 
 pub(super) struct PlayerInternal {
-    pub(super) initialized: Initialized,
+    /// Player state.
+    pub(super) state: Mutex<PlayerState>,
+    /// Player is closed for more requests.
+    pub(super) closed: Mutex<Option<Option<Arc<String>>>>,
+    /// Injector.
     pub(super) injector: Injector,
-    /// Current player kind.
-    pub(super) player: PlayerKind,
-    /// Updated to the current playback mode.
-    /// Player is detached.
-    pub(super) detached: bool,
     /// API clients and streams.
     pub(super) spotify: Arc<api::Spotify>,
     pub(super) youtube: Arc<api::YouTube>,
     pub(super) connect_player: ConnectPlayer,
     pub(super) youtube_player: YouTubePlayer,
-    /// The mode of the player.
-    ///
-    /// The mode determines if the player is enqueueing songs or immediately
-    /// playing them.
-    pub(super) playback_mode: PlaybackMode,
     /// The internal mixer.
     pub(super) mixer: Mixer,
     /// The player bus.
@@ -61,14 +58,30 @@ pub(super) struct PlayerInternal {
     pub(super) duplicate_duration: settings::Var<utils::Duration>,
     /// Theme songs.
     pub(super) themes: injector::Ref<db::Themes>,
-    /// Player is closed for more requests.
-    pub(super) closed: Option<Option<Arc<String>>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct PlayerState {
+    /// Current player kind.
+    pub(super) player: PlayerKind,
+    /// Updated to the current playback mode.
+    /// Player is detached.
+    pub(super) detached: bool,
+    /// The mode of the player.
+    ///
+    /// The mode determines if the player is enqueueing songs or immediately
+    /// playing them.
+    pub(super) mode: PlaybackMode,
 }
 
 impl PlayerInternal {
+    fn state(&self) -> PlayerState {
+        *self.state.lock()
+    }
+
     /// Initialize the internal player if necessary.
-    pub(crate) async fn initialize(&mut self) -> Result<()> {
-        if !self.initialized.playback_state {
+    pub(crate) async fn initialize(&self, initialize: &mut PlayerInitialize) -> Result<()> {
+        if !initialize.playback {
             let p = self.spotify.me_player().await?;
 
             if let Some(p) = p {
@@ -89,15 +102,15 @@ impl PlayerInternal {
                 }
             }
 
-            self.initialized.playback_state = true;
+            initialize.playback = true;
         }
 
-        if !self.initialized.queue {
+        if !initialize.queue {
             self.mixer
                 .initialize_queue(&self.spotify, &self.youtube)
                 .await?;
 
-            self.initialized.queue = true;
+            initialize.queue = true;
         }
 
         Ok(())
@@ -108,15 +121,18 @@ impl PlayerInternal {
     /// An unmanaged player doesn't process default commands that deal with the
     /// internal player.
     fn is_unmanaged(&self) -> bool {
-        if self.detached {
+        let state = self.state();
+
+        if state.detached {
             return true;
         }
 
-        self.playback_mode == PlaybackMode::Queue
+        state.mode == PlaybackMode::Queue
     }
 
     /// We've reached the end of track, process it.
-    pub(super) async fn end_of_track(&mut self) -> Result<()> {
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
+    pub(super) async fn end_of_track(&self) -> Result<()> {
         if self.is_unmanaged() {
             tracing::warn!("End of track called even though we are no longer managing the player");
             return Ok(());
@@ -135,17 +151,23 @@ impl PlayerInternal {
     }
 
     /// Notify a change in the current song.
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
     async fn notify_song_change(&self, song: Option<&Song>) -> Result<()> {
+        tracing::trace!("Notify song change");
         self.global_bus.send(bus::Global::song(song)?).await;
         self.global_bus.send(bus::Global::SongModified).await;
         Ok(())
     }
 
     /// Switch the current player and send the appropriate play commands.
-    async fn switch_current_player(&mut self, player: PlayerKind) -> Result<()> {
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
+    async fn switch_current_player(&self, player: PlayerKind) -> Result<()> {
         use self::PlayerKind::*;
 
-        match (self.player, player) {
+        tracing::trace!("Switch current player");
+        let state = self.state();
+
+        match (state.player, player) {
             (Spotify, Spotify) => (),
             (YouTube, YouTube) => (),
             (Spotify, _) | (None, YouTube) => {
@@ -157,13 +179,16 @@ impl PlayerInternal {
             (None, None) => (),
         }
 
-        self.player = player;
+        self.state.lock().player = player;
         Ok(())
     }
 
     /// Send a pause command to the appropriate player.
-    async fn send_pause_command(&mut self) {
-        match self.player {
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
+    async fn send_pause_command(&self) {
+        tracing::trace!("Sending pause command");
+
+        match self.state().player {
             PlayerKind::Spotify => {
                 tracing::trace!("Pausing Spotify player");
                 self.connect_player.pause().await;
@@ -177,7 +202,10 @@ impl PlayerInternal {
     }
 
     /// Play the given song.
-    async fn send_play_command(&mut self, song: &Song) {
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
+    async fn send_play_command(&self, song: &Song) {
+        tracing::trace!("Sending play command");
+
         match song.item.track_id.clone() {
             TrackId::Spotify(id) => {
                 self.connect_player
@@ -193,7 +221,10 @@ impl PlayerInternal {
     }
 
     /// Switch the player to the specified song without changing its state.
-    async fn switch_to_song(&mut self, mut song: Option<Song>) -> Result<()> {
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
+    async fn switch_to_song(&self, mut song: Option<Song>) -> Result<()> {
+        tracing::trace!("Switching to song");
+
         if let Some(song) = song.as_mut() {
             song.pause();
             self.switch_current_player(song.player()).await?;
@@ -211,7 +242,10 @@ impl PlayerInternal {
     }
 
     /// Switch current song to the specified song.
-    async fn play_song(&mut self, source: Source, mut song: Song) -> Result<()> {
+    #[tracing::instrument(skip(self))]
+    async fn play_song(&self, source: Source, mut song: Song) -> Result<()> {
+        tracing::trace!("Playing song");
+
         song.play();
 
         self.send_play_command(&song).await;
@@ -230,7 +264,10 @@ impl PlayerInternal {
     }
 
     /// Resume playing a specific song.
-    async fn resume_song(&mut self, source: Source, song: Song) -> Result<()> {
+    #[tracing::instrument(skip(self))]
+    async fn resume_song(&self, source: Source, song: Song) -> Result<()> {
+        tracing::trace!("Resuming song");
+
         self.send_play_command(&song).await;
         self.switch_current_player(song.player()).await?;
         self.notify_song_change(Some(&song)).await?;
@@ -247,8 +284,11 @@ impl PlayerInternal {
     }
 
     /// Detach the player.
-    async fn detach(&mut self) -> Result<()> {
-        self.player = PlayerKind::None;
+    #[tracing::instrument(skip(self))]
+    async fn detach(&self) -> Result<()> {
+        tracing::trace!("Detaching");
+
+        self.state.lock().player = PlayerKind::None;
         self.injector.update(State::None).await;
 
         // store the currently playing song in the sidelined slot.
@@ -260,7 +300,10 @@ impl PlayerInternal {
         Ok(())
     }
 
-    pub(super) async fn toggle(&mut self, source: Source) -> Result<()> {
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
+    pub(super) async fn toggle(&self, source: Source) -> Result<()> {
+        tracing::trace!("Toggling");
+
         let state = self.injector.get::<State>().await.unwrap_or_default();
 
         match state {
@@ -271,8 +314,13 @@ impl PlayerInternal {
         Ok(())
     }
 
-    pub(super) async fn play(&mut self, source: Source) -> Result<()> {
-        if self.detached {
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
+    pub(super) async fn play(&self, source: Source) -> Result<()> {
+        tracing::trace!("Playing");
+
+        let state = self.state();
+
+        if state.detached {
             if let Source::Manual = source {
                 self.bus.send_sync(Event::Detached);
             }
@@ -280,9 +328,7 @@ impl PlayerInternal {
             return Ok(());
         }
 
-        tracing::trace!("Starting Player");
-
-        match self.playback_mode {
+        match state.mode {
             PlaybackMode::Default => {
                 let song = {
                     match self.injector.get::<Song>().await {
@@ -328,8 +374,13 @@ impl PlayerInternal {
     }
 
     /// Pause playback.
-    pub(super) async fn pause(&mut self, source: Source) -> Result<()> {
-        if self.detached {
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
+    pub(super) async fn pause(&self, source: Source) -> Result<()> {
+        tracing::trace!("Pausing Player");
+
+        let state = self.state();
+
+        if state.detached {
             if let Source::Manual = source {
                 self.bus.send_sync(Event::Detached);
             }
@@ -337,9 +388,7 @@ impl PlayerInternal {
             return Ok(());
         }
 
-        tracing::trace!("Pausing Player");
-
-        match self.playback_mode {
+        match state.mode {
             PlaybackMode::Default => {
                 self.send_pause_command().await;
                 self.injector.update(State::Paused).await;
@@ -372,8 +421,13 @@ impl PlayerInternal {
         Ok(())
     }
 
-    pub(super) async fn skip(&mut self, source: Source) -> Result<()> {
-        if self.detached {
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
+    pub(super) async fn skip(&self, source: Source) -> Result<()> {
+        tracing::trace!("Skipping Song");
+
+        let state = self.state();
+
+        if state.detached {
             if let Source::Manual = source {
                 self.bus.send_sync(Event::Detached);
             }
@@ -381,9 +435,7 @@ impl PlayerInternal {
             return Ok(());
         }
 
-        tracing::trace!("Skipping Song");
-
-        match self.playback_mode {
+        match state.mode {
             PlaybackMode::Default => {
                 let state = self.injector.get::<State>().await.unwrap_or_default();
                 let song = self.mixer.next_song().await?;
@@ -420,7 +472,8 @@ impl PlayerInternal {
     }
 
     /// Start playback on a specific song state.
-    pub(super) async fn sync(&mut self, song: Song) -> Result<()> {
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
+    pub(super) async fn sync(&self, song: Song) -> Result<()> {
         tracing::trace!("Syncing Song");
 
         self.switch_current_player(song.player()).await?;
@@ -433,8 +486,13 @@ impl PlayerInternal {
     }
 
     /// Mark the queue as modified and load and notify resources appropriately.
-    pub(super) async fn modified(&mut self, source: Source) -> Result<()> {
-        if self.detached {
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
+    pub(super) async fn modified(&self, source: Source) -> Result<()> {
+        tracing::trace!("Modified player");
+
+        let state = self.state();
+
+        if state.detached {
             if let Source::Manual = source {
                 self.bus.send_sync(Event::Detached);
             }
@@ -442,9 +500,7 @@ impl PlayerInternal {
             return Ok(());
         }
 
-        tracing::trace!("Pausing player");
-
-        if let PlaybackMode::Default = self.playback_mode {
+        if let PlaybackMode::Default = state.mode {
             if !self.injector.exists::<Song>().await {
                 if let Some(song) = self.mixer.next_song().await? {
                     self.play_song(source, song).await?;
@@ -459,13 +515,18 @@ impl PlayerInternal {
     }
 
     /// Inject the given item to start playing _immediately_.
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
     pub(super) async fn inject(
-        &mut self,
+        &self,
         source: Source,
         item: Arc<Item>,
         offset: Duration,
     ) -> Result<()> {
-        if self.detached {
+        tracing::trace!("Injecting song");
+
+        let state = self.state();
+
+        if state.detached {
             if let Source::Manual = source {
                 self.bus.send_sync(Event::Detached);
             }
@@ -473,9 +534,7 @@ impl PlayerInternal {
             return Ok(());
         }
 
-        tracing::trace!("Pausing player");
-
-        match self.playback_mode {
+        match state.mode {
             PlaybackMode::Default => {
                 // store the currently playing song in the sidelined slot.
                 if let Some(mut song) = self.injector.clear::<Song>().await {
@@ -500,15 +559,19 @@ impl PlayerInternal {
     }
 
     /// Update fallback items.
-    pub(super) async fn update_fallback_items(&mut self, items: Vec<Arc<Item>>) {
-        self.mixer.update_fallback_items(items);
+    #[tracing::instrument(skip_all, fields(state = ?self.state(), items = items.len()))]
+    pub(super) async fn update_fallback_items(&self, items: Vec<Arc<Item>>) {
+        self.mixer.update_fallback_items(items).await;
     }
 
     /// Load fallback items with the given uri.
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
     pub(super) async fn load_fallback_items(
         &self,
         uri: Option<&Uri>,
     ) -> Result<(String, Vec<Arc<Item>>)> {
+        tracing::trace!("Loading fallback items");
+
         let (what, items) = match uri {
             Some(uri) => {
                 let id = match uri {
@@ -616,28 +679,17 @@ impl PlayerInternal {
     }
 
     /// Handle an event from the connect integration.
-    pub(super) async fn handle_player_event(&mut self, e: IntegrationEvent) -> Result<()> {
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
+    pub(super) async fn handle_player_event(&self, e: IntegrationEvent) -> Result<()> {
         use IntegrationEvent::*;
+
+        tracing::trace!("Handling player event");
 
         let state = self.injector.get::<State>().await.unwrap_or_default();
 
-        if self.detached {
-            tracing::trace!(
-                "Ignoring (Detached): IntegrationEvent = {:?}, State = {:?}, Player = {:?}",
-                e,
-                state,
-                self.player,
-            );
-
+        if self.state().detached {
             return Ok(());
         }
-
-        tracing::trace!(
-            "Processing: IntegrationEvent = {:?}, State = {:?}, Player = {:?}",
-            e,
-            state,
-            self.player,
-        );
 
         match e {
             DeviceChanged => {
@@ -681,7 +733,7 @@ impl PlayerInternal {
     }
 
     /// Handle a song file update.
-    pub(super) async fn song_update(&mut self) {
+    pub(super) async fn song_update(&self) {
         if let State::Playing = self.injector.get::<State>().await.unwrap_or_default() {
             let song = self.injector.get::<Song>().await;
             let song = song.as_ref();
@@ -698,18 +750,20 @@ impl PlayerInternal {
     }
 
     /// Update the detached state.
-    pub(super) async fn update_detached(&mut self, detached: bool) -> Result<()> {
-        if detached {
+    pub(super) async fn update_detached(&self, detached: bool) -> Result<()> {
+        let state = self.state();
+
+        if state.detached {
             self.detach().await?;
         }
 
-        self.detached = detached;
+        self.state.lock().detached = detached;
         Ok(())
     }
 
     /// Update the current playback mode.
-    pub(super) async fn update_playback_mode(&mut self, mode: PlaybackMode) -> Result<()> {
-        self.playback_mode = mode;
+    pub(super) async fn update_playback_mode(&self, mode: PlaybackMode) -> Result<()> {
+        self.state.lock().mode = mode;
 
         if let PlaybackMode::Queue = mode {
             self.detach().await?;
@@ -722,7 +776,7 @@ impl PlayerInternal {
     ///
     /// Returns the item added.
     pub(super) async fn add_track(
-        &mut self,
+        &self,
         user: &str,
         track_id: TrackId,
         bypass_constraints: bool,
@@ -732,7 +786,7 @@ impl PlayerInternal {
         let streamer: PrivateUser = self.spotify.me().await.map_err(AddTrackError::Error)?;
         let market = streamer.country.as_deref();
 
-        match self.playback_mode {
+        match self.state().mode {
             PlaybackMode::Default => {
                 self.default_add_track(user, track_id, bypass_constraints, max_duration, market)
                     .await
@@ -745,18 +799,23 @@ impl PlayerInternal {
     }
 
     /// Default method for adding a track.
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
     async fn default_add_track(
-        &mut self,
+        &self,
         user: &str,
         track_id: TrackId,
         bypass_constraints: bool,
         max_duration: Option<utils::Duration>,
         market: Option<&str>,
     ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
+        tracing::trace!("Add track");
+
         let (user_count, len) = {
             if !bypass_constraints {
-                if let Some(reason) = &self.closed {
-                    return Err(AddTrackError::PlayerClosed(reason.clone()));
+                let closed = (*self.closed.lock()).as_ref().cloned();
+
+                if let Some(reason) = closed {
+                    return Err(AddTrackError::PlayerClosed(reason));
                 }
 
                 let max_queue_length = self.max_queue_length.load().await;
@@ -797,7 +856,9 @@ impl PlayerInternal {
             let mut user_count = 0;
             let mut len = 0;
 
-            for (index, i) in self.mixer.list().enumerate() {
+            let items = self.mixer.queue().await;
+
+            for (index, i) in items.iter().enumerate() {
                 len += 1;
 
                 if i.track_id == track_id {
@@ -862,14 +923,17 @@ impl PlayerInternal {
     }
 
     /// Try to queue up a track.
+    #[tracing::instrument(skip(self), fields(state = ?self.state()))]
     async fn queue_add_track(
-        &mut self,
+        &self,
         user: &str,
         track_id: TrackId,
         _bypass_constraints: bool,
         _max_duration: Option<utils::Duration>,
         market: Option<&str>,
     ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
+        tracing::trace!("Add track");
+
         let item = convert_item(
             &self.spotify,
             &self.youtube,

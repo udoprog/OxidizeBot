@@ -35,6 +35,7 @@ impl RequestBuilder {
     }
 
     /// Execute the request.
+    #[tracing::instrument(skip_all, fields(method = ?self.method, url = ?self.url.to_string()))]
     pub(crate) async fn execute<T>(self) -> Result<T, anyhow::Error>
     where
         T: serde::de::DeserializeOwned,

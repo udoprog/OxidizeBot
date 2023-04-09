@@ -43,6 +43,7 @@ pub(crate) struct Notification {
     pub(crate) title: Option<String>,
     pub(crate) icon: NotificationIcon,
     pub(crate) timeout: Option<Duration>,
+    #[cfg_attr(not(windows), allow(unused))]
     pub(crate) on_click: Option<Callback>,
 }
 
