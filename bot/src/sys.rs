@@ -84,6 +84,7 @@ impl Notification {
     }
 
     /// What should happen if we click the notification.
+    #[cfg_attr(not(windows), allow(unused))]
     pub(crate) fn on_click<F>(self, on_click: F) -> Self
     where
         F: FnMut() -> Result<(), Error> + Send + 'static,
