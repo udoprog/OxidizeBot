@@ -206,11 +206,6 @@ impl Flow {
         true
     }
 
-    /// Access scopes configured for this flow.
-    pub(crate) fn scopes(&self) -> &[Scope] {
-        &self.config.scopes
-    }
-
     /// Append an extra parameter to the given flow.
     pub(crate) fn extra_param(&mut self, key: impl AsRef<str>, value: impl AsRef<str>) {
         self.extra_params

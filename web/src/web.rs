@@ -1144,20 +1144,6 @@ where
     }
 }
 
-/// Construct a HTML response.
-pub(crate) fn html(body: String) -> Result<Response<Body>, Error> {
-    let mut r = Response::new(Body::from(body));
-
-    r.headers_mut().insert(
-        header::CONTENT_TYPE,
-        "text/html; charset=utf-8"
-            .parse()
-            .map_err(anyhow::Error::from)?,
-    );
-
-    Ok(r)
-}
-
 /// Construct a JSON OK response.
 pub(crate) fn json_ok(body: impl Serialize) -> Result<Response<Body>, Error> {
     let body = serde_json::to_string(&body).map_err(anyhow::Error::from)?;
@@ -1178,10 +1164,4 @@ fn json_empty() -> Result<Response<Body>, Error> {
 
     #[derive(Debug, Serialize, Deserialize)]
     struct Empty {}
-}
-
-#[derive(Debug)]
-pub(crate) struct ReceivedToken {
-    pub(crate) code: String,
-    pub(crate) state: String,
 }
