@@ -42,3 +42,4 @@ jobs:
         files: "dist/*"
         name: ${{steps.tag.outputs.tag}}
         token: ${{secrets.GITHUB_TOKEN}}
+        prerelease: ${{steps.tag.outputs.prerelease}}
