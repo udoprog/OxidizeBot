@@ -30,7 +30,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: udoprog/github-release@tag
-      id: tag
+      id: release
     - uses: actions/download-artifact@v1
       with: {name: dist-macos-latest, path: dist}
     - uses: actions/download-artifact@v1
@@ -40,6 +40,6 @@ jobs:
     - uses: udoprog/github-release@v1
       with:
         files: "dist/*"
-        name: ${{steps.tag.outputs.tag}}
+        name: ${{steps.release.outputs.tag}}
         token: ${{secrets.GITHUB_TOKEN}}
-        prerelease: ${{steps.tag.outputs.prerelease}}
+        prerelease: ${{steps.release.outputs.prerelease}}

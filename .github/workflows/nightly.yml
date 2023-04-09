@@ -41,7 +41,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: udoprog/github-release@channel
-      id: channel
+      id: release
       with:
         channel: ${{github.event.inputs.channel}}
     - uses: actions/download-artifact@v1
@@ -53,5 +53,5 @@ jobs:
     - uses: udoprog/github-release@nightly
       with:
         files: "dist/*"
-        name: ${{steps.channel.outputs.channel}}
+        name: ${{steps.release.outputs.channel}}
         token: ${{secrets.GITHUB_TOKEN}}
