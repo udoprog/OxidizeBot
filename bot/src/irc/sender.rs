@@ -73,11 +73,13 @@ impl Sender {
     }
 
     /// Delete the given message by id.
+    #[tracing::instrument(skip_all)]
     pub(crate) fn delete(&self, id: &str) {
         self.privmsg_immediate(format!("/delete {}", id));
     }
 
     /// Only send to chat, with rate limiting.
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn send(&self, m: impl Into<Message>) {
         let m = m.into();
 
@@ -89,6 +91,7 @@ impl Sender {
     }
 
     /// Send an immediate message, without taking rate limiting into account.
+    #[tracing::instrument(skip_all)]
     pub(crate) fn send_immediate(&self, m: impl Into<Message>) {
         if let Err(e) = self.inner.sender.send(m) {
             log_error!(e, "Failed to send message");
@@ -96,13 +99,18 @@ impl Sender {
     }
 
     /// Send a PRIVMSG.
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn privmsg(&self, f: impl fmt::Display) {
+        let message = f.to_string();
+
         match self.ty.load().await {
             Type::NightBot => {
-                self.send_nightbot(&self.inner, f.to_string()).await;
+                tracing::trace!(?message, "Sending to nightbot");
+                self.send_nightbot(&self.inner, message).await;
             }
             Type::Chat => {
-                self.send(Command::PRIVMSG(self.inner.target.clone(), f.to_string()))
+                tracing::trace!(?message, target = ?self.inner.target, "Sending privmsg");
+                self.send(Command::PRIVMSG(self.inner.target.clone(), message))
                     .await;
             }
         }

@@ -1,25 +1,39 @@
+use std::collections::VecDeque;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
+use anyhow::Result;
+use chrono::Utc;
+use tokio::sync::Mutex;
+use tokio::sync::MutexGuard;
+
 use crate::api;
 use crate::db;
 use crate::player::{convert_item, Item, Song};
 use crate::track_id::TrackId;
 use crate::utils;
-use anyhow::Result;
-use chrono::Utc;
-use std::collections::VecDeque;
-use std::sync::Arc;
+
+#[derive(Default)]
+struct Fallback {
+    /// Currently loaded fallback items.
+    items: Vec<Arc<Item>>,
+    /// Items ordered in the reverse way they are meant to be played.
+    queue: VecDeque<Arc<Item>>,
+}
 
 /// Mixer decides what song to play next.
 pub(super) struct Mixer {
     /// Database access.
     db: db::Database,
     /// In-memory queue.
-    queue: VecDeque<Arc<Item>>,
+    queue: Mutex<VecDeque<Arc<Item>>>,
     /// A song that has been sidelined by another song.
-    sidelined: VecDeque<Song>,
-    /// Currently loaded fallback items.
-    fallback_items: Vec<Arc<Item>>,
-    /// Items ordered in the reverse way they are meant to be played.
-    fallback_queue: VecDeque<Arc<Item>>,
+    sidelined: parking_lot::Mutex<VecDeque<Song>>,
+    /// Fallback queue.
+    fallback: Mutex<Fallback>,
+    /// Keeping track of queue length.
+    len: AtomicUsize,
 }
 
 impl Mixer {
@@ -30,22 +44,24 @@ impl Mixer {
     pub(super) fn new(db: db::Database) -> Self {
         Self {
             db,
-            queue: Default::default(),
-            sidelined: Default::default(),
-            fallback_items: Default::default(),
-            fallback_queue: Default::default(),
+            queue: Mutex::default(),
+            sidelined: parking_lot::Mutex::default(),
+            fallback: Mutex::default(),
+            len: AtomicUsize::new(0),
         }
     }
 
     /// Initialize the queue from the database.
+    #[tracing::instrument(skip_all)]
     pub(super) async fn initialize_queue(
-        &mut self,
+        &self,
         spotify: &api::Spotify,
         youtube: &api::YouTube,
     ) -> Result<()> {
         // TODO: cache this value
         let streamer = spotify.me().await?;
         let market = streamer.country.as_deref();
+        let mut queue = self.queue.lock().await;
 
         // Add tracks from database.
         for song in self.db.player_list().await? {
@@ -59,28 +75,31 @@ impl Mixer {
             )
             .await;
 
-            if let Ok(Some(item)) = item {
-                self.queue.push_back(Arc::new(item));
-            } else {
-                tracing::warn!("Failed to convert db item: {:?}", song);
+            match item {
+                Ok(item) => {
+                    queue.extend(item.map(Arc::new));
+                }
+                Err(error) => {
+                    log_warn!(error, "Failed to convert database item");
+                }
             }
         }
 
+        self.len.store(queue.len(), Ordering::SeqCst);
         Ok(())
     }
 
-    /// List items in the queue.
-    pub(super) fn list(&self) -> impl Iterator<Item = &Arc<Item>> {
-        self.queue.iter()
+    pub(super) fn len(&self) -> usize {
+        self.len.load(Ordering::SeqCst)
     }
 
-    /// Get the length of the queue in the mixer.
-    pub(super) fn len(&self) -> usize {
-        self.queue.len()
+    /// List items in the queue.
+    pub(super) async fn queue(&self) -> MutexGuard<'_, VecDeque<Arc<Item>>> {
+        self.queue.lock().await
     }
 
     /// Push item to back of queue.
-    pub(super) async fn push_back(&mut self, item: Arc<Item>) -> Result<()> {
+    pub(super) async fn push_back(&self, item: Arc<Item>) -> Result<()> {
         self.db
             .player_push_back(&db::models::AddSong {
                 track_id: item.track_id.clone(),
@@ -89,29 +108,37 @@ impl Mixer {
             })
             .await?;
 
-        self.queue.push_back(item);
+        self.queue.lock().await.push_back(item);
+        self.len.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
     /// Purge the song queue.
-    pub(super) async fn purge(&mut self) -> Result<Vec<Arc<Item>>> {
-        if self.queue.is_empty() {
-            return Ok(vec![]);
+    pub(super) async fn purge(&self) -> Result<Vec<Arc<Item>>> {
+        let purged = self.queue.lock().await.drain(..).collect::<Vec<_>>();
+        self.len.store(0, Ordering::SeqCst);
+
+        if !purged.is_empty() {
+            self.db.player_song_purge().await?;
         }
 
-        let purged = std::mem::take(&mut self.queue).into_iter().collect();
-
-        self.db.player_song_purge().await?;
         Ok(purged)
     }
 
     /// Remove the item at the given position.
-    pub(super) async fn remove_at(&mut self, n: usize) -> Result<Option<Arc<Item>>> {
-        if self.queue.is_empty() {
-            return Ok(None);
-        }
+    pub(super) async fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>> {
+        let next = {
+            let mut queue = self.queue.lock().await;
 
-        if let Some(item) = self.queue.remove(n) {
+            if queue.is_empty() {
+                return Ok(None);
+            }
+
+            queue.remove(n)
+        };
+
+        if let Some(item) = next {
+            self.len.fetch_sub(1, Ordering::SeqCst);
             self.db.player_remove_song(&item.track_id, false).await?;
             return Ok(Some(item));
         }
@@ -120,12 +147,19 @@ impl Mixer {
     }
 
     /// Remove the last element.
-    pub(super) async fn remove_last(&mut self) -> Result<Option<Arc<Item>>> {
-        if self.queue.is_empty() {
-            return Ok(None);
-        }
+    pub(super) async fn remove_last(&self) -> Result<Option<Arc<Item>>> {
+        let next = {
+            let mut queue = self.queue.lock().await;
 
-        if let Some(item) = self.queue.pop_back() {
+            if queue.is_empty() {
+                return Ok(None);
+            }
+
+            queue.pop_back()
+        };
+
+        if let Some(item) = next {
+            self.len.fetch_sub(1, Ordering::SeqCst);
             self.db.player_remove_song(&item.track_id, false).await?;
             return Ok(Some(item));
         }
@@ -134,20 +168,28 @@ impl Mixer {
     }
 
     /// Remove the last requested song matching the given user.
-    pub(super) async fn remove_last_by_user(&mut self, user: &str) -> Result<Option<Arc<Item>>> {
-        if self.queue.is_empty() {
-            return Ok(None);
-        }
+    pub(super) async fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>> {
+        let removed = {
+            let mut queue = self.queue.lock().await;
 
-        if let Some(position) = self
-            .queue
-            .iter()
-            .rposition(|i| i.user.as_ref().map(|u| u == user).unwrap_or_default())
-        {
-            if let Some(item) = self.queue.remove(position) {
-                self.db.player_remove_song(&item.track_id, false).await?;
-                return Ok(Some(item));
+            if queue.is_empty() {
+                return Ok(None);
             }
+
+            if let Some(position) = queue
+                .iter()
+                .rposition(|i| i.user.as_ref().map(|u| u == user).unwrap_or_default())
+            {
+                queue.remove(position)
+            } else {
+                None
+            }
+        };
+
+        if let Some(item) = removed {
+            self.len.fetch_sub(1, Ordering::SeqCst);
+            self.db.player_remove_song(&item.track_id, false).await?;
+            return Ok(Some(item));
         }
 
         Ok(None)
@@ -155,20 +197,26 @@ impl Mixer {
 
     /// Promote the given song.
     pub(super) async fn promote_song(
-        &mut self,
+        &self,
         user: Option<&str>,
         n: usize,
     ) -> Result<Option<Arc<Item>>> {
-        // OK, but song doesn't exist or index is out of bound.
-        if self.queue.is_empty() || n >= self.queue.len() {
-            return Ok(None);
-        }
+        let next = {
+            let mut queue = self.queue.lock().await;
 
-        if let Some(removed) = self.queue.remove(n) {
-            self.queue.push_front(removed);
-        }
+            // OK, but song doesn't exist or index is out of bound.
+            if queue.is_empty() || n >= queue.len() {
+                return Ok(None);
+            }
 
-        if let Some(item) = self.queue.get(0).cloned() {
+            if let Some(removed) = queue.remove(n) {
+                queue.push_front(removed);
+            }
+
+            queue.get(0).cloned()
+        };
+
+        if let Some(item) = next {
             self.db.player_promote_song(user, &item.track_id).await?;
             return Ok(Some(item));
         }
@@ -188,22 +236,19 @@ impl Mixer {
     /// Get next song to play.
     ///
     /// Will shuffle all fallback items and add them to a queue to avoid playing the same song twice.
-    pub(super) fn next_fallback_item(&mut self) -> Option<Song> {
+    pub(super) async fn next_fallback_item(&self) -> Option<Song> {
         use rand::seq::SliceRandom;
 
-        if self.fallback_items.is_empty() {
-            return None;
-        }
+        let mut fallback = self.fallback.lock().await;
 
-        let mut rng = rand::thread_rng();
-
-        while self.fallback_queue.len() < Self::FALLBACK_QUEUE_SIZE {
-            let mut extension = self.fallback_items.clone();
+        while fallback.queue.len() < Self::FALLBACK_QUEUE_SIZE && !fallback.items.is_empty() {
+            let mut rng = rand::thread_rng();
+            let mut extension = fallback.items.clone();
             extension.shuffle(&mut rng);
-            self.fallback_queue.extend(extension);
+            fallback.queue.extend(extension);
         }
 
-        let item = self.fallback_queue.pop_front()?;
+        let item = fallback.queue.pop_front()?;
         Some(Song::new(item, Default::default()))
     }
 
@@ -215,8 +260,8 @@ impl Mixer {
     /// If there are any songs in the queue.
     ///
     /// Finally, if there are any songs to fall back to.
-    pub(super) async fn next_song(&mut self) -> Result<Option<Song>> {
-        if let Some(song) = self.sidelined.pop_front() {
+    pub(super) async fn next_song(&self) -> Result<Option<Song>> {
+        if let Some(song) = self.sidelined.lock().pop_front() {
             return Ok(Some(song));
         }
 
@@ -225,17 +270,15 @@ impl Mixer {
             return Ok(Some(Song::new(item, Default::default())));
         }
 
-        if self.fallback_items.is_empty() {
-            tracing::warn!("There are no fallback songs available");
-            return Ok(None);
-        }
-
-        Ok(self.next_fallback_item())
+        Ok(self.next_fallback_item().await)
     }
 
     /// Pop the front of the queue.
-    async fn pop_front(&mut self) -> Result<Option<Arc<Item>>> {
-        if let Some(item) = self.queue.pop_front() {
+    async fn pop_front(&self) -> Result<Option<Arc<Item>>> {
+        let next = self.queue.lock().await.pop_front();
+
+        if let Some(item) = next {
+            self.len.fetch_sub(1, Ordering::SeqCst);
             self.db.player_remove_song(&item.track_id, true).await?;
             Ok(Some(item))
         } else {
@@ -244,13 +287,14 @@ impl Mixer {
     }
 
     /// Push a song to the sidelined queue.
-    pub(super) fn push_sidelined(&mut self, song: Song) {
-        self.sidelined.push_back(song);
+    pub(super) fn push_sidelined(&self, song: Song) {
+        self.sidelined.lock().push_back(song);
     }
 
     /// Update available fallback items and clear the current fallback queue.
-    pub(super) fn update_fallback_items(&mut self, items: Vec<Arc<Item>>) {
-        self.fallback_items = items;
-        self.fallback_queue.clear();
+    pub(super) async fn update_fallback_items(&self, items: Vec<Arc<Item>>) {
+        let mut fallback = self.fallback.lock().await;
+        fallback.items = items;
+        fallback.queue.clear();
     }
 }

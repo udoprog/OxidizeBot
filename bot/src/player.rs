@@ -1,3 +1,11 @@
+use std::fmt;
+use std::future::Future;
+use std::sync::Arc;
+use std::time::Duration;
+
+use anyhow::{bail, Result};
+use parking_lot::Mutex;
+
 use crate::api;
 use crate::bus;
 use crate::channel::Channel;
@@ -7,18 +15,12 @@ use crate::song_file::SongFile;
 use crate::spotify_id::SpotifyId;
 use crate::track_id::TrackId;
 use crate::utils;
-use anyhow::{bail, Result};
-use std::fmt;
-use std::future::Future;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::RwLock;
 
-pub(self) use self::connect::{ConnectDevice, ConnectPlayer, ConnectStream};
-pub(self) use self::mixer::Mixer;
-pub(self) use self::playback_future::PlaybackFuture;
-pub(self) use self::player_internal::PlayerInternal;
-pub(self) use self::youtube::YouTubePlayer;
+use self::connect::{ConnectDevice, ConnectPlayer, ConnectStream};
+use self::mixer::Mixer;
+use self::playback_future::PlaybackFuture;
+use self::player_internal::{PlayerInitialize, PlayerInternal, PlayerState};
+use self::youtube::YouTubePlayer;
 pub(crate) use self::{item::Item, song::Song, track::Track};
 
 mod connect;
@@ -68,7 +70,7 @@ pub(crate) enum Source {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(self) enum PlaybackMode {
+enum PlaybackMode {
     /// The default playback mode.
     #[serde(rename = "default")]
     Default,
@@ -94,7 +96,7 @@ pub(crate) enum ModifyVolume {
 
 impl ModifyVolume {
     /// Apply the given modification.
-    pub(self) fn apply(self, v: u32) -> u32 {
+    fn apply(self, v: u32) -> u32 {
         use self::ModifyVolume::*;
 
         let v = match self {
@@ -111,7 +113,7 @@ impl ModifyVolume {
 ///
 /// Returns `None` if the service required to convert the item is not
 /// authenticated.
-pub(self) async fn convert_item(
+async fn convert_item(
     spotify: &api::Spotify,
     youtube: &api::YouTube,
     user: Option<&str>,
@@ -230,34 +232,33 @@ pub(crate) async fn run(
 
     let mixer = Mixer::new(db.clone());
 
-    let (playback_mode_stream, playback_mode) = settings
+    let (playback_mode_stream, mode) = settings
         .stream("playback-mode")
         .or_with_else(PlaybackMode::default)
         .await?;
 
-    let internal = Arc::new(RwLock::new(PlayerInternal {
-        initialized: Default::default(),
+    let internal = Arc::new(PlayerInternal {
+        state: Mutex::new(PlayerState {
+            player: PlayerKind::None,
+            detached,
+            mode,
+        }),
+        closed: Mutex::new(None),
         injector: injector.clone(),
-        player: PlayerKind::None,
-        detached,
         spotify: spotify.clone(),
         youtube: youtube.clone(),
         connect_player: connect_player.clone(),
         youtube_player,
-        playback_mode,
         mixer,
         bus,
         global_bus,
         song_switch_feedback,
-
         device,
         max_queue_length,
         max_songs_per_user,
         duplicate_duration,
-
         themes: injector.var().await,
-        closed: None,
-    }));
+    });
 
     let playback = PlaybackFuture {
         internal: internal.clone(),
@@ -279,11 +280,13 @@ pub(crate) async fn run(
     // future to initialize the player future.
     // Yeah, I know....
     Ok(async move {
+        let mut initialize = PlayerInitialize::default();
+
         // Note: these tasks might fail sporadically, since we need to perform external
         // API calls to initialize metadata for playback items.
         retry_until_ok! {
             "Initialize Player", {
-                internal.write().await.initialize().await
+                internal.initialize(&mut initialize).await
             }
         };
 
@@ -320,45 +323,41 @@ pub(crate) enum Event {
 #[derive(Clone)]
 pub(crate) struct Player {
     /// Player internals. Wrapped to make cloning cheaper since Player is frequently shared.
-    inner: Arc<RwLock<PlayerInternal>>,
+    inner: Arc<PlayerInternal>,
 }
 
 impl Player {
     /// Get a receiver for player events.
     pub(crate) async fn subscribe(&self) -> bus::Reader<Event> {
-        self.inner.read().await.bus.subscribe()
+        self.inner.bus.subscribe()
     }
 
     /// Get the current device.
     pub(crate) async fn current_device(&self) -> Option<String> {
-        let inner = self.inner.read().await;
-        inner.device.current_device().await
+        self.inner.device.current_device().await
     }
 
     /// List all available devices.
     pub(crate) async fn list_devices(&self) -> Result<Vec<api::spotify::Device>> {
-        let inner = self.inner.read().await;
-        inner.device.list_devices().await
+        self.inner.device.list_devices().await
     }
 
     /// External call to set device.
     ///
     /// Should always notify the player to change.
     pub(crate) async fn set_device(&self, device: String) -> Result<()> {
-        let inner = self.inner.read().await;
-        inner.device.set_device(Some(device)).await
+        self.inner.device.set_device(Some(device)).await
     }
 
     /// Get the next N songs in queue.
     pub(crate) async fn list(&self) -> Vec<Arc<Item>> {
-        let inner = self.inner.read().await;
-        let items = inner.mixer.list();
-        let song = inner.injector.get::<Song>().await;
+        let items = (*self.inner.mixer.queue().await).clone();
+        let song = self.inner.injector.get::<Song>().await;
 
         song.as_ref()
             .map(|c| c.item.clone())
             .into_iter()
-            .chain(items.cloned())
+            .chain(items)
             .collect()
     }
 
@@ -368,11 +367,10 @@ impl Player {
         user: Option<&str>,
         n: usize,
     ) -> Result<Option<Arc<Item>>> {
-        let mut inner = self.inner.write().await;
-        let promoted = inner.mixer.promote_song(user, n).await?;
+        let promoted = self.inner.mixer.promote_song(user, n).await?;
 
         if promoted.is_some() {
-            inner.modified(Source::Manual).await?;
+            self.inner.modified(Source::Manual).await?;
         }
 
         Ok(promoted)
@@ -380,37 +378,32 @@ impl Player {
 
     /// Toggle playback.
     pub(crate) async fn toggle(&self) -> Result<()> {
-        let mut inner = self.inner.write().await;
-        inner.toggle(Source::Manual).await?;
+        self.inner.toggle(Source::Manual).await?;
         Ok(())
     }
 
     /// Start playback.
     pub(crate) async fn play(&self) -> Result<()> {
-        let mut inner = self.inner.write().await;
-        inner.play(Source::Manual).await?;
+        self.inner.play(Source::Manual).await?;
         Ok(())
     }
 
     /// Pause playback.
     pub(crate) async fn pause(&self) -> Result<()> {
-        let mut inner = self.inner.write().await;
-        inner.pause(Source::Manual).await?;
+        self.inner.pause(Source::Manual).await?;
         Ok(())
     }
 
     /// Skip the current song.
     pub(crate) async fn skip(&self) -> Result<()> {
-        let mut inner = self.inner.write().await;
-        inner.skip(Source::Manual).await?;
+        self.inner.skip(Source::Manual).await?;
         Ok(())
     }
 
     /// Get the current volume.
     pub(crate) async fn current_volume(&self) -> Option<u32> {
-        let inner = self.inner.read().await;
-
-        let track_id = inner
+        let track_id = self
+            .inner
             .injector
             .get::<Song>()
             .await
@@ -420,16 +413,14 @@ impl Player {
             .clone();
 
         match track_id {
-            TrackId::Spotify(..) => Some(inner.connect_player.current_volume().await),
-            TrackId::YouTube(..) => Some(inner.youtube_player.current_volume().await),
+            TrackId::Spotify(..) => Some(self.inner.connect_player.current_volume().await),
+            TrackId::YouTube(..) => Some(self.inner.youtube_player.current_volume().await),
         }
     }
 
     /// Update volume of the player.
     pub(super) async fn volume(&self, modify: ModifyVolume) -> Option<u32> {
-        let inner = self.inner.read().await;
-
-        let track_id = match inner.injector.get::<Song>().await {
+        let track_id = match self.inner.injector.get::<Song>().await {
             Some(song) => song.item.track_id.clone(),
             None => {
                 return None;
@@ -437,28 +428,26 @@ impl Player {
         };
 
         Some(match track_id {
-            TrackId::Spotify(..) => inner.connect_player.volume(modify).await,
-            TrackId::YouTube(..) => inner.youtube_player.volume(modify).await,
+            TrackId::Spotify(..) => self.inner.connect_player.volume(modify).await,
+            TrackId::YouTube(..) => self.inner.youtube_player.volume(modify).await,
         })
     }
 
     /// Close the player from more requests.
     pub(crate) async fn close(&self, reason: Option<String>) {
-        self.inner.write().await.closed = Some(reason.map(Arc::new));
+        *self.inner.closed.lock() = Some(reason.map(Arc::new));
     }
 
     /// Open the player.
     pub(crate) async fn open(&self) {
-        self.inner.write().await.closed = None;
+        *self.inner.closed.lock() = None;
     }
 
     /// Search for a track.
     pub(crate) async fn search_track(&self, q: &str) -> Result<Option<TrackId>> {
-        let inner = self.inner.read().await;
-
         if q.starts_with("youtube:") {
             let q = q.trim_start_matches("youtube:");
-            let results = inner.youtube.search(q).await?;
+            let results = self.inner.youtube.search(q).await?;
             let result = results
                 .items
                 .into_iter()
@@ -473,7 +462,7 @@ impl Player {
             q
         };
 
-        let page = inner.spotify.search_track(q, 1).await?;
+        let page = self.inner.spotify.search_track(q, 1).await?;
 
         match page.tracks.items.into_iter().next().and_then(|t| t.id) {
             Some(track_id) => match SpotifyId::from_base62(&track_id) {
@@ -490,9 +479,7 @@ impl Player {
         channel: &Channel,
         name: &str,
     ) -> Result<(), PlayThemeError> {
-        let mut inner = self.inner.write().await;
-
-        let themes = match inner.themes.load().await {
+        let themes = match self.inner.themes.load().await {
             Some(themes) => themes,
             None => return Err(PlayThemeError::NotConfigured),
         };
@@ -505,8 +492,8 @@ impl Player {
         let duration = theme.end.clone().map(|o| o.as_duration());
 
         let item = convert_item(
-            &inner.spotify,
-            &inner.youtube,
+            &self.inner.spotify,
+            &self.inner.youtube,
             None,
             &theme.track_id,
             duration,
@@ -523,7 +510,7 @@ impl Player {
         let item = Arc::new(item);
         let duration = theme.start.as_duration();
 
-        inner
+        self.inner
             .inject(Source::Manual, item, duration)
             .await
             .map_err(PlayThemeError::Error)?;
@@ -540,18 +527,16 @@ impl Player {
         bypass_constraints: bool,
         max_duration: Option<utils::Duration>,
     ) -> Result<(Option<usize>, Arc<Item>), AddTrackError> {
-        let mut inner = self.inner.write().await;
-        inner
+        self.inner
             .add_track(user, track_id, bypass_constraints, max_duration)
             .await
     }
 
     pub(crate) async fn purge(&self) -> Result<Vec<Arc<Item>>> {
-        let mut inner = self.inner.write().await;
-        let purged = inner.mixer.purge().await?;
+        let purged = self.inner.mixer.purge().await?;
 
         if !purged.is_empty() {
-            inner.modified(Source::Manual).await?;
+            self.inner.modified(Source::Manual).await?;
         }
 
         Ok(purged)
@@ -559,11 +544,10 @@ impl Player {
 
     /// Remove the item at the given position.
     pub(crate) async fn remove_at(&self, n: usize) -> Result<Option<Arc<Item>>> {
-        let mut inner = self.inner.write().await;
-        let removed = inner.mixer.remove_at(n).await?;
+        let removed = self.inner.mixer.remove_at(n).await?;
 
         if removed.is_some() {
-            inner.modified(Source::Manual).await?;
+            self.inner.modified(Source::Manual).await?;
         }
 
         Ok(removed)
@@ -571,11 +555,10 @@ impl Player {
 
     /// Remove the first track in the queue.
     pub(crate) async fn remove_last(&self) -> Result<Option<Arc<Item>>> {
-        let mut inner = self.inner.write().await;
-        let removed = inner.mixer.remove_last().await?;
+        let removed = self.inner.mixer.remove_last().await?;
 
         if removed.is_some() {
-            inner.modified(Source::Manual).await?;
+            self.inner.modified(Source::Manual).await?;
         }
 
         Ok(removed)
@@ -583,11 +566,10 @@ impl Player {
 
     /// Remove the last track by the given user.
     pub(crate) async fn remove_last_by_user(&self, user: &str) -> Result<Option<Arc<Item>>> {
-        let mut inner = self.inner.write().await;
-        let removed = inner.mixer.remove_last_by_user(user).await?;
+        let removed = self.inner.mixer.remove_last_by_user(user).await?;
 
         if removed.is_some() {
-            inner.modified(Source::Manual).await?;
+            self.inner.modified(Source::Manual).await?;
         }
 
         Ok(removed)
@@ -598,11 +580,9 @@ impl Player {
         &self,
         mut predicate: impl FnMut(&Item) -> bool,
     ) -> Option<(Duration, Arc<Item>)> {
-        let inner = self.inner.read().await;
-
         let mut duration = Duration::default();
 
-        if let Some(c) = inner.injector.get::<Song>().await {
+        if let Some(c) = self.inner.injector.get::<Song>().await {
             if predicate(&c.item) {
                 return Some((Default::default(), c.item));
             }
@@ -610,7 +590,9 @@ impl Player {
             duration += c.remaining();
         }
 
-        for item in inner.mixer.list() {
+        let items = self.inner.mixer.queue().await;
+
+        for item in items.iter() {
             if predicate(item) {
                 return Some((duration, item.clone()));
             }
@@ -623,17 +605,17 @@ impl Player {
 
     /// Get the length in number of items and total number of seconds in queue.
     pub(crate) async fn length(&self) -> (usize, Duration) {
-        let inner = self.inner.read().await;
-
         let mut count = 0;
         let mut duration = Duration::default();
 
-        if let Some(song) = inner.injector.get::<Song>().await.as_ref() {
+        if let Some(song) = self.inner.injector.get::<Song>().await.as_ref() {
             duration += song.remaining();
             count += 1;
         }
 
-        for item in inner.mixer.list() {
+        let items = self.inner.mixer.queue().await;
+
+        for item in items.iter() {
             duration += item.duration;
             count += 1;
         }
@@ -643,7 +625,7 @@ impl Player {
 
     /// Get the current song, if it is set.
     pub(crate) async fn current(&self) -> Option<Song> {
-        self.inner.read().await.injector.get::<Song>().await
+        self.inner.injector.get::<Song>().await
     }
 }
 

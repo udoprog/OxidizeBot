@@ -142,7 +142,7 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Execute the request.
-    #[tracing::instrument(skip_all, fields(method = ?self.method, url = ?self.url))]
+    #[tracing::instrument(skip_all, fields(method = ?self.method, url = ?self.url.to_string()))]
     pub(crate) async fn execute(&self) -> Result<Response<Bytes>> {
         // NB: scope to only lock the token over the request setup.
         tracing::trace!("Executing");
