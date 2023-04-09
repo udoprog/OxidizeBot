@@ -2,10 +2,11 @@
 name = "builder"
 version = "0.1.0"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 anyhow = "1.0.9"
+chrono = "0.4.24"
 regex = { version = "1.5.5", default-features = false, features = ["std", "unicode-perl"] }
 walkdir = "2"
 zip = "0.5.3"

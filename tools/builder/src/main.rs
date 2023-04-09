@@ -1,5 +1,3 @@
-use anyhow::{anyhow, bail, Result};
-use regex::Regex;
 use std::env;
 use std::env::consts;
 use std::ffi::OsStr;
@@ -8,7 +6,102 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::str::FromStr;
+
+use anyhow::{anyhow, bail, Context, Result};
+use chrono::Datelike;
+use chrono::NaiveDate;
+use chrono::NaiveDateTime;
+use chrono::Timelike;
+use chrono::Utc;
+use regex::Regex;
 use walkdir::WalkDir;
+
+enum Release {
+    Version(Version),
+    Nightly(NaiveDateTime),
+    Date(NaiveDate),
+}
+
+impl Release {
+    fn file_version(&self) -> Result<String> {
+        /// Calculate an MSI-safe version number.
+        /// Unfortunately this enforces some unfortunate constraints on the available
+        /// version range.
+        ///
+        /// The computed patch component must fit within 65535
+        fn from_version(version: &Version) -> Result<String> {
+            if version.patch > 64 {
+                bail!(
+                    "patch version must not be greater than 64: {}",
+                    version.patch
+                );
+            }
+
+            let mut last = 999;
+
+            if let Some(pre) = version.pre {
+                if pre >= 999 {
+                    bail!(
+                        "patch version must not be greater than 64: {}",
+                        version.patch
+                    );
+                }
+
+                last = pre;
+            }
+
+            last += version.patch * 1000;
+            Ok(format!("{}.{}.{}", version.major, version.minor, last))
+        }
+
+        fn from_date_time(date_time: &NaiveDateTime) -> Result<String> {
+            let date = date_time.date();
+
+            Ok(format!(
+                "{}.{}.{}",
+                date.year() - 2023,
+                date.month(),
+                date.day() * 100 + date.day() + date_time.hour()
+            ))
+        }
+
+        fn from_date(date: &NaiveDate) -> Result<String> {
+            Ok(format!(
+                "{}.{}.{}",
+                date.year() - 2023,
+                date.month(),
+                date.day() * 100 + date.day()
+            ))
+        }
+
+        match self {
+            Release::Version(version) => from_version(version),
+            Release::Nightly(date_time) => from_date_time(date_time),
+            Release::Date(date) => from_date(date),
+        }
+    }
+}
+
+impl fmt::Display for Release {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Release::Version(version) => version.fmt(f),
+            Release::Date(date) => date.fmt(f),
+            Release::Nightly(date_time) => {
+                let date = date_time.date();
+                write!(
+                    f,
+                    "nightly-{}.{}.{}.{}",
+                    date.year(),
+                    date.month(),
+                    date.day(),
+                    date_time.hour()
+                )
+            }
+        }
+    }
+}
 
 pub(crate) struct SignTool {
     root: PathBuf,
@@ -37,9 +130,9 @@ impl SignTool {
         let cert = self.root.join("bot/res/cert.pfx");
 
         let status = Command::new(&self.signtool)
-            .args(&["sign", "/f"])
+            .args(["sign", "/f"])
             .arg(&cert)
-            .args(&[
+            .args([
                 "/d",
                 what,
                 "/du",
@@ -67,7 +160,7 @@ struct WixBuilder {
 
 impl WixBuilder {
     /// Construct a new WIX builder.
-    fn new(out: &Path, version: &Version) -> Result<Self> {
+    fn new(out: &Path, release: &Release) -> Result<Self> {
         let wix_bin = match env::var_os("WIX") {
             Some(wix_bin) => PathBuf::from(wix_bin).join("bin"),
             None => bail!("missing: WIX"),
@@ -90,8 +183,7 @@ impl WixBuilder {
         }
 
         let base = format!(
-            "oxidize-{version}-{os}-{arch}",
-            version = version,
+            "oxidize-{release}-{os}-{arch}",
             os = consts::OS,
             arch = consts::ARCH
         );
@@ -120,9 +212,9 @@ impl WixBuilder {
         let mut command = Command::new(&self.candle_bin);
 
         command
-            .arg(&format!("-dVersion={}", file_version))
-            .arg(&format!("-dPlatform={}", platform))
-            .args(&["-ext", "WixUtilExtension"])
+            .arg(format!("-dVersion={}", file_version))
+            .arg(format!("-dPlatform={}", platform))
+            .args(["-ext", "WixUtilExtension"])
             .arg("-o")
             .arg(&self.wixobj_path)
             .arg(source);
@@ -152,8 +244,8 @@ impl WixBuilder {
 
         command
             .arg("-spdb")
-            .args(&["-ext", "WixUIExtension"])
-            .args(&["-ext", "WixUtilExtension"])
+            .args(["-ext", "WixUIExtension"])
+            .args(["-ext", "WixUtilExtension"])
             .arg("-cultures:en-us")
             .arg(&self.wixobj_path)
             .arg("-out")
@@ -203,30 +295,6 @@ impl Version {
             patch,
             pre,
         }))
-    }
-
-    /// Calculate an MSI-safe version number.
-    /// Unfortunately this enforces some unfortunate constraints on the available
-    /// version range.
-    ///
-    /// The computed patch component must fit within 65535
-    pub(crate) fn as_windows_file_version(&self) -> Result<String> {
-        if self.patch > 64 {
-            bail!("patch version must not be greater than 64: {}", self.patch);
-        }
-
-        let mut last = 999;
-
-        if let Some(pre) = self.pre {
-            if pre >= 999 {
-                bail!("patch version must not be greater than 64: {}", self.patch);
-            }
-
-            last = pre;
-        }
-
-        last += self.patch * 1000;
-        Ok(format!("{}.{}.{}", self.major, self.minor, last))
     }
 }
 
@@ -311,14 +379,13 @@ where
 }
 
 /// Create a zip distribution.
-fn create_zip_dist(dest: &Path, version: &Version, files: Vec<PathBuf>) -> Result<()> {
+fn create_zip_dist(dest: &Path, release: &Release, files: Vec<PathBuf>) -> Result<()> {
     if !dest.is_dir() {
         fs::create_dir_all(dest)?;
     }
 
     let zip_file = dest.join(format!(
-        "oxidize-{version}-{os}-{arch}.zip",
-        version = version,
+        "oxidize-{release}-{os}-{arch}.zip",
         os = consts::OS,
         arch = consts::ARCH
     ));
@@ -329,14 +396,10 @@ fn create_zip_dist(dest: &Path, version: &Version, files: Vec<PathBuf>) -> Resul
 }
 
 /// Perform a Windows build.
-fn windows_build(root: &Path) -> Result<()> {
-    let version = github_ref_version()?;
-    let file_version = version.as_windows_file_version()?;
-
-    env::set_var("OXIDIZE_VERSION", &version);
+fn windows_build(root: &Path, release: Release) -> Result<()> {
+    let file_version = release.file_version()?;
+    env::set_var("OXIDIZE_VERSION", release.to_string());
     env::set_var("OXIDIZE_FILE_VERSION", &file_version);
-
-    println!("version: {}", version);
 
     let signer = match (env::var("SIGNTOOL"), env::var("CERTIFICATE_PASSWORD")) {
         (Ok(signtool), Ok(password)) => {
@@ -349,7 +412,7 @@ fn windows_build(root: &Path) -> Result<()> {
     let wix_dir = root.join("target").join("wix");
     let upload = root.join("target").join("upload");
 
-    let wix_builder = WixBuilder::new(&wix_dir, &version)?;
+    let wix_builder = WixBuilder::new(&wix_dir, &release)?;
 
     if !exe.is_file() {
         println!("building: {}", exe.display());
@@ -360,7 +423,7 @@ fn windows_build(root: &Path) -> Result<()> {
             "--bin",
             "oxidize",
             "--features",
-            "windows"
+            "windows",
         ])?;
     }
 
@@ -379,15 +442,14 @@ fn windows_build(root: &Path) -> Result<()> {
         Ok(())
     })?;
 
-    create_zip_dist(&upload, &version, vec![root.join("README.md"), exe])?;
+    create_zip_dist(&upload, &release, vec![root.join("README.md"), exe])?;
     Ok(())
 }
 
 /// Perform a Linux build.
-fn linux_build(root: &Path) -> Result<()> {
-    let version = github_ref_version()?;
-    env::set_var("OXIDIZE_VERSION", &version);
-    println!("version: {}", version);
+fn linux_build(root: &Path, release: Release) -> Result<()> {
+    env::set_var("OXIDIZE_VERSION", release.to_string());
+    println!("Release: {release}");
 
     // Install cargo-deb for building the package below.
     cargo(&["install", "cargo-deb"])?;
@@ -402,7 +464,7 @@ fn linux_build(root: &Path) -> Result<()> {
             "-p",
             "oxidize",
             "--deb-version",
-            &version.to_string(),
+            &release.to_string(),
         ])?;
     }
 
@@ -419,8 +481,19 @@ fn linux_build(root: &Path) -> Result<()> {
         ])?;
     }
 
-    create_zip_dist(&upload, &version, vec![root.join("README.md"), exe])?;
+    create_zip_dist(&upload, &release, vec![root.join("README.md"), exe])?;
     Ok(())
+}
+
+/// Get the github release to build.
+fn github_release() -> Release {
+    match github_ref_version() {
+        Err(error) => {
+            println!("Assuming nightly release since we couldn't determine tag: {error}");
+            Release::Nightly(Utc::now().naive_local())
+        }
+        Ok(version) => Release::Version(version),
+    }
 }
 
 /// Get the version from GITHUB_REF.
@@ -443,10 +516,8 @@ fn github_ref_version() -> Result<Version> {
 }
 
 /// Perform a MacOS build.
-fn macos_build(root: &Path) -> Result<()> {
-    let version = github_ref_version()?;
-    env::set_var("OXIDIZE_VERSION", &version);
-    println!("version: {}", version);
+fn macos_build(root: &Path, release: Release) -> Result<()> {
+    env::set_var("OXIDIZE_VERSION", release.to_string());
 
     let exe = root.join("target/release/oxidize");
     let upload = root.join("target/upload");
@@ -462,7 +533,7 @@ fn macos_build(root: &Path) -> Result<()> {
         ])?;
     }
 
-    create_zip_dist(&upload, &version, vec![root.join("README.md"), exe])?;
+    create_zip_dist(&upload, &release, vec![root.join("README.md"), exe])?;
     Ok(())
 }
 
@@ -470,14 +541,37 @@ fn main() -> Result<()> {
     let root = env::current_dir()?;
     println!("root: {}", root.display());
 
+    let mut it = std::env::args().skip(1);
+    let mut release = None;
+
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--tag" => {
+                let tag = it.next().context("missing --tag argument")?;
+
+                release = match (tag.as_str(), NaiveDate::from_str(tag.as_str())) {
+                    (_, Ok(date)) => Some(Release::Date(date)),
+                    ("nightly", _) => Some(Release::Nightly(Utc::now().naive_utc())),
+                    _ => None,
+                };
+            }
+            _ => {
+                bail!("unsupported `{arg}`");
+            }
+        }
+    }
+
+    let release = release.unwrap_or_else(github_release);
+    println!("Release: {}", release);
+
     if cfg!(target_os = "windows") {
-        windows_build(&root)?;
+        windows_build(&root, release)?;
     } else if cfg!(target_os = "linux") {
-        linux_build(&root)?;
+        linux_build(&root, release)?;
     } else if cfg!(target_os = "macos") {
-        macos_build(&root)?;
+        macos_build(&root, release)?;
     } else {
-        bail!("unsupported operating system: {}", consts::OS);
+        bail!("Unsupported operating system: {}", consts::OS);
     }
 
     Ok(())

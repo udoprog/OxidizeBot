@@ -1,7 +1,6 @@
 [workspace]
 default-members = ["bot"]
-members = ["bot", "web"]
-exclude = ["tools/builder"]
+members = ["bot", "web", "tools/builder"]
 
 [profile.release]
 opt-level = 'z'
