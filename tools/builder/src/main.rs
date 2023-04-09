@@ -1,3 +1,5 @@
+mod cargo;
+
 use std::env;
 use std::env::consts;
 use std::ffi::OsStr;
@@ -16,6 +18,8 @@ use chrono::Timelike;
 use chrono::Utc;
 use regex::Regex;
 use walkdir::WalkDir;
+
+use self::cargo::Cargo;
 
 const PACKAGE: &str = "oxidize";
 const BINARY: &str = "oxidize";
@@ -315,16 +319,6 @@ impl AsRef<OsStr> for Version {
     }
 }
 
-fn cargo(args: &[&str]) -> Result<()> {
-    let status = Command::new("cargo").args(args).status()?;
-
-    if !status.success() {
-        bail!("failed to run cargo");
-    }
-
-    Ok(())
-}
-
 fn create_zip(file: &Path, it: impl IntoIterator<Item = PathBuf>) -> Result<()> {
     let options =
         zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
@@ -358,7 +352,7 @@ where
     }
 
     for e in WalkDir::new(from) {
-        let e = e?;
+        let e = e.with_context(|| from.display().to_string())?;
 
         let source = e.path();
 
@@ -428,13 +422,21 @@ fn build_msi(root: &Path, dist: &Path, exe: &Path, release: &Release) -> Result<
 /// Perform a Linux build.
 fn build_deb(root: &Path, upload: &Path, release: &Release) -> Result<()> {
     // Install cargo-deb for building the package below.
-    cargo(&["install", "cargo-deb"])?;
+    Cargo::with(&["install", "cargo-deb"]).run()?;
 
     let deb_dir = root.join("deb");
 
     if !deb_dir.is_dir() {
-        cargo(&["deb", "-p", PACKAGE, "--deb-version", &release.to_string()])?;
+        fs::create_dir_all(&deb_dir).with_context(|| deb_dir.display().to_string())?;
     }
+
+    Cargo::new()
+        .args(["deb", "-p", PACKAGE])
+        .arg("--output")
+        .arg(&deb_dir)
+        .arg("--deb-version")
+        .arg(release.to_string())
+        .run()?;
 
     copy_files(&deb_dir, upload, "deb", |_| Ok(()))?;
     Ok(())
@@ -515,7 +517,7 @@ fn main() -> Result<()> {
     }
 
     println!("Building: {}", exe.display());
-    cargo(&build)?;
+    Cargo::with(&build).run()?;
 
     if cfg!(target_os = "windows") {
         build_msi(&root, &dist, &exe, &release)?;
