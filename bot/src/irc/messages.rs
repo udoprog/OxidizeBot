@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::future::Future;
+use std::pin::pin;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -71,7 +72,7 @@ pub(super) async fn setup(
     let messages2 = messages.clone();
 
     let future = async move {
-        tokio::pin!(stream_map);
+        let mut stream_map = pin!(stream_map);
 
         while let Some((key, value)) = stream_map.next().await {
             let mut map = messages.map.write().await;

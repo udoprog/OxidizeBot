@@ -1,5 +1,10 @@
 //! module for misc smaller commands.
 
+use std::pin::pin;
+
+use anyhow::Result;
+use chrono::Utc;
+
 use crate::api;
 use crate::auth;
 use crate::command;
@@ -8,8 +13,6 @@ use crate::module;
 use crate::prelude::*;
 use crate::stream_info;
 use crate::utils;
-use anyhow::Result;
-use chrono::Utc;
 
 /// Handler for the `!uptime` command.
 pub(crate) struct Uptime {
@@ -162,8 +165,7 @@ impl command::Handler for Game {
 
         let stream_info = self.stream_info.clone();
 
-        let stream = self.streamer.client.categories(rest);
-        tokio::pin!(stream);
+        let mut stream = pin!(self.streamer.client.categories(rest));
 
         let first = if let Some(first) = stream.next().await {
             first?

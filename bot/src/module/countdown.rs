@@ -1,12 +1,14 @@
+use std::fs;
+use std::path::PathBuf;
+use std::pin::pin;
+use std::time;
+
 use crate::auth;
 use crate::command;
 use crate::module;
 use crate::prelude::*;
 use crate::template;
 use crate::utils;
-use std::fs;
-use std::path::PathBuf;
-use std::time;
 
 enum Event {
     /// Set the countdown.
@@ -107,8 +109,7 @@ impl super::Module for Module {
         );
 
         let future = async move {
-            let timer = Fuse::empty();
-            tokio::pin!(timer);
+            let mut timer = pin!(Fuse::empty());
 
             loop {
                 tokio::select! {

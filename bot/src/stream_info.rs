@@ -1,12 +1,15 @@
+use std::collections::HashSet;
+use std::pin::pin;
+use std::sync::Arc;
+use std::time;
+
+use anyhow::{anyhow, Result};
+use parking_lot::RwLock;
+use tracing::Instrument;
+
 use crate::api;
 use crate::api::twitch;
 use crate::prelude::*;
-use anyhow::{anyhow, Result};
-use parking_lot::RwLock;
-use std::collections::HashSet;
-use std::sync::Arc;
-use std::time;
-use tracing::Instrument;
 
 #[derive(Debug, Default)]
 pub(crate) struct Data {
@@ -39,8 +42,7 @@ impl StreamInfo {
         let subs = {
             let mut out = Vec::new();
 
-            let stream = streamer.client.subscriptions(&streamer.user.id, vec![]);
-            tokio::pin!(stream);
+            let mut stream = pin!(streamer.client.subscriptions(&streamer.user.id, vec![]));
 
             while let Some(sub) = stream.next().await.transpose()? {
                 out.push(sub);
@@ -91,8 +93,7 @@ impl StreamInfo {
         streamer: &'a api::TwitchAndUser,
         stream_state_tx: &'a mpsc::Sender<StreamState>,
     ) -> Result<()> {
-        let streams = streamer.client.streams(&streamer.user.id).await;
-        tokio::pin!(streams);
+        let mut streams = pin!(streamer.client.streams(&streamer.user.id).await);
 
         let stream = streams.next().await.transpose()?;
 

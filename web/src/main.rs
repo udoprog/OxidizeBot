@@ -22,6 +22,7 @@ mod web;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use std::pin::pin;
 use std::time;
 
 use anyhow::{bail, Context, Result};
@@ -111,8 +112,7 @@ async fn main() -> Result<()> {
 
     let mut releases_interval = tokio::time::interval(time::Duration::from_secs(60 * 10));
 
-    let web = web::setup(db.clone(), host, port, config)?;
-    tokio::pin!(web);
+    let mut web = pin!(web::setup(db.clone(), host, port, config)?);
 
     loop {
         tokio::select! {

@@ -5,6 +5,7 @@ use crate::spotify_id::SpotifyId;
 use crate::utils;
 use crate::Uri;
 use anyhow::Result;
+use std::pin::pin;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -38,19 +39,19 @@ impl PlaybackFuture {
 
         let (mut fallback_stream, fallback) = settings.stream("fallback-uri").optional().await?;
 
-        let configure_fallback = Fuse::new(update_fallback_items_task(&self.internal, fallback));
-        tokio::pin!(configure_fallback);
+        let mut configure_fallback = pin!(Fuse::new(update_fallback_items_task(
+            &self.internal,
+            fallback
+        )));
 
         let (mut song_stream, song) = injector.stream::<Song>().await;
 
-        let song_timeout = song
+        let mut song_timeout = pin!(song
             .and_then(|s| match s.state() {
                 State::Playing => Some(Fuse::new(tokio::time::sleep_until(s.deadline().into()))),
                 _ => None,
             })
-            .unwrap_or_default();
-
-        tokio::pin!(song_timeout);
+            .unwrap_or_default());
 
         let mut song_update_interval = self.song_update_interval;
 

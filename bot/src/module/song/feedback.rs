@@ -1,3 +1,5 @@
+use std::pin::pin;
+
 use anyhow::{Context as _, Result};
 
 use crate::irc;
@@ -19,8 +21,7 @@ pub(crate) async fn task(
         None => Default::default(),
     };
 
-    let feedback_loop = new_feedback_loop(player);
-    tokio::pin!(feedback_loop);
+    let mut feedback_loop = pin!(new_feedback_loop(player));
 
     loop {
         tokio::select! {

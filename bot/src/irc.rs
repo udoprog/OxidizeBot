@@ -321,21 +321,19 @@ impl IrcLoop<'_> {
         let mut ping_interval = tokio::time::interval(time::Duration::from_secs(10));
         let mut commands = command_bus.subscribe();
 
-        let leave = Fuse::empty();
-        tokio::pin!(leave);
+        let mut leave = pin!(Fuse::empty());
 
         let sender = handler.sender.clone();
 
         // Things to do when joining.
-        let join_task = Fuse::new(async move {
+        let mut join_task = pin!(Fuse::new(async move {
             sender.cap_req(TWITCH_TAGS_CAP).await;
             sender.cap_req(TWITCH_COMMANDS_CAP).await;
 
             if let Some(m) = messages.try_get(messages::JOIN_CHAT).await {
                 sender.privmsg_immediate(m);
             }
-        });
-        tokio::pin!(join_task);
+        }));
 
         while leave.is_empty() {
             tokio::select! {
