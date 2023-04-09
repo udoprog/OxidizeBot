@@ -675,7 +675,7 @@ pub(crate) struct Module;
 #[async_trait]
 impl super::Module for Module {
     fn ty(&self) -> &'static str {
-        "8ball"
+        "speedrun"
     }
 
     /// Set up command handlers for this module.
