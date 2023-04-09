@@ -1,6 +1,7 @@
 //! Stream currency configuration.
 
 use std::collections::HashSet;
+use std::pin::pin;
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
@@ -284,12 +285,11 @@ impl Currency {
     ) -> Result<usize, anyhow::Error> {
         tracing::trace!("Getting chatters");
 
-        let chatters = self
+        let mut chatters = pin!(self
             .inner
             .streamer
             .client
-            .chatters(&self.inner.streamer.user.id, &self.inner.streamer.user.id);
-        tokio::pin!(chatters);
+            .chatters(&self.inner.streamer.user.id, &self.inner.streamer.user.id));
 
         let mut users = HashSet::new();
 

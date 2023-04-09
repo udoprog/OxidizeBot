@@ -1,3 +1,11 @@
+use std::pin::pin;
+use std::sync::Arc;
+use std::time::Duration;
+
+use anyhow::{anyhow, Result};
+use chrono::{DateTime, Utc};
+use futures_core::Stream;
+
 use crate::api;
 use crate::api::spotify::{FullTrack, PrivateUser};
 use crate::bus;
@@ -14,11 +22,6 @@ use crate::spotify_id::SpotifyId;
 use crate::track_id::TrackId;
 use crate::utils;
 use crate::Uri;
-use anyhow::{anyhow, Result};
-use chrono::{DateTime, Utc};
-use futures_core::Stream;
-use std::sync::Arc;
-use std::time::Duration;
 
 #[derive(Default)]
 pub(super) struct Initialized {
@@ -537,7 +540,7 @@ impl PlayerInternal {
         return Ok((what, items));
 
         async fn convert(stream: impl Stream<Item = Result<FullTrack>>) -> Result<Vec<Arc<Item>>> {
-            tokio::pin!(stream);
+            let mut stream = pin!(stream);
 
             let mut items = Vec::new();
 
@@ -587,8 +590,7 @@ impl PlayerInternal {
             let name = playlist.name.to_string();
 
             let items = async_stream::try_stream! {
-                let playlist_tracks = spotify.page_as_stream(playlist.tracks);
-                tokio::pin!(playlist_tracks);
+                let mut playlist_tracks = pin!(spotify.page_as_stream(playlist.tracks));
 
                 while let Some(playlist_track) = playlist_tracks.next().await.transpose()? {
                     yield playlist_track.track;
@@ -604,8 +606,7 @@ impl PlayerInternal {
         ) -> impl Stream<Item = Result<FullTrack>> + '_ {
             async_stream::try_stream! {
                 let saved_tracks = spotify.my_tracks().await?;
-                let saved_tracks = spotify.page_as_stream(saved_tracks);
-                tokio::pin!(saved_tracks);
+                let mut saved_tracks = pin!(spotify.page_as_stream(saved_tracks));
 
                 while let Some(track) = saved_tracks.next().await.transpose()? {
                     yield track.track;

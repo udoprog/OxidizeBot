@@ -1,3 +1,8 @@
+use std::collections::HashSet;
+use std::pin::pin;
+
+use anyhow::{bail, Result};
+
 use crate::api;
 use crate::auth::Scope;
 use crate::command;
@@ -5,8 +10,6 @@ use crate::currency::Currency;
 use crate::module;
 use crate::prelude::*;
 use crate::utils::{Cooldown, Duration};
-use anyhow::{bail, Result};
-use std::collections::HashSet;
 
 pub(crate) struct Handler {
     enabled: settings::Var<bool>,
@@ -48,11 +51,10 @@ impl command::Handler for Handler {
 
         let mut users = HashSet::new();
 
-        let chatters = self
+        let mut chatters = pin!(self
             .streamer
             .client
-            .chatters(&self.streamer.user.id, &self.streamer.user.id);
-        tokio::pin!(chatters);
+            .chatters(&self.streamer.user.id, &self.streamer.user.id));
 
         while let Some(chatter) = chatters.next().await.transpose()? {
             users.insert(chatter.user_login);

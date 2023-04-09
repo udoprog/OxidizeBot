@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::pin::pin;
 use std::sync::Arc;
 use std::time;
 
@@ -247,11 +248,8 @@ fn inner_main(args: Args) -> Result<()> {
             tracing::info!("Restarting in {}...", utils::compact_duration(backoff));
 
             let intent = runtime.block_on(async {
-                let wait_for_shutdown = system.wait_for_shutdown();
-                tokio::pin!(wait_for_shutdown);
-
-                let wait_for_restart = system.wait_for_restart();
-                tokio::pin!(wait_for_restart);
+                let mut wait_for_shutdown = pin!(system.wait_for_shutdown());
+                let mut wait_for_restart = pin!(system.wait_for_restart());
 
                 tokio::select! {
                     _ = wait_for_shutdown => Intent::Shutdown,
