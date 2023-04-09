@@ -50,7 +50,7 @@ impl Release {
             if let Some(pre) = version.pre {
                 if pre >= 999 {
                     bail!(
-                        "patch version must not be greater than 64: {}",
+                        "pre version must not be greater than 999: {}",
                         version.patch
                     );
                 }
