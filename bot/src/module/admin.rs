@@ -69,17 +69,17 @@ impl command::Handler for Handler {
     async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
         match ctx.next().as_deref() {
             Some("refresh-mods") => {
-                ctx.privmsg("/mods").await;
-                respond!(ctx, "Refreshed information on mods");
+                ctx.notify().refresh_mods.notify_one();
+                respond!(ctx, "Refreshing information on mods");
             }
             Some("refresh-vips") => {
-                ctx.privmsg("/vips").await;
-                respond!(ctx, "Refreshed information on vips");
+                ctx.notify().refresh_vips.notify_one();
+                respond!(ctx, "Refreshing information on vips");
             }
             Some("refresh") => {
-                ctx.privmsg("/mods").await;
-                ctx.privmsg("/vips").await;
-                respond!(ctx, "Refreshed information on mods and vips");
+                ctx.notify().refresh_mods.notify_one();
+                ctx.notify().refresh_vips.notify_one();
+                respond!(ctx, "Refreshing information on mods and vips");
             }
             Some("version") => {
                 respond!(ctx, "OxidizeBot Version {}", crate::VERSION);

@@ -17,6 +17,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
 use tokio::sync;
+use tokio::sync::Notify;
 
 #[derive(Debug, Error)]
 pub(crate) enum Respond {
@@ -68,6 +69,14 @@ pub(crate) trait MessageHook: std::any::Any + Send + Sync {
     async fn peek(&self, user: &irc::User, m: &str) -> Result<()>;
 }
 
+#[derive(Default)]
+pub(crate) struct ContextNotify {
+    /// Indicate that moderators should be refreshed.
+    pub(crate) refresh_mods: Notify,
+    /// Indicate that VIPs should be refreshed.
+    pub(crate) refresh_vips: Notify,
+}
+
 pub(crate) struct ContextInner {
     /// Sender associated with the command.
     pub(crate) sender: irc::Sender,
@@ -81,6 +90,8 @@ pub(crate) struct ContextInner {
     pub(crate) moderators: parking_lot::RwLock<HashSet<String>>,
     /// Logins for VIPs.
     pub(crate) vips: parking_lot::RwLock<HashSet<String>>,
+    /// Notifications that can be sent to the context.
+    pub(crate) notify: ContextNotify,
 }
 
 impl ContextInner {
@@ -96,6 +107,7 @@ impl ContextInner {
             message_hooks: Default::default(),
             moderators: Default::default(),
             vips: Default::default(),
+            notify: ContextNotify::default(),
         }
     }
 }
@@ -111,6 +123,11 @@ pub(crate) struct Context {
 }
 
 impl Context {
+    /// Available notifications.
+    pub(crate) fn notify(&self) -> &ContextNotify {
+        &self.inner.notify
+    }
+
     /// Access the last known API url.
     pub(crate) fn api_url(&self) -> Option<&str> {
         self.api_url.as_deref()

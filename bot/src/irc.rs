@@ -5,6 +5,7 @@ pub(crate) mod messages;
 mod sender;
 
 use std::path::PathBuf;
+use std::pin::pin;
 use std::sync::Arc;
 use std::time;
 
@@ -1369,18 +1370,17 @@ async fn refresh_roles(
     context: Arc<command::ContextInner>,
     streamer: api::TwitchAndUser,
 ) -> Result<()> {
-    async fn update_set<F, O>(
+    async fn update_set<S>(
         what: &str,
-        f: F,
+        f: S,
         out: &parking_lot::RwLock<HashSet<String>>,
     ) -> Result<()>
     where
-        F: FnOnce() -> O,
-        O: crate::stream::Stream<Item = Result<api::twitch::Chatter>>,
+        S: crate::stream::Stream<Item = Result<api::twitch::Chatter>>,
     {
-        let stream = f();
-        tokio::pin!(stream);
+        tracing::info!(?what, "Refreshing");
 
+        let mut stream = pin!(f);
         let mut set = HashSet::new();
 
         while let Some(chatter) = stream.next().await.transpose()? {
@@ -1388,7 +1388,7 @@ async fn refresh_roles(
         }
 
         if *out.read() != set {
-            tracing::info!(?set, "Updating {what}");
+            tracing::info!(?set, ?what, "Changed");
             *out.write() = set;
         }
 
@@ -1397,31 +1397,38 @@ async fn refresh_roles(
 
     let mut interval = tokio::time::interval(time::Duration::from_secs(60 * 5));
 
+    let mut mods_need = pin!(context.notify.refresh_mods.notified());
+    mods_need.as_mut().enable();
+
+    let mut vips_need = pin!(context.notify.refresh_vips.notified());
+    vips_need.as_mut().enable();
+
     loop {
-        tracing::trace!("Refreshing moderators and VIPs");
+        tokio::select! {
+            _ = interval.tick() => {
+                context.notify.refresh_mods.notify_one();
+                context.notify.refresh_vips.notify_one();
+            }
+            _ = mods_need.as_mut() => {
+                let future = streamer.client.moderators(&streamer.user.id);
 
-        let mods = update_set(
-            "Moderators",
-            || streamer.client.moderators(&streamer.user.id),
-            &context.moderators,
-        );
+                if let Err(error) = update_set("Moderators", future, &context.moderators).await {
+                    log_error!(error, "Failed to update Moderators");
+                }
 
-        let vips = update_set(
-            "VIPs",
-            || streamer.client.vips(&streamer.user.id),
-            &context.vips,
-        );
+                // Remove interest since we just updated to avoid duplicates.
+                mods_need.set(context.notify.refresh_mods.notified());
+            }
+            _ = vips_need.as_mut() => {
+                let future = streamer.client.vips(&streamer.user.id);
 
-        let (mods, vips) = tokio::join!(mods, vips);
+                if let Err(error) = update_set("VIPs", future, &context.vips).await {
+                    log_error!(error, "Failed to update VIPs");
+                }
 
-        if let Err(error) = mods {
-            log_error!(error, "Failed to update Moderators");
+                // Remove interest since we just updated to avoid duplicates.
+                vips_need.set(context.notify.refresh_vips.notified());
+            }
         }
-
-        if let Err(error) = vips {
-            log_error!(error, "Failed to update VIPs");
-        }
-
-        interval.tick().await;
     }
 }
