@@ -274,27 +274,23 @@ struct Version {
 
 impl Version {
     /// Open a version by matching it against the given string.
-    pub(crate) fn open(version: impl AsRef<str>) -> Result<Option<Version>> {
-        let version_re = Regex::new(r"^(\d+)\.(\d+)\.(\d+)(-.+\.(\d+))?$")?;
+    pub(crate) fn parse(version: impl AsRef<str>) -> Result<Version> {
         let version = version.as_ref();
-
-        let m = match version_re.captures(version) {
-            Some(m) => m,
-            None => return Ok(None),
-        };
+        let version_re = Regex::new(r"^(\d+)\.(\d+)\.(\d+)(-.+\.(\d+))?$")?;
+        let m = version_re.captures(version).context("invalid version")?;
 
         let major: u32 = str::parse(&m[1])?;
         let minor: u32 = str::parse(&m[2])?;
         let patch: u32 = str::parse(&m[3])?;
         let pre: Option<u32> = m.get(5).map(|s| str::parse(s.as_str())).transpose()?;
 
-        Ok(Some(Self {
+        Ok(Self {
             base: version.to_string(),
             major,
             minor,
             patch,
             pre,
-        }))
+        })
     }
 }
 
@@ -506,9 +502,7 @@ fn github_ref_version() -> Result<Version> {
     let mut it = version.split('/');
 
     let version = match (it.next(), it.next(), it.next()) {
-        (Some("refs"), Some("tags"), Some(version)) => {
-            Version::open(version)?.ok_or_else(|| anyhow!("Expected valid version"))?
-        }
+        (Some("refs"), Some("tags"), Some(version)) => Version::parse(version)?,
         _ => bail!("expected GITHUB_REF: refs/tags/*"),
     };
 
@@ -546,14 +540,18 @@ fn main() -> Result<()> {
 
     while let Some(arg) = it.next() {
         match arg.as_str() {
-            "--tag" => {
-                let tag = it.next().context("missing --tag argument")?;
+            "--channel" => {
+                let channel = it.next().context("missing --channel argument")?;
 
-                release = match (tag.as_str(), NaiveDate::from_str(tag.as_str())) {
+                release = match (channel.as_str(), NaiveDate::from_str(channel.as_str())) {
                     (_, Ok(date)) => Some(Release::Date(date)),
                     ("nightly", _) => Some(Release::Nightly(Utc::now().naive_utc())),
                     _ => None,
                 };
+            }
+            "--version" => {
+                let version = it.next().context("missing --version argument")?;
+                release = Some(Release::Version(Version::parse(version.as_str())?));
             }
             _ => {
                 bail!("unsupported `{arg}`");

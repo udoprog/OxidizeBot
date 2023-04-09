@@ -1,9 +1,18 @@
-name: Release
+name: Nightly
 
 on:
-  push:
-    tags:
-    - '*'
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'release to perform'
+        required: true
+        default: 'nightly'
+        type: choice
+        options:
+        - nightly
+        - date
 
 jobs:
   build:
@@ -14,11 +23,13 @@ jobs:
         os: [macos-latest, windows-latest, ubuntu-latest]
     steps:
     - uses: actions/checkout@v3
+    - uses: udoprog/github-release@channel
+      id: release
+      with:
+        channel: ${{github.event.inputs.channel}}
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
-    - uses: udoprog/github-release@tag
-      id: release
-    - run: cargo run -p builder -- --version ${{steps.release.outputs.tag}}
+    - run: cargo run -p builder -- --channel ${{steps.release.outputs.channel}}
     - uses: actions/upload-artifact@v1
       with:
         name: dist-${{matrix.os}}
@@ -29,16 +40,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: udoprog/github-release@tag
-      id: tag
+    - uses: udoprog/github-release@channel
+      id: channel
+      with:
+        channel: ${{github.event.inputs.channel}}
     - uses: actions/download-artifact@v1
       with: {name: dist-macos-latest, path: target/upload}
     - uses: actions/download-artifact@v1
       with: {name: dist-windows-latest, path: target/upload}
     - uses: actions/download-artifact@v1
       with: {name: dist-ubuntu-latest, path: target/upload}
-    - uses: udoprog/github-release@v1
+    - uses: udoprog/github-release@nightly
       with:
         files: "target/upload/*"
-        name: ${{steps.tag.outputs.tag}}
+        name: ${{steps.channel.outputs.channel}}
         token: ${{secrets.GITHUB_TOKEN}}
