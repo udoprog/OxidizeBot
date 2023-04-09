@@ -17,6 +17,9 @@ use chrono::Utc;
 use regex::Regex;
 use walkdir::WalkDir;
 
+const PACKAGE: &str = "oxidize";
+const BINARY: &str = "oxidize";
+
 enum Release {
     Version(Version),
     Nightly(NaiveDateTime),
@@ -313,7 +316,6 @@ impl AsRef<OsStr> for Version {
 }
 
 fn cargo(args: &[&str]) -> Result<()> {
-    println!("cargo {}", args.join(" "));
     let status = Command::new("cargo").args(args).status()?;
 
     if !status.success() {
@@ -392,9 +394,8 @@ fn create_zip_dist(dest: &Path, release: &Release, files: Vec<PathBuf>) -> Resul
 }
 
 /// Perform a Windows build.
-fn windows_build(root: &Path, release: Release) -> Result<()> {
+fn build_msi(root: &Path, dist: &Path, exe: &Path, release: &Release) -> Result<()> {
     let file_version = release.file_version()?;
-    env::set_var("OXIDIZE_VERSION", release.to_string());
     env::set_var("OXIDIZE_FILE_VERSION", &file_version);
 
     let signer = match (env::var("SIGNTOOL"), env::var("CERTIFICATE_PASSWORD")) {
@@ -404,33 +405,16 @@ fn windows_build(root: &Path, release: Release) -> Result<()> {
         _ => None,
     };
 
-    let exe = root.join("target").join("release").join("oxidize.exe");
-    let wix_dir = root.join("target").join("wix");
-    let upload = root.join("target").join("upload");
-
-    let wix_builder = WixBuilder::new(&wix_dir, &release)?;
-
-    if !exe.is_file() {
-        println!("building: {}", exe.display());
-        cargo(&[
-            "build",
-            "--manifest-path=bot/Cargo.toml",
-            "--release",
-            "--bin",
-            "oxidize",
-            "--features",
-            "windows",
-        ])?;
-    }
-
     if let Some(signer) = signer.as_ref() {
-        signer.sign(&exe, "OxidizeBot")?;
+        signer.sign(exe, "OxidizeBot")?;
     }
 
+    let wix_dir = root.join("wix");
+    let wix_builder = WixBuilder::new(&wix_dir, release)?;
     wix_builder.build(&root.join("wix").join("main.wxs"), &file_version)?;
     wix_builder.link()?;
 
-    copy_files(&wix_dir, &upload, "msi", |file| {
+    copy_files(&wix_dir, dist, "msi", |file| {
         if let Some(signer) = &signer {
             signer.sign(file, "OxidizeBot Installer")?;
         }
@@ -438,46 +422,21 @@ fn windows_build(root: &Path, release: Release) -> Result<()> {
         Ok(())
     })?;
 
-    create_zip_dist(&upload, &release, vec![root.join("README.md"), exe])?;
     Ok(())
 }
 
 /// Perform a Linux build.
-fn linux_build(root: &Path, release: Release) -> Result<()> {
-    env::set_var("OXIDIZE_VERSION", release.to_string());
-    println!("Release: {release}");
-
+fn build_deb(root: &Path, upload: &Path, release: &Release) -> Result<()> {
     // Install cargo-deb for building the package below.
     cargo(&["install", "cargo-deb"])?;
 
-    let exe = root.join("target/release/oxidize");
-    let debian_dir = root.join("target/debian");
-    let upload = root.join("target/upload");
+    let deb_dir = root.join("deb");
 
-    if !debian_dir.is_dir() {
-        cargo(&[
-            "deb",
-            "-p",
-            "oxidize",
-            "--deb-version",
-            &release.to_string(),
-        ])?;
+    if !deb_dir.is_dir() {
+        cargo(&["deb", "-p", PACKAGE, "--deb-version", &release.to_string()])?;
     }
 
-    copy_files(&debian_dir, &upload, "deb", |_| Ok(()))?;
-
-    if !exe.is_file() {
-        println!("building: {}", exe.display());
-        cargo(&[
-            "build",
-            "--manifest-path=bot/Cargo.toml",
-            "--release",
-            "--bin",
-            "oxidize",
-        ])?;
-    }
-
-    create_zip_dist(&upload, &release, vec![root.join("README.md"), exe])?;
+    copy_files(&deb_dir, upload, "deb", |_| Ok(()))?;
     Ok(())
 }
 
@@ -507,28 +466,6 @@ fn github_ref_version() -> Result<Version> {
     };
 
     Ok(version)
-}
-
-/// Perform a MacOS build.
-fn macos_build(root: &Path, release: Release) -> Result<()> {
-    env::set_var("OXIDIZE_VERSION", release.to_string());
-
-    let exe = root.join("target/release/oxidize");
-    let upload = root.join("target/upload");
-
-    if !exe.is_file() {
-        println!("building: {}", exe.display());
-        cargo(&[
-            "build",
-            "--manifest-path=bot/Cargo.toml",
-            "--release",
-            "--bin",
-            "oxidize",
-        ])?;
-    }
-
-    create_zip_dist(&upload, &release, vec![root.join("README.md"), exe])?;
-    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -561,16 +498,31 @@ fn main() -> Result<()> {
 
     let release = release.unwrap_or_else(github_release);
     println!("Release: {}", release);
+    env::set_var("OXIDIZE_VERSION", release.to_string());
+
+    let dist = root.join("dist");
+
+    let exe = root
+        .join("target")
+        .join("release")
+        .join(BINARY)
+        .with_extension(consts::EXE_EXTENSION);
+
+    let mut build = vec!["build", "-p", PACKAGE, "--release", "--bin", BINARY];
 
     if cfg!(target_os = "windows") {
-        windows_build(&root, release)?;
-    } else if cfg!(target_os = "linux") {
-        linux_build(&root, release)?;
-    } else if cfg!(target_os = "macos") {
-        macos_build(&root, release)?;
-    } else {
-        bail!("Unsupported operating system: {}", consts::OS);
+        build.extend(["--features", "windows"]);
     }
 
+    println!("Building: {}", exe.display());
+    cargo(&build)?;
+
+    if cfg!(target_os = "windows") {
+        build_msi(&root, &dist, &exe, &release)?;
+    } else if cfg!(target_os = "linux") {
+        build_deb(&root, &dist, &release)?;
+    }
+
+    create_zip_dist(&dist, &release, vec![root.join("README.md"), exe])?;
     Ok(())
 }
