@@ -8,7 +8,7 @@ use std::thread;
 use anyhow::{anyhow, bail, Context as _, Error};
 use chrono::Local;
 use parking_lot::Mutex;
-use tokio::sync::broadcast;
+use tokio::sync::{Notify, Semaphore};
 use winapi::um::shellapi::ShellExecuteW;
 use winapi::um::winuser::SW_SHOW;
 
@@ -30,23 +30,37 @@ pub(crate) enum Event {
     Notification(Notification),
 }
 
+pub(crate) struct SystemNotify {
+    shutdown: Semaphore,
+    restart: Notify,
+}
+
+impl Default for SystemNotify {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            shutdown: Semaphore::new(0),
+            restart: Notify::default(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct System {
     thread: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
-    shutdown: broadcast::Sender<()>,
-    restart: broadcast::Sender<()>,
+    notify: Arc<SystemNotify>,
     events: mpsc::UnboundedSender<Event>,
 }
 
 impl System {
     /// Wait for system shutdown signal.
     pub(crate) async fn wait_for_shutdown(&self) {
-        let _ = self.shutdown.subscribe().recv().await;
+        let _ = self.notify.shutdown.acquire().await;
     }
 
     /// Wait for system restart signal.
     pub(crate) async fn wait_for_restart(&self) {
-        let _ = self.restart.subscribe().recv().await;
+        self.notify.restart.notified().await;
     }
 
     /// Clear the current state.
@@ -72,11 +86,11 @@ impl System {
 
     /// Join the current thread.
     pub(crate) fn join(&self) -> Result<(), Error> {
-        let _ = self.shutdown.send(());
+        let _ = self.notify.shutdown.add_permits(1);
 
         if let Some(thread) = self.thread.lock().take() {
             if thread.join().is_err() {
-                bail!("thread panicked");
+                bail!("background thread panicked");
             }
         }
 
@@ -152,13 +166,8 @@ pub(crate) fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
     let root = root.to_owned();
     let log_file = log_file.to_owned();
 
-    // all senders to notify when we are requesting a restart.
-    let (restart, _) = broadcast::channel(1);
-    let restart1 = restart.clone();
-
-    // all senders to notify when we are shutting down.
-    let (shutdown, mut shutdown_rx) = broadcast::channel(1);
-    let shutdown1 = shutdown.clone();
+    let notify = Arc::new(SystemNotify::default());
+    let notify1 = notify.clone();
 
     let (events, mut events_rx) = mpsc::unbounded_channel::<Event>();
 
@@ -179,8 +188,8 @@ pub(crate) fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
 
         loop {
             tokio::select! {
-                _ = shutdown_rx.recv() => {
-                    window.quit();
+                _ = notify.shutdown.acquire() => {
+                    break;
                 }
                 Some(event) = events_rx.recv() => {
                     tracing::trace!("Event: {:?}", event);
@@ -216,11 +225,10 @@ pub(crate) fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
                                 let _ = open_dir(&root)?;
                             }
                             4 => {
-                                let _ = restart1.send(());
+                                notify.restart.notify_one();
                             }
                             6 => {
-                                window.quit();
-                                let _ = shutdown1.send(());
+                                break;
                             }
                             _ => (),
                         },
@@ -240,7 +248,8 @@ pub(crate) fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
             }
         }
 
-        let _ = shutdown1.send(());
+        window.quit();
+        let _ = notify.shutdown.add_permits(1);
         Ok::<_, Error>(())
     };
 
@@ -253,8 +262,7 @@ pub(crate) fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
 
     let system = System {
         thread: Arc::new(Mutex::new(Some(thread))),
-        shutdown,
-        restart,
+        notify: notify1,
         events,
     };
 
