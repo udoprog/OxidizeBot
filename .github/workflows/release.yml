@@ -22,7 +22,7 @@ jobs:
     - uses: actions/upload-artifact@v1
       with:
         name: dist-${{matrix.os}}
-        path: target/upload
+        path: dist
 
   publish:
     needs: build
@@ -32,13 +32,13 @@ jobs:
     - uses: udoprog/github-release@tag
       id: tag
     - uses: actions/download-artifact@v1
-      with: {name: dist-macos-latest, path: target/upload}
+      with: {name: dist-macos-latest, path: dist}
     - uses: actions/download-artifact@v1
-      with: {name: dist-windows-latest, path: target/upload}
+      with: {name: dist-windows-latest, path: dist}
     - uses: actions/download-artifact@v1
-      with: {name: dist-ubuntu-latest, path: target/upload}
+      with: {name: dist-ubuntu-latest, path: dist}
     - uses: udoprog/github-release@v1
       with:
-        files: "target/upload/*"
+        files: "dist/*"
         name: ${{steps.tag.outputs.tag}}
         token: ${{secrets.GITHUB_TOKEN}}
