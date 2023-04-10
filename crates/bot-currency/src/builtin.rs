@@ -1,11 +1,11 @@
 //! Module for the built-in currency which uses the regular databse support.
 
-use crate::channel::Channel;
-use crate::currency::{BalanceOf, BalanceTransferError};
-use crate::db::{models, schema, user_id, Database};
-
 use anyhow::Result;
+use common::Channel;
+use db::{models, schema, user_id, Database};
 use diesel::prelude::*;
+
+use crate::{BalanceOf, BalanceTransferError};
 
 pub(crate) struct Backend {
     db: Database,

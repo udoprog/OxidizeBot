@@ -1,13 +1,12 @@
-use crate::auth;
-use crate::command;
-use crate::db;
-use crate::module;
-use crate::prelude::*;
 use anyhow::Result;
+use async_trait::async_trait;
+
+use crate::command;
+use crate::module;
 
 /// Handler for the !alias command.
 pub(crate) struct Handler {
-    pub(crate) aliases: injector::Ref<db::Aliases>,
+    pub(crate) aliases: async_injector::Ref<db::Aliases>,
 }
 
 #[async_trait]

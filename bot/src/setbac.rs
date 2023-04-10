@@ -1,3 +1,7 @@
+use api::setbac::PlayerUpdate;
+use api::Setbac;
+use url::Url;
+
 /// Run update loop shipping information to the remote server.
 #[tracing::instrument(skip_all)]
 pub(crate) async fn run<S>(
@@ -107,7 +111,7 @@ struct RemoteBuilder {
     streamer_token: Option<crate::token::Token>,
     injector: Injector,
     global_bus: bus::Bus<bus::Global>,
-    player: Option<Player>,
+    player: Option<player::Player>,
     enabled: bool,
     api_url: Option<Url>,
     secret_key: Option<String>,
@@ -148,4 +152,14 @@ struct Remote {
     rx: Option<bus::Reader<bus::Global>>,
     player: Option<player::Player>,
     setbac: Option<Setbac>,
+}
+
+fn parse_url(url: &str) -> Option<Url> {
+    match str::parse(url) {
+        Ok(api_url) => Some(api_url),
+        Err(e) => {
+            common::log_warn!(e, "bad api url: {}", url);
+            None
+        }
+    }
 }

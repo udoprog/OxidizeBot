@@ -1,15 +1,16 @@
+use std::sync::Arc;
+
+use anyhow::Error;
+use async_trait::async_trait;
+use common::display;
+
 use crate::auth::Scope;
 use crate::command;
 use crate::currency::{BalanceTransferError, Currency};
-use crate::db;
-use crate::prelude::*;
-use crate::utils;
-use anyhow::Error;
-use std::sync::Arc;
 
 /// Handler for the !admin command.
 pub(crate) struct Handler {
-    pub(crate) currency: injector::Ref<Currency>,
+    pub(crate) currency: async_injector::Ref<Currency>,
 }
 
 impl Handler {
@@ -46,7 +47,7 @@ impl command::Handler for Handler {
                 match result {
                     Ok(balance) => {
                         let balance = balance.unwrap_or_default();
-                        let watch_time = utils::compact_duration(balance.watch_time().as_std());
+                        let watch_time = display::compact_duration(balance.watch_time().as_std());
 
                         respond!(
                             user,
@@ -69,7 +70,7 @@ impl command::Handler for Handler {
                 match currency.balance_of(ctx.channel(), to_show.as_str()).await {
                     Ok(balance) => {
                         let balance = balance.unwrap_or_default();
-                        let watch_time = utils::compact_duration(balance.watch_time().as_std());
+                        let watch_time = display::compact_duration(balance.watch_time().as_std());
 
                         respond!(
                             ctx,

@@ -1,19 +1,18 @@
-use crate::auth::Scope;
-use crate::command;
-use crate::currency;
-use crate::irc;
-use crate::module;
-use crate::player;
-use crate::prelude::*;
-use crate::utils::{compact_duration, Cooldown, Duration};
-use anyhow::{bail, Result};
 use std::collections::{hash_map, HashMap};
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time;
+
+use anyhow::{bail, Result};
+use async_trait::async_trait;
+use common::{duration, Cooldown, Duration};
 use tokio::net::UdpSocket;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
+
+use crate::command;
+use crate::irc;
+use crate::module;
 
 const VEHICLE_URL: &str = "http://bit.ly/gtavvehicles";
 
@@ -538,8 +537,8 @@ impl fmt::Display for Command {
 
 pub(crate) struct Handler {
     enabled: settings::Var<bool>,
-    player: injector::Ref<player::Player>,
-    currency: injector::Ref<currency::Currency>,
+    player: async_injector::Ref<player::Player>,
+    currency: async_injector::Ref<currency::Currency>,
     cooldown: settings::Var<Cooldown>,
     reward_cooldown: settings::Var<Cooldown>,
     punish_cooldown: settings::Var<Cooldown>,
@@ -703,7 +702,7 @@ impl Handler {
                 None => return Ok(None),
             },
             Some("raw") => {
-                ctx.check_scope(Scope::GtavRaw).await?;
+                ctx.check_scope(auth::Scope::GtavRaw).await?;
                 Command::Raw(ctx.rest().to_string())
             }
             Some(..) | None => {
@@ -949,7 +948,7 @@ impl command::Handler for Handler {
             }
         }
 
-        let bypass_cooldown = ctx.user.has_scope(Scope::GtavBypassCooldown).await;
+        let bypass_cooldown = ctx.user.has_scope(auth::Scope::GtavBypassCooldown).await;
 
         if !bypass_cooldown {
             if let Some((what, remaining)) =
@@ -959,7 +958,7 @@ impl command::Handler for Handler {
                     ctx,
                     "{} cooldown in effect, please wait at least {}!",
                     what,
-                    compact_duration(remaining),
+                    duration::compact_duration(remaining),
                 );
 
                 return Ok(());

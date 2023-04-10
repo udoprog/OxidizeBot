@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use anyhow::{bail, Result};
 use async_fuse::Fuse;
 use backoff::backoff::Backoff;
@@ -18,19 +19,19 @@ use tracing::Instrument;
 use async_injector::{Injector, Key};
 use common::{tags, BoxStream};
 
-pub(crate) use self::model::*;
+use crate::twitch::Data;
 
 const URL: &str = "wss://pubsub-edge.twitch.tv";
 
 /// Websocket pub/sub integration for twitch.
 #[derive(Clone)]
-pub(crate) struct TwitchPubSub {
+pub struct TwitchPubSub {
     inner: Arc<Inner>,
 }
 
 impl TwitchPubSub {
     /// Subscribe for redemptions.
-    pub(crate) fn redemptions(&self) -> TwitchStream<Redemption> {
+    pub fn redemptions(&self) -> TwitchStream<Redemption> {
         use tokio::sync::broadcast::error::RecvError;
 
         let mut s = self.inner.redemptions.subscribe();
@@ -49,7 +50,7 @@ impl TwitchPubSub {
     }
 }
 
-pub(crate) struct TwitchStream<T> {
+pub struct TwitchStream<T> {
     stream: BoxStream<'static, T>,
 }
 
@@ -103,7 +104,7 @@ impl Client {
 
 /// Connect to the pub/sub websocket once available.
 #[tracing::instrument(skip_all)]
-pub(crate) fn connect<S>(
+pub fn connect<S>(
     settings: &settings::Settings<S>,
     injector: &Injector,
 ) -> impl Future<Output = Result<()>>
@@ -369,7 +370,7 @@ struct Inner {
     redemptions: broadcast::Sender<Redemption>,
 }
 
-pub(crate) mod transport {
+pub mod transport {
     use std::fmt;
 
     use serde::{Deserialize, Serialize};
@@ -378,7 +379,7 @@ pub(crate) mod transport {
 
     #[derive(Debug, Serialize, Deserialize)]
     #[serde(tag = "type")]
-    pub(crate) enum Frame {
+    pub enum Frame {
         #[serde(rename = "PING")]
         Ping,
         #[serde(rename = "PONG")]
@@ -394,31 +395,31 @@ pub(crate) mod transport {
     }
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub(crate) struct Response {
+    pub struct Response {
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "empty_string"
         )]
-        pub(crate) nonce: Option<String>,
+        pub nonce: Option<String>,
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "empty_string"
         )]
-        pub(crate) error: Option<String>,
+        pub error: Option<String>,
     }
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub(crate) struct Data<T> {
+    pub struct Data<T> {
         #[serde(default)]
-        pub(crate) nonce: Option<String>,
-        pub(crate) data: T,
+        pub nonce: Option<String>,
+        pub data: T,
     }
 
     impl<T> Data<T> {
         /// Construct a data with nonce.
-        pub(crate) fn with_nonce(data: T, nonce: String) -> Self {
+        pub fn with_nonce(data: T, nonce: String) -> Self {
             Self {
                 nonce: Some(nonce),
                 data,
@@ -427,16 +428,16 @@ pub(crate) mod transport {
     }
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub(crate) struct Listen {
-        pub(crate) topics: Vec<String>,
+    pub struct Listen {
+        pub topics: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        pub(crate) auth_token: Option<TokenPayload>,
+        pub auth_token: Option<TokenPayload>,
     }
 
     #[derive(Debug, Serialize, Deserialize)]
-    pub(crate) struct Message {
-        pub(crate) topic: String,
-        pub(crate) message: String,
+    pub struct Message {
+        pub topic: String,
+        pub message: String,
     }
 
     /// Deserializes an empty string as `None`.
@@ -451,104 +452,97 @@ pub(crate) mod transport {
     }
 }
 
-mod model {
-    use chrono::{DateTime, Utc};
-    use serde::{Deserialize, Serialize};
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum Message {
+    #[serde(rename = "reward-redeemed")]
+    RewardRedeemed(Data<RewardRedeemed>),
+}
 
-    use crate::twitch::Data;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct User {
+    pub id: String,
+    pub login: String,
+    pub display_name: String,
+}
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    #[serde(tag = "type")]
-    pub(crate) enum Message {
-        #[serde(rename = "reward-redeemed")]
-        RewardRedeemed(Data<RewardRedeemed>),
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Image {
+    pub url_1x: String,
+    pub url_2x: String,
+    pub url_4x: String,
+}
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub(crate) struct User {
-        pub(crate) id: String,
-        pub(crate) login: String,
-        pub(crate) display_name: String,
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Reward {
+    pub id: String,
+    pub channel_id: String,
+    pub title: String,
+    pub prompt: String,
+    pub cost: i64,
+    pub is_user_input_required: bool,
+    pub is_sub_only: bool,
+    #[serde(default)]
+    pub image: Option<Image>,
+    pub default_image: Image,
+    pub background_color: String,
+    pub is_enabled: bool,
+    pub is_paused: bool,
+    pub is_in_stock: bool,
+    pub max_per_stream: MaxPerStream,
+    pub should_redemptions_skip_request_queue: bool,
+    #[serde(default)]
+    pub template_id: Option<serde_json::Value>,
+    pub updated_for_indicator_at: DateTime<Utc>,
+    pub max_per_user_per_stream: MaxPerUserPerStream,
+    pub global_cooldown: GlobalCooldown,
+    #[serde(default)]
+    pub redemptions_redeemed_current_stream: Option<serde_json::Value>,
+    pub cooldown_expires_at: Option<serde_json::Value>,
+}
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub(crate) struct Image {
-        pub(crate) url_1x: String,
-        pub(crate) url_2x: String,
-        pub(crate) url_4x: String,
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Redemption {
+    pub id: String,
+    pub user: User,
+    pub channel_id: String,
+    pub redeemed_at: DateTime<Utc>,
+    pub reward: Reward,
+    #[serde(default)]
+    pub user_input: Option<String>,
+    pub status: Status,
+}
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub(crate) struct Reward {
-        pub(crate) id: String,
-        pub(crate) channel_id: String,
-        pub(crate) title: String,
-        pub(crate) prompt: String,
-        pub(crate) cost: i64,
-        pub(crate) is_user_input_required: bool,
-        pub(crate) is_sub_only: bool,
-        #[serde(default)]
-        pub(crate) image: Option<Image>,
-        pub(crate) default_image: Image,
-        pub(crate) background_color: String,
-        pub(crate) is_enabled: bool,
-        pub(crate) is_paused: bool,
-        pub(crate) is_in_stock: bool,
-        pub(crate) max_per_stream: MaxPerStream,
-        pub(crate) should_redemptions_skip_request_queue: bool,
-        #[serde(default)]
-        pub(crate) template_id: Option<serde_json::Value>,
-        pub(crate) updated_for_indicator_at: DateTime<Utc>,
-        pub(crate) max_per_user_per_stream: MaxPerUserPerStream,
-        pub(crate) global_cooldown: GlobalCooldown,
-        #[serde(default)]
-        pub(crate) redemptions_redeemed_current_stream: Option<serde_json::Value>,
-        pub(crate) cooldown_expires_at: Option<serde_json::Value>,
-    }
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum Status {
+    #[serde(rename = "FULFILLED")]
+    Fulfilled,
+    #[serde(rename = "UNFULFILLED")]
+    Unfulfilled,
+    #[serde(rename = "CANCELED")]
+    Canceled,
+}
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub(crate) struct Redemption {
-        pub(crate) id: String,
-        pub(crate) user: User,
-        pub(crate) channel_id: String,
-        pub(crate) redeemed_at: DateTime<Utc>,
-        pub(crate) reward: Reward,
-        #[serde(default)]
-        pub(crate) user_input: Option<String>,
-        pub(crate) status: Status,
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MaxPerStream {
+    pub is_enabled: bool,
+    pub max_per_stream: u64,
+}
 
-    #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-    pub(crate) enum Status {
-        #[serde(rename = "FULFILLED")]
-        Fulfilled,
-        #[serde(rename = "UNFULFILLED")]
-        Unfulfilled,
-        #[serde(rename = "CANCELED")]
-        Canceled,
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MaxPerUserPerStream {
+    pub is_enabled: bool,
+    pub max_per_user_per_stream: u64,
+}
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub(crate) struct MaxPerStream {
-        pub(crate) is_enabled: bool,
-        pub(crate) max_per_stream: u64,
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlobalCooldown {
+    pub is_enabled: bool,
+    pub global_cooldown_seconds: u64,
+}
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub(crate) struct MaxPerUserPerStream {
-        pub(crate) is_enabled: bool,
-        pub(crate) max_per_user_per_stream: u64,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub(crate) struct GlobalCooldown {
-        pub(crate) is_enabled: bool,
-        pub(crate) global_cooldown_seconds: u64,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub(crate) struct RewardRedeemed {
-        pub(crate) timestamp: String,
-        pub(crate) redemption: Redemption,
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RewardRedeemed {
+    pub timestamp: String,
+    pub redemption: Redemption,
 }

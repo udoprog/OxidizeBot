@@ -1,12 +1,13 @@
 //! Traits and shared plumbing for bot commands (e.g. `!uptime`)
 
-use crate::auth::Scope;
-use crate::channel::Channel;
-use crate::irc;
-use crate::prelude::*;
-use crate::utils;
-
 use anyhow::Result;
+use async_trait::async_trait;
+use auth::Scope;
+use common::Channel;
+use thiserror::Error;
+use tokio::sync;
+use tokio::sync::Notify;
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -15,9 +16,9 @@ use std::num;
 use std::str;
 use std::sync::Arc;
 use std::time::Instant;
-use thiserror::Error;
-use tokio::sync;
-use tokio::sync::Notify;
+
+use crate::irc;
+use crate::utils;
 
 #[derive(Debug, Error)]
 pub(crate) enum Respond {

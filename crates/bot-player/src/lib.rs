@@ -152,7 +152,7 @@ async fn convert_item(
 
 /// Run the player.
 #[tracing::instrument(skip_all)]
-pub(crate) async fn run(
+pub async fn run(
     injector: &Injector,
     db: db::Database,
     spotify: Arc<api::Spotify>,
@@ -288,7 +288,7 @@ pub(crate) enum Event {
 
 /// All parts of a Player that can be shared between threads.
 #[derive(Clone)]
-pub(crate) struct Player {
+pub struct Player {
     /// Player internals. Wrapped to make cloning cheaper since Player is frequently shared.
     inner: Arc<PlayerInternal>,
 }
@@ -300,19 +300,19 @@ impl Player {
     }
 
     /// Get the current device.
-    pub(crate) async fn current_device(&self) -> Option<String> {
+    pub async fn current_device(&self) -> Option<String> {
         self.inner.device.current_device().await
     }
 
     /// List all available devices.
-    pub(crate) async fn list_devices(&self) -> Result<Vec<Device>> {
+    pub async fn list_devices(&self) -> Result<Vec<Device>> {
         self.inner.device.list_devices().await
     }
 
     /// External call to set device.
     ///
     /// Should always notify the player to change.
-    pub(crate) async fn set_device(&self, device: String) -> Result<()> {
+    pub async fn set_device(&self, device: String) -> Result<()> {
         self.inner.device.set_device(Some(device)).await
     }
 
@@ -597,7 +597,7 @@ impl Player {
 }
 
 /// Error raised when failing to play a theme song.
-pub(crate) enum PlayThemeError {
+pub enum PlayThemeError {
     /// No such theme song.
     NoSuchTheme,
     /// Themes system is not configured.

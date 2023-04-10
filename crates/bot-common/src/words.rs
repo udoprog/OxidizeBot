@@ -2,8 +2,13 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 /// Construct an iterator over words in a string.
-pub fn words(string: impl Into<WordsStorage>) -> Words {
-    Words::new(string)
+pub fn split(string: impl Into<WordsStorage>) -> Split {
+    Split::new(string)
+}
+
+/// Trimmed words.
+pub fn trimmed(string: &str) -> Trimmed<'_> {
+    Trimmed::new(string)
 }
 
 #[derive(Debug, Clone)]
@@ -37,7 +42,7 @@ impl From<Arc<String>> for WordsStorage {
 
 /// An iterator over words in a string.
 #[derive(Debug, Clone)]
-pub struct Words {
+pub struct Split {
     string: WordsStorage,
     off: usize,
     /// one character lookahead.
@@ -45,15 +50,15 @@ pub struct Words {
     buffer: String,
 }
 
-impl Words {
+impl Split {
     /// Split the given string.
-    pub(crate) fn new(string: impl Into<WordsStorage>) -> Words {
+    pub(crate) fn new(string: impl Into<WordsStorage>) -> Split {
         let string = string.into();
         let mut it = string.char_indices();
         let b0 = it.next();
         let off = it.next().map(|(n, _)| n).unwrap_or_else(|| string.len());
 
-        Words {
+        Split {
             string,
             off,
             b0,
@@ -105,7 +110,7 @@ impl Words {
     }
 }
 
-impl Iterator for Words {
+impl Iterator for Split {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -160,20 +165,20 @@ impl Iterator for Words {
 }
 
 #[derive(Debug)]
-pub(crate) struct TrimmedWords<'a> {
+pub struct Trimmed<'a> {
     string: &'a str,
 }
 
-impl<'a> TrimmedWords<'a> {
+impl<'a> Trimmed<'a> {
     /// Split the commandline.
-    pub(crate) fn new(string: &str) -> TrimmedWords<'_> {
-        TrimmedWords {
+    fn new(string: &str) -> Trimmed<'_> {
+        Trimmed {
             string: string.trim_start_matches(is_trim_separator),
         }
     }
 }
 
-impl<'a> Iterator for TrimmedWords<'a> {
+impl<'a> Iterator for Trimmed<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -197,17 +202,17 @@ fn is_trim_separator(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{TrimmedWords, Urls, Words};
+    use super::{Trimmed, Urls, Split};
 
     #[test]
     pub(crate) fn test_trimmed_words() {
-        let out = TrimmedWords::new("hello, do you feel alive?").collect::<Vec<_>>();
+        let out = Trimmed::new("hello, do you feel alive?").collect::<Vec<_>>();
         assert_eq!(out, vec!["hello", "do", "you", "feel", "alive"]);
     }
 
     #[test]
     pub(crate) fn test_trimmed_words_unicode() {
-        let it = TrimmedWords::new(" 👌👌 foo");
+        let it = Trimmed::new(" 👌👌 foo");
 
         assert_eq!(
             vec![String::from("👌👌"), String::from("foo")],
@@ -217,30 +222,30 @@ mod tests {
 
     #[test]
     pub(crate) fn test_split_escape() {
-        let out = Words::new("   foo bar   baz   ").collect::<Vec<_>>();
+        let out = Split::new("   foo bar   baz   ").collect::<Vec<_>>();
         assert_eq!(out, vec!["foo", "bar", "baz"]);
     }
 
     #[test]
     pub(crate) fn test_split_quoted() {
-        let out = Words::new("   foo bar   \"baz  biz\" ").collect::<Vec<_>>();
+        let out = Split::new("   foo bar   \"baz  biz\" ").collect::<Vec<_>>();
         assert_eq!(out, vec!["foo", "bar", "baz  biz"]);
 
-        let out = Words::new("   foo\"baz  biz\" ").collect::<Vec<_>>();
+        let out = Split::new("   foo\"baz  biz\" ").collect::<Vec<_>>();
         assert_eq!(out, vec!["foobaz  biz"]);
 
-        let out = Words::new("   foo\\\"baz  biz").collect::<Vec<_>>();
+        let out = Split::new("   foo\\\"baz  biz").collect::<Vec<_>>();
         assert_eq!(out, vec!["foo\"baz", "biz"]);
 
         // test that rest kinda works.
-        let mut it = Words::new("   foo\\\"baz  biz \"is good\"");
+        let mut it = Split::new("   foo\\\"baz  biz \"is good\"");
         assert_eq!(it.next().as_deref(), Some("foo\"baz"));
         assert_eq!(it.rest(), "biz \"is good\"");
     }
 
     #[test]
     pub(crate) fn test_unicode() {
-        let it = Words::new("👌👌 foo");
+        let it = Split::new("👌👌 foo");
 
         assert_eq!(
             vec![String::from("👌👌"), String::from("foo")],

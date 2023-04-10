@@ -46,7 +46,7 @@ impl Builder {
 }
 
 /// Hook up open weather api if all necessary settings are available.
-pub(crate) async fn setup<S>(
+pub async fn setup<S>(
     user_agent: &'static str,
     settings: settings::Settings<S>,
     injector: Injector,
@@ -100,7 +100,7 @@ impl OpenWeatherMap {
         req
     }
 
-    pub(crate) async fn current(&self, q: String) -> Result<Option<Current>> {
+    pub async fn current(&self, q: String) -> Result<Option<Current>> {
         let mut req = self.v2(Method::GET, &["weather"]);
         req.query_param("q", &q);
         req.execute().await?.not_found().json()
@@ -108,22 +108,22 @@ impl OpenWeatherMap {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct Current {
+pub struct Current {
     pub(crate) coord: Coord,
     pub(crate) sys: Sys,
-    pub(crate) weather: Vec<Weather>,
-    pub(crate) main: Main,
+    pub weather: Vec<Weather>,
+    pub main: Main,
     #[serde(default)]
     pub(crate) visibility: Option<u32>,
     pub(crate) wind: Wind,
     #[serde(default)]
-    pub(crate) rain: Option<Precipitation>,
+    pub rain: Option<Precipitation>,
     #[serde(default)]
-    pub(crate) snow: Option<Precipitation>,
+    pub snow: Option<Precipitation>,
     pub(crate) clouds: Clouds,
     pub(crate) dt: u64,
     pub(crate) id: u64,
-    pub(crate) name: String,
+    pub name: String,
     pub(crate) cod: u64,
 }
 
@@ -141,7 +141,7 @@ pub(crate) struct Sys {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct Weather {
+pub struct Weather {
     pub(crate) id: u64,
     pub(crate) main: String,
     pub(crate) description: String,
@@ -170,8 +170,8 @@ impl fmt::Display for Weather {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct Main {
-    pub(crate) temp: f32,
+pub struct Main {
+    pub temp: f32,
     #[serde(default)]
     pub(crate) humidity: Option<u64>,
     #[serde(default)]
@@ -195,11 +195,11 @@ pub(crate) struct Wind {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub(crate) struct Precipitation {
+pub struct Precipitation {
     #[serde(rename = "1h", default)]
-    pub(crate) _1h: Option<f32>,
+    pub _1h: Option<f32>,
     #[serde(rename = "3h", default)]
-    pub(crate) _3h: Option<f32>,
+    pub _3h: Option<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

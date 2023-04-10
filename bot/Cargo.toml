@@ -17,60 +17,28 @@ categories = ["games"]
 web = { package = "bot-web", path = "../crates/bot-web" }
 settings = { package = "bot-settings", path = "../crates/bot-settings" }
 db = { package = "bot-db", path = "../crates/bot-db" }
-
-anyhow = "1.0.70"
-argwerk = "0.20.4"
-async-fuse = { version = "0.11.4", features = ["stream"] }
-async-injector = "0.18.5"
-async-stream = "0.3.5"
-async-trait = "0.1.68"
-backoff = "0.4.0"
-backtrace = "0.3.67"
-bytes = "1.4.0"
-chrono = { version = "0.4.24", features = ["serde"] }
-crossbeam = "0.8.2"
-dirs = "5.0.0"
-fixed-map = "0.8.2"
-futures-cache = "0.10.3"
-futures-core = "0.3.28"
-futures-util = "0.3.28"
-graphql_client = { version = "0.12.0", default-features = false, features = ["graphql_query_derive"] }
-handlebars = "4.3.6"
-hex = "0.4.3"
-ignore = "0.4.20"
-irc = "0.15.0"
-lazy_static = "1.4.0"
-leaky-bucket = "0.12.4"
-mysql_async = "0.31.3"
-notify = "5.1.0"
-parking_lot = "0.12.1"
-rand = "0.8.5"
-regex = "1.7.3"
-relative-path = { version = "1.8.0", features = ["serde"] }
-reqwest = "0.11.16"
-serde = { version = "1.0.159", features = ["rc"] }
-serde_cbor = "0.11.2"
-serde_json = "1.0.95"
-serde_urlencoded = "0.7.1"
-serde_yaml = "0.9.21"
-slab = "0.4.8"
-smallvec = { version = "1.10.0", features = ["serde"] }
-thiserror = "1.0.40"
-tokio = { version = "1.27.0", features = ["full"] }
-tokio-stream = "0.1.12"
-tokio-tungstenite = { version = "0.18.0", features = ["rustls"] }
-tracing = "0.1.37"
-tracing-appender = "0.2.2"
-tracing-core = "0.1.30"
-tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-tungstenite = "0.18.0"
-uom = "0.34.0"
-url = { version = "2.3.1", features = ["serde"] }
-uuid = { version = "1.3.0", features = ["serde", "v4"] }
-webbrowser = "0.8.8"
-
+api = { package = "bot-api", path = "../crates/bot-api" }
+auth = { package = "bot-auth", path = "../crates/bot-auth" }
+bus = { package = "bot-bus", path = "../crates/bot-bus" }
+common = { package = "bot-common", path = "../crates/bot-common" }
+player = { package = "bot-player", path = "../crates/bot-player" }
+oauth2 = { package = "bot-oauth2", path = "../crates/bot-oauth2" }
+messagelog = { package = "bot-messagelog", path = "../crates/bot-messagelog" }
 rune = { version = "0.12.3", optional = true }
 rune-modules = { version = "0.12.3", features = ["full"], optional = true }
+async-injector = "0.18.5"
+rand = "0.8.5"
+serde_json = "1.0.95"
+webbrowser = "0.8.8"
+tracing-appender = "0.2.2"
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+tokio = { version = "1.27.0", features = ["full", "tracing"] }
+dirs = "5.0.0"
+async-trait = "0.1.68"
+chrono = { version = "0.4.24", default-features = false }
+async-fuse = "0.11.4"
+anyhow = "1.0.70"
 
 [build-dependencies]
 winres = "0.1.12"

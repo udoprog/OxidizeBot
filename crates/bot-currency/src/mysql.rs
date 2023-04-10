@@ -7,22 +7,23 @@
 //! 1) Name the table to use.
 //! 2) Name the fields holding channel, user, and amount.
 
-use crate::channel::{Channel, OwnedChannel};
-use crate::currency::{BalanceOf, BalanceTransferError};
-use crate::db::{models::Balance, user_id};
-
-use anyhow::Result;
-use mysql_async as mysql;
-use std::convert::TryInto as _;
 use std::sync::Arc;
 
+use anyhow::{anyhow, Context, Result};
+use common::{Channel, OwnedChannel};
+use db::models::Balance;
+use db::user_id;
 use mysql::prelude::*;
+use mysql_async as mysql;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct Schema {
-    pub(crate) table: String,
-    pub(crate) balance_column: String,
-    pub(crate) user_column: String,
+use crate::{BalanceOf, BalanceTransferError};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Schema {
+    pub table: String,
+    pub balance_column: String,
+    pub user_column: String,
 }
 
 impl Default for Schema {
@@ -207,7 +208,7 @@ impl Backend {
         amount: i64,
         override_balance: bool,
     ) -> Result<(), BalanceTransferError> {
-        let amount: i32 = amount.try_into()?;
+        let amount: i32 = amount.try_into().with_context(|| anyhow!("Unsupported amount `{amount}`"))?;
         let taker = user_id(taker);
         let giver = user_id(giver);
 

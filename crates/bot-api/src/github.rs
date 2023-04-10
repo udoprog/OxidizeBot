@@ -43,7 +43,7 @@ impl GitHub {
     }
 
     /// Get all releases for the given repo.
-    pub(crate) async fn releases(&self, user: String, repo: String) -> Result<Vec<Release>> {
+    pub async fn releases(&self, user: String, repo: String) -> Result<Vec<Release>> {
         let req = self.request(
             Method::GET,
             &["repos", user.as_str(), repo.as_str(), "releases"],

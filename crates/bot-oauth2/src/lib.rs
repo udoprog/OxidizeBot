@@ -2,18 +2,16 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::sync::Arc;
 use std::time;
+use std::future::Future;
 
-use api::{
-    setbac::{Connection, ConnectionMeta, Token},
-    Setbac,
-};
+use api::setbac::{Connection, ConnectionMeta, Token};
 use async_injector::{Injector, Key};
 use common::Duration;
-
 use anyhow::Error;
 use thiserror::Error;
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tracing::Instrument;
+use tokio::sync::{mpsc, oneshot};
 
 /// Connection metadata.
 pub struct ConnectionIntegrationMeta {
@@ -28,10 +26,10 @@ impl ConnectionIntegrationMeta {
 
 pub trait ConnectionIntegration {
     /// Clear the given connection.
-    fn clear_connection(id: &str);
+    fn clear_connection(&self, id: &str);
 
     /// Update connection metadata.
-    fn update_connection(id: &str, meta: ConnectionIntegrationMeta);
+    fn update_connection(&self, id: &str, meta: ConnectionIntegrationMeta);
 }
 
 #[derive(Debug, Error)]
@@ -160,15 +158,15 @@ impl SyncToken {
 }
 
 struct ConnectionFactory<I> {
-    setbac: Option<Setbac>,
+    setbac: Option<api::Setbac>,
     flow_id: &'static str,
     expires: time::Duration,
     force_refresh: bool,
     connection: Option<Box<Connection>>,
     sync_token: SyncToken,
-    settings: crate::Settings,
+    settings: settings::Settings<auth::Scope>,
     injector: Injector,
-    key: Key<SyncToken>,
+    key: Key<api::Token>,
     integration: I,
     current_hash: Option<String>,
 }
@@ -202,7 +200,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
                     self.injector.clear_key(&self.key).await;
                 }
 
-                self.integration.clear_connection(self.flow_id).await;
+                self.integration.clear_connection(self.flow_id);
             }
             Validation::Updated(connection) => {
                 tracing::info!("Connection updated");
@@ -224,7 +222,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
                     self.current_hash = Some(meta.hash.clone());
                 }
 
-                self.integration.update_connection(self.flow_id, ConnectionIntegrationMeta::from_api(meta)).await;
+                self.integration.update_connection(self.flow_id, ConnectionIntegrationMeta::from_api(meta));
             }
         }
 
@@ -264,7 +262,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
                 self.current_hash = Some(meta.hash.clone());
             }
 
-            self.integration.update_connection(self.flow_id, ConnectionIntegrationMeta::from_api(meta)).await;
+            self.integration.update_connection(self.flow_id, ConnectionIntegrationMeta::from_api(meta));
         } else {
             self.sync_token.clear().await;
 
@@ -273,7 +271,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
                 self.current_hash = None;
             }
 
-            self.integration.clear_connection(self.flow_id).await;
+            self.integration.clear_connection(self.flow_id);
         }
 
         Ok(())
@@ -284,7 +282,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
         match self.build().await {
             Ok(connection) => connection,
             Err(e) => {
-                log_error!(e, "Failed to build connection");
+                common::log_error!(e, "Failed to build connection");
                 Validation::Ok
             }
         }
@@ -362,7 +360,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
     #[tracing::instrument(skip_all)]
     async fn validate(
         &self,
-        setbac: &Setbac,
+        setbac: &api::Setbac,
         connection: &Connection,
     ) -> Result<Validation, Error> {
         tracing::trace!("Validating connection");
@@ -387,7 +385,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
 
     /// Refresh a connection.
     #[tracing::instrument(skip_all)]
-    async fn refresh(&self, setbac: &Setbac) -> Result<Option<Box<Connection>>, Error> {
+    async fn refresh(&self, setbac: &api::Setbac) -> Result<Option<Box<Connection>>, Error> {
         tracing::trace!("Refreshing");
 
         let Some(connection) = setbac.refresh_connection(self.flow_id).await? else {
@@ -407,7 +405,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
     }
 }
 
-impl fmt::Debug for ConnectionFactory {
+impl<I> fmt::Debug for ConnectionFactory<I> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("ConnectionFactory")
             .field("flow_id", &self.flow_id)
@@ -420,14 +418,14 @@ impl fmt::Debug for ConnectionFactory {
 
 /// Setup a synchronized token and the future necessary to keep it up-to-date.
 #[tracing::instrument(skip_all, fields(id = flow_id))]
-pub(crate) async fn setup<I>(
+pub async fn setup<I>(
     flow_id: &'static str,
-    parent: &crate::Settings,
-    settings: crate::Settings,
+    parent: &settings::Settings<auth::Scope>,
+    settings: settings::Settings<auth::Scope>,
     injector: Injector,
-    key: Key<SyncToken>,
+    key: Key<api::Token>,
     integration: I,
-) -> Result<(SyncToken, impl Future<Output = Result<(), Error>>), Error> where I: ConnectionIntegration
+) -> Result<(api::Token, impl Future<Output = Result<(), Error>>), Error> where I: ConnectionIntegration
 {
     // connection expires within 30 minutes.
     let expires = time::Duration::from_secs(30 * 60);
@@ -439,7 +437,7 @@ pub(crate) async fn setup<I>(
         .stream::<Connection>("connection")
         .optional()
         .await?;
-    let (mut setbac_stream, setbac) = injector.stream::<Setbac>().await;
+    let (mut setbac_stream, setbac) = injector.stream::<api::Setbac>().await;
     let (mut check_interval_stream, check_interval) = parent
         .stream::<Duration>("remote/check-interval")
         .or_with(Duration::seconds(30))

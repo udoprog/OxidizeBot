@@ -16,28 +16,3 @@ where
         Err(e) => Err(E::from(e)),
     }
 }
-
-pub(crate) struct Handle<T> {
-    handle: tokio::task::JoinHandle<T>,
-}
-
-impl<T> Future for Handle<T> {
-    type Output = Result<T>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        match Pin::new(&mut self.handle).poll(cx) {
-            Poll::Ready(output) => Poll::Ready(Ok(output?)),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
-/// Spawn the given task in the background.
-pub(crate) fn spawn<F>(future: F) -> Handle<F::Output>
-where
-    F: Future + Send + 'static,
-    F::Output: Send + 'static,
-{
-    let handle = tokio::spawn(future);
-    Handle { handle }
-}

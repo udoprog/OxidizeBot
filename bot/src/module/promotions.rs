@@ -1,17 +1,15 @@
-use crate::auth;
-use crate::channel::Channel;
+use async_trait::async_trait;
+use chrono::Utc;
+use common::Channel;
+use common::Duration;
+
 use crate::command;
-use crate::db;
 use crate::irc;
 use crate::module;
-use crate::prelude::*;
-use crate::utils;
-
-use chrono::Utc;
 
 pub(crate) struct Handler {
     enabled: settings::Var<bool>,
-    promotions: injector::Ref<db::Promotions>,
+    promotions: async_injector::Ref<db::Promotions>,
 }
 
 #[async_trait]
@@ -78,7 +76,7 @@ impl super::Module for Module {
 
         let (mut setting, frequency) = settings
             .stream("frequency")
-            .or_with_else(|| utils::Duration::seconds(5 * 60))
+            .or_with_else(|| Duration::seconds(5 * 60))
             .await?;
 
         handlers.insert(

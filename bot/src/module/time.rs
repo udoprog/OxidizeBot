@@ -1,12 +1,12 @@
-use crate::auth;
-use crate::command;
-use crate::module;
-use crate::prelude::*;
-use crate::template::Template;
 use anyhow::Result;
+use async_trait::async_trait;
 use chrono::prelude::*;
 use chrono::Utc;
 use chrono_tz::{Etc, Tz};
+use template::Template;
+
+use crate::command;
+use crate::module;
 
 /// Handler for the !8ball command.
 pub(crate) struct Time {

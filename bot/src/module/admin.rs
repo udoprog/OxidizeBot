@@ -1,18 +1,16 @@
-use crate::auth;
-use crate::command;
-use crate::db;
-use crate::module;
-use crate::prelude::*;
-use crate::settings;
 use anyhow::Result;
+use async_trait::async_trait;
+
+use crate::command;
+use crate::module;
 
 /// Handler for the !admin command.
 pub(crate) struct Handler {
     settings: crate::Settings,
-    aliases: injector::Ref<db::Aliases>,
-    commands: injector::Ref<db::Commands>,
-    promotions: injector::Ref<db::Promotions>,
-    themes: injector::Ref<db::Themes>,
+    aliases: async_injector::Ref<db::Aliases>,
+    commands: async_injector::Ref<db::Commands>,
+    promotions: async_injector::Ref<db::Promotions>,
+    themes: async_injector::Ref<db::Themes>,
 }
 
 impl Handler {

@@ -1,10 +1,14 @@
-use crate::player;
-use crate::prelude::*;
-use crate::template::Template;
-use crate::utils;
-use anyhow::Result;
 use std::fs::File;
 use std::path::PathBuf;
+
+use anyhow::Result;
+use async_fuse::Fuse;
+use async_injector::Injector;
+use common::display;
+use common::model::{Song, State, TrackId};
+use common::Duration;
+use serde::Serialize;
+use template::Template;
 
 static DEFAULT_CURRENT_SONG_TEMPLATE: &str = "Song: {{name}}{{#if artists}} by {{artists}}{{/if}}{{#if paused}} (Paused){{/if}} ({{duration}})\n{{#if user~}}Request by: @{{user~}}{{/if}}";
 static DEFAULT_CURRENT_SONG_STOPPED_TEMPLATE: &str = "Not Playing";
@@ -15,7 +19,7 @@ pub(crate) struct SongFileBuilder {
     pub(crate) path: Option<PathBuf>,
     pub(crate) template: Option<Template>,
     pub(crate) stopped_template: Option<Template>,
-    pub(crate) update_interval: utils::Duration,
+    pub(crate) update_interval: Duration,
 }
 
 impl SongFileBuilder {
@@ -72,8 +76,8 @@ pub(crate) struct SongFile {
 impl SongFile {
     #[tracing::instrument(skip_all)]
     pub(crate) async fn run(injector: Injector, settings: crate::Settings) -> Result<()> {
-        let (mut song_stream, mut song) = injector.stream::<player::Song>().await;
-        let (mut state_stream, mut state) = injector.stream::<player::State>().await;
+        let (mut song_stream, mut song) = injector.stream::<Song>().await;
+        let (mut state_stream, mut state) = injector.stream::<State>().await;
         let (mut path_stream, path) = settings.stream("path").optional().await?;
 
         let (mut template_stream, template) = settings
@@ -92,7 +96,7 @@ impl SongFile {
 
         let (mut update_interval_stream, update_interval) = settings
             .stream("update-interval")
-            .or_with(utils::Duration::seconds(1))
+            .or_with(Duration::seconds(1))
             .await?;
 
         let (mut enabled_stream, enabled) = settings.stream("enabled").or_default().await?;
@@ -147,7 +151,7 @@ impl SongFile {
     }
 
     /// Write current song. Log any errors.
-    async fn update_song(&self, song: Option<&player::Song>, state: Option<player::State>) {
+    async fn update_song(&self, song: Option<&Song>, state: Option<State>) {
         tracing::trace!("Updating song: {:?} {:?}", song, state);
 
         let state = state.unwrap_or_default();
@@ -186,11 +190,7 @@ impl SongFile {
     }
 
     /// Write the current song to a path.
-    pub(crate) fn write(
-        &self,
-        song: &player::Song,
-        state: player::State,
-    ) -> Result<(), anyhow::Error> {
+    pub(crate) fn write(&self, song: &Song, state: State) -> Result<(), anyhow::Error> {
         let mut f = self.create_or_truncate()?;
         let data = data(song, state)?;
         self.template.render(&mut f, &data)?;
@@ -207,20 +207,20 @@ impl SongFile {
 
 /// Get serializable data for this item.
 pub(crate) fn data(song: &Song, state: State) -> Result<CurrentData<'_>> {
-    let artists = self.item.track.artists();
+    let artists = song.item().track().artists();
 
     Ok(CurrentData {
         paused: state != State::Playing,
-        track_id: &self.item.track_id,
-        name: self.item.track.name(),
+        track_id: &song.item().track_id(),
+        name: song.item().track().name(),
         artists,
-        user: self.item.user.as_deref(),
-        duration: display::digital_duration(self.item.duration),
-        elapsed: display::digital_duration(self.elapsed()),
+        user: song.item().user(),
+        duration: display::digital_duration(song.item.duration),
+        elapsed: display::digital_duration(song.elapsed()),
     })
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct CurrentData<'a> {
     paused: bool,
     track_id: &'a TrackId,

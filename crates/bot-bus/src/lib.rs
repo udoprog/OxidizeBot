@@ -227,7 +227,6 @@ impl Global {
 /// Events for running commands externally.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
-#[non_exhaustive]
 pub enum Command {
     /// Run a raw command.
     #[serde(rename = "raw")]

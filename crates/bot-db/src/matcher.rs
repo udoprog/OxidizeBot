@@ -3,7 +3,8 @@ use std::fmt;
 use std::sync::Arc;
 
 use anyhow::Error;
-use common::{Channel, OwnedChannel, Words};
+use common::{Channel, OwnedChannel};
+use common::words;
 use serde::{Serialize, Serializer};
 
 /// Trait over something that has a matchable pattern.
@@ -151,7 +152,7 @@ where
         &self,
         channel: &'a Channel,
         first: Option<&'a str>,
-        it: &'a Words,
+        it: &'a words::Split,
     ) -> Option<(&Arc<T>, Captures<'a>)> {
         if let Some(first) = first {
             let key = Key::new(channel, first);

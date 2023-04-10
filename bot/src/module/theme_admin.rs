@@ -1,11 +1,10 @@
-use crate::auth;
+use async_trait::async_trait;
+
 use crate::command;
-use crate::db;
 use crate::module;
-use crate::prelude::*;
 
 pub(crate) struct Handler {
-    pub(crate) themes: injector::Ref<db::Themes>,
+    pub(crate) themes: async_injector::Ref<db::Themes>,
 }
 
 #[async_trait]

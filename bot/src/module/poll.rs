@@ -1,13 +1,13 @@
-use crate::auth;
-use crate::command;
-use crate::irc;
-use crate::module;
-use crate::prelude::*;
-use crate::utils;
 use anyhow::Error;
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
+
+use crate::command;
+use crate::irc;
+use crate::module;
+use crate::utils;
 
 /// Handler for the !poll command.
 pub(crate) struct Poll {
@@ -154,7 +154,7 @@ impl command::MessageHook for ActivePoll {
             return Ok(());
         }
 
-        for word in utils::TrimmedWords::new(m) {
+        for word in common::words::trimmed(m) {
             if self.options.get(&word.to_lowercase()).is_none() {
                 continue;
             }

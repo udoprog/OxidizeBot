@@ -22,7 +22,7 @@ pub struct Duration(u64);
 
 impl Duration {
     /// Construct a duration from the given number of seconds.
-    pub fn seconds(seconds: u64) -> Self {
+    pub const fn seconds(seconds: u64) -> Self {
         Duration(seconds)
     }
 

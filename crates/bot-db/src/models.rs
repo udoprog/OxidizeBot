@@ -10,17 +10,17 @@ use crate::schema::{
 
 #[derive(Serialize, Deserialize, Queryable, Insertable)]
 pub struct Balance {
-    pub(crate) channel: OwnedChannel,
-    pub(crate) user: String,
+    pub channel: OwnedChannel,
+    pub user: String,
     #[serde(default)]
-    pub(crate) amount: i64,
+    pub amount: i64,
     #[serde(default)]
-    pub(crate) watch_time: i64,
+    pub watch_time: i64,
 }
 
 impl Balance {
     /// Helper function to convert into a checked balance.
-    pub(crate) fn checked(self) -> Self {
+    pub fn checked(self) -> Self {
         Self {
             channel: self.channel,
             user: super::user_id(&self.user),

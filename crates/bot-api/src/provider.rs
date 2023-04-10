@@ -30,7 +30,7 @@ pub struct User {
 }
 
 impl User {
-    fn from_api(api: crate::twitch::new::User) -> Self {
+    fn from_api(api: crate::twitch::model::User) -> Self {
         Self {
             id: api.id,
             login: api.login,

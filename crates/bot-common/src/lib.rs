@@ -13,8 +13,7 @@ pub use self::channel::{Channel, OwnedChannel};
 pub mod duration;
 pub use self::duration::Duration;
 
-mod words;
-pub use self::words::{words, Words};
+pub mod words;
 
 mod offset;
 pub use self::offset::Offset;

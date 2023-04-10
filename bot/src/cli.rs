@@ -3,27 +3,18 @@ use std::sync::Arc;
 use std::time;
 
 use anyhow::{anyhow, Context, Result};
+use async_injector::{Injector, Key};
 use backoff::backoff::Backoff as _;
+use common::stream::StreamExt;
 use tokio::sync::mpsc;
 
-use crate::api;
-use crate::auth;
-use crate::bus;
-use crate::db;
-use crate::injector::{Injector, Key};
 use crate::irc;
-use crate::message_log;
 use crate::module;
-use crate::oauth2;
-use crate::player;
-use crate::storage;
-use crate::stream::StreamExt;
 use crate::stream_info;
 use crate::sys;
 use crate::tags;
 use crate::updater;
 use crate::utils;
-use crate::web;
 
 const OLD_CONFIG_DIR: &str = "SetMod";
 const CONFIG_DIR: &str = "OxidizeBot";
@@ -298,7 +289,7 @@ async fn try_main(
     let injector = Injector::new();
 
     let mut modules = Vec::<Box<dyn module::Module>>::new();
-    let mut futures = crate::utils::Futures::new();
+    let mut futures = common::Futures::new();
 
     injector.update(db.clone()).await;
 
@@ -355,7 +346,7 @@ async fn try_main(
     let (latest, future) = updater::updater(&injector);
     futures.push(Box::pin(future));
 
-    let message_log = message_log::MessageLog::builder()
+    let message_log = messagelog::MessageLog::builder()
         .bus(message_bus.clone())
         .limit(512)
         .build();
@@ -624,14 +615,11 @@ async fn system_loop(settings: crate::Settings, system: sys::System) -> Result<(
 }
 
 /// Access auth from the database.
-pub async fn auth(
-    db: &db::Db,
-    schema: crate::auth::Schema,
-) -> Result<crate::auth::Auth, Error> {
+pub async fn auth(db: &db::Db, schema: crate::auth::Schema) -> Result<crate::auth::Auth> {
     crate::auth::Auth::new(db.clone(), schema).await
 }
 
 /// Access settings from the database.
-pub fn settings(db: &db::Db, schema: crate::Schema) -> Result<crate::Settings, Error> {
+pub fn settings(db: &db::Db, schema: crate::Schema) -> Result<crate::Settings> {
     Ok(settings::Settings::new(db.clone(), schema))
 }

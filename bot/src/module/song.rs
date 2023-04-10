@@ -1,4 +1,5 @@
 use anyhow::Result;
+use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -23,9 +24,9 @@ const EXAMPLE_SEARCH: &str = "queen we will rock you";
 /// Handler for the `!song` command.
 pub(crate) struct Handler {
     enabled: settings::Var<bool>,
-    player: injector::Ref<Player>,
+    player: async_injector::Ref<Player>,
     request_help_cooldown: Mutex<Cooldown>,
-    currency: injector::Ref<Currency>,
+    currency: async_injector::Ref<Currency>,
     requester: requester::SongRequester,
     streamer: api::TwitchAndUser,
 }

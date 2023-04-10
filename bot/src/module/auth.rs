@@ -1,14 +1,14 @@
-use crate::auth;
+use anyhow::Result;
+use async_trait::async_trait;
+use chrono::Utc;
+use common::Duration;
+
 use crate::command;
 use crate::module;
-use crate::prelude::*;
-use crate::utils::Duration;
-use anyhow::Result;
-use chrono::Utc;
 
 /// Handler for the !auth command.
 pub(crate) struct Handler {
-    auth: injector::Ref<auth::Auth>,
+    auth: async_injector::Ref<auth::Auth>,
 }
 
 #[async_trait]

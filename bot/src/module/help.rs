@@ -1,8 +1,9 @@
+use anyhow::Result;
+use async_trait::async_trait;
+use url::Url;
+
 use crate::command;
 use crate::module;
-use crate::prelude::*;
-use anyhow::Result;
-use url::Url;
 
 const DEFAULT_URL: &str = "https://setbac.tv/help";
 

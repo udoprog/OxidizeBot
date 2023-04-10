@@ -1,12 +1,11 @@
-use crate::auth;
 use crate::command;
-use crate::db;
 use crate::module;
-use crate::prelude::*;
+
+use async_trait::async_trait;
 
 pub(crate) struct Handler {
     pub(crate) enabled: settings::Var<bool>,
-    pub(crate) commands: injector::Ref<db::Commands>,
+    pub(crate) commands: async_injector::Ref<db::Commands>,
 }
 
 #[async_trait]

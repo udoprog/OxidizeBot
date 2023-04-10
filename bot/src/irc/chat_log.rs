@@ -11,7 +11,7 @@ use crate::storage::Cache;
 pub(crate) struct Builder {
     streamer: api::TwitchAndUser,
     pub(crate) message_log: message_log::MessageLog,
-    pub(crate) cache_stream: injector::Stream<Cache>,
+    pub(crate) cache_stream: async_injector::Stream<Cache>,
     pub(crate) cache: Option<Cache>,
     pub(crate) enabled_stream: settings::Stream<bool>,
     pub(crate) enabled: bool,

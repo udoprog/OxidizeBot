@@ -9,7 +9,7 @@ use std::pin::pin;
 use std::sync::Arc;
 use std::time;
 
-use anyhow::{anyhow, bail, Context as _, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use irc::client::{self, Client};
 use irc::proto::command::Command;
 use irc::proto::message::{Message, Tag};
@@ -21,21 +21,18 @@ use tokio::sync;
 
 pub(crate) use self::messages::Messages;
 pub(crate) use self::sender::Sender;
-use crate::api;
 use crate::auth::{Auth, Role, Scope};
-use crate::bus;
 use crate::channel::Channel;
 use crate::command;
-use crate::db;
 use crate::idle;
 use crate::message_log::MessageLog;
 use crate::module;
 use crate::prelude::*;
 use crate::script;
 use crate::stream_info;
-use crate::tags;
 use crate::task;
 use crate::utils::{self, Cooldown};
+use common::tags;
 
 const SERVER: &str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &str = "twitch.tv/tags";
@@ -153,12 +150,12 @@ impl IrcLoop<'_> {
             .update_key(Key::tagged(tags::Globals::Channel)?, chat_channel.clone())
             .await;
 
-        let access_token = bot.client.token.read().await?.access_token().to_string();
+        let access_token = bot.client.token().read().context("missing bot token")?.0;
 
         let irc_client_config = client::data::config::Config {
             nickname: Some(bot.user.login.to_string()),
             channels: vec![chat_channel.clone()],
-            password: Some(format!("oauth:{}", access_token)),
+            password: Some(format!("oauth:{}", access_token.as_str())),
             server: Some(String::from(SERVER)),
             port: Some(6697),
             use_tls: Some(true),
@@ -903,7 +900,7 @@ impl<'a> Handler<'a> {
                 match tags.msg_id.as_deref() {
                     _ if message == "Login authentication failed" => {
                         tracing::trace!("Authentication failed");
-                        self.bot.client.token.force_refresh().await?;
+                        self.bot.client.token().force_refresh().await?;
                         self.handler_shutdown = true;
                     }
                     msg_id => {
@@ -1095,7 +1092,7 @@ impl User {
     }
 
     /// Access the sender associated with the user.
-    pub(crate) fn sender(&self) -> &Sender {
+    pub fn sender(&self) -> &Sender {
         &self.inner.sender
     }
 
@@ -1318,7 +1315,7 @@ async fn refresh_roles(
         out: &parking_lot::RwLock<HashSet<String>>,
     ) -> Result<()>
     where
-        S: crate::stream::Stream<Item = Result<api::twitch::Chatter>>,
+        S: crate::stream::Stream<Item = Result<api::twitch::model::Chatter>>,
     {
         tracing::info!(?what, "Refreshing");
 

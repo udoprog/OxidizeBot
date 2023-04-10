@@ -15,6 +15,7 @@ bus = { package = "bot-bus", path = "../bot-bus" }
 storage = { package = "bot-storage", path = "../bot-storage" }
 messagelog = { package = "bot-messagelog", path = "../bot-messagelog" }
 player = { package = "bot-player", path = "../bot-player" }
+currency = { package = "bot-currency", path = "../bot-currency" }
 warp = "0.3.4"
 serde_json = "1.0.95"
 percent-encoding = "2.2.0"

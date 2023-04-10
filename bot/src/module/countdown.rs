@@ -3,16 +3,16 @@ use std::path::PathBuf;
 use std::pin::pin;
 use std::time;
 
-use crate::auth;
+use async_trait::async_trait;
+use common::Duration;
+use tokio::sync::mpsc;
+
 use crate::command;
 use crate::module;
-use crate::prelude::*;
-use crate::template;
-use crate::utils;
 
 enum Event {
     /// Set the countdown.
-    Set(utils::Duration, template::Template),
+    Set(Duration, template::Template),
     /// Clear the countdown.
     Clear,
 }
@@ -239,8 +239,8 @@ impl FileWriter {
 }
 
 struct Timer {
-    duration: utils::Duration,
-    elapsed: utils::Duration,
+    duration: Duration,
+    elapsed: Duration,
     interval: tokio::time::Interval,
 }
 
@@ -253,7 +253,7 @@ impl stream::Stream for Timer {
             Poll::Ready(..) => (),
         }
 
-        self.as_mut().elapsed += utils::Duration::seconds(1);
+        self.as_mut().elapsed += Duration::seconds(1);
 
         if self.as_ref().elapsed >= self.as_ref().duration {
             return Poll::Ready(None);

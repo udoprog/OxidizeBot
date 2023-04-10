@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde::{ser, Serialize};
 use anyhow::{anyhow, Context as _, Error};
 use common::Channel;
-use common::Words;
+use common::words;
 use diesel::prelude::*;
 use tokio::sync::RwLock;
 
@@ -179,18 +179,18 @@ impl Commands {
     }
 
     /// Increment the specified command.
-    pub(crate) async fn increment(&self, command: &Command) -> Result<(), Error> {
+    pub async fn increment(&self, command: &Command) -> Result<(), Error> {
         self.db.increment(&command.key).await?;
         command.count.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
     /// Resolve the given command.
-    pub(crate) async fn resolve<'a>(
+    pub async fn resolve<'a>(
         &self,
         channel: &'a Channel,
         first: Option<&'a str>,
-        it: &'a Words,
+        it: &'a words::Split,
     ) -> Option<(Arc<Command>, crate::Captures<'a>)> {
         let inner = self.inner.read().await;
 
@@ -253,12 +253,12 @@ impl Command {
     }
 
     /// Get the currenct count.
-    pub(crate) fn count(&self) -> i32 {
+    pub fn count(&self) -> i32 {
         self.count.load(Ordering::SeqCst) as i32
     }
 
     /// Render the given command.
-    pub(crate) fn render<T>(&self, data: &T) -> Result<String, Error>
+    pub fn render<T>(&self, data: &T) -> Result<String, Error>
     where
         T: Serialize,
     {
@@ -266,7 +266,7 @@ impl Command {
     }
 
     /// Test if the rendered command has the given var.
-    pub(crate) fn has_var(&self, var: &str) -> bool {
+    pub fn has_var(&self, var: &str) -> bool {
         self.vars.contains(var)
     }
 }

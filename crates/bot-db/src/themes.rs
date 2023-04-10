@@ -142,7 +142,7 @@ impl Themes {
     }
 
     /// Edit the duration of the given theme.
-    pub(crate) async fn edit_duration(
+    pub async fn edit_duration(
         &self,
         channel: &Channel,
         name: &str,

@@ -1,10 +1,9 @@
-use crate::api;
-use crate::auth;
+use anyhow::Result;
+use async_trait::async_trait;
+use common::{Cooldown, Duration};
+
 use crate::command;
 use crate::module;
-use crate::prelude::*;
-use crate::utils::{Cooldown, Duration};
-use anyhow::Result;
 
 /// Handler for the `!clip` command.
 pub(crate) struct Clip {

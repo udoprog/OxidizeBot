@@ -74,7 +74,7 @@ impl Setbac {
     }
 
     /// Update the channel information.
-    pub(crate) async fn player_update(&self, request: PlayerUpdate) -> Result<()> {
+    pub async fn player_update(&self, request: PlayerUpdate) -> Result<()> {
         let body = serde_json::to_vec(&request)?;
 
         let mut req = self.request(Method::POST, &["api", "player"]);
@@ -87,7 +87,7 @@ impl Setbac {
     }
 
     /// Get the token corresponding to the given flow.
-    pub(crate) async fn get_connection(&self, id: &str) -> Result<Option<Connection>> {
+    pub async fn get_connection(&self, id: &str) -> Result<Option<Connection>> {
         let mut req = self.request(Method::GET, &["api", "connections", id]);
 
         req.header(header::CONTENT_TYPE, "application/json");
@@ -97,7 +97,7 @@ impl Setbac {
     }
 
     /// Get the token corresponding to the given flow.
-    pub(crate) async fn get_connection_meta(
+    pub async fn get_connection_meta(
         &self,
         flow_id: &str,
     ) -> Result<Option<ConnectionMeta>> {
@@ -111,7 +111,7 @@ impl Setbac {
     }
 
     /// Refresh the token corresponding to the given flow.
-    pub(crate) async fn refresh_connection(&self, id: &str) -> Result<Option<Connection>> {
+    pub async fn refresh_connection(&self, id: &str) -> Result<Option<Connection>> {
         let mut req = self.request(Method::POST, &["api", "connections", id, "refresh"]);
 
         req.header(header::CONTENT_TYPE, "application/json");
@@ -122,7 +122,7 @@ impl Setbac {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct Data<T> {
+struct Data<T> {
     data: Option<T>,
 }
 
@@ -133,17 +133,17 @@ impl<T> Default for Data<T> {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
-pub(crate) struct PlayerUpdate {
+pub struct PlayerUpdate {
     /// Current song.
     #[serde(default)]
-    current: Option<Item>,
+    pub current: Option<Item>,
     /// Songs.
     #[serde(default)]
-    items: Vec<Item>,
+    pub items: Vec<Item>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct Item {
+pub struct Item {
     /// Name of the song.
     name: String,
     /// Artists of the song.
@@ -234,16 +234,6 @@ impl Connection {
             title: self.title.clone(),
             description: self.description.clone(),
             hash: self.hash.clone(),
-        }
-    }
-}
-
-fn parse_url(url: &str) -> Option<Url> {
-    match str::parse(url) {
-        Ok(api_url) => Some(api_url),
-        Err(e) => {
-            common::log_warn!(e, "bad api url: {}", url);
-            None
         }
     }
 }

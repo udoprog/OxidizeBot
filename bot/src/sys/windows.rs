@@ -8,7 +8,7 @@ use std::thread;
 use anyhow::{anyhow, bail, Context as _, Error};
 use chrono::Local;
 use parking_lot::Mutex;
-use tokio::sync::{Notify, Semaphore};
+use tokio::sync::{mpsc, oneshot, Notify, Semaphore};
 use winapi::um::shellapi::ShellExecuteW;
 use winapi::um::winuser::SW_SHOW;
 

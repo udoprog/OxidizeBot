@@ -1,14 +1,13 @@
-use crate::api::OpenWeatherMap;
-use crate::auth;
-use crate::command;
-use crate::module;
-use crate::prelude::*;
 use anyhow::Result;
+use async_trait::async_trait;
 use uom::si::{
     f32::ThermodynamicTemperature,
     thermodynamic_temperature::{degree_celsius, degree_fahrenheit, kelvin},
     Unit as _,
 };
+
+use crate::command;
+use crate::module;
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 enum TemperatureUnit {
@@ -46,7 +45,7 @@ pub(crate) struct Weather {
     enabled: settings::Var<bool>,
     temperature_unit: settings::Var<TemperatureUnit>,
     location: settings::Var<Option<String>>,
-    api: injector::Ref<OpenWeatherMap>,
+    api: async_injector::Ref<api::OpenWeatherMap>,
 }
 
 #[async_trait]

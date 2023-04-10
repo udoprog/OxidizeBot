@@ -3,16 +3,14 @@
 use std::pin::pin;
 
 use anyhow::Result;
+use async_trait::async_trait;
 use chrono::Utc;
+use common::display;
 
-use crate::api;
-use crate::auth;
 use crate::command;
 use crate::irc;
 use crate::module;
-use crate::prelude::*;
 use crate::stream_info;
-use crate::utils;
 
 /// Handler for the `!uptime` command.
 pub(crate) struct Uptime {
@@ -45,7 +43,7 @@ impl command::Handler for Uptime {
             // NB: very important to check that _now_ is after started at.
             Some(ref started_at) if now > *started_at => {
                 let uptime =
-                    utils::compact_duration((now - *started_at).to_std().unwrap_or_default());
+                    display::compact_duration((now - *started_at).to_std().unwrap_or_default());
 
                 respond!(ctx, "Stream has been live for {uptime}.", uptime = uptime);
             }
@@ -103,7 +101,7 @@ impl command::Handler for Title {
         } else {
             ctx.check_scope(auth::Scope::TitleEdit).await?;
 
-            let mut request = api::twitch::new::ModifyChannelRequest::default();
+            let mut request = api::twitch::model::ModifyChannelRequest::default();
             request.title = Some(rest);
 
             self.streamer
@@ -174,7 +172,7 @@ impl command::Handler for Game {
             return Ok(());
         };
 
-        let mut request = api::twitch::new::ModifyChannelRequest::default();
+        let mut request = api::twitch::model::ModifyChannelRequest::default();
         request.game_id = Some(&first.id);
 
         self.streamer

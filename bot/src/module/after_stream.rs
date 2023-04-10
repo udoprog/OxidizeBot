@@ -1,15 +1,15 @@
-use crate::auth;
+use async_trait::async_trait;
+use common::Cooldown;
+use common::Duration;
+
 use crate::command;
-use crate::db;
 use crate::module;
-use crate::prelude::*;
-use crate::utils;
 
 /// Handler for the `!afterstream` command.
 pub(crate) struct AfterStream {
     pub(crate) enabled: settings::Var<bool>,
-    pub(crate) cooldown: settings::Var<utils::Cooldown>,
-    pub(crate) after_streams: injector::Ref<db::AfterStreams>,
+    pub(crate) cooldown: settings::Var<Cooldown>,
+    pub(crate) after_streams: async_injector::Ref<db::AfterStreams>,
 }
 
 #[async_trait]
@@ -83,10 +83,7 @@ impl super::Module for Module {
             AfterStream {
                 enabled: settings.var("enabled", true).await?,
                 cooldown: settings
-                    .var(
-                        "cooldown",
-                        utils::Cooldown::from_duration(utils::Duration::seconds(30)),
-                    )
+                    .var("cooldown", Cooldown::from_duration(Duration::seconds(30)))
                     .await?,
                 after_streams: injector.var().await,
             },

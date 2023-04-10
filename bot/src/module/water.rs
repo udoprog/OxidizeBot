@@ -1,13 +1,11 @@
 use anyhow::Result;
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use common::{Cooldown, Duration};
 use tokio::sync::Mutex;
 
-use crate::api;
-use crate::auth;
 use crate::command;
-use crate::currency::Currency;
 use crate::module;
-use crate::prelude::*;
 use crate::stream_info;
 use crate::utils;
 
@@ -19,8 +17,8 @@ pub(crate) struct Reward {
 
 pub(crate) struct Handler {
     enabled: settings::Var<bool>,
-    cooldown: settings::Var<utils::Cooldown>,
-    currency: injector::Ref<Currency>,
+    cooldown: settings::Var<Cooldown>,
+    currency: async_injector::Ref<currency::Currency>,
     waters: Mutex<Vec<(DateTime<Utc>, Option<Reward>)>>,
     stream_info: stream_info::StreamInfo,
     reward_multiplier: settings::Var<u32>,
@@ -181,7 +179,7 @@ impl super::Module for Module {
         let cooldown = settings
             .var(
                 "water/cooldown",
-                utils::Cooldown::from_duration(utils::Duration::seconds(60)),
+                Cooldown::from_duration(Duration::seconds(60)),
             )
             .await?;
         let reward_multiplier = settings.var("water/reward%", 100).await?;

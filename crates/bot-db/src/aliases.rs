@@ -109,12 +109,12 @@ impl Aliases {
     }
 
     /// Resolve the given command.
-    pub(crate) async fn resolve(
+    pub async fn resolve(
         &self,
         channel: &Channel,
         message: Arc<String>,
     ) -> Option<(crate::Key, String)> {
-        let mut it = common::words(message);
+        let mut it = common::words::split(message);
         let first = it.next();
 
         if let Some((alias, captures)) =

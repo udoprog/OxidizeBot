@@ -72,6 +72,11 @@ impl Token {
     pub fn is_ready(&self) -> bool {
         self.inner.payload.read().is_some()
     }
+
+    /// Wait until token is ready.
+    pub async fn wait_until_read(&self) {
+        todo!()
+    }
 }
 
 struct Payload {

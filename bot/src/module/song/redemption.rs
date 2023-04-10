@@ -1,11 +1,9 @@
 use anyhow::Result;
+use api::twitch::pubsub;
 
-use crate::api;
-use crate::api::twitch::pubsub;
-use crate::irc;
 use crate::module::song::requester::{RequestCurrency, SongRequester};
 use crate::player::Player;
-use crate::prelude::*;
+use crate::utils;
 
 /// Task used to react to redemptions as song requests.
 pub(crate) async fn task(

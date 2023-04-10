@@ -1,18 +1,14 @@
-use crate::api;
-use crate::prelude::*;
+mod respond;
+pub(crate) use self::respond::respond;
+
 use std::borrow::Cow;
 use std::fmt;
-
+use std::future::Future;
 use std::ops;
 use std::sync::Arc;
 use std::time;
-use tokio::sync::Mutex;
 
-mod duration;
-mod respond;
-
-pub(crate) use self::duration::Duration;
-pub(crate) use self::respond::respond;
+use tokio::sync::{oneshot, Mutex};
 
 pub(crate) trait Driver<'a> {
     /// Drive the given future.
@@ -21,7 +17,7 @@ pub(crate) trait Driver<'a> {
         F: 'a + Send + Future<Output = Result<(), anyhow::Error>>;
 }
 
-impl<'a> Driver<'a> for Vec<BoxFuture<'a, Result<(), anyhow::Error>>> {
+impl<'a> Driver<'a> for Vec<common::BoxFuture<'a, Result<(), anyhow::Error>>> {
     fn drive<F>(&mut self, future: F)
     where
         F: 'a + Send + Future<Output = Result<(), anyhow::Error>>,

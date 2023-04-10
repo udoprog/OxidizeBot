@@ -6,7 +6,7 @@ use crate::Duration;
 #[derive(Debug, Clone, Default)]
 pub struct Cooldown {
     last_action_at: Option<std::time::Instant>,
-    pub(crate) cooldown: Duration,
+    pub cooldown: Duration,
 }
 
 impl Cooldown {
@@ -32,7 +32,7 @@ impl Cooldown {
     }
 
     /// Test how much time remains until cooldown is open.
-    pub(crate) fn check(&mut self, now: std::time::Instant) -> Option<std::time::Duration> {
+    pub fn check(&mut self, now: std::time::Instant) -> Option<std::time::Duration> {
         if let Some(last_action_at) = self.last_action_at.as_ref() {
             let since_last_action = now - *last_action_at;
             let cooldown = self.cooldown.as_std();
@@ -46,7 +46,7 @@ impl Cooldown {
     }
 
     /// Poke the cooldown with the current time
-    pub(crate) fn poke(&mut self, now: std::time::Instant) {
+    pub fn poke(&mut self, now: std::time::Instant) {
         self.last_action_at = Some(now);
     }
 }

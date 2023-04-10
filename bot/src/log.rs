@@ -1,11 +1,10 @@
-use std::{io};
 use std::collections::VecDeque;
+use std::io;
 
 use tracing_subscriber::fmt::MakeWriter;
 
 #[derive(Default)]
-pub(crate) struct Log {
-}
+pub(crate) struct Log {}
 
 #[derive(Default)]
 pub(crate) struct LogWriter {
@@ -28,8 +27,6 @@ impl<'a> MakeWriter<'a> for Log {
     type Writer = LogWriter;
 
     fn make_writer(&'a self) -> Self::Writer {
-        LogWriter {
-            buf: Vec::new(),
-        }
+        LogWriter { buf: Vec::new() }
     }
 }

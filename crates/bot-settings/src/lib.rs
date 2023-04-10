@@ -235,7 +235,7 @@ impl<S> SchemaType<S> where S: Scope {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct Schema<S> where S: Scope {
+pub struct Schema<S> where S: Scope {
     #[serde(default)]
     migrations: Vec<Migration>,
     types: HashMap<String, SchemaType<S>>,
@@ -547,7 +547,7 @@ where
     }
 
     /// Insert the given setting without sending an update notification to other components.
-    pub(crate) async fn set_silent<T>(&self, key: &str, value: T) -> Result<(), Error>
+    pub async fn set_silent<T>(&self, key: &str, value: T) -> Result<(), Error>
     where
         T: Serialize,
     {
@@ -1101,7 +1101,8 @@ where
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[derive(Default)]
-pub(crate) enum Format {
+#[non_exhaustive]
+pub enum Format {
     #[serde(rename = "regex")]
     Regex { pattern: String },
     #[serde(rename = "time-zone")]
@@ -1146,7 +1147,7 @@ pub struct SelectOption {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "id")]
 #[non_exhaustive]
-enum Kind {
+pub enum Kind {
     #[serde(rename = "raw")]
     Raw,
     #[serde(rename = "duration")]
@@ -1184,7 +1185,7 @@ enum Kind {
 
 impl Type {
     /// Parse the given string as the current type and convert into JSON.
-    pub(crate) fn parse_as_json(&self, s: &str) -> Result<serde_json::Value, Error> {
+    pub fn parse_as_json(&self, s: &str) -> Result<serde_json::Value, Error> {
         use self::Kind::*;
         use serde_json::Value;
 

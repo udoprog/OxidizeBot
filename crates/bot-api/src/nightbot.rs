@@ -65,7 +65,7 @@ impl NightBot {
     }
 
     /// Update the channel information.
-    pub(crate) async fn channel_send(&self, message: String) -> Result<()> {
+    pub async fn channel_send(&self, message: String) -> Result<()> {
         let message = Message { message };
         let message = serde_json::to_string(&message)?;
 

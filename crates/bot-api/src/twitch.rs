@@ -1,7 +1,14 @@
 //! Twitch API helpers.
 
-use anyhow::Result;
+mod gql;
+
+pub mod model;
+
+pub mod pubsub;
+
 use common::stream::Stream;
+use anyhow::Result;
+use common::stream;
 use reqwest::{header, Client, Method, Url};
 use serde::{de, Serialize};
 use thiserror::Error;
@@ -9,7 +16,7 @@ use thiserror::Error;
 use crate::base::RequestBuilder;
 use crate::token::Token;
 
-pub(crate) const CLIPS_URL: &str = "http://clips.twitch.tv";
+pub const CLIPS_URL: &str = "http://clips.twitch.tv";
 const API_TWITCH_URL: &str = "https://api.twitch.tv";
 const GQL_URL: &str = "https://gql.twitch.tv/gql";
 
@@ -17,9 +24,6 @@ const GQL_CLIENT_ID: &str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 /// Common header.
 const BROADCASTER_ID: &str = "broadcaster_id";
 
-mod gql;
-mod model;
-pub(crate) mod pubsub;
 
 #[derive(Debug, Error)]
 pub(crate) enum Error {
@@ -83,7 +87,7 @@ impl Twitch {
     }
 
     /// Get chatters for the given broadcaster.
-    pub(crate) fn chatters(
+    pub fn chatters(
         &self,
         moderator_id: &str,
         broadcaster_id: &str,
@@ -97,7 +101,7 @@ impl Twitch {
     }
 
     /// Get moderators for the current broadcaster.
-    pub(crate) fn moderators(
+    pub fn moderators(
         &self,
         broadcaster_id: &str,
     ) -> impl Stream<Item = Result<Chatter>> + '_ {
@@ -107,28 +111,28 @@ impl Twitch {
     }
 
     /// Get VIPs for the current broadcaster.
-    pub(crate) fn vips(&self, broadcaster_id: &str) -> impl Stream<Item = Result<Chatter>> + '_ {
+    pub fn vips(&self, broadcaster_id: &str) -> impl Stream<Item = Result<Chatter>> + '_ {
         let mut req = self.new_api(Method::GET, &["channels", "vips"]);
         req.query_param("broadcaster_id", broadcaster_id);
         page(req)
     }
 
     /// Search for a category with the given name.
-    pub(crate) fn categories<'a>(
+    pub fn categories<'a>(
         &'a self,
         query: &str,
-    ) -> impl Stream<Item = Result<new::Category>> + 'a {
+    ) -> impl Stream<Item = Result<model::Category>> + 'a {
         let mut req = self.new_api(Method::GET, &["search", "categories"]);
         req.query_param("query", query);
         page(req)
     }
 
     /// Get information on a user.
-    pub(crate) fn subscriptions<'a>(
+    pub fn subscriptions<'a>(
         &'a self,
         broadcaster_id: &str,
         user_ids: Vec<String>,
-    ) -> impl Stream<Item = Result<new::Subscription>> + 'a {
+    ) -> impl Stream<Item = Result<model::Subscription>> + 'a {
         let mut req = self.new_api(Method::GET, &["subscriptions"]);
         req.query_param(BROADCASTER_ID, broadcaster_id);
 
@@ -140,29 +144,29 @@ impl Twitch {
     }
 
     /// Create a clip for the given broadcaster.
-    pub(crate) async fn create_clip(&self, broadcaster_id: &str) -> Result<Option<new::Clip>> {
+    pub async fn create_clip(&self, broadcaster_id: &str) -> Result<Option<model::Clip>> {
         let res = self
             .new_api(Method::POST, &["clips"])
             .query_param(BROADCASTER_ID, broadcaster_id)
             .execute()
             .await?
-            .json::<Data<Vec<new::Clip>>>()?;
+            .json::<Data<Vec<model::Clip>>>()?;
 
         Ok(res.data.into_iter().next())
     }
 
     /// Get stream information.
-    pub(crate) async fn streams(
+    pub async fn streams(
         &self,
         user_id: &str,
-    ) -> impl Stream<Item = Result<new::Stream>> + '_ {
+    ) -> impl Stream<Item = Result<model::Stream>> + '_ {
         let mut req = self.new_api(Method::GET, &["streams"]);
         req.query_param("user_id", user_id);
         page(req)
     }
 
     /// Update the status of a redemption.
-    pub(crate) async fn patch_redemptions(
+    pub async fn patch_redemptions(
         &self,
         broadcaster_id: &str,
         redemption: &pubsub::Redemption,
@@ -193,33 +197,33 @@ impl Twitch {
     }
 
     /// Get the channel associated with the current authentication.
-    pub(crate) async fn user(&self) -> Result<new::User> {
+    pub async fn user(&self) -> Result<model::User> {
         let req = self.new_api(Method::GET, &["users"]);
-        let data = req.execute().await?.json::<Data<Vec<new::User>>>()?;
+        let data = req.execute().await?.json::<Data<Vec<model::User>>>()?;
         let user = data.data.into_iter().next().ok_or(Error::MissingUser)?;
         Ok(user)
     }
 
     /// Get the channel associated with the specified broadcaster id.
-    pub(crate) async fn channels(&self, broadcaster_id: &str) -> Result<Option<new::Channel>> {
+    pub async fn channels(&self, broadcaster_id: &str) -> Result<Option<model::Channel>> {
         let mut req = self.new_api(Method::GET, &["channels"]);
         req.query_param(BROADCASTER_ID, broadcaster_id);
-        let result = req.execute().await?.json::<Data<Vec<new::Channel>>>()?;
+        let result = req.execute().await?.json::<Data<Vec<model::Channel>>>()?;
         Ok(result.data.into_iter().next())
     }
 
     /// Get emotes by sets.
-    pub async fn emote_set(&self, id: &str) -> Result<Vec<new::Emote>> {
+    pub async fn emote_set(&self, id: &str) -> Result<Vec<model::Emote>> {
         let mut req = self.new_api(Method::GET, &["chat", "emotes", "set"]);
         req.query_param("emote_set_id", id);
-        Ok(req.execute().await?.json::<Data<Vec<new::Emote>>>()?.data)
+        Ok(req.execute().await?.json::<Data<Vec<model::Emote>>>()?.data)
     }
 
     /// Update the channel information.
     pub(crate) async fn patch_channel(
         &self,
         broadcaster_id: &str,
-        request: new::ModifyChannelRequest<'_>,
+        request: model::ModifyChannelRequest<'_>,
     ) -> Result<()> {
         let body = serde_json::to_vec(&request)?;
 
@@ -266,7 +270,7 @@ where
     T: de::DeserializeOwned,
 {
     async_stream::try_stream! {
-        let initial = request.execute().await?.json::<new::Page<T>>()?;
+        let initial = request.execute().await?.json::<model::Page<T>>()?;
         let mut page = initial.data.into_iter();
         let mut pagination = initial.pagination;
 
@@ -282,7 +286,7 @@ where
 
             let mut next = request.clone();
             next.query_param("after", cursor);
-            let next = next.execute().await?.json::<new::Page<T>>()?;
+            let next = next.execute().await?.json::<model::Page<T>>()?;
             page = next.data.into_iter();
             pagination = next.pagination;
         }

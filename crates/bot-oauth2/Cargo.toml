@@ -7,4 +7,10 @@ publish = false
 [dependencies]
 api = { package = "bot-api", path = "../bot-api" }
 common = { package = "bot-common", path = "../bot-common" }
+settings = { package = "bot-settings", path = "../bot-settings" }
+auth = { package = "bot-auth", path = "../bot-auth" }
 tokio = { version = "1.27.0", features = ["sync"] }
+tracing = "0.1.37"
+thiserror = "1.0.40"
+anyhow = "1.0.70"
+async-injector = "0.18.5"

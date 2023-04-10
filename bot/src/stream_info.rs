@@ -1,22 +1,20 @@
 use std::collections::HashSet;
+use std::future::Future;
 use std::pin::pin;
 use std::sync::Arc;
 use std::time;
 
 use anyhow::{anyhow, Result};
+use api::twitch;
 use parking_lot::RwLock;
 use tracing::Instrument;
 
-use crate::api;
-use crate::api::twitch;
-use crate::prelude::*;
-
 #[derive(Debug, Default)]
 pub(crate) struct Data {
-    pub(crate) stream: Option<twitch::new::Stream>,
+    pub(crate) stream: Option<api::twitch::model::Stream>,
     pub(crate) title: Option<String>,
     pub(crate) game: Option<String>,
-    pub(crate) subs: Vec<twitch::new::Subscription>,
+    pub(crate) subs: Vec<api::twitch::model::Subscription>,
     pub(crate) subs_set: HashSet<String>,
 }
 
@@ -135,7 +133,7 @@ pub(crate) fn setup(
 
     let future = async move {
         loop {
-            streamer.client.token.wait_until_ready().await?;
+            streamer.client.token().wait_until_ready().await?;
 
             tokio::select! {
                 _ = subs_interval.tick() => {

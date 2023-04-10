@@ -1,18 +1,16 @@
-use crate::api::{
-    self,
-    speedrun::{
-        Category, CategoryType, Embed, Embeds, Game, GameRecord, Level, Players, RelatedPlayer,
-        Run, RunInfo, User, Variable, Variables,
-    },
+use std::collections::HashMap;
+
+use anyhow::{anyhow, Result};
+use api::speedrun::{
+    Category, CategoryType, Embed, Embeds, Game, GameRecord, Level, Players, RelatedPlayer, Run,
+    RunInfo, User, Variable, Variables,
 };
-use crate::auth;
+use async_trait::async_trait;
+use common::display;
+use storage::Cache;
+
 use crate::command;
 use crate::module;
-use crate::prelude::*;
-use crate::storage::Cache;
-use crate::utils;
-use anyhow::{anyhow, Result};
-use std::collections::HashMap;
 
 /// Handler for the !speedrun command.
 pub(crate) struct Speedrun {
@@ -211,7 +209,7 @@ impl Speedrun {
             let mut runs = Vec::new();
 
             for GroupRun { name, run } in group.runs {
-                let duration = utils::compact_duration(run.run.times.primary.as_std());
+                let duration = display::compact_duration(run.run.times.primary.as_std());
                 runs.push(format!("{}: {} (#{})", name, duration, run.place));
             }
 
@@ -418,9 +416,8 @@ impl Speedrun {
                     names.extend(name);
                 }
 
-                let duration = utils::compact_duration(run.run.times.primary.as_std());
-
-                let names = utils::human_list(&names).unwrap_or_else(|| String::from("*none*"));
+                let duration = display::compact_duration(run.run.times.primary.as_std());
+                let names = display::human_list(&names).unwrap_or_else(|| String::from("*none*"));
 
                 runs.push(format!(
                     "{names}: {duration} (#{place})",

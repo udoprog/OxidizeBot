@@ -27,9 +27,6 @@ use self::cache::Cache;
 use self::chat::Chat;
 use self::settings::Settings;
 
-use crate::currency::Currency;
-use crate::player;
-
 pub(crate) const URL: &str = "http://localhost:12345";
 
 mod assets {
@@ -793,7 +790,7 @@ struct Api {
     version: &'static str,
     player: async_injector::Ref<player::Player>,
     after_streams: async_injector::Ref<db::AfterStreams>,
-    currency: async_injector::Ref<Currency>,
+    currency: async_injector::Ref<currency::Currency>,
     latest: ::settings::Var<Option<api::github::Release>>,
 }
 

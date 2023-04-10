@@ -2,12 +2,8 @@ use std::fmt;
 use std::sync::Arc;
 use std::time;
 
-use crate::api;
-use crate::channel::Channel;
-use crate::injector;
-use crate::settings;
-
 use anyhow::Result;
+use common::Channel;
 use irc::client;
 use irc::proto::command::{CapSubCommand, Command};
 use irc::proto::message::Message;
@@ -27,7 +23,7 @@ struct Inner {
     sender: client::Sender,
     limiter: RateLimiter,
     nightbot_limiter: RateLimiter,
-    nightbot: injector::Ref<api::NightBot>,
+    nightbot: async_injector::Ref<api::NightBot>,
 }
 
 #[derive(Clone)]
@@ -42,7 +38,7 @@ impl Sender {
         ty: settings::Var<Type>,
         target: String,
         sender: client::Sender,
-        nightbot: injector::Ref<api::NightBot>,
+        nightbot: async_injector::Ref<api::NightBot>,
     ) -> Result<Sender> {
         // limiter to use for IRC chat messages.
         let limiter = RateLimiter::builder()
@@ -68,7 +64,7 @@ impl Sender {
     }
 
     /// Get the channel this sender is associated with.
-    pub(crate) fn channel(&self) -> &Channel {
+    pub fn channel(&self) -> &Channel {
         Channel::new(self.inner.target.as_str())
     }
 

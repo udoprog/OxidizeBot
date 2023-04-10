@@ -146,7 +146,7 @@ impl Words {
     }
 
     /// Build a tester.
-    pub(crate) async fn tester(&self) -> Tester<'_> {
+    pub async fn tester(&self) -> Tester<'_> {
         let inner = self.inner.read().await;
 
         Tester { inner }
@@ -154,13 +154,13 @@ impl Words {
 }
 
 /// A locked tester.
-pub(crate) struct Tester<'a> {
+pub struct Tester<'a> {
     inner: RwLockReadGuard<'a, Inner>,
 }
 
 impl Tester<'_> {
     /// Test the given word.
-    pub(crate) fn test(&self, word: &str) -> Option<Arc<Word>> {
+    pub fn test(&self, word: &str) -> Option<Arc<Word>> {
         let word = tokenize(word);
 
         if let Some(w) = self.inner.hashed.get(&eudex::Hash::new(&word)) {
@@ -178,5 +178,5 @@ impl Tester<'_> {
 #[derive(Debug)]
 pub struct Word {
     pub(crate) word: String,
-    pub(crate) why: Option<template::Template>,
+    pub why: Option<template::Template>,
 }

@@ -2,20 +2,19 @@ use std::collections::HashSet;
 use std::pin::pin;
 
 use anyhow::{bail, Result};
+use async_trait::async_trait;
+use auth::Scope;
+use common::{Cooldown, Duration};
+use currency::Currency;
 
-use crate::api;
-use crate::auth::Scope;
 use crate::command;
-use crate::currency::Currency;
 use crate::module;
-use crate::prelude::*;
-use crate::utils::{Cooldown, Duration};
 
 pub(crate) struct Handler {
     enabled: settings::Var<bool>,
     reward: settings::Var<i64>,
     cooldown: settings::Var<Cooldown>,
-    currency: injector::Ref<Currency>,
+    currency: async_injector::Ref<Currency>,
     streamer: api::TwitchAndUser,
 }
 
