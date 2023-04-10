@@ -7,7 +7,6 @@ use tokio::sync::Mutex;
 use crate::command;
 use crate::module;
 use crate::stream_info;
-use crate::utils;
 
 #[derive(Clone)]
 pub(crate) struct Reward {

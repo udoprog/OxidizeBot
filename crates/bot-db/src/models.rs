@@ -1,6 +1,6 @@
 use chrono::NaiveDateTime;
-use common::{OwnedChannel};
 use common::models::TrackId;
+use common::OwnedChannel;
 use diesel::{Insertable, Queryable};
 use serde::{Deserialize, Serialize};
 

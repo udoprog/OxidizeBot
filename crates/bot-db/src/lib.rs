@@ -35,14 +35,14 @@ pub use self::words::{Word, Words};
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{bail, Result, Context, anyhow};
-use diesel_migrations::{EmbeddedMigrations, HarnessWithOutput, MigrationHarness};
-use thiserror::Error;
-use common::{Duration};
-use common::models::TrackId;
+use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
+use common::models::TrackId;
+use common::Duration;
 use diesel::prelude::*;
+use diesel_migrations::{EmbeddedMigrations, HarnessWithOutput, MigrationHarness};
 use parking_lot::Mutex;
+use thiserror::Error;
 
 pub const MIGRATIONS: EmbeddedMigrations = diesel_migrations::embed_migrations!("./migrations");
 
@@ -145,11 +145,7 @@ impl Database {
     }
 
     /// Remove the song with the given ID.
-    pub async fn player_remove_song(
-        &self,
-        track_id: &TrackId,
-        played: bool,
-    ) -> Result<bool> {
+    pub async fn player_remove_song(&self, track_id: &TrackId, played: bool) -> Result<bool> {
         use self::schema::songs::dsl;
 
         let track_id = track_id.clone();

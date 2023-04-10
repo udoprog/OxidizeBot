@@ -4,12 +4,12 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_fuse::Fuse;
 use async_injector::Injector;
+use common::Duration;
 use tokio::time;
 use tracing::Instrument;
 
 use crate::currency::CurrencyBuilder;
-use crate::utils::Duration;
-use crate::{api, db, idle, Settings};
+use crate::{idle, Settings};
 
 use super::Sender;
 
@@ -35,7 +35,7 @@ pub(super) async fn setup(
 
     let future = async move {
         while let Err(error) = task.run().await {
-            log_error!(error, "Currency task errored, retrying again in 10 seconds");
+            common::log_error!(error, "Currency task errored, retrying again in 10 seconds");
             time::sleep(time::Duration::from_secs(10)).await;
         }
 

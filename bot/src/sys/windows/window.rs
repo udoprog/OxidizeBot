@@ -23,7 +23,6 @@ use winapi::um::winuser::{
 };
 
 use super::convert::ToWide as _;
-use crate::prelude::*;
 use crate::sys::Notification;
 
 const ICON_MSG_ID: UINT = WM_USER + 1;

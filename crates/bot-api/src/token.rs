@@ -1,3 +1,4 @@
+use std::pin::pin;
 use std::sync::Arc;
 use std::{borrow::Cow, fmt};
 
@@ -51,6 +52,21 @@ pub struct Token {
 }
 
 impl Token {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                payload: parking_lot::RwLock::new(None),
+                refresh: Notify::new(),
+                waiters: Notify::new(),
+            }),
+        }
+    }
+
+    /// Clear the token.
+    pub fn clear(&self) {
+        *self.inner.payload.write() = None;
+    }
+
     /// Read the current token.
     pub fn read(&self) -> Option<(TokenPayload, Arc<str>)> {
         let payload = self.inner.payload.read();
@@ -68,14 +84,43 @@ impl Token {
         self.inner.refresh.notify_one();
     }
 
+    /// Wait for the token to need to be refreshed.
+    ///
+    /// Only a single waker is notified *once* if a refresh is needed.
+    pub async fn wait_for_refresh(&self) {
+        self.inner.refresh.notified().await;
+    }
+
     /// Test if token is ready.
     pub fn is_ready(&self) -> bool {
         self.inner.payload.read().is_some()
     }
 
+    /// Sets the value of the token, notifying anyone waiting for it to be
+    /// set.
+    pub fn set(&self, token: &str, client_id: &str) {
+        *self.inner.payload.write() = Some(Payload {
+            token: token.into(),
+            client_id: client_id.into(),
+        });
+
+        self.inner.waiters.notify_waiters();
+    }
+
     /// Wait until token is ready.
     pub async fn wait_until_read(&self) {
-        todo!()
+        let mut future = pin!(self.inner.waiters.notified());
+
+        loop {
+            future.as_mut().enable();
+
+            if self.inner.payload.read().is_some() {
+                break;
+            }
+
+            future.as_mut().await;
+            future.set(self.inner.waiters.notified());
+        }
     }
 }
 
@@ -87,6 +132,7 @@ struct Payload {
 struct Inner {
     payload: parking_lot::RwLock<Option<Payload>>,
     refresh: Notify,
+    waiters: Notify,
 }
 
 impl fmt::Debug for Token {

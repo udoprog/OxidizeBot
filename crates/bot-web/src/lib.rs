@@ -13,10 +13,10 @@ use anyhow::{bail, Error, Result};
 use api::setbac::ConnectionMeta;
 use async_injector::{Injector, Key};
 use common::models::spotify::senum::DeviceType;
+use common::models::TrackId;
 use common::sink::SinkExt;
 use common::tags;
 use common::{Channel, Duration};
-use common::models::TrackId;
 use serde::{de, Deserialize, Serialize};
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tracing::Instrument;
@@ -27,7 +27,8 @@ use self::cache::Cache;
 use self::chat::Chat;
 use self::settings::Settings;
 
-pub(crate) const URL: &str = "http://localhost:12345";
+/// URL of public web interface.
+pub const URL: &str = "http://localhost:12345";
 
 mod assets {
     #[derive(rust_embed::RustEmbed)]
@@ -983,7 +984,7 @@ impl Api {
 
 /// Set up the web endpoint.
 #[tracing::instrument(skip_all)]
-pub(crate) async fn run(
+pub async fn run(
     version: &'static str,
     injector: &Injector,
     message_log: messagelog::MessageLog,
@@ -1276,7 +1277,7 @@ struct ErrorMessage {
 
 /// Interface to the server.
 #[derive(Clone)]
-pub(crate) struct Server {
+pub struct Server {
     /// Callbacks for when we have received a token.
     active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
 }

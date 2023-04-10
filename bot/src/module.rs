@@ -1,12 +1,13 @@
-use crate::api;
 use crate::command;
 use crate::idle;
-use crate::injector::Injector;
 use crate::irc;
 use crate::stream_info;
-use crate::utils;
+
+use async_injector::Injector;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+use anyhow::Result;
 
 #[macro_use]
 mod macros;
@@ -53,7 +54,7 @@ impl Handlers {
 pub(crate) struct HookContext<'a> {
     pub(crate) injector: &'a Injector,
     pub(crate) handlers: &'a mut Handlers,
-    pub(crate) futures: &'a mut utils::Futures<'static>,
+    pub(crate) futures: &'a mut common::Futures<'static, Result<()>>,
     pub(crate) stream_info: &'a stream_info::StreamInfo,
     pub(crate) idle: &'a idle::Idle,
     // pub(crate) bot: &'a api::TwitchAndUser,
@@ -71,5 +72,5 @@ where
     fn ty(&self) -> &'static str;
 
     /// Set up command handlers for this module.
-    async fn hook(&self, _: HookContext<'_>) -> Result<(), anyhow::Error>;
+    async fn hook(&self, _: HookContext<'_>) -> Result<()>;
 }

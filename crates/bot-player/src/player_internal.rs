@@ -117,7 +117,7 @@ impl PlayerInternal {
                     track: Box::new(track),
                 },
                 None,
-                duration
+                duration,
             ));
 
             let mut song = Song::new(item, elapsed);

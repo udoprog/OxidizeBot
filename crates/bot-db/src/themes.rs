@@ -3,8 +3,8 @@ use std::fmt;
 use std::sync::Arc;
 
 use anyhow::Result;
-use common::{Channel, Offset, OwnedChannel};
 use common::models::TrackId;
+use common::{Channel, Offset, OwnedChannel};
 use diesel::prelude::*;
 use serde::Serialize;
 use tokio::sync::RwLock;
@@ -109,12 +109,7 @@ impl Themes {
     }
 
     /// Insert a word into the bad words list.
-    pub async fn edit(
-        &self,
-        channel: &Channel,
-        name: &str,
-        track_id: TrackId,
-    ) -> Result<()> {
+    pub async fn edit(&self, channel: &Channel, name: &str, track_id: TrackId) -> Result<()> {
         let key = Key::new(channel, name);
 
         let mut inner = self.inner.write().await;

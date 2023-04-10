@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::fmt;
+use std::fmt::Write;
 use std::io;
 use std::string;
-use std::fmt::Write;
 
 use anyhow::Result;
 
@@ -84,20 +84,13 @@ impl Template {
     }
 
     /// Render the template to the given output.
-    pub(crate) fn render(
-        &self,
-        out: &mut impl io::Write,
-        data: impl serde::Serialize,
-    ) -> Result<()> {
+    pub fn render(&self, out: &mut impl io::Write, data: impl serde::Serialize) -> Result<()> {
         let mut output = WriteOutput::new(out);
         self.render_internal(&mut output, data)
     }
 
     /// Render the template to a string.
-    pub fn render_to_string(
-        &self,
-        data: impl serde::Serialize,
-    ) -> Result<String> {
+    pub fn render_to_string(&self, data: impl serde::Serialize) -> Result<String> {
         let mut output = StringOutput::new();
         self.render_internal(&mut output, data)?;
         output.into_string().map_err(Into::into)

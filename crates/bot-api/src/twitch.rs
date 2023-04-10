@@ -6,9 +6,8 @@ pub mod model;
 
 pub mod pubsub;
 
-use common::stream::Stream;
 use anyhow::Result;
-use common::stream;
+use common::stream::Stream;
 use reqwest::{header, Client, Method, Url};
 use serde::{de, Serialize};
 use thiserror::Error;
@@ -23,7 +22,6 @@ const GQL_URL: &str = "https://gql.twitch.tv/gql";
 const GQL_CLIENT_ID: &str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 /// Common header.
 const BROADCASTER_ID: &str = "broadcaster_id";
-
 
 #[derive(Debug, Error)]
 pub(crate) enum Error {
@@ -101,10 +99,7 @@ impl Twitch {
     }
 
     /// Get moderators for the current broadcaster.
-    pub fn moderators(
-        &self,
-        broadcaster_id: &str,
-    ) -> impl Stream<Item = Result<Chatter>> + '_ {
+    pub fn moderators(&self, broadcaster_id: &str) -> impl Stream<Item = Result<Chatter>> + '_ {
         let mut req = self.new_api(Method::GET, &["moderation", "moderators"]);
         req.query_param("broadcaster_id", broadcaster_id);
         page(req)
@@ -156,10 +151,7 @@ impl Twitch {
     }
 
     /// Get stream information.
-    pub async fn streams(
-        &self,
-        user_id: &str,
-    ) -> impl Stream<Item = Result<model::Stream>> + '_ {
+    pub async fn streams(&self, user_id: &str) -> impl Stream<Item = Result<model::Stream>> + '_ {
         let mut req = self.new_api(Method::GET, &["streams"]);
         req.query_param("user_id", user_id);
         page(req)
@@ -254,7 +246,12 @@ impl Twitch {
 
     /// Access GQL client.
     fn gql(&self) -> RequestBuilder<'_> {
-        let mut req = RequestBuilder::new(&self.client, self.user_agent, Method::POST, self.gql_url.clone());
+        let mut req = RequestBuilder::new(
+            &self.client,
+            self.user_agent,
+            Method::POST,
+            self.gql_url.clone(),
+        );
 
         req.header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json")

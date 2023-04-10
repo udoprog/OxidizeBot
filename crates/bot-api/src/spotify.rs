@@ -1,21 +1,19 @@
 //! Spotify API helpers.
 
 use anyhow::Result;
-use common::stream::Stream;
-use common::models::SpotifyId;
-use reqwest::{header, Client, Method, StatusCode};
-use serde::de::DeserializeOwned;
-use serde::{ser, Deserialize, Serialize};
-use url::Url;
-use common::models::spotify::artist::SimplifiedArtist;
 use common::models::spotify::context::FullPlayingContext;
 use common::models::spotify::device::Device;
 use common::models::spotify::page::Page;
 use common::models::spotify::playlist::FullPlaylist;
 use common::models::spotify::search::SearchTracks;
-use common::models::spotify::senum::DeviceType;
 use common::models::spotify::track::{FullTrack, SavedTrack};
 use common::models::spotify::user::PrivateUser;
+use common::models::SpotifyId;
+use common::stream::Stream;
+use reqwest::{header, Client, Method, StatusCode};
+use serde::de::DeserializeOwned;
+use serde::{ser, Deserialize, Serialize};
+use url::Url;
 
 use crate::base::RequestBuilder;
 use crate::token::Token;
@@ -73,11 +71,7 @@ impl Spotify {
     }
 
     /// Get my playlists.
-    pub async fn playlist(
-        &self,
-        id: SpotifyId,
-        market: Option<&str>,
-    ) -> Result<FullPlaylist> {
+    pub async fn playlist(&self, id: SpotifyId, market: Option<&str>) -> Result<FullPlaylist> {
         let mut req = self.request(Method::GET, &["playlists", id.to_string().as_str()]);
 
         req.query_param("limit", &DEFAULT_LIMIT.to_string());
@@ -102,11 +96,7 @@ impl Spotify {
     }
 
     /// Set player volume.
-    pub async fn me_player_volume(
-        &self,
-        device_id: Option<&str>,
-        volume: f32,
-    ) -> Result<bool> {
+    pub async fn me_player_volume(&self, device_id: Option<&str>, volume: f32) -> Result<bool> {
         let volume = u32::min(100, (volume * 100f32).round() as u32).to_string();
 
         let mut req = self.request(Method::PUT, &["me", "player", "volume"]);
@@ -201,11 +191,7 @@ impl Spotify {
     }
 
     /// Enqueue the specified track.
-    pub async fn me_player_queue(
-        &self,
-        device_id: Option<&str>,
-        track_uri: &str,
-    ) -> Result<bool> {
+    pub async fn me_player_queue(&self, device_id: Option<&str>, track_uri: &str) -> Result<bool> {
         let mut r = self.request(Method::POST, &["me", "player", "queue"]);
 
         if let Some(device_id) = device_id {
@@ -263,10 +249,7 @@ impl Spotify {
     }
 
     /// Convert a page object into a stream.
-    pub fn page_as_stream<'a, T: 'a>(
-        &'a self,
-        page: Page<T>,
-    ) -> impl Stream<Item = Result<T>> + 'a
+    pub fn page_as_stream<'a, T: 'a>(&'a self, page: Page<T>) -> impl Stream<Item = Result<T>> + 'a
     where
         T: Send + DeserializeOwned,
     {

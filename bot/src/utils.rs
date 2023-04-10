@@ -1,12 +1,9 @@
 mod respond;
 pub(crate) use self::respond::respond;
 
-use std::borrow::Cow;
 use std::fmt;
 use std::future::Future;
-use std::ops;
 use std::sync::Arc;
-use std::time;
 
 use tokio::sync::{oneshot, Mutex};
 

@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use common::irc;
-use serde::{Serialize, Deserialize};
-use api::{bttv, ffz, BetterTTV, FrankerFaceZ, Tduva};
-use storage::Cache;
 use anyhow::Result;
+use api::{bttv, ffz, BetterTTV, FrankerFaceZ, Tduva};
+use common::irc;
+use serde::{Deserialize, Serialize};
 use smallvec::{smallvec, SmallVec};
+use storage::Cache;
 use tokio::sync::RwLock;
 
 /// Number of badges inlined for performance reasons.
@@ -139,7 +139,11 @@ pub(crate) struct Emotes {
 
 impl Emotes {
     /// Construct a new emoticon handler.
-    pub(crate) fn new(user_agent: &'static str, cache: Cache, streamer: api::TwitchAndUser) -> Result<Self> {
+    pub(crate) fn new(
+        user_agent: &'static str,
+        cache: Cache,
+        streamer: api::TwitchAndUser,
+    ) -> Result<Self> {
         Ok(Self {
             inner: Arc::new(Inner {
                 cache: cache.namespaced(&"emotes")?,
@@ -416,10 +420,7 @@ impl Emotes {
     }
 
     /// Get ffz chat badges.
-    async fn ffz_chat_badges(
-        &self,
-        name: &str,
-    ) -> Result<SmallVec<[Badge; INLINED_BADGES]>> {
+    async fn ffz_chat_badges(&self, name: &str) -> Result<SmallVec<[Badge; INLINED_BADGES]>> {
         let user = self
             .inner
             .cache
@@ -452,10 +453,7 @@ impl Emotes {
     }
 
     /// Get tduva chat badges.
-    async fn tduva_chat_badges(
-        &self,
-        name: &str,
-    ) -> Result<SmallVec<[Badge; INLINED_BADGES]>> {
+    async fn tduva_chat_badges(&self, name: &str) -> Result<SmallVec<[Badge; INLINED_BADGES]>> {
         let mut out = SmallVec::new();
 
         if let Some(d) = &*self.inner.tduva_data.read().await {

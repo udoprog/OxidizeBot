@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
+use common::models::{Song, State, Track, TrackId};
 use serde::Serialize;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
-use common::models::{State, Song, Track, TrackId};
 
 pub trait Message: 'static + Clone + Send + Sync + Serialize {
     /// The ID of a bussed message.

@@ -1,5 +1,5 @@
-use crate::models::{Track, TrackId};
 use crate::display;
+use crate::models::{Track, TrackId};
 
 #[derive(Debug, Clone)]
 pub struct Item {
@@ -10,7 +10,19 @@ pub struct Item {
 }
 
 impl Item {
-    pub fn new(track_id: TrackId, track: Track, user: Option<String>, duration: std::time::Duration) -> Self { Self { track_id, track, user, duration } }
+    pub fn new(
+        track_id: TrackId,
+        track: Track,
+        user: Option<String>,
+        duration: std::time::Duration,
+    ) -> Self {
+        Self {
+            track_id,
+            track,
+            user,
+            duration,
+        }
+    }
 
     /// Human readable version of playback item.
     pub fn what(&self) -> String {

@@ -4,10 +4,10 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
 use anyhow::{bail, Result};
 use async_fuse::Fuse;
 use backoff::backoff::Backoff;
+use chrono::{DateTime, Utc};
 use common::sink::SinkExt;
 use common::stream::Stream;
 use serde::{Deserialize, Serialize};
@@ -371,8 +371,6 @@ struct Inner {
 }
 
 pub mod transport {
-    use std::fmt;
-
     use serde::{Deserialize, Serialize};
 
     use crate::token::TokenPayload;

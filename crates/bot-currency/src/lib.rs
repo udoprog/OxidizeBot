@@ -205,11 +205,7 @@ impl Backend {
     }
 
     /// Find user balance.
-    async fn balance_of(
-        &self,
-        channel: &Channel,
-        user: &str,
-    ) -> Result<Option<BalanceOf>> {
+    async fn balance_of(&self, channel: &Channel, user: &str) -> Result<Option<BalanceOf>> {
         use self::Backend::*;
 
         match self {
@@ -219,12 +215,7 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    async fn balance_add(
-        &self,
-        channel: &Channel,
-        user: &str,
-        amount: i64,
-    ) -> Result<()> {
+    async fn balance_add(&self, channel: &Channel, user: &str, amount: i64) -> Result<()> {
         use self::Backend::*;
 
         match self {
@@ -331,21 +322,12 @@ impl Currency {
     }
 
     /// Find user balance.
-    async fn balance_of(
-        &self,
-        channel: &Channel,
-        user: &str,
-    ) -> Result<Option<BalanceOf>> {
+    async fn balance_of(&self, channel: &Channel, user: &str) -> Result<Option<BalanceOf>> {
         self.inner.backend.balance_of(channel, user).await
     }
 
     /// Add (or subtract) from the balance for a single user.
-    async fn balance_add(
-        &self,
-        channel: &Channel,
-        user: &str,
-        amount: i64,
-    ) -> Result<()> {
+    async fn balance_add(&self, channel: &Channel, user: &str, amount: i64) -> Result<()> {
         self.inner.backend.balance_add(channel, user, amount).await
     }
 

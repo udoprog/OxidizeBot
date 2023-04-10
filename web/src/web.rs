@@ -342,7 +342,7 @@ impl Handler {
                     Error::NotFound => http_error(StatusCode::NOT_FOUND, "Not Found"),
                     Error::Unauthorized => http_error(StatusCode::UNAUTHORIZED, "Unauthorized"),
                     Error::Error(e) => {
-                        log_error!(e, "Internal server error");
+                        common::log_error!(e, "Internal server error");
                         http_error(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
                     }
                 };
@@ -350,7 +350,7 @@ impl Handler {
                 match result {
                     Ok(result) => result,
                     Err(Error::Error(e)) => {
-                        log_error!(e, "Failed to build error response");
+                        common::log_error!(e, "Failed to build error response");
                         let mut r = Response::new(Body::from("Internal Server Error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         r
@@ -555,7 +555,7 @@ impl Handler {
                 Some(status) if status.is_client_error() => {
                     self.db.delete_connection(&user.user_id, id)?;
 
-                    log_error!(e, "Failed to refresh token");
+                    common::log_error!(e, "Failed to refresh token");
 
                     return http_error(
                         StatusCode::BAD_REQUEST,

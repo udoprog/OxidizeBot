@@ -11,7 +11,7 @@ common = { package = "bot-common", path = "../bot-common" }
 thiserror = "1.0.40"
 anyhow = "1.0.70"
 async-injector = "0.18.5"
-diesel = { version = "2.0.3", default-features = false }
+diesel = "2.0.3"
 mysql_async = "0.31.3"
 serde = { version = "1.0.159", features = ["derive"] }
 tokio = { version = "1.27.0", default-features = false, features = ["rt"] }

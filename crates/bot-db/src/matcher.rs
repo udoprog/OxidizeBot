@@ -3,8 +3,8 @@ use std::fmt;
 use std::sync::Arc;
 
 use anyhow::Error;
-use common::{Channel, OwnedChannel};
 use common::words;
+use common::{Channel, OwnedChannel};
 use serde::{Serialize, Serializer};
 
 /// Trait over something that has a matchable pattern.

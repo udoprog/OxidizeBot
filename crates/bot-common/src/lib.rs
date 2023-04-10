@@ -23,8 +23,8 @@ pub mod tags;
 mod pt_duration;
 pub use self::pt_duration::PtDuration;
 
+pub use futures_util::sink;
 pub use tokio_stream as stream;
-pub use futures_util::sink as sink;
 
 pub mod models;
 
@@ -40,5 +40,4 @@ pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T
 pub type BoxStream<'a, T> = std::pin::Pin<Box<dyn tokio_stream::Stream<Item = T> + Send + 'a>>;
 
 /// Collection of boxed futures to drive.
-pub type Futures<'a, O> =
-    ::futures_util::stream::FuturesUnordered<BoxFuture<'a, O>>;
+pub type Futures<'a, O> = ::futures_util::stream::FuturesUnordered<BoxFuture<'a, O>>;

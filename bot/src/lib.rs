@@ -123,17 +123,13 @@ mod stream_info;
 mod sys;
 mod updater;
 mod utils;
-use tokio_stream as stream;
-
-use self::panic_logger::panic_logger;
-use self::uri::Uri;
 
 /// The local schema alias.
-type Schema = crate::settings::Schema<crate::auth::Scope>;
+type Schema = settings::Schema<auth::Scope>;
 /// The local settings alias.
-type Settings = crate::settings::Settings<crate::auth::Scope>;
+type Settings = settings::Settings<auth::Scope>;
 /// The local setting alias.
-type Setting = crate::settings::Setting<crate::auth::Scope>;
+type Setting = settings::Setting<auth::Scope>;
 
 const SCHEMA: &[u8] = include_bytes!("settings.yaml");
 const AUTH_SCHEMA: &[u8] = include_bytes!("auth.yaml");

@@ -1,13 +1,12 @@
 //! speedrun.com API client.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt;
 
 use anyhow::Result;
 use chrono::{DateTime, NaiveDate, Utc};
 use common::PtDuration;
 use reqwest::{header, Client, Method, StatusCode, Url};
-use serde::{de, ser, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 use crate::base::RequestBuilder;
 

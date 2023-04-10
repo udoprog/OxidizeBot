@@ -4,9 +4,8 @@ use std::path::PathBuf;
 use anyhow::Result;
 use async_fuse::Fuse;
 use async_injector::Injector;
-use common::display;
-use common::model::{Song, State, TrackId};
-use common::Duration;
+use common::models::{Song, State, TrackId};
+use common::{display, Duration};
 use serde::Serialize;
 use template::Template;
 
@@ -214,8 +213,8 @@ pub(crate) fn data(song: &Song, state: State) -> Result<CurrentData<'_>> {
         track_id: &song.item().track_id(),
         name: song.item().track().name(),
         artists,
-        user: song.item().user(),
-        duration: display::digital_duration(song.item.duration),
+        user: song.item().user().map(String::as_str),
+        duration: display::digital_duration(song.item().duration()),
         elapsed: display::digital_duration(song.elapsed()),
     })
 }

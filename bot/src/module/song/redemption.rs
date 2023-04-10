@@ -1,6 +1,11 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use api::twitch::pubsub;
+use async_fuse::Fuse;
+use async_injector::Injector;
 
+use crate::irc;
 use crate::module::song::requester::{RequestCurrency, SongRequester};
 use crate::player::Player;
 use crate::utils;
@@ -158,7 +163,7 @@ impl State {
             .await;
 
         if let Err(e) = result {
-            log_error!(
+            common::log_error!(
                 e,
                 "failed to update status of reward `{}`",
                 redemption.reward.id

@@ -5,8 +5,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time;
 
 use anyhow::{bail, Result};
+use async_fuse::Fuse;
 use async_trait::async_trait;
-use common::{duration, Cooldown, Duration};
+use common::{display, Cooldown, Duration};
+use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, Mutex};
 
@@ -53,7 +55,7 @@ macro_rules! vehicle {
     };
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct CommandConfig {
     name: String,
     #[serde(default)]
@@ -64,7 +66,7 @@ struct CommandConfig {
     cost: Option<u32>,
 }
 
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct CommandsConfig(Vec<CommandConfig>);
 
 #[derive(Debug)]
@@ -958,7 +960,7 @@ impl command::Handler for Handler {
                     ctx,
                     "{} cooldown in effect, please wait at least {}!",
                     what,
-                    duration::compact_duration(remaining),
+                    display::compact_duration(remaining),
                 );
 
                 return Ok(());

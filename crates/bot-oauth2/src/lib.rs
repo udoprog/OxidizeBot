@@ -1,26 +1,25 @@
 use std::collections::VecDeque;
 use std::fmt;
+use std::future::Future;
 use std::sync::Arc;
 use std::time;
-use std::future::Future;
 
-use api::setbac::{Connection, ConnectionMeta, Token};
+use anyhow::Error;
+use anyhow::Result;
+use api::setbac::{Connection, ConnectionMeta};
 use async_injector::{Injector, Key};
 use common::Duration;
-use anyhow::Error;
 use thiserror::Error;
+use tokio::sync::{mpsc, oneshot};
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tracing::Instrument;
-use tokio::sync::{mpsc, oneshot};
 
 /// Connection metadata.
-pub struct ConnectionIntegrationMeta {
-}
+pub struct ConnectionIntegrationMeta {}
 
 impl ConnectionIntegrationMeta {
     fn from_api(meta: ConnectionMeta) -> Self {
-        Self {
-        }
+        Self {}
     }
 }
 
@@ -40,135 +39,18 @@ pub(crate) struct MissingTokenError(&'static str);
 #[error("Connection receive was cancelled")]
 pub(crate) struct CancelledToken(());
 
-#[derive(Debug, Default)]
-pub(crate) struct InnerSyncToken {
-    /// Stored connection.
-    connection: Option<Box<Connection>>,
-    /// Queue to notify when a connection is available.
-    ready_queue: VecDeque<oneshot::Sender<()>>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct SyncToken {
-    /// Name of the flow associated with connection.
-    flow_id: &'static str,
-    /// The interior reference to the token.
-    inner: Arc<RwLock<InnerSyncToken>>,
-    /// Channel to use to force a refresh.
-    force_refresh: mpsc::UnboundedSender<Option<Box<Connection>>>,
-}
-
-impl SyncToken {
-    /// Create a new SyncToken.
-    pub(crate) fn new(
-        flow_id: &'static str,
-        force_refresh: mpsc::UnboundedSender<Option<Box<Connection>>>,
-    ) -> Self {
-        Self {
-            flow_id,
-            inner: Default::default(),
-            force_refresh,
-        }
-    }
-
-    /// Set the connection and notify all waiters.
-    pub(crate) async fn update(&self, update: Box<Connection>) {
-        tracing::info!("Updating connection");
-        let mut lock = self.inner.write().await;
-
-        let InnerSyncToken {
-            ref mut connection,
-            ref mut ready_queue,
-        } = *lock;
-
-        *connection = Some(update);
-
-        // send ready notifications if we updated the connection.
-        while let Some(front) = ready_queue.pop_front() {
-            if let Err(()) = front.send(()) {
-                tracing::warn!("Tried to send ready notification but failed");
-            }
-        }
-    }
-
-    /// Clear the current connection.
-    #[tracing::instrument(skip_all)]
-    pub(crate) async fn clear(&self) {
-        tracing::trace!("Clearing connection");
-        self.inner.write().await.connection = None;
-    }
-
-    /// Force a connection refresh.
-    #[tracing::instrument(skip_all)]
-    pub(crate) async fn force_refresh(&self) -> Result<(), Error> {
-        tracing::trace!("Clearing refresh");
-        let connection = self.inner.write().await.connection.take();
-        self.force_refresh.send(connection)?;
-        Ok(())
-    }
-
-    /// Check if connection is ready.
-    pub(crate) async fn is_ready(&self) -> bool {
-        self.inner.read().await.connection.is_some()
-    }
-
-    /// Wait until an underlying connection is available.
-    #[tracing::instrument(skip_all)]
-    pub(crate) async fn wait_until_ready(&self) -> Result<(), CancelledToken> {
-        if self.inner.read().await.connection.is_some() {
-            return Ok(());
-        }
-
-        let rx = {
-            let mut lock = self.inner.write().await;
-
-            let InnerSyncToken {
-                ref connection,
-                ref mut ready_queue,
-            } = *lock;
-
-            if connection.is_some() {
-                return Ok(());
-            }
-
-            let (tx, rx) = oneshot::channel();
-            ready_queue.push_back(tx);
-            rx
-        };
-
-        tracing::trace!("Waiting for connection");
-
-        match rx.await {
-            Ok(()) => Ok(()),
-            Err(..) => Err(CancelledToken(())),
-        }
-    }
-
-    /// Read the synchronized connection.
-    ///
-    /// This results in an error if there is no connection to read.
-    pub(crate) async fn read(&self) -> Result<RwLockReadGuard<'_, Token>, MissingTokenError> {
-        match RwLockReadGuard::try_map(self.inner.read().await, |i| {
-            i.connection.as_ref().map(|c| &c.token)
-        }) {
-            Ok(guard) => Ok(guard),
-            Err(_) => Err(MissingTokenError(self.flow_id)),
-        }
-    }
-}
-
 struct ConnectionFactory<I> {
     setbac: Option<api::Setbac>,
     flow_id: &'static str,
     expires: time::Duration,
     force_refresh: bool,
     connection: Option<Box<Connection>>,
-    sync_token: SyncToken,
     settings: settings::Settings<auth::Scope>,
     injector: Injector,
     key: Key<api::Token>,
     integration: I,
     current_hash: Option<String>,
+    token: api::Token,
 }
 
 enum Validation {
@@ -180,9 +62,12 @@ enum Validation {
     Updated(Box<Connection>),
 }
 
-impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
+impl<I> ConnectionFactory<I>
+where
+    I: ConnectionIntegration,
+{
     /// Perform an update based on the existing state.
-    pub(crate) async fn update(&mut self) -> Result<(), Error> {
+    pub(crate) async fn update(&mut self) -> Result<()> {
         match self.log_build().await {
             Validation::Ok => {
                 tracing::trace!("Connection ok")
@@ -194,7 +79,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
                     .set_silent("connection", None::<Connection>)
                     .await?;
 
-                self.sync_token.clear().await;
+                self.token.clear();
 
                 if self.current_hash.is_some() {
                     self.injector.clear_key(&self.key).await;
@@ -211,18 +96,21 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
                     .set_silent("connection", Some(&connection))
                     .await?;
 
-                self.sync_token.update(connection).await;
+                self.token
+                    .set(&connection.token.access_token, &connection.token.client_id);
 
                 if self.current_hash.as_ref() != Some(&meta.hash) {
                     tracing::trace!("Update sync token through injector");
 
                     self.injector
-                        .update_key(&self.key, self.sync_token.clone())
+                        .update_key(&self.key, self.token.clone())
                         .await;
+
                     self.current_hash = Some(meta.hash.clone());
                 }
 
-                self.integration.update_connection(self.flow_id, ConnectionIntegrationMeta::from_api(meta));
+                self.integration
+                    .update_connection(self.flow_id, ConnectionIntegrationMeta::from_api(meta));
             }
         }
 
@@ -234,7 +122,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
     pub(crate) async fn update_from_settings(
         &mut self,
         connection: Option<Box<Connection>>,
-    ) -> Result<(), Error> {
+    ) -> Result<()> {
         let was_none = self.connection.is_none();
         self.connection = connection.clone();
 
@@ -253,18 +141,20 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
 
         if let Some(connection) = connection {
             let meta = connection.as_meta();
-            self.sync_token.update(connection).await;
+            self.token
+                .set(&connection.token.access_token, &connection.token.client_id);
 
             if self.current_hash.as_ref() != Some(&meta.hash) {
                 self.injector
-                    .update_key(&self.key, self.sync_token.clone())
+                    .update_key(&self.key, self.token.clone())
                     .await;
                 self.current_hash = Some(meta.hash.clone());
             }
 
-            self.integration.update_connection(self.flow_id, ConnectionIntegrationMeta::from_api(meta));
+            self.integration
+                .update_connection(self.flow_id, ConnectionIntegrationMeta::from_api(meta));
         } else {
-            self.sync_token.clear().await;
+            self.token.clear();
 
             if self.current_hash.is_some() {
                 self.injector.clear_key(&self.key).await;
@@ -290,7 +180,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
 
     /// Construct a new connection.
     #[tracing::instrument(skip_all)]
-    pub(crate) async fn build(&mut self) -> Result<Validation, Error> {
+    pub(crate) async fn build(&mut self) -> Result<Validation> {
         let Some(setbac) = self.setbac.as_ref() else {
             tracing::trace!("No client to configure");
             return Ok(Validation::Ok);
@@ -358,11 +248,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
 
     /// Validate a connection base on the current flow.
     #[tracing::instrument(skip_all)]
-    async fn validate(
-        &self,
-        setbac: &api::Setbac,
-        connection: &Connection,
-    ) -> Result<Validation, Error> {
+    async fn validate(&self, setbac: &api::Setbac, connection: &Connection) -> Result<Validation> {
         tracing::trace!("Validating connection");
 
         // TODO: for some reason, this doesn't update :/
@@ -385,7 +271,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
 
     /// Refresh a connection.
     #[tracing::instrument(skip_all)]
-    async fn refresh(&self, setbac: &api::Setbac) -> Result<Option<Box<Connection>>, Error> {
+    async fn refresh(&self, setbac: &api::Setbac) -> Result<Option<Box<Connection>>> {
         tracing::trace!("Refreshing");
 
         let Some(connection) = setbac.refresh_connection(self.flow_id).await? else {
@@ -396,7 +282,7 @@ impl<I> ConnectionFactory<I> where I: ConnectionIntegration {
     }
 
     /// Check if connection is outdated.
-    fn is_outdated(&self, c: &Connection, meta: &ConnectionMeta) -> Result<bool, Error> {
+    fn is_outdated(&self, c: &Connection, meta: &ConnectionMeta) -> Result<bool> {
         if c.hash != meta.hash {
             return Ok(true);
         }
@@ -420,30 +306,31 @@ impl<I> fmt::Debug for ConnectionFactory<I> {
 #[tracing::instrument(skip_all, fields(id = flow_id))]
 pub async fn setup<I>(
     flow_id: &'static str,
-    parent: &settings::Settings<auth::Scope>,
+    parent: settings::Settings<auth::Scope>,
     settings: settings::Settings<auth::Scope>,
     injector: Injector,
     key: Key<api::Token>,
     integration: I,
-) -> Result<(api::Token, impl Future<Output = Result<(), Error>>), Error> where I: ConnectionIntegration
+) -> Result<()>
+where
+    I: ConnectionIntegration,
 {
     // connection expires within 30 minutes.
     let expires = time::Duration::from_secs(30 * 60);
-
-    // queue used to force connection refreshes.
-    let (force_refresh, mut force_refresh_rx) = mpsc::unbounded_channel();
 
     let (mut connection_stream, connection) = settings
         .stream::<Connection>("connection")
         .optional()
         .await?;
+
     let (mut setbac_stream, setbac) = injector.stream::<api::Setbac>().await;
+
     let (mut check_interval_stream, check_interval) = parent
         .stream::<Duration>("remote/check-interval")
         .or_with(Duration::seconds(30))
         .await?;
 
-    let sync_token = SyncToken::new(flow_id, force_refresh);
+    let token = api::Token::new();
 
     let mut builder = ConnectionFactory {
         setbac,
@@ -451,12 +338,12 @@ pub async fn setup<I>(
         expires,
         force_refresh: false,
         connection: None,
-        sync_token: sync_token.clone(),
         settings,
         injector,
         key,
         integration,
         current_hash: None,
+        token: token.clone(),
     };
 
     // check for expirations.
@@ -466,37 +353,35 @@ pub async fn setup<I>(
         .update_from_settings(connection.map(Box::new))
         .await?;
 
-    let future = async move {
-        tracing::trace!("Starting loop");
+    tracing::trace!("Starting loop");
 
-        loop {
-            tokio::select! {
-                setbac = setbac_stream.recv() => {
-                    builder.setbac = setbac;
-                    builder.update().await?;
-                }
-                connection = connection_stream.recv() => {
-                    tracing::trace!("New from settings");
-                    builder.update_from_settings(connection.map(Box::new)).await?;
-                }
-                _ = force_refresh_rx.recv() => {
-                    tracing::trace!("Forced refresh");
+    loop {
+        tokio::select! {
+            setbac = setbac_stream.recv() => {
+                builder.setbac = setbac;
+                builder.update().await?;
+            }
+            connection = connection_stream.recv() => {
+                tracing::trace!("New from settings");
+                builder.update_from_settings(connection.map(Box::new)).await?;
+            }
+            _ = builder.token.wait_for_refresh() => {
+                tracing::trace!("Forced refresh");
 
-                    if !std::mem::take(&mut builder.force_refresh) {
-                        tracing::warn!("Forcing connection refresh");
-                        builder.update().await?;
-                    }
-                }
-                _ = check_interval.tick() => {
-                    tracing::trace!("Check for expiration");
+                if !std::mem::take(&mut builder.force_refresh) {
+                    tracing::warn!("Forcing connection refresh");
                     builder.update().await?;
-                }
-                update = check_interval_stream.recv() => {
-                    check_interval = tokio::time::interval(update.as_std());
                 }
             }
+            _ = check_interval.tick() => {
+                tracing::trace!("Check for expiration");
+                builder.update().await?;
+            }
+            update = check_interval_stream.recv() => {
+                check_interval = tokio::time::interval(update.as_std());
+            }
         }
-    };
+    }
 
-    Ok((sync_token, future.in_current_span()))
+    Ok(())
 }

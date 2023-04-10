@@ -1,7 +1,7 @@
 use std::{fmt, num::ParseIntError};
 
+use serde::{de, ser, Deserialize, Serialize};
 use thiserror::Error;
-use serde::{Serialize, Deserialize, de, ser};
 
 #[derive(Debug, Error)]
 pub enum FromStrError {

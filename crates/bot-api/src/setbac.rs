@@ -1,27 +1,21 @@
 //! setbac.tv API helpers.
 
-use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use async_injector::{Injector, Key};
 use chrono::{DateTime, Utc};
-use common::tags;
 use reqwest::{header, Client, Method, Url};
 use serde::{Deserialize, Serialize};
-use tracing::Instrument;
 
 use crate::base::RequestBuilder;
-use crate::token;
-
-const DEFAULT_API_URL: &str = "https://setbac.tv";
+use crate::token::Token;
 
 struct Inner {
     user_agent: &'static str,
     client: Client,
     api_url: Url,
-    streamer_token: Option<crate::token::Token>,
+    streamer_token: Option<Token>,
     secret_key: Option<String>,
 }
 
@@ -35,7 +29,7 @@ impl Setbac {
     /// Create a new API integration.
     pub fn new(
         user_agent: &'static str,
-        streamer_token: Option<crate::token::Token>,
+        streamer_token: Option<Token>,
         secret_key: Option<String>,
         api_url: Url,
     ) -> Self {
@@ -62,7 +56,8 @@ impl Setbac {
             p.extend(path);
         }
 
-        let mut request = RequestBuilder::new(&self.inner.client, self.inner.user_agent, method, url);
+        let mut request =
+            RequestBuilder::new(&self.inner.client, self.inner.user_agent, method, url);
 
         if let Some(secret_key) = self.inner.secret_key.as_ref() {
             request.header(header::AUTHORIZATION, &format!("key:{}", secret_key));
@@ -97,10 +92,7 @@ impl Setbac {
     }
 
     /// Get the token corresponding to the given flow.
-    pub async fn get_connection_meta(
-        &self,
-        flow_id: &str,
-    ) -> Result<Option<ConnectionMeta>> {
+    pub async fn get_connection_meta(&self, flow_id: &str) -> Result<Option<ConnectionMeta>> {
         let mut req = self.request(Method::GET, &["api", "connections", flow_id]);
 
         req.query_param("format", "meta")
@@ -176,7 +168,7 @@ impl From<Arc<common::models::Item>> for Item {
 /// A token that comes out of a token workflow.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[non_exhaustive]
-pub struct Token {
+pub struct RemoteToken {
     /// The client identifier that generated the token.
     pub client_id: String,
     /// Flow that generated the token.
@@ -191,7 +183,7 @@ pub struct Token {
     pub scopes: Vec<String>,
 }
 
-impl Token {
+impl RemoteToken {
     /// Return `true` if the token expires within 30 minutes.
     pub fn expires_within(&self, within: Duration) -> Result<bool> {
         let out = match self.expires_in {
@@ -223,7 +215,7 @@ pub struct Connection {
     pub title: String,
     pub description: String,
     pub hash: String,
-    pub token: Token,
+    pub token: RemoteToken,
 }
 
 impl Connection {

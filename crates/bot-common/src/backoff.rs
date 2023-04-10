@@ -18,6 +18,11 @@ impl Exponential {
         }
     }
 
+    /// Reset backoff.
+    pub fn reset(&mut self) {
+        self.attempt = 0;
+    }
+
     /// Get the next duration and increment the attempt counter.
     pub fn next(&mut self) -> Duration {
         let mut duration = self.initial;

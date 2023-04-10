@@ -1,4 +1,3 @@
-
 /// Struct of tags.
 #[derive(Debug, Clone, Default)]
 pub struct Tags {
@@ -18,7 +17,12 @@ pub struct Tags {
 
 impl Tags {
     /// Extract tags from message.
-    pub fn from_tags<I, K, V>(tags: I) -> Tags where I: IntoIterator<Item = (K, V)>, K: AsRef<str>, V: AsRef<str> {
+    pub fn from_tags<I, K, V>(tags: I) -> Tags
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
         let mut id = None;
         let mut msg_id = None;
         let mut display_name = None;
@@ -36,7 +40,7 @@ impl Tags {
                 "emotes" => emotes = Some(value.as_ref().to_owned()),
                 key => {
                     tracing::warn!(key, value = value.as_ref(), "unsupported tag");
-                },
+                }
             }
         }
 

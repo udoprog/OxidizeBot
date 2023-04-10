@@ -47,7 +47,7 @@ where
             let path = path.canonicalize()?;
 
             if let Err(e) = scripts.load(&path) {
-                log_error!(e, "Failed to load script: {}", path.display())
+                common::log_error!(e, "Failed to load script: {}", path.display())
             }
         }
     }

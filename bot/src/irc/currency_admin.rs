@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
 use anyhow::Error;
+use async_injector::Injector;
 use async_trait::async_trait;
 use common::display;
 
-use crate::auth::Scope;
 use crate::command;
 use crate::currency::{BalanceTransferError, Currency};
+use auth::Scope;
 
 /// Handler for the !admin command.
 pub(crate) struct Handler {
@@ -59,7 +60,7 @@ impl command::Handler for Handler {
                     }
                     Err(e) => {
                         respond!(user, "Could not get balance, sorry :(");
-                        log_error!(e, "Failed to get balance");
+                        common::log_error!(e, "Failed to get balance");
                     }
                 }
             }
@@ -83,7 +84,7 @@ impl command::Handler for Handler {
                     }
                     Err(e) => {
                         respond!(ctx, "Count not get balance, sorry :(");
-                        log_error!(e, "Failed to get balance");
+                        common::log_error!(e, "Failed to get balance");
                     }
                 }
             }
@@ -147,7 +148,7 @@ impl command::Handler for Handler {
                             "Failed to give {currency}, sorry :(",
                             currency = currency.name
                         );
-                        log_error!(e, "Failed to modify currency");
+                        common::log_error!(e, "Failed to modify currency");
                     }
                 }
             }

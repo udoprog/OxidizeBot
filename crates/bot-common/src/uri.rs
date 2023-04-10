@@ -1,7 +1,6 @@
 /// Tools to deal with URIs.
 ///
 /// URIs are strings that identify a single resource, like a track or a playlist.
-
 use std::fmt;
 use std::str::FromStr;
 

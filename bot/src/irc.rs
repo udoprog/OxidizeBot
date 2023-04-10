@@ -6,23 +6,29 @@ mod sender;
 
 use std::path::PathBuf;
 use std::pin::pin;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time;
 
 use anyhow::{anyhow, bail, Context, Result};
+use async_fuse::Fuse;
+use async_injector::{Injector, Key, Provider};
+use auth::{Auth, Role, Scope};
+use common::stream::Stream;
+use common::{backoff, Tags};
+use common::{tags, Channel, Cooldown};
 use irc::client::{self, Client};
 use irc::proto::command::Command;
 use irc::proto::message::{Message, Tag};
 use irc::proto::Prefix;
 use notify::{recommended_watcher, RecommendedWatcher, Watcher};
+use serde::Serialize;
 use std::collections::HashSet;
 use std::fmt;
-use tokio::sync;
+use tokio::sync::mpsc;
 
 pub(crate) use self::messages::Messages;
 pub(crate) use self::sender::Sender;
-use crate::auth::{Auth, Role, Scope};
-use crate::channel::Channel;
 use crate::command;
 use crate::idle;
 use crate::message_log::MessageLog;
@@ -31,8 +37,7 @@ use crate::prelude::*;
 use crate::script;
 use crate::stream_info;
 use crate::task;
-use crate::utils::{self, Cooldown};
-use common::tags;
+use crate::utils;
 
 const SERVER: &str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &str = "twitch.tv/tags";
@@ -48,14 +53,9 @@ pub(crate) struct Irc {
 
 impl Irc {
     pub(crate) async fn run(self) -> Result<()> {
-        use backoff::backoff::Backoff as _;
-
         let mut provider = Setup::provider(&self.injector).await?;
 
-        let mut error_backoff = backoff::ExponentialBackoff::default();
-        error_backoff.current_interval = time::Duration::from_secs(5);
-        error_backoff.initial_interval = time::Duration::from_secs(5);
-        error_backoff.max_elapsed_time = None;
+        let mut error_backoff = backoff::Exponential::new(time::Duration::from_secs(5));
 
         loop {
             while let Some(setup) = provider.build() {
@@ -70,8 +70,12 @@ impl Irc {
                         error_backoff.reset();
                     }
                     Err(e) => {
-                        let backoff = error_backoff.next_backoff().unwrap_or_default();
-                        log_error!(e, "Chat component crashed, restarting in {:?}", backoff);
+                        let backoff = error_backoff.next();
+                        common::log_error!(
+                            e,
+                            "Chat component crashed, restarting in {:?}",
+                            backoff
+                        );
                         tokio::time::sleep(backoff).await;
                         continue;
                     }
@@ -177,7 +181,7 @@ impl IrcLoop<'_> {
 
         let sender = Sender::new(sender_ty, chat_channel.clone(), client.sender(), nightbot)?;
 
-        let mut futures = crate::utils::Futures::new();
+        let mut futures = common::Futures::<Result<()>>::new();
 
         let stream_info = {
             let (stream_info, future) =
@@ -204,7 +208,7 @@ impl IrcLoop<'_> {
 
         let scripts = script::load_dir(channel.as_ref(), db.clone(), script_dirs).await?;
 
-        let (scripts_watch_tx, mut scripts_watch_rx) = sync::mpsc::unbounded_channel();
+        let (scripts_watch_tx, mut scripts_watch_rx) = mpsc::unbounded_channel();
 
         let _watcher = if !script_dirs.is_empty() {
             let mut watcher: RecommendedWatcher = recommended_watcher(move |e| {
@@ -340,7 +344,7 @@ impl IrcLoop<'_> {
                 Some(ev) = scripts_watch_rx.recv() => {
                     if let Ok(ev) = ev {
                         if let Err(e) = handler.handle_script_filesystem_event(ev) {
-                            log_error!(e, "Failed to handle script filesystem event");
+                            common::log_error!(e, "Failed to handle script filesystem event");
                         }
                     }
                 }
@@ -352,7 +356,7 @@ impl IrcLoop<'_> {
                             tracing::trace!("Raw command: {}", command);
 
                             if let Err(e) = handler.raw(command).await {
-                                log_error!(e, "Failed to handle message");
+                                common::log_error!(e, "Failed to handle message");
                             }
                         }
                     }
@@ -364,7 +368,7 @@ impl IrcLoop<'_> {
                             return Ok(());
                         }
                         Err(e) => {
-                            log_warn!(e, "IRC component errored, restarting in 5 seconds");
+                            common::log_warn!(e, "IRC component errored, restarting in 5 seconds");
                             tokio::time::sleep(time::Duration::from_secs(5)).await;
                             return Ok(());
                         }
@@ -401,7 +405,7 @@ impl IrcLoop<'_> {
                 message = client_stream.next() => {
                     if let Some(m) = message.transpose()? {
                         if let Err(e) = handler.handle(m).await {
-                            log_error!(e, "Failed to handle message");
+                            common::log_error!(e, "Failed to handle message");
                         }
                     }
 
@@ -512,7 +516,7 @@ impl Handler<'_> {
                     let p = p.canonicalize()?;
 
                     if let Err(e) = self.scripts.reload(&p) {
-                        log_error!(e, "Failed to reload: {}", p.display());
+                        common::log_error!(e, "Failed to reload: {}", p.display());
                     }
                 }
             }
@@ -597,7 +601,7 @@ async fn process_command(
                             }
                         } else {
                             respond!(ctx, "Sorry, something went wrong :(");
-                            log_error!(e, "Error when processing command");
+                            common::log_error!(e, "Error when processing command");
                         }
                     }
                 });
@@ -608,7 +612,7 @@ async fn process_command(
             if let Some(handler) = scripts.get(other) {
                 if let Err(e) = handler.call(ctx.clone()).await {
                     ctx.respond("Sorry, something went wrong :(").await;
-                    log_error!(e, "Error when processing command");
+                    common::log_error!(e, "Error when processing command");
                 }
 
                 return Ok(());
@@ -652,7 +656,7 @@ impl<'a> Handler<'a> {
                             self.sender.privmsg(&why).await;
                         }
                         Err(e) => {
-                            log_error!(e, "Failed to render response");
+                            common::log_error!(e, "Failed to render response");
                         }
                     }
                 }
@@ -675,7 +679,7 @@ impl<'a> Handler<'a> {
     async fn test_bad_words(&self, message: &str) -> Option<Arc<db::Word>> {
         let tester = self.bad_words.tester().await;
 
-        for word in utils::TrimmedWords::new(message) {
+        for word in common::words::trimmed(message) {
             if let Some(word) = tester.test(word) {
                 return Some(word);
             }
@@ -724,7 +728,7 @@ impl<'a> Handler<'a> {
 
                 for (key, hook) in &*message_hooks {
                     if let Err(e) = hook.peek(&user, &message).await {
-                        log_error!(e, "Hook `{}` failed", key);
+                        common::log_error!(e, "Hook `{}` failed", key);
                     }
                 }
             }
@@ -764,7 +768,7 @@ impl<'a> Handler<'a> {
             }
         }
 
-        let mut it = utils::Words::new(message.clone());
+        let mut it = common::words::split(message.clone());
         let first = it.next();
 
         if let Some(commands) = self.commands.as_ref() {
@@ -808,7 +812,7 @@ impl<'a> Handler<'a> {
                 );
 
                 if let Err(e) = result.await {
-                    log_error!(e, "Failed to process command");
+                    common::log_error!(e, "Failed to process command");
                 }
             }
         }
@@ -1288,13 +1292,13 @@ impl ClearMsgTags {
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(Serialize)]
 pub(crate) struct BadWordsVars<'a> {
     name: Option<&'a str>,
     target: &'a str,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Serialize)]
 pub(crate) struct CommandVars<'a> {
     name: Option<&'a str>,
     target: &'a str,
@@ -1315,7 +1319,7 @@ async fn refresh_roles(
         out: &parking_lot::RwLock<HashSet<String>>,
     ) -> Result<()>
     where
-        S: crate::stream::Stream<Item = Result<api::twitch::model::Chatter>>,
+        S: Stream<Item = Result<api::twitch::model::Chatter>>,
     {
         tracing::info!(?what, "Refreshing");
 
@@ -1352,7 +1356,7 @@ async fn refresh_roles(
                 let future = streamer.client.moderators(&streamer.user.id);
 
                 if let Err(error) = update_set("Moderators", future, &context.moderators).await {
-                    log_error!(error, "Failed to update Moderators");
+                    common::log_error!(error, "Failed to update Moderators");
                 }
 
                 // Remove interest since we just updated to avoid duplicates.
@@ -1362,7 +1366,7 @@ async fn refresh_roles(
                 let future = streamer.client.vips(&streamer.user.id);
 
                 if let Err(error) = update_set("VIPs", future, &context.vips).await {
-                    log_error!(error, "Failed to update VIPs");
+                    common::log_error!(error, "Failed to update VIPs");
                 }
 
                 // Remove interest since we just updated to avoid duplicates.

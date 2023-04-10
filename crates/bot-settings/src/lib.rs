@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use chrono_tz::Tz;
+use common::stream::StreamExt as _;
 use diesel::prelude::*;
 use serde::de;
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,6 @@ use thiserror::Error;
 use tokio::sync::broadcast;
 use tokio::sync::{mpsc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tokio::task::JoinError;
-use common::stream::StreamExt as _;
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -150,13 +150,19 @@ pub(crate) enum Event<T> {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Setting<S> where S: Scope {
+pub struct Setting<S>
+where
+    S: Scope,
+{
     schema: SchemaType<S>,
     key: String,
     value: serde_json::Value,
 }
 
-impl<S> Setting<S> where S: Scope {
+impl<S> Setting<S>
+where
+    S: Scope,
+{
     /// Access the schema associated with the setting.
     pub fn schema(&self) -> &SchemaType<S> {
         &self.schema
@@ -165,17 +171,23 @@ impl<S> Setting<S> where S: Scope {
     /// Access the key associated with the setting.
     pub fn key(&self) -> &str {
         &self.key
-    }    
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SettingRef<'settings, 'key, S, T> where S: Scope {
+pub struct SettingRef<'settings, 'key, S, T>
+where
+    S: Scope,
+{
     schema: &'settings SchemaType<S>,
     key: Key<'settings, 'key>,
     value: Option<T>,
 }
 
-impl<S> SettingRef<'_, '_, S, serde_json::Value> where S: Scope {
+impl<S> SettingRef<'_, '_, S, serde_json::Value>
+where
+    S: Scope,
+{
     /// Convert into an owned value.
     pub fn to_owned(&self) -> Setting<S> {
         Setting {
@@ -189,7 +201,10 @@ impl<S> SettingRef<'_, '_, S, serde_json::Value> where S: Scope {
     }
 }
 
-impl<'settings, 'key, S, T> SettingRef<'settings, 'key, S, T> where S: Scope {
+impl<'settings, 'key, S, T> SettingRef<'settings, 'key, S, T>
+where
+    S: Scope,
+{
     /// Access the underlying schema this setting references.
     pub fn schema(&self) -> &SchemaType<S> {
         self.schema
@@ -207,7 +222,10 @@ impl<'settings, 'key, S, T> SettingRef<'settings, 'key, S, T> where S: Scope {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SchemaType<S> where S: Scope {
+pub struct SchemaType<S>
+where
+    S: Scope,
+{
     /// Documentation for this type.
     doc: String,
     /// Scope required to modify variable.
@@ -227,7 +245,10 @@ pub struct SchemaType<S> where S: Scope {
     title: Option<String>,
 }
 
-impl<S> SchemaType<S> where S: Scope {
+impl<S> SchemaType<S>
+where
+    S: Scope,
+{
     /// If this setting is a feature toggle.
     pub fn feature(&self) -> bool {
         self.feature
@@ -235,13 +256,19 @@ impl<S> SchemaType<S> where S: Scope {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Schema<S> where S: Scope {
+pub struct Schema<S>
+where
+    S: Scope,
+{
     #[serde(default)]
     migrations: Vec<Migration>,
     types: HashMap<String, SchemaType<S>>,
 }
 
-impl<S> Schema<S> where S: Scope {
+impl<S> Schema<S>
+where
+    S: Scope,
+{
     /// Convert schema into prefix data.
     fn as_prefixes(&self) -> HashMap<Box<str>, Prefix> {
         let mut prefixes = HashMap::<Box<str>, Prefix>::new();
@@ -297,7 +324,7 @@ where
     S: Scope + de::DeserializeOwned,
 {
     /// Load schema from the given set of bytes.
-    pub(crate) fn load_bytes(bytes: &[u8]) -> Result<Schema<S>, Error> {
+    pub fn load_bytes(bytes: &[u8]) -> Result<Schema<S>, Error> {
         Ok(serde_yaml::from_slice(bytes)?)
     }
 }

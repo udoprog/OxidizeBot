@@ -14,7 +14,6 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_injector::{Injector, Key};
 use common::tags;
-use serde::{Deserialize, Serialize};
 
 use crate::token::Token;
 

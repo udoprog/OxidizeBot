@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::display;
-use crate::models::{Track, Item, TrackId, SpotifyId, PlayerKind, State};
+use crate::models::{Item, PlayerKind, SpotifyId, State, Track, TrackId};
 
 /// Information on current song.
 #[derive(Clone)]

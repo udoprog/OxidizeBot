@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize, de, ser};
+use serde::{de, ser, Deserialize, Serialize};
 
 use crate::Duration;
 
@@ -19,7 +19,7 @@ impl Cooldown {
     }
 
     /// Test if we are allowed to perform the action based on the cooldown in effect.
-    pub(crate) fn is_open(&mut self) -> bool {
+    pub fn is_open(&mut self) -> bool {
         let now = std::time::Instant::now();
 
         match self.check(now) {

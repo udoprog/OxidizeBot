@@ -1,10 +1,7 @@
 //! Twitch API helpers.
 
-use std::collections::HashMap;
-
 use anyhow::{bail, Result};
-use chrono::{DateTime, Utc};
-use common::models::youtube::{Video, Videos, SearchResults};
+use common::models::youtube::{SearchResults, Video, Videos};
 use reqwest::{Client, Method, Url};
 use serde::{Deserialize, Serialize};
 

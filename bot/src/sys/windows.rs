@@ -8,13 +8,11 @@ use std::thread;
 use anyhow::{anyhow, bail, Context as _, Error};
 use chrono::Local;
 use parking_lot::Mutex;
-use tokio::sync::{mpsc, oneshot, Notify, Semaphore};
+use tokio::sync::{mpsc, Notify, Semaphore};
 use winapi::um::shellapi::ShellExecuteW;
 use winapi::um::winuser::SW_SHOW;
 
-use crate::prelude::*;
 use crate::sys::Notification;
-use crate::web;
 
 mod convert;
 mod registry;
@@ -256,7 +254,7 @@ pub(crate) fn setup(root: &Path, log_file: &Path) -> Result<System, Error> {
     let thread = thread::spawn(move || match futures_executor::block_on(window_loop) {
         Ok(()) => (),
         Err(e) => {
-            log_error!(e, "Windows system tray errored");
+            common::log_error!(e, "Windows system tray errored");
         }
     });
 

@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 common = { package = "bot-common", path = "../bot-common" }
 db = { package = "bot-db", path = "../bot-db" }
-diesel = { version = "2.0.3", default-features = false }
+diesel = "2.0.3"
 futures-util = { version = "0.3.28", default-features = false, features = ["alloc"] }
 serde = "1.0.159"
 serde_json = "1.0.95"

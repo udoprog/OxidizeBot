@@ -1,12 +1,11 @@
 use std::pin::pin;
 
 use anyhow::{Context as _, Result};
+use async_fuse::Fuse;
+use async_injector::Injector;
 
-use crate::irc;
 use crate::irc::Sender;
 use crate::player::{Event, Player};
-use crate::prelude::*;
-use crate::settings;
 
 /// Setup the task that sends chat feedback.
 pub(crate) async fn task(
@@ -38,7 +37,7 @@ pub(crate) async fn task(
 /// Notifications from the player.
 async fn feedback(
     player: Player,
-    sender: irc::Sender,
+    sender: Sender,
     chat_feedback: settings::Var<bool>,
 ) -> Result<()> {
     let mut rx = player.subscribe().await;

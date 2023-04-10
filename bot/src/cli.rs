@@ -4,7 +4,8 @@ use std::time;
 
 use anyhow::{anyhow, Context, Result};
 use async_injector::{Injector, Key};
-use backoff::backoff::Backoff as _;
+use common::backoff;
+use common::display;
 use common::stream::StreamExt;
 use tokio::sync::mpsc;
 
@@ -146,7 +147,7 @@ fn inner_main(args: Args) -> Result<()> {
     let (_guard, log_file) =
         setup_logs(&root, args.trace, &args.log).context("failed to setup logs")?;
 
-    crate::panic_logger();
+    crate::panic_logger::panic_logger();
 
     if !root.is_dir() {
         tracing::info!("Creating config directory: {}", root.display());
@@ -155,10 +156,7 @@ fn inner_main(args: Args) -> Result<()> {
 
     let system = sys::setup(&root, &log_file)?;
 
-    let mut error_backoff = backoff::ExponentialBackoff::default();
-    error_backoff.current_interval = time::Duration::from_secs(5);
-    error_backoff.initial_interval = time::Duration::from_secs(5);
-    error_backoff.max_elapsed_time = None;
+    let mut error_backoff = backoff::Exponential::new(time::Duration::from_secs(5));
 
     if !args.silent {
         let startup = sys::Notification::new(format!("Started Oxidize {}", crate::VERSION));
@@ -210,9 +208,9 @@ fn inner_main(args: Args) -> Result<()> {
 
         let backoff = match runtime.block_on(future) {
             Err(e) => {
-                let backoff = error_backoff.next_backoff().unwrap_or_default();
+                let backoff = error_backoff.next();
                 system.error(String::from("Bot crashed, see log for more details."));
-                crate::log_error!(e, "Bot crashed");
+                common::log_error!(e, "Bot crashed");
                 Some(backoff)
             }
             Ok(Intent::Shutdown) => {
@@ -228,7 +226,7 @@ fn inner_main(args: Args) -> Result<()> {
             if !args.silent {
                 let message = format!(
                     "Restart in {}.\nSee log for more details.",
-                    utils::compact_duration(backoff)
+                    display::compact_duration(backoff)
                 );
 
                 let n = sys::Notification::new(message)
@@ -238,7 +236,7 @@ fn inner_main(args: Args) -> Result<()> {
                 system.notification(n);
             }
 
-            tracing::info!("Restarting in {}...", utils::compact_duration(backoff));
+            tracing::info!("Restarting in {}...", display::compact_duration(backoff));
 
             let intent = runtime.block_on(async {
                 tokio::select! {
@@ -483,7 +481,7 @@ async fn try_main(
     futures.push(Box::pin(future));
 
     futures.push(Box::pin(
-        api::setbac::run(&settings, &injector, global_bus.clone()).await?,
+        crate::setbac::run(&settings, &injector, global_bus.clone()).await?,
     ));
 
     modules.push(Box::new(module::time::Module));
@@ -615,11 +613,11 @@ async fn system_loop(settings: crate::Settings, system: sys::System) -> Result<(
 }
 
 /// Access auth from the database.
-pub async fn auth(db: &db::Db, schema: crate::auth::Schema) -> Result<crate::auth::Auth> {
-    crate::auth::Auth::new(db.clone(), schema).await
+pub async fn auth(db: &db::Database, schema: auth::Schema) -> Result<auth::Auth> {
+    auth::Auth::new(db.clone(), schema).await
 }
 
 /// Access settings from the database.
-pub fn settings(db: &db::Db, schema: crate::Schema) -> Result<crate::Settings> {
+pub fn settings(db: &db::Database, schema: crate::Schema) -> Result<crate::Settings> {
     Ok(settings::Settings::new(db.clone(), schema))
 }

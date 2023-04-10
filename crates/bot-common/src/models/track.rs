@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::display;
 
@@ -7,9 +7,13 @@ use crate::display;
 #[serde(tag = "type")]
 pub enum Track {
     #[serde(rename = "spotify")]
-    Spotify { track: Box<crate::models::spotify::track::FullTrack> },
+    Spotify {
+        track: Box<crate::models::spotify::track::FullTrack>,
+    },
     #[serde(rename = "youtube")]
-    YouTube { video: Box<crate::models::youtube::Video> },
+    YouTube {
+        video: Box<crate::models::youtube::Video>,
+    },
 }
 
 impl Track {
@@ -17,9 +21,7 @@ impl Track {
     pub fn artists(&self) -> Option<String> {
         match self {
             Self::Spotify { track } => display::human_artists(&track.artists),
-            Self::YouTube { video } => {
-                video.snippet.as_ref().and_then(|s| s.channel_title.clone())
-            }
+            Self::YouTube { video } => video.snippet.as_ref().and_then(|s| s.channel_title.clone()),
         }
     }
 

@@ -3,14 +3,14 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::auth::Scope;
 use crate::channel::Channel;
 use crate::currency::Currency;
 use crate::irc::RealUser;
 use crate::module::song::Constraint;
 use crate::player::{AddTrackError, Player};
 use crate::settings;
-use crate::track_id::{self, TrackId};
+use auth::Scope;
+use common::{track_id, TrackId};
 
 pub(crate) enum RequestCurrency<'a> {
     /// Use bot currency.
@@ -64,7 +64,7 @@ impl SongRequester {
             Err(e) => {
                 match e {
                     // NB: fall back to searching.
-                    track_id::ParseTrackIdError::MissingUriPrefix => (),
+                    track_id::FromStrError::MissingUriPrefix => (),
                     // show other errors.
                     e => {
                         tracing::warn!("Bad song request: {}", e);

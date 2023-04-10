@@ -8,8 +8,9 @@ use irc::client;
 use irc::proto::command::{CapSubCommand, Command};
 use irc::proto::message::Message;
 use leaky_bucket::RateLimiter;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize, Default)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default)]
 pub(crate) enum Type {
     #[serde(rename = "chat")]
     #[default]
@@ -82,7 +83,7 @@ impl Sender {
         self.inner.limiter.acquire(1).await;
 
         if let Err(e) = self.inner.sender.send(m) {
-            log_error!(e, "Failed to send message");
+            common::log_error!(e, "Failed to send message");
         }
     }
 
@@ -90,7 +91,7 @@ impl Sender {
     #[tracing::instrument(skip_all)]
     pub(crate) fn send_immediate(&self, m: impl Into<Message>) {
         if let Err(e) = self.inner.sender.send(m) {
-            log_error!(e, "Failed to send message");
+            common::log_error!(e, "Failed to send message");
         }
     }
 
@@ -142,7 +143,7 @@ impl Sender {
         inner.nightbot_limiter.acquire(1).await;
 
         if let Err(e) = nightbot.channel_send(m.clone()).await {
-            log_error!(e, "Failed to send message via nightbot");
+            common::log_error!(e, "Failed to send message via nightbot");
         }
     }
 }

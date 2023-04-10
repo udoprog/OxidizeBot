@@ -1,10 +1,15 @@
 use std::fs;
 use std::path::PathBuf;
 use std::pin::pin;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time;
 
+use async_fuse::Fuse;
 use async_trait::async_trait;
+use common::stream::Stream;
 use common::Duration;
+use serde::Serialize;
 use tokio::sync::mpsc;
 
 use crate::command;
@@ -124,7 +129,7 @@ impl super::Module for Module {
 
                         *enabled.write().await = update;
                     }
-                    out = timer.as_mut().poll_stream(stream::Stream::poll_next) => {
+                    out = timer.as_mut().poll_stream(Stream::poll_next) => {
                         match out {
                             Some(()) => if let Some(timer) = timer.as_inner_ref() {
                                 writer.write_log(timer);
@@ -199,7 +204,7 @@ impl FileWriter {
 
         return Ok(());
 
-        #[derive(serde::Serialize)]
+        #[derive(Serialize)]
         struct Data {
             remaining: String,
             elapsed: String,
@@ -226,14 +231,14 @@ impl FileWriter {
     /// Attempt to write an update and log on errors.
     fn write_log(&self, timer: &Timer) {
         if let Err(e) = self.write(timer) {
-            log_error!(e, "Failed to write");
+            common::log_error!(e, "Failed to write");
         }
     }
 
     /// Attempt to clear the file and log on errors.
     fn clear_log(&self) {
         if let Err(e) = self.clear() {
-            log_error!(e, "Failed to clear");
+            common::log_error!(e, "Failed to clear");
         }
     }
 }
@@ -244,7 +249,7 @@ struct Timer {
     interval: tokio::time::Interval,
 }
 
-impl stream::Stream for Timer {
+impl Stream for Timer {
     type Item = ();
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {

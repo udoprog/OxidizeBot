@@ -5,8 +5,8 @@ use std::sync::Arc;
 use std::time;
 
 use anyhow::{anyhow, Result};
-use api::twitch;
 use parking_lot::RwLock;
+use tokio::sync::mpsc;
 use tracing::Instrument;
 
 #[derive(Debug, Default)]
@@ -73,7 +73,7 @@ impl StreamInfo {
                 return Ok(());
             }
             Err(e) => {
-                log_warn!(e, "Failed to refresh channel");
+                common::log_warn!(e, "Failed to refresh channel");
                 return Ok(());
             }
         };
@@ -138,7 +138,7 @@ pub(crate) fn setup(
             tokio::select! {
                 _ = subs_interval.tick() => {
                     if let Err(error) = stream_info.refresh_subs(&streamer).await {
-                        log_error!(error, "Failed to refresh subscriptions");
+                        common::log_error!(error, "Failed to refresh subscriptions");
                     }
                 }
                 _ = stream_interval.tick() => {
@@ -150,11 +150,11 @@ pub(crate) fn setup(
                     let (stream, channel) = tokio::join!(stream, channel);
 
                     if let Err(error) = stream {
-                        log_error!(error, "Failed to referesh stream");
+                        common::log_error!(error, "Failed to referesh stream");
                     }
 
                     if let Err(error) = channel {
-                        log_error!(error, "Failed to referesh channel");
+                        common::log_error!(error, "Failed to referesh channel");
                     }
                 }
             }

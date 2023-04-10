@@ -1,6 +1,13 @@
+use std::future::Future;
+
+use anyhow::Result;
 use api::setbac::PlayerUpdate;
 use api::Setbac;
+use async_injector::{Injector, Key};
+use common::tags;
 use url::Url;
+
+const DEFAULT_API_URL: &str = "https://setbac.tv";
 
 /// Run update loop shipping information to the remote server.
 #[tracing::instrument(skip_all)]
@@ -22,9 +29,9 @@ where
 
     let (mut secret_key_stream, secret_key) = settings.stream("secret-key").optional().await?;
     let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(false).await?;
-    let (mut player_stream, player) = injector.stream::<Player>().await;
+    let (mut player_stream, player) = injector.stream::<player::Player>().await;
     let (mut streamer_token_stream, streamer_token) = injector
-        .stream_key(Key::<crate::token::Token>::tagged(tags::Token::Twitch(
+        .stream_key(Key::<api::Token>::tagged(tags::Token::Twitch(
             tags::Twitch::Streamer,
         ))?)
         .await;
@@ -108,7 +115,7 @@ where
 }
 
 struct RemoteBuilder {
-    streamer_token: Option<crate::token::Token>,
+    streamer_token: Option<api::Token>,
     injector: Injector,
     global_bus: bus::Bus<bus::Global>,
     player: Option<player::Player>,

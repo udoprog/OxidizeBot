@@ -142,7 +142,7 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub(crate) async fn balance_add(
+    pub async fn balance_add(
         &self,
         channel: &Channel,
         user: &str,

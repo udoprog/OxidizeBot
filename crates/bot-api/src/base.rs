@@ -58,7 +58,12 @@ pub(crate) struct RequestBuilder<'a> {
 
 impl<'a> RequestBuilder<'a> {
     /// Construct a new request builder.
-    pub(crate) fn new(client: &'a Client, user_agent: &'static str, method: Method, url: Url) -> Self {
+    pub(crate) fn new(
+        client: &'a Client,
+        user_agent: &'static str,
+        method: Method,
+        url: Url,
+    ) -> Self {
         Self {
             token: None,
             client,

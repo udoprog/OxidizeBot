@@ -1,13 +1,5 @@
 //! Traits and shared plumbing for bot commands (e.g. `!uptime`)
 
-use anyhow::Result;
-use async_trait::async_trait;
-use auth::Scope;
-use common::Channel;
-use thiserror::Error;
-use tokio::sync;
-use tokio::sync::Notify;
-
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -16,6 +8,15 @@ use std::num;
 use std::str;
 use std::sync::Arc;
 use std::time::Instant;
+
+use anyhow::Result;
+use async_trait::async_trait;
+use auth::Scope;
+use common::Channel;
+use common::{display, words, Cooldown};
+use thiserror::Error;
+use tokio::sync;
+use tokio::sync::Notify;
 
 use crate::irc;
 use crate::utils;
@@ -84,7 +85,7 @@ pub(crate) struct ContextInner {
     /// Shutdown handler.
     pub(crate) restart: utils::Restart,
     /// Active scope cooldowns.
-    pub(crate) scope_cooldowns: sync::Mutex<HashMap<Scope, utils::Cooldown>>,
+    pub(crate) scope_cooldowns: sync::Mutex<HashMap<Scope, Cooldown>>,
     /// A hook that can be installed to peek at all incoming messages.
     pub(crate) message_hooks: sync::RwLock<slab::Slab<Box<dyn MessageHook>>>,
     /// Logins for moderators.
@@ -99,7 +100,7 @@ impl ContextInner {
     pub(crate) fn new(
         sender: irc::Sender,
         restart: utils::Restart,
-        scope_cooldowns: HashMap<Scope, utils::Cooldown>,
+        scope_cooldowns: HashMap<Scope, Cooldown>,
     ) -> Self {
         Self {
             sender,
@@ -118,7 +119,7 @@ impl ContextInner {
 pub(crate) struct Context {
     pub(crate) api_url: Arc<Option<String>>,
     pub(crate) user: irc::User,
-    pub(crate) it: utils::Words,
+    pub(crate) it: words::Split,
     pub(crate) messages: irc::Messages,
     pub(crate) inner: Arc<ContextInner>,
 }
@@ -186,7 +187,7 @@ impl Context {
             if let Some(duration) = cooldown.check(now) {
                 respond_bail!(
                     "Cooldown in effect for {}",
-                    utils::compact_duration(duration),
+                    display::compact_duration(duration),
                 )
             }
 

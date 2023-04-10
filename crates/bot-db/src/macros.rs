@@ -134,11 +134,7 @@ macro_rules! database_group_fns {
         }
 
         /// Get the given thing by name.
-        pub async fn get(
-            &self,
-            channel: &::common::Channel,
-            name: &str,
-        ) -> Option<Arc<$thing>> {
+        pub async fn get(&self, channel: &::common::Channel, name: &str) -> Option<Arc<$thing>> {
             let key = <$key>::new(channel, name);
 
             let inner = self.inner.read().await;

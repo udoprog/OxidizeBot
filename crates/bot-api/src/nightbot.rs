@@ -45,7 +45,9 @@ impl NightBot {
         loop {
             match deps.wait_for_update().await {
                 Some(deps) => {
-                    injector.update(NightBot::new(user_agent, deps.token)?).await;
+                    injector
+                        .update(NightBot::new(user_agent, deps.token)?)
+                        .await;
                 }
                 None => {
                     injector.clear::<NightBot>().await;

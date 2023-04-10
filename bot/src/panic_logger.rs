@@ -1,4 +1,4 @@
-use backtrace::Backtrace;
+use std::bracktrace::Backtrace;
 use std::panic;
 use std::thread;
 

@@ -3,11 +3,11 @@ use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use serde::{ser, Serialize};
 use anyhow::{anyhow, Context as _, Error};
-use common::Channel;
 use common::words;
+use common::Channel;
 use diesel::prelude::*;
+use serde::{ser, Serialize};
 use tokio::sync::RwLock;
 
 /// Local database wrapper.

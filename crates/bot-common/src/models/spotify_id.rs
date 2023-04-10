@@ -41,7 +41,10 @@ const BASE62_DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM
 
 impl SpotifyId {
     /// Parse a spotify identifier from a base62 string.
-    pub fn from_base62<B>(id: B) -> Result<SpotifyId, SpotifyIdError> where B: AsRef<[u8]> {
+    pub fn from_base62<B>(id: B) -> Result<SpotifyId, SpotifyIdError>
+    where
+        B: AsRef<[u8]>,
+    {
         let data = id.as_ref();
 
         let mut n = 0u128;

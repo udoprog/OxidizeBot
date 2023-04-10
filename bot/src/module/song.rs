@@ -1,19 +1,14 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use common::display;
+use common::{Cooldown, Duration};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::api;
-use crate::auth::Scope;
 use crate::command;
-use crate::currency::Currency;
 use crate::irc;
 use crate::module;
-use crate::player;
 use crate::player::{AddTrackError, Item, PlayThemeError, Player};
-use crate::prelude::*;
-use crate::settings;
-use crate::utils::{self, Cooldown, Duration};
 
 mod feedback;
 mod redemption;
@@ -26,7 +21,7 @@ pub(crate) struct Handler {
     enabled: settings::Var<bool>,
     player: async_injector::Ref<Player>,
     request_help_cooldown: Mutex<Cooldown>,
-    currency: async_injector::Ref<Currency>,
+    currency: async_injector::Ref<currency::Currency>,
     requester: requester::SongRequester,
     streamer: api::TwitchAndUser,
 }
@@ -35,7 +30,7 @@ impl Handler {
     async fn handle_request(&self, ctx: &mut command::Context, player: &Player) -> Result<()> {
         let q = ctx.rest().trim().to_string();
 
-        let currency: Option<Currency> = self.currency.load().await;
+        let currency: Option<currency::Currency> = self.currency.load().await;
 
         let user = match ctx.user.real() {
             Some(user) => user,
@@ -110,8 +105,8 @@ impl Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    fn scope(&self) -> Option<Scope> {
-        Some(Scope::Song)
+    fn scope(&self) -> Option<auth::Scope> {
+        Some(auth::Scope::Song)
     }
 
     async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
@@ -127,7 +122,7 @@ impl command::Handler for Handler {
 
         match ctx.next().as_deref() {
             Some("theme") => {
-                ctx.check_scope(Scope::SongTheme).await?;
+                ctx.check_scope(auth::Scope::SongTheme).await?;
                 let name = ctx.next_str("<name>")?;
 
                 match player.play_theme(ctx.channel(), name.as_str()).await {
@@ -142,7 +137,7 @@ impl command::Handler for Handler {
                         ctx.user
                             .respond("There was a problem playing that theme :(")
                             .await;
-                        log_error!(e, "Failed to add song");
+                        common::log_error!(e, "Failed to add song");
                     }
                     Err(PlayThemeError::MissingAuth) => {
                         ctx.user.respond(
@@ -152,7 +147,7 @@ impl command::Handler for Handler {
                 }
             }
             Some("promote") => {
-                ctx.check_scope(Scope::SongEditQueue).await?;
+                ctx.check_scope(auth::Scope::SongEditQueue).await?;
                 let index = ctx.next().ok_or(respond_err!("Expected <number>"))?;
                 let index = parse_queue_position(&index).await?;
 
@@ -166,7 +161,7 @@ impl command::Handler for Handler {
                 }
             }
             Some("close") => {
-                ctx.check_scope(Scope::SongEditQueue).await?;
+                ctx.check_scope(auth::Scope::SongEditQueue).await?;
 
                 player
                     .close(match ctx.rest() {
@@ -178,7 +173,7 @@ impl command::Handler for Handler {
                 respond!(ctx, "Closed player from further requests.");
             }
             Some("open") => {
-                ctx.check_scope(Scope::SongEditQueue).await?;
+                ctx.check_scope(auth::Scope::SongEditQueue).await?;
                 player.open().await;
                 respond!(ctx, "Opened player for requests.");
             }
@@ -196,7 +191,7 @@ impl command::Handler for Handler {
                 let mut limit = 3usize;
 
                 if let Some(n) = ctx.next() {
-                    ctx.check_scope(Scope::SongListLimit).await?;
+                    ctx.check_scope(auth::Scope::SongListLimit).await?;
 
                     if let Ok(n) = str::parse(&n) {
                         limit = n;
@@ -215,8 +210,8 @@ impl command::Handler for Handler {
             }
             Some("current") => match player.current().await {
                 Some(current) => {
-                    let elapsed = utils::digital_duration(current.elapsed());
-                    let duration = utils::digital_duration(current.duration());
+                    let elapsed = display::digital_duration(current.elapsed());
+                    let duration = display::digital_duration(current.duration());
 
                     if let Some(name) = current.item.user.as_ref() {
                         respond!(
@@ -244,7 +239,7 @@ impl command::Handler for Handler {
                 }
             },
             Some("purge") => {
-                ctx.check_scope(Scope::SongEditQueue).await?;
+                ctx.check_scope(auth::Scope::SongEditQueue).await?;
                 player.purge().await?;
                 respond!(ctx, "Song queue purged.");
             }
@@ -282,7 +277,7 @@ impl command::Handler for Handler {
                         }
                     }
                     Some((when, item)) => {
-                        let when = utils::compact_duration(when);
+                        let when = display::compact_duration(when);
 
                         if your {
                             respond!(
@@ -307,11 +302,11 @@ impl command::Handler for Handler {
                     Some("last") => match ctx.next() {
                         Some(last_user) => {
                             let last_user = last_user.to_lowercase();
-                            ctx.check_scope(Scope::SongEditQueue).await?;
+                            ctx.check_scope(auth::Scope::SongEditQueue).await?;
                             player.remove_last_by_user(&last_user).await?
                         }
                         None => {
-                            ctx.check_scope(Scope::SongEditQueue).await?;
+                            ctx.check_scope(auth::Scope::SongEditQueue).await?;
                             player.remove_last().await?
                         }
                     },
@@ -327,7 +322,7 @@ impl command::Handler for Handler {
                         player.remove_last_by_user(user.login()).await?
                     }
                     Some(n) => {
-                        ctx.check_scope(Scope::SongEditQueue).await?;
+                        ctx.check_scope(auth::Scope::SongEditQueue).await?;
                         let n = parse_queue_position(n).await?;
                         player.remove_at(n).await?
                     }
@@ -346,7 +341,7 @@ impl command::Handler for Handler {
                 match ctx.next().as_deref() {
                     // setting volume
                     Some(other) => {
-                        ctx.check_scope(Scope::SongVolume).await?;
+                        ctx.check_scope(auth::Scope::SongVolume).await?;
 
                         let (diff, argument) = match other.chars().next() {
                             Some('+') => (Some(true), &other[1..]),
@@ -389,22 +384,22 @@ impl command::Handler for Handler {
                 }
             }
             Some("skip") => {
-                ctx.check_scope(Scope::SongPlaybackControl).await?;
+                ctx.check_scope(auth::Scope::SongPlaybackControl).await?;
                 player.skip().await?;
             }
             Some("request") => {
                 self.handle_request(ctx, &player).await?;
             }
             Some("toggle") => {
-                ctx.check_scope(Scope::SongPlaybackControl).await?;
+                ctx.check_scope(auth::Scope::SongPlaybackControl).await?;
                 player.toggle().await?;
             }
             Some("play") => {
-                ctx.check_scope(Scope::SongPlaybackControl).await?;
+                ctx.check_scope(auth::Scope::SongPlaybackControl).await?;
                 player.play().await?;
             }
             Some("pause") => {
-                ctx.check_scope(Scope::SongPlaybackControl).await?;
+                ctx.check_scope(auth::Scope::SongPlaybackControl).await?;
                 player.pause().await?;
             }
             Some("length") => {
@@ -413,12 +408,12 @@ impl command::Handler for Handler {
                 match count {
                     0 => ctx.respond("No songs in queue :(").await,
                     1 => {
-                        let length = utils::long_duration(duration);
+                        let length = display::long_duration(duration);
                         ctx.respond(format!("One song in queue with {} of play time.", length))
                             .await;
                     }
                     count => {
-                        let length = utils::long_duration(duration);
+                        let length = display::long_duration(duration);
                         ctx.respond(format!(
                             "{} songs in queue with {} of play time.",
                             count, length
@@ -430,13 +425,13 @@ impl command::Handler for Handler {
             _ => {
                 let mut alts = Vec::new();
 
-                if ctx.user.has_scope(Scope::SongTheme).await {
+                if ctx.user.has_scope(auth::Scope::SongTheme).await {
                     alts.push("theme");
                 } else {
                     alts.push("theme 🛇");
                 }
 
-                if ctx.user.has_scope(Scope::SongEditQueue).await {
+                if ctx.user.has_scope(auth::Scope::SongEditQueue).await {
                     alts.push("promote");
                     alts.push("close");
                     alts.push("open");
@@ -448,13 +443,13 @@ impl command::Handler for Handler {
                     alts.push("purge 🛇");
                 }
 
-                if ctx.user.has_scope(Scope::SongVolume).await {
+                if ctx.user.has_scope(auth::Scope::SongVolume).await {
                     alts.push("volume");
                 } else {
                     alts.push("volume 🛇");
                 }
 
-                if ctx.user.has_scope(Scope::SongPlaybackControl).await {
+                if ctx.user.has_scope(auth::Scope::SongPlaybackControl).await {
                     alts.push("skip");
                     alts.push("toggle");
                     alts.push("play");

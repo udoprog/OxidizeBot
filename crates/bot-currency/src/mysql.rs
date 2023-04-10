@@ -208,7 +208,9 @@ impl Backend {
         amount: i64,
         override_balance: bool,
     ) -> Result<(), BalanceTransferError> {
-        let amount: i32 = amount.try_into().with_context(|| anyhow!("Unsupported amount `{amount}`"))?;
+        let amount: i32 = amount
+            .try_into()
+            .with_context(|| anyhow!("Unsupported amount `{amount}`"))?;
         let taker = user_id(taker);
         let giver = user_id(giver);
 

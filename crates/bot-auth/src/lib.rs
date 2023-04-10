@@ -3,16 +3,16 @@ use std::fmt;
 use std::iter;
 use std::sync::Arc;
 
-use serde::{Serialize, Deserialize};
-use common::{Cooldown, Duration};
-use anyhow::{Context, Result, Error};
+use anyhow::{Context, Error, Result};
 use chrono::{DateTime, Utc};
+use common::{Cooldown, Duration};
 use diesel::backend::{Backend, RawValue};
 use diesel::prelude::*;
 use diesel::serialize::IsNull;
 use diesel::serialize::ToSql;
 use diesel::sqlite::Sqlite;
-use diesel::{FromSqlRow, AsExpression};
+use diesel::{AsExpression, FromSqlRow};
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 /// Authorization schema.
