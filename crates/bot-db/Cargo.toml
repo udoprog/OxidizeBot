@@ -1,0 +1,22 @@
+[package]
+name = "bot-db"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+common = { package = "bot-common", path = "../bot-common" }
+template = { package = "bot-template", path = "../bot-template" }
+libsqlite3-sys = { version = "0.25.2", features = ["bundled", "unlock_notify"] }
+diesel = { version = "2.0.3", features = ["sqlite", "chrono"] }
+diesel_migrations = "2.0.0"
+eudex = "0.1.1"
+anyhow = "1.0.70"
+serde = { version = "1.0.159", features = ["derive"] }
+tracing = "0.1.37"
+tokio = { version = "1.27.0", features = ["rt", "sync"] }
+chrono = { version = "0.4.24", features = ["serde"] }
+Inflector = "0.11.4"
+thiserror = "1.0.40"
+regex = "1.7.3"
+parking_lot = "0.12.1"

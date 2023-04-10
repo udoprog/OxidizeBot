@@ -1,0 +1,18 @@
+[package]
+name = "bot-emotes"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = "1.0.70"
+api = { package = "bot-api", path = "../bot-api" }
+chrono = { version = "0.4.24", default-features = false }
+serde = { version = "1.0.159", features = ["derive", "rc"] }
+smallvec = { version = "1.10.0", features = ["serde"] }
+storage = { package = "bot-storage", path = "../bot-storage" }
+common = { package = "bot-common", path = "../bot-common" }
+template = { package = "bot-template", path = "../bot-template" }
+tokio = { version = "1.27.0", default-features = false, features = ["sync"] }
+tracing = { version = "0.1.37", default-features = false }
+url = { version = "2.3.1", default-features = false }

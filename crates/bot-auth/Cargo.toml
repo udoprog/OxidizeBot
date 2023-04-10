@@ -1,0 +1,16 @@
+[package]
+name = "bot-auth"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+common = { package = "bot-common", path = "../bot-common" }
+db = { package = "bot-db", path = "../bot-db" }
+settings = { package = "bot-settings", path = "../bot-settings" }
+diesel = { version = "2.0.3", default-features = false, features = ["with-deprecated"] }
+serde_yaml = "0.9.21"
+anyhow = "1.0.70"
+serde = { version = "1.0.159", features = ["derive"] }
+tokio = { version = "1.27.0", default-features = false, features = ["sync"] }
+chrono = { version = "0.4.24", default-features = false, features = ["serde"] }

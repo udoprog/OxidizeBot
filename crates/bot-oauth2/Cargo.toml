@@ -1,0 +1,10 @@
+[package]
+name = "bot-oauth2"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+api = { package = "bot-api", path = "../bot-api" }
+common = { package = "bot-common", path = "../bot-common" }
+tokio = { version = "1.27.0", features = ["sync"] }

@@ -192,7 +192,7 @@ impl SongFile {
         state: player::State,
     ) -> Result<(), anyhow::Error> {
         let mut f = self.create_or_truncate()?;
-        let data = song.data(state)?;
+        let data = data(song, state)?;
         self.template.render(&mut f, &data)?;
         Ok(())
     }
@@ -203,4 +203,30 @@ impl SongFile {
             tracing::error!("Failed to blank file: {}: {}", self.path.display(), e);
         }
     }
+}
+
+/// Get serializable data for this item.
+pub(crate) fn data(song: &Song, state: State) -> Result<CurrentData<'_>> {
+    let artists = self.item.track.artists();
+
+    Ok(CurrentData {
+        paused: state != State::Playing,
+        track_id: &self.item.track_id,
+        name: self.item.track.name(),
+        artists,
+        user: self.item.user.as_deref(),
+        duration: display::digital_duration(self.item.duration),
+        elapsed: display::digital_duration(self.elapsed()),
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct CurrentData<'a> {
+    paused: bool,
+    track_id: &'a TrackId,
+    name: String,
+    artists: Option<String>,
+    user: Option<&'a str>,
+    duration: String,
+    elapsed: String,
 }

@@ -1,0 +1,13 @@
+[package]
+name = "bot-messagelog"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+bus = { package = "bot-bus", path = "../bot-bus" }
+common = { package = "bot-common", path = "../bot-common" }
+emotes = { package = "bot-emotes", path = "../bot-emotes" }
+chrono = { version = "0.4.24", default-features = false, features = ["serde"] }
+serde = { version = "1.0.159", features = ["derive"] }
+tokio = { version = "1.27.0", default-features = false, features = ["sync"] }

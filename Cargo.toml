@@ -1,6 +1,11 @@
 [workspace]
 default-members = ["bot"]
-members = ["bot", "web", "tools/builder"]
+members = [
+    "bot",
+    "web",
+    "tools/builder",
+    "crates/*"
+]
 
 [profile.release]
 opt-level = 'z'

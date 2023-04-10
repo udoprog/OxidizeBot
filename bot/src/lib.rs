@@ -110,41 +110,24 @@ extern crate smallvec;
 
 pub(crate) use async_injector as injector;
 
-/// Get the version number of the project.
-macro_rules! version_str {
-    () => {
-        include_str!(concat!(env!("OUT_DIR"), "/version.txt"))
-    };
-}
-
-/// Get the user agent.
-macro_rules! user_agent_str {
-    () => {
-        include_str!(concat!(env!("OUT_DIR"), "/user_agent.txt"))
-    };
-}
-
-pub(crate) const VERSION: &str = version_str!();
+pub(crate) const VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/version.txt"));
+pub(crate) const USER_AGENT: &str = include_str!(concat!(env!("OUT_DIR"), "/user_agent.txt"));
 
 #[macro_use]
 mod macros;
-pub(crate) mod api;
+mod log;
 pub(crate) mod auth;
 mod backoff;
-pub(crate) mod bus;
-pub(crate) mod channel;
 pub mod cli;
 mod command;
 pub(crate) mod currency;
-pub(crate) mod db;
 pub(crate) mod emotes;
 mod idle;
 pub(crate) mod irc;
 pub(crate) mod message_log;
 pub(crate) mod module;
-pub(crate) mod oauth2;
 mod panic_logger;
-pub(crate) mod player;
+mod setbac;
 pub(crate) mod prelude;
 #[cfg(feature = "scripting")]
 mod script;
@@ -164,7 +147,6 @@ mod track_id;
 pub(crate) mod updater;
 mod uri;
 pub(crate) mod utils;
-pub(crate) mod web;
 pub(crate) use tokio_stream as stream;
 
 pub(crate) use self::panic_logger::panic_logger;
@@ -178,6 +160,7 @@ pub(crate) type Settings = crate::settings::Settings<crate::auth::Scope>;
 pub(crate) type Setting = crate::settings::Setting<crate::auth::Scope>;
 
 pub(crate) const SCHEMA: &[u8] = include_bytes!("settings.yaml");
+pub(crate) const AUTH_SCHEMA: &[u8] = include_bytes!("auth.yaml");
 
 /// Load the settings schema to use.
 pub(crate) fn load_schema() -> Result<crate::Schema, crate::settings::Error> {

@@ -1,0 +1,11 @@
+[package]
+name = "bot-template"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = "1.0.70"
+handlebars = "4.3.6"
+lazy_static = "1.4.0"
+serde = { version = "1.0.159", features = ["derive"] }

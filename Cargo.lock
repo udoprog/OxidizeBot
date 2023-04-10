@@ -395,6 +395,217 @@ dependencies = [
 ]
 
 [[package]]
+name = "bot-api"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "async-fuse",
+ "async-injector",
+ "async-stream",
+ "backoff",
+ "bot-bus",
+ "bot-common",
+ "bot-settings",
+ "bytes",
+ "chrono",
+ "graphql_client",
+ "parking_lot 0.12.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tungstenite",
+ "url",
+]
+
+[[package]]
+name = "bot-auth"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "bot-common",
+ "bot-db",
+ "bot-settings",
+ "chrono",
+ "diesel",
+ "serde",
+ "serde_yaml",
+ "tokio",
+]
+
+[[package]]
+name = "bot-bus"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "bot-common",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "bot-common"
+version = "0.0.0"
+dependencies = [
+ "chrono",
+ "diesel",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio-stream",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "bot-db"
+version = "0.0.0"
+dependencies = [
+ "Inflector",
+ "anyhow",
+ "bot-common",
+ "bot-template",
+ "chrono",
+ "diesel",
+ "diesel_migrations",
+ "eudex",
+ "libsqlite3-sys",
+ "parking_lot 0.12.1",
+ "regex",
+ "serde",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "bot-emotes"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bot-api",
+ "bot-common",
+ "bot-storage",
+ "bot-template",
+ "chrono",
+ "serde",
+ "smallvec 1.10.0",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "bot-messagelog"
+version = "0.0.0"
+dependencies = [
+ "bot-bus",
+ "bot-common",
+ "bot-emotes",
+ "chrono",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "bot-oauth2"
+version = "0.0.0"
+dependencies = [
+ "bot-api",
+ "bot-common",
+ "tokio",
+]
+
+[[package]]
+name = "bot-player"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "async-fuse",
+ "async-injector",
+ "async-stream",
+ "bot-api",
+ "bot-auth",
+ "bot-bus",
+ "bot-common",
+ "bot-db",
+ "bot-settings",
+ "chrono",
+ "parking_lot 0.12.1",
+ "rand",
+ "serde",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "bot-settings"
+version = "0.0.0"
+dependencies = [
+ "bot-common",
+ "bot-db",
+ "chrono-tz",
+ "diesel",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "bot-storage"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "futures-cache",
+]
+
+[[package]]
+name = "bot-template"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "handlebars",
+ "lazy_static",
+ "serde",
+]
+
+[[package]]
+name = "bot-web"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "async-injector",
+ "bot-api",
+ "bot-auth",
+ "bot-bus",
+ "bot-common",
+ "bot-db",
+ "bot-messagelog",
+ "bot-player",
+ "bot-settings",
+ "bot-storage",
+ "bot-template",
+ "mime",
+ "mime_guess",
+ "percent-encoding",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "warp",
+]
+
+[[package]]
 name = "bstr"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -527,14 +738,13 @@ dependencies = [
 
 [[package]]
 name = "chrono-tz"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa48fa079165080f11d7753fd0bc175b7d391f276b965fe4b55bfad67856e463"
+checksum = "cf9cc2b23599e6d7479755f3594285efb3f74a1bdca7a7374948bc831e23a552"
 dependencies = [
  "chrono",
  "chrono-tz-build",
  "phf",
- "serde",
 ]
 
 [[package]]
@@ -2548,7 +2758,6 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 name = "oxidize"
 version = "0.0.0"
 dependencies = [
- "Inflector",
  "anyhow",
  "argwerk",
  "async-fuse",
@@ -2557,14 +2766,13 @@ dependencies = [
  "async-trait",
  "backoff",
  "backtrace",
+ "bot-db",
+ "bot-settings",
+ "bot-web",
  "bytes",
  "chrono",
- "chrono-tz",
  "crossbeam",
- "diesel",
- "diesel_migrations",
  "dirs 5.0.0",
- "eudex",
  "fixed-map",
  "futures-cache",
  "futures-core",
@@ -2577,20 +2785,15 @@ dependencies = [
  "irc",
  "lazy_static",
  "leaky-bucket",
- "libsqlite3-sys",
- "mime",
- "mime_guess",
  "mysql_async",
  "notify",
  "parking_lot 0.12.1",
- "percent-encoding",
  "rand",
  "regex",
  "relative-path",
  "reqwest",
  "rune",
  "rune-modules",
- "rust-embed",
  "serde",
  "serde_cbor",
  "serde_json",
@@ -2610,7 +2813,6 @@ dependencies = [
  "uom",
  "url",
  "uuid",
- "warp",
  "webbrowser",
  "winapi",
  "winres",

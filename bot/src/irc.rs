@@ -1263,62 +1263,6 @@ where
     }
 }
 
-/// Struct of tags.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct Tags {
-    /// Contents of the id tag if present.
-    pub(crate) id: Option<String>,
-    /// Contents of the msg-id tag if present.
-    pub(crate) msg_id: Option<String>,
-    /// The display name of the user.
-    pub(crate) display_name: Option<String>,
-    /// The ID of the user.
-    pub(crate) user_id: Option<String>,
-    /// Color of the user.
-    pub(crate) color: Option<String>,
-    /// Emotes part of the message.
-    pub(crate) emotes: Option<String>,
-}
-
-impl Tags {
-    /// Extract tags from message.
-    fn from_tags(tags: Option<Vec<Tag>>) -> Tags {
-        let mut id = None;
-        let mut msg_id = None;
-        let mut display_name = None;
-        let mut user_id = None;
-        let mut color = None;
-        let mut emotes = None;
-
-        if let Some(tags) = tags {
-            for t in tags {
-                let Tag(name, Some(value)) = t else {
-                    continue;
-                };
-
-                match name.as_str() {
-                    "id" => id = Some(value),
-                    "msg-id" => msg_id = Some(value),
-                    "display-name" => display_name = Some(value),
-                    "user-id" => user_id = Some(value),
-                    "color" => color = Some(value),
-                    "emotes" => emotes = Some(value),
-                    _ => (),
-                }
-            }
-        }
-
-        Tags {
-            id,
-            msg_id,
-            display_name,
-            user_id,
-            color,
-            emotes,
-        }
-    }
-}
-
 /// Tags associated with a CLEARMSG.
 struct ClearMsgTags {
     target_msg_id: String,

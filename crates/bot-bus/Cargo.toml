@@ -1,0 +1,10 @@
+[package]
+name = "bot-bus"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.70"
+common = { package = "bot-common", path = "../bot-common" }
+serde = { version = "1.0.159", features = ["derive"] }
+tokio = { version = "1.27.0", features = ["sync"] }

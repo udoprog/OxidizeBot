@@ -82,6 +82,8 @@ fn setup_logs(root: &Path, trace: bool, modules: &[String]) -> Result<(impl Drop
     use tracing_subscriber::prelude::*;
     use tracing_subscriber::{fmt, Registry};
 
+    let logger = crate::log::Log::default();
+
     let mut env_filter = tracing_subscriber::EnvFilter::from_default_env();
 
     if trace {
@@ -100,6 +102,7 @@ fn setup_logs(root: &Path, trace: bool, modules: &[String]) -> Result<(impl Drop
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     let subscriber = Registry::default()
+        .with(logger)
         .with(env_filter)
         .with(
             fmt::Layer::default()
@@ -300,7 +303,7 @@ async fn try_main(
     injector.update(db.clone()).await;
 
     let scopes_schema = auth::Schema::load_static()?;
-    let auth = db.auth(scopes_schema).await?;
+    let auth = auth(db, scopes_schema).await?;
     injector.update(auth.clone()).await;
 
     let settings_schema = crate::load_schema()?;
@@ -481,6 +484,11 @@ async fn try_main(
     )
     .await?;
 
+    futures.push(Box::pin(crate::song_file::SongFile::run(
+        injector.clone(),
+        settings.scoped("song-file"),
+    )));
+
     futures.push(Box::pin(future));
 
     futures.push(Box::pin(
@@ -613,4 +621,17 @@ async fn system_loop(settings: crate::Settings, system: sys::System) -> Result<(
         let update = run_on_startup_stream.recv().await;
         build(update)?;
     }
+}
+
+/// Access auth from the database.
+pub async fn auth(
+    db: &db::Db,
+    schema: crate::auth::Schema,
+) -> Result<crate::auth::Auth, Error> {
+    crate::auth::Auth::new(db.clone(), schema).await
+}
+
+/// Access settings from the database.
+pub fn settings(db: &db::Db, schema: crate::Schema) -> Result<crate::Settings, Error> {
+    Ok(settings::Settings::new(db.clone(), schema))
 }
