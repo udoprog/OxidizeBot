@@ -81,7 +81,7 @@ module.exports = function (_, argv) {
     devServer: {
       historyApiFallback: true,
       proxy: {
-        '/ws/*': {
+        '/ws': {
           target: 'ws://localhost:12345',
           secure: false,
           ws: true,
