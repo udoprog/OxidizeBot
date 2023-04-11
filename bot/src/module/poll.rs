@@ -29,7 +29,7 @@ impl command::Handler for Poll {
 
                 let mut options = HashMap::new();
 
-                while let Some(option) = ctx.next() {
+                for option in ctx.by_ref() {
                     let (key, description) = match option.find('=') {
                         Some(i) => {
                             let (keyword, description) = option.split_at(i);

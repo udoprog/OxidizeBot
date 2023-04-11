@@ -219,11 +219,6 @@ impl Context {
         self.inner.sender.privmsg(m).await;
     }
 
-    /// Get the next argument.
-    pub fn next(&mut self) -> Option<String> {
-        self.it.next()
-    }
-
     /// Get the rest of the commandline.
     pub fn rest(&self) -> &str {
         self.it.rest()
@@ -284,5 +279,14 @@ impl Context {
         M: fmt::Display,
     {
         Ok(self.next().ok_or(respond_err!("Expected {}", m))?)
+    }
+}
+
+impl Iterator for Context {
+    type Item = String;
+
+    #[inline]
+    fn next(&mut self) -> Option<String> {
+        self.it.next()
     }
 }
