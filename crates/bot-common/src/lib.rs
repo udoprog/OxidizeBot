@@ -33,6 +33,9 @@ pub mod backoff;
 mod uri;
 pub use self::uri::Uri;
 
+mod percentage;
+pub use self::percentage::percentage;
+
 #[macro_use]
 mod futures;
 pub use self::futures::{BorrowedFutures, Futures, LocalFutures};

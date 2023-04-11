@@ -5,9 +5,7 @@ use api::twitch::pubsub;
 use async_fuse::Fuse;
 use async_injector::Injector;
 
-use crate::chat;
 use crate::module::song::requester::{RequestCurrency, SongRequester};
-use crate::utils;
 
 /// Task used to react to redemptions as song requests.
 pub(crate) async fn task(
@@ -144,13 +142,13 @@ impl State {
         let status = match result {
             Ok(outcome) => {
                 self.sender
-                    .privmsg(utils::respond(display_name, outcome))
+                    .privmsg(chat::respond(display_name, outcome))
                     .await;
 
                 pubsub::Status::Fulfilled
             }
             Err(e) => {
-                self.sender.privmsg(utils::respond(display_name, e)).await;
+                self.sender.privmsg(chat::respond(display_name, e)).await;
                 pubsub::Status::Canceled
             }
         };

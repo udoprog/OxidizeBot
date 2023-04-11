@@ -6,17 +6,17 @@ macro_rules! command_enable {
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
-                respond!($ctx, "Expected <name> to enable");
+                chat::respond!($ctx, "Expected <name> to enable");
                 return Ok(());
             }
         };
 
         if !$db.enable($ctx.channel(), &name).await? {
-            respond!($ctx, "No {} named `{}`.", $what, name);
+            chat::respond!($ctx, "No {} named `{}`.", $what, name);
             return Ok(());
         }
 
-        respond!($ctx, "Enabled {} `{}`", $what, name);
+        chat::respond!($ctx, "Enabled {} `{}`", $what, name);
     }};
 }
 
@@ -28,17 +28,17 @@ macro_rules! command_disable {
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
-                respond!($ctx, "Expected <name> to disable");
+                chat::respond!($ctx, "Expected <name> to disable");
                 return Ok(());
             }
         };
 
         if !$db.disable($ctx.channel(), &name).await? {
-            respond!($ctx, "No {} named `{}`.", $what, name);
+            chat::respond!($ctx, "No {} named `{}`.", $what, name);
             return Ok(());
         }
 
-        respond!($ctx, "Disabled {} `{}`", $what, name);
+        chat::respond!($ctx, "Disabled {} `{}`", $what, name);
     }};
 }
 
@@ -50,17 +50,17 @@ macro_rules! command_clear_group {
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
-                respond!($ctx, "Expected <name> to remove from a group");
+                chat::respond!($ctx, "Expected <name> to remove from a group");
                 return Ok(());
             }
         };
 
         if !$db.edit_group($ctx.channel(), &name, None).await? {
-            respond!($ctx, "No {} named `{}`.", $what, name);
+            chat::respond!($ctx, "No {} named `{}`.", $what, name);
             return Ok(());
         }
 
-        respond!($ctx, "Removed {} `{}` from its group", $what, name);
+        chat::respond!($ctx, "Removed {} `{}` from its group", $what, name);
     }};
 }
 
@@ -72,7 +72,7 @@ macro_rules! command_group {
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
-                respond!($ctx, "Expected <name> to add to a group");
+                chat::respond!($ctx, "Expected <name> to add to a group");
                 return Ok(());
             }
         };
@@ -83,14 +83,14 @@ macro_rules! command_group {
                 let thing = match $db.get($ctx.channel(), &name).await {
                     Some(thing) => thing,
                     None => {
-                        respond!($ctx, "No {} named `{}`", $what, name);
+                        chat::respond!($ctx, "No {} named `{}`", $what, name);
                         return Ok(());
                     }
                 };
 
                 match thing.group.as_ref() {
                     Some(group) => {
-                        respond!(
+                        chat::respond!(
                             $ctx,
                             "{} `{}` belongs to group: {}",
                             $what,
@@ -99,7 +99,7 @@ macro_rules! command_group {
                         );
                     }
                     None => {
-                        respond!(
+                        chat::respond!(
                             $ctx,
                             "{} `{}` does not belong to a group",
                             $what,
@@ -116,11 +116,11 @@ macro_rules! command_group {
             .edit_group($ctx.channel(), &name, Some(group.clone()))
             .await?
         {
-            respond!($ctx, "no such {}", $what);
+            chat::respond!($ctx, "no such {}", $what);
             return Ok(());
         }
 
-        respond!($ctx, "set group for {} `{}` to {}", $what, name, group);
+        chat::respond!($ctx, "set group for {} `{}` to {}", $what, name, group);
     }};
 }
 
@@ -134,10 +134,10 @@ macro_rules! command_list {
             .collect::<Vec<_>>();
 
         if names.is_empty() {
-            respond!($ctx, "No custom {}.", $what);
+            chat::respond!($ctx, "No custom {}.", $what);
         } else {
             names.sort();
-            respond!($ctx, "{}", names.join(", "));
+            chat::respond!($ctx, "{}", names.join(", "));
         }
     }};
 }
@@ -149,15 +149,15 @@ macro_rules! command_delete {
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
-                respond!($ctx, "Expected <name>");
+                chat::respond!($ctx, "Expected <name>");
                 return Ok(());
             }
         };
 
         if $db.delete($ctx.channel(), &name).await? {
-            respond!($ctx, "Deleted {} `{}`", $what, name);
+            chat::respond!($ctx, "Deleted {} `{}`", $what, name);
         } else {
-            respond!($ctx, "No such {}", $what);
+            chat::respond!($ctx, "No such {}", $what);
         }
     }};
 }
@@ -169,20 +169,20 @@ macro_rules! command_rename {
         let (from, to) = match ($ctx.next(), $ctx.next()) {
             (Some(from), Some(to)) => (from, to),
             _ => {
-                respond!($ctx, "Expected <from> <to>");
+                chat::respond!($ctx, "Expected <from> <to>");
                 return Ok(());
             }
         };
 
         match $db.rename($ctx.channel(), &from, &to).await {
             Ok(()) => {
-                respond!($ctx, "Renamed {} {} -> {}.", $what, from, to);
+                chat::respond!($ctx, "Renamed {} {} -> {}.", $what, from, to);
             }
             Err(::db::RenameError::Conflict) => {
-                respond!($ctx, "Already an {} named `{}`.", $what, to);
+                chat::respond!($ctx, "Already an {} named `{}`.", $what, to);
             }
             Err(::db::RenameError::Missing) => {
-                respond!($ctx, "No {} named `{}`.", $what, from);
+                chat::respond!($ctx, "No {} named `{}`.", $what, from);
             }
         }
     }};
@@ -193,7 +193,7 @@ macro_rules! command_show {
         let name = match $ctx.next() {
             Some(name) => name,
             None => {
-                respond!($ctx, "Expected <name> to show");
+                chat::respond!($ctx, "Expected <name> to show");
                 return Ok(());
             }
         };
@@ -202,10 +202,10 @@ macro_rules! command_show {
 
         match thing {
             Some(thing) => {
-                respond!($ctx, format!("{} -> {}", thing.key.name, thing));
+                chat::respond!($ctx, format!("{} -> {}", thing.key.name, thing));
             }
             None => {
-                respond!($ctx, format!("No {} named `{}`.", $what, name));
+                chat::respond!($ctx, format!("No {} named `{}`.", $what, name));
             }
         }
     }};

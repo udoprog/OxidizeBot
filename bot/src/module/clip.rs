@@ -2,8 +2,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use common::{Cooldown, Duration};
 
-use crate::command;
-use crate::module;
+use chat::command;
+use chat::module;
 
 /// Handler for the `!clip` command.
 pub(crate) struct Clip {
@@ -24,7 +24,7 @@ impl command::Handler for Clip {
         }
 
         if !self.clip_cooldown.write().await.is_open() {
-            respond!(ctx, "A clip was already created recently");
+            chat::respond!(ctx, "A clip was already created recently");
             return Ok(());
         }
 
@@ -40,7 +40,7 @@ impl command::Handler for Clip {
             .await?
         {
             Some(clip) => {
-                respond!(
+                chat::respond!(
                     ctx,
                     "Created clip at {}/{}",
                     api::twitch::CLIPS_URL,
@@ -52,7 +52,7 @@ impl command::Handler for Clip {
                 }
             }
             None => {
-                respond!(ctx, "Failed to create clip, sorry :(");
+                chat::respond!(ctx, "Failed to create clip, sorry :(");
                 tracing::error!("Created clip, but API returned nothing");
             }
         }
@@ -64,7 +64,7 @@ impl command::Handler for Clip {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "clip"
     }

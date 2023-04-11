@@ -1,18 +1,16 @@
+mod feedback;
+mod redemption;
+mod requester;
+
 use anyhow::Result;
 use async_trait::async_trait;
+use chat::command;
+use chat::module;
 use common::display;
 use common::models::Item;
 use common::{Cooldown, Duration};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-
-use crate::chat;
-use crate::command;
-use crate::module;
-
-mod feedback;
-mod redemption;
-mod requester;
 
 const EXAMPLE_SEARCH: &str = "queen we will rock you";
 
@@ -57,7 +55,7 @@ impl Handler {
             .await
         {
             Ok(outcome) => {
-                respond!(user, "{}", outcome)
+                chat::respond!(user, "{}", outcome)
             }
             Err(e) => match e {
                 requester::RequestError::BadRequest(reason) => {
@@ -68,14 +66,14 @@ impl Handler {
                         return Err(e);
                     }
                     e => {
-                        respond!(user, "{}", e);
+                        chat::respond!(user, "{}", e);
                     }
                 },
                 requester::RequestError::Error(e) => {
                     return Err(e);
                 }
                 e => {
-                    respond!(user, "{}", e);
+                    chat::respond!(user, "{}", e);
                 }
             },
         }
@@ -87,7 +85,7 @@ impl Handler {
     async fn request_help(&self, ctx: &mut command::Context, reason: Option<&str>) {
         if !self.request_help_cooldown.lock().await.is_open() {
             if let Some(reason) = reason {
-                respond!(ctx, reason);
+                chat::respond!(ctx, reason);
             }
 
             return;
@@ -103,7 +101,7 @@ impl Handler {
             response = format!("{}. {}", reason, response);
         }
 
-        respond!(ctx, response);
+        chat::respond!(ctx, response);
     }
 }
 
@@ -122,7 +120,7 @@ impl command::Handler for Handler {
             .player
             .load()
             .await
-            .ok_or(respond_err!("No player configured"))?;
+            .ok_or(chat::respond_err!("No player configured"))?;
 
         match ctx.next().as_deref() {
             Some("theme") => {
@@ -152,16 +150,16 @@ impl command::Handler for Handler {
             }
             Some("promote") => {
                 ctx.check_scope(auth::Scope::SongEditQueue).await?;
-                let index = ctx.next().ok_or(respond_err!("Expected <number>"))?;
+                let index = ctx.next().ok_or(chat::respond_err!("Expected <number>"))?;
                 let index = parse_queue_position(&index).await?;
 
                 if let Some(item) = player.promote_song(ctx.user.name(), index).await? {
-                    respond!(
+                    chat::respond!(
                         ctx,
                         format!("Promoted song to head of queue: {}", item.what())
                     );
                 } else {
-                    respond!(ctx, "No such song to promote");
+                    chat::respond!(ctx, "No such song to promote");
                 }
             }
             Some("close") => {
@@ -174,16 +172,16 @@ impl command::Handler for Handler {
                     })
                     .await;
 
-                respond!(ctx, "Closed player from further requests.");
+                chat::respond!(ctx, "Closed player from further requests.");
             }
             Some("open") => {
                 ctx.check_scope(auth::Scope::SongEditQueue).await?;
                 player.open().await;
-                respond!(ctx, "Opened player for requests.");
+                chat::respond!(ctx, "Opened player for requests.");
             }
             Some("list") => {
                 if let Some(api_url) = ctx.api_url() {
-                    respond!(
+                    chat::respond!(
                         ctx,
                         "You can find the queue at {}/player/{}",
                         api_url,
@@ -218,7 +216,7 @@ impl command::Handler for Handler {
                     let duration = display::digital_duration(current.item().duration());
 
                     if let Some(name) = current.item().user() {
-                        respond!(
+                        chat::respond!(
                             ctx,
                             "Current song: {}, requested by {} - {elapsed} / {duration} - {url}",
                             current.item().what(),
@@ -228,7 +226,7 @@ impl command::Handler for Handler {
                             url = current.item().track_id().url(),
                         );
                     } else {
-                        respond!(
+                        chat::respond!(
                             ctx,
                             "Current song: {} - {elapsed} / {duration} - {url}",
                             current.item().what(),
@@ -239,13 +237,13 @@ impl command::Handler for Handler {
                     }
                 }
                 None => {
-                    respond!(ctx, "No song :(");
+                    chat::respond!(ctx, "No song :(");
                 }
             },
             Some("purge") => {
                 ctx.check_scope(auth::Scope::SongEditQueue).await?;
                 player.purge().await?;
-                respond!(ctx, "Song queue purged.");
+                chat::respond!(ctx, "Song queue purged.");
             }
             // print when your next song will play.
             Some("when") => {
@@ -257,7 +255,7 @@ impl command::Handler for Handler {
                         let user = match ctx.user.real() {
                             Some(user) => user,
                             None => {
-                                respond!(ctx, "Not a real user");
+                                chat::respond!(ctx, "Not a real user");
                                 return Ok(());
                             }
                         };
@@ -275,28 +273,42 @@ impl command::Handler for Handler {
                 match result {
                     Some((when, ref item)) if when.as_secs() == 0 => {
                         if your {
-                            respond!(ctx, "Your song is currently playing");
+                            chat::respond!(ctx, "Your song is currently playing");
                         } else {
-                            respond!(ctx, "{}'s song {} is currently playing", user, item.what());
+                            chat::respond!(
+                                ctx,
+                                "{}'s song {} is currently playing",
+                                user,
+                                item.what()
+                            );
                         }
                     }
                     Some((when, item)) => {
                         let when = display::compact_duration(when);
 
                         if your {
-                            respond!(
+                            chat::respond!(
                                 ctx,
                                 format!("Your song {} will play in {}", item.what(), when)
                             );
                         } else {
-                            respond!(ctx, "{}'s song {} will play in {}", user, item.what(), when);
+                            chat::respond!(
+                                ctx,
+                                "{}'s song {} will play in {}",
+                                user,
+                                item.what(),
+                                when
+                            );
                         }
                     }
                     None => {
                         if your {
-                            respond!(ctx, "You don't have any songs in queue :(");
+                            chat::respond!(ctx, "You don't have any songs in queue :(");
                         } else {
-                            respond!(ctx, format!("{} doesn't have any songs in queue :(", user));
+                            chat::respond!(
+                                ctx,
+                                format!("{} doesn't have any songs in queue :(", user)
+                            );
                         }
                     }
                 }
@@ -318,7 +330,7 @@ impl command::Handler for Handler {
                         let user = match ctx.user.real() {
                             Some(user) => user,
                             None => {
-                                respond!(ctx, "Only real users can delete their own songs");
+                                chat::respond!(ctx, "Only real users can delete their own songs");
                                 return Ok(());
                             }
                         };
@@ -331,7 +343,7 @@ impl command::Handler for Handler {
                         player.remove_at(n).await?
                     }
                     None => {
-                        respond!(ctx, "Expected: last, last <user>, or mine");
+                        chat::respond!(ctx, "Expected: last, last <user>, or mine");
                         return Ok(());
                     }
                 };
@@ -356,7 +368,7 @@ impl command::Handler for Handler {
                         let argument = match str::parse::<u32>(argument) {
                             Ok(argument) => argument,
                             Err(_) => {
-                                respond!(ctx, "expected whole number argument");
+                                chat::respond!(ctx, "expected whole number argument");
                                 return Ok(());
                             }
                         };
@@ -369,20 +381,20 @@ impl command::Handler for Handler {
 
                         match player.volume(volume).await {
                             Some(volume) => {
-                                respond!(ctx, format!("Updated volume to {}.", volume));
+                                chat::respond!(ctx, format!("Updated volume to {}.", volume));
                             }
                             None => {
-                                respond!(ctx, "Cannot update volume");
+                                chat::respond!(ctx, "Cannot update volume");
                             }
                         }
                     }
                     // reading volume
                     None => match player.current_volume().await {
                         Some(volume) => {
-                            respond!(ctx, format!("Current volume: {}.", volume));
+                            chat::respond!(ctx, format!("Current volume: {}.", volume));
                         }
                         None => {
-                            respond!(ctx, "No active player");
+                            chat::respond!(ctx, "No active player");
                         }
                     },
                 }
@@ -471,7 +483,7 @@ impl command::Handler for Handler {
                 alts.push("delete");
                 alts.push("request");
                 alts.push("length");
-                respond!(ctx, format!("Expected argument: {}.", alts.join(", ")));
+                chat::respond!(ctx, format!("Expected argument: {}.", alts.join(", ")));
             }
         }
 
@@ -572,9 +584,9 @@ impl Constraint {
 /// Parse a queue position.
 async fn parse_queue_position(n: &str) -> Result<usize> {
     match str::parse::<usize>(n) {
-        Ok(0) => respond_bail!("Can't mess with the current song :("),
+        Ok(0) => chat::respond_bail!("Can't mess with the current song :("),
         Ok(n) => Ok(n.saturating_sub(1)),
-        Err(_) => respond_bail!("Expected whole number argument"),
+        Err(_) => chat::respond_bail!("Expected whole number argument"),
     }
 }
 

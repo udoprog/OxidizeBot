@@ -1,9 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use chat::command;
+use chat::module;
 use url::Url;
-
-use crate::command;
-use crate::module;
 
 const DEFAULT_URL: &str = "https://setbac.tv/help";
 
@@ -25,7 +24,7 @@ impl command::Handler for Help {
 
         match next.as_deref() {
             None => {
-                respond!(
+                chat::respond!(
                     ctx,
                     "You can find documentation for each command at {}",
                     url
@@ -33,7 +32,7 @@ impl command::Handler for Help {
             }
             Some(command) => {
                 url.query_pairs_mut().append_pair("q", command);
-                respond!(ctx, format!("For help on that, go to {}", url));
+                chat::respond!(ctx, format!("For help on that, go to {}", url));
             }
         }
 
@@ -44,7 +43,7 @@ impl command::Handler for Help {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "help"
     }

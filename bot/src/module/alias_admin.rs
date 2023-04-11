@@ -1,8 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::command;
-use crate::module;
+use chat::command;
+use chat::module;
 
 /// Handler for the !alias command.
 pub(crate) struct Handler {
@@ -27,7 +27,7 @@ impl command::Handler for Handler {
                 let template = ctx.rest_parse("<name> <template>")?;
                 aliases.edit(ctx.channel(), &name, template).await?;
 
-                respond!(ctx, "Edited alias");
+                chat::respond!(ctx, "Edited alias");
             }
             Some("pattern") => {
                 ctx.check_scope(auth::Scope::AliasEdit).await?;
@@ -48,14 +48,14 @@ impl command::Handler for Handler {
                 };
 
                 if !aliases.edit_pattern(ctx.channel(), &name, pattern).await? {
-                    respond!(ctx, format!("No such alias: `{}`", name));
+                    chat::respond!(ctx, format!("No such alias: `{}`", name));
                     return Ok(());
                 }
 
-                respond!(ctx, "Edited pattern for alias.");
+                chat::respond!(ctx, "Edited pattern for alias.");
             }
             None | Some(..) => {
-                respond!(
+                chat::respond!(
                     ctx,
                     "Expected: show, list, edit, delete, enable, disable, or group."
                 );
@@ -69,7 +69,7 @@ impl command::Handler for Handler {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "alias"
     }

@@ -1,8 +1,7 @@
-use crate::command;
-use crate::module;
-
 use anyhow::Result;
 use async_trait::async_trait;
+use chat::command;
+use chat::module;
 
 pub(crate) struct Handler {
     pub(crate) enabled: settings::Var<bool>,
@@ -35,7 +34,7 @@ impl command::Handler for Handler {
                 let template = ctx.rest_parse("<name> <template>")?;
                 commands.edit(ctx.channel(), &name, template).await?;
 
-                respond!(ctx, "Edited command.");
+                chat::respond!(ctx, "Edited command.");
             }
             Some("pattern") => {
                 ctx.check_scope(auth::Scope::CommandEdit).await?;
@@ -56,14 +55,14 @@ impl command::Handler for Handler {
                 };
 
                 if !commands.edit_pattern(ctx.channel(), &name, pattern).await? {
-                    respond!(ctx, format!("No such command: `{}`", name));
+                    chat::respond!(ctx, format!("No such command: `{}`", name));
                     return Ok(());
                 }
 
-                respond!(ctx, "Edited pattern for command.");
+                chat::respond!(ctx, "Edited pattern for command.");
             }
             None | Some(..) => {
-                respond!(
+                chat::respond!(
                     ctx,
                     "Expected: show, list, edit, delete, enable, disable, or group."
                 );
@@ -77,7 +76,7 @@ impl command::Handler for Handler {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "command"
     }

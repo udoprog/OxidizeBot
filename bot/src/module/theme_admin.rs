@@ -1,8 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
-
-use crate::command;
-use crate::module;
+use chat::command;
+use chat::module;
 
 pub(crate) struct Handler {
     pub(crate) themes: async_injector::Ref<db::Themes>,
@@ -26,7 +25,7 @@ impl command::Handler for Handler {
                 let track_id = ctx.next_parse("<name> <track-id>")?;
 
                 themes.edit(ctx.channel(), &name, track_id).await?;
-                respond!(ctx, "Edited theme.");
+                chat::respond!(ctx, "Edited theme.");
             }
             Some("edit-duration") => {
                 ctx.check_scope(auth::Scope::ThemeEdit).await?;
@@ -38,10 +37,10 @@ impl command::Handler for Handler {
                 themes
                     .edit_duration(ctx.channel(), &name, start, end)
                     .await?;
-                respond!(ctx, "Edited theme.");
+                chat::respond!(ctx, "Edited theme.");
             }
             None | Some(..) => {
-                respond!(
+                chat::respond!(
                     ctx,
                     "Expected: show, list, edit, edit-duration, delete, enable, disable, or group.",
                 );
@@ -55,7 +54,7 @@ impl command::Handler for Handler {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "theme"
     }

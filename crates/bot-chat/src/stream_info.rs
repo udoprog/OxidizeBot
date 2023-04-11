@@ -11,23 +11,23 @@ use tokio::sync::mpsc;
 use tracing::Instrument;
 
 #[derive(Debug, Default)]
-pub(crate) struct Data {
-    pub(crate) stream: Option<api::twitch::model::Stream>,
-    pub(crate) title: Option<String>,
-    pub(crate) game: Option<String>,
-    pub(crate) subs: Vec<api::twitch::model::Subscription>,
-    pub(crate) subs_set: HashSet<String>,
+pub struct Data {
+    pub stream: Option<api::twitch::model::Stream>,
+    pub title: Option<String>,
+    pub game: Option<String>,
+    pub subs: Vec<api::twitch::model::Subscription>,
+    pub subs_set: HashSet<String>,
 }
 
 /// Notify on changes in stream state.
-pub(crate) enum StreamState {
+pub enum StreamState {
     Started,
     Stopped,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct StreamInfo {
-    pub(crate) data: Arc<RwLock<Data>>,
+pub struct StreamInfo {
+    pub data: Arc<RwLock<Data>>,
 }
 
 impl StreamInfo {
@@ -63,7 +63,7 @@ impl StreamInfo {
 
     /// Refresh channel.
     #[tracing::instrument(skip_all, fields(id = ?streamer.user.id))]
-    pub(crate) async fn refresh_channel<'a>(
+    pub async fn refresh_channel<'a>(
         &'a self,
         streamer: &'a api::TwitchAndUser,
     ) -> Result<()> {

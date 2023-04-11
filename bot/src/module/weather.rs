@@ -1,8 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
-
-use crate::command;
-use crate::module;
+use chat::command;
+use chat::module;
 
 #[derive(Debug, Clone, Copy)]
 struct Temperature(f32);
@@ -66,7 +65,9 @@ impl command::Handler for Weather {
         match ctx.next().as_deref() {
             Some("current") => {
                 let api = self.api.read().await;
-                let api = api.as_ref().ok_or(respond_err!("API not configured"))?;
+                let api = api
+                    .as_ref()
+                    .ok_or(chat::respond_err!("API not configured"))?;
 
                 let loc = match ctx.rest() {
                     "" => self.location.load().await,
@@ -76,7 +77,7 @@ impl command::Handler for Weather {
                 let loc = match loc {
                     Some(loc) => loc,
                     None => {
-                        respond!(ctx, "Must specify <location>");
+                        chat::respond!(ctx, "Must specify <location>");
                         return Ok(());
                     }
                 };
@@ -88,7 +89,7 @@ impl command::Handler for Weather {
                 let current = match current {
                     Some(current) => current,
                     None => {
-                        respond!(ctx, "Could not find location `{}`", loc);
+                        chat::respond!(ctx, "Could not find location `{}`", loc);
                         return Ok(());
                     }
                 };
@@ -119,10 +120,10 @@ impl command::Handler for Weather {
                     });
                 }
 
-                respond!(ctx, "{} -> {}.", current.name, parts.join(", "));
+                chat::respond!(ctx, "{} -> {}.", current.name, parts.join(", "));
             }
             _ => {
-                respond!(ctx, "Expected: current.");
+                chat::respond!(ctx, "Expected: current.");
             }
         }
 
@@ -133,7 +134,7 @@ impl command::Handler for Weather {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "weather"
     }

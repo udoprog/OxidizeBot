@@ -6,11 +6,10 @@ use api::speedrun::{
     RunInfo, User, Variable, Variables,
 };
 use async_trait::async_trait;
+use chat::command;
+use chat::module;
 use common::display;
 use storage::Cache;
-
-use crate::command;
-use crate::module;
 
 /// Handler for the !speedrun command.
 pub(crate) struct Speedrun {
@@ -35,7 +34,7 @@ impl Speedrun {
                 "--game" => match ctx.next() {
                     Some(g) => games.push(g.to_lowercase()),
                     None => {
-                        respond!(ctx, "Expected argument to `--game`");
+                        chat::respond!(ctx, "Expected argument to `--game`");
                         return Ok(());
                     }
                 },
@@ -46,7 +45,7 @@ impl Speedrun {
                         category_filter.ty = Some(CategoryType::PerLevel)
                     }
                     None => {
-                        respond!(ctx, "Expected argument to `--level`");
+                        chat::respond!(ctx, "Expected argument to `--level`");
                         return Ok(());
                     }
                 },
@@ -57,7 +56,7 @@ impl Speedrun {
                         category_filter.misc = true;
                     }
                     None => {
-                        respond!(ctx, "Expected argument to `--category`");
+                        chat::respond!(ctx, "Expected argument to `--category`");
                         return Ok(());
                     }
                 },
@@ -68,7 +67,7 @@ impl Speedrun {
                         category_filter.misc = true;
                     }
                     None => {
-                        respond!(ctx, "Expected argument to `--sub-category`");
+                        chat::respond!(ctx, "Expected argument to `--sub-category`");
                         return Ok(());
                     }
                 },
@@ -79,14 +78,14 @@ impl Speedrun {
                 }
                 "--abbrev" => abbrev = true,
                 other if other.starts_with("--") => {
-                    respond!(ctx, format!("`{}` is not a valid parameter", other));
+                    chat::respond!(ctx, format!("`{}` is not a valid parameter", other));
                     return Ok(());
                 }
                 other if query_user.is_none() => {
                     query_user = Some(other.to_lowercase());
                 }
                 _ => {
-                    respond!(ctx, "did not expect more arguments");
+                    chat::respond!(ctx, "did not expect more arguments");
                     return Ok(());
                 }
             }
@@ -97,7 +96,7 @@ impl Speedrun {
         let query_user = match query_user {
             Some(query_user) => query_user,
             None => {
-                respond!(ctx, "No user in query");
+                chat::respond!(ctx, "No user in query");
                 return Ok(());
             }
         };
@@ -107,7 +106,7 @@ impl Speedrun {
         let u = match self.speedrun.user_by_id(&query_user).await? {
             Some(u) => u,
             None => {
-                respond!(
+                chat::respond!(
                     ctx,
                     format!("No user on speedrun.com named `{}`", query_user)
                 );
@@ -123,7 +122,7 @@ impl Speedrun {
         let personal_bests = match personal_bests {
             Some(personal_bests) => personal_bests,
             None => {
-                respond!(ctx, "No personal bests found");
+                chat::respond!(ctx, "No personal bests found");
                 return Ok(());
             }
         };
@@ -262,7 +261,7 @@ impl Speedrun {
                 "--user" => match ctx.next() {
                     Some(u) => match_user = Some(u.to_lowercase()),
                     None => {
-                        respond!(ctx, "Expected argument to `--user`");
+                        chat::respond!(ctx, "Expected argument to `--user`");
                         return Ok(());
                     }
                 },
@@ -273,7 +272,7 @@ impl Speedrun {
                         category_filter.misc = true;
                     }
                     None => {
-                        respond!(ctx, "Expected argument to `--category`");
+                        chat::respond!(ctx, "Expected argument to `--category`");
                         return Ok(());
                     }
                 },
@@ -284,7 +283,7 @@ impl Speedrun {
                         category_filter.misc = true;
                     }
                     None => {
-                        respond!(ctx, "Expected argument to `--sub-category`");
+                        chat::respond!(ctx, "Expected argument to `--sub-category`");
                         return Ok(());
                     }
                 },
@@ -295,7 +294,7 @@ impl Speedrun {
                 }
                 "--abbrev" => abbrev = true,
                 other => {
-                    respond!(ctx, format!("`{}` is not a valid parameter", other));
+                    chat::respond!(ctx, format!("`{}` is not a valid parameter", other));
                     return Ok(());
                 }
             }
@@ -308,7 +307,7 @@ impl Speedrun {
         let game = match game {
             Some(game) => game,
             None => {
-                respond!(ctx, "No game matching `{}`", game_query);
+                chat::respond!(ctx, "No game matching `{}`", game_query);
                 return Result::Ok(());
             }
         };
@@ -324,7 +323,7 @@ impl Speedrun {
         let categories = match categories {
             Some(categories) => categories,
             None => {
-                respond!(ctx, "No categories for that game");
+                chat::respond!(ctx, "No categories for that game");
                 return Ok(());
             }
         };
@@ -496,7 +495,7 @@ impl command::Handler for Speedrun {
                 self.query_game(ctx).await?;
             }
             _ => {
-                respond!(ctx, "Expected argument: record, personal-bests.");
+                chat::respond!(ctx, "Expected argument: record, personal-bests.");
             }
         }
 
@@ -670,7 +669,7 @@ impl CachedSpeedrun {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "speedrun"
     }

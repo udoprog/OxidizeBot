@@ -105,20 +105,11 @@ const USER_AGENT: &str = include_str!(concat!(env!("OUT_DIR"), "/user_agent.txt"
 const SETTINGS_SCHEMA: &[u8] = include_bytes!("settings.yaml");
 const AUTH_SCHEMA: &[u8] = include_bytes!("auth.yaml");
 
-#[macro_use]
-mod macros;
-mod chat;
 pub mod cli;
-mod command;
-mod idle;
 mod module;
 mod panic_logger;
-mod script;
 mod setbac;
 mod song_file;
-mod stream_info;
 mod sys;
-mod task;
 mod tracing;
 mod updater;
-mod utils;

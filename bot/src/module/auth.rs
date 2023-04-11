@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 use common::Duration;
 
-use crate::command;
-use crate::module;
+use chat::command;
+use chat::module;
 
 /// Handler for the !auth command.
 pub(crate) struct Handler {
@@ -17,7 +17,7 @@ impl command::Handler for Handler {
         let auth = self.auth.read().await;
         let auth = match auth.as_deref() {
             Some(auth) => auth,
-            None => return Err(respond_err!("auth component not configured").into()),
+            None => return Err(chat::respond_err!("auth component not configured").into()),
         };
 
         match ctx.next().as_deref() {
@@ -28,7 +28,7 @@ impl command::Handler for Handler {
                 let user = match ctx.user.real() {
                     Some(user) => user,
                     None => {
-                        respond!(ctx, "Can only get scopes for real users");
+                        chat::respond!(ctx, "Can only get scopes for real users");
                         return Ok(());
                     }
                 };
@@ -71,7 +71,7 @@ impl command::Handler for Handler {
                 let scope = ctx.next_parse("<duration> <principal> <scope>")?;
 
                 if !ctx.user.has_scope(scope).await {
-                    respond!(
+                    chat::respond!(
                         ctx,
                         "Trying to grant scope `{}` that you don't have :(",
                         scope
@@ -82,7 +82,7 @@ impl command::Handler for Handler {
                 let now = Utc::now();
                 let expires_at = now + duration.as_chrono();
 
-                respond!(
+                chat::respond!(
                     ctx,
                     "Gave: {scope} to {principal} for {duration}",
                     duration = duration,
@@ -93,7 +93,7 @@ impl command::Handler for Handler {
                 auth.insert_temporary(scope, principal, expires_at).await;
             }
             _ => {
-                respond!(ctx, "Expected: scopes, permit");
+                chat::respond!(ctx, "Expected: scopes, permit");
             }
         }
 
@@ -104,7 +104,7 @@ impl command::Handler for Handler {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "auth"
     }

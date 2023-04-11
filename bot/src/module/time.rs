@@ -5,8 +5,8 @@ use chrono::Utc;
 use chrono_tz::{Etc, Tz};
 use template::Template;
 
-use crate::command;
-use crate::module;
+use chat::command;
+use chat::module;
 
 /// Handler for the !8ball command.
 pub(crate) struct Time {
@@ -54,7 +54,7 @@ impl command::Handler for Time {
             rfc2822: &rfc2822,
         })?;
 
-        respond!(ctx, response);
+        chat::respond!(ctx, response);
         return Ok(());
 
         #[derive(serde::Serialize)]
@@ -91,7 +91,7 @@ impl command::Handler for Time {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "time"
     }

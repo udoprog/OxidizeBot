@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub(crate) struct Idle {
+pub struct Idle {
     /// Number of messages seen.
     seen: Arc<AtomicUsize>,
     threshold: settings::Var<u32>,
@@ -25,7 +25,7 @@ impl Idle {
     }
 
     /// Test if there is enough messages to not bee considered "idle".
-    pub(crate) async fn is_idle(&self) -> bool {
+    pub async fn is_idle(&self) -> bool {
         let seen = self.seen.load(Ordering::SeqCst);
 
         if seen >= self.threshold.load().await as usize {

@@ -3,13 +3,11 @@ use std::pin::pin;
 use anyhow::{Context as _, Result};
 use async_fuse::Fuse;
 use async_injector::Injector;
-
-use crate::chat::Sender;
 use player::Event;
 
 /// Setup the task that sends chat feedback.
 pub(crate) async fn task(
-    sender: Sender,
+    sender: chat::Sender,
     injector: Injector,
     chat_feedback: settings::Var<bool>,
 ) -> Result<()> {
@@ -37,7 +35,7 @@ pub(crate) async fn task(
 /// Notifications from the player.
 async fn feedback(
     player: player::Player,
-    sender: Sender,
+    sender: chat::Sender,
     chat_feedback: settings::Var<bool>,
 ) -> Result<()> {
     let mut rx = player.subscribe().await;

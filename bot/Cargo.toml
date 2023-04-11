@@ -28,8 +28,7 @@ oauth2 = { package = "bot-oauth2", path = "../crates/bot-oauth2" }
 messagelog = { package = "bot-messagelog", path = "../crates/bot-messagelog" }
 template = { package = "bot-template", path = "../crates/bot-template" }
 storage = { package = "bot-storage", path = "../crates/bot-storage" }
-rune = { version = "0.12.3", optional = true }
-rune-modules = { version = "0.12.3", features = ["full"], optional = true }
+chat = { package = "bot-chat", path = "../crates/bot-chat" }
 async-injector = "0.18.5"
 rand = "0.8.5"
 serde_json = "1.0.95"
@@ -43,20 +42,15 @@ async-trait = "0.1.68"
 chrono = { version = "0.4.24", default-features = false }
 async-fuse = { version = "0.11.4", features = ["stream"] }
 anyhow = "1.0.70"
-notify = "5.1.0"
 argwerk = "0.20.4"
 url = { version = "2.3.1", features = ["serde"] }
 regex = "1.7.3"
-smallvec = "1.10.0"
 parking_lot = "0.12.1"
-slab = "0.4.8"
 thiserror = "1.0.40"
 serde = { version = "1.0.159", features = ["derive"] }
 async-stream = "0.3.5"
-irc = { version = "0.15.0", default-features = false, features = ["tokio-native-tls", "native-tls", "tls-rust"] }
 chrono-tz = { version = "0.8.2", features = ["serde"] }
-leaky-bucket = "0.12.4"
-ignore = { version = "0.4.20", optional = true }
+smallvec = "1.10.0"
 
 [build-dependencies]
 winres = "0.1.12"
@@ -69,4 +63,4 @@ winapi = { version = "0.3.9", features = ["shellapi", "impl-default"] }
 [features]
 default = []
 windows = []
-scripting = ["rune", "rune-modules", "ignore", "db/scripting"]
+scripting = ["chat/scripting"]

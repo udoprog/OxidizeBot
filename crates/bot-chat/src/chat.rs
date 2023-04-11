@@ -1,7 +1,6 @@
 mod chat_log;
 mod currency;
 mod currency_admin;
-pub(crate) mod messages;
 mod sender;
 
 use std::path::{Path, PathBuf};
@@ -25,10 +24,8 @@ use notify::{recommended_watcher, RecommendedWatcher, Watcher};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fmt;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 
-pub(crate) use self::messages::Messages;
-pub(crate) use self::sender::Sender;
 use crate::command;
 use crate::idle;
 use crate::module;
@@ -36,35 +33,43 @@ use crate::script;
 use crate::stream_info;
 use crate::task;
 use crate::utils;
+use crate::messages;
+pub use self::sender::Sender;
 
 const SERVER: &str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &str = "twitch.tv/tags";
 const TWITCH_COMMANDS_CAP: &str = "twitch.tv/commands";
 
 /// Helper struct to construct IRC integration.
-pub(crate) struct Configuration {
+pub struct Configuration {
+    user_agent: &'static str,
     injector: Injector,
     stream_state_tx: mpsc::Sender<stream_info::StreamState>,
+    restart: Arc<Notify>,
     modules: Vec<Box<dyn module::Module>>,
     script_dirs: Vec<PathBuf>,
 }
 
 impl Configuration {
     /// Construct a new chat configuration.
-    pub(crate) fn new(
+    pub fn new(
+        user_agent: &'static str,
         injector: Injector,
         stream_state_tx: mpsc::Sender<stream_info::StreamState>,
+        restart: Arc<Notify>,
     ) -> Self {
         Self {
+            user_agent,
             injector,
             stream_state_tx,
+            restart,
             modules: Vec::new(),
             script_dirs: Vec::new(),
         }
     }
 
     /// Add a script directory to watch.
-    pub(crate) fn script_dir<P>(&mut self, script_dir: P)
+    pub fn script_dir<P>(&mut self, script_dir: P)
     where
         P: AsRef<Path>,
     {
@@ -72,7 +77,7 @@ impl Configuration {
     }
 
     /// Add a module.
-    pub(crate) fn module<M>(&mut self, module: M)
+    pub fn module<M>(&mut self, module: M)
     where
         M: module::Module,
     {
@@ -80,7 +85,7 @@ impl Configuration {
     }
 
     #[tracing::instrument(skip_all)]
-    pub(crate) async fn run(self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         tracing::trace!("Waiting for everything to be ready");
 
         let mut provider = Setup::provider(&self.injector).await?;
@@ -134,8 +139,6 @@ struct Setup {
     global_bus: bus::Bus<bus::Global>,
     #[dependency]
     settings: settings::Settings<::auth::Scope>,
-    #[dependency]
-    restart: utils::Restart,
 }
 
 struct ChatLoop<'a> {
@@ -162,14 +165,15 @@ impl ChatLoop<'_> {
             command_bus,
             global_bus,
             settings,
-            restart,
         } = setup;
 
         let Configuration {
+            user_agent,
             injector,
+            stream_state_tx,
+            restart,
             modules,
             script_dirs,
-            stream_state_tx,
             ..
         } = irc;
 
@@ -221,8 +225,8 @@ impl ChatLoop<'_> {
 
         let context_inner = Arc::new(command::ContextInner::new(
             sender.clone(),
-            restart,
             auth.scope_cooldowns(),
+            restart.clone(),
         ));
 
         futures.push(Box::pin(refresh_roles(
@@ -300,6 +304,7 @@ impl ChatLoop<'_> {
         let (mut api_url_stream, api_url) = settings.stream("remote/api-url").optional().await?;
 
         let mut chat_log_builder = chat_log::Builder::new(
+            user_agent,
             streamer.clone(),
             injector,
             message_log.clone(),
@@ -512,9 +517,9 @@ struct Handler<'a> {
     /// Handler for chat logs.
     chat_log: Option<chat_log::ChatLog>,
     /// Messages.
-    messages: Messages,
+    messages: messages::Messages,
     /// Shared context paramters.
-    context_inner: Arc<command::ContextInner>,
+    pub(crate) context_inner: Arc<command::ContextInner>,
 }
 
 impl Handler<'_> {
@@ -623,8 +628,8 @@ async fn process_command(
 
                 task::spawn(async move {
                     if let Err(error) = handler.handle(&mut ctx).await {
-                        if let Some(respond) = error.downcast_ref::<command::Respond>() {
-                            if let command::Respond::Message(respond) = respond {
+                        if let Some(respond) = error.downcast_ref::<crate::RespondErr>() {
+                            if let crate::RespondErr::Message(respond) = respond {
                                 respond!(ctx, respond);
                             }
                         } else {
@@ -995,7 +1000,7 @@ impl<'a> Handler<'a> {
 /// Struct representing a real user.
 ///
 /// For example, an injected command does not have a real user associated with it.
-pub(crate) struct RealUser<'a> {
+pub struct RealUser<'a> {
     tags: &'a Tags,
     sender: &'a Sender,
     login: &'a str,
@@ -1007,24 +1012,24 @@ pub(crate) struct RealUser<'a> {
 
 impl<'a> RealUser<'a> {
     /// Get the login of the user.
-    pub(crate) fn login(&self) -> &'a str {
+    pub fn login(&self) -> &'a str {
         self.login
     }
 
     /// Get the display name of the user.
-    pub(crate) fn display_name(&self) -> &'a str {
+    pub fn display_name(&self) -> &'a str {
         self.tags.display_name.as_deref().unwrap_or(self.login)
     }
 
     /// Respond to the user with a message.
-    pub(crate) async fn respond(&self, m: impl fmt::Display) {
+    pub async fn respond(&self, m: impl fmt::Display) {
         self.sender
-            .privmsg(crate::utils::respond(self.display_name(), m))
+            .privmsg(crate::respond(self.display_name(), m))
             .await;
     }
 
     /// Test if the current user is the given user.
-    pub(crate) fn is(&self, name: &str) -> bool {
+    pub fn is(&self, name: &str) -> bool {
         self.login == name.to_lowercase()
     }
 
@@ -1049,7 +1054,7 @@ impl<'a> RealUser<'a> {
     }
 
     /// Get a list of all roles the current requester belongs to.
-    pub(crate) fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
+    pub fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
         let mut roles = smallvec::SmallVec::new();
 
         if self.is_streamer() {
@@ -1073,14 +1078,14 @@ impl<'a> RealUser<'a> {
     }
 
     /// Test if the current user has the given scope.
-    pub(crate) async fn has_scope(&self, scope: Scope) -> bool {
+    pub async fn has_scope(&self, scope: Scope) -> bool {
         self.auth.test_any(scope, self.login, self.roles()).await
     }
 }
 
 /// Information about the user.
 #[derive(Debug)]
-pub(crate) enum Principal {
+pub enum Principal {
     /// A real user based on its login.
     User { login: Box<str> },
     /// An injected user command.
@@ -1099,13 +1104,13 @@ struct UserInner {
 }
 
 #[derive(Clone)]
-pub(crate) struct User {
+pub struct User {
     inner: Arc<UserInner>,
 }
 
 impl User {
     /// Access the user as a real user.
-    pub(crate) fn real(&self) -> Option<RealUser<'_>> {
+    pub fn real(&self) -> Option<RealUser<'_>> {
         match self.inner.principal {
             Principal::User { ref login } => Some(RealUser {
                 tags: &self.inner.tags,
@@ -1121,7 +1126,7 @@ impl User {
     }
 
     /// Get the name of the user.
-    pub(crate) fn name(&self) -> Option<&str> {
+    pub fn name(&self) -> Option<&str> {
         match self.inner.principal {
             Principal::User {
                 login: ref name, ..
@@ -1131,7 +1136,7 @@ impl User {
     }
 
     /// Get the display name of the user.
-    pub(crate) fn display_name(&self) -> Option<&str> {
+    pub fn display_name(&self) -> Option<&str> {
         self.inner
             .tags
             .display_name
@@ -1145,12 +1150,12 @@ impl User {
     }
 
     /// Test if the current user is the given user.
-    pub(crate) fn is(&self, name: &str) -> bool {
+    pub fn is(&self, name: &str) -> bool {
         self.real().map(|u| u.is(name)).unwrap_or(false)
     }
 
     /// Get the principal of the current user.
-    pub(crate) fn principal(&self) -> &Principal {
+    pub fn principal(&self) -> &Principal {
         &self.inner.principal
     }
 
@@ -1165,12 +1170,12 @@ impl User {
     }
 
     /// Respond to the user with a message.
-    pub(crate) async fn respond(&self, m: impl fmt::Display) {
+    pub async fn respond(&self, m: impl fmt::Display) {
         match self.display_name() {
             Some(name) => {
                 self.inner
                     .sender
-                    .privmsg(crate::utils::respond(name, m))
+                    .privmsg(crate::respond(name, m))
                     .await;
             }
             None => {
@@ -1180,7 +1185,7 @@ impl User {
     }
 
     /// Render an iterable of results, that implements display.
-    pub(crate) async fn respond_lines<I>(&self, results: I, empty: &str)
+    pub async fn respond_lines<I>(&self, results: I, empty: &str)
     where
         I: IntoIterator,
         I::Item: fmt::Display,
@@ -1202,7 +1207,7 @@ impl User {
     }
 
     /// Get a list of all roles the current requester belongs to.
-    pub(crate) fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
+    pub fn roles(&self) -> smallvec::SmallVec<[Role; 4]> {
         match self.real().map(|u| u.roles()) {
             Some(roles) => roles,
             None => {
@@ -1217,7 +1222,7 @@ impl User {
     }
 
     /// Test if the current user has the given scope.
-    pub(crate) async fn has_scope(&self, scope: Scope) -> bool {
+    pub async fn has_scope(&self, scope: Scope) -> bool {
         let user = match self.real() {
             Some(user) => user,
             None => return false,
@@ -1384,17 +1389,17 @@ async fn refresh_roles(
 
     let mut interval = tokio::time::interval(time::Duration::from_secs(60 * 5));
 
-    let mut mods_need = pin!(context.notify.refresh_mods.notified());
+    let mut mods_need = pin!(context.notify().refresh_mods.notified());
     mods_need.as_mut().enable();
 
-    let mut vips_need = pin!(context.notify.refresh_vips.notified());
+    let mut vips_need = pin!(context.notify().refresh_vips.notified());
     vips_need.as_mut().enable();
 
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                context.notify.refresh_mods.notify_one();
-                context.notify.refresh_vips.notify_one();
+                context.notify().refresh_mods.notify_one();
+                context.notify().refresh_vips.notify_one();
             }
             _ = mods_need.as_mut() => {
                 let future = streamer.client.moderators(&streamer.user.id);
@@ -1404,7 +1409,7 @@ async fn refresh_roles(
                 }
 
                 // Remove interest since we just updated to avoid duplicates.
-                mods_need.set(context.notify.refresh_mods.notified());
+                mods_need.set(context.notify().refresh_mods.notified());
             }
             _ = vips_need.as_mut() => {
                 let future = streamer.client.vips(&streamer.user.id);
@@ -1414,7 +1419,7 @@ async fn refresh_roles(
                 }
 
                 // Remove interest since we just updated to avoid duplicates.
-                vips_need.set(context.notify.refresh_vips.notified());
+                vips_need.set(context.notify().refresh_vips.notified());
             }
         }
     }

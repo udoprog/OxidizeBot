@@ -9,12 +9,10 @@ use common::display;
 use common::tags;
 use tokio::sync::mpsc;
 
-use crate::chat;
 use crate::module;
-use crate::stream_info;
 use crate::sys;
 use crate::updater;
-use crate::utils;
+use chat::stream_info;
 
 const OLD_CONFIG_DIR: &str = "SetMod";
 const CONFIG_DIR: &str = "OxidizeBot";
@@ -436,9 +434,6 @@ async fn try_main(
     let weather_future =
         api::open_weather_map::setup(crate::USER_AGENT, settings.clone(), injector.clone()).await?;
 
-    let (restart, restart_rx) = utils::Restart::new();
-    injector.update(restart).await;
-
     let nightbot_future = Box::pin(api::NightBot::run(crate::USER_AGENT, injector.clone()));
 
     injector
@@ -461,7 +456,12 @@ async fn try_main(
 
     let (stream_state_tx, stream_state_rx) = mpsc::channel(64);
 
-    let mut chat = chat::Configuration::new(injector.clone(), stream_state_tx);
+    let mut chat = chat::Configuration::new(
+        crate::USER_AGENT,
+        injector.clone(),
+        stream_state_tx,
+        system.restart().clone(),
+    );
 
     for script_dir in script_dirs {
         chat.script_dir(script_dir);
@@ -525,10 +525,6 @@ async fn try_main(
         },
         _ = system.wait_for_restart() => {
             tracing::info!("Restart triggered by system");
-            Ok(Intent::Restart)
-        },
-        _ = restart_rx => {
-            tracing::info!("Restart triggered by bot");
             Ok(Intent::Restart)
         },
         _ = tokio::signal::ctrl_c() => {

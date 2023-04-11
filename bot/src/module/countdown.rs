@@ -8,13 +8,12 @@ use std::time;
 use anyhow::Result;
 use async_fuse::Fuse;
 use async_trait::async_trait;
+use chat::command;
+use chat::module;
 use common::stream::Stream;
 use common::Duration;
 use serde::Serialize;
 use tokio::sync::mpsc;
-
-use crate::command;
-use crate::module;
 
 enum Event {
     /// Set the countdown.
@@ -46,25 +45,25 @@ impl command::Handler for Handler {
 
                 match self.sender.send(Event::Set(duration, template)) {
                     Ok(()) => {
-                        respond!(ctx, "Countdown set!");
+                        chat::respond!(ctx, "Countdown set!");
                     }
                     Err(_) => {
-                        respond!(ctx, "Could not set countdown :(");
+                        chat::respond!(ctx, "Could not set countdown :(");
                         return Ok(());
                     }
                 }
             }
             Some("clear") => match self.sender.send(Event::Clear) {
                 Ok(()) => {
-                    respond!(ctx, "Countdown cleared!");
+                    chat::respond!(ctx, "Countdown cleared!");
                 }
                 Err(_) => {
-                    respond!(ctx, "Could not clear countdown :(");
+                    chat::respond!(ctx, "Could not clear countdown :(");
                     return Ok(());
                 }
             },
             _ => {
-                respond!(
+                chat::respond!(
                     ctx,
                     "Expected: !countdown set <duration> <template>, or !countdown clear"
                 );
@@ -79,7 +78,7 @@ impl command::Handler for Handler {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "countdown"
     }

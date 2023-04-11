@@ -1,0 +1,39 @@
+[package]
+name = "bot-chat"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+scripting = ["rune", "rune-modules", "ignore", "db/scripting"]
+
+[dependencies]
+db = { package = "bot-db", path = "../bot-db" }
+common = { package = "bot-common", path = "../bot-common" }
+emotes = { package = "bot-emotes", path = "../bot-emotes" }
+api = { package = "bot-api", path = "../bot-api" }
+auth = { package = "bot-auth", path = "../bot-auth" }
+settings = { package = "bot-settings", path = "../bot-settings" }
+bus = { package = "bot-bus", path = "../bot-bus" }
+messagelog = { package = "bot-messagelog", path = "../bot-messagelog" }
+currency = { package = "bot-currency", path = "../bot-currency" }
+storage = { package = "bot-storage", path = "../bot-storage" }
+async-trait = "0.1.68"
+notify = "5.1.0"
+rune = { version = "0.12.3", optional = true }
+rune-modules = { version = "0.12.3", features = ["full"], optional = true }
+ignore = { version = "0.4.20", optional = true }
+async-injector = "0.18.5"
+url = "2.3.1"
+tracing = "0.1.37"
+irc = { version = "0.15.0", default-features = false, features = ["tokio-native-tls", "native-tls", "tls-rust"] }
+anyhow = "1.0.70"
+serde = { version = "1.0.160", features = ["derive"] }
+tokio = { version = "1.27.0", features = ["time"] }
+parking_lot = "0.12.1"
+slab = "0.4.8"
+smallvec = "1.10.0"
+leaky-bucket = "0.12.4"
+async-fuse = { version = "0.11.4", features = ["stream"] }
+thiserror = "1.0.40"
+async-stream = "0.3.5"

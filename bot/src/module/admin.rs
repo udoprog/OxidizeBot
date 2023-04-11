@@ -1,8 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::command;
-use crate::module;
+use chat::command;
+use chat::module;
 
 /// Handler for the !admin command.
 pub(crate) struct Handler {
@@ -42,7 +42,7 @@ impl Handler {
         }
 
         if results.is_empty() {
-            respond!(ctx, "No settings starting with `{}`", key);
+            chat::respond!(ctx, "No settings starting with `{}`", key);
         } else {
             let mut response = results.join(", ");
 
@@ -68,26 +68,23 @@ impl command::Handler for Handler {
         match ctx.next().as_deref() {
             Some("refresh-mods") => {
                 ctx.notify().refresh_mods.notify_one();
-                respond!(ctx, "Refreshing information on mods");
+                chat::respond!(ctx, "Refreshing information on mods");
             }
             Some("refresh-vips") => {
                 ctx.notify().refresh_vips.notify_one();
-                respond!(ctx, "Refreshing information on vips");
+                chat::respond!(ctx, "Refreshing information on vips");
             }
             Some("refresh") => {
                 ctx.notify().refresh_mods.notify_one();
                 ctx.notify().refresh_vips.notify_one();
-                respond!(ctx, "Refreshing information on mods and vips");
+                chat::respond!(ctx, "Refreshing information on mods and vips");
             }
             Some("version") => {
-                respond!(ctx, "OxidizeBot Version {}", crate::VERSION);
+                chat::respond!(ctx, "OxidizeBot Version {}", crate::VERSION);
             }
             Some("shutdown") | Some("restart") => {
-                if ctx.restart().await {
-                    respond!(ctx, "Restarting...");
-                } else {
-                    respond!(ctx, "Already restarting...");
-                }
+                ctx.notify().restart.notify_one();
+                chat::respond!(ctx, "Restarting...");
             }
             // Insert a value into a setting.
             Some("push") => {
@@ -102,7 +99,7 @@ impl command::Handler for Handler {
 
                 values.push(value);
                 self.settings.set(&key, values).await?;
-                respond!(ctx, "Updated the {} setting", key);
+                chat::respond!(ctx, "Updated the {} setting", key);
             }
             // Delete a value from a setting.
             Some("delete") => {
@@ -117,7 +114,7 @@ impl command::Handler for Handler {
 
                 values.retain(|v| v != &value);
                 self.settings.set(&key, values).await?;
-                respond!(ctx, "Updated the {} setting", key);
+                chat::respond!(ctx, "Updated the {} setting", key);
             }
             Some("toggle") => {
                 self.toggle(ctx).await?;
@@ -125,7 +122,7 @@ impl command::Handler for Handler {
             Some("enable-group") => {
                 let group = ctx
                     .next()
-                    .ok_or(respond_err!("Expected <group> to enable"))?;
+                    .ok_or(chat::respond_err!("Expected <group> to enable"))?;
 
                 if let Some(aliases) = self.aliases.read().await.as_deref() {
                     aliases.enable_group(ctx.channel(), &group).await?;
@@ -143,12 +140,12 @@ impl command::Handler for Handler {
                     themes.enable_group(ctx.channel(), &group).await?;
                 }
 
-                respond!(ctx, "Enabled group {}", group);
+                chat::respond!(ctx, "Enabled group {}", group);
             }
             Some("disable-group") => {
                 let group = ctx
                     .next()
-                    .ok_or(respond_err!("Expected <group> to disable"))?;
+                    .ok_or(chat::respond_err!("Expected <group> to disable"))?;
 
                 if let Some(aliases) = self.aliases.read().await.as_deref() {
                     aliases.disable_group(ctx.channel(), &group).await?;
@@ -166,7 +163,7 @@ impl command::Handler for Handler {
                     themes.disable_group(ctx.channel(), &group).await?;
                 }
 
-                respond!(ctx, "Disabled group {}", group);
+                chat::respond!(ctx, "Disabled group {}", group);
             }
             // Get or set settings.
             Some("settings") => {
@@ -184,10 +181,10 @@ impl command::Handler for Handler {
                         };
 
                         if setting.schema().secret {
-                            respond_bail!("Cannot show secret setting `{}`", key);
+                            chat::respond_bail!("Cannot show secret setting `{}`", key);
                         }
 
-                        respond!(
+                        chat::respond!(
                             ctx,
                             "{} = {}",
                             key,
@@ -198,15 +195,15 @@ impl command::Handler for Handler {
                         let schema = self
                             .settings
                             .lookup(&key)
-                            .ok_or(respond_err!("No such setting"))?;
+                            .ok_or(chat::respond_err!("No such setting"))?;
 
                         let value = schema.ty.parse_as_json(value).map_err(|e| {
-                            respond_err!("Value is not a valid {} type: {}", schema.ty, e)
+                            chat::respond_err!("Value is not a valid {} type: {}", schema.ty, e)
                         })?;
 
                         if let Some(scope) = schema.scope {
                             if !ctx.user.has_scope(scope).await {
-                                respond_bail!(
+                                chat::respond_bail!(
                                     "You are not permitted to modify that setting, sorry :(",
                                 );
                             }
@@ -214,12 +211,12 @@ impl command::Handler for Handler {
 
                         let value_string = serde_json::to_string(&value)?;
                         self.settings.set_json(&key, value).await?;
-                        respond!(ctx, "Updated setting {} = {}", key, value_string);
+                        chat::respond!(ctx, "Updated setting {} = {}", key, value_string);
                     }
                 }
             }
             _ => {
-                respond!(
+                chat::respond!(
                     ctx,
                     "Expected one of: \
                      refresh-mods, \
@@ -244,11 +241,11 @@ impl Handler {
             .settings
             .setting::<serde_json::Value>(&key)
             .await?
-            .ok_or(respond_err!("No setting matching key: {}", key))?;
+            .ok_or(chat::respond_err!("No setting matching key: {}", key))?;
 
         if let Some(scope) = setting.schema().scope {
             if !ctx.user.has_scope(scope).await {
-                respond!(
+                chat::respond!(
                     ctx,
                     "You are not permitted to modify that setting, sorry :("
                 );
@@ -267,7 +264,7 @@ impl Handler {
                 _ => serde_json::Value::Bool(false),
             },
             other => {
-                respond!(
+                chat::respond!(
                     ctx,
                     "Can only toggle bool settings, but {} is a {}",
                     key,
@@ -279,7 +276,7 @@ impl Handler {
 
         let value_string = serde_json::to_string(&toggled)?;
         self.settings.set_json(&key, toggled).await?;
-        respond!(ctx, "Updated setting {} = {}", key, value_string);
+        chat::respond!(ctx, "Updated setting {} = {}", key, value_string);
         Ok(())
     }
 
@@ -294,14 +291,15 @@ impl Handler {
         let schema = self
             .settings
             .lookup(key)
-            .ok_or(respond_err!("No such setting"))?;
+            .ok_or(chat::respond_err!("No such setting"))?;
 
         // Test schema permissions.
         if let Some(scope) = schema.scope {
             if !ctx.user.has_scope(scope).await {
-                return Err(
-                    respond_err!("You are not permitted to modify that setting, sorry :(").into(),
-                );
+                return Err(chat::respond_err!(
+                    "You are not permitted to modify that setting, sorry :("
+                )
+                .into());
             }
         }
 
@@ -312,14 +310,14 @@ impl Handler {
             } => value,
             ref other => {
                 return Err(
-                    respond_err!("Configuration is a {}, but expected a set", other).into(),
+                    chat::respond_err!("Configuration is a {}, but expected a set", other).into(),
                 );
             }
         };
 
         let value = ty
             .parse_as_json(ctx.rest())
-            .map_err(|e| respond_err!("Value is not a valid {} type: {}", ty, e))?;
+            .map_err(|e| chat::respond_err!("Value is not a valid {} type: {}", ty, e))?;
 
         Ok(value)
     }
@@ -327,10 +325,10 @@ impl Handler {
 
 /// Extract a settings key from the context.
 fn key(ctx: &mut command::Context) -> Result<String> {
-    let key = ctx.next().ok_or(respond_err!("Expected <key>"))?;
+    let key = ctx.next().ok_or(chat::respond_err!("Expected <key>"))?;
 
     if key.starts_with("secrets/") {
-        respond_bail!("Cannot access secrets through chat!");
+        chat::respond_bail!("Cannot access secrets through chat!");
     }
 
     Ok(key)
@@ -339,7 +337,7 @@ fn key(ctx: &mut command::Context) -> Result<String> {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "admin"
     }

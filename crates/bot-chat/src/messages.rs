@@ -10,23 +10,23 @@ use tracing::Instrument;
 use common::stream::{StreamExt, StreamMap};
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Optional {
+pub struct Optional {
     id: &'static str,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Required {
+pub struct Required {
     id: &'static str,
     default: &'static str,
 }
 
-pub(crate) const JOIN_CHAT: Optional = Optional { id: "join-chat" };
-pub(crate) const LEAVE_CHAT: Optional = Optional { id: "leave-chat" };
-pub(crate) const AUTH_FAILED: Required = Required {
+pub const JOIN_CHAT: Optional = Optional { id: "join-chat" };
+pub const LEAVE_CHAT: Optional = Optional { id: "leave-chat" };
+pub const AUTH_FAILED: Required = Required {
     id: "auth-failed",
     default: "You are not allowed to run that command",
 };
-pub(crate) const AUTH_FAILED_RUDE: Required = Required {
+pub const AUTH_FAILED_RUDE: Required = Required {
     id: "auth-failed-rude",
     default: "Do you think this is a democracy? LUL",
 };
@@ -91,13 +91,13 @@ pub(super) async fn setup(
 
 /// Handler for messages that can be configured.
 #[derive(Default, Clone)]
-pub(crate) struct Messages {
+pub struct Messages {
     map: Arc<RwLock<HashMap<&'static str, String>>>,
 }
 
 impl Messages {
     /// Get a message.
-    pub(crate) async fn get(&self, required: Required) -> RwLockReadGuard<'_, str> {
+    pub async fn get(&self, required: Required) -> RwLockReadGuard<'_, str> {
         RwLockReadGuard::map(self.map.read().await, |map| {
             map.get(required.id)
                 .map(String::as_str)
@@ -106,7 +106,7 @@ impl Messages {
     }
 
     /// Get an optional message.
-    pub(crate) async fn try_get(&self, optional: Optional) -> Option<RwLockReadGuard<'_, str>> {
+    pub async fn try_get(&self, optional: Optional) -> Option<RwLockReadGuard<'_, str>> {
         RwLockReadGuard::try_map(self.map.read().await, |map| {
             map.get(optional.id).map(String::as_str)
         })

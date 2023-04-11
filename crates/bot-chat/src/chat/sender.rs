@@ -28,7 +28,7 @@ struct Inner {
 }
 
 #[derive(Clone)]
-pub(crate) struct Sender {
+pub struct Sender {
     ty: settings::Var<Type>,
     inner: Arc<Inner>,
 }
@@ -71,13 +71,13 @@ impl Sender {
 
     /// Delete the given message by id.
     #[tracing::instrument(skip_all)]
-    pub(crate) fn delete(&self, id: &str) {
+    pub fn delete(&self, id: &str) {
         self.privmsg_immediate(format!("/delete {}", id));
     }
 
     /// Only send to chat, with rate limiting.
     #[tracing::instrument(skip_all)]
-    pub(crate) async fn send(&self, m: impl Into<Message>) {
+    pub async fn send(&self, m: impl Into<Message>) {
         let m = m.into();
 
         self.inner.limiter.acquire(1).await;
@@ -89,7 +89,7 @@ impl Sender {
 
     /// Send an immediate message, without taking rate limiting into account.
     #[tracing::instrument(skip_all)]
-    pub(crate) fn send_immediate(&self, m: impl Into<Message>) {
+    pub fn send_immediate(&self, m: impl Into<Message>) {
         if let Err(e) = self.inner.sender.send(m) {
             common::log_error!(e, "Failed to send message");
         }
@@ -97,7 +97,7 @@ impl Sender {
 
     /// Send a PRIVMSG.
     #[tracing::instrument(skip_all)]
-    pub(crate) async fn privmsg(&self, f: impl fmt::Display) {
+    pub async fn privmsg(&self, f: impl fmt::Display) {
         let message = f.to_string();
 
         match self.ty.load().await {

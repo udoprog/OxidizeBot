@@ -423,6 +423,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "bot-chat"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-fuse",
+ "async-injector",
+ "async-stream",
+ "async-trait",
+ "bot-api",
+ "bot-auth",
+ "bot-bus",
+ "bot-common",
+ "bot-currency",
+ "bot-db",
+ "bot-emotes",
+ "bot-messagelog",
+ "bot-settings",
+ "bot-storage",
+ "ignore",
+ "irc",
+ "leaky-bucket",
+ "notify",
+ "parking_lot 0.12.1",
+ "rune",
+ "rune-modules",
+ "serde",
+ "slab",
+ "smallvec 1.10.0",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "bot-common"
 version = "0.0.0"
 dependencies = [
@@ -2731,6 +2766,7 @@ dependencies = [
  "bot-api",
  "bot-auth",
  "bot-bus",
+ "bot-chat",
  "bot-common",
  "bot-currency",
  "bot-db",
@@ -2746,18 +2782,11 @@ dependencies = [
  "chrono-tz",
  "dirs 5.0.0",
  "futures-executor",
- "ignore",
- "irc",
- "leaky-bucket",
- "notify",
  "parking_lot 0.12.1",
  "rand",
  "regex",
- "rune",
- "rune-modules",
  "serde",
  "serde_json",
- "slab",
  "smallvec 1.10.0",
  "thiserror",
  "tokio",

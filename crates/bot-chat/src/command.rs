@@ -1,6 +1,5 @@
 //! Traits and shared plumbing for bot commands (e.g. `!uptime`)
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
@@ -14,26 +13,15 @@ use async_trait::async_trait;
 use auth::Scope;
 use common::Channel;
 use common::{display, words, Cooldown};
-use thiserror::Error;
 use tokio::sync;
 use tokio::sync::Notify;
 
-use crate::chat;
-use crate::utils;
-
-#[derive(Debug, Error)]
-pub(crate) enum Respond {
-    /// Response already sent.
-    #[error("Command failed")]
-    Empty,
-    /// A literal message.
-    #[error("Command failed with: {0}")]
-    Message(Cow<'static, str>),
-}
+use crate::chat::{User, Sender};
+use crate::messages;
 
 /// An opaque identifier for a hook that has been inserted.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct HookId(usize);
+pub struct HookId(usize);
 
 impl fmt::Display for HookId {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -51,7 +39,7 @@ impl str::FromStr for HookId {
 
 #[async_trait]
 /// The handler trait for a given command.
-pub(crate) trait Handler
+pub trait Handler
 where
     Self: 'static + Send + Sync,
 {
@@ -66,26 +54,36 @@ where
 
 #[async_trait]
 /// A trait for peeking into chat messages.
-pub(crate) trait MessageHook: std::any::Any + Send + Sync {
+pub trait MessageHook: std::any::Any + Send + Sync {
     /// Peek the given message.
-    async fn peek(&self, user: &chat::User, m: &str) -> Result<()>;
+    async fn peek(&self, user: &User, m: &str) -> Result<()>;
 }
 
 #[derive(Default)]
-pub(crate) struct ContextNotify {
+pub struct ContextNotify {
+    /// Indicate that the bot should be restarted.
+    pub restart: Arc<Notify>,
     /// Indicate that moderators should be refreshed.
-    pub(crate) refresh_mods: Notify,
+    pub refresh_mods: Notify,
     /// Indicate that VIPs should be refreshed.
-    pub(crate) refresh_vips: Notify,
+    pub refresh_vips: Notify,
+}
+
+impl ContextNotify {
+    fn new(restart: Arc<Notify>) -> Self {
+        Self {
+            restart,
+            refresh_mods: Notify::default(),
+            refresh_vips: Notify::default(),
+        }
+    }
 }
 
 pub(crate) struct ContextInner {
     /// Sender associated with the command.
-    pub(crate) sender: chat::Sender,
-    /// Shutdown handler.
-    pub(crate) restart: utils::Restart,
+    sender: Sender,
     /// Active scope cooldowns.
-    pub(crate) scope_cooldowns: sync::Mutex<HashMap<Scope, Cooldown>>,
+    scope_cooldowns: sync::Mutex<HashMap<Scope, Cooldown>>,
     /// A hook that can be installed to peek at all incoming messages.
     pub(crate) message_hooks: sync::RwLock<slab::Slab<Box<dyn MessageHook>>>,
     /// Logins for moderators.
@@ -93,60 +91,64 @@ pub(crate) struct ContextInner {
     /// Logins for VIPs.
     pub(crate) vips: parking_lot::RwLock<HashSet<String>>,
     /// Notifications that can be sent to the context.
-    pub(crate) notify: ContextNotify,
+    notify: ContextNotify,
 }
 
 impl ContextInner {
     pub(crate) fn new(
-        sender: chat::Sender,
-        restart: utils::Restart,
+        sender: Sender,
         scope_cooldowns: HashMap<Scope, Cooldown>,
+        restart: Arc<Notify>,
     ) -> Self {
         Self {
             sender,
-            restart,
             scope_cooldowns: sync::Mutex::new(scope_cooldowns),
             message_hooks: Default::default(),
             moderators: Default::default(),
             vips: Default::default(),
-            notify: ContextNotify::default(),
+            notify: ContextNotify::new(restart),
         }
     }
+
+    /// Available notifications.
+    pub(crate) fn notify(&self) -> &ContextNotify {
+        &self.notify
+    }    
 }
 
 /// Context for a single command invocation.
 #[derive(Clone)]
-pub(crate) struct Context {
-    pub(crate) api_url: Arc<Option<String>>,
-    pub(crate) user: chat::User,
-    pub(crate) it: words::Split,
-    pub(crate) messages: chat::Messages,
+pub struct Context {
+    pub api_url: Arc<Option<String>>,
+    pub user: User,
+    pub it: words::Split,
+    pub messages: messages::Messages,
     pub(crate) inner: Arc<ContextInner>,
 }
 
 impl Context {
+    /// Get associated sender.
+    pub fn sender(&self) -> &Sender {
+        &self.inner.sender
+    }
+
     /// Available notifications.
-    pub(crate) fn notify(&self) -> &ContextNotify {
+    pub fn notify(&self) -> &ContextNotify {
         &self.inner.notify
     }
 
     /// Access the last known API url.
-    pub(crate) fn api_url(&self) -> Option<&str> {
+    pub fn api_url(&self) -> Option<&str> {
         self.api_url.as_deref()
     }
 
     /// Get the channel.
-    pub(crate) fn channel(&self) -> &Channel {
+    pub fn channel(&self) -> &Channel {
         self.inner.sender.channel()
     }
 
-    /// Signal that the bot should try to shut down.
-    pub(crate) async fn restart(&self) -> bool {
-        self.inner.restart.restart().await
-    }
-
     /// Setup the specified hook.
-    pub(crate) async fn insert_hook<H>(&self, hook: H) -> HookId
+    pub async fn insert_hook<H>(&self, hook: H) -> HookId
     where
         H: MessageHook,
     {
@@ -156,7 +158,7 @@ impl Context {
     }
 
     /// Setup the specified hook.
-    pub(crate) async fn remove_hook(&self, id: HookId) {
+    pub async fn remove_hook(&self, id: HookId) {
         let mut hooks = self.inner.message_hooks.write().await;
 
         if hooks.contains(id.0) {
@@ -166,11 +168,11 @@ impl Context {
 
     /// Verify that the current user has the associated scope.
     #[tracing::instrument(skip(self), fields(roles = ?self.user.roles(), principal = ?self.user.principal()))]
-    pub(crate) async fn check_scope(&self, scope: Scope) -> Result<()> {
+    pub async fn check_scope(&self, scope: Scope) -> Result<()> {
         tracing::info!("Checking scope");
 
         if !self.user.has_scope(scope).await {
-            let m = self.messages.get(chat::messages::AUTH_FAILED_RUDE).await;
+            let m = self.messages.get(messages::AUTH_FAILED_RUDE).await;
             self.respond(m).await;
             respond_bail!();
         }
@@ -198,12 +200,12 @@ impl Context {
     }
 
     /// Respond to the user with a message.
-    pub(crate) async fn respond(&self, m: impl fmt::Display) {
+    pub async fn respond(&self, m: impl fmt::Display) {
         self.user.respond(m).await;
     }
 
     /// Render an iterable of results, that implements display.
-    pub(crate) async fn respond_lines<I>(&self, results: I, empty: &str)
+    pub async fn respond_lines<I>(&self, results: I, empty: &str)
     where
         I: IntoIterator,
         I::Item: fmt::Display,
@@ -212,22 +214,22 @@ impl Context {
     }
 
     /// Send a privmsg to the channel.
-    pub(crate) async fn privmsg(&self, m: impl fmt::Display) {
+    pub async fn privmsg(&self, m: impl fmt::Display) {
         self.inner.sender.privmsg(m).await;
     }
 
     /// Get the next argument.
-    pub(crate) fn next(&mut self) -> Option<String> {
+    pub fn next(&mut self) -> Option<String> {
         self.it.next()
     }
 
     /// Get the rest of the commandline.
-    pub(crate) fn rest(&self) -> &str {
+    pub fn rest(&self) -> &str {
         self.it.rest()
     }
 
     /// Take the next parameter and parse as the given type.
-    pub(crate) fn next_parse_optional<T>(&mut self) -> Result<Option<T>>
+    pub fn next_parse_optional<T>(&mut self) -> Result<Option<T>>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
@@ -244,7 +246,7 @@ impl Context {
     }
 
     /// Take the next parameter and parse as the given type.
-    pub(crate) fn next_parse<T, M>(&mut self, m: M) -> Result<T>
+    pub fn next_parse<T, M>(&mut self, m: M) -> Result<T>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
@@ -256,7 +258,7 @@ impl Context {
     }
 
     /// Take the rest and parse as the given type.
-    pub(crate) fn rest_parse<T, M>(&mut self, m: M) -> Result<T>
+    pub fn rest_parse<T, M>(&mut self, m: M) -> Result<T>
     where
         T: std::str::FromStr,
         T::Err: fmt::Display,
@@ -276,7 +278,7 @@ impl Context {
     }
 
     /// Take the next parameter.
-    pub(crate) fn next_str<M>(&mut self, m: M) -> Result<String>
+    pub fn next_str<M>(&mut self, m: M) -> Result<String>
     where
         M: fmt::Display,
     {

@@ -2,13 +2,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use chat::command;
+use chat::module;
 use chrono::Utc;
 use common::Channel;
 use common::Duration;
-
-use crate::chat;
-use crate::command;
-use crate::module;
 
 pub(crate) struct Handler {
     enabled: settings::Var<bool>,
@@ -40,10 +38,10 @@ impl command::Handler for Handler {
                 promotions
                     .edit(ctx.channel(), &name, frequency, template)
                     .await?;
-                respond!(ctx, "Edited promo.");
+                chat::respond!(ctx, "Edited promo.");
             }
             None | Some(..) => {
-                respond!(
+                chat::respond!(
                     ctx,
                     "Expected: show, list, edit, delete, enable, disable, or group."
                 );
@@ -57,7 +55,7 @@ impl command::Handler for Handler {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "promotions"
     }

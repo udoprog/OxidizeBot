@@ -30,7 +30,7 @@ pub(crate) enum Event {
 
 pub(crate) struct SystemNotify {
     shutdown: Semaphore,
-    restart: Notify,
+    restart: Arc<Notify>,
 }
 
 impl Default for SystemNotify {
@@ -38,7 +38,7 @@ impl Default for SystemNotify {
     fn default() -> Self {
         Self {
             shutdown: Semaphore::new(0),
-            restart: Notify::default(),
+            restart: Arc::new(Notify::default()),
         }
     }
 }
@@ -59,6 +59,11 @@ impl System {
     /// Wait for system restart signal.
     pub(crate) async fn wait_for_restart(&self) {
         self.notify.restart.notified().await;
+    }
+
+    /// Get restart notification helper.
+    pub(crate) fn restart(&self) -> &Arc<Notify> {
+        &self.notify.restart
     }
 
     /// Clear the current state.

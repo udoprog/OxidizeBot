@@ -1,13 +1,10 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use chat::command;
+use chat::module;
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
-
-use crate::chat;
-use crate::command;
-use crate::module;
-use crate::utils;
 
 /// Handler for the !poll command.
 pub(crate) struct Poll {
@@ -64,19 +61,19 @@ impl command::Handler for Poll {
 
                 let id = match ctx.next() {
                     Some(id) => str::parse::<command::HookId>(&id)
-                        .map_err(|_| respond_err!("Bad id `{}`", id))?,
+                        .map_err(|_| chat::respond_err!("Bad id `{}`", id))?,
                     None => {
                         *polls
                             .iter()
                             .max_by_key(|e| e.1.created_at)
-                            .ok_or(respond_err!("No running polls"))?
+                            .ok_or(chat::respond_err!("No running polls"))?
                             .0
                     }
                 };
 
                 let poll = polls
                     .remove(&id)
-                    .ok_or(respond_err!("No poll with id `{}`!", id))?;
+                    .ok_or(chat::respond_err!("No poll with id `{}`!", id))?;
 
                 ctx.remove_hook(id).await;
                 let results = poll.close().await;
@@ -86,7 +83,7 @@ impl command::Handler for Poll {
                 let mut formatted = Vec::new();
 
                 for (key, votes) in results {
-                    let p = utils::percentage(votes, total);
+                    let p = common::percentage(votes, total);
 
                     let votes = match votes {
                         0 => "no votes".to_string(),
@@ -97,7 +94,7 @@ impl command::Handler for Poll {
                     formatted.push(format!("{} = {} ({})", key, votes, p));
                 }
 
-                respond!(ctx, "{} -> {}.", poll.question, formatted.join(", "));
+                chat::respond!(ctx, "{} -> {}.", poll.question, formatted.join(", "));
             }
             _ => {
                 ctx.respond("Expected: run, close.").await;
@@ -171,7 +168,7 @@ impl command::MessageHook for ActivePoll {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "poll"
     }

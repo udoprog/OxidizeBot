@@ -1,9 +1,10 @@
 use anyhow::Result;
-
-use crate::chat;
 use storage::Cache;
 
+use crate::chat;
+
 pub(crate) struct Builder {
+    user_agent: &'static str,
     streamer: api::TwitchAndUser,
     pub(crate) message_log: messagelog::MessageLog,
     pub(crate) cache_stream: async_injector::Stream<Cache>,
@@ -16,6 +17,7 @@ pub(crate) struct Builder {
 
 impl Builder {
     pub(crate) async fn new(
+        user_agent: &'static str,
         streamer: api::TwitchAndUser,
         injector: &async_injector::Injector,
         message_log: messagelog::MessageLog,
@@ -31,6 +33,7 @@ impl Builder {
         message_log.enabled(enabled).await;
 
         Ok(Self {
+            user_agent,
             streamer,
             message_log,
             cache_stream,
@@ -69,7 +72,7 @@ impl Builder {
 
         let emotes = match (self.emotes_enabled, self.cache.as_ref()) {
             (true, Some(cache)) => Some(emotes::Emotes::new(
-                crate::USER_AGENT,
+                self.user_agent,
                 cache.clone(),
                 self.streamer.clone(),
             )?),

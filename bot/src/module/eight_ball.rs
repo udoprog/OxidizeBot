@@ -1,8 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
-
-use crate::command;
-use crate::module;
+use chat::command;
+use chat::module;
 
 static MAGIC_8BALL_ANSWER: &[&str] = &[
     "It is certain.",
@@ -48,14 +47,14 @@ impl command::Handler for EightBall {
         let rest = ctx.rest();
 
         if rest.trim().is_empty() {
-            respond!(ctx, "Ask a question.");
+            chat::respond!(ctx, "Ask a question.");
             return Ok(());
         }
 
         let index = rand::thread_rng().gen_range(0..MAGIC_8BALL_ANSWER.len());
 
         if let Some(answer) = MAGIC_8BALL_ANSWER.get(index) {
-            respond!(ctx, answer);
+            chat::respond!(ctx, answer);
         }
 
         Ok(())
@@ -65,7 +64,7 @@ impl command::Handler for EightBall {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "8ball"
     }

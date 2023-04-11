@@ -6,7 +6,6 @@ use auth::Scope;
 use common::models::{track_id, TrackId};
 use common::Channel;
 
-use crate::chat::RealUser;
 use crate::module::song::Constraint;
 
 pub(crate) enum RequestCurrency<'a> {
@@ -43,7 +42,7 @@ impl SongRequester {
         channel: &Channel,
         q: &str,
         user: &str,
-        real_user: Option<&RealUser<'_>>,
+        real_user: Option<&chat::RealUser<'_>>,
         currency: RequestCurrency<'_>,
         player: &player::Player,
     ) -> Result<RequestOutcome, RequestError> {

@@ -1,12 +1,11 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use chat::command;
+use chat::module;
+use chat::stream_info;
 use chrono::{DateTime, Utc};
 use common::{Cooldown, Duration};
 use tokio::sync::Mutex;
-
-use crate::command;
-use crate::module;
-use crate::stream_info;
 
 #[derive(Clone)]
 pub(crate) struct Reward {
@@ -41,7 +40,7 @@ impl Handler {
             .as_ref()
             .map(|s| s.started_at);
 
-        let started_at = started_at.ok_or(respond_err!(
+        let started_at = started_at.ok_or(chat::respond_err!(
             "Sorry, the !water command is currently not available :("
         ))?;
 
@@ -60,13 +59,13 @@ impl command::Handler for Handler {
         let currency = match self.currency.load().await {
             Some(currency) => currency,
             None => {
-                respond!(ctx, "No currency configured for stream, sorry :(");
+                chat::respond!(ctx, "No currency configured for stream, sorry :(");
                 return Ok(());
             }
         };
 
         if !self.cooldown.write().await.is_open() {
-            respond!(
+            chat::respond!(
                 ctx,
                 "A !water command was recently issued, please wait a bit longer!"
             );
@@ -86,7 +85,7 @@ impl command::Handler for Handler {
                 let reward = match reward {
                     Some(reward) => reward,
                     None => {
-                        respond!(ctx, "No one has been rewarded for !water yet cmonBruh");
+                        chat::respond!(ctx, "No one has been rewarded for !water yet cmonBruh");
                         return Ok(());
                     }
                 };
@@ -129,7 +128,7 @@ impl command::Handler for Handler {
                     }),
                 ));
 
-                respond!(
+                chat::respond!(
                     ctx,
                     "{streamer}, DRINK SOME WATER! {user} has been rewarded {amount} {currency} for the reminder.",
                     streamer = self.streamer.user.login,
@@ -146,7 +145,7 @@ impl command::Handler for Handler {
                 }
             }
             Some(_) => {
-                respond!(ctx, "Expected: !water, or !water undo.");
+                chat::respond!(ctx, "Expected: !water, or !water undo.");
             }
         }
 
@@ -157,7 +156,7 @@ impl command::Handler for Handler {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "water"
     }

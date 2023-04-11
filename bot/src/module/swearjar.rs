@@ -4,12 +4,11 @@ use std::pin::pin;
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use auth::Scope;
+use chat::command;
+use chat::module;
 use common::stream::StreamExt;
 use common::{Cooldown, Duration};
 use currency::Currency;
-
-use crate::command;
-use crate::module;
 
 pub(crate) struct Handler {
     enabled: settings::Var<bool>,
@@ -33,13 +32,13 @@ impl command::Handler for Handler {
         let currency = match self.currency.load().await {
             Some(currency) => currency,
             None => {
-                respond!(ctx, "No currency configured for stream, sorry :(");
+                chat::respond!(ctx, "No currency configured for stream, sorry :(");
                 return Ok(());
             }
         };
 
         if !self.cooldown.write().await.is_open() {
-            respond!(
+            chat::respond!(
                 ctx,
                 "A !swearjar command was recently issued, please wait a bit longer!"
             );
@@ -85,7 +84,7 @@ impl command::Handler for Handler {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "swearjar"
     }

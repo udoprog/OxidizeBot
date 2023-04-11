@@ -4,14 +4,12 @@ use std::pin::pin;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use chat::command;
+use chat::module;
+use chat::stream_info;
 use chrono::Utc;
 use common::display;
 use common::stream::StreamExt;
-
-use crate::chat;
-use crate::command;
-use crate::module;
-use crate::stream_info;
 
 /// Handler for the `!uptime` command.
 pub(crate) struct Uptime {
@@ -46,13 +44,13 @@ impl command::Handler for Uptime {
                 let uptime =
                     display::compact_duration((now - *started_at).to_std().unwrap_or_default());
 
-                respond!(ctx, "Stream has been live for {uptime}.", uptime = uptime);
+                chat::respond!(ctx, "Stream has been live for {uptime}.", uptime = uptime);
             }
             Some(_) => {
-                respond!(ctx, "Stream is live, but start time is weird!");
+                chat::respond!(ctx, "Stream is live, but start time is weird!");
             }
             None => {
-                respond!(ctx, "Stream is not live right now, try again later!");
+                chat::respond!(ctx, "Stream is not live right now, try again later!");
             }
         }
 
@@ -111,7 +109,7 @@ impl command::Handler for Title {
                 .await?;
 
             self.stream_info.refresh_channel(&self.streamer).await?;
-            respond!(ctx, "Title updated!");
+            chat::respond!(ctx, "Title updated!");
         }
 
         Ok(())
@@ -169,7 +167,7 @@ impl command::Handler for Game {
         let first = if let Some(first) = stream.next().await {
             first?
         } else {
-            respond!(ctx, "No category found matching `{}`", rest);
+            chat::respond!(ctx, "No category found matching `{}`", rest);
             return Ok(());
         };
 
@@ -183,7 +181,7 @@ impl command::Handler for Game {
 
         stream_info.refresh_channel(&self.streamer).await?;
 
-        respond!(ctx, "Game updated to `{}`!", first.name);
+        chat::respond!(ctx, "Game updated to `{}`!", first.name);
         Ok(())
     }
 }
@@ -191,7 +189,7 @@ impl command::Handler for Game {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "misc"
     }

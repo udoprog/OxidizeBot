@@ -7,14 +7,12 @@ use std::time;
 use anyhow::{bail, Result};
 use async_fuse::Fuse;
 use async_trait::async_trait;
+use chat::command;
+use chat::module;
 use common::{display, Cooldown, Duration};
 use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, Mutex};
-
-use crate::chat;
-use crate::command;
-use crate::module;
 
 const VEHICLE_URL: &str = "http://bit.ly/gtavvehicles";
 
@@ -39,7 +37,7 @@ macro_rules! vehicle {
                     .collect::<Vec<String>>()
                     .join(", ");
 
-                respond!(
+                chat::respond!(
                     $ctx,
                     "You give the streamer a vehicle using for example `random`. \
                      You can pick a vehicle by its name or a category. \
@@ -708,7 +706,7 @@ impl Handler {
                 Command::Raw(ctx.rest().to_string())
             }
             Some(..) | None => {
-                respond!(
+                chat::respond!(
                     ctx,
                     "Available mods are: \
                      randomize-color, \
@@ -738,7 +736,7 @@ impl Handler {
             Some("wanted") => match ctx.next().map(|s| str::parse(&s)) {
                 Some(Ok(n)) if (1..=5).contains(&n) => Command::Wanted(n),
                 _ => {
-                    respond!(ctx, "Expected number between 1 and 5");
+                    chat::respond!(ctx, "Expected number between 1 and 5");
                     return Ok(None);
                 }
             },
@@ -748,15 +746,15 @@ impl Handler {
                 None => Command::SpawnEnemy(1),
                 Some(Ok(n)) if n > 0 && n <= 5 => Command::SpawnEnemy(n),
                 Some(Ok(0)) => {
-                    respond!(ctx, "Please specify more than 0 enemies to spawn.");
+                    chat::respond!(ctx, "Please specify more than 0 enemies to spawn.");
                     return Ok(None);
                 }
                 Some(Ok(_)) => {
-                    respond!(ctx, "Cannot spawn more than 5 enemies.");
+                    chat::respond!(ctx, "Cannot spawn more than 5 enemies.");
                     return Ok(None);
                 }
                 Some(Err(_)) => {
-                    respond!(ctx, "Expected <number>");
+                    chat::respond!(ctx, "Expected <number>");
                     return Ok(None);
                 }
             },
@@ -776,7 +774,7 @@ impl Handler {
                             .collect::<Vec<String>>()
                             .join(", ");
 
-                        respond!(
+                        chat::respond!(
                             ctx,
                             "You disable controls like `steering`. \
                              Available controls to disable are: {controls}. ",
@@ -794,7 +792,7 @@ impl Handler {
             Some("taze") => Command::Taze,
             Some("taze-others") => Command::TazeOthers,
             _ => {
-                respond!(ctx, "See !chaos% for available punishments.");
+                chat::respond!(ctx, "See !chaos% for available punishments.");
 
                 return Ok(None);
             }
@@ -818,7 +816,7 @@ impl Handler {
                 let weapon = match ctx.next().and_then(Weapon::from_id) {
                     Some(weapon) => weapon,
                     None => {
-                        respond!(ctx, "No such weapon, sorry :(.");
+                        chat::respond!(ctx, "No such weapon, sorry :(.");
 
                         return Ok(None);
                     }
@@ -855,7 +853,7 @@ impl Handler {
                             .collect::<Vec<String>>()
                             .join(", ");
 
-                        respond!(
+                        chat::respond!(
                             ctx,
                             "You give the streamer vehicle mods using for example `random`. \
                              Available mods are: {mods}. ",
@@ -879,7 +877,7 @@ impl Handler {
             Some("skyfall") => Command::Skyfall,
             Some("reduce-gravity") => Command::ReduceGravity,
             _ => {
-                respond!(ctx, "See !chaos% for available rewards.");
+                chat::respond!(ctx, "See !chaos% for available rewards.");
                 return Ok(None);
             }
         };
@@ -895,11 +893,9 @@ impl command::Handler for Handler {
             return Ok(());
         }
 
-        let currency = self
-            .currency
-            .load()
-            .await
-            .ok_or(respond_err!("No currency configured for stream, sorry :("))?;
+        let currency = self.currency.load().await.ok_or(chat::respond_err!(
+            "No currency configured for stream, sorry :("
+        ))?;
 
         let (result, category_cooldown) = match ctx.next().as_deref() {
             Some("other") => {
@@ -917,7 +913,7 @@ impl command::Handler for Handler {
                 (command, Some(cooldown))
             }
             _ => {
-                respond!(
+                chat::respond!(
                     ctx,
                     "You have the following actions available: \
                     reward - To reward the streamer, \
@@ -956,7 +952,7 @@ impl command::Handler for Handler {
             if let Some((what, remaining)) =
                 self.check_cooldown(ctx, &command, category_cooldown).await
             {
-                respond!(
+                chat::respond!(
                     ctx,
                     "{} cooldown in effect, please wait at least {}!",
                     what,
@@ -970,7 +966,7 @@ impl command::Handler for Handler {
         let id = self.id_counter.fetch_add(1, Ordering::SeqCst);
 
         let cost = cost * percentage / 100;
-        let sender = ctx.inner.sender.clone();
+        let sender = ctx.sender().clone();
         let prefix = self.prefix.load().await;
         let tx = self.tx.clone();
 
@@ -987,7 +983,7 @@ impl command::Handler for Handler {
             };
 
             if balance < cost {
-                respond!(
+                chat::respond!(
                     ctx,
                     "{prefix}\
                         You need at least {limit} {currency} to reward the streamer, \
@@ -1036,11 +1032,11 @@ async fn license(input: &str, ctx: &command::Context) -> Option<String> {
     match input {
         "" => None,
         license if license.len() > 8 => {
-            respond!(ctx, "License plates only support up to 8 characters.");
+            chat::respond!(ctx, "License plates only support up to 8 characters.");
             None
         }
         license if !license.is_ascii() => {
-            respond!(ctx, "License plate can only contain ASCII characters.");
+            chat::respond!(ctx, "License plate can only contain ASCII characters.");
             None
         }
         license => Some(license.to_string()),
@@ -1050,7 +1046,7 @@ async fn license(input: &str, ctx: &command::Context) -> Option<String> {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "gtav"
     }

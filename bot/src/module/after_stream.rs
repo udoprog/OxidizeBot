@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use common::Cooldown;
 use common::Duration;
 
-use crate::command;
-use crate::module;
+use chat::command;
+use chat::module;
 
 /// Handler for the `!afterstream` command.
 pub(crate) struct AfterStream {
@@ -27,7 +27,7 @@ impl command::Handler for AfterStream {
         let user = match ctx.user.real() {
             Some(user) => user,
             None => {
-                respond!(ctx, "Only real users can add after stream messages");
+                chat::respond!(ctx, "Only real users can add after stream messages");
                 return Ok(());
             }
         };
@@ -38,12 +38,12 @@ impl command::Handler for AfterStream {
         };
 
         if !self.cooldown.write().await.is_open() {
-            respond!(ctx, "An afterstream was already created recently.");
+            chat::respond!(ctx, "An afterstream was already created recently.");
             return Ok(());
         }
 
         if ctx.rest().trim().is_empty() {
-            respond!(
+            chat::respond!(
                 ctx,
                 "You add a reminder by calling !afterstream <reminder>, \
                  like \"!afterstream remember that you are awesome <3\"",
@@ -54,7 +54,7 @@ impl command::Handler for AfterStream {
         after_streams
             .push(ctx.channel(), user.login(), ctx.rest())
             .await?;
-        respond!(ctx, "Reminder added.");
+        chat::respond!(ctx, "Reminder added.");
         Ok(())
     }
 }
@@ -62,7 +62,7 @@ impl command::Handler for AfterStream {
 pub(crate) struct Module;
 
 #[async_trait]
-impl super::Module for Module {
+impl chat::Module for Module {
     fn ty(&self) -> &'static str {
         "afterstream"
     }
