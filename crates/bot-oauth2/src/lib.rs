@@ -307,9 +307,9 @@ impl<I> fmt::Debug for ConnectionFactory<I> {
 }
 
 /// Setup a synchronized token and the future necessary to keep it up-to-date.
-#[tracing::instrument(skip_all, fields(id = flow_id))]
+#[tracing::instrument(skip_all, fields(id = id))]
 pub async fn setup<I>(
-    flow_id: &'static str,
+    id: &'static str,
     parent: settings::Settings<::auth::Scope>,
     settings: settings::Settings<::auth::Scope>,
     injector: Injector,
@@ -335,10 +335,11 @@ where
         .await?;
 
     let token = api::Token::new();
+    injector.update_key(key.clone(), token.clone()).await;
 
     let mut builder = ConnectionFactory {
         setbac,
-        flow_id,
+        flow_id: id,
         expires,
         force_refresh: false,
         connection: None,
@@ -347,7 +348,7 @@ where
         key,
         integration,
         current_hash: None,
-        token: token.clone(),
+        token,
     };
 
     // check for expirations.

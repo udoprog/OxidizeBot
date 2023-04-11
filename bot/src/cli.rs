@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
+use std::pin::pin;
 use std::time;
 
 use anyhow::{anyhow, Context, Result};
 use async_injector::{Injector, Key};
 use common::backoff;
 use common::display;
-use common::stream::StreamExt;
 use common::tags;
 use tokio::sync::mpsc;
 
@@ -308,7 +308,6 @@ async fn try_main(
     let injector = Injector::new();
 
     let mut modules = Vec::<Box<dyn module::Module>>::new();
-    let mut futures = common::Futures::new();
 
     injector.update(db.clone()).await;
 
@@ -321,10 +320,10 @@ async fn try_main(
 
     let drive = settings.clone();
 
-    futures.push(Box::pin({
-        let future = drive.drive();
-        async move { Ok(future.await?) }
-    }));
+    let settings_future = async {
+        drive.drive().await?;
+        Ok(())
+    };
 
     settings
         .run_migrations()
@@ -355,15 +354,11 @@ async fn try_main(
     let command_bus = bus::Bus::new();
     injector.update(command_bus.clone()).await;
 
-    futures.push(Box::pin(system_loop(
-        settings.scoped("system"),
-        system.clone(),
-    )));
+    let system_future = system_loop(settings.scoped("system"), system.clone());
 
     injector.update(storage.cache()?).await;
 
-    let (latest, future) = updater::updater(&injector);
-    futures.push(Box::pin(future));
+    let (latest, updater_future) = updater::updater(&injector);
 
     let message_log = messagelog::MessageLog::builder()
         .bus(message_bus.clone())
@@ -371,7 +366,7 @@ async fn try_main(
         .build();
     injector.update(message_log.clone()).await;
 
-    let (web, future) = web::run(
+    let (web, server_future) = web::run(
         crate::VERSION,
         &injector,
         message_log.clone(),
@@ -383,8 +378,6 @@ async fn try_main(
         latest.clone(),
     )
     .await?;
-
-    futures.push(Box::pin(future));
 
     if settings.get::<bool>("first-run").await?.unwrap_or(true) {
         tracing::info!("Opening {} for the first time", web::URL);
@@ -402,94 +395,59 @@ async fn try_main(
 
     let integration = WebIntegration(web.clone());
 
-    futures.push(Box::pin({
-        let s = token_settings.scoped("spotify");
-        let key = Key::tagged(tags::Token::Spotify)?;
-        oauth2::setup(
-            "spotify",
-            settings.clone(),
-            s,
-            injector.clone(),
-            key,
-            integration.clone(),
-        )
-    }));
+    macro_rules! token {
+        ($id:expr, $tag:expr) => {{
+            let s = token_settings.scoped($id);
 
-    futures.push(Box::pin({
-        let s = token_settings.scoped("youtube");
-        let key = Key::tagged(tags::Token::YouTube)?;
-        oauth2::setup(
-            "youtube",
-            settings.clone(),
-            s,
-            injector.clone(),
-            key,
-            integration.clone(),
-        )
-    }));
+            oauth2::setup(
+                $id,
+                settings.clone(),
+                s,
+                injector.clone(),
+                Key::tagged($tag)?,
+                integration.clone(),
+            )
+        }};
+    }
 
-    futures.push(Box::pin({
-        let s = token_settings.scoped("nightbot");
-        let key = Key::tagged(tags::Token::NightBot)?;
-        oauth2::setup(
-            "nightbot",
-            settings.clone(),
-            s,
-            injector.clone(),
-            key,
-            integration.clone(),
-        )
-    }));
+    let spotify_token_future = token!("spotify", tags::Token::Spotify);
+    let youtube_token_future = token!("youtube", tags::Token::YouTube);
+    let nightbot_token_future = token!("nightbot", tags::Token::NightBot);
+    let streamer_token_future = token!(
+        "twitch-streamer",
+        tags::Token::Twitch(tags::Twitch::Streamer)
+    );
+    let twitch_token_future = token!("twitch-bot", tags::Token::Twitch(tags::Twitch::Bot));
 
-    futures.push(Box::pin({
-        let s = token_settings.scoped("twitch-streamer");
-        let key = Key::tagged(tags::Token::Twitch(tags::Twitch::Streamer))?;
-        oauth2::setup(
-            "twitch-streamer",
-            settings.clone(),
-            s,
-            injector.clone(),
-            key,
-            integration.clone(),
-        )
-    }));
+    let twitch_pubsub_future = api::twitch::pubsub::connect(&settings, &injector);
 
-    futures.push(Box::pin({
-        let s = token_settings.scoped("twitch-bot");
-        let key = Key::tagged(tags::Token::Twitch(tags::Twitch::Bot))?;
-        oauth2::setup(
-            "twitch-bot",
-            settings.clone(),
-            s,
-            injector.clone(),
-            key,
-            integration.clone(),
-        )
-    }));
-
-    futures.push(Box::pin(api::twitch::pubsub::connect(&settings, &injector)));
-    futures.push(Box::pin(api::twitch_clients_task(
+    let twitch_streamer_client_future = api::provider::twitch_and_user(
         crate::USER_AGENT,
+        "twitch-streamer",
+        tags::Twitch::Streamer,
         injector.clone(),
-    )));
+    );
 
-    futures.push(Box::pin(
-        api::open_weather_map::setup(crate::USER_AGENT, settings.clone(), injector.clone()).await?,
-    ));
+    let twitch_bot_client_future = api::provider::twitch_and_user(
+        crate::USER_AGENT,
+        "twitch-bot",
+        tags::Twitch::Bot,
+        injector.clone(),
+    );
+
+    let weather_future =
+        api::open_weather_map::setup(crate::USER_AGENT, settings.clone(), injector.clone()).await?;
 
     let (restart, restart_rx) = utils::Restart::new();
     injector.update(restart).await;
 
-    futures.push(Box::pin(api::NightBot::run(
-        crate::USER_AGENT,
-        injector.clone(),
-    )));
+    let nightbot_future = Box::pin(api::NightBot::run(crate::USER_AGENT, injector.clone()));
 
     injector
         .update(api::Speedrun::new(crate::USER_AGENT)?)
         .await;
 
-    let future = player::setup(
+    let player_future = player::setup(
         crate::USER_AGENT,
         injector.clone(),
         db.clone(),
@@ -498,16 +456,10 @@ async fn try_main(
         settings.clone(),
     );
 
-    futures.push(Box::pin(crate::song_file::setup(
-        injector.clone(),
-        settings.scoped("player/song-file"),
-    )));
+    let song_file_future =
+        crate::song_file::setup(injector.clone(), settings.scoped("player/song-file"));
 
-    futures.push(Box::pin(future));
-
-    futures.push(Box::pin(
-        crate::setbac::run(&settings, &injector, global_bus.clone()).await?,
-    ));
+    let setbac_future = crate::setbac::run(&settings, &injector, global_bus.clone()).await?;
 
     modules.push(Box::new(module::time::Module));
     modules.push(Box::new(module::song::Module));
@@ -533,7 +485,6 @@ async fn try_main(
     let (stream_state_tx, stream_state_rx) = mpsc::channel(64);
 
     let notify_after_streams = notify_after_streams(&injector, stream_state_rx, system.clone());
-    futures.push(Box::pin(notify_after_streams));
 
     let irc = irc::Irc {
         modules,
@@ -542,10 +493,33 @@ async fn try_main(
         script_dirs: script_dirs.to_vec(),
     };
 
-    futures.push(Box::pin(irc.run()));
+    let irc_future = irc.run();
+
+    common::local_join!(
+        tasks =>
+        server_future,
+        system_future,
+        settings_future,
+        updater_future,
+        spotify_token_future,
+        youtube_token_future,
+        nightbot_token_future,
+        streamer_token_future,
+        twitch_token_future,
+        twitch_pubsub_future,
+        twitch_streamer_client_future,
+        twitch_bot_client_future,
+        weather_future,
+        nightbot_future,
+        song_file_future,
+        player_future,
+        setbac_future,
+        notify_after_streams,
+        irc_future,
+    );
 
     tokio::select! {
-        Some(result) = futures.next() => {
+        Some(result) = tasks.next() => {
             result.map(|_| Intent::Shutdown)
         }
         _ = system.wait_for_shutdown() => {

@@ -51,37 +51,37 @@ pub(crate) struct Irc {
 }
 
 impl Irc {
+    #[tracing::instrument(skip_all)]
     pub(crate) async fn run(self) -> Result<()> {
+        tracing::info!("Waiting for everything to be ready");
+
         let mut provider = Setup::provider(&self.injector).await?;
 
         let mut error_backoff = backoff::Exponential::new(time::Duration::from_secs(5));
 
         loop {
-            while let Some(setup) = provider.build() {
-                let irc_loop = IrcLoop {
-                    setup,
-                    provider: &mut provider,
-                    irc: &self,
-                };
+            let Some(setup) = provider.build() else {
+                provider.wait().await;
+                continue;
+            };
 
-                match irc_loop.run().await {
-                    Ok(()) => {
-                        error_backoff.reset();
-                    }
-                    Err(e) => {
-                        let backoff = error_backoff.failed();
-                        common::log_error!(
-                            e,
-                            "Chat component crashed, restarting in {:?}",
-                            backoff
-                        );
-                        tokio::time::sleep(backoff).await;
-                        continue;
-                    }
+            let irc_loop = IrcLoop {
+                setup,
+                provider: &mut provider,
+                irc: &self,
+            };
+
+            match irc_loop.run().await {
+                Ok(()) => {
+                    error_backoff.reset();
+                }
+                Err(e) => {
+                    let backoff = error_backoff.failed();
+                    common::log_error!(e, "Chat component crashed, restarting in {:?}", backoff);
+                    tokio::time::sleep(backoff).await;
+                    continue;
                 }
             }
-
-            provider.wait().await;
         }
     }
 }
@@ -145,6 +145,7 @@ impl IrcLoop<'_> {
             ..
         } = irc;
 
+        tracing::info!("Starting to chat");
         tracing::trace!("Streamer: {:?}", streamer.user.display_name);
         tracing::trace!("Bot: {:?}", bot.user.display_name);
 

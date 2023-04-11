@@ -39,7 +39,7 @@ impl Tags {
                 "color" => color = Some(value.as_ref().to_owned()),
                 "emotes" => emotes = Some(value.as_ref().to_owned()),
                 key => {
-                    tracing::warn!(key, value = value.as_ref(), "unsupported tag");
+                    tracing::trace!(key, value = value.as_ref(), "unsupported tag");
                 }
             }
         }

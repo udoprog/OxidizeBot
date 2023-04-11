@@ -132,6 +132,9 @@ impl PlayerInternal {
         }
 
         if !initialize.playback {
+            tracing::trace!("Waiting until token is ready");
+            self.spotify.token().wait_until_ready().await;
+
             let p = self.spotify.me_player().await?;
 
             if let Some(p) = p {

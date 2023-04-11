@@ -48,11 +48,31 @@ pub struct TwitchAndUser {
 }
 
 /// Set up the task to provide various twitch clients.
-pub async fn twitch_clients_task(user_agent: &'static str, injector: Injector) -> Result<()> {
-    let streamer = TwitchAndUserProvider::run(user_agent, injector.clone(), tags::Twitch::Streamer);
-    let bot = TwitchAndUserProvider::run(user_agent, injector.clone(), tags::Twitch::Bot);
-    tokio::try_join!(streamer, bot)?;
-    Ok(())
+#[tracing::instrument(skip(injector))]
+pub async fn twitch_and_user(
+    user_agent: &'static str,
+    id: &'static str,
+    tag: tags::Twitch,
+    injector: Injector,
+) -> Result<()> {
+    let (mut token_stream, token) = injector
+        .stream_key(&Key::<Token>::tagged(tags::Token::Twitch(tag))?)
+        .await;
+
+    let mut this = TwitchAndUserProvider {
+        user_agent,
+        key: Key::<TwitchAndUser>::tagged(tag)?,
+        injector,
+        user_id: None,
+    };
+
+    this.update(token).await?;
+
+    // loop to setup all necessary twitch authentication.
+    loop {
+        let token = token_stream.recv().await;
+        this.update(token).await?;
+    }
 }
 
 struct TwitchAndUserProvider {
@@ -64,32 +84,13 @@ struct TwitchAndUserProvider {
 }
 
 impl TwitchAndUserProvider {
-    pub async fn run(user_agent: &'static str, injector: Injector, id: tags::Twitch) -> Result<()> {
-        let (mut token_stream, token) = injector
-            .stream_key(&Key::<Token>::tagged(tags::Token::Twitch(id))?)
-            .await;
-
-        let mut this = TwitchAndUserProvider {
-            user_agent,
-            key: Key::<TwitchAndUser>::tagged(id)?,
-            injector,
-            user_id: None,
-        };
-
-        this.update(token).await?;
-
-        // loop to setup all necessary twitch authentication.
-        loop {
-            let token = token_stream.recv().await;
-            this.update(token).await?;
-        }
-    }
-
     /// Inner update helper function.
     async fn update(&mut self, token: Option<Token>) -> Result<()> {
+        tracing::trace!("Updating with token");
+
         let token = match token {
-            Some(token) => token,
-            None => {
+            Some(token) if token.is_ready() => token,
+            _ => {
                 let _ = self.injector.clear_key(&self.key).await;
                 return Ok(());
             }

@@ -18,7 +18,7 @@ pub mod open_weather_map;
 pub use self::open_weather_map::OpenWeatherMap;
 
 pub mod provider;
-pub use self::provider::{twitch_clients_task, TwitchAndUser, User};
+pub use self::provider::{TwitchAndUser, User};
 
 pub mod setbac;
 pub use self::setbac::Setbac;

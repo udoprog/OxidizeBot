@@ -33,11 +33,12 @@ pub mod backoff;
 mod uri;
 pub use self::uri::Uri;
 
+#[macro_use]
+mod futures;
+pub use self::futures::{BorrowedFutures, Futures, LocalFutures};
+
 /// A boxed future.
 pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
 
 /// A boxed stream.
 pub type BoxStream<'a, T> = std::pin::Pin<Box<dyn tokio_stream::Stream<Item = T> + Send + 'a>>;
-
-/// Collection of boxed futures to drive.
-pub type Futures<'a, O> = ::futures_util::stream::FuturesUnordered<BoxFuture<'a, O>>;

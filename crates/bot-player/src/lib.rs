@@ -5,6 +5,7 @@ mod player_internal;
 mod youtube;
 
 use std::fmt;
+use std::pin::pin;
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
@@ -12,7 +13,6 @@ use async_fuse::Fuse;
 use async_injector::{Injector, Key};
 use common::models::spotify::device::Device;
 use common::models::{Item, PlayerKind, Song, SpotifyId, Track, TrackId};
-use common::stream::StreamExt;
 use common::tags;
 use common::{display, PtDuration};
 use common::{Channel, Duration};
@@ -162,6 +162,7 @@ pub async fn setup(
 ) -> Result<()> {
     let settings = settings.scoped("player");
 
+    tracing::trace!("Waiting for tokens to become available");
     let spotify = load_token(&injector, tags::Token::Spotify);
     let youtube = load_token(&injector, tags::Token::YouTube);
     let (spotify, youtube) = tokio::try_join!(spotify, youtube)?;
@@ -169,17 +170,13 @@ pub async fn setup(
     let spotify = Arc::new(api::Spotify::new(user_agent, spotify)?);
     let youtube = Arc::new(api::YouTube::new(user_agent, youtube)?);
 
-    let mut futures = common::Futures::<Result<()>>::default();
-
-    let (connect_stream, connect_player, device, future) =
+    tracing::trace!("Setting up Spotify connection");
+    let (connect_stream, connect_player, device, spotify_future) =
         self::connect::setup(spotify.clone(), settings.scoped("spotify")).await?;
 
-    futures.push(Box::pin(future));
-
-    let (youtube_player, future) =
+    tracing::trace!("Setting up YouTube connection");
+    let (youtube_player, youtube_future) =
         self::youtube::setup(youtube_bus, settings.scoped("youtube")).await?;
-
-    futures.push(Box::pin(future));
 
     let bus = bus::Bus::new();
 
@@ -242,7 +239,18 @@ pub async fn setup(
         song_update_interval_stream,
     };
 
-    futures.push(Box::pin(playback.run(injector.clone(), settings)));
+    let mut playback_future = pin!(playback.run(injector.clone(), settings));
+
+    let youtube_future = pin!(youtube_future);
+    let spotify_future = pin!(spotify_future);
+    let playback_future = pin!(playback_future);
+
+    common::local_join! {
+        futures =>
+        youtube_future,
+        spotify_future,
+        playback_future,
+    };
 
     injector
         .update(Player {

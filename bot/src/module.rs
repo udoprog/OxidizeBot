@@ -4,6 +4,7 @@ use crate::irc;
 use crate::stream_info;
 
 use async_injector::Injector;
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -63,7 +64,7 @@ pub(crate) struct HookContext<'a> {
     pub(crate) settings: &'a settings::Settings<::auth::Scope>,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 pub(crate) trait Module
 where
     Self: 'static + Send + Sync,
