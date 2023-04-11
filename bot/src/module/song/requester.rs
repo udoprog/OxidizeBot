@@ -6,7 +6,7 @@ use auth::Scope;
 use common::models::{track_id, TrackId};
 use common::Channel;
 
-use crate::irc::RealUser;
+use crate::chat::RealUser;
 use crate::module::song::Constraint;
 
 pub(crate) enum RequestCurrency<'a> {

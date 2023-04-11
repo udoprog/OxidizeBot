@@ -107,10 +107,10 @@ const AUTH_SCHEMA: &[u8] = include_bytes!("auth.yaml");
 
 #[macro_use]
 mod macros;
+mod chat;
 pub mod cli;
 mod command;
 mod idle;
-mod irc;
 mod module;
 mod panic_logger;
 mod script;

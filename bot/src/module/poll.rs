@@ -4,8 +4,8 @@ use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
 
+use crate::chat;
 use crate::command;
-use crate::irc;
 use crate::module;
 use crate::utils;
 
@@ -142,7 +142,7 @@ impl ActivePoll {
 
 #[async_trait]
 impl command::MessageHook for ActivePoll {
-    async fn peek(&self, user: &irc::User, m: &str) -> Result<()> {
+    async fn peek(&self, user: &chat::User, m: &str) -> Result<()> {
         let mut inner = self.inner.write().await;
 
         let user = match user.real() {

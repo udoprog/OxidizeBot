@@ -4,7 +4,7 @@ use anyhow::{Context as _, Result};
 use async_fuse::Fuse;
 use async_injector::Injector;
 
-use crate::irc::Sender;
+use crate::chat::Sender;
 use player::Event;
 
 /// Setup the task that sends chat feedback.

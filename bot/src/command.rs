@@ -18,7 +18,7 @@ use thiserror::Error;
 use tokio::sync;
 use tokio::sync::Notify;
 
-use crate::irc;
+use crate::chat;
 use crate::utils;
 
 #[derive(Debug, Error)]
@@ -68,7 +68,7 @@ where
 /// A trait for peeking into chat messages.
 pub(crate) trait MessageHook: std::any::Any + Send + Sync {
     /// Peek the given message.
-    async fn peek(&self, user: &irc::User, m: &str) -> Result<()>;
+    async fn peek(&self, user: &chat::User, m: &str) -> Result<()>;
 }
 
 #[derive(Default)]
@@ -81,7 +81,7 @@ pub(crate) struct ContextNotify {
 
 pub(crate) struct ContextInner {
     /// Sender associated with the command.
-    pub(crate) sender: irc::Sender,
+    pub(crate) sender: chat::Sender,
     /// Shutdown handler.
     pub(crate) restart: utils::Restart,
     /// Active scope cooldowns.
@@ -98,7 +98,7 @@ pub(crate) struct ContextInner {
 
 impl ContextInner {
     pub(crate) fn new(
-        sender: irc::Sender,
+        sender: chat::Sender,
         restart: utils::Restart,
         scope_cooldowns: HashMap<Scope, Cooldown>,
     ) -> Self {
@@ -118,9 +118,9 @@ impl ContextInner {
 #[derive(Clone)]
 pub(crate) struct Context {
     pub(crate) api_url: Arc<Option<String>>,
-    pub(crate) user: irc::User,
+    pub(crate) user: chat::User,
     pub(crate) it: words::Split,
-    pub(crate) messages: irc::Messages,
+    pub(crate) messages: chat::Messages,
     pub(crate) inner: Arc<ContextInner>,
 }
 
@@ -170,7 +170,7 @@ impl Context {
         tracing::info!("Checking scope");
 
         if !self.user.has_scope(scope).await {
-            let m = self.messages.get(irc::messages::AUTH_FAILED_RUDE).await;
+            let m = self.messages.get(chat::messages::AUTH_FAILED_RUDE).await;
             self.respond(m).await;
             respond_bail!();
         }

@@ -4,9 +4,8 @@ mod currency_admin;
 pub(crate) mod messages;
 mod sender;
 
-use std::path::PathBuf;
-use std::pin::pin;
-use std::pin::Pin;
+use std::path::{Path, PathBuf};
+use std::pin::{pin, Pin};
 use std::sync::Arc;
 use std::time;
 
@@ -43,17 +42,46 @@ const TWITCH_TAGS_CAP: &str = "twitch.tv/tags";
 const TWITCH_COMMANDS_CAP: &str = "twitch.tv/commands";
 
 /// Helper struct to construct IRC integration.
-pub(crate) struct Irc {
-    pub(crate) modules: Vec<Box<dyn module::Module>>,
-    pub(crate) injector: Injector,
-    pub(crate) stream_state_tx: mpsc::Sender<stream_info::StreamState>,
-    pub(crate) script_dirs: Vec<PathBuf>,
+pub(crate) struct Configuration {
+    injector: Injector,
+    stream_state_tx: mpsc::Sender<stream_info::StreamState>,
+    modules: Vec<Box<dyn module::Module>>,
+    script_dirs: Vec<PathBuf>,
 }
 
-impl Irc {
+impl Configuration {
+    /// Construct a new chat configuration.
+    pub(crate) fn new(
+        injector: Injector,
+        stream_state_tx: mpsc::Sender<stream_info::StreamState>,
+    ) -> Self {
+        Self {
+            injector,
+            stream_state_tx,
+            modules: Vec::new(),
+            script_dirs: Vec::new(),
+        }
+    }
+
+    /// Add a script directory to watch.
+    pub(crate) fn script_dir<P>(&mut self, script_dir: P)
+    where
+        P: AsRef<Path>,
+    {
+        self.script_dirs.push(script_dir.as_ref().to_owned());
+    }
+
+    /// Add a module.
+    pub(crate) fn module<M>(&mut self, module: M)
+    where
+        M: module::Module,
+    {
+        self.modules.push(Box::new(module));
+    }
+
     #[tracing::instrument(skip_all)]
     pub(crate) async fn run(self) -> Result<()> {
-        tracing::info!("Waiting for everything to be ready");
+        tracing::trace!("Waiting for everything to be ready");
 
         let mut provider = Setup::provider(&self.injector).await?;
 
@@ -65,7 +93,7 @@ impl Irc {
                 continue;
             };
 
-            let irc_loop = IrcLoop {
+            let irc_loop = ChatLoop {
                 setup,
                 provider: &mut provider,
                 irc: &self,
@@ -110,13 +138,13 @@ struct Setup {
     restart: utils::Restart,
 }
 
-struct IrcLoop<'a> {
+struct ChatLoop<'a> {
     setup: Setup,
     provider: &'a mut SetupProvider,
-    irc: &'a Irc,
+    irc: &'a Configuration,
 }
 
-impl IrcLoop<'_> {
+impl ChatLoop<'_> {
     async fn run(self) -> Result<()> {
         let Self {
             setup,
@@ -137,7 +165,7 @@ impl IrcLoop<'_> {
             restart,
         } = setup;
 
-        let Irc {
+        let Configuration {
             injector,
             modules,
             script_dirs,

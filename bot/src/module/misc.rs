@@ -8,8 +8,8 @@ use chrono::Utc;
 use common::display;
 use common::stream::StreamExt;
 
+use crate::chat;
 use crate::command;
-use crate::irc;
 use crate::module;
 use crate::stream_info;
 
@@ -69,7 +69,7 @@ pub(crate) struct Title {
 
 impl Title {
     /// Handle the title command.
-    async fn show(&self, user: &irc::User) {
+    async fn show(&self, user: &chat::User) {
         let title = self.stream_info.data.read().title.clone();
 
         match title {
@@ -127,7 +127,7 @@ pub(crate) struct Game {
 
 impl Game {
     /// Handle the game command.
-    async fn show(&self, user: &irc::User) {
+    async fn show(&self, user: &chat::User) {
         let game = self.stream_info.data.read().game.clone();
 
         match game {

@@ -1,6 +1,6 @@
+use crate::chat;
 use crate::command;
 use crate::idle;
-use crate::irc;
 use crate::stream_info;
 
 use async_injector::Injector;
@@ -60,7 +60,7 @@ pub(crate) struct HookContext<'a> {
     pub(crate) idle: &'a idle::Idle,
     // pub(crate) bot: &'a api::TwitchAndUser,
     pub(crate) streamer: &'a api::TwitchAndUser,
-    pub(crate) sender: &'a irc::Sender,
+    pub(crate) sender: &'a chat::Sender,
     pub(crate) settings: &'a settings::Settings<::auth::Scope>,
 }
 

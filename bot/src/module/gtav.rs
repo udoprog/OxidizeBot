@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;
 use tokio::sync::{mpsc, Mutex};
 
+use crate::chat;
 use crate::command;
-use crate::irc;
 use crate::module;
 
 const VEHICLE_URL: &str = "http://bit.ly/gtavvehicles";
@@ -552,7 +552,7 @@ pub(crate) struct Handler {
     reward_percentage: settings::Var<u32>,
     success_feedback: settings::Var<bool>,
     id_counter: AtomicUsize,
-    tx: mpsc::UnboundedSender<(irc::User, usize, Command)>,
+    tx: mpsc::UnboundedSender<(chat::User, usize, Command)>,
     per_user_cooldowns: Mutex<HashMap<String, Cooldown>>,
     per_command_cooldowns: Mutex<HashMap<&'static str, Cooldown>>,
     per_command_configs: settings::Var<HashMap<String, CommandSetting>>,

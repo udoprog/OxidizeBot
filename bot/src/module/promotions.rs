@@ -6,8 +6,8 @@ use chrono::Utc;
 use common::Channel;
 use common::Duration;
 
+use crate::chat;
 use crate::command;
-use crate::irc;
 use crate::module;
 
 pub(crate) struct Handler {
@@ -136,7 +136,7 @@ impl super::Module for Module {
 }
 
 /// Run the next promotion.
-async fn promote(promotions: db::Promotions, sender: irc::Sender) -> Result<()> {
+async fn promote(promotions: db::Promotions, sender: chat::Sender) -> Result<()> {
     let channel = sender.channel();
 
     if let Some(p) = pick(promotions.list(channel).await) {

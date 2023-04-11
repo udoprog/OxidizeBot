@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::irc;
+use crate::chat;
 use storage::Cache;
 
 pub(crate) struct Builder {
@@ -94,7 +94,7 @@ pub(crate) struct ChatLog {
 impl ChatLog {
     pub(crate) async fn observe(
         &self,
-        tags: &irc::Tags,
+        tags: &chat::Tags,
         user: &api::User,
         login: &str,
         message: &str,

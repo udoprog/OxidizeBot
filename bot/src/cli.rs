@@ -9,7 +9,7 @@ use common::display;
 use common::tags;
 use tokio::sync::mpsc;
 
-use crate::irc;
+use crate::chat;
 use crate::module;
 use crate::stream_info;
 use crate::sys;
@@ -307,8 +307,6 @@ async fn try_main(
 
     let injector = Injector::new();
 
-    let mut modules = Vec::<Box<dyn module::Module>>::new();
-
     injector.update(db.clone()).await;
 
     let auth_schema = auth::Schema::load_static(crate::AUTH_SCHEMA)?;
@@ -461,39 +459,38 @@ async fn try_main(
 
     let setbac_future = crate::setbac::run(&settings, &injector, global_bus.clone()).await?;
 
-    modules.push(Box::new(module::time::Module));
-    modules.push(Box::new(module::song::Module));
-    modules.push(Box::new(module::command_admin::Module));
-    modules.push(Box::new(module::admin::Module));
-    modules.push(Box::new(module::alias_admin::Module));
-    modules.push(Box::new(module::theme_admin::Module));
-    modules.push(Box::new(module::promotions::Module));
-    modules.push(Box::new(module::swearjar::Module));
-    modules.push(Box::new(module::countdown::Module));
-    modules.push(Box::new(module::gtav::Module));
-    modules.push(Box::new(module::water::Module));
-    modules.push(Box::new(module::misc::Module));
-    modules.push(Box::new(module::after_stream::Module));
-    modules.push(Box::new(module::clip::Module));
-    modules.push(Box::new(module::eight_ball::Module));
-    modules.push(Box::new(module::speedrun::Module));
-    modules.push(Box::new(module::auth::Module));
-    modules.push(Box::new(module::poll::Module));
-    modules.push(Box::new(module::weather::Module));
-    modules.push(Box::new(module::help::Module));
-
     let (stream_state_tx, stream_state_rx) = mpsc::channel(64);
+
+    let mut chat = chat::Configuration::new(injector.clone(), stream_state_tx);
+
+    for script_dir in script_dirs {
+        chat.script_dir(script_dir);
+    }
+
+    chat.module(module::time::Module);
+    chat.module(module::song::Module);
+    chat.module(module::command_admin::Module);
+    chat.module(module::admin::Module);
+    chat.module(module::alias_admin::Module);
+    chat.module(module::theme_admin::Module);
+    chat.module(module::promotions::Module);
+    chat.module(module::swearjar::Module);
+    chat.module(module::countdown::Module);
+    chat.module(module::gtav::Module);
+    chat.module(module::water::Module);
+    chat.module(module::misc::Module);
+    chat.module(module::after_stream::Module);
+    chat.module(module::clip::Module);
+    chat.module(module::eight_ball::Module);
+    chat.module(module::speedrun::Module);
+    chat.module(module::auth::Module);
+    chat.module(module::poll::Module);
+    chat.module(module::weather::Module);
+    chat.module(module::help::Module);
 
     let notify_after_streams = notify_after_streams(&injector, stream_state_rx, system.clone());
 
-    let irc = irc::Irc {
-        modules,
-        injector: injector.clone(),
-        stream_state_tx,
-        script_dirs: script_dirs.to_vec(),
-    };
-
-    let irc_future = irc.run();
+    let chat_future = chat.run();
 
     common::local_join!(
         tasks =>
@@ -515,7 +512,7 @@ async fn try_main(
         player_future,
         setbac_future,
         notify_after_streams,
-        irc_future,
+        chat_future,
     );
 
     tokio::select! {

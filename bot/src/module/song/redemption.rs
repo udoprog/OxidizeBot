@@ -5,13 +5,13 @@ use api::twitch::pubsub;
 use async_fuse::Fuse;
 use async_injector::Injector;
 
-use crate::irc;
+use crate::chat;
 use crate::module::song::requester::{RequestCurrency, SongRequester};
 use crate::utils;
 
 /// Task used to react to redemptions as song requests.
 pub(crate) async fn task(
-    sender: irc::Sender,
+    sender: chat::Sender,
     injector: Injector,
     settings: settings::Settings<::auth::Scope>,
     requester: SongRequester,
@@ -63,7 +63,7 @@ struct State {
     streamer: api::TwitchAndUser,
     pubsub: Option<pubsub::TwitchPubSub>,
     player: Option<player::Player>,
-    sender: irc::Sender,
+    sender: chat::Sender,
     request_redemption: Option<Arc<str>>,
     redemptions_stream: Fuse<pubsub::TwitchStream<pubsub::Redemption>>,
 }
@@ -85,7 +85,7 @@ impl State {
     }
 
     /// Process a single incoming redemption.
-    async fn process_redemption(&mut self, sender: &irc::Sender, redemption: pubsub::Redemption) {
+    async fn process_redemption(&mut self, sender: &chat::Sender, redemption: pubsub::Redemption) {
         match &self.request_redemption {
             Some(title) if title.as_ref() == redemption.reward.title => {
                 let title = title.clone();
@@ -99,7 +99,7 @@ impl State {
     /// Process song request redemptions.
     async fn request_redemption(
         &mut self,
-        sender: &irc::Sender,
+        sender: &chat::Sender,
         title: &str,
         redemption: pubsub::Redemption,
     ) {

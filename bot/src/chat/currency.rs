@@ -8,8 +8,8 @@ use common::Duration;
 use tokio::time;
 use tracing::Instrument;
 
+use crate::chat::Sender;
 use crate::idle;
-use crate::irc::Sender;
 
 /// Set up a reward loop.
 pub(super) async fn setup(

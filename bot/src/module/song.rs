@@ -6,8 +6,8 @@ use common::{Cooldown, Duration};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::chat;
 use crate::command;
-use crate::irc;
 use crate::module;
 
 mod feedback;
@@ -580,7 +580,7 @@ async fn parse_queue_position(n: &str) -> Result<usize> {
 
 /// Display the collection of songs.
 async fn display_songs(
-    user: &irc::User,
+    user: &chat::User,
     has_more: Option<usize>,
     it: impl IntoIterator<Item = Arc<Item>>,
 ) {
