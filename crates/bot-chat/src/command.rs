@@ -124,7 +124,7 @@ pub struct Context<'a> {
     pub user: User,
     pub it: words::Split,
     pub messages: &'a messages::Messages,
-    pub(crate) inner: &'a ContextInner,
+    pub(crate) inner: &'a Arc<ContextInner>,
 }
 
 impl<'a> Context<'a> {

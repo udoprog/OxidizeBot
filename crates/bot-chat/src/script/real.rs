@@ -12,6 +12,7 @@ use rune::{
     Any, Context, ContextError, Diagnostics, FromValue, Module, Options, Source, Sources, Vm,
 };
 
+use crate::chat;
 use crate::command;
 use crate::script::io;
 
@@ -107,9 +108,9 @@ pub(crate) struct Handler {
 
 impl Handler {
     /// Call the given handler with the current context.
-    pub(crate) async fn call(self, ctx: command::Context) -> Result<()> {
+    pub(crate) async fn call(self, ctx: command::Context<'_>) -> Result<()> {
         let ctx = Ctx {
-            ctx,
+            user: ctx.user,
             db: self.db.scoped(),
         };
 
@@ -303,7 +304,7 @@ impl Registry {
 
 #[derive(Clone, Any)]
 struct Ctx {
-    ctx: command::Context,
+    user: chat::User,
     db: ScopedDb,
 }
 
@@ -315,16 +316,16 @@ impl Ctx {
 
     /// Get the user name, if present.
     fn user(&self) -> Option<String> {
-        self.ctx.user.name().map(|s| s.to_owned())
+        self.user.name().map(|s| s.to_owned())
     }
 
     /// Respond with the given message.
     async fn respond(&self, message: &str) {
-        self.ctx.respond(message).await;
+        self.user.respond(message).await;
     }
 
     /// Send a privmsg, without prefixing it with the user we are responding to.
     async fn privmsg(&self, message: &str) {
-        self.ctx.privmsg(message).await;
+        self.user.sender().privmsg(message).await;
     }
 }
