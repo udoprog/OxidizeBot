@@ -9,7 +9,7 @@ pub(crate) struct Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn handle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         let themes = match self.themes.load().await {
             Some(themes) => themes,
             None => return Ok(()),

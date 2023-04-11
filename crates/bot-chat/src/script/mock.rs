@@ -21,7 +21,7 @@ where
 pub(crate) struct Handler(());
 
 impl Handler {
-    pub(crate) async fn call(self, _ctx: command::Context) -> Result<()> {
+    pub(crate) async fn call(self, _ctx: command::Context<'_>) -> Result<()> {
         Ok(())
     }
 }

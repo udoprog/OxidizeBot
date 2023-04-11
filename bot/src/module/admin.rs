@@ -15,7 +15,11 @@ pub(crate) struct Handler {
 
 impl Handler {
     /// List settings by prefix.
-    async fn list_settings_by_prefix(&self, ctx: &mut command::Context, key: &str) -> Result<()> {
+    async fn list_settings_by_prefix(
+        &self,
+        ctx: &mut command::Context<'_>,
+        key: &str,
+    ) -> Result<()> {
         let mut results = Vec::new();
 
         let settings = self.settings.list_by_prefix(key).await?;
@@ -64,7 +68,7 @@ impl command::Handler for Handler {
         Some(auth::Scope::Admin)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn handle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         match ctx.next().as_deref() {
             Some("refresh-mods") => {
                 ctx.notify().refresh_mods.notify_one();
@@ -234,7 +238,7 @@ impl command::Handler for Handler {
 
 impl Handler {
     /// Handler for the toggle command.
-    async fn toggle(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn toggle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         let key = key(ctx)?;
 
         let setting = self
@@ -285,7 +289,7 @@ impl Handler {
     /// Also tests that we have the permission to modify the specified setting.
     async fn edit_value_in_set(
         &self,
-        ctx: &mut command::Context,
+        ctx: &mut command::Context<'_>,
         key: &str,
     ) -> Result<serde_json::Value> {
         let schema = self
@@ -324,7 +328,7 @@ impl Handler {
 }
 
 /// Extract a settings key from the context.
-fn key(ctx: &mut command::Context) -> Result<String> {
+fn key(ctx: &mut command::Context<'_>) -> Result<String> {
     let key = ctx.next().ok_or(chat::respond_err!("Expected <key>"))?;
 
     if key.starts_with("secrets/") {

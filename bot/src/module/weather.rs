@@ -57,7 +57,7 @@ impl command::Handler for Weather {
         Some(auth::Scope::Weather)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn handle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }

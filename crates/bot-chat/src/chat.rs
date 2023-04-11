@@ -3,7 +3,7 @@ use std::pin::{pin, Pin};
 use std::sync::Arc;
 use std::time;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Context as _, Result};
 use async_fuse::Fuse;
 use async_injector::{Injector, Key, Provider};
 use auth::{Auth, Role, Scope};
@@ -37,6 +37,10 @@ use crate::utils;
 const SERVER: &str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &str = "twitch.tv/tags";
 const TWITCH_COMMANDS_CAP: &str = "twitch.tv/commands";
+
+/// The type of a pending command.
+type PendingCommand<'a> = common::BoxFuture<'a, (Result<()>, command::Context<'a>)>;
+type Hook<'a> = common::BoxFuture<'a, Result<()>>;
 
 /// Helper struct to construct IRC integration.
 pub struct Configuration {
@@ -237,7 +241,7 @@ impl ChatLoop<'_> {
 
         let channel = Channel::from_string(&streamer.user.login);
 
-        let scripts = script::load_dir(channel.as_ref(), db.clone(), script_dirs).await?;
+        let mut scripts = script::load_dir(channel.as_ref(), db.clone(), script_dirs).await?;
 
         let (scripts_watch_tx, mut scripts_watch_rx) = mpsc::unbounded_channel();
 
@@ -318,6 +322,9 @@ impl ChatLoop<'_> {
         let (messages, future) = messages::setup(&settings).await?;
         futures.push(Box::pin(future));
 
+        let mut pending = common::Futures::default();
+        let mut hooks = common::Futures::default();
+
         let mut handler = Handler {
             streamer: &streamer,
             sender: sender.clone(),
@@ -328,20 +335,20 @@ impl ChatLoop<'_> {
             aliases,
             api_url: Arc::new(api_url),
             moderator_cooldown,
-            handlers,
-            scripts,
+            handlers: &handlers,
+            scripts: &mut scripts,
             idle: &idle,
             pong_timeout: &mut pong_timeout,
             bot: &bot,
             handler_shutdown: false,
             stream_info: &stream_info,
             auth: &auth,
-            currency_handler,
+            currency_handler: &currency_handler,
             url_whitelist_enabled,
             bad_words_enabled,
             chat_log: chat_log_builder.build()?,
-            messages: messages.clone(),
-            context_inner,
+            messages: &messages,
+            context_inner: &context_inner,
         };
 
         let mut outgoing = client
@@ -358,7 +365,7 @@ impl ChatLoop<'_> {
         let sender = handler.sender.clone();
 
         // Things to do when joining.
-        let mut join_task = pin!(Fuse::new(async move {
+        let mut join_task = pin!(Fuse::new(async {
             sender.cap_req(TWITCH_TAGS_CAP).await;
             sender.cap_req(TWITCH_COMMANDS_CAP).await;
 
@@ -366,6 +373,9 @@ impl ChatLoop<'_> {
                 sender.privmsg_immediate(m);
             }
         }));
+
+        let mut pending_buf = Vec::new();
+        let mut hook_buf = Vec::new();
 
         while leave.is_empty() {
             tokio::select! {
@@ -386,8 +396,16 @@ impl ChatLoop<'_> {
                         bus::Command::Raw { command } => {
                             tracing::trace!("Raw command: {}", command);
 
-                            if let Err(e) = handler.raw(command).await {
+                            if let Err(e) = handler.raw(command, &mut pending_buf, &mut hook_buf).await {
                                 common::log_error!(e, "Failed to handle message");
+                            }
+
+                            for future in pending_buf.drain(..) {
+                                pending.push(future);
+                            }
+
+                            for future in hook_buf.drain(..) {
+                                hooks.push(future);
                             }
                         }
                     }
@@ -435,13 +453,38 @@ impl ChatLoop<'_> {
                 },
                 message = client_stream.next() => {
                     if let Some(m) = message.transpose()? {
-                        if let Err(e) = handler.handle(m).await {
+                        if let Err(e) = handler.handle(m, &mut pending_buf, &mut hook_buf).await {
                             common::log_error!(e, "Failed to handle message");
                         }
                     }
 
+                    for future in pending_buf.drain(..) {
+                        pending.push(future);
+                    }
+
+                    for future in hook_buf.drain(..) {
+                        hooks.push(future);
+                    }
+
                     if handler.handler_shutdown {
                         bail!("handler forcibly shut down");
+                    }
+                }
+                Some(result) = pending.next(), if !pending.is_empty() => {
+                    if let (Err(error), ctx) = result {
+                        if let Some(respond) = error.downcast_ref::<crate::RespondErr>() {
+                            if let crate::RespondErr::Message(respond) = respond {
+                                respond!(ctx, respond);
+                            }
+                        } else {
+                            respond!(ctx, "Sorry, something went wrong :(");
+                            common::log_error!(error, "Error when processing command");
+                        }
+                    }
+                }
+                Some(result) = hooks.next(), if !hooks.is_empty() => {
+                    if let Err(error) = result {
+                        common::log_error!(error, "Hooks failed to run");
                     }
                 }
                 _ = &mut outgoing => {
@@ -493,9 +536,9 @@ struct Handler<'a> {
     /// Active moderator cooldown.
     moderator_cooldown: Option<Cooldown>,
     /// Handlers for specific commands like `!skip`.
-    handlers: module::Handlers,
+    handlers: &'a module::Handlers,
     /// Dynamic handlers.
-    scripts: script::Scripts,
+    scripts: &'a mut script::Scripts,
     /// Build idle detection.
     idle: &'a idle::Idle,
     /// Pong timeout currently running.
@@ -509,15 +552,15 @@ struct Handler<'a> {
     /// Information about auth.
     auth: &'a Auth,
     /// Handler for currencies.
-    currency_handler: Arc<currency_admin::Handler>,
+    currency_handler: &'a currency_admin::Handler,
     bad_words_enabled: settings::Var<bool>,
     url_whitelist_enabled: settings::Var<bool>,
     /// Handler for chat logs.
     chat_log: Option<chat_log::ChatLog>,
     /// Messages.
-    messages: messages::Messages,
+    messages: &'a messages::Messages,
     /// Shared context paramters.
-    pub(crate) context_inner: Arc<command::ContextInner>,
+    pub(crate) context_inner: &'a Arc<command::ContextInner>,
 }
 
 impl Handler<'_> {
@@ -572,13 +615,14 @@ impl Handler<'_> {
 }
 
 /// Handle a command.
-async fn process_command(
+async fn process_command<'a>(
     command: &str,
-    mut ctx: command::Context,
-    global_bus: &bus::Bus<bus::Global>,
-    currency_handler: &Arc<currency_admin::Handler>,
-    handlers: &module::Handlers,
+    mut ctx: command::Context<'a>,
+    global_bus: &'a bus::Bus<bus::Global>,
+    currency_handler: &'a currency_admin::Handler,
+    handlers: &'a module::Handlers,
     scripts: &script::Scripts,
+    pending_buf: &mut Vec<PendingCommand<'a>>,
 ) -> Result<()> {
     match command {
         "ping" => {
@@ -593,7 +637,7 @@ async fn process_command(
 
             let handler = match (other, currency_command) {
                 (other, Some(ref name)) if other == **name => {
-                    Some(currency_handler.clone() as Arc<dyn command::Handler>)
+                    Some(currency_handler as &dyn command::Handler)
                 }
                 (other, Some(..)) | (other, None) => handlers.get(other),
             };
@@ -605,7 +649,7 @@ async fn process_command(
                     ?scope,
                     roles = ?ctx.user.roles(),
                     principal = ?ctx.user.principal(),
-                    "Testing auth"
+                    "Testing handler scope"
                 };
 
                 // Test if user has the required scope to run the given
@@ -624,20 +668,10 @@ async fn process_command(
                     }
                 }
 
-                task::spawn(async move {
-                    if let Err(error) = handler.handle(&mut ctx).await {
-                        if let Some(respond) = error.downcast_ref::<crate::RespondErr>() {
-                            if let crate::RespondErr::Message(respond) = respond {
-                                respond!(ctx, respond);
-                            }
-                        } else {
-                            respond!(ctx, "Sorry, something went wrong :(");
-                            common::log_error!(error, "Error when processing command");
-                        }
-                    }
-
-                    Ok(())
-                });
+                pending_buf.push(Box::pin(async move {
+                    let result = handler.handle(&mut ctx).await;
+                    (result, ctx)
+                }));
 
                 return Ok(());
             }
@@ -749,14 +783,16 @@ impl<'a> Handler<'a> {
         &mut self,
         user: &User,
         mut message: Arc<String>,
+        pending_buf: &mut Vec<PendingCommand<'a>>,
+        hook_buf: &mut Vec<Hook<'a>>,
     ) -> Result<()> {
         // Run message hooks.
-        task::spawn({
+        hook_buf.push({
             let user = user.clone();
-            let context_inner = self.context_inner.clone();
+            let context_inner = self.context_inner;
             let message = message.clone();
 
-            async move {
+            Box::pin(async move {
                 let message_hooks = context_inner.message_hooks.read().await;
 
                 for (key, hook) in &*message_hooks {
@@ -766,7 +802,7 @@ impl<'a> Handler<'a> {
                 }
 
                 Ok(())
-            }
+            })
         });
 
         // only non-moderators and non-streamer bumps the idle counter.
@@ -833,20 +869,22 @@ impl<'a> Handler<'a> {
                     api_url: self.api_url.clone(),
                     user: user.clone(),
                     it,
-                    messages: self.messages.clone(),
-                    inner: self.context_inner.clone(),
+                    messages: self.messages,
+                    inner: self.context_inner,
                 };
 
                 let result = process_command(
                     command,
                     ctx,
                     self.global_bus,
-                    &self.currency_handler,
-                    &self.handlers,
-                    &self.scripts,
-                );
+                    self.currency_handler,
+                    self.handlers,
+                    self.scripts,
+                    pending_buf,
+                )
+                .await;
 
-                if let Err(e) = result.await {
+                if let Err(e) = result {
                     common::log_error!(e, "Failed to process command");
                 }
             }
@@ -860,7 +898,12 @@ impl<'a> Handler<'a> {
     }
 
     /// Run the given raw command.
-    pub(crate) async fn raw(&mut self, message: String) -> Result<()> {
+    pub(crate) async fn raw(
+        &mut self,
+        message: String,
+        pending_buf: &mut Vec<PendingCommand<'a>>,
+        hook_buf: &mut Vec<Hook<'a>>,
+    ) -> Result<()> {
         let tags = Tags::default();
 
         let user = User {
@@ -875,12 +918,19 @@ impl<'a> Handler<'a> {
             }),
         };
 
-        self.process_message(&user, Arc::new(message)).await
+        self.process_message(&user, Arc::new(message), pending_buf, hook_buf)
+            .await?;
+        Ok(())
     }
 
     /// Handle the given command.
     #[tracing::instrument(skip_all)]
-    pub(crate) async fn handle(&mut self, m: Message) -> Result<()> {
+    pub(crate) async fn handle(
+        &mut self,
+        m: Message,
+        pending_buf: &mut Vec<PendingCommand<'a>>,
+        hook_buf: &mut Vec<Hook<'a>>,
+    ) -> Result<()> {
         match m.command {
             Command::PRIVMSG(_, message) => {
                 let message = Arc::new(message);
@@ -922,7 +972,8 @@ impl<'a> Handler<'a> {
                     }),
                 };
 
-                self.process_message(&user, message).await?;
+                self.process_message(&user, message, pending_buf, hook_buf)
+                    .await?;
             }
             Command::JOIN(channel, _, _) => {
                 let user = match &m.prefix {

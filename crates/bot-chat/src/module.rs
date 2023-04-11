@@ -24,8 +24,8 @@ impl Handlers {
     }
 
     /// Lookup the given command mutably.
-    pub(crate) fn get(&self, command: &str) -> Option<Arc<dyn command::Handler>> {
-        self.handlers.get(command).cloned()
+    pub(crate) fn get(&self, command: &str) -> Option<&dyn command::Handler> {
+        self.handlers.get(command).map(|h| h.as_ref())
     }
 }
 

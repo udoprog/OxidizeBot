@@ -18,7 +18,7 @@ impl command::Handler for Clip {
         Some(auth::Scope::Clip)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn handle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }

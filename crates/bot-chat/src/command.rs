@@ -50,7 +50,7 @@ where
     }
 
     /// Handle the command.
-    async fn handle(&self, ctx: &mut Context) -> Result<()>;
+    async fn handle(&self, ctx: &mut Context<'_>) -> Result<()>;
 }
 
 #[async_trait]
@@ -119,15 +119,15 @@ impl ContextInner {
 
 /// Context for a single command invocation.
 #[derive(Clone)]
-pub struct Context {
+pub struct Context<'a> {
     pub api_url: Arc<Option<String>>,
     pub user: User,
     pub it: words::Split,
-    pub messages: messages::Messages,
-    pub(crate) inner: Arc<ContextInner>,
+    pub messages: &'a messages::Messages,
+    pub(crate) inner: &'a ContextInner,
 }
 
-impl Context {
+impl<'a> Context<'a> {
     /// Get associated sender.
     pub fn sender(&self) -> &sender::Sender {
         &self.inner.sender
@@ -282,7 +282,7 @@ impl Context {
     }
 }
 
-impl Iterator for Context {
+impl<'a> Iterator for Context<'a> {
     type Item = String;
 
     #[inline]

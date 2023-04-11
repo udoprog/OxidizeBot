@@ -27,7 +27,7 @@ pub(crate) struct Handler {
 impl Handler {
     async fn handle_request(
         &self,
-        ctx: &mut command::Context,
+        ctx: &mut command::Context<'_>,
         player: &player::Player,
     ) -> Result<()> {
         let q = ctx.rest().trim().to_string();
@@ -82,7 +82,7 @@ impl Handler {
     }
 
     /// Provide a help message instructing the user how to perform song requests.
-    async fn request_help(&self, ctx: &mut command::Context, reason: Option<&str>) {
+    async fn request_help(&self, ctx: &mut command::Context<'_>, reason: Option<&str>) {
         if !self.request_help_cooldown.lock().await.is_open() {
             if let Some(reason) = reason {
                 chat::respond!(ctx, reason);
@@ -111,7 +111,7 @@ impl command::Handler for Handler {
         Some(auth::Scope::Song)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn handle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }

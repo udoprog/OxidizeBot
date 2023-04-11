@@ -23,7 +23,7 @@ impl command::Handler for Uptime {
         Some(auth::Scope::Uptime)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn handle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -88,7 +88,7 @@ impl command::Handler for Title {
         Some(auth::Scope::Title)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn handle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -146,7 +146,7 @@ impl command::Handler for Game {
         Some(auth::Scope::Game)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn handle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }

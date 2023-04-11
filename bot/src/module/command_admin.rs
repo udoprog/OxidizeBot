@@ -14,7 +14,7 @@ impl command::Handler for Handler {
         Some(auth::Scope::Command)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn handle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }

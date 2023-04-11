@@ -558,7 +558,7 @@ pub(crate) struct Handler {
 
 impl Handler {
     /// Play the specified theme song.
-    async fn play_theme_song(&self, ctx: &command::Context, id: &str) {
+    async fn play_theme_song(&self, ctx: &command::Context<'_>, id: &str) {
         let player = self.player.load().await;
 
         if let Some(player) = player {
@@ -583,7 +583,7 @@ impl Handler {
     /// Check if the given user is subject to cooldown right now.
     async fn check_cooldown(
         &self,
-        ctx: &command::Context,
+        ctx: &command::Context<'_>,
         command: &Command,
         category_cooldown: Option<settings::Var<Cooldown>>,
     ) -> Option<(&'static str, time::Duration)> {
@@ -691,7 +691,7 @@ impl Handler {
     }
 
     /// Handle the other commands.
-    async fn handle_other(&self, ctx: &mut command::Context) -> Result<Option<(Command, u32)>> {
+    async fn handle_other(&self, ctx: &mut command::Context<'_>) -> Result<Option<(Command, u32)>> {
         let command = match ctx.next().as_deref() {
             Some("randomize-color") => Command::RandomizeColor,
             Some("randomize-weather") => Command::RandomizeWeather,
@@ -724,7 +724,10 @@ impl Handler {
     }
 
     /// Handle the punish command.
-    async fn handle_punish(&self, ctx: &mut command::Context) -> Result<Option<(Command, u32)>> {
+    async fn handle_punish(
+        &self,
+        ctx: &mut command::Context<'_>,
+    ) -> Result<Option<(Command, u32)>> {
         let command = match ctx.next().as_deref() {
             Some("stumble") => Command::Stumble,
             Some("fall") => Command::Fall,
@@ -802,7 +805,10 @@ impl Handler {
     }
 
     /// Handle the reward command.
-    async fn handle_reward(&self, ctx: &mut command::Context) -> Result<Option<(Command, u32)>> {
+    async fn handle_reward(
+        &self,
+        ctx: &mut command::Context<'_>,
+    ) -> Result<Option<(Command, u32)>> {
         let command = match ctx.next().as_deref() {
             Some("car") => Command::SpawnRandomVehicle(Vehicle::random_car()),
             Some("vehicle") => {
@@ -888,7 +894,7 @@ impl Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn handle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -1028,7 +1034,7 @@ impl command::Handler for Handler {
 }
 
 /// Parse a license plate.Arc
-async fn license(input: &str, ctx: &command::Context) -> Option<String> {
+async fn license(input: &str, ctx: &command::Context<'_>) -> Option<String> {
     match input {
         "" => None,
         license if license.len() > 8 => {

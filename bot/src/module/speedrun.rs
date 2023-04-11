@@ -20,7 +20,7 @@ pub(crate) struct Speedrun {
 
 impl Speedrun {
     /// Query a user.
-    async fn query_personal_bests(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn query_personal_bests(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         let mut query_user = None;
         let mut category_filter = CategoryFilter::default();
         let mut games = Vec::new();
@@ -245,7 +245,7 @@ impl Speedrun {
     }
 
     /// Query a game.
-    async fn query_game(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn query_game(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         let top = self.top.load().await;
 
         let game_query = ctx.next_str("<game> [options]")?;
@@ -482,7 +482,7 @@ impl command::Handler for Speedrun {
         Some(auth::Scope::Speedrun)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
+    async fn handle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
