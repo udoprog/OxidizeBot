@@ -1,6 +1,5 @@
 //! Idle detection for incoming messages.
 
-use crate::settings;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 

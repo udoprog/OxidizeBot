@@ -7,19 +7,18 @@ use async_injector::Injector;
 
 use crate::irc;
 use crate::module::song::requester::{RequestCurrency, SongRequester};
-use crate::player::Player;
 use crate::utils;
 
 /// Task used to react to redemptions as song requests.
 pub(crate) async fn task(
     sender: irc::Sender,
     injector: Injector,
-    settings: crate::Settings,
+    settings: settings::Settings<::auth::Scope>,
     requester: SongRequester,
     streamer: api::TwitchAndUser,
 ) -> Result<()> {
     let (mut pubsub_stream, pubsub) = injector.stream::<pubsub::TwitchPubSub>().await;
-    let (mut player_stream, player) = injector.stream::<Player>().await;
+    let (mut player_stream, player) = injector.stream::<player::Player>().await;
     let (mut request_redemption_stream, request_redemption) = settings
         .stream::<String>("request-redemption")
         .optional()
@@ -63,7 +62,7 @@ struct State {
     requester: SongRequester,
     streamer: api::TwitchAndUser,
     pubsub: Option<pubsub::TwitchPubSub>,
-    player: Option<Player>,
+    player: Option<player::Player>,
     sender: irc::Sender,
     request_redemption: Option<Arc<str>>,
     redemptions_stream: Fuse<pubsub::TwitchStream<pubsub::Redemption>>,

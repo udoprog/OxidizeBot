@@ -6,7 +6,7 @@ use anyhow::Result;
 /// Setup a player.
 pub(super) async fn setup(
     bus: bus::Bus<bus::YouTube>,
-    settings: settings::Settings<auth::Scope>,
+    settings: settings::Settings<::auth::Scope>,
 ) -> Result<(YouTubePlayer, impl Future<Output = Result<()>>)> {
     let (mut volume_scale_stream, mut volume_scale) =
         settings.stream("volume-scale").or_with(100).await?;
@@ -47,7 +47,7 @@ pub(super) async fn setup(
 #[derive(Clone)]
 pub(super) struct YouTubePlayer {
     bus: bus::Bus<bus::YouTube>,
-    settings: settings::Settings<auth::Scope>,
+    settings: settings::Settings<::auth::Scope>,
     volume: settings::Var<u32>,
 }
 

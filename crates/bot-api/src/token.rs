@@ -46,20 +46,15 @@ impl<'de> Deserialize<'de> for TokenPayload {
 
 /// A synchronized token holder for which we can asynchronously process events
 /// in multiple directions.
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct Token {
     inner: Arc<Inner>,
 }
 
 impl Token {
+    /// Construct a new empty token.
     pub fn new() -> Self {
-        Self {
-            inner: Arc::new(Inner {
-                payload: parking_lot::RwLock::new(None),
-                refresh: Notify::new(),
-                waiters: Notify::new(),
-            }),
-        }
+        Self::default()
     }
 
     /// Clear the token.
@@ -108,7 +103,7 @@ impl Token {
     }
 
     /// Wait until token is ready.
-    pub async fn wait_until_read(&self) {
+    pub async fn wait_until_ready(&self) {
         let mut future = pin!(self.inner.waiters.notified());
 
         loop {
@@ -129,6 +124,7 @@ struct Payload {
     client_id: Arc<str>,
 }
 
+#[derive(Default)]
 struct Inner {
     payload: parking_lot::RwLock<Option<Payload>>,
     refresh: Notify,

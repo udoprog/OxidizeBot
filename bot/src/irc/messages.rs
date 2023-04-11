@@ -7,8 +7,7 @@ use anyhow::Result;
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tracing::Instrument;
 
-use crate::stream::{StreamExt, StreamMap};
-use crate::Settings;
+use common::stream::{StreamExt, StreamMap};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Optional {
@@ -38,7 +37,7 @@ const OPTIONAL: [Optional; 2] = [JOIN_CHAT, LEAVE_CHAT];
 
 /// Set up message handler.
 pub(super) async fn setup(
-    settings: &Settings,
+    settings: &settings::Settings<::auth::Scope>,
 ) -> Result<(Messages, impl Future<Output = Result<()>>)> {
     let settings = settings.scoped("messages");
 

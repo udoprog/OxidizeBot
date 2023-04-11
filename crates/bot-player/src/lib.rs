@@ -5,15 +5,15 @@ mod player_internal;
 mod youtube;
 
 use std::fmt;
-use std::future::Future;
 use std::sync::Arc;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use async_fuse::Fuse;
-use async_injector::Injector;
+use async_injector::{Injector, Key};
 use common::models::spotify::device::Device;
 use common::models::{Item, PlayerKind, Song, SpotifyId, Track, TrackId};
 use common::stream::StreamExt;
+use common::tags;
 use common::{display, PtDuration};
 use common::{Channel, Duration};
 use parking_lot::Mutex;
@@ -152,16 +152,22 @@ async fn convert_item(
 
 /// Run the player.
 #[tracing::instrument(skip_all)]
-pub async fn run(
-    injector: &Injector,
+pub async fn setup(
+    user_agent: &'static str,
+    injector: Injector,
     db: db::Database,
-    spotify: Arc<api::Spotify>,
-    youtube: Arc<api::YouTube>,
     global_bus: bus::Bus<bus::Global>,
     youtube_bus: bus::Bus<bus::YouTube>,
-    settings: ::settings::Settings<auth::Scope>,
-) -> Result<impl Future<Output = Result<()>>> {
+    settings: settings::Settings<::auth::Scope>,
+) -> Result<()> {
     let settings = settings.scoped("player");
+
+    let spotify = load_token(&injector, tags::Token::Spotify);
+    let youtube = load_token(&injector, tags::Token::YouTube);
+    let (spotify, youtube) = tokio::try_join!(spotify, youtube)?;
+
+    let spotify = Arc::new(api::Spotify::new(user_agent, spotify)?);
+    let youtube = Arc::new(api::YouTube::new(user_agent, youtube)?);
 
     let mut futures = common::Futures::<Result<()>>::default();
 
@@ -244,28 +250,36 @@ pub async fn run(
         })
         .await;
 
-    // future to initialize the player future.
-    // Yeah, I know....
-    Ok(async move {
-        let mut initialize = PlayerInitialize::default();
+    let mut initialize = PlayerInitialize::default();
 
-        // Note: these tasks might fail sporadically, since we need to perform external
-        // API calls to initialize metadata for playback items.
-        common::retry_until_ok! {
-            "Initialize Player", {
-                internal.initialize(&mut initialize).await
-            }
-        };
-
-        tracing::info!("Player is up and running!");
-
-        // Drive child futures now that initialization is done.
-        if let Some(result) = futures.next().await {
-            result?;
+    // Note: these tasks might fail sporadically, since we need to perform external
+    // API calls to initialize metadata for playback items.
+    common::retry_until_ok! {
+        "Initialize Player", {
+            internal.initialize(&mut initialize).await
         }
+    };
 
-        Ok(())
-    })
+    tracing::info!("Player is up and running!");
+
+    // Drive child futures now that initialization is done.
+    if let Some(result) = futures.next().await {
+        result?;
+    }
+
+    Ok(())
+}
+
+async fn load_token(injector: &Injector, tag: tags::Token) -> Result<api::Token> {
+    let (mut stream, token) = injector.stream_key(Key::<api::Token>::tagged(tag)?).await;
+
+    let token = if let Some(token) = token {
+        token
+    } else {
+        stream.recv().await.context("token stream ended")?
+    };
+
+    Ok(token)
 }
 
 /// Events emitted by the player.
@@ -382,7 +396,7 @@ impl Player {
     }
 
     /// Update volume of the player.
-    async fn volume(&self, modify: ModifyVolume) -> Option<u32> {
+    pub async fn volume(&self, modify: ModifyVolume) -> Option<u32> {
         let track_id = match self.inner.injector.get::<Song>().await {
             Some(song) => song.item().track_id().clone(),
             None => {
@@ -408,8 +422,7 @@ impl Player {
 
     /// Search for a track.
     pub async fn search_track(&self, q: &str) -> Result<Option<TrackId>> {
-        if q.starts_with("youtube:") {
-            let q = q.trim_start_matches("youtube:");
+        if let Some(q) = q.strip_prefix("youtube:") {
             let results = self.inner.youtube.search(q).await?;
             let result = results
                 .items
@@ -419,21 +432,15 @@ impl Player {
             return Ok(result.next().map(TrackId::YouTube));
         }
 
-        let q = if q.starts_with("spotify:") {
-            q.trim_start_matches("spotify:")
-        } else {
-            q
-        };
-
+        let q = q.strip_prefix("spotify:").unwrap_or(q);
         let page = self.inner.spotify.search_track(q, 1).await?;
 
-        match page.tracks.items.into_iter().next().and_then(|t| t.id) {
-            Some(track_id) => match SpotifyId::from_base62(&track_id) {
-                Ok(track_id) => Ok(Some(TrackId::Spotify(track_id))),
-                Err(_) => bail!("search result returned malformed id"),
-            },
-            None => Ok(None),
-        }
+        let Some(id) = page.tracks.items.into_iter().flat_map(|t| t.id).next() else {
+            return Ok(None);
+        };
+
+        let track_id = SpotifyId::from_base62(id).context("Malformed id from search result")?;
+        Ok(Some(TrackId::Spotify(track_id)))
     }
 
     /// Play a theme track.

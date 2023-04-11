@@ -1,3 +1,5 @@
+#![allow(clippy::field_reassign_with_default)]
+
 #[macro_use]
 mod macros;
 pub mod schema;
@@ -38,7 +40,6 @@ use std::sync::Arc;
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use common::models::TrackId;
-use common::Duration;
 use diesel::prelude::*;
 use diesel_migrations::{EmbeddedMigrations, HarnessWithOutput, MigrationHarness};
 use parking_lot::Mutex;

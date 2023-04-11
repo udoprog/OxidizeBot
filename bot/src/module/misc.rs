@@ -6,6 +6,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
 use common::display;
+use common::stream::StreamExt;
 
 use crate::command;
 use crate::irc;

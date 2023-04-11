@@ -4,6 +4,9 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
+[features]
+scripting = ["serde_cbor"]
+
 [dependencies]
 common = { package = "bot-common", path = "../bot-common" }
 template = { package = "bot-template", path = "../bot-template" }
@@ -20,3 +23,4 @@ Inflector = "0.11.4"
 thiserror = "1.0.40"
 regex = "1.7.3"
 parking_lot = "0.12.1"
+serde_cbor = { version = "0.11.2", optional = true }

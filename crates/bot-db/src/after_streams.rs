@@ -14,12 +14,12 @@ pub struct AfterStreams {
 
 impl AfterStreams {
     /// Open the after streams database.
-    pub(crate) async fn load(db: crate::Database) -> Result<Self> {
+    pub async fn load(db: crate::Database) -> Result<Self> {
         Ok(Self { db })
     }
 
     /// Push the given afterstream message.
-    pub(crate) async fn push(&self, channel: &Channel, user: &str, text: &str) -> Result<()> {
+    pub async fn push(&self, channel: &Channel, user: &str, text: &str) -> Result<()> {
         use self::schema::after_streams::dsl;
 
         let channel = channel.to_owned();

@@ -92,7 +92,7 @@ impl Themes {
     database_group_fns!(Theme, Key);
 
     /// Construct a new commands store with a db.
-    pub(crate) async fn load(db: crate::Database) -> Result<Themes> {
+    pub async fn load(db: crate::Database) -> Result<Themes> {
         let mut inner = HashMap::new();
 
         let db = Database(db);

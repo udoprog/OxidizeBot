@@ -212,7 +212,7 @@ impl Twitch {
     }
 
     /// Update the channel information.
-    pub(crate) async fn patch_channel(
+    pub async fn patch_channel(
         &self,
         broadcaster_id: &str,
         request: model::ModifyChannelRequest<'_>,

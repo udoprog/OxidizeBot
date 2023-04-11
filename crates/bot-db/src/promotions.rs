@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use common::{Channel, Duration, OwnedChannel};
 use diesel::prelude::*;
@@ -11,7 +11,7 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Error)]
-pub(crate) enum BumpError {
+pub enum BumpError {
     /// Trying to bump something which doesn't exist.
     #[error("promotion missing")]
     Missing,
@@ -32,7 +32,7 @@ impl Database {
         key: &Key,
         frequency: Duration,
         text: &str,
-    ) -> Result<Option<crate::models::Promotion>, anyhow::Error> {
+    ) -> Result<Option<crate::models::Promotion>> {
         use crate::schema::promotions::dsl;
 
         let key = key.clone();
@@ -82,11 +82,7 @@ impl Database {
             .await
     }
 
-    async fn bump_promoted_at(
-        &self,
-        from: &Key,
-        now: &DateTime<Utc>,
-    ) -> Result<bool, anyhow::Error> {
+    async fn bump_promoted_at(&self, from: &Key, now: &DateTime<Utc>) -> Result<bool> {
         use crate::schema::promotions::dsl;
 
         let from = from.clone();
@@ -117,7 +113,7 @@ impl Promotions {
     database_group_fns!(Promotion, Key);
 
     /// Construct a new promos store with a db.
-    pub(crate) async fn load(db: crate::Database) -> Result<Promotions, anyhow::Error> {
+    pub async fn load(db: crate::Database) -> Result<Promotions> {
         let db = Database(db);
 
         let mut inner = HashMap::new();
@@ -140,7 +136,7 @@ impl Promotions {
         name: &str,
         frequency: Duration,
         template: template::Template,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<()> {
         let key = Key::new(channel, name);
 
         let mut inner = self.inner.write().await;
@@ -167,7 +163,8 @@ impl Promotions {
     }
 
     /// Bump that the given promotion was last promoted right now.
-    pub(crate) async fn bump_promoted_at(&self, promotion: &Promotion) -> Result<(), BumpError> {
+    #[tracing::instrument(skip_all)]
+    pub async fn bump_promoted_at(&self, promotion: &Promotion) -> Result<(), BumpError> {
         let mut inner = self.inner.write().await;
 
         let promotion = match inner.remove(&promotion.key) {
@@ -191,9 +188,9 @@ impl Promotions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub(crate) struct Key {
-    pub(crate) channel: OwnedChannel,
-    pub(crate) name: String,
+pub struct Key {
+    pub channel: OwnedChannel,
+    pub name: String,
 }
 
 impl Key {
@@ -207,20 +204,18 @@ impl Key {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Promotion {
-    pub(crate) key: Key,
-    pub(crate) frequency: Duration,
-    pub(crate) promoted_at: Option<DateTime<Utc>>,
-    pub(crate) template: template::Template,
-    pub(crate) group: Option<String>,
-    pub(crate) disabled: bool,
+    pub key: Key,
+    pub frequency: Duration,
+    pub promoted_at: Option<DateTime<Utc>>,
+    pub template: template::Template,
+    pub group: Option<String>,
+    pub disabled: bool,
 }
 
 impl Promotion {
     pub(crate) const NAME: &'static str = "promotion";
 
-    pub(crate) fn from_db(
-        promotion: &crate::models::Promotion,
-    ) -> Result<Promotion, anyhow::Error> {
+    pub(crate) fn from_db(promotion: &crate::models::Promotion) -> Result<Promotion> {
         let template = template::Template::compile(&promotion.text)
             .with_context(|| anyhow!("failed to compile promotion `{:?}` from db", promotion))?;
 
@@ -241,7 +236,7 @@ impl Promotion {
     }
 
     /// Render the given promotion.
-    pub(crate) fn render<T>(&self, data: &T) -> Result<String, anyhow::Error>
+    pub fn render<T>(&self, data: &T) -> Result<String>
     where
         T: Serialize,
     {

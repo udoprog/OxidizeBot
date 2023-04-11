@@ -1,7 +1,9 @@
-use common::Channel;
-use diesel::prelude::*;
 use std::fmt;
 use std::sync::Arc;
+
+use anyhow::Result;
+use common::Channel;
+use diesel::prelude::*;
 use tokio::sync::RwLock;
 
 /// Local database wrapper.
@@ -11,11 +13,7 @@ struct Database(crate::Database);
 impl Database {
     private_database_group_fns!(aliases, Alias, crate::Key);
 
-    async fn edit(
-        &self,
-        key: &crate::Key,
-        text: &str,
-    ) -> Result<crate::models::Alias, anyhow::Error> {
+    async fn edit(&self, key: &crate::Key, text: &str) -> Result<crate::models::Alias> {
         use crate::schema::aliases::dsl;
 
         let key = key.clone();
@@ -56,11 +54,7 @@ impl Database {
     }
 
     /// Edit the pattern of an alias.
-    async fn edit_pattern(
-        &self,
-        key: &crate::Key,
-        pattern: Option<&regex::Regex>,
-    ) -> Result<(), anyhow::Error> {
+    async fn edit_pattern(&self, key: &crate::Key, pattern: Option<&regex::Regex>) -> Result<()> {
         use crate::schema::aliases::dsl;
 
         let key = key.clone();
@@ -92,7 +86,7 @@ impl Aliases {
     database_group_fns!(Alias, crate::Key);
 
     /// Construct a new commands store with a db.
-    pub(crate) async fn load(db: crate::Database) -> Result<Aliases, anyhow::Error> {
+    pub async fn load(db: crate::Database) -> Result<Aliases> {
         let mut inner = crate::Matcher::new();
 
         let db = Database(db);
@@ -142,7 +136,7 @@ impl Aliases {
         channel: &Channel,
         name: &str,
         template: template::Template,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<()> {
         let key = crate::Key::new(channel, name);
 
         let alias = self.db.edit(&key, template.source()).await?;
@@ -167,12 +161,12 @@ impl Aliases {
     }
 
     /// Edit the pattern for the given command.
-    pub(crate) async fn edit_pattern(
+    pub async fn edit_pattern(
         &self,
         channel: &Channel,
         name: &str,
         pattern: Option<regex::Regex>,
-    ) -> Result<bool, anyhow::Error> {
+    ) -> Result<bool> {
         let key = crate::Key::new(channel, name);
         self.db.edit_pattern(&key, pattern.as_ref()).await?;
 
@@ -205,7 +199,7 @@ impl Alias {
     pub(crate) const NAME: &'static str = "alias";
 
     /// Convert a database alias into an in-memory alias.
-    pub(crate) fn from_db(alias: &crate::models::Alias) -> Result<Alias, anyhow::Error> {
+    pub(crate) fn from_db(alias: &crate::models::Alias) -> Result<Alias> {
         let key = crate::Key::new(&alias.channel, &alias.name);
         let pattern = crate::Pattern::from_db(alias.pattern.as_ref())?;
         let template = template::Template::compile(&alias.text)?;

@@ -1,3 +1,4 @@
+use anyhow::Result;
 use async_trait::async_trait;
 use common::Cooldown;
 use common::Duration;
@@ -18,7 +19,7 @@ impl command::Handler for AfterStream {
         Some(auth::Scope::AfterStream)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -75,7 +76,7 @@ impl super::Module for Module {
             settings,
             ..
         }: module::HookContext<'_>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<()> {
         let settings = settings.scoped("afterstream");
 
         handlers.insert(

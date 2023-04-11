@@ -1,18 +1,17 @@
 use anyhow::Result;
 use diesel::prelude::*;
 
-use crate::channel::{Channel, OwnedChannel};
-use crate::db;
+use common::{Channel, OwnedChannel};
 
 #[derive(Clone)]
-pub(crate) struct ScriptStorage {
+pub struct ScriptStorage {
     channel: OwnedChannel,
-    db: db::Database,
+    db: crate::Database,
 }
 
 impl ScriptStorage {
     /// Open the script storage database.
-    pub(crate) fn new(channel: &Channel, db: db::Database) -> Self {
+    pub fn new(channel: &Channel, db: crate::Database) -> Self {
         Self {
             channel: channel.to_owned(),
             db,
@@ -20,12 +19,12 @@ impl ScriptStorage {
     }
 
     /// Set the given key.
-    pub(crate) async fn set<K, V>(&self, key: K, value: V) -> Result<()>
+    pub async fn set<K, V>(&self, key: K, value: V) -> Result<()>
     where
         K: 'static + Send + serde::Serialize,
         V: 'static + Send + serde::Serialize,
     {
-        use db::schema::script_keys::dsl;
+        use crate::schema::script_keys::dsl;
 
         let channel = self.channel.clone();
 
@@ -37,11 +36,11 @@ impl ScriptStorage {
                 let filter =
                     dsl::script_keys.filter(dsl::channel.eq(&channel).and(dsl::key.eq(&key)));
 
-                let first = filter.first::<db::models::ScriptKey>(c).optional()?;
+                let first = filter.first::<crate::models::ScriptKey>(c).optional()?;
 
                 match first {
                     None => {
-                        let script_key = db::models::ScriptKey {
+                        let script_key = crate::models::ScriptKey {
                             channel,
                             key,
                             value,
@@ -54,7 +53,7 @@ impl ScriptStorage {
                         Ok(())
                     }
                     Some(..) => {
-                        let set = db::models::SetScriptKeyValue { value: &value };
+                        let set = crate::models::SetScriptKeyValue { value: &value };
                         diesel::update(filter).set(&set).execute(c)?;
                         Ok(())
                     }
@@ -64,12 +63,12 @@ impl ScriptStorage {
     }
 
     /// Get the given key.
-    pub(crate) async fn get<K, V>(&self, key: K) -> Result<Option<V>>
+    pub async fn get<K, V>(&self, key: K) -> Result<Option<V>>
     where
         K: 'static + Send + serde::Serialize,
         for<'de> V: 'static + Send + serde::Deserialize<'de>,
     {
-        use db::schema::script_keys::dsl;
+        use crate::schema::script_keys::dsl;
 
         let channel = self.channel.clone();
 
@@ -80,7 +79,7 @@ impl ScriptStorage {
                 let filter =
                     dsl::script_keys.filter(dsl::channel.eq(&channel).and(dsl::key.eq(&key)));
 
-                let first = filter.first::<db::models::ScriptKey>(c).optional()?;
+                let first = filter.first::<crate::models::ScriptKey>(c).optional()?;
 
                 match first {
                     None => Ok(None),

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time;
 
 use anyhow::{anyhow, Result};
+use common::stream::StreamExt;
 use parking_lot::RwLock;
 use tokio::sync::mpsc;
 use tracing::Instrument;
@@ -133,7 +134,7 @@ pub(crate) fn setup(
 
     let future = async move {
         loop {
-            streamer.client.token().wait_until_ready().await?;
+            streamer.client.token().wait_until_ready().await;
 
             tokio::select! {
                 _ = subs_interval.tick() => {

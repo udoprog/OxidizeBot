@@ -23,7 +23,7 @@ pub enum TrackId {
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
-pub enum ParseTrackIdError {
+pub enum FromStrError {
     /// Requested a URI from a bad host, like youtube.com.
     #[error("bad host, expected: open.spotify.com")]
     BadHost(String),
@@ -42,7 +42,7 @@ pub enum ParseTrackIdError {
 }
 
 impl std::str::FromStr for TrackId {
-    type Err = ParseTrackIdError;
+    type Err = FromStrError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.starts_with("youtube:video:") {
@@ -57,12 +57,12 @@ impl std::str::FromStr for TrackId {
             if let Some(index) = id.find('?') {
                 id = &id[..index];
             }
-            let id = SpotifyId::from_base62(id)
-                .map_err(|_| ParseTrackIdError::BadBase62(id.to_string()))?;
+            let id =
+                SpotifyId::from_base62(id).map_err(|_| FromStrError::BadBase62(id.to_string()))?;
             return Ok(TrackId::Spotify(id));
         }
 
-        Err(ParseTrackIdError::MissingUriPrefix)
+        Err(FromStrError::MissingUriPrefix)
     }
 }
 
@@ -85,11 +85,11 @@ impl TrackId {
     }
 
     /// Used to load records from the database since they don't have a prefix.
-    pub(crate) fn parse_with_prefix_fallback(s: &str) -> Result<Self, ParseTrackIdError> {
+    pub(crate) fn parse_with_prefix_fallback(s: &str) -> Result<Self, FromStrError> {
         match str::parse::<Self>(s) {
-            Err(ParseTrackIdError::MissingUriPrefix) => {
+            Err(FromStrError::MissingUriPrefix) => {
                 let id = SpotifyId::from_base62(s)
-                    .map_err(|_| ParseTrackIdError::BadBase62(s.to_string()))?;
+                    .map_err(|_| FromStrError::BadBase62(s.to_string()))?;
                 Ok(TrackId::Spotify(id))
             }
             other => other,
@@ -97,7 +97,7 @@ impl TrackId {
     }
 
     /// Parse by trying  URL forms first.
-    pub(crate) fn parse_with_urls(s: &str) -> Result<Self, ParseTrackIdError> {
+    pub fn parse_with_urls(s: &str) -> Result<Self, FromStrError> {
         // Parse a track id from a URL or URI.
         if let Ok(url) = str::parse::<url::Url>(s) {
             match url.host() {
@@ -106,8 +106,8 @@ impl TrackId {
 
                     let id = match parts.as_slice() {
                         ["", "track", id] => SpotifyId::from_base62(id)
-                            .map_err(|_| ParseTrackIdError::BadBase62((*id).to_string()))?,
-                        _ => return Err(ParseTrackIdError::BadUrl(url.to_string())),
+                            .map_err(|_| FromStrError::BadBase62((*id).to_string()))?,
+                        _ => return Err(FromStrError::BadUrl(url.to_string())),
                     };
 
                     return Ok(TrackId::Spotify(id));
@@ -116,7 +116,7 @@ impl TrackId {
                     let parts = url.path().split('/').collect::<Vec<_>>();
 
                     if parts.as_slice() != ["", "watch"] {
-                        return Err(ParseTrackIdError::BadUrl(url.to_string()));
+                        return Err(FromStrError::BadUrl(url.to_string()));
                     }
 
                     let mut video_id = None;
@@ -129,7 +129,7 @@ impl TrackId {
 
                     let video_id = match video_id {
                         Some(video_id) => video_id,
-                        None => return Err(ParseTrackIdError::BadUrl(url.to_string())),
+                        None => return Err(FromStrError::BadUrl(url.to_string())),
                     };
 
                     return Ok(TrackId::YouTube(video_id));
@@ -139,13 +139,13 @@ impl TrackId {
 
                     let video_id = match parts.as_slice() {
                         ["", video_id] => *video_id,
-                        _ => return Err(ParseTrackIdError::BadUrl(url.to_string())),
+                        _ => return Err(FromStrError::BadUrl(url.to_string())),
                     };
 
                     return Ok(TrackId::YouTube(video_id.to_string()));
                 }
                 Some(..) => {
-                    return Err(ParseTrackIdError::BadHost(url.to_string()));
+                    return Err(FromStrError::BadHost(url.to_string()));
                 }
                 None => (),
             }

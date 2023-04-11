@@ -1,6 +1,6 @@
 //! Twitch API helpers.
 
-use anyhow::bail;
+use anyhow::{bail, Result};
 use bytes::Bytes;
 use reqwest::{header, Client, Method, Url};
 
@@ -36,7 +36,7 @@ impl RequestBuilder {
 
     /// Execute the request.
     #[tracing::instrument(skip_all, fields(method = ?self.method, url = ?self.url.to_string()))]
-    pub(crate) async fn execute<T>(self) -> Result<T, anyhow::Error>
+    pub(crate) async fn execute<T>(self) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {

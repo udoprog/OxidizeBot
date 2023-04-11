@@ -1,16 +1,11 @@
 use anyhow::Result;
 
-use crate::api;
-use crate::emotes;
-use crate::injector;
 use crate::irc;
-use crate::message_log;
-use crate::settings;
-use crate::storage::Cache;
+use storage::Cache;
 
 pub(crate) struct Builder {
     streamer: api::TwitchAndUser,
-    pub(crate) message_log: message_log::MessageLog,
+    pub(crate) message_log: messagelog::MessageLog,
     pub(crate) cache_stream: async_injector::Stream<Cache>,
     pub(crate) cache: Option<Cache>,
     pub(crate) enabled_stream: settings::Stream<bool>,
@@ -22,9 +17,9 @@ pub(crate) struct Builder {
 impl Builder {
     pub(crate) async fn new(
         streamer: api::TwitchAndUser,
-        injector: &injector::Injector,
-        message_log: message_log::MessageLog,
-        settings: crate::Settings,
+        injector: &async_injector::Injector,
+        message_log: messagelog::MessageLog,
+        settings: settings::Settings<::auth::Scope>,
     ) -> Result<Self> {
         let (cache_stream, cache) = injector.stream::<Cache>().await;
 
@@ -73,7 +68,11 @@ impl Builder {
         }
 
         let emotes = match (self.emotes_enabled, self.cache.as_ref()) {
-            (true, Some(cache)) => Some(emotes::Emotes::new(cache.clone(), self.streamer.clone())?),
+            (true, Some(cache)) => Some(emotes::Emotes::new(
+                crate::USER_AGENT,
+                cache.clone(),
+                self.streamer.clone(),
+            )?),
             _ => None,
         };
 
@@ -87,7 +86,7 @@ impl Builder {
 #[derive(Clone)]
 pub(crate) struct ChatLog {
     /// Log to add messages to.
-    pub(crate) message_log: message_log::MessageLog,
+    pub(crate) message_log: messagelog::MessageLog,
     /// Handler of emotes.
     emotes: Option<emotes::Emotes>,
 }

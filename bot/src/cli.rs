@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time;
 
 use anyhow::{anyhow, Context, Result};
@@ -7,13 +6,13 @@ use async_injector::{Injector, Key};
 use common::backoff;
 use common::display;
 use common::stream::StreamExt;
+use common::tags;
 use tokio::sync::mpsc;
 
 use crate::irc;
 use crate::module;
 use crate::stream_info;
 use crate::sys;
-use crate::tags;
 use crate::updater;
 use crate::utils;
 
@@ -74,16 +73,38 @@ fn setup_logs(root: &Path, trace: bool, modules: &[String]) -> Result<(impl Drop
     use tracing_subscriber::prelude::*;
     use tracing_subscriber::{fmt, Registry};
 
-    let logger = crate::log::Log::default();
+    // Crates to enable logging for, by default.
+    const CRATES: [&str; 16] = [
+        "bot_api",
+        "bot_auth",
+        "bot_bus",
+        "bot_common",
+        "bot_currency",
+        "bot_db",
+        "bot_emotes",
+        "bot_messagelog",
+        "bot_oauth2",
+        "bot_player",
+        "bot_settings",
+        "bot_storage",
+        "bot_template",
+        "bot_web",
+        "oxidize",
+        "panic",
+    ];
+
+    let (capture, _) = crate::tracing::capture();
 
     let mut env_filter = tracing_subscriber::EnvFilter::from_default_env();
 
     if trace {
-        env_filter = env_filter.add_directive("oxidize=trace".parse()?);
-        env_filter = env_filter.add_directive("panic=trace".parse()?);
+        for name in CRATES {
+            env_filter = env_filter.add_directive(format!("{name}=trace").parse()?);
+        }
     } else {
-        env_filter = env_filter.add_directive("oxidize=info".parse()?);
-        env_filter = env_filter.add_directive("panic=info".parse()?);
+        for name in CRATES {
+            env_filter = env_filter.add_directive(format!("{name}=info").parse()?);
+        }
     };
 
     for module in modules {
@@ -94,7 +115,7 @@ fn setup_logs(root: &Path, trace: bool, modules: &[String]) -> Result<(impl Drop
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     let subscriber = Registry::default()
-        .with(logger)
+        .with(capture)
         .with(env_filter)
         .with(
             fmt::Layer::default()
@@ -208,7 +229,7 @@ fn inner_main(args: Args) -> Result<()> {
 
         let backoff = match runtime.block_on(future) {
             Err(e) => {
-                let backoff = error_backoff.next();
+                let backoff = error_backoff.failed();
                 system.error(String::from("Bot crashed, see log for more details."));
                 common::log_error!(e, "Bot crashed");
                 Some(backoff)
@@ -291,12 +312,12 @@ async fn try_main(
 
     injector.update(db.clone()).await;
 
-    let scopes_schema = auth::Schema::load_static()?;
-    let auth = auth(db, scopes_schema).await?;
+    let auth_schema = auth::Schema::load_static(crate::AUTH_SCHEMA)?;
+    let auth = auth::Auth::new(db.clone(), auth_schema).await?;
     injector.update(auth.clone()).await;
 
-    let settings_schema = crate::load_schema()?;
-    let settings = db.settings(settings_schema)?;
+    let settings_schema = settings::Schema::load_bytes(crate::SETTINGS_SCHEMA)?;
+    let settings = settings::Settings::new(db.clone(), settings_schema);
 
     let drive = settings.clone();
 
@@ -351,6 +372,7 @@ async fn try_main(
     injector.update(message_log.clone()).await;
 
     let (web, future) = web::run(
+        crate::VERSION,
         &injector,
         message_log.clone(),
         message_bus.clone(),
@@ -362,10 +384,7 @@ async fn try_main(
     )
     .await?;
 
-    futures.push(Box::pin(async {
-        future.await;
-        Err::<(), _>(anyhow!("web server exited unexpectedly"))
-    }));
+    futures.push(Box::pin(future));
 
     if settings.get::<bool>("first-run").await?.unwrap_or(true) {
         tracing::info!("Opening {} for the first time", web::URL);
@@ -381,101 +400,107 @@ async fn try_main(
 
     let token_settings = settings.scoped("secrets/oauth2");
 
-    let spotify_setup = {
+    let integration = WebIntegration(web.clone());
+
+    futures.push(Box::pin({
         let s = token_settings.scoped("spotify");
         let key = Key::tagged(tags::Token::Spotify)?;
-        oauth2::setup("spotify", &settings, s, injector.clone(), key, web.clone())
-    };
+        oauth2::setup(
+            "spotify",
+            settings.clone(),
+            s,
+            injector.clone(),
+            key,
+            integration.clone(),
+        )
+    }));
 
-    let youtube_setup = {
+    futures.push(Box::pin({
         let s = token_settings.scoped("youtube");
         let key = Key::tagged(tags::Token::YouTube)?;
-        oauth2::setup("youtube", &settings, s, injector.clone(), key, web.clone())
-    };
+        oauth2::setup(
+            "youtube",
+            settings.clone(),
+            s,
+            injector.clone(),
+            key,
+            integration.clone(),
+        )
+    }));
 
-    let nightbot_setup = {
+    futures.push(Box::pin({
         let s = token_settings.scoped("nightbot");
         let key = Key::tagged(tags::Token::NightBot)?;
-        oauth2::setup("nightbot", &settings, s, injector.clone(), key, web.clone())
-    };
+        oauth2::setup(
+            "nightbot",
+            settings.clone(),
+            s,
+            injector.clone(),
+            key,
+            integration.clone(),
+        )
+    }));
 
-    let streamer_setup = {
+    futures.push(Box::pin({
         let s = token_settings.scoped("twitch-streamer");
         let key = Key::tagged(tags::Token::Twitch(tags::Twitch::Streamer))?;
         oauth2::setup(
             "twitch-streamer",
-            &settings,
+            settings.clone(),
             s,
             injector.clone(),
             key,
-            web.clone(),
+            integration.clone(),
         )
-    };
+    }));
 
-    let bot_setup = {
+    futures.push(Box::pin({
         let s = token_settings.scoped("twitch-bot");
         let key = Key::tagged(tags::Token::Twitch(tags::Twitch::Bot))?;
         oauth2::setup(
             "twitch-bot",
-            &settings,
+            settings.clone(),
             s,
             injector.clone(),
             key,
-            web.clone(),
+            integration.clone(),
         )
-    };
-
-    let (
-        (spotify_token, spotify_future),
-        (youtube_token, youtube_future),
-        (_, nightbot_future),
-        (_, streamer_future),
-        (_, bot_future),
-    ) = tokio::try_join!(
-        spotify_setup,
-        youtube_setup,
-        nightbot_setup,
-        streamer_setup,
-        bot_setup
-    )?;
+    }));
 
     futures.push(Box::pin(api::twitch::pubsub::connect(&settings, &injector)));
-    futures.push(Box::pin(api::twitch_clients_task(injector.clone())));
-    futures.push(Box::pin(spotify_future));
-    futures.push(Box::pin(youtube_future));
-    futures.push(Box::pin(nightbot_future));
-    futures.push(Box::pin(streamer_future));
-    futures.push(Box::pin(bot_future));
+    futures.push(Box::pin(api::twitch_clients_task(
+        crate::USER_AGENT,
+        injector.clone(),
+    )));
 
     futures.push(Box::pin(
-        api::open_weather_map::setup(settings.clone(), injector.clone()).await?,
+        api::open_weather_map::setup(crate::USER_AGENT, settings.clone(), injector.clone()).await?,
     ));
 
     let (restart, restart_rx) = utils::Restart::new();
     injector.update(restart).await;
 
-    let spotify = Arc::new(api::Spotify::new(spotify_token.clone())?);
-    let youtube = Arc::new(api::YouTube::new(youtube_token.clone())?);
-    injector.update(youtube.clone()).await;
+    futures.push(Box::pin(api::NightBot::run(
+        crate::USER_AGENT,
+        injector.clone(),
+    )));
 
-    futures.push(Box::pin(api::NightBot::run(injector.clone())));
+    injector
+        .update(api::Speedrun::new(crate::USER_AGENT)?)
+        .await;
 
-    injector.update(api::Speedrun::new()?).await;
-
-    let future = player::run(
-        &injector,
+    let future = player::setup(
+        crate::USER_AGENT,
+        injector.clone(),
         db.clone(),
-        spotify.clone(),
-        youtube.clone(),
         global_bus.clone(),
         youtube_bus.clone(),
         settings.clone(),
-    )
-    .await?;
+    );
 
-    futures.push(Box::pin(crate::song_file::SongFile::run(
+    futures.push(Box::pin(crate::song_file::setup(
         injector.clone(),
-        settings.scoped("song-file"),
+        settings.scoped("player/song-file"),
     )));
 
     futures.push(Box::pin(future));
@@ -593,7 +618,10 @@ async fn notify_after_streams(
 
 /// Run the loop that handles installing this as a service.
 #[tracing::instrument(skip_all)]
-async fn system_loop(settings: crate::Settings, system: sys::System) -> Result<()> {
+async fn system_loop(
+    settings: settings::Settings<::auth::Scope>,
+    system: sys::System,
+) -> Result<()> {
     settings
         .set("run-on-startup", system.is_installed()?)
         .await?;
@@ -612,12 +640,23 @@ async fn system_loop(settings: crate::Settings, system: sys::System) -> Result<(
     }
 }
 
-/// Access auth from the database.
-pub async fn auth(db: &db::Database, schema: auth::Schema) -> Result<auth::Auth> {
-    auth::Auth::new(db.clone(), schema).await
-}
+#[derive(Clone)]
+struct WebIntegration(web::Server);
 
-/// Access settings from the database.
-pub fn settings(db: &db::Database, schema: crate::Schema) -> Result<crate::Settings> {
-    Ok(settings::Settings::new(db.clone(), schema))
+impl oauth2::ConnectionIntegration for WebIntegration {
+    fn clear_connection(&self, id: &str) {
+        self.0.clear_connection(id);
+    }
+
+    fn update_connection(&self, id: &str, meta: oauth2::ConnectionIntegrationMeta) {
+        self.0.update_connection(
+            id,
+            api::setbac::ConnectionMeta {
+                id: meta.id,
+                title: meta.title,
+                description: meta.description,
+                hash: meta.hash,
+            },
+        );
+    }
 }

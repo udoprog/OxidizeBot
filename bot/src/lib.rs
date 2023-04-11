@@ -102,6 +102,8 @@
 
 const VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/version.txt"));
 const USER_AGENT: &str = include_str!(concat!(env!("OUT_DIR"), "/user_agent.txt"));
+const SETTINGS_SCHEMA: &[u8] = include_bytes!("settings.yaml");
+const AUTH_SCHEMA: &[u8] = include_bytes!("auth.yaml");
 
 #[macro_use]
 mod macros;
@@ -109,32 +111,14 @@ pub mod cli;
 mod command;
 mod idle;
 mod irc;
-mod log;
 mod module;
 mod panic_logger;
-#[cfg(feature = "scripting")]
-mod script;
-#[cfg(not(feature = "scripting"))]
-#[path = "script/mock.rs"]
 mod script;
 mod setbac;
 mod song_file;
 mod stream_info;
 mod sys;
+mod task;
+mod tracing;
 mod updater;
 mod utils;
-
-/// The local schema alias.
-type Schema = settings::Schema<auth::Scope>;
-/// The local settings alias.
-type Settings = settings::Settings<auth::Scope>;
-/// The local setting alias.
-type Setting = settings::Setting<auth::Scope>;
-
-const SCHEMA: &[u8] = include_bytes!("settings.yaml");
-const AUTH_SCHEMA: &[u8] = include_bytes!("auth.yaml");
-
-/// Load the settings schema to use.
-fn load_schema() -> Result<settings::Schema<auth::Scope>, settings::Error> {
-    settings::Schema::load_bytes(SCHEMA)
-}

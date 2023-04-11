@@ -186,8 +186,8 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct Key {
-    pub(crate) channel: OwnedChannel,
-    pub(crate) name: String,
+    pub channel: OwnedChannel,
+    pub name: String,
 }
 
 impl Key {

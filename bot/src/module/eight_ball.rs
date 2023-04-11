@@ -1,3 +1,4 @@
+use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::command;
@@ -37,7 +38,7 @@ impl command::Handler for EightBall {
         Some(auth::Scope::EightBall)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         use rand::Rng as _;
 
         if !self.enabled.load().await {
@@ -75,7 +76,7 @@ impl super::Module for Module {
         module::HookContext {
             handlers, settings, ..
         }: module::HookContext<'_>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<()> {
         handlers.insert(
             "8ball",
             EightBall {

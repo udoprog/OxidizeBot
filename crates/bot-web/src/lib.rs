@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 mod cache;
 mod chat;
 mod settings;
@@ -7,9 +9,10 @@ use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::pin;
 use std::sync::Arc;
 
-use anyhow::{bail, Error, Result};
+use anyhow::{bail, Context, Error, Result};
 use api::setbac::ConnectionMeta;
 use async_injector::{Injector, Key};
 use common::models::spotify::senum::DeviceType;
@@ -18,7 +21,7 @@ use common::sink::SinkExt;
 use common::tags;
 use common::{Channel, Duration};
 use serde::{de, Deserialize, Serialize};
-use tokio::sync::{RwLock, RwLockReadGuard};
+use tokio::sync::{mpsc, RwLock, RwLockReadGuard};
 use tracing::Instrument;
 use warp::{body, filters, path, Filter};
 
@@ -598,7 +601,7 @@ impl Themes {
 struct Auth {
     active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
     auth: auth::Auth,
-    settings: async_injector::Ref<::settings::Settings<auth::Scope>>,
+    settings: async_injector::Ref<::settings::Settings<::auth::Scope>>,
 }
 
 #[derive(Deserialize)]
@@ -611,7 +614,7 @@ impl Auth {
     fn route(
         auth: auth::Auth,
         active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
-        settings: async_injector::Ref<::settings::Settings<auth::Scope>>,
+        settings: async_injector::Ref<::settings::Settings<::auth::Scope>>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Auth {
             auth,
@@ -994,7 +997,7 @@ pub async fn run(
     command_bus: bus::Bus<bus::Command>,
     auth: auth::Auth,
     latest: ::settings::Var<Option<api::github::Release>>,
-) -> Result<(Server, impl Future<Output = ()>)> {
+) -> Result<(Server, impl Future<Output = Result<()>>)> {
     let addr: SocketAddr = str::parse("0.0.0.0:12345")?;
 
     let channel = injector
@@ -1161,8 +1164,30 @@ pub async fn run(
     // TODO: fix when this review is fixed: https://github.com/seanmonstar/warp/pull/265#pullrequestreview-294644379
     let server_future = service.try_bind_ephemeral(addr)?.1;
 
-    let server = Server { active_connections };
+    let (connections_tx, mut connections_rx) = mpsc::unbounded_channel();
 
+    let server_future = async move {
+        let mut server_future = pin!(server_future);
+
+        loop {
+            tokio::select! {
+                _ = server_future.as_mut() => {
+                    bail!("server ended");
+                }
+                out = connections_rx.recv() => {
+                    let (id, connection) = out.context("End of connection updates")?;
+
+                    if let Some(connection) = connection {
+                        let _ = active_connections.write().await.insert(id, connection);
+                    } else {
+                        let _ = active_connections.write().await.remove(&id);
+                    }
+                }
+            }
+        }
+    };
+
+    let server = Server { connections_tx };
     return Ok((server, server_future.in_current_span()));
 
     fn serve(
@@ -1279,19 +1304,16 @@ struct ErrorMessage {
 #[derive(Clone)]
 pub struct Server {
     /// Callbacks for when we have received a token.
-    active_connections: Arc<RwLock<HashMap<String, ConnectionMeta>>>,
+    connections_tx: mpsc::UnboundedSender<(String, Option<ConnectionMeta>)>,
 }
 
 impl Server {
-    pub(crate) async fn update_connection(&self, id: &str, connection: ConnectionMeta) {
-        self.active_connections
-            .write()
-            .await
-            .insert(id.to_string(), connection);
+    pub fn update_connection(&self, id: &str, connection: ConnectionMeta) {
+        let _ = self.connections_tx.send((id.into(), Some(connection)));
     }
 
-    pub(crate) async fn clear_connection(&self, id: &str) {
-        let _ = self.active_connections.write().await.remove(id);
+    pub fn clear_connection(&self, id: &str) {
+        let _ = self.connections_tx.send((id.into(), None));
     }
 }
 

@@ -1,13 +1,25 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use uom::si::{
-    f32::ThermodynamicTemperature,
-    thermodynamic_temperature::{degree_celsius, degree_fahrenheit, kelvin},
-    Unit as _,
-};
 
 use crate::command;
 use crate::module;
+
+#[derive(Debug, Clone, Copy)]
+struct Temperature(f32);
+
+impl Temperature {
+    fn kelvin(self) -> f32 {
+        self.0
+    }
+
+    fn celsius(self) -> f32 {
+        self.0 - 273.15
+    }
+
+    fn fahrenheit(self) -> f32 {
+        9.0 / 5.0 * (self.0 - 273.15) + 32.0
+    }
+}
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 enum TemperatureUnit {
@@ -21,20 +33,12 @@ enum TemperatureUnit {
 
 impl TemperatureUnit {
     /// Format the given temperature.
-    pub(crate) fn with(self, t: ThermodynamicTemperature) -> String {
+    pub(crate) fn with(self, t: Temperature) -> String {
         match self {
-            TemperatureUnit::DegreesCelsius => format!(
-                "{:.1} {}",
-                t.get::<degree_celsius>(),
-                degree_celsius::abbreviation()
-            ),
-            TemperatureUnit::DegressFahrenheit => format!(
-                "{:.1} {}",
-                t.get::<degree_fahrenheit>(),
-                degree_fahrenheit::abbreviation()
-            ),
+            TemperatureUnit::DegreesCelsius => format!("{:.1} °C", t.celsius()),
+            TemperatureUnit::DegressFahrenheit => format!("{:.1} °F", t.fahrenheit()),
             TemperatureUnit::Kelvin => {
-                format!("{:.1} {}", t.get::<kelvin>(), kelvin::abbreviation())
+                format!("{:.1} °K", t.kelvin())
             }
         }
     }
@@ -91,7 +95,7 @@ impl command::Handler for Weather {
 
                 let mut parts = Vec::with_capacity(4);
 
-                let t = ThermodynamicTemperature::new::<kelvin>(current.main.temp);
+                let t = Temperature(current.main.temp);
 
                 parts.push(temperature_unit.with(t));
 

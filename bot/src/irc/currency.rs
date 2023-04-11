@@ -8,10 +8,8 @@ use common::Duration;
 use tokio::time;
 use tracing::Instrument;
 
-use crate::currency::CurrencyBuilder;
-use crate::{idle, Settings};
-
-use super::Sender;
+use crate::idle;
+use crate::irc::Sender;
 
 /// Set up a reward loop.
 pub(super) async fn setup(
@@ -19,8 +17,8 @@ pub(super) async fn setup(
     sender: Sender,
     idle: idle::Idle,
     injector: Injector,
-    chat_settings: Settings,
-    settings: Settings,
+    chat_settings: settings::Settings<::auth::Scope>,
+    settings: settings::Settings<::auth::Scope>,
 ) -> Result<impl Future<Output = Result<()>>> {
     tracing::trace!("Setting up currency loop");
 
@@ -50,8 +48,8 @@ struct Task {
     sender: Sender,
     idle: idle::Idle,
     injector: Injector,
-    chat_settings: Settings,
-    settings: Settings,
+    chat_settings: settings::Settings<::auth::Scope>,
+    settings: settings::Settings<::auth::Scope>,
 }
 
 impl Task {
@@ -100,7 +98,8 @@ impl Task {
 
         let (mut db_stream, db) = injector.stream::<db::Database>().await;
 
-        let mut builder = CurrencyBuilder::new(streamer.clone(), mysql_schema, injector.clone());
+        let mut builder =
+            currency::CurrencyBuilder::new(streamer.clone(), mysql_schema, injector.clone());
 
         builder.db = db;
         builder.ty = ty;

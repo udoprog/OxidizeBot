@@ -202,7 +202,7 @@ fn is_trim_separator(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{Split, Trimmed, Urls};
+    use super::{Split, Trimmed};
 
     #[test]
     pub(crate) fn test_trimmed_words() {

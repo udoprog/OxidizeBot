@@ -41,7 +41,7 @@ macro_rules! retry_until_ok {
                 match res {
                     Ok(output) => break 'output output,
                     Err(e) => {
-                        let duration = backoff.next();
+                        let duration = backoff.failed();
                         $crate::log_warn!(e, "{} failed, trying again in {:?}", $id, duration);
                         ::tokio::time::sleep(duration).await;
                     }

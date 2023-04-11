@@ -142,12 +142,7 @@ impl Backend {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    pub async fn balance_add(
-        &self,
-        channel: &Channel,
-        user: &str,
-        amount: i64,
-    ) -> Result<()> {
+    pub async fn balance_add(&self, channel: &Channel, user: &str, amount: i64) -> Result<()> {
         let channel = channel.to_owned();
         let user = user_id(user);
 

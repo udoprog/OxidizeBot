@@ -33,90 +33,90 @@ impl Balance {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Queryable, Insertable)]
 pub struct Command {
     /// The channel the command belongs to.
-    pub(crate) channel: OwnedChannel,
+    pub channel: OwnedChannel,
     /// The name of the command.
-    pub(crate) name: String,
+    pub name: String,
     /// The regular expression pattern to match for the given command.
-    pub(crate) pattern: Option<String>,
+    pub pattern: Option<String>,
     /// The number of times the counter has been invoked.
-    pub(crate) count: i32,
+    pub count: i32,
     /// The text of the command.
-    pub(crate) text: String,
+    pub text: String,
     /// The group the promotion is part of, if any.
-    pub(crate) group: Option<String>,
+    pub group: Option<String>,
     /// If the command is disabled.
-    pub(crate) disabled: bool,
+    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Default, diesel::AsChangeset)]
 #[diesel(table_name = commands)]
 pub struct UpdateCommand<'a> {
-    pub(crate) count: Option<i32>,
-    pub(crate) text: Option<&'a str>,
-    pub(crate) group: Option<&'a str>,
-    pub(crate) disabled: Option<bool>,
+    pub count: Option<i32>,
+    pub text: Option<&'a str>,
+    pub group: Option<&'a str>,
+    pub disabled: Option<bool>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Queryable, Insertable)]
 #[diesel(table_name = aliases)]
 pub struct Alias {
     /// The channel the alias belongs to.
-    pub(crate) channel: OwnedChannel,
+    pub channel: OwnedChannel,
     /// The name of the alias.
-    pub(crate) name: String,
+    pub name: String,
     /// The regular expression pattern to match for the given alias.
-    pub(crate) pattern: Option<String>,
+    pub pattern: Option<String>,
     /// The text of the alias.
-    pub(crate) text: String,
+    pub text: String,
     /// The group the promotion is part of, if any.
-    pub(crate) group: Option<String>,
+    pub group: Option<String>,
     /// If the promotion is disabled.
-    pub(crate) disabled: bool,
+    pub disabled: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Insertable)]
 #[diesel(table_name = aliases)]
 pub struct InsertAlias {
-    pub(crate) channel: OwnedChannel,
-    pub(crate) name: String,
-    pub(crate) text: String,
+    pub channel: OwnedChannel,
+    pub name: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Default, diesel::AsChangeset)]
 #[diesel(table_name = aliases)]
 pub struct UpdateAlias<'a> {
-    pub(crate) text: Option<&'a str>,
-    pub(crate) group: Option<&'a str>,
-    pub(crate) disabled: Option<bool>,
+    pub text: Option<&'a str>,
+    pub group: Option<&'a str>,
+    pub disabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Queryable)]
 pub struct AfterStream {
     /// The unique identifier of the afterstream message.
-    pub(crate) id: i32,
+    pub id: i32,
     /// The channel the afterstream message belongs to.
-    pub(crate) channel: Option<OwnedChannel>,
+    pub channel: Option<OwnedChannel>,
     /// When the afterstream was added.
-    pub(crate) added_at: NaiveDateTime,
+    pub added_at: NaiveDateTime,
     /// The user that added the afterstream.
-    pub(crate) user: String,
+    pub user: String,
     /// The text of the afterstream.
-    pub(crate) text: String,
+    pub text: String,
 }
 
 /// Insert model for afterstreams.
 #[derive(Insertable)]
 #[diesel(table_name = after_streams)]
 pub struct InsertAfterStream {
-    pub(crate) channel: Option<String>,
-    pub(crate) user: String,
-    pub(crate) text: String,
+    pub channel: Option<String>,
+    pub user: String,
+    pub text: String,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Queryable, Insertable)]
 pub struct BadWord {
-    pub(crate) word: String,
-    pub(crate) why: Option<String>,
+    pub word: String,
+    pub why: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Queryable)]
@@ -153,68 +153,68 @@ pub struct AddSong {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Queryable, Insertable)]
 pub struct Promotion {
     /// The channel the promotion belongs to.
-    pub(crate) channel: OwnedChannel,
+    pub channel: OwnedChannel,
     /// The name of the promotion.
-    pub(crate) name: String,
+    pub name: String,
     /// The frequency in seconds at which the promotion is posted.
-    pub(crate) frequency: i32,
+    pub frequency: i32,
     /// The last time the promoted was promoted.
-    pub(crate) promoted_at: Option<NaiveDateTime>,
+    pub promoted_at: Option<NaiveDateTime>,
     /// The promotion template to run.
-    pub(crate) text: String,
+    pub text: String,
     /// The group the promotion is part of, if any.
-    pub(crate) group: Option<String>,
+    pub group: Option<String>,
     /// If the promotion is disabled.
-    pub(crate) disabled: bool,
+    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Default, diesel::AsChangeset)]
 #[diesel(table_name = promotions)]
 pub struct UpdatePromotion<'a> {
-    pub(crate) frequency: Option<i32>,
-    pub(crate) promoted_at: Option<&'a NaiveDateTime>,
-    pub(crate) text: Option<&'a str>,
-    pub(crate) group: Option<&'a str>,
-    pub(crate) disabled: Option<bool>,
+    pub frequency: Option<i32>,
+    pub promoted_at: Option<&'a NaiveDateTime>,
+    pub text: Option<&'a str>,
+    pub group: Option<&'a str>,
+    pub disabled: Option<bool>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Queryable, Insertable)]
 pub struct Theme {
     /// The channel the theme belongs to.
-    pub(crate) channel: OwnedChannel,
+    pub channel: OwnedChannel,
     /// The name of the theme.
-    pub(crate) name: String,
+    pub name: String,
     /// If track id of the theme.
-    pub(crate) track_id: TrackId,
+    pub track_id: TrackId,
     /// The start of the theme in seconds.
-    pub(crate) start: i32,
+    pub start: i32,
     /// The end of the theme in seconds.
-    pub(crate) end: Option<i32>,
+    pub end: Option<i32>,
     /// The group the theme is part of, if any.
-    pub(crate) group: Option<String>,
+    pub group: Option<String>,
     /// If the theme is disabled.
-    pub(crate) disabled: bool,
+    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Default, diesel::AsChangeset)]
 #[diesel(table_name = themes)]
 pub struct UpdateTheme<'a> {
-    pub(crate) track_id: Option<&'a TrackId>,
-    pub(crate) start: Option<i32>,
-    pub(crate) end: i32,
-    pub(crate) group: Option<&'a str>,
-    pub(crate) disabled: Option<bool>,
+    pub track_id: Option<&'a TrackId>,
+    pub start: Option<i32>,
+    pub end: i32,
+    pub group: Option<&'a str>,
+    pub disabled: Option<bool>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Queryable, Insertable)]
 pub struct ScriptKey {
-    pub(crate) channel: OwnedChannel,
-    pub(crate) key: Vec<u8>,
-    pub(crate) value: Vec<u8>,
+    pub channel: OwnedChannel,
+    pub key: Vec<u8>,
+    pub value: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Default, diesel::AsChangeset)]
 #[diesel(table_name = script_keys)]
 pub struct SetScriptKeyValue<'a> {
-    pub(crate) value: &'a [u8],
+    pub value: &'a [u8],
 }

@@ -22,7 +22,7 @@ pub(crate) fn updater(
     let injector = injector.clone();
 
     let future = async move {
-        let github = api::GitHub::new()?;
+        let github = api::GitHub::new(crate::USER_AGENT)?;
         let mut interval = tokio::time::interval(Duration::hours(6).as_std());
 
         let (mut cache_stream, mut cache) = injector.stream::<Cache>().await;

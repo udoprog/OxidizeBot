@@ -5,6 +5,7 @@ use api::setbac::PlayerUpdate;
 use api::Setbac;
 use async_injector::{Injector, Key};
 use common::tags;
+use tracing::Instrument;
 use url::Url;
 
 const DEFAULT_API_URL: &str = "https://setbac.tv";
@@ -96,11 +97,10 @@ where
                     tracing::trace!("Pushing remote player update");
 
                     let mut update = PlayerUpdate::default();
-
-                    update.current = player.current().await.map(|c| c.item.into());
+                    update.current = player.current().await.map(|c| c.item().as_ref().into());
 
                     for i in player.list().await {
-                        update.items.push(i.into());
+                        update.items.push(i.as_ref().into());
                     }
 
                     if let Err(e) = setbac.player_update(update).await {
@@ -138,6 +138,7 @@ impl RemoteBuilder {
         remote.setbac = match self.api_url.as_ref() {
             Some(api_url) => {
                 let setbac = Setbac::new(
+                    crate::USER_AGENT,
                     self.streamer_token.clone(),
                     self.secret_key.clone(),
                     api_url.clone(),

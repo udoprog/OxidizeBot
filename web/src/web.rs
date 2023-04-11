@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::error::Error as _;
 use std::fmt;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -7,7 +6,7 @@ use std::sync::Arc;
 use std::time;
 
 use ::oauth2::State;
-use anyhow::anyhow;
+use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use hyper::body::Body;
 use hyper::header;
@@ -31,14 +30,11 @@ use crate::stream::StreamExt as _;
 
 macro_rules! log_error {
     ($e:expr, $fmt:expr $(, $($tt:tt)*)?) => {{
+        let e = anyhow::Error::from($e);
         tracing::error!($fmt $(, $($tt)*)*);
-        tracing::error!("Caused by: {}", $e);
 
-        let mut last = $e.source();
-
-        while let Some(e) = last {
+        for e in e.chain().skip(1) {
             tracing::error!("Caused by: {}", e);
-            last = e.source();
         }
     }}
 }
@@ -67,7 +63,7 @@ pub(crate) fn setup(
     host: String,
     port: u32,
     config: Config,
-) -> Result<impl Future<Output = Result<(), hyper::Error>>, anyhow::Error> {
+) -> Result<impl Future<Output = Result<(), hyper::Error>>> {
     let fallback =
         assets::Asset::get("index.html").ok_or_else(|| anyhow!("missing index.html in assets"))?;
 
@@ -228,7 +224,7 @@ impl Handler {
         db: db::Database,
         config: Config,
         pending_tokens: Arc<Mutex<HashMap<State, PendingToken>>>,
-    ) -> Result<Self, anyhow::Error> {
+    ) -> Result<Self> {
         let (login_flow, flows) = oauth2::setup_flows(&config.base_url, &config.oauth2)?;
         let session = session::Session::new(db.clone(), &config.session)?;
 
@@ -285,7 +281,7 @@ impl Handler {
         self: Arc<Self>,
         remote_address: SocketAddr,
         mut req: Request<Body>,
-    ) -> Result<Response<Body>, anyhow::Error> {
+    ) -> Result<Response<Body>> {
         use hyper::{body::HttpBody, Method};
 
         let path = req
@@ -342,7 +338,7 @@ impl Handler {
                     Error::NotFound => http_error(StatusCode::NOT_FOUND, "Not Found"),
                     Error::Unauthorized => http_error(StatusCode::UNAUTHORIZED, "Unauthorized"),
                     Error::Error(e) => {
-                        common::log_error!(e, "Internal server error");
+                        log_error!(e, "Internal server error");
                         http_error(StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
                     }
                 };
@@ -350,7 +346,7 @@ impl Handler {
                 match result {
                     Ok(result) => result,
                     Err(Error::Error(e)) => {
-                        common::log_error!(e, "Failed to build error response");
+                        log_error!(e, "Failed to build error response");
                         let mut r = Response::new(Body::from("Internal Server Error"));
                         *r.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                         r
@@ -555,7 +551,7 @@ impl Handler {
                 Some(status) if status.is_client_error() => {
                     self.db.delete_connection(&user.user_id, id)?;
 
-                    common::log_error!(e, "Failed to refresh token");
+                    log_error!(e, "Failed to refresh token");
 
                     return http_error(
                         StatusCode::BAD_REQUEST,
@@ -996,7 +992,7 @@ impl Handler {
         &self,
         flow: &oauth2::Flow,
         token: &oauth2::SavedToken,
-    ) -> Result<serde_cbor::Value, anyhow::Error> {
+    ) -> Result<serde_cbor::Value> {
         return match flow.config.ty {
             oauth2::FlowType::Twitch => {
                 let result = self

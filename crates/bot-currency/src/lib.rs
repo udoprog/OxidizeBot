@@ -19,7 +19,7 @@ mod mysql;
 /// Balance of a single user.
 #[derive(Default)]
 pub struct BalanceOf {
-    balance: i64,
+    pub balance: i64,
     watch_time: i64,
 }
 
@@ -68,7 +68,7 @@ impl CurrencyBuilder {
     }
 
     /// Inject the newly built value and return the result.
-    async fn build_and_inject(&self) -> Option<Currency> {
+    pub async fn build_and_inject(&self) -> Option<Currency> {
         match self.build() {
             Some(currency) => {
                 self.injector.update(currency.clone()).await;
@@ -226,7 +226,7 @@ impl Backend {
 
     /// Add balance to users.
     #[tracing::instrument(skip(self, users))]
-    async fn balances_increment<I>(
+    pub async fn balances_increment<I>(
         &self,
         channel: &Channel,
         users: I,
@@ -258,20 +258,20 @@ struct Inner {
 /// The currency being used.
 #[derive(Clone)]
 pub struct Currency {
-    name: Arc<String>,
-    command_enabled: bool,
+    pub name: Arc<String>,
+    pub command_enabled: bool,
     inner: Arc<Inner>,
 }
 
 impl Currency {
     /// Reward all users.
     #[tracing::instrument(skip(self))]
-    async fn add_channel_all(
+    pub async fn add_channel_all(
         &self,
         channel: &Channel,
         reward: i64,
         watch_time: i64,
-    ) -> Result<usize, anyhow::Error> {
+    ) -> Result<usize> {
         tracing::trace!("Getting chatters");
 
         let mut chatters = pin!(self
@@ -297,7 +297,7 @@ impl Currency {
     }
 
     /// Add (or subtract) from the balance for a single user.
-    async fn balance_transfer(
+    pub async fn balance_transfer(
         &self,
         channel: &Channel,
         giver: &str,
@@ -322,17 +322,17 @@ impl Currency {
     }
 
     /// Find user balance.
-    async fn balance_of(&self, channel: &Channel, user: &str) -> Result<Option<BalanceOf>> {
+    pub async fn balance_of(&self, channel: &Channel, user: &str) -> Result<Option<BalanceOf>> {
         self.inner.backend.balance_of(channel, user).await
     }
 
     /// Add (or subtract) from the balance for a single user.
-    async fn balance_add(&self, channel: &Channel, user: &str, amount: i64) -> Result<()> {
+    pub async fn balance_add(&self, channel: &Channel, user: &str, amount: i64) -> Result<()> {
         self.inner.backend.balance_add(channel, user, amount).await
     }
 
     /// Add balance to users.
-    async fn balances_increment<I>(
+    pub async fn balances_increment<I>(
         &self,
         channel: &Channel,
         users: I,
@@ -351,7 +351,7 @@ impl Currency {
 }
 
 #[derive(Debug, Error)]
-enum BalanceTransferError {
+pub enum BalanceTransferError {
     #[error("missing balance for transfer")]
     NoBalance,
     #[error("database error: {0}")]
@@ -361,9 +361,5 @@ enum BalanceTransferError {
     #[error("error joining: {0}")]
     JoinError(#[from] tokio::task::JoinError),
     #[error("other error: {}", _0)]
-    Other(
-        #[from]
-        #[source]
-        Error,
-    ),
+    Other(#[from] Error),
 }

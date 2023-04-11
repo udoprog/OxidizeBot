@@ -5,19 +5,20 @@ use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
 
+use anyhow::Result;
 use tokio::sync::{oneshot, Mutex};
 
 pub(crate) trait Driver<'a> {
     /// Drive the given future.
     fn drive<F>(&mut self, future: F)
     where
-        F: 'a + Send + Future<Output = Result<(), anyhow::Error>>;
+        F: 'a + Send + Future<Output = Result<()>>;
 }
 
-impl<'a> Driver<'a> for Vec<common::BoxFuture<'a, Result<(), anyhow::Error>>> {
+impl<'a> Driver<'a> for Vec<common::BoxFuture<'a, Result<()>>> {
     fn drive<F>(&mut self, future: F)
     where
-        F: 'a + Send + Future<Output = Result<(), anyhow::Error>>,
+        F: 'a + Send + Future<Output = Result<()>>,
     {
         self.push(Box::pin(future));
     }

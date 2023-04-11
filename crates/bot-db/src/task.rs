@@ -1,7 +1,4 @@
 use anyhow::Result;
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 
 /// Asyncify the given task.
 pub(crate) async fn asyncify<F, T, E>(task: F) -> Result<T, E>

@@ -1,6 +1,7 @@
 use crate::command;
 use crate::module;
 
+use anyhow::Result;
 use async_trait::async_trait;
 
 pub(crate) struct Handler {
@@ -14,7 +15,7 @@ impl command::Handler for Handler {
         Some(auth::Scope::Command)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -89,7 +90,7 @@ impl super::Module for Module {
             settings,
             ..
         }: module::HookContext<'_>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<()> {
         let enabled = settings.var("command/enabled", true).await?;
         let commands = injector.var().await;
         handlers.insert("command", Handler { enabled, commands });

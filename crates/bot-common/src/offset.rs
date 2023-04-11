@@ -99,7 +99,7 @@ mod tests {
     use super::Offset;
 
     #[test]
-    pub(crate) fn test_offset() -> Result<(), anyhow::Error> {
+    pub(crate) fn test_offset() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(Offset::milliseconds(1_000), str::parse::<Offset>("1")?);
         assert_eq!(Offset::milliseconds(1_000), str::parse::<Offset>("01")?);
         assert_eq!(Offset::milliseconds(61_000), str::parse::<Offset>("01:01")?);

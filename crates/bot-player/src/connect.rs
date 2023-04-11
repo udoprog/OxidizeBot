@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 /// Setup a player.
 pub(super) async fn setup(
     spotify: Arc<api::Spotify>,
-    settings: settings::Settings<auth::Scope>,
+    settings: settings::Settings<::auth::Scope>,
 ) -> Result<(
     ConnectStream,
     ConnectPlayer,
@@ -103,7 +103,7 @@ pub(super) struct ConnectPlayer {
     /// Currently configured device.
     device: settings::Var<Option<String>>,
     /// Access to settings.
-    settings: settings::Settings<auth::Scope>,
+    settings: settings::Settings<::auth::Scope>,
     /// Current volume scale for this player.
     volume_scale: settings::Var<u32>,
     /// Current volume for this player.
@@ -234,7 +234,7 @@ pub(super) enum ConfigurationEvent {
 pub(super) struct ConnectDevice {
     spotify: Arc<api::Spotify>,
     pub(super) device: settings::Var<Option<String>>,
-    settings: settings::Settings<auth::Scope>,
+    settings: settings::Settings<::auth::Scope>,
 }
 
 impl ConnectDevice {

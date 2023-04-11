@@ -51,7 +51,7 @@ impl Duration {
     /// Subtract another duration from this duration.
     ///
     /// This will saturate on overflows.
-    pub(crate) fn saturating_sub(&self, other: Self) -> Self {
+    pub fn saturating_sub(&self, other: Self) -> Self {
         Duration(self.0.saturating_sub(other.0))
     }
 

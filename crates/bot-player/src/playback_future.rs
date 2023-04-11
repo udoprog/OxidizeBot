@@ -28,7 +28,7 @@ impl PlaybackFuture {
     pub(super) async fn run(
         mut self,
         injector: Injector,
-        settings: settings::Settings<auth::Scope>,
+        settings: settings::Settings<::auth::Scope>,
     ) -> Result<()> {
         // TODO: Remove fallback-uri migration next major release.
         if let Some(fallback_uri) = settings.get::<String>("fallback-uri").await? {

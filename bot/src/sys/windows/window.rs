@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::thread;
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{anyhow, Context as _, Error};
 use async_fuse::Fuse;
 use tokio::sync::{mpsc, oneshot};
 use winapi::shared::basetsd::ULONG_PTR;

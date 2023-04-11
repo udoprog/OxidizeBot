@@ -22,20 +22,17 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+use thiserror::Error;
+
 use std::fmt;
 use std::str;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SpotifyId(u128);
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Error)]
+#[error("bad spotify id")]
 pub struct SpotifyIdError;
-
-impl fmt::Display for SpotifyIdError {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "bad spotify id")
-    }
-}
 
 const BASE62_DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -96,6 +93,6 @@ impl<'de> serde::Deserialize<'de> for SpotifyId {
         D: serde::Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        SpotifyId::from_base62(&s).map_err(serde::de::Error::custom)
+        SpotifyId::from_base62(s).map_err(serde::de::Error::custom)
     }
 }

@@ -7,7 +7,7 @@ macro_rules! database_group_fns {
             channel: &::common::Channel,
             name: &str,
             group: Option<String>,
-        ) -> Result<bool, anyhow::Error> {
+        ) -> ::anyhow::Result<bool> {
             let key = <$key>::new(channel, name);
 
             let mut inner = self.inner.write().await;
@@ -27,7 +27,7 @@ macro_rules! database_group_fns {
             &self,
             channel: &::common::Channel,
             name: &str,
-        ) -> Result<bool, anyhow::Error> {
+        ) -> ::anyhow::Result<bool> {
             let key = <$key>::new(channel, name);
 
             let thing = match self.db.fetch(&key).await? {
@@ -48,7 +48,7 @@ macro_rules! database_group_fns {
             &self,
             channel: &::common::Channel,
             name: &str,
-        ) -> Result<bool, anyhow::Error> {
+        ) -> ::anyhow::Result<bool> {
             let key = <$key>::new(channel, name);
             let mut inner = self.inner.write().await;
 
@@ -65,7 +65,7 @@ macro_rules! database_group_fns {
             &self,
             channel: &::common::Channel,
             group: &str,
-        ) -> Result<(), anyhow::Error> {
+        ) -> ::anyhow::Result<()> {
             self.db.set_group_disabled(channel, group, false).await?;
 
             let mut inner = self.inner.write().await;
@@ -83,7 +83,7 @@ macro_rules! database_group_fns {
             &self,
             channel: &::common::Channel,
             group: &str,
-        ) -> Result<(), anyhow::Error> {
+        ) -> ::anyhow::Result<()> {
             self.db.set_group_disabled(channel, group, true).await?;
 
             let mut inner = self.inner.write().await;
@@ -104,10 +104,7 @@ macro_rules! database_group_fns {
         }
 
         /// Get a list of all members.
-        pub async fn list_all(
-            &self,
-            channel: &::common::Channel,
-        ) -> Result<Vec<$thing>, anyhow::Error> {
+        pub async fn list_all(&self, channel: &::common::Channel) -> ::anyhow::Result<Vec<$thing>> {
             let mut out = Vec::new();
 
             for p in self.db.list_all(channel).await? {
@@ -122,7 +119,7 @@ macro_rules! database_group_fns {
             &self,
             channel: &::common::Channel,
             name: &str,
-        ) -> Result<bool, anyhow::Error> {
+        ) -> ::anyhow::Result<bool> {
             let key = <$key>::new(channel, name);
 
             if !self.db.delete(&key).await? {
@@ -151,7 +148,7 @@ macro_rules! database_group_fns {
             &self,
             channel: &::common::Channel,
             name: &str,
-        ) -> Result<Option<$thing>, anyhow::Error> {
+        ) -> ::anyhow::Result<Option<$thing>> {
             let key = <$key>::new(channel, name);
             let thing = match self.db.fetch(&key).await? {
                 Some(thing) => thing,
@@ -230,7 +227,7 @@ macro_rules! database_group_fns {
 macro_rules! private_database_group_fns {
     ($module:ident, $thing:ident, $key:ty) => {
         /// List all members that are not disabled.
-        async fn list(&self) -> Result<Vec<$crate::models::$thing>, anyhow::Error> {
+        async fn list(&self) -> ::anyhow::Result<Vec<$crate::models::$thing>> {
             use $crate::schema::$module::dsl;
 
             self.0
@@ -246,7 +243,7 @@ macro_rules! private_database_group_fns {
         async fn list_all(
             &self,
             channel: &::common::Channel,
-        ) -> Result<Vec<$crate::models::$thing>, anyhow::Error> {
+        ) -> ::anyhow::Result<Vec<$crate::models::$thing>> {
             use $crate::schema::$module::dsl;
             let channel = channel.to_owned();
 
@@ -264,7 +261,7 @@ macro_rules! private_database_group_fns {
             &self,
             channel: &::common::Channel,
             group: &str,
-        ) -> Result<Vec<$crate::models::$thing>, anyhow::Error> {
+        ) -> ::anyhow::Result<Vec<$crate::models::$thing>> {
             use $crate::schema::$module::dsl;
             let channel = channel.to_owned();
             let group = group.to_string();
@@ -284,7 +281,7 @@ macro_rules! private_database_group_fns {
             channel: &::common::Channel,
             group: &str,
             disabled: bool,
-        ) -> Result<(), anyhow::Error> {
+        ) -> ::anyhow::Result<()> {
             use $crate::schema::$module::dsl;
             let channel = channel.to_owned();
             let group = group.to_string();
@@ -303,7 +300,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// Edit the group membership of the given thing.
-        async fn edit_group(&self, key: &$key, group: Option<String>) -> Result<(), anyhow::Error> {
+        async fn edit_group(&self, key: &$key, group: Option<String>) -> ::anyhow::Result<()> {
             use $crate::schema::$module::dsl;
             let key = key.clone();
 
@@ -322,7 +319,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// Set the disabled state of the given command.
-        async fn edit_disabled(&self, key: &$key, disabled: bool) -> Result<(), anyhow::Error> {
+        async fn edit_disabled(&self, key: &$key, disabled: bool) -> ::anyhow::Result<()> {
             use $crate::schema::$module::dsl;
             let key = key.clone();
 
@@ -341,7 +338,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// Fetch a single entity.
-        async fn fetch(&self, key: &$key) -> Result<Option<$crate::models::$thing>, anyhow::Error> {
+        async fn fetch(&self, key: &$key) -> ::anyhow::Result<Option<$crate::models::$thing>> {
             use $crate::schema::$module::dsl;
             let key = key.clone();
 
@@ -358,7 +355,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// Delete a single thing.
-        async fn delete(&self, key: &$key) -> Result<bool, anyhow::Error> {
+        async fn delete(&self, key: &$key) -> ::anyhow::Result<bool> {
             use $crate::schema::$module::dsl;
             let key = key.clone();
 
@@ -375,7 +372,7 @@ macro_rules! private_database_group_fns {
         }
 
         /// Rename one thing to another.
-        async fn rename(&self, from: &$key, to: &$key) -> Result<bool, anyhow::Error> {
+        async fn rename(&self, from: &$key, to: &$key) -> ::anyhow::Result<bool> {
             use $crate::schema::$module::dsl;
             let from = from.clone();
             let to = to.clone();

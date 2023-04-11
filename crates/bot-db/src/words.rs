@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use anyhow::Result;
 use diesel::prelude::*;
 use tokio::sync::{RwLock, RwLockReadGuard};
 
@@ -18,7 +19,7 @@ struct Inner {
 
 impl Inner {
     /// Insert a bad word.
-    fn insert(&mut self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error> {
+    fn insert(&mut self, word: &str, why: Option<&str>) -> Result<()> {
         let word = Word {
             word: tokenize(word),
             why: why.map(template::Template::compile).transpose()?,
@@ -46,7 +47,7 @@ struct Database(crate::Database);
 
 impl Database {
     /// List all words in backend.
-    async fn list(&self) -> Result<Vec<crate::models::BadWord>, anyhow::Error> {
+    async fn list(&self) -> Result<Vec<crate::models::BadWord>> {
         use crate::schema::bad_words::dsl;
 
         self.0
@@ -55,7 +56,7 @@ impl Database {
     }
 
     /// Insert or update an existing word.
-    async fn edit(&self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error> {
+    async fn edit(&self, word: &str, why: Option<&str>) -> Result<()> {
         use crate::schema::bad_words::dsl;
 
         let word = word.to_string();
@@ -87,7 +88,7 @@ impl Database {
     }
 
     /// Delete the given word from the backend.
-    async fn delete(&self, word: &str) -> Result<bool, anyhow::Error> {
+    async fn delete(&self, word: &str) -> Result<bool> {
         use crate::schema::bad_words::dsl;
 
         let word = word.to_string();
@@ -110,7 +111,7 @@ pub struct Words {
 
 impl Words {
     /// Load all words from the backend.
-    pub(crate) async fn load(db: crate::Database) -> Result<Words, anyhow::Error> {
+    pub async fn load(db: crate::Database) -> Result<Words> {
         let db = Database(db);
         let mut inner = Inner::default();
 
@@ -126,7 +127,7 @@ impl Words {
 
     /// Insert a word into the bad words list.
     #[allow(unused)]
-    pub(crate) async fn edit(&self, word: &str, why: Option<&str>) -> Result<(), anyhow::Error> {
+    pub(crate) async fn edit(&self, word: &str, why: Option<&str>) -> Result<()> {
         self.db.edit(word, why).await?;
         let mut inner = self.inner.write().await;
         inner.insert(word, why)?;
@@ -135,7 +136,7 @@ impl Words {
 
     /// Remove a word from the bad words list.
     #[allow(unused)]
-    pub(crate) async fn delete(&self, word: &str) -> Result<bool, anyhow::Error> {
+    pub(crate) async fn delete(&self, word: &str) -> Result<bool> {
         if !self.db.delete(word).await? {
             return Ok(false);
         }

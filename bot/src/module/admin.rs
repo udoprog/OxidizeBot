@@ -6,7 +6,7 @@ use crate::module;
 
 /// Handler for the !admin command.
 pub(crate) struct Handler {
-    settings: crate::Settings,
+    settings: settings::Settings<::auth::Scope>,
     aliases: async_injector::Ref<db::Aliases>,
     commands: async_injector::Ref<db::Commands>,
     promotions: async_injector::Ref<db::Promotions>,
@@ -64,7 +64,7 @@ impl command::Handler for Handler {
         Some(auth::Scope::Admin)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         match ctx.next().as_deref() {
             Some("refresh-mods") => {
                 ctx.notify().refresh_mods.notify_one();
@@ -237,7 +237,7 @@ impl command::Handler for Handler {
 
 impl Handler {
     /// Handler for the toggle command.
-    async fn toggle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
+    async fn toggle(&self, ctx: &mut command::Context) -> Result<()> {
         let key = key(ctx)?;
 
         let setting = self

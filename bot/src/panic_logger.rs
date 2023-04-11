@@ -1,4 +1,4 @@
-use std::bracktrace::Backtrace;
+use std::backtrace::Backtrace;
 use std::panic;
 use std::thread;
 
@@ -6,7 +6,7 @@ use std::thread;
 /// Adapted from: <https://github.com/sfackler/rust-log-panics/blob/master/src/lib.rs>.
 pub(crate) fn panic_logger() {
     panic::set_hook(Box::new(|info| {
-        let bt = Backtrace::new();
+        let bt = Backtrace::capture();
 
         let thread = thread::current();
         let thread = thread.name().unwrap_or("unnamed");

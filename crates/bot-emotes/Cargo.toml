@@ -1,6 +1,6 @@
 [package]
 name = "bot-emotes"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2021"
 publish = false
 
@@ -15,4 +15,4 @@ common = { package = "bot-common", path = "../bot-common" }
 template = { package = "bot-template", path = "../bot-template" }
 tokio = { version = "1.27.0", default-features = false, features = ["sync"] }
 tracing = { version = "0.1.37", default-features = false }
-url = { version = "2.3.1", default-features = false }
+url = { version = "2.3.1", features = ["serde"] }

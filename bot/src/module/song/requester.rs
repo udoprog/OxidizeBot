@@ -2,19 +2,16 @@ use std::fmt;
 use std::sync::Arc;
 
 use anyhow::Result;
+use auth::Scope;
+use common::models::{track_id, TrackId};
+use common::Channel;
 
-use crate::channel::Channel;
-use crate::currency::Currency;
 use crate::irc::RealUser;
 use crate::module::song::Constraint;
-use crate::player::{AddTrackError, Player};
-use crate::settings;
-use auth::Scope;
-use common::{track_id, TrackId};
 
 pub(crate) enum RequestCurrency<'a> {
     /// Use bot currency.
-    BotCurrency(Option<&'a Currency>),
+    BotCurrency(Option<&'a currency::Currency>),
     /// Redemption doesn't use currency.
     Redemption,
 }
@@ -48,7 +45,7 @@ impl SongRequester {
         user: &str,
         real_user: Option<&RealUser<'_>>,
         currency: RequestCurrency<'_>,
-        player: &Player,
+        player: &player::Player,
     ) -> Result<RequestOutcome, RequestError> {
         if q.is_empty() {
             return Err(RequestError::BadRequest(None));
@@ -289,7 +286,7 @@ pub(crate) enum RequestError {
         balance: i64,
     },
     /// Error raised when adding track.
-    AddTrackError(AddTrackError),
+    AddTrackError(player::AddTrackError),
     /// A generic error.
     Error(anyhow::Error),
 }

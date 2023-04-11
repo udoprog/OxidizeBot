@@ -1,7 +1,6 @@
 //! Utilities for dealing with dynamic configuration and settings.
 
 use std::collections::HashMap;
-use std::error;
 use std::fmt;
 use std::future::Future;
 use std::marker;
@@ -154,9 +153,9 @@ pub struct Setting<S>
 where
     S: Scope,
 {
-    schema: SchemaType<S>,
-    key: String,
-    value: serde_json::Value,
+    pub schema: SchemaType<S>,
+    pub key: String,
+    pub value: serde_json::Value,
 }
 
 impl<S> Setting<S>
@@ -216,7 +215,7 @@ where
     }
 
     /// Access the raw value this setting references.
-    pub(crate) fn value(&self) -> Option<&T> {
+    pub fn value(&self) -> Option<&T> {
         self.value.as_ref()
     }
 }
@@ -230,13 +229,13 @@ where
     doc: String,
     /// Scope required to modify variable.
     #[serde(default)]
-    scope: Option<S>,
+    pub scope: Option<S>,
     /// The type.
     #[serde(rename = "type")]
-    ty: Type,
+    pub ty: Type,
     /// If the value is a secret value or not.
     #[serde(default)]
-    secret: bool,
+    pub secret: bool,
     /// If the setting is a feature toggle.
     #[serde(default)]
     feature: bool,
@@ -380,7 +379,7 @@ impl<S> Settings<S>
 where
     S: Scope,
 {
-    pub(crate) fn new(db: db::Database, schema: Schema<S>) -> Self {
+    pub fn new(db: db::Database, schema: Schema<S>) -> Self {
         let prefixes = schema.as_prefixes();
         let subscriptions = schema.as_subscriptions();
         let (drivers, drivers_rx) = mpsc::unbounded_channel();
@@ -399,7 +398,7 @@ where
     }
 
     /// Run all settings migrations.
-    pub(crate) async fn run_migrations(&self) -> Result<(), Error> {
+    pub async fn run_migrations(&self) -> Result<(), Error> {
         for m in &self.inner.schema.migrations {
             if m.prefix {
                 self.migrate_prefix(&m.from, &m.to).await?;
@@ -489,7 +488,7 @@ where
     }
 
     /// Lookup the given schema.
-    pub(crate) fn lookup(&self, key: &str) -> Option<&SchemaType<S>> {
+    pub fn lookup(&self, key: &str) -> Option<&SchemaType<S>> {
         let key = self.key(key);
         self.inner.schema.types.get(&*key)
     }
@@ -721,6 +720,11 @@ where
             scope
         };
 
+        #[cfg(debug_assertions)]
+        if !self.inner.prefixes.contains_key(scope.as_str()) {
+            panic!("no schema prefix registered for key `{scope}`");
+        }
+
         Settings {
             scope: scope.into(),
             inner: self.inner.clone(),
@@ -906,7 +910,7 @@ where
         let rx = if let Some(sender) = self.inner.subscriptions.get(key) {
             sender.subscribe()
         } else {
-            panic!("no schema registered for key `{}`", key);
+            panic!("no schema registered for key `{key}`");
         };
 
         OptionStream {
@@ -927,8 +931,19 @@ where
         }
     }
 
-    /// Construct a new key.
     fn key<'settings, 'key>(&'settings self, key: &'key str) -> Key<'settings, 'key> {
+        let key = self.inner_key(key);
+
+        #[cfg(debug_assertions)]
+        if !self.inner.prefixes.contains_key(&*key) {
+            panic!("no schema registered for key `{key}`");
+        }
+
+        key
+    }
+
+    /// Construct a new key.
+    fn inner_key<'settings, 'key>(&'settings self, key: &'key str) -> Key<'settings, 'key> {
         let key = key.trim_matches(SEP);
 
         if key.is_empty() {
@@ -954,6 +969,12 @@ pub enum Key<'settings, 'key> {
     Settings(&'settings str),
     Key(&'key str),
     Owned(Box<str>),
+}
+
+impl fmt::Display for Key<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&**self, f)
+    }
 }
 
 impl fmt::Debug for Key<'_, '_> {
@@ -1142,9 +1163,9 @@ pub enum Format {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Type {
     #[serde(default)]
-    optional: bool,
+    pub optional: bool,
     #[serde(flatten)]
-    kind: Kind,
+    pub kind: Kind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

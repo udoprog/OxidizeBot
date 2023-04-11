@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Result;
 use async_trait::async_trait;
 use chrono::Utc;
 use common::Channel;
@@ -16,7 +17,7 @@ pub(crate) struct Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -72,7 +73,7 @@ impl super::Module for Module {
             idle,
             ..
         }: module::HookContext<'_>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<()> {
         let settings = settings.scoped("promotions");
         let enabled = settings.var("enabled", false).await?;
 
@@ -135,7 +136,7 @@ impl super::Module for Module {
 }
 
 /// Run the next promotion.
-async fn promote(promotions: db::Promotions, sender: irc::Sender) -> Result<(), anyhow::Error> {
+async fn promote(promotions: db::Promotions, sender: irc::Sender) -> Result<()> {
     let channel = sender.channel();
 
     if let Some(p) = pick(promotions.list(channel).await) {

@@ -133,13 +133,13 @@ struct Inner {
 }
 
 #[derive(Clone)]
-pub(crate) struct Emotes {
+pub struct Emotes {
     inner: Arc<Inner>,
 }
 
 impl Emotes {
     /// Construct a new emoticon handler.
-    pub(crate) fn new(
+    pub fn new(
         user_agent: &'static str,
         cache: Cache,
         streamer: api::TwitchAndUser,
@@ -659,7 +659,8 @@ impl Emotes {
             .await
     }
 
-    pub(crate) async fn render(
+    #[tracing::instrument(skip(self))]
+    pub async fn render(
         &self,
         tags: &irc::Tags,
         user: &api::User,
@@ -671,6 +672,7 @@ impl Emotes {
             self.room_emotes(user),
             self.global_emotes(),
         )?;
+
         let message_emotes = self.message_emotes_twitch(tags, message)?;
 
         Ok(Rendered::render(

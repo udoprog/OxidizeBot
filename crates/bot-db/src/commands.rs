@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{anyhow, Context, Error, Result};
 use common::words;
 use common::Channel;
 use diesel::prelude::*;
@@ -58,11 +58,7 @@ impl Database {
     }
 
     /// Edit the pattern of a command.
-    async fn edit_pattern(
-        &self,
-        key: &crate::Key,
-        pattern: Option<&regex::Regex>,
-    ) -> Result<(), anyhow::Error> {
+    async fn edit_pattern(&self, key: &crate::Key, pattern: Option<&regex::Regex>) -> Result<()> {
         use crate::schema::commands::dsl;
 
         let key = key.clone();
@@ -114,7 +110,7 @@ impl Commands {
     database_group_fns!(Command, crate::Key);
 
     /// Construct a new commands store with a db.
-    pub(crate) async fn load(db: crate::Database) -> Result<Commands, Error> {
+    pub async fn load(db: crate::Database) -> Result<Commands, Error> {
         let db = Database(db);
 
         let mut matcher = crate::Matcher::new();
@@ -164,12 +160,12 @@ impl Commands {
     }
 
     /// Edit the pattern for the given command.
-    pub(crate) async fn edit_pattern(
+    pub async fn edit_pattern(
         &self,
         channel: &Channel,
         name: &str,
         pattern: Option<regex::Regex>,
-    ) -> Result<bool, anyhow::Error> {
+    ) -> Result<bool> {
         let key = crate::Key::new(channel, name);
         self.db.edit_pattern(&key, pattern.as_ref()).await?;
 

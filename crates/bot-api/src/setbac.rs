@@ -152,8 +152,8 @@ pub struct Item {
     duration: String,
 }
 
-impl From<Arc<common::models::Item>> for Item {
-    fn from(i: Arc<common::models::Item>) -> Self {
+impl From<&common::models::Item> for Item {
+    fn from(i: &common::models::Item) -> Self {
         Item {
             name: i.track().name(),
             artists: i.track().artists(),
@@ -200,7 +200,6 @@ impl RemoteToken {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
-#[non_exhaustive]
 pub struct ConnectionMeta {
     pub id: String,
     pub title: String,

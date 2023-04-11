@@ -1,6 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use common::display;
+use common::models::Item;
 use common::{Cooldown, Duration};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -8,7 +9,6 @@ use tokio::sync::Mutex;
 use crate::command;
 use crate::irc;
 use crate::module;
-use crate::player::{AddTrackError, Item, PlayThemeError, Player};
 
 mod feedback;
 mod redemption;
@@ -19,7 +19,7 @@ const EXAMPLE_SEARCH: &str = "queen we will rock you";
 /// Handler for the `!song` command.
 pub(crate) struct Handler {
     enabled: settings::Var<bool>,
-    player: async_injector::Ref<Player>,
+    player: async_injector::Ref<player::Player>,
     request_help_cooldown: Mutex<Cooldown>,
     currency: async_injector::Ref<currency::Currency>,
     requester: requester::SongRequester,
@@ -27,7 +27,11 @@ pub(crate) struct Handler {
 }
 
 impl Handler {
-    async fn handle_request(&self, ctx: &mut command::Context, player: &Player) -> Result<()> {
+    async fn handle_request(
+        &self,
+        ctx: &mut command::Context,
+        player: &player::Player,
+    ) -> Result<()> {
         let q = ctx.rest().trim().to_string();
 
         let currency: Option<currency::Currency> = self.currency.load().await;
@@ -60,7 +64,7 @@ impl Handler {
                     self.request_help(ctx, reason.as_deref()).await;
                 }
                 requester::RequestError::AddTrackError(e) => match e {
-                    AddTrackError::Error(e) => {
+                    player::AddTrackError::Error(e) => {
                         return Err(e);
                     }
                     e => {
@@ -127,19 +131,19 @@ impl command::Handler for Handler {
 
                 match player.play_theme(ctx.channel(), name.as_str()).await {
                     Ok(()) => (),
-                    Err(PlayThemeError::NoSuchTheme) => {
+                    Err(player::PlayThemeError::NoSuchTheme) => {
                         ctx.user.respond("No such theme :(").await;
                     }
-                    Err(PlayThemeError::NotConfigured) => {
+                    Err(player::PlayThemeError::NotConfigured) => {
                         ctx.user.respond("Theme system is not configured :(").await;
                     }
-                    Err(PlayThemeError::Error(e)) => {
+                    Err(player::PlayThemeError::Error(e)) => {
                         ctx.user
                             .respond("There was a problem playing that theme :(")
                             .await;
                         common::log_error!(e, "Failed to add song");
                     }
-                    Err(PlayThemeError::MissingAuth) => {
+                    Err(player::PlayThemeError::MissingAuth) => {
                         ctx.user.respond(
                             "Cannot play the given theme because the service has not been authenticated by the streamer!",
                         ).await;
@@ -211,26 +215,26 @@ impl command::Handler for Handler {
             Some("current") => match player.current().await {
                 Some(current) => {
                     let elapsed = display::digital_duration(current.elapsed());
-                    let duration = display::digital_duration(current.duration());
+                    let duration = display::digital_duration(current.item().duration());
 
-                    if let Some(name) = current.item.user.as_ref() {
+                    if let Some(name) = current.item().user() {
                         respond!(
                             ctx,
                             "Current song: {}, requested by {} - {elapsed} / {duration} - {url}",
-                            current.item.what(),
+                            current.item().what(),
                             name,
                             elapsed = elapsed,
                             duration = duration,
-                            url = current.item.track_id.url(),
+                            url = current.item().track_id().url(),
                         );
                     } else {
                         respond!(
                             ctx,
                             "Current song: {} - {elapsed} / {duration} - {url}",
-                            current.item.what(),
+                            current.item().what(),
                             elapsed = elapsed,
                             duration = duration,
-                            url = current.item.track_id.url(),
+                            url = current.item().track_id().url(),
                         );
                     }
                 }
@@ -265,7 +269,7 @@ impl command::Handler for Handler {
                 let user = user.to_lowercase();
 
                 let result = player
-                    .find(|item| item.user.as_ref().map(|u| *u == user).unwrap_or_default())
+                    .find(|item| item.user().map(|u| *u == user).unwrap_or_default())
                     .await;
 
                 match result {
@@ -549,7 +553,7 @@ pub(crate) struct Constraint {
 
 impl Constraint {
     pub(crate) async fn build(
-        vars: &mut crate::Settings,
+        vars: &mut settings::Settings<::auth::Scope>,
         enabled: bool,
         min_currency: i64,
     ) -> Result<Self> {
@@ -583,7 +587,7 @@ async fn display_songs(
     let mut lines = Vec::new();
 
     for (index, item) in it.into_iter().enumerate() {
-        match item.user.as_ref() {
+        match item.user() {
             Some(user) => {
                 lines.push(format!("#{}: {} ({user})", index, item.what(), user = user));
             }

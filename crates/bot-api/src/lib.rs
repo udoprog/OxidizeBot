@@ -1,3 +1,5 @@
+#![allow(clippy::field_reassign_with_default)]
+
 pub mod base;
 
 pub mod bttv;

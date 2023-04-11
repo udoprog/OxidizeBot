@@ -24,7 +24,7 @@ impl Exponential {
     }
 
     /// Get the next duration and increment the attempt counter.
-    pub fn next(&mut self) -> Duration {
+    pub fn failed(&mut self) -> Duration {
         let mut duration = self.initial;
 
         if self.attempt <= 4 {

@@ -10,7 +10,7 @@ pub use self::track::Track;
 mod spotify_id;
 pub use self::spotify_id::SpotifyId;
 
-mod track_id;
+pub mod track_id;
 pub use self::track_id::TrackId;
 
 mod item;

@@ -1,6 +1,7 @@
+use std::fmt::Write;
+
 use rune::runtime::{Stack, VmError};
 use rune::{ContextError, Module, Value};
-use std::fmt::Write as _;
 
 /// Construct the necessary io shims suitable for use within the bot.
 pub(crate) fn module() -> Result<Module, ContextError> {

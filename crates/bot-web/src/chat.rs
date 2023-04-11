@@ -1,7 +1,9 @@
-use crate::EMPTY;
+use anyhow::Result;
 use warp::filters;
 use warp::path;
 use warp::Filter as _;
+
+use crate::EMPTY;
 
 #[derive(serde::Deserialize)]
 struct CommandQuery {
@@ -47,7 +49,7 @@ impl Chat {
     }
 
     /// Run a command.
-    async fn command(&self, query: CommandQuery) -> Result<impl warp::Reply, anyhow::Error> {
+    async fn command(&self, query: CommandQuery) -> Result<impl warp::Reply> {
         self.bus
             .send(bus::Command::Raw {
                 command: query.command,
@@ -58,7 +60,7 @@ impl Chat {
     }
 
     /// Get all stored messages.
-    async fn messages(&self) -> Result<impl warp::Reply, anyhow::Error> {
+    async fn messages(&self) -> Result<impl warp::Reply> {
         let messages = self.message_log.messages().await;
         Ok(warp::reply::json(&*messages))
     }

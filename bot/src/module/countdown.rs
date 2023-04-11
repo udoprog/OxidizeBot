@@ -5,6 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time;
 
+use anyhow::Result;
 use async_fuse::Fuse;
 use async_trait::async_trait;
 use common::stream::Stream;
@@ -33,7 +34,7 @@ impl command::Handler for Handler {
         Some(auth::Scope::Countdown)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -92,7 +93,7 @@ impl super::Module for Module {
             settings,
             ..
         }: module::HookContext<'_>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<()> {
         let settings = settings.scoped("countdown");
 
         let (mut enabled_stream, enabled) = settings.stream("enabled").or_with(true).await?;
@@ -174,7 +175,7 @@ struct FileWriter {
 }
 
 impl FileWriter {
-    fn write(&self, timer: &Timer) -> Result<(), anyhow::Error> {
+    fn write(&self, timer: &Timer) -> Result<()> {
         let path = match &self.path {
             Some(path) => path,
             None => return Ok(()),
@@ -212,7 +213,7 @@ impl FileWriter {
         }
     }
 
-    fn clear(&self) -> Result<(), anyhow::Error> {
+    fn clear(&self) -> Result<()> {
         let path = match &self.path {
             Some(path) => path,
             None => return Ok(()),

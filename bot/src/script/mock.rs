@@ -1,3 +1,8 @@
+//! Mock scripting, note that we keep this even with `scripting` disabled so
+//! that we can ensure it compiles as intended.
+
+#![cfg_attr(feature = "scripting", allow(unused))]
+
 use std::path::Path;
 
 use anyhow::Result;

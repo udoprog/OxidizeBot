@@ -1,4 +1,4 @@
-use anyhow::Error;
+use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
@@ -21,7 +21,7 @@ impl command::Handler for Poll {
         Some(auth::Scope::Poll)
     }
 
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         if !self.enabled.load().await {
             return Ok(());
         }
@@ -142,7 +142,7 @@ impl ActivePoll {
 
 #[async_trait]
 impl command::MessageHook for ActivePoll {
-    async fn peek(&self, user: &irc::User, m: &str) -> Result<(), Error> {
+    async fn peek(&self, user: &irc::User, m: &str) -> Result<()> {
         let mut inner = self.inner.write().await;
 
         let user = match user.real() {
@@ -182,7 +182,7 @@ impl super::Module for Module {
         module::HookContext {
             handlers, settings, ..
         }: module::HookContext<'_>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<()> {
         handlers.insert(
             "poll",
             Poll {

@@ -4,6 +4,7 @@ use std::pin::pin;
 use anyhow::{bail, Result};
 use async_trait::async_trait;
 use auth::Scope;
+use common::stream::StreamExt;
 use common::{Cooldown, Duration};
 use currency::Currency;
 

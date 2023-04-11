@@ -1,25 +1,29 @@
-use std::collections::VecDeque;
 use std::fmt;
-use std::future::Future;
-use std::sync::Arc;
 use std::time;
 
-use anyhow::Error;
 use anyhow::Result;
 use api::setbac::{Connection, ConnectionMeta};
 use async_injector::{Injector, Key};
 use common::Duration;
 use thiserror::Error;
-use tokio::sync::{mpsc, oneshot};
-use tokio::sync::{RwLock, RwLockReadGuard};
-use tracing::Instrument;
 
 /// Connection metadata.
-pub struct ConnectionIntegrationMeta {}
+pub struct ConnectionIntegrationMeta {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub hash: String,
+}
 
 impl ConnectionIntegrationMeta {
+    #[inline]
     fn from_api(meta: ConnectionMeta) -> Self {
-        Self {}
+        ConnectionIntegrationMeta {
+            id: meta.id,
+            title: meta.title,
+            description: meta.description,
+            hash: meta.hash,
+        }
     }
 }
 
@@ -45,7 +49,7 @@ struct ConnectionFactory<I> {
     expires: time::Duration,
     force_refresh: bool,
     connection: Option<Box<Connection>>,
-    settings: settings::Settings<auth::Scope>,
+    settings: settings::Settings<::auth::Scope>,
     injector: Injector,
     key: Key<api::Token>,
     integration: I,
@@ -306,8 +310,8 @@ impl<I> fmt::Debug for ConnectionFactory<I> {
 #[tracing::instrument(skip_all, fields(id = flow_id))]
 pub async fn setup<I>(
     flow_id: &'static str,
-    parent: settings::Settings<auth::Scope>,
-    settings: settings::Settings<auth::Scope>,
+    parent: settings::Settings<::auth::Scope>,
+    settings: settings::Settings<::auth::Scope>,
     injector: Injector,
     key: Key<api::Token>,
     integration: I,
@@ -382,6 +386,4 @@ where
             }
         }
     }
-
-    Ok(())
 }

@@ -60,7 +60,7 @@ pub(crate) struct HookContext<'a> {
     // pub(crate) bot: &'a api::TwitchAndUser,
     pub(crate) streamer: &'a api::TwitchAndUser,
     pub(crate) sender: &'a irc::Sender,
-    pub(crate) settings: &'a crate::Settings,
+    pub(crate) settings: &'a settings::Settings<::auth::Scope>,
 }
 
 #[async_trait::async_trait]

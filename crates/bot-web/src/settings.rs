@@ -22,11 +22,11 @@ struct SettingsQuery {
 
 /// Settings endpoint.
 #[derive(Clone)]
-pub(crate) struct Settings(async_injector::Ref<::settings::Settings<auth::Scope>>);
+pub(crate) struct Settings(async_injector::Ref<::settings::Settings<::auth::Scope>>);
 
 impl Settings {
     pub(crate) fn route(
-        settings: async_injector::Ref<::settings::Settings<auth::Scope>>,
+        settings: async_injector::Ref<::settings::Settings<::auth::Scope>>,
     ) -> filters::BoxedFilter<(impl warp::Reply,)> {
         let api = Settings(settings);
 
@@ -101,7 +101,7 @@ impl Settings {
     }
 
     /// Access underlying settings abstraction.
-    async fn settings(&self) -> Result<RwLockReadGuard<'_, ::settings::Settings<auth::Scope>>> {
+    async fn settings(&self) -> Result<RwLockReadGuard<'_, ::settings::Settings<::auth::Scope>>> {
         match self.0.read().await {
             Some(out) => Ok(out),
             None => bail!("settings not configured"),

@@ -1,3 +1,4 @@
+use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::command;
@@ -9,7 +10,7 @@ pub(crate) struct Handler {
 
 #[async_trait]
 impl command::Handler for Handler {
-    async fn handle(&self, ctx: &mut command::Context) -> Result<(), anyhow::Error> {
+    async fn handle(&self, ctx: &mut command::Context) -> Result<()> {
         let themes = match self.themes.load().await {
             Some(themes) => themes,
             None => return Ok(()),
@@ -64,7 +65,7 @@ impl super::Module for Module {
         module::HookContext {
             injector, handlers, ..
         }: module::HookContext<'_>,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<()> {
         handlers.insert(
             "theme",
             Handler {

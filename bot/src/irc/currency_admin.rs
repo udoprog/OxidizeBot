@@ -3,15 +3,14 @@ use std::sync::Arc;
 use anyhow::Error;
 use async_injector::Injector;
 use async_trait::async_trait;
+use auth::Scope;
 use common::display;
 
 use crate::command;
-use crate::currency::{BalanceTransferError, Currency};
-use auth::Scope;
 
 /// Handler for the !admin command.
 pub(crate) struct Handler {
-    pub(crate) currency: async_injector::Ref<Currency>,
+    pub(crate) currency: async_injector::Ref<currency::Currency>,
 }
 
 impl Handler {
@@ -134,7 +133,7 @@ impl command::Handler for Handler {
                             currency = currency.name
                         );
                     }
-                    Err(BalanceTransferError::NoBalance) => {
+                    Err(currency::BalanceTransferError::NoBalance) => {
                         respond!(
                             user,
                             "Not enough {currency} to transfer {amount}",
@@ -142,13 +141,13 @@ impl command::Handler for Handler {
                             amount = amount,
                         );
                     }
-                    Err(BalanceTransferError::Other(e)) => {
+                    Err(error) => {
                         respond!(
                             user,
                             "Failed to give {currency}, sorry :(",
                             currency = currency.name
                         );
-                        common::log_error!(e, "Failed to modify currency");
+                        common::log_error!(error, "Failed to modify currency");
                     }
                 }
             }
@@ -243,7 +242,7 @@ impl command::Handler for Handler {
 }
 
 pub(crate) async fn setup(injector: &Injector) -> Result<Arc<Handler>, Error> {
-    let currency = injector.var::<Currency>().await;
+    let currency = injector.var::<currency::Currency>().await;
     let handler = Handler { currency };
     Ok(Arc::new(handler))
 }

@@ -31,7 +31,7 @@ impl Schema {
 
 /// A role or a user.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum RoleOrUser {
+pub enum RoleOrUser {
     Role(Role),
     User(String),
 }
@@ -134,14 +134,14 @@ impl Auth {
     }
 
     /// Return all temporary scopes belonging to the specified user.
-    pub(crate) async fn scopes_for_user(&self, user: &str) -> Vec<Scope> {
+    pub async fn scopes_for_user(&self, user: &str) -> Vec<Scope> {
         let now = Utc::now();
         self.temporary_scopes(&now, RoleOrUser::User(user.to_string()))
             .await
     }
 
     /// Return all temporary scopes belonging to the specified user.
-    pub(crate) async fn scopes_for_role(&self, needle: Role) -> Vec<Scope> {
+    pub async fn scopes_for_role(&self, needle: Role) -> Vec<Scope> {
         let now = Utc::now();
         let mut out = self.temporary_scopes(&now, RoleOrUser::Role(needle)).await;
 
@@ -157,7 +157,7 @@ impl Auth {
     }
 
     /// Construct scope cooldowns.
-    pub(crate) fn scope_cooldowns(&self) -> HashMap<Scope, Cooldown> {
+    pub fn scope_cooldowns(&self) -> HashMap<Scope, Cooldown> {
         let mut cooldowns = HashMap::new();
 
         for (scope, schema) in self.inner.schema.scopes.iter() {
@@ -224,7 +224,7 @@ impl Auth {
     }
 
     /// Insert a temporary grant.
-    pub(crate) async fn insert_temporary(
+    pub async fn insert_temporary(
         &self,
         scope: Scope,
         principal: RoleOrUser,
@@ -315,7 +315,7 @@ impl Auth {
     }
 
     /// Test if the given assignment exists.
-    pub(crate) async fn test_any(
+    pub async fn test_any(
         &self,
         scope: Scope,
         user: &str,

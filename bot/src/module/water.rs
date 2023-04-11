@@ -138,11 +138,11 @@ impl command::Handler for Handler {
                     currency = currency.name
                 );
 
-                if let Err(e) = currency
+                if let Err(error) = currency
                     .balance_add(ctx.channel(), user.login(), amount)
                     .await
                 {
-                    tracing::error!("Failed to appply water balance: {}", e);
+                    common::log_error!(error, "Failed to appply water balance");
                 }
             }
             Some(_) => {

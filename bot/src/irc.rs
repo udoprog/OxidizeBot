@@ -14,8 +14,9 @@ use anyhow::{anyhow, bail, Context, Result};
 use async_fuse::Fuse;
 use async_injector::{Injector, Key, Provider};
 use auth::{Auth, Role, Scope};
-use common::stream::Stream;
-use common::{backoff, Tags};
+use common::backoff;
+use common::irc::Tags;
+use common::stream::{Stream, StreamExt};
 use common::{tags, Channel, Cooldown};
 use irc::client::{self, Client};
 use irc::proto::command::Command;
@@ -31,9 +32,7 @@ pub(crate) use self::messages::Messages;
 pub(crate) use self::sender::Sender;
 use crate::command;
 use crate::idle;
-use crate::message_log::MessageLog;
 use crate::module;
-use crate::prelude::*;
 use crate::script;
 use crate::stream_info;
 use crate::task;
@@ -70,7 +69,7 @@ impl Irc {
                         error_backoff.reset();
                     }
                     Err(e) => {
-                        let backoff = error_backoff.next();
+                        let backoff = error_backoff.failed();
                         common::log_error!(
                             e,
                             "Chat component crashed, restarting in {:?}",
@@ -100,13 +99,13 @@ struct Setup {
     #[dependency]
     bad_words: db::Words,
     #[dependency]
-    message_log: MessageLog,
+    message_log: messagelog::MessageLog,
     #[dependency]
     command_bus: bus::Bus<bus::Command>,
     #[dependency]
     global_bus: bus::Bus<bus::Global>,
     #[dependency]
-    settings: crate::Settings,
+    settings: settings::Settings<::auth::Scope>,
     #[dependency]
     restart: utils::Restart,
 }
@@ -594,16 +593,18 @@ async fn process_command(
                 }
 
                 task::spawn(async move {
-                    if let Err(e) = handler.handle(&mut ctx).await {
-                        if let Some(respond) = e.downcast_ref::<command::Respond>() {
+                    if let Err(error) = handler.handle(&mut ctx).await {
+                        if let Some(respond) = error.downcast_ref::<command::Respond>() {
                             if let command::Respond::Message(respond) = respond {
                                 respond!(ctx, respond);
                             }
                         } else {
                             respond!(ctx, "Sorry, something went wrong :(");
-                            common::log_error!(e, "Error when processing command");
+                            common::log_error!(error, "Error when processing command");
                         }
                     }
+
+                    Ok(())
                 });
 
                 return Ok(());
@@ -731,6 +732,8 @@ impl<'a> Handler<'a> {
                         common::log_error!(e, "Hook `{}` failed", key);
                     }
                 }
+
+                Ok(())
             }
         });
 
@@ -849,7 +852,13 @@ impl<'a> Handler<'a> {
         match m.command {
             Command::PRIVMSG(_, message) => {
                 let message = Arc::new(message);
-                let tags = Tags::from_tags(m.tags);
+
+                let tags = Tags::from_tags(m.tags.iter().flat_map(|tag| {
+                    tag.iter().flat_map(|tag| match tag {
+                        Tag(key, Some(value)) => Some((key, value)),
+                        _ => None,
+                    })
+                }));
 
                 let Some(Prefix::Nickname(login, _, _)) = m.prefix else {
                     bail!("Missing nickname");
@@ -865,6 +874,7 @@ impl<'a> Handler<'a> {
 
                     task::spawn(Box::pin(async move {
                         chat_log.observe(&tags, &user, &login, &message).await;
+                        Ok(())
                     }));
                 }
 
@@ -899,12 +909,17 @@ impl<'a> Handler<'a> {
                 self.pong_timeout.clear();
             }
             Command::NOTICE(_, message) => {
-                let tags = Tags::from_tags(m.tags);
+                let tags = Tags::from_tags(m.tags.iter().flat_map(|tag| {
+                    tag.iter().flat_map(|tag| match tag {
+                        Tag(key, Some(value)) => Some((key, value)),
+                        _ => None,
+                    })
+                }));
 
                 match tags.msg_id.as_deref() {
                     _ if message == "Login authentication failed" => {
                         tracing::trace!("Authentication failed");
-                        self.bot.client.token().force_refresh().await?;
+                        self.bot.client.token().force_refresh();
                         self.handler_shutdown = true;
                     }
                     msg_id => {

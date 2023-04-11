@@ -1,7 +1,11 @@
-use super::RequestBuilder;
+use std::collections::HashMap;
+
+use anyhow::Result;
 use reqwest::{header, Client, Method, Url};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+
+use super::RequestBuilder;
+
 const URL: &str = "https://api.spotify.com";
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -48,7 +52,7 @@ pub(crate) struct Spotify {
 
 impl Spotify {
     /// Create a new Spotify client.
-    pub(crate) fn new() -> Result<Spotify, anyhow::Error> {
+    pub(crate) fn new() -> Result<Spotify> {
         Ok(Spotify {
             client: Client::new(),
             api_url: str::parse::<Url>(URL)?,
@@ -63,7 +67,7 @@ impl Spotify {
     }
 
     // Get user information about the token.
-    pub(crate) async fn v1_me(&self, token: &str) -> Result<User, anyhow::Error> {
+    pub(crate) async fn v1_me(&self, token: &str) -> Result<User> {
         let request = self
             .request(Method::GET, &["v1", "me"])
             .header(header::AUTHORIZATION, &format!("Bearer {}", token));

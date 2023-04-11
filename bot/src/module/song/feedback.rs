@@ -5,7 +5,7 @@ use async_fuse::Fuse;
 use async_injector::Injector;
 
 use crate::irc::Sender;
-use crate::player::{Event, Player};
+use player::Event;
 
 /// Setup the task that sends chat feedback.
 pub(crate) async fn task(
@@ -13,9 +13,9 @@ pub(crate) async fn task(
     injector: Injector,
     chat_feedback: settings::Var<bool>,
 ) -> Result<()> {
-    let (mut player_stream, player) = injector.stream::<Player>().await;
+    let (mut player_stream, player) = injector.stream::<player::Player>().await;
 
-    let new_feedback_loop = move |new_player: Option<Player>| match new_player {
+    let new_feedback_loop = move |new_player: Option<player::Player>| match new_player {
         Some(player) => Fuse::new(feedback(player, sender.clone(), chat_feedback.clone())),
         None => Default::default(),
     };
@@ -36,7 +36,7 @@ pub(crate) async fn task(
 
 /// Notifications from the player.
 async fn feedback(
-    player: Player,
+    player: player::Player,
     sender: Sender,
     chat_feedback: settings::Var<bool>,
 ) -> Result<()> {
@@ -56,7 +56,7 @@ async fn feedback(
                 }
 
                 if let Some(item) = item {
-                    let message = match item.user.as_ref() {
+                    let message = match item.user() {
                         Some(user) => {
                             format!("Now playing: {}, requested by {}.", item.what(), user)
                         }
