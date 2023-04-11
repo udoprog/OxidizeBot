@@ -1,18 +1,27 @@
-use crate::sys::Notification;
-use anyhow::Error;
-use std::future;
 use std::path::Path;
+use std::sync::Arc;
+
+use anyhow::Error;
+use tokio::sync::Notify;
+
+use crate::sys::Notification;
 
 #[derive(Clone)]
-pub(crate) struct System;
+pub(crate) struct System {
+    restart: Arc<Notify>,
+}
 
 impl System {
     pub(crate) async fn wait_for_shutdown(&self) {
-        future::pending().await
+        std::future::pending().await
     }
 
     pub(crate) async fn wait_for_restart(&self) {
-        future::pending().await
+        self.restart.notified().await;
+    }
+
+    pub(crate) fn restart(&self) -> &Arc<Notify> {
+        &self.restart
     }
 
     pub(crate) fn clear(&self) {}
@@ -39,5 +48,7 @@ impl System {
 }
 
 pub(crate) fn setup(_root: &Path, _log_file: &Path) -> Result<System, Error> {
-    Ok(System)
+    Ok(System {
+        restart: Arc::new(Notify::default()),
+    })
 }
