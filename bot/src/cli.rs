@@ -71,36 +71,16 @@ fn setup_logs(root: &Path, trace: bool, modules: &[String]) -> Result<(impl Drop
     use tracing_subscriber::prelude::*;
     use tracing_subscriber::{fmt, Registry};
 
-    // Crates to enable logging for, by default.
-    const CRATES: [&str; 16] = [
-        "bot_api",
-        "bot_auth",
-        "bot_bus",
-        "bot_common",
-        "bot_currency",
-        "bot_db",
-        "bot_emotes",
-        "bot_messagelog",
-        "bot_oauth2",
-        "bot_player",
-        "bot_settings",
-        "bot_storage",
-        "bot_template",
-        "bot_web",
-        "oxidize",
-        "panic",
-    ];
-
     let (capture, _) = crate::tracing::capture();
 
     let mut env_filter = tracing_subscriber::EnvFilter::from_default_env();
 
     if trace {
-        for name in CRATES {
+        for name in crate::CRATES {
             env_filter = env_filter.add_directive(format!("{name}=trace").parse()?);
         }
     } else {
-        for name in CRATES {
+        for name in crate::CRATES {
             env_filter = env_filter.add_directive(format!("{name}=info").parse()?);
         }
     };

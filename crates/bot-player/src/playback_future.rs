@@ -1,11 +1,12 @@
 use std::pin::pin;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_fuse::Fuse;
 use async_injector::Injector;
 use common::models::{Song, SpotifyId, State};
 use common::{Duration, Uri};
+use serde::Serialize;
 
 use crate::{ConnectStream, PlaybackMode, PlayerInternal};
 
@@ -41,11 +42,17 @@ impl PlaybackFuture {
             }
         }
 
+        let cache = injector
+            .get::<storage::Cache>()
+            .await
+            .context("missing cache")?;
+
         let (mut fallback_stream, fallback) = settings.stream("fallback-uri").optional().await?;
 
         let mut configure_fallback = pin!(Fuse::new(update_fallback_items_task(
             &self.internal,
-            fallback
+            fallback,
+            &cache
         )));
 
         let (mut song_stream, song) = injector.stream::<Song>().await;
@@ -91,7 +98,7 @@ impl PlaybackFuture {
                     self.internal.handle_player_event(event).await?;
                 }
                 fallback = fallback_stream.recv() => {
-                    configure_fallback.set(Fuse::new(update_fallback_items_task(&self.internal, fallback)));
+                    configure_fallback.set(Fuse::new(update_fallback_items_task(&self.internal, fallback, &cache)));
                 }
                 _ = configure_fallback.as_mut() => {
                 }
@@ -99,10 +106,31 @@ impl PlaybackFuture {
         }
 
         /// Update fallback item tasks.
-        async fn update_fallback_items_task(internal: &PlayerInternal, fallback: Option<Uri>) {
+        async fn update_fallback_items_task(
+            internal: &PlayerInternal,
+            fallback: Option<Uri>,
+            cache: &storage::Cache,
+        ) -> Result<()> {
+            #[derive(Clone, Copy, Serialize)]
+            #[serde(tag = "source")]
+            enum Key<'a> {
+                Uri { uri: &'a Uri },
+                Library,
+            }
+
+            let key = match fallback.as_ref() {
+                Some(uri) => Key::Uri { uri },
+                None => Key::Library,
+            };
+
+            let duration = chrono::Duration::hours(4);
+            let cache = cache.namespaced(&"fallback-uri")?;
+
             common::retry_until_ok! {
                 "Loading fallback items", {
-                    let (what, items) = internal.load_fallback_items(fallback.as_ref()).await?;
+                    // NB: I don't know what's up, but for some reason this
+                    // future blows up the stack.
+                    let (what, items) = common::debug_box_pin(cache.wrap(key, duration, internal.load_fallback_items(fallback.as_ref()))).await?;
 
                     tracing::info!(
                         "Updated fallback queue with {} items from {}.",
@@ -114,6 +142,8 @@ impl PlaybackFuture {
                     Ok(())
                 }
             }
+
+            Ok(())
         }
     }
 }

@@ -88,7 +88,7 @@ impl Configuration {
 
         let mut provider = Setup::provider(&self.injector).await?;
 
-        let mut error_backoff = backoff::Exponential::new(time::Duration::from_secs(5));
+        let mut error_backoff = backoff::Exponential::new(time::Duration::from_millis(100));
 
         loop {
             let Some(setup) = provider.build() else {
@@ -955,7 +955,7 @@ impl<'a> Handler<'a> {
                         self.handler_shutdown = true;
                     }
                     msg_id => {
-                        tracing::info!(?msg_id, message, "Unhandled notice");
+                        tracing::trace!(?msg_id, message, "Unhandled notice");
                     }
                 }
             }
@@ -987,7 +987,7 @@ impl<'a> Handler<'a> {
                 }
             },
             _ => {
-                tracing::info!(?m, "Unhandled",);
+                tracing::trace!(?m, "Unhandled",);
             }
         }
 
@@ -1365,7 +1365,7 @@ async fn refresh_roles(
     where
         S: Stream<Item = Result<api::twitch::model::Chatter>>,
     {
-        tracing::info!(?what, "Refreshing");
+        tracing::trace!(?what, "Refreshing");
 
         let mut stream = pin!(f);
         let mut set = HashSet::new();
@@ -1375,7 +1375,7 @@ async fn refresh_roles(
         }
 
         if *out.read() != set {
-            tracing::info!(?set, ?what, "Changed");
+            tracing::trace!(?set, ?what, "Changed");
             *out.write() = set;
         }
 

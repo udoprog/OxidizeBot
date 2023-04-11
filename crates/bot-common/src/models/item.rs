@@ -1,7 +1,9 @@
+use serde::{Deserialize, Serialize};
+
 use crate::display;
 use crate::models::{Track, TrackId};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Item {
     track_id: TrackId,
     track: Track,

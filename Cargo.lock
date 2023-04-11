@@ -569,6 +569,7 @@ dependencies = [
  "bot-common",
  "bot-db",
  "bot-settings",
+ "bot-storage",
  "chrono",
  "parking_lot 0.12.1",
  "rand",

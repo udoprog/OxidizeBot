@@ -45,3 +45,20 @@ pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T
 
 /// A boxed stream.
 pub type BoxStream<'a, T> = std::pin::Pin<Box<dyn tokio_stream::Stream<Item = T> + Send + 'a>>;
+
+/// This is a function which `Pin<Box<T>>`'s something if we're running a debug
+/// build. Otherwise the value is just passed straight through.
+///
+/// This is used for really large futures which tend to blow up the stack in
+/// debug mode.
+#[cfg(debug_assertions)]
+#[inline(always)]
+pub fn debug_box_pin<T>(input: T) -> std::pin::Pin<Box<T>> {
+    Box::pin(input)
+}
+
+#[cfg(not(debug_assertions))]
+#[inline(always)]
+pub fn debug_box_pin<T>(input: T) -> T {
+    input
+}

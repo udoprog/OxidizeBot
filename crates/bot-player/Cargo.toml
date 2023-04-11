@@ -10,6 +10,7 @@ api = { package = "bot-api", path = "../bot-api" }
 bus = { package = "bot-bus", path = "../bot-bus" }
 db = { package = "bot-db", path = "../bot-db" }
 settings = { package = "bot-settings", path = "../bot-settings" }
+storage = { package = "bot-storage", path = "../bot-storage" }
 auth = { package = "bot-auth", path = "../bot-auth" }
 async-fuse = "0.11.4"
 rand = "0.8.5"
