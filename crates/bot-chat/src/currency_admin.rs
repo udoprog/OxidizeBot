@@ -34,13 +34,7 @@ impl command::Handler for Handler {
 
         match ctx.next().as_deref() {
             None => {
-                let user = match ctx.user.real() {
-                    Some(user) => user,
-                    None => {
-                        respond!(ctx, "Only real users can check their balance");
-                        return Ok(());
-                    }
-                };
+                let user = ctx.user.real().ok_or(respond_err!("Only real users can check their balance"))?;
 
                 let result = currency.balance_of(ctx.channel(), user.login()).await;
 
@@ -91,13 +85,7 @@ impl command::Handler for Handler {
                 let taker = db::user_id(&ctx.next_str("<user> <amount>")?);
                 let amount: i64 = ctx.next_parse("<user> <amount>")?;
 
-                let user = match ctx.user.real() {
-                    Some(user) => user,
-                    None => {
-                        respond!(ctx, "Only real users can give currency");
-                        return Ok(());
-                    }
-                };
+                let user = ctx.user.real().ok_or(respond_err!("Only real users can give currency"))?;
 
                 if ctx.user.is(&taker) {
                     respond!(ctx, "Giving to... yourself? But WHY?");

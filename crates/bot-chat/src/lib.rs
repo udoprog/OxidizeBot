@@ -21,5 +21,8 @@ mod task;
 
 pub mod messages;
 
+mod currency_admin;
+mod reward_loop;
+
 mod respond;
 pub use self::respond::{respond, RespondErr};

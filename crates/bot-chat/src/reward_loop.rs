@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -6,20 +5,19 @@ use async_fuse::Fuse;
 use async_injector::Injector;
 use common::Duration;
 use tokio::time;
-use tracing::Instrument;
 
 use crate::chat::Sender;
 use crate::idle;
 
 /// Set up a reward loop.
-pub(super) async fn setup(
+pub async fn setup(
     streamer: api::TwitchAndUser,
     sender: Sender,
     idle: idle::Idle,
     injector: Injector,
     chat_settings: settings::Settings<::auth::Scope>,
     settings: settings::Settings<::auth::Scope>,
-) -> Result<impl Future<Output = Result<()>>> {
+) -> Result<()> {
     tracing::trace!("Setting up currency loop");
 
     let task = Task {
@@ -31,16 +29,12 @@ pub(super) async fn setup(
         settings,
     };
 
-    let future = async move {
-        while let Err(error) = task.run().await {
-            common::log_error!(error, "Currency task errored, retrying again in 10 seconds");
-            time::sleep(time::Duration::from_secs(10)).await;
-        }
+    while let Err(error) = task.run().await {
+        common::log_error!(error, "Currency task errored, retrying again in 10 seconds");
+        time::sleep(time::Duration::from_secs(10)).await;
+    }
 
-        Ok(())
-    };
-
-    Ok(future.in_current_span())
+    Ok(())
 }
 
 struct Task {

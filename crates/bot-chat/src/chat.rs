@@ -1,6 +1,4 @@
 mod chat_log;
-mod currency;
-mod currency_admin;
 mod sender;
 
 use std::path::{Path, PathBuf};
@@ -34,6 +32,8 @@ use crate::stream_info;
 use crate::task;
 use crate::utils;
 use crate::messages;
+use crate::currency_admin;
+use crate::reward_loop;
 pub use self::sender::Sender;
 
 const SERVER: &str = "irc.chat.twitch.tv";
@@ -279,15 +279,14 @@ impl ChatLoop<'_> {
 
         let currency_handler = currency_admin::setup(injector).await?;
 
-        let future = currency::setup(
+        let future = reward_loop::setup(
             streamer.clone(),
             sender.clone(),
             idle.clone(),
             injector.clone(),
             chat_settings.clone(),
             settings.clone(),
-        )
-        .await?;
+        );
 
         futures.push(Box::pin(future));
 
@@ -1034,7 +1033,7 @@ impl<'a> RealUser<'a> {
     }
 
     /// Test if streamer.
-    fn is_streamer(&self) -> bool {
+    pub(crate) fn is_streamer(&self) -> bool {
         self.login == self.streamer_login
     }
 
@@ -1160,12 +1159,12 @@ impl User {
     }
 
     /// Test if streamer.
-    fn is_streamer(&self) -> bool {
+    pub(crate) fn is_streamer(&self) -> bool {
         self.real().map(|u| u.is_streamer()).unwrap_or(true)
     }
 
     /// Test if moderator.
-    fn is_moderator(&self) -> bool {
+    pub(crate) fn is_moderator(&self) -> bool {
         self.real().map(|u| u.is_moderator()).unwrap_or(true)
     }
 
