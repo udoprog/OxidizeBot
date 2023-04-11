@@ -1,6 +1,3 @@
-mod chat_log;
-mod sender;
-
 use std::path::{Path, PathBuf};
 use std::pin::{pin, Pin};
 use std::sync::Arc;
@@ -24,17 +21,18 @@ use std::collections::HashSet;
 use std::fmt;
 use tokio::sync::{mpsc, Notify};
 
+use crate::chat_log;
 use crate::command;
+use crate::currency_admin;
 use crate::idle;
+use crate::messages;
 use crate::module;
+use crate::reward_loop;
 use crate::script;
+use crate::sender;
 use crate::stream_info;
 use crate::task;
 use crate::utils;
-use crate::messages;
-use crate::currency_admin;
-use crate::reward_loop;
-pub use self::sender::Sender;
 
 const SERVER: &str = "irc.chat.twitch.tv";
 const TWITCH_TAGS_CAP: &str = "twitch.tv/tags";
@@ -211,7 +209,8 @@ impl ChatLoop<'_> {
 
         let nightbot = injector.var::<api::NightBot>().await;
 
-        let sender = Sender::new(sender_ty, chat_channel.clone(), client.sender(), nightbot)?;
+        let sender =
+            sender::Sender::new(sender_ty, chat_channel.clone(), client.sender(), nightbot)?;
 
         let mut futures = common::Futures::<Result<()>>::new();
 
@@ -478,7 +477,7 @@ struct Handler<'a> {
     /// Current Streamer.
     streamer: &'a api::TwitchAndUser,
     /// Queue for sending messages.
-    sender: Sender,
+    sender: sender::Sender,
     /// Whitelisted hosts for links.
     whitelisted_hosts: HashSet<String>,
     /// All registered commands.
@@ -1001,7 +1000,7 @@ impl<'a> Handler<'a> {
 /// For example, an injected command does not have a real user associated with it.
 pub struct RealUser<'a> {
     tags: &'a Tags,
-    sender: &'a Sender,
+    sender: &'a sender::Sender,
     login: &'a str,
     streamer_login: &'a str,
     stream_info: &'a stream_info::StreamInfo,
@@ -1094,7 +1093,7 @@ pub enum Principal {
 /// Inner struct for User to make it cheaper to clone.
 struct UserInner {
     tags: Tags,
-    sender: Sender,
+    sender: sender::Sender,
     principal: Principal,
     streamer_login: String,
     stream_info: stream_info::StreamInfo,
@@ -1144,7 +1143,7 @@ impl User {
     }
 
     /// Access the sender associated with the user.
-    pub fn sender(&self) -> &Sender {
+    pub fn sender(&self) -> &sender::Sender {
         &self.inner.sender
     }
 
@@ -1172,10 +1171,7 @@ impl User {
     pub async fn respond(&self, m: impl fmt::Display) {
         match self.display_name() {
             Some(name) => {
-                self.inner
-                    .sender
-                    .privmsg(crate::respond(name, m))
-                    .await;
+                self.inner.sender.privmsg(crate::respond(name, m)).await;
             }
             None => {
                 self.inner.sender.privmsg(m).await;

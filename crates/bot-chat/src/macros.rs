@@ -1,4 +1,3 @@
-
 /// Generate a [`RespondErr`][crate::RespondErr].
 #[macro_export]
 macro_rules! respond_err {

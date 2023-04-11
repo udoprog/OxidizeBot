@@ -63,10 +63,7 @@ impl StreamInfo {
 
     /// Refresh channel.
     #[tracing::instrument(skip_all, fields(id = ?streamer.user.id))]
-    pub async fn refresh_channel<'a>(
-        &'a self,
-        streamer: &'a api::TwitchAndUser,
-    ) -> Result<()> {
+    pub async fn refresh_channel<'a>(&'a self, streamer: &'a api::TwitchAndUser) -> Result<()> {
         let channel = match streamer.client.channels(&streamer.user.id).await {
             Ok(Some(channel)) => channel,
             Ok(None) => {

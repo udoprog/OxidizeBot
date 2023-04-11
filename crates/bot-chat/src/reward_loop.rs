@@ -6,13 +6,13 @@ use async_injector::Injector;
 use common::Duration;
 use tokio::time;
 
-use crate::chat::Sender;
 use crate::idle;
+use crate::sender;
 
 /// Set up a reward loop.
 pub async fn setup(
     streamer: api::TwitchAndUser,
-    sender: Sender,
+    sender: sender::Sender,
     idle: idle::Idle,
     injector: Injector,
     chat_settings: settings::Settings<::auth::Scope>,
@@ -39,7 +39,7 @@ pub async fn setup(
 
 struct Task {
     streamer: api::TwitchAndUser,
-    sender: Sender,
+    sender: sender::Sender,
     idle: idle::Idle,
     injector: Injector,
     chat_settings: settings::Settings<::auth::Scope>,

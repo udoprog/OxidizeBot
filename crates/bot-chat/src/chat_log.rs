@@ -1,7 +1,6 @@
 use anyhow::Result;
+use common::irc::Tags;
 use storage::Cache;
-
-use crate::chat;
 
 pub(crate) struct Builder {
     user_agent: &'static str,
@@ -95,13 +94,7 @@ pub(crate) struct ChatLog {
 }
 
 impl ChatLog {
-    pub(crate) async fn observe(
-        &self,
-        tags: &chat::Tags,
-        user: &api::User,
-        login: &str,
-        message: &str,
-    ) {
+    pub(crate) async fn observe(&self, tags: &Tags, user: &api::User, login: &str, message: &str) {
         let rendered = match self.emotes.as_ref() {
             Some(emotes) => match emotes.render(tags, user, login, message).await {
                 Ok(rendered) => Some(rendered),

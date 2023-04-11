@@ -4,7 +4,7 @@ mod macros;
 mod idle;
 
 mod chat;
-pub use self::chat::{User, Configuration, RealUser, Sender};
+pub use self::chat::{Configuration, RealUser, User};
 
 pub mod command;
 
@@ -21,8 +21,11 @@ mod task;
 
 pub mod messages;
 
+mod chat_log;
 mod currency_admin;
 mod reward_loop;
+mod sender;
+pub use self::sender::Sender;
 
 mod respond;
 pub use self::respond::{respond, RespondErr};

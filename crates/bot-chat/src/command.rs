@@ -16,8 +16,9 @@ use common::{display, words, Cooldown};
 use tokio::sync;
 use tokio::sync::Notify;
 
-use crate::chat::{User, Sender};
+use crate::chat::User;
 use crate::messages;
+use crate::sender;
 
 /// An opaque identifier for a hook that has been inserted.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -81,7 +82,7 @@ impl ContextNotify {
 
 pub(crate) struct ContextInner {
     /// Sender associated with the command.
-    sender: Sender,
+    sender: sender::Sender,
     /// Active scope cooldowns.
     scope_cooldowns: sync::Mutex<HashMap<Scope, Cooldown>>,
     /// A hook that can be installed to peek at all incoming messages.
@@ -96,7 +97,7 @@ pub(crate) struct ContextInner {
 
 impl ContextInner {
     pub(crate) fn new(
-        sender: Sender,
+        sender: sender::Sender,
         scope_cooldowns: HashMap<Scope, Cooldown>,
         restart: Arc<Notify>,
     ) -> Self {
@@ -113,7 +114,7 @@ impl ContextInner {
     /// Available notifications.
     pub(crate) fn notify(&self) -> &ContextNotify {
         &self.notify
-    }    
+    }
 }
 
 /// Context for a single command invocation.
@@ -128,7 +129,7 @@ pub struct Context {
 
 impl Context {
     /// Get associated sender.
-    pub fn sender(&self) -> &Sender {
+    pub fn sender(&self) -> &sender::Sender {
         &self.inner.sender
     }
 

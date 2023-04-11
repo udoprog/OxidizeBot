@@ -3,9 +3,9 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::chat;
 use crate::command;
 use crate::idle;
+use crate::sender;
 use crate::stream_info;
 
 use anyhow::Result;
@@ -37,7 +37,7 @@ pub struct HookContext<'a> {
     pub stream_info: &'a stream_info::StreamInfo,
     pub idle: &'a idle::Idle,
     pub streamer: &'a api::TwitchAndUser,
-    pub sender: &'a chat::Sender,
+    pub sender: &'a sender::Sender,
     pub settings: &'a settings::Settings<::auth::Scope>,
 }
 

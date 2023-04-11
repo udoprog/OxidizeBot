@@ -1,4 +1,4 @@
-use std::{fmt, borrow::Cow};
+use std::{borrow::Cow, fmt};
 
 use thiserror::Error;
 
