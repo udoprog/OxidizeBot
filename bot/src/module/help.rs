@@ -52,7 +52,7 @@ impl chat::Module for Module {
         &self,
         module::HookContext {
             handlers, settings, ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         let default_url = Url::parse(DEFAULT_URL)?;
 

@@ -1063,10 +1063,10 @@ impl chat::Module for Module {
         module::HookContext {
             handlers,
             settings,
-            futures,
+            tasks,
             injector,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         let currency = injector.var().await;
         let settings = settings.scoped("gtav");
@@ -1180,7 +1180,7 @@ impl chat::Module for Module {
             }
         };
 
-        futures.push(Box::pin(future));
+        tasks.push(Box::pin(future));
         Ok(())
     }
 }

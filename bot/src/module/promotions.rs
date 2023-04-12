@@ -65,12 +65,12 @@ impl chat::Module for Module {
         module::HookContext {
             injector,
             handlers,
-            futures,
+            tasks,
             sender,
             settings,
             idle,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         let settings = settings.scoped("promotions");
         let enabled = settings.var("enabled", false).await?;
@@ -128,7 +128,7 @@ impl chat::Module for Module {
             }
         };
 
-        futures.push(Box::pin(future));
+        tasks.push(Box::pin(future));
         Ok(())
     }
 }

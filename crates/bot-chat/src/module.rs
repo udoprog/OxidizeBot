@@ -30,15 +30,15 @@ impl Handlers {
 }
 
 /// Context for hooking up a module.
-pub struct HookContext<'a> {
+pub struct HookContext<'a, 'task> {
     pub injector: &'a Injector,
-    pub handlers: &'a mut Handlers,
-    pub futures: &'a mut common::Futures<'static, Result<()>>,
     pub stream_info: &'a stream_info::StreamInfo,
     pub idle: &'a idle::Idle,
     pub streamer: &'a api::TwitchAndUser,
     pub sender: &'a sender::Sender,
     pub settings: &'a settings::Settings<::auth::Scope>,
+    pub handlers: &'a mut Handlers,
+    pub tasks: &'a mut common::Futures<'task, Result<()>>,
 }
 
 /// Trait used to hook up a module.
@@ -51,5 +51,5 @@ where
     fn ty(&self) -> &'static str;
 
     /// Set up command handlers for this module.
-    async fn hook(&self, _: HookContext<'_>) -> Result<()>;
+    async fn hook(&self, _: HookContext<'_, '_>) -> Result<()>;
 }

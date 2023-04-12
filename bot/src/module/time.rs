@@ -101,7 +101,7 @@ impl chat::Module for Module {
         &self,
         module::HookContext {
             handlers, settings, ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         let default_template = Template::compile("The streamer's time is {{time}}{{offset}}")?;
 

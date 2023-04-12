@@ -504,13 +504,13 @@ impl module::Module for Module {
         &self,
         module::HookContext {
             handlers,
-            futures,
+            tasks,
             sender,
             settings,
             injector,
             streamer,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         let currency = injector.var().await;
         let settings = settings.scoped("song");
@@ -537,13 +537,13 @@ impl module::Module for Module {
             },
         );
 
-        futures.push(Box::pin(feedback::task(
+        tasks.push(Box::pin(feedback::task(
             sender.clone(),
             injector.clone(),
             chat_feedback,
         )));
 
-        futures.push(Box::pin(redemption::task(
+        tasks.push(Box::pin(redemption::task(
             sender.clone(),
             injector.clone(),
             settings,

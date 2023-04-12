@@ -77,7 +77,7 @@ impl chat::Module for Module {
             settings,
             streamer,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         let settings = settings.scoped("clip");
 

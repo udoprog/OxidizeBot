@@ -1,8 +1,9 @@
-use anyhow::{anyhow, Error};
+use std::num;
+
+use anyhow::{anyhow, Context, Error};
 use ring::aead;
 use ring::pbkdf2;
 use ring::rand::{SecureRandom as _, SystemRandom};
-use std::num;
 
 /// A helper type to seal and unseal messages using AEAD.
 ///
@@ -24,7 +25,7 @@ impl AeadSealer {
 
         pbkdf2::derive(
             pbkdf2::PBKDF2_HMAC_SHA256,
-            num::NonZeroU32::new(100).unwrap(),
+            num::NonZeroU32::new(100).context("bad non-zero number")?,
             &[],
             secret,
             &mut key,

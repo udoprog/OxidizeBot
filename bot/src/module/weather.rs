@@ -147,7 +147,7 @@ impl chat::Module for Module {
             settings,
             injector,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         handlers.insert(
             "weather",

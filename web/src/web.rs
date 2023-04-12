@@ -329,7 +329,7 @@ impl Handler {
             Ok(mut response) => {
                 response
                     .headers_mut()
-                    .insert(header::CACHE_CONTROL, "no-cache".parse().unwrap());
+                    .insert(header::CACHE_CONTROL, "no-cache".parse()?);
                 response
             }
             Err(e) => {

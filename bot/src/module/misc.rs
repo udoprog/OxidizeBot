@@ -203,7 +203,7 @@ impl chat::Module for Module {
             streamer,
             settings,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         handlers.insert(
             "title",

@@ -682,7 +682,7 @@ impl chat::Module for Module {
             settings,
             injector,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         let cache: Cache = injector
             .get()

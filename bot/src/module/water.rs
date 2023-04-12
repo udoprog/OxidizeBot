@@ -171,7 +171,7 @@ impl chat::Module for Module {
             injector,
             streamer,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         let enabled = settings.var("water/enabled", false).await?;
         let cooldown = settings

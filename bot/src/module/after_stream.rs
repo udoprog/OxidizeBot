@@ -75,7 +75,7 @@ impl chat::Module for Module {
             handlers,
             settings,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         let settings = settings.scoped("afterstream");
 

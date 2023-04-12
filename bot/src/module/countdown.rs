@@ -88,10 +88,10 @@ impl chat::Module for Module {
         &self,
         module::HookContext {
             handlers,
-            futures,
+            tasks,
             settings,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         let settings = settings.scoped("countdown");
 
@@ -162,7 +162,7 @@ impl chat::Module for Module {
             }
         };
 
-        futures.push(Box::pin(future));
+        tasks.push(Box::pin(future));
         Ok(())
     }
 }

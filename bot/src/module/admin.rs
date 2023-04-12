@@ -353,7 +353,7 @@ impl chat::Module for Module {
             handlers,
             settings,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         handlers.insert(
             "admin",

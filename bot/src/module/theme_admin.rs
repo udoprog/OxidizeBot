@@ -63,7 +63,7 @@ impl chat::Module for Module {
         &self,
         module::HookContext {
             injector, handlers, ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         handlers.insert(
             "theme",

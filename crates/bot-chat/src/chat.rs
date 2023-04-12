@@ -42,7 +42,7 @@ const TWITCH_COMMANDS_CAP: &str = "twitch.tv/commands";
 type PendingOutput<'a> = (Result<()>, command::Context<'a>);
 type HookOutput<'a> = Result<()>;
 
-/// Helper struct to construct IRC integration.
+/// Helper struct to construct Chat integration.
 pub struct Configuration {
     user_agent: &'static str,
     injector: Injector,
@@ -216,15 +216,8 @@ impl ChatLoop<'_> {
         let sender =
             sender::Sender::new(sender_ty, chat_channel.clone(), client.sender(), nightbot)?;
 
-        let mut futures = common::Futures::<Result<()>>::new();
-
-        let stream_info = {
-            let (stream_info, future) =
-                stream_info::setup(streamer.clone(), stream_state_tx.clone());
-
-            futures.push(Box::pin(future));
-            stream_info
-        };
+        let (stream_info, stream_info_future) =
+            stream_info::setup(streamer.clone(), stream_state_tx.clone());
 
         let context_inner = Arc::new(command::ContextInner::new(
             sender.clone(),
@@ -232,10 +225,7 @@ impl ChatLoop<'_> {
             restart.clone(),
         ));
 
-        futures.push(Box::pin(refresh_roles(
-            context_inner.clone(),
-            streamer.clone(),
-        )));
+        let refresh_roles_future = refresh_roles(context_inner.clone(), streamer.clone());
 
         let mut handlers = module::Handlers::default();
 
@@ -261,13 +251,15 @@ impl ChatLoop<'_> {
             None
         };
 
+        let mut hook_futures = common::Futures::new();
+
         for module in modules {
             tracing::trace!("Initializing module: {}", module.ty());
 
             let result = module
                 .hook(module::HookContext {
                     handlers: &mut handlers,
-                    futures: &mut futures,
+                    tasks: &mut hook_futures,
                     stream_info: &stream_info,
                     idle: &idle,
                     streamer: &streamer,
@@ -282,7 +274,7 @@ impl ChatLoop<'_> {
 
         let currency_handler = currency_admin::setup(injector).await?;
 
-        let future = reward_loop::setup(
+        let reward_loop_future = reward_loop::setup(
             streamer.clone(),
             sender.clone(),
             idle.clone(),
@@ -290,8 +282,6 @@ impl ChatLoop<'_> {
             chat_settings.clone(),
             settings.clone(),
         );
-
-        futures.push(Box::pin(future));
 
         let (mut whitelisted_hosts_stream, whitelisted_hosts) = chat_settings
             .stream("whitelisted-hosts")
@@ -319,9 +309,20 @@ impl ChatLoop<'_> {
 
         let mut pong_timeout = Fuse::empty();
 
-        let (messages, future) = messages::setup(&settings).await?;
-        futures.push(Box::pin(future));
+        let (messages, messages_future) = messages::setup(&settings).await?;
 
+        // Join all local tasks we are performing.
+        common::local_join! {
+            futures =>
+            stream_info_future,
+            refresh_roles_future,
+            reward_loop_future,
+            messages_future
+        }
+
+        // We maintain separate collections of local futures which we add
+        // potentially user-defined tasks to, to allow them to .await
+        // concurrently with the main chat task.
         let mut pending = common::Futures::default();
         let mut hooks = common::Futures::default();
 
@@ -399,14 +400,27 @@ impl ChatLoop<'_> {
                         }
                     }
                 }
-                Some(future) = futures.next() => {
+                Some(future) = hook_futures.next() => {
                     match future {
                         Ok(..) => {
-                            tracing::warn!("IRC component exited, exiting...");
+                            tracing::warn!("Chat component exited, exiting...");
                             return Ok(());
                         }
                         Err(e) => {
-                            common::log_warn!(e, "IRC component errored, restarting in 5 seconds");
+                            common::log_warn!(e, "Chat component errored, restarting in 5 seconds");
+                            tokio::time::sleep(time::Duration::from_secs(5)).await;
+                            return Ok(());
+                        }
+                    }
+                }
+                Some(future) = futures.next() => {
+                    match future {
+                        Ok(..) => {
+                            tracing::warn!("Chat component exited, exiting...");
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            common::log_warn!(e, "Chat component errored, restarting in 5 seconds");
                             tokio::time::sleep(time::Duration::from_secs(5)).await;
                             return Ok(());
                         }
@@ -524,7 +538,7 @@ struct Handler<'a> {
     idle: &'a idle::Idle,
     /// Pong timeout currently running.
     pong_timeout: &'a mut Fuse<Pin<Box<tokio::time::Sleep>>>,
-    /// OAuth 2.0 Token used to authenticate with IRC.
+    /// OAuth 2.0 Token used to authenticate with Chat.
     bot: &'a api::TwitchAndUser,
     /// Force a shutdown.
     handler_shutdown: bool,

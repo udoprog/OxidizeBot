@@ -98,7 +98,7 @@ impl chat::Module for Module {
             injector,
             settings,
             ..
-        }: module::HookContext<'_>,
+        }: module::HookContext<'_, '_>,
     ) -> Result<()> {
         let enabled = settings.var("swearjar/enabled", false).await?;
         let reward = settings.var("swearjar/reward", 10).await?;
