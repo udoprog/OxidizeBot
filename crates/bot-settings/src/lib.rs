@@ -174,16 +174,16 @@ where
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct SettingRef<'settings, 'key, S, T>
+pub struct SettingRef<'a, S, T>
 where
     S: Scope,
 {
-    schema: &'settings SchemaType<S>,
-    key: Key<'settings, 'key>,
+    schema: &'a SchemaType<S>,
+    key: Key<'a>,
     value: Option<T>,
 }
 
-impl<S> SettingRef<'_, '_, S, serde_json::Value>
+impl<S> SettingRef<'_, S, serde_json::Value>
 where
     S: Scope,
 {
@@ -200,7 +200,7 @@ where
     }
 }
 
-impl<'settings, 'key, S, T> SettingRef<'settings, 'key, S, T>
+impl<'a, S, T> SettingRef<'a, S, T>
 where
     S: Scope,
 {
@@ -210,7 +210,7 @@ where
     }
 
     /// Access the key associated with the setting.
-    pub fn key(&self) -> &Key<'settings, 'key> {
+    pub fn key(&self) -> &Key<'a> {
         &self.key
     }
 
@@ -545,10 +545,10 @@ where
     /// Get the given setting.
     ///
     /// This includes the schema of the setting as well.
-    pub async fn setting<'settings, 'key, T>(
-        &'settings self,
-        key: &'key str,
-    ) -> Result<Option<SettingRef<'settings, 'key, S, T>>, Error>
+    pub async fn setting<'a, T>(
+        &'a self,
+        key: &'a str,
+    ) -> Result<Option<SettingRef<'a, S, T>>, Error>
     where
         T: Serialize + de::DeserializeOwned,
     {
@@ -732,10 +732,7 @@ where
     }
 
     /// Initialize the value from the database.
-    pub fn stream<'settings, 'key, T>(
-        &'settings self,
-        key: &'key str,
-    ) -> StreamBuilder<'settings, 'key, S, T> {
+    pub fn stream<'a, T>(&'a self, key: &'a str) -> StreamBuilder<'a, S, T> {
         let key = self.key(key);
 
         StreamBuilder {
@@ -931,7 +928,7 @@ where
         }
     }
 
-    fn key<'settings, 'key>(&'settings self, key: &'key str) -> Key<'settings, 'key> {
+    fn key<'a>(&'a self, key: &'a str) -> Key<'a> {
         let key = self.inner_key(key);
 
         #[cfg(debug_assertions)]
@@ -943,7 +940,7 @@ where
     }
 
     /// Construct a new key.
-    fn inner_key<'settings, 'key>(&'settings self, key: &'key str) -> Key<'settings, 'key> {
+    fn inner_key<'a>(&'a self, key: &'a str) -> Key<'a> {
         let key = key.trim_matches(SEP);
 
         if key.is_empty() {
@@ -965,25 +962,25 @@ where
 /// key specified or we can rely solely on scope.
 #[derive(Clone)]
 #[non_exhaustive]
-pub enum Key<'settings, 'key> {
-    Settings(&'settings str),
-    Key(&'key str),
+pub enum Key<'a> {
+    Settings(&'a str),
+    Key(&'a str),
     Owned(Box<str>),
 }
 
-impl fmt::Display for Key<'_, '_> {
+impl fmt::Display for Key<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&**self, f)
     }
 }
 
-impl fmt::Debug for Key<'_, '_> {
+impl fmt::Debug for Key<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl Serialize for Key<'_, '_> {
+impl Serialize for Key<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -992,7 +989,7 @@ impl Serialize for Key<'_, '_> {
     }
 }
 
-impl ops::Deref for Key<'_, '_> {
+impl ops::Deref for Key<'_> {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
@@ -1005,16 +1002,16 @@ impl ops::Deref for Key<'_, '_> {
 }
 
 #[must_use = "Must consume to drive decide how to handle stream"]
-pub struct StreamBuilder<'settings, 'key, S, T>
+pub struct StreamBuilder<'a, S, T>
 where
     S: Scope,
 {
-    settings: &'settings Settings<S>,
+    settings: &'a Settings<S>,
     default_value: Option<T>,
-    key: Key<'settings, 'key>,
+    key: Key<'a>,
 }
 
-impl<'settings, 'key, S, T> StreamBuilder<'settings, 'key, S, T>
+impl<'a, S, T> StreamBuilder<'a, S, T>
 where
     S: Scope,
     T: Serialize + de::DeserializeOwned,
@@ -1074,6 +1071,7 @@ where
     }
 
     /// Add a potential fallback value when the type is optional.
+    #[inline]
     pub fn or(self, other: Option<T>) -> Self {
         self.or_else(move || other)
     }
@@ -1241,7 +1239,7 @@ impl Type {
             return Ok(Value::Null);
         }
 
-        let value = match self.kind {
+        let value = match &self.kind {
             Raw => serde_json::from_str(s)?,
             Duration => {
                 let d = str::parse::<common::Duration>(s)?;
@@ -1257,7 +1255,7 @@ impl Type {
                 Value::Number(n)
             }
             String { .. } | Text => Value::String(s.to_string()),
-            Set { ref value } => {
+            Set { value } => {
                 let json = serde_json::from_str(s)?;
 
                 match json {
@@ -1271,11 +1269,7 @@ impl Type {
                     _ => return Err(Error::Expected("array")),
                 }
             }
-            Select {
-                ref value,
-                ref options,
-                ..
-            } => {
+            Select { value, options, .. } => {
                 let v = value.parse_as_json(s)?;
 
                 if !options.iter().any(|o| o.value == v) {
@@ -1294,7 +1288,7 @@ impl Type {
                 let tz = str::parse::<Tz>(s).map_err(Error::BadTimeZone)?;
                 Value::String(format!("{:?}", tz))
             }
-            Object { ref fields, .. } => {
+            Object { fields, .. } => {
                 let json = serde_json::from_str(s)?;
 
                 let object = match json {
@@ -1332,30 +1326,23 @@ impl Type {
 
         match (&self.kind, other) {
             (Raw, _) => true,
-            (Duration, Value::String(ref s)) => str::parse::<common::Duration>(s).is_ok(),
+            (Duration, Value::String(s)) => str::parse::<common::Duration>(s).is_ok(),
             (Bool, Value::Bool(..)) => true,
             (Number, Value::Number(..)) => true,
             (Percentage, Value::Number(..)) => true,
             (String { .. }, Value::String(..)) => true,
             (Text, Value::String(..)) => true,
-            (Set { ref value }, Value::Array(ref values)) => {
+            (Set { value }, Value::Array(values)) => {
                 values.iter().all(|v| value.is_compatible_with_json(v))
             }
-            (
-                Select {
-                    ref value,
-                    ref options,
-                    ..
-                },
-                json,
-            ) => {
+            (Select { value, options, .. }, json) => {
                 if !value.is_compatible_with_json(json) {
                     return false;
                 }
 
                 options.iter().any(|opt| opt.value == *json)
             }
-            (Object { ref fields, .. }, Value::Object(ref object)) => {
+            (Object { fields, .. }, Value::Object(object)) => {
                 // NB: check that all fields match expected schema.
                 fields.iter().all(|f| match object.get(&f.field) {
                     Some(field) => f.ty.is_compatible_with_json(field),
