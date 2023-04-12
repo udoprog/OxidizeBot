@@ -248,7 +248,7 @@ impl Command {
         })
     }
 
-    /// Get the currenct count.
+    /// Get the current count.
     pub fn count(&self) -> i32 {
         self.count.load(Ordering::SeqCst) as i32
     }

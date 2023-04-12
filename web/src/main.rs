@@ -11,7 +11,6 @@
 //! <br>
 //!
 //! The web component of OxidizeBot, a high performance Twitch Bot powered by Rust.
-
 mod aead;
 mod api;
 mod db;

@@ -44,6 +44,18 @@ impl Setbac {
         }
     }
 
+    /// Test if authorization is available for this remote, either through a
+    /// token or a secret key.
+    pub fn is_authorized(&self) -> bool {
+        self.inner.secret_key.is_some()
+            || self
+                .inner
+                .streamer_token
+                .as_ref()
+                .map(|t| t.is_ready())
+                .unwrap_or_default()
+    }
+
     /// Get request against API.
     fn request<I>(&self, method: Method, path: I) -> RequestBuilder<'_>
     where

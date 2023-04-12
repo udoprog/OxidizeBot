@@ -3,7 +3,7 @@ use std::time::Duration as StdDuration;
 use std::{fmt, mem};
 
 use anyhow::Result;
-use api::setbac::{Connection, ConnectionMeta};
+use api::setbac::Connection;
 use async_fuse::Fuse;
 use async_injector::{Injector, Key};
 use common::Duration;
@@ -76,9 +76,11 @@ where
 {
     /// Reset backoff deadline.
     fn reset(&mut self) {
-        tracing::trace!("Resetting backoff");
-        self.backoff_deadline = None;
-        self.backoff.reset();
+        if self.backoff_deadline.is_some() {
+            tracing::trace!("Resetting backoff");
+            self.backoff_deadline = None;
+            self.backoff.reset();
+        }
     }
 
     /// Perform an update based on the existing state.
@@ -89,7 +91,7 @@ where
                 .update_key(&self.key, self.token.clone())
                 .await;
             self.integration
-                .update_connection(self.id, ConnectionIntegrationMeta::from_api(&c));
+                .update_connection(self.id, ConnectionIntegrationMeta::from_api(c));
         } else {
             self.token.clear();
             self.injector.clear_key(&self.key).await;
@@ -102,6 +104,8 @@ where
         let validation = match self.build().await {
             Ok(validation) => validation,
             Err(error) => {
+                // We perform backoff here, since this is a remote operation
+                // that *might* fail for reasons unrelated to a buggy bot.
                 common::log_error!(error, "Failed to build connection");
                 self.backoff_deadline = Some(Instant::now() + self.backoff.failed());
                 return Ok(());
@@ -112,13 +116,14 @@ where
 
         match validation {
             Validation::Keep => {
-                tracing::trace!("Keeping currenct connection");
+                tracing::trace!("Keeping current connection");
             }
             Validation::Updated(c) => {
-                let old = self.connection.as_ref().map(|c| c.as_ref().hash.as_str());
-                let new = Some(c.hash.as_str());
+                let old_hash = self.connection.as_ref().map(|c| c.as_ref().hash.as_str());
+                let new_hash = Some(c.hash.as_str());
+                let hash_mismatch = old_hash != new_hash;
 
-                tracing::info!(?old, ?new, "Connection updated");
+                tracing::trace!(hash_mismatch, "Connection updated");
 
                 // Only update setting, if the update did not originate from settings.
                 if !from_setting {
@@ -135,8 +140,8 @@ where
                 //
                 // A hash mismatch occurs for example if the configured set of
                 // scopes have changed.
-                if old != new {
-                    tracing::trace!("Update sync token through injector");
+                if hash_mismatch {
+                    tracing::trace!(?old_hash, ?new_hash, "Update sync token through injector");
 
                     self.injector
                         .update_key(&self.key, self.token.clone())
@@ -148,7 +153,7 @@ where
                 self.connection = Some(c);
             }
             Validation::Cleared => {
-                tracing::info!("Connection cleared");
+                tracing::trace!("Connection cleared");
 
                 // Only update setting, if the update did not originate from settings.
                 if !from_setting {
@@ -170,12 +175,17 @@ where
     /// Construct a new connection.
     #[tracing::instrument(skip_all)]
     async fn build(&mut self) -> Result<Validation> {
+        tracing::trace!("Building connection");
+
         let Some(setbac) = self.setbac.as_ref() else {
             tracing::trace!("No client to configure");
             return Ok(Validation::Keep);
         };
 
-        tracing::trace!("Building connection");
+        if !setbac.is_authorized() {
+            tracing::warn!("Remote connection is not configured");
+            return Ok(Validation::Keep);
+        }
 
         if mem::take(&mut self.force_refresh) {
             tracing::trace!("Forcing refresh of existing connection");
@@ -186,52 +196,48 @@ where
             };
         }
 
-        if let Some(connection) = &self.connection {
-            if self.is_valid(setbac, connection).await? {
-                return Ok(Validation::Keep);
-            }
-        }
+        let Some(c) = &self.connection else {
+            tracing::trace!("Requesting new connection, local connection absent");
 
-        tracing::trace!("Requesting new connection");
-
-        match setbac.get_connection(self.id).await? {
-            Some(connection) => Ok(Validation::Updated(Box::new(connection))),
-            None => Ok(Validation::Cleared),
-        }
-    }
-
-    /// Validate a connection base on the current flow.
-    #[tracing::instrument(skip_all)]
-    async fn is_valid(&self, setbac: &api::Setbac, connection: &Connection) -> Result<bool> {
-        tracing::trace!("Validating connection");
+            return match setbac.get_connection(self.id).await? {
+                Some(connection) => Ok(Validation::Updated(Box::new(connection))),
+                None => Ok(Validation::Cleared),
+            };
+        };
 
         let Some(meta) = setbac.get_connection_meta(self.id).await? else {
-            tracing::trace!("Remote connection cleared");
-            return Ok(false);
+            tracing::info!("Remote connection cleared");
+            return Ok(Validation::Cleared);
         };
 
-        Ok(!self.is_outdated(connection, &meta)?)
-    }
+        // Test if the hash of the local connection matches that of the remote.
+        // Hashes change either when the remote connection has a new access
+        // token, or something else like scopes have changed.
+        if meta.hash != c.hash {
+            tracing::trace!(
+                local_hash = c.hash,
+                remote_hash = meta.hash,
+                "Requesting new connection, hash mismatch"
+            );
 
-    /// Refresh a connection.
-    #[tracing::instrument(skip_all)]
-    async fn refresh(&self, setbac: &api::Setbac) -> Result<Option<Box<Connection>>> {
-        tracing::trace!("Refreshing");
-
-        let Some(connection) = setbac.refresh_connection(self.id).await? else {
-            return Ok(None)
-        };
-
-        Ok(Some(Box::new(connection)))
-    }
-
-    /// Check if connection is outdated.
-    fn is_outdated(&self, c: &Connection, meta: &ConnectionMeta) -> Result<bool> {
-        if c.hash != meta.hash {
-            return Ok(true);
+            return match setbac.get_connection(self.id).await? {
+                Some(connection) => Ok(Validation::Updated(Box::new(connection))),
+                None => Ok(Validation::Cleared),
+            };
         }
 
-        c.token.expires_within(self.expires)
+        // If the location connection is expired, and matches the remote hash.
+        // Force a remote refresh to get a new token.
+        if c.token.expires_within(self.expires)? {
+            tracing::info!("Remote connection outdated, forcing refresh");
+
+            return match setbac.refresh_connection(self.id).await? {
+                Some(connection) => Ok(Validation::Updated(Box::new(connection))),
+                None => Ok(Validation::Cleared),
+            };
+        }
+
+        Ok(Validation::Keep)
     }
 }
 
@@ -269,14 +275,14 @@ where
 
     let (mut setbac_stream, setbac) = injector.stream::<api::Setbac>().await;
 
-    let (mut check_interval_stream, check_interval) = parent
+    let (mut check_interval_stream, mut check_interval_duration) = parent
         .stream::<Duration>("remote/check-interval")
         .or_with(Duration::seconds(30))
         .await?;
 
     let mut builder = ConnectionFactory {
         setbac,
-        id: id,
+        id,
         expires,
         force_refresh: false,
         connection: connection.map(Box::new),
@@ -292,11 +298,17 @@ where
     builder.init().await;
 
     // check for expirations.
-    let mut check_interval = tokio::time::interval(check_interval.as_std());
 
     tracing::trace!("Starting loop");
 
+    let mut check_interval = pin!(Fuse::empty());
     let mut backoff = pin!(Fuse::empty());
+
+    let mut needs_interval = builder
+        .setbac
+        .as_ref()
+        .map(|s| s.is_authorized())
+        .unwrap_or_default();
 
     loop {
         if backoff.is_empty() != builder.backoff_deadline.is_none() {
@@ -306,11 +318,20 @@ where
             });
         }
 
+        if check_interval.as_ref().is_empty() != !needs_interval {
+            check_interval.set(if needs_interval {
+                Fuse::new(tokio::time::interval(check_interval_duration.as_std()))
+            } else {
+                Fuse::empty()
+            });
+        }
+
         let backing_off = !backoff.is_empty();
 
         tokio::select! {
             setbac = setbac_stream.recv() => {
                 tracing::trace!("Received new setbac client");
+                needs_interval = setbac.as_ref().map(|s| s.is_authorized()).unwrap_or_default();
                 builder.setbac = setbac;
                 builder.reset();
                 builder.update(false).await?;
@@ -326,7 +347,7 @@ where
                 builder.force_refresh = true;
                 builder.update(false).await?;
             }
-            _ = check_interval.tick(), if !backing_off => {
+            _ = check_interval.as_mut().poll_inner(|mut i, ctx| i.poll_tick(ctx)), if !backing_off => {
                 tracing::trace!("Check for expiration");
                 builder.update(true).await?;
             }
@@ -334,10 +355,11 @@ where
                 tracing::trace!("Backoff finished");
                 builder.backoff_deadline = None;
                 backoff.set(Fuse::empty());
-                check_interval.reset();
+                check_interval.set(Fuse::empty());
             }
             update = check_interval_stream.recv() => {
-                check_interval = tokio::time::interval(update.as_std());
+                check_interval_duration = update;
+                check_interval.set(Fuse::empty());
             }
         }
     }
