@@ -68,9 +68,9 @@ impl std::str::FromStr for TrackId {
 
 impl fmt::Display for TrackId {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            TrackId::Spotify(ref id) => write!(fmt, "spotify:track:{}", id.to_base62()),
-            TrackId::YouTube(ref id) => write!(fmt, "youtube:video:{}", id),
+        match self {
+            TrackId::Spotify(id) => write!(fmt, "spotify:track:{}", id.to_base62()),
+            TrackId::YouTube(id) => write!(fmt, "youtube:video:{}", id),
         }
     }
 }
@@ -78,9 +78,9 @@ impl fmt::Display for TrackId {
 impl TrackId {
     /// Get the URL for this track.
     pub fn url(&self) -> String {
-        match *self {
-            TrackId::Spotify(ref id) => format!("{}/{}", SPOTIFY_URL, id.to_base62()),
-            TrackId::YouTube(ref id) => format!("{}/{}", YOUTUBE_URL, id),
+        match self {
+            TrackId::Spotify(id) => format!("{}/{}", SPOTIFY_URL, id.to_base62()),
+            TrackId::YouTube(id) => format!("{}/{}", YOUTUBE_URL, id),
         }
     }
 
@@ -101,7 +101,7 @@ impl TrackId {
         // Parse a track id from a URL or URI.
         if let Ok(url) = str::parse::<url::Url>(s) {
             match url.host() {
-                Some(ref host) if *host == url::Host::Domain("open.spotify.com") => {
+                Some(host) if host == url::Host::Domain("open.spotify.com") => {
                     let parts = url.path().split('/').collect::<Vec<_>>();
 
                     let id = match parts.as_slice() {
@@ -112,7 +112,7 @@ impl TrackId {
 
                     return Ok(TrackId::Spotify(id));
                 }
-                Some(ref host) if is_long_youtube(host) => {
+                Some(host) if is_long_youtube(&host) => {
                     let parts = url.path().split('/').collect::<Vec<_>>();
 
                     if parts.as_slice() != ["", "watch"] {
@@ -134,7 +134,7 @@ impl TrackId {
 
                     return Ok(TrackId::YouTube(video_id));
                 }
-                Some(ref host) if is_short_youtube(host) => {
+                Some(host) if is_short_youtube(&host) => {
                     let parts = url.path().split('/').collect::<Vec<_>>();
 
                     let video_id = match parts.as_slice() {

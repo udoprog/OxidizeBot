@@ -71,10 +71,10 @@ impl std::str::FromStr for Uri {
 
 impl fmt::Display for Uri {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            Uri::SpotifyTrack(ref id) => write!(fmt, "spotify:track:{}", id.to_base62()),
-            Uri::SpotifyPlaylist(ref id) => write!(fmt, "spotify:playlist:{}", id.to_base62()),
-            Uri::YouTubeVideo(ref id) => write!(fmt, "youtube:video:{}", id),
+        match self {
+            Uri::SpotifyTrack(id) => write!(fmt, "spotify:track:{}", id.to_base62()),
+            Uri::SpotifyPlaylist(id) => write!(fmt, "spotify:playlist:{}", id.to_base62()),
+            Uri::YouTubeVideo(id) => write!(fmt, "youtube:video:{}", id),
         }
     }
 }

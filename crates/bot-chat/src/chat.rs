@@ -636,7 +636,7 @@ async fn process_command<'a>(
             let currency_command = currency_handler.command_name().await;
 
             let handler = match (other, currency_command) {
-                (other, Some(ref name)) if other == **name => {
+                (other, Some(name)) if other == name.as_ref() => {
                     Some(currency_handler as &dyn command::Handler)
                 }
                 (other, Some(..)) | (other, None) => handlers.get(other),
@@ -1127,7 +1127,10 @@ impl<'a> RealUser<'a> {
     }
 
     /// Test if the current user has the given scope.
-    pub async fn has_scope(&self, scope: Scope) -> bool {
+    pub async fn has_scope<S>(&self, scope: S) -> bool
+    where
+        S: AsRef<Scope>,
+    {
         self.auth.test_any(scope, self.login, self.roles()).await
     }
 }
@@ -1160,8 +1163,8 @@ pub struct User {
 impl User {
     /// Access the user as a real user.
     pub fn real(&self) -> Option<RealUser<'_>> {
-        match self.inner.principal {
-            Principal::User { ref login } => Some(RealUser {
+        match &self.inner.principal {
+            Principal::User { login } => Some(RealUser {
                 tags: &self.inner.tags,
                 sender: &self.inner.sender,
                 login: login.as_ref(),
@@ -1176,10 +1179,8 @@ impl User {
 
     /// Get the name of the user.
     pub fn name(&self) -> Option<&str> {
-        match self.inner.principal {
-            Principal::User {
-                login: ref name, ..
-            } => Some(name),
+        match &self.inner.principal {
+            Principal::User { login: name, .. } => Some(name),
             Principal::Injected => None,
         }
     }
@@ -1268,7 +1269,10 @@ impl User {
     }
 
     /// Test if the current user has the given scope.
-    pub async fn has_scope(&self, scope: Scope) -> bool {
+    pub async fn has_scope<S>(&self, scope: S) -> bool
+    where
+        S: AsRef<Scope>,
+    {
         let user = match self.real() {
             Some(user) => user,
             None => return false,

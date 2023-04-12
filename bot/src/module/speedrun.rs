@@ -445,8 +445,8 @@ impl Speedrun {
         match_user: Option<&'a str>,
         embedded_players: &'a HashMap<String, Box<User>>,
     ) -> Result<Option<String>> {
-        match *player {
-            RelatedPlayer::Player(ref player) => {
+        match player {
+            RelatedPlayer::Player(player) => {
                 let user = match embedded_players.get(&player.id) {
                     Some(user) => user.clone(),
                     None => match speedrun.user_by_id(&player.id).await? {
@@ -463,7 +463,7 @@ impl Speedrun {
 
                 Ok(Some(user.names.name().to_string()))
             }
-            RelatedPlayer::Guest(ref guest) => {
+            RelatedPlayer::Guest(guest) => {
                 if let Some(match_user) = match_user {
                     if !guest.name.contains(match_user) {
                         return Ok(None);

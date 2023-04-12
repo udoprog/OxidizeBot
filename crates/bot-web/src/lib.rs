@@ -63,10 +63,10 @@ impl From<Error> for WebError {
 
 impl fmt::Display for WebError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
+        match self {
             WebError::BadRequest => "bad request".fmt(fmt),
             WebError::NotFound => "not found".fmt(fmt),
-            WebError::Custom(ref err) => err.fmt(fmt),
+            WebError::Custom(e) => e.fmt(fmt),
         }
     }
 }

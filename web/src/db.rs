@@ -215,40 +215,37 @@ impl serde::Serialize for Key {
             Self::Players => {
                 seq.serialize_element("player")?;
             }
-            Self::Player { ref user_login } => {
+            Self::Player { user_login } => {
                 seq.serialize_element("player")?;
                 seq.serialize_element(user_login)?;
             }
-            Self::Connection {
-                ref user_id,
-                ref id,
-            } => {
+            Self::Connection { user_id, id } => {
                 seq.serialize_element("connections")?;
                 seq.serialize_element(user_id)?;
                 seq.serialize_element(id)?;
             }
-            Self::ConnectionsByUserId { ref user_id } => {
+            Self::ConnectionsByUserId { user_id } => {
                 seq.serialize_element("connections")?;
                 seq.serialize_element(user_id)?;
             }
-            Self::UserIdToKey { ref user_id } => {
+            Self::UserIdToKey { user_id } => {
                 seq.serialize_element("user-id-to-key")?;
                 seq.serialize_element(user_id)?;
             }
-            Self::KeyToUserId { ref key } => {
+            Self::KeyToUserId { key } => {
                 seq.serialize_element("key-to-user-id")?;
                 seq.serialize_element(key)?;
             }
-            Self::User { ref user_id } => {
+            Self::User { user_id } => {
                 seq.serialize_element("user")?;
                 seq.serialize_element(user_id)?;
             }
-            Self::GithubReleases { ref repo, ref user } => {
+            Self::GithubReleases { repo, user } => {
                 seq.serialize_element("github-releases")?;
                 seq.serialize_element(repo)?;
                 seq.serialize_element(user)?;
             }
-            Self::Unsupported(ref ns, ref args) => {
+            Self::Unsupported(ns, args) => {
                 seq.serialize_element(ns)?;
 
                 for value in args {
@@ -283,7 +280,7 @@ impl Database {
             let (key, value) = result?;
 
             match Key::deserialize(key.as_ref())? {
-                Key::Player { ref user_login } => {
+                Key::Player { user_login } => {
                     if let Ok(partial) = Self::deserialize::<PlayerPartial>(&value) {
                         out.push(PlayerEntry {
                             user_login: user_login.to_string(),
@@ -445,11 +442,8 @@ impl Database {
 
             // TODO: do something with the id?
             let _id = match Key::deserialize(key.as_ref())? {
-                Key::Connection {
-                    ref user_id,
-                    ref id,
-                } if user_id == needle_user_id => id.to_string(),
-                Key::ConnectionsByUserId { ref user_id } if user_id == needle_user_id => {
+                Key::Connection { user_id, id } if user_id == needle_user_id => id.to_string(),
+                Key::ConnectionsByUserId { user_id } if user_id == needle_user_id => {
                     continue;
                 }
                 _ => break,

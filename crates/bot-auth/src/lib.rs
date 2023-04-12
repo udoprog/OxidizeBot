@@ -38,8 +38,8 @@ pub enum RoleOrUser {
 
 impl fmt::Display for RoleOrUser {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            RoleOrUser::User(ref user) => user.fmt(fmt),
+        match self {
+            RoleOrUser::User(user) => user.fmt(fmt),
             RoleOrUser::Role(role) => role.fmt(fmt),
         }
     }
@@ -283,7 +283,7 @@ impl Auth {
     async fn test_temporary(
         &self,
         now: &DateTime<Utc>,
-        scope: Scope,
+        scope: &Scope,
         against: impl IntoIterator<Item = RoleOrUser>,
     ) -> (bool, bool) {
         let temporary = self.inner.temporary_grants.read().await;
@@ -297,7 +297,7 @@ impl Auth {
 
         'outer: for against in against.into_iter() {
             for t in temporary.iter() {
-                if t.principal != against || t.scope != scope {
+                if t.principal != against || t.scope != *scope {
                     continue;
                 }
 
@@ -315,18 +315,22 @@ impl Auth {
     }
 
     /// Test if the given assignment exists.
-    pub async fn test_any(
+    pub async fn test_any<S>(
         &self,
-        scope: Scope,
+        scope: S,
         user: &str,
         roles: impl IntoIterator<Item = Role>,
-    ) -> bool {
+    ) -> bool
+    where
+        S: AsRef<Scope>,
+    {
+        let scope = scope.as_ref();
         let roles = roles.into_iter().collect::<HashSet<_>>();
 
         {
             let grants = self.inner.grants.read().await;
 
-            if roles.iter().any(|r| grants.contains(&(scope, *r))) {
+            if roles.iter().any(|r| grants.contains(&(*scope, *r))) {
                 return true;
             }
         }
@@ -396,81 +400,88 @@ impl Auth {
 
 macro_rules! scopes {
     ($(($variant:ident, $scope:expr),)*) => {
-    #[derive(
-        Debug,
-        Clone,
-        Copy,
-        PartialEq,
-        Eq,
-        PartialOrd,
-        Ord,
-        Hash,
-        Serialize,
-        Deserialize,
-        FromSqlRow,
-        AsExpression,
-    )]
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    pub enum Scope {
-        $(#[serde(rename = $scope)] $variant,)*
-        Unknown,
-    }
-
-    impl settings::Scope for Scope {
-    }
-
-    impl Default for Scope {
-        fn default() -> Self {
-            Self::Unknown
+        #[derive(
+            Debug,
+            Clone,
+            Copy,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Hash,
+            Serialize,
+            Deserialize,
+            FromSqlRow,
+            AsExpression,
+        )]
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        pub enum Scope {
+            $(#[serde(rename = $scope)] $variant,)*
+            Unknown,
         }
-    }
 
-    impl Scope {
-        /// Get a list of all scopes.
-        pub(crate) fn list() -> Vec<Scope> {
-            vec![
-                $(Scope::$variant,)*
-            ]
+        impl settings::Scope for Scope {
         }
-    }
 
-    impl fmt::Display for Scope {
-        fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-            match *self {
-                $(Scope::$variant => $scope.fmt(fmt),)*
-                Scope::Unknown => "unknown".fmt(fmt),
+        impl Default for Scope {
+            fn default() -> Self {
+                Self::Unknown
             }
         }
-    }
 
-    impl std::str::FromStr for Scope {
-        type Err = Error;
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-            match s {
-                $($scope => Ok(Scope::$variant),)*
-                _ => Ok(Scope::Unknown),
+        impl Scope {
+            /// Get a list of all scopes.
+            pub(crate) fn list() -> Vec<Scope> {
+                vec![
+                    $(Scope::$variant,)*
+                ]
             }
         }
-    }
 
-    impl ToSql<diesel::sql_types::Text, Sqlite> for Scope {
-        fn to_sql<'b>(&self, out: &mut diesel::serialize::Output<'b, '_, Sqlite>) -> diesel::serialize::Result {
-            out.set_value(self.to_string());
-            Ok(IsNull::No)
+        impl fmt::Display for Scope {
+            fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+                match *self {
+                    $(Scope::$variant => $scope.fmt(fmt),)*
+                    Scope::Unknown => "unknown".fmt(fmt),
+                }
+            }
         }
-    }
 
-    impl<DB> diesel::deserialize::FromSql<diesel::sql_types::Text, DB> for Scope
-    where
-        DB: Backend,
-        String: diesel::deserialize::FromSql<diesel::sql_types::Text, DB>,
-    {
-        fn from_sql(bytes: RawValue<'_, DB>) -> diesel::deserialize::Result<Self> {
-            let s = String::from_sql(bytes)?;
-            Ok(str::parse(&s)?)
+        impl std::str::FromStr for Scope {
+            type Err = Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $($scope => Ok(Scope::$variant),)*
+                    _ => Ok(Scope::Unknown),
+                }
+            }
         }
-    }
+
+        impl ToSql<diesel::sql_types::Text, Sqlite> for Scope {
+            fn to_sql<'b>(&self, out: &mut diesel::serialize::Output<'b, '_, Sqlite>) -> diesel::serialize::Result {
+                out.set_value(self.to_string());
+                Ok(IsNull::No)
+            }
+        }
+
+        impl<DB> diesel::deserialize::FromSql<diesel::sql_types::Text, DB> for Scope
+        where
+            DB: Backend,
+            String: diesel::deserialize::FromSql<diesel::sql_types::Text, DB>,
+        {
+            fn from_sql(bytes: RawValue<'_, DB>) -> diesel::deserialize::Result<Self> {
+                let s = String::from_sql(bytes)?;
+                Ok(str::parse(&s)?)
+            }
+        }
+
+        impl AsRef<Scope> for Scope {
+            #[inline]
+            fn as_ref(&self) -> &Scope {
+                self
+            }
+        }
     }
 }
 

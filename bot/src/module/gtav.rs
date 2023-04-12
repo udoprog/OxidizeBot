@@ -342,14 +342,14 @@ impl Command {
     fn command(&self) -> String {
         use self::Command::*;
 
-        match *self {
+        match self {
             SpawnRandomVehicle(vehicle) | SpawnVehicle(vehicle) => {
                 format!("spawn-vehicle {}", vehicle)
             }
             Repair => "repair".to_string(),
             KillEngine => "kill-engine".to_string(),
             BlowTires => "blow-tires".to_string(),
-            GiveWeapon(ref weapon) => format!("give-weapon {}", weapon),
+            GiveWeapon(weapon) => format!("give-weapon {}", weapon),
             TakeWeapon => "take-weapon".to_string(),
             TakeAllWeapons => "take-all-weapons".to_string(),
             Stumble => "stumble".to_string(),
@@ -358,7 +358,7 @@ impl Command {
             GiveHealth => "give-health".to_string(),
             GiveArmor => "give-armor".to_string(),
             TakeHealth => "take-health".to_string(),
-            License(ref license) => format!("license {}", license),
+            License(license) => format!("license {}", license),
             RandomizeColor => "randomize-color".to_string(),
             RandomizeWeather => "randomize-weather".to_string(),
             RandomizeCharacter => "randomize-character".to_string(),
@@ -382,21 +382,21 @@ impl Command {
             MakePedsAggressive => "make-peds-aggressive".to_string(),
             MatrixSlam => "matrix-slam".to_string(),
             CloseParachute => "close-parachute".to_string(),
-            DisableControl(ref control) => format!("disable-control {}", control),
-            ModVehicle(ref m) => format!("mod-vehicle {}", m),
+            DisableControl(control) => format!("disable-control {}", control),
+            ModVehicle(m) => format!("mod-vehicle {}", m),
             Levitate => "levitate".to_string(),
             LevitateEntities => "levitate-entities".to_string(),
             Eject => "eject".to_string(),
             SlowDownTime => "slow-down-time".to_string(),
             MakeFireProof(n) => format!("make-fire-proof {}", n),
             FuelLeakage => "fuel-leakage".to_string(),
-            ChangeCurrentVehicle(ref vehicle) => format!("change-current-vehicle {}", vehicle),
+            ChangeCurrentVehicle(vehicle) => format!("change-current-vehicle {}", vehicle),
             RandomizeDoors => "randomize-doors".to_string(),
             Skyfall => "skyfall".to_string(),
             Taze => "taze".to_string(),
             TazeOthers => "taze-others".to_string(),
             ReduceGravity => "reduce-gravity".to_string(),
-            Raw(ref cmd) => cmd.to_string(),
+            Raw(cmd) => cmd.to_string(),
         }
     }
 
@@ -414,7 +414,7 @@ impl Command {
             Fall => 30,
             // rewards
             SpawnRandomVehicle(..) => 10,
-            SpawnVehicle(ref vehicle, ..) => vehicle.cost(),
+            SpawnVehicle(vehicle, ..) => vehicle.cost(),
             Repair => 10,
             GiveWeapon(weapon) => weapon.cost(),
             Wanted(0) => 15,
@@ -446,15 +446,15 @@ impl Command {
             MakePedsAggressive => 40,
             MatrixSlam => 50,
             CloseParachute => 50,
-            DisableControl(ref control) => control.cost(),
-            ModVehicle(ref m) => m.cost(),
+            DisableControl(control) => control.cost(),
+            ModVehicle(m) => m.cost(),
             Levitate => 25,
             LevitateEntities => 50,
             Eject => 50,
             SlowDownTime => 25,
             MakeFireProof(..) => 50,
             FuelLeakage => 10,
-            ChangeCurrentVehicle(ref vehicle) => vehicle.cost(),
+            ChangeCurrentVehicle(vehicle) => vehicle.cost(),
             RandomizeDoors => 0,
             Skyfall => 50,
             Taze => 25,
@@ -469,7 +469,7 @@ impl fmt::Display for Command {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         use self::Command::*;
 
-        match *self {
+        match self {
             SpawnRandomVehicle(vehicle) | SpawnVehicle(vehicle) => {
                 write!(fmt, "giving them {}", vehicle.display())
             }
@@ -485,7 +485,7 @@ impl fmt::Display for Command {
             GiveHealth => "giving them FULL health TakeNRG".fmt(fmt),
             GiveArmor => "giving them FULL armor TakeNRG".fmt(fmt),
             TakeHealth => "taking away their health TriHard".fmt(fmt),
-            License(ref license) => write!(fmt, "setting the license plate to \"{}\"!", license),
+            License(license) => write!(fmt, "setting the license plate to \"{}\"!", license),
             RandomizeColor => write!(fmt, "randomizing vehicle color BlessRNG"),
             RandomizeWeather => write!(fmt, "randomizing current weather DatSheffy"),
             RandomizeCharacter => write!(fmt, "randomizing current character!"),
@@ -514,10 +514,10 @@ impl fmt::Display for Command {
             MakePedsAggressive => write!(fmt, "setting the pedestrians on them"),
             MatrixSlam => write!(fmt, "performing a Matrix slam"),
             CloseParachute => write!(fmt, "opening their parachute"),
-            DisableControl(ref control) => {
+            DisableControl(control) => {
                 write!(fmt, "disabling their {} control", control.display())
             }
-            ModVehicle(ref m) => write!(fmt, "adding {} mod to their current vehicle", m.display()),
+            ModVehicle(m) => write!(fmt, "adding {} mod to their current vehicle", m.display()),
             Levitate => write!(fmt, "causing them to levitate"),
             LevitateEntities => write!(fmt, "causing other things to levitate"),
             Eject => write!(fmt, "causing them to eject"),

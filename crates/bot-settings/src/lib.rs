@@ -153,9 +153,9 @@ pub struct Setting<S>
 where
     S: Scope,
 {
-    pub schema: SchemaType<S>,
-    pub key: String,
-    pub value: serde_json::Value,
+    schema: SchemaType<S>,
+    key: String,
+    value: serde_json::Value,
 }
 
 impl<S> Setting<S>
@@ -170,6 +170,11 @@ where
     /// Access the key associated with the setting.
     pub fn key(&self) -> &str {
         &self.key
+    }
+
+    /// Get the value of the setting as its raw underlying JSON.
+    pub fn value(&self) -> &serde_json::Value {
+        &self.value
     }
 }
 
@@ -221,21 +226,18 @@ where
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SchemaType<S>
-where
-    S: Scope,
-{
+pub struct SchemaType<S> {
     /// Documentation for this type.
     doc: String,
     /// Scope required to modify variable.
     #[serde(default)]
-    pub scope: Option<S>,
+    scope: Option<S>,
     /// The type.
     #[serde(rename = "type")]
-    pub ty: Type,
+    ty: Type,
     /// If the value is a secret value or not.
     #[serde(default)]
-    pub secret: bool,
+    secret: bool,
     /// If the setting is a feature toggle.
     #[serde(default)]
     feature: bool,
@@ -244,13 +246,25 @@ where
     title: Option<String>,
 }
 
-impl<S> SchemaType<S>
-where
-    S: Scope,
-{
+impl<S> SchemaType<S> {
     /// If this setting is a feature toggle.
     pub fn feature(&self) -> bool {
         self.feature
+    }
+
+    /// Get the scope assocaited with the setting.
+    pub fn scope(&self) -> Option<&S> {
+        self.scope.as_ref()
+    }
+
+    /// Test if the setting is secret.
+    pub fn is_secret(&self) -> bool {
+        self.secret
+    }
+
+    /// Get the type of the setting.
+    pub fn ty(&self) -> &Type {
+        &self.ty
     }
 }
 

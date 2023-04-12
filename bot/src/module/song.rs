@@ -271,7 +271,7 @@ impl command::Handler for Handler {
                     .await;
 
                 match result {
-                    Some((when, ref item)) if when.as_secs() == 0 => {
+                    Some((when, item)) if when.as_secs() == 0 => {
                         if your {
                             chat::respond!(ctx, "Your song is currently playing");
                         } else {

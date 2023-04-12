@@ -38,9 +38,9 @@ impl command::Handler for Uptime {
 
         let now = Utc::now();
 
-        match started_at {
+        match &started_at {
             // NB: very important to check that _now_ is after started at.
-            Some(ref started_at) if now > *started_at => {
+            Some(started_at) if now > *started_at => {
                 let uptime =
                     display::compact_duration((now - *started_at).to_std().unwrap_or_default());
 

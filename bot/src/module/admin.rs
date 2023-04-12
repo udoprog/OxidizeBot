@@ -26,11 +26,11 @@ impl Handler {
 
         for setting in settings.iter().take(10) {
             // NB: security issue if this was present.
-            if key.starts_with("secrets/") || setting.schema.secret {
+            if key.starts_with("secrets/") || setting.schema().is_secret() {
                 continue;
             }
 
-            let value = serde_json::to_string(&setting.value)?;
+            let value = serde_json::to_string(setting.value())?;
 
             let value = if value.len() > 20 {
                 "*too long*"
@@ -40,7 +40,7 @@ impl Handler {
 
             results.push(format!(
                 "..{} = {}",
-                setting.key.trim_start_matches(key),
+                setting.key().trim_start_matches(key),
                 value,
             ));
         }
@@ -184,7 +184,7 @@ impl command::Handler for Handler {
                             None => return self.list_settings_by_prefix(ctx, &key).await,
                         };
 
-                        if setting.schema().secret {
+                        if setting.schema().is_secret() {
                             chat::respond_bail!("Cannot show secret setting `{}`", key);
                         }
 
@@ -201,11 +201,11 @@ impl command::Handler for Handler {
                             .lookup(&key)
                             .ok_or(chat::respond_err!("No such setting"))?;
 
-                        let value = schema.ty.parse_as_json(value).map_err(|e| {
-                            chat::respond_err!("Value is not a valid {} type: {}", schema.ty, e)
+                        let value = schema.ty().parse_as_json(value).map_err(|e| {
+                            chat::respond_err!("Value is not a valid {} type: {}", schema.ty(), e)
                         })?;
 
-                        if let Some(scope) = schema.scope {
+                        if let Some(scope) = schema.scope() {
                             if !ctx.user.has_scope(scope).await {
                                 chat::respond_bail!(
                                     "You are not permitted to modify that setting, sorry :(",
@@ -247,7 +247,7 @@ impl Handler {
             .await?
             .ok_or(chat::respond_err!("No setting matching key: {}", key))?;
 
-        if let Some(scope) = setting.schema().scope {
+        if let Some(scope) = setting.schema().scope() {
             if !ctx.user.has_scope(scope).await {
                 chat::respond!(
                     ctx,
@@ -258,7 +258,7 @@ impl Handler {
         }
 
         // Check type of the setting.
-        let toggled = match &setting.schema().ty {
+        let toggled = match setting.schema().ty() {
             settings::Type {
                 kind: settings::Kind::Bool,
                 ..
@@ -298,7 +298,7 @@ impl Handler {
             .ok_or(chat::respond_err!("No such setting"))?;
 
         // Test schema permissions.
-        if let Some(scope) = schema.scope {
+        if let Some(scope) = schema.scope() {
             if !ctx.user.has_scope(scope).await {
                 return Err(chat::respond_err!(
                     "You are not permitted to modify that setting, sorry :("
@@ -307,12 +307,12 @@ impl Handler {
             }
         }
 
-        let ty = match schema.ty {
+        let ty = match schema.ty() {
             settings::Type {
-                kind: settings::Kind::Set { ref value },
+                kind: settings::Kind::Set { value },
                 ..
             } => value,
-            ref other => {
+            other => {
                 return Err(
                     chat::respond_err!("Configuration is a {}, but expected a set", other).into(),
                 );
