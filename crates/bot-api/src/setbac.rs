@@ -105,9 +105,7 @@ impl Setbac {
     /// Refresh the token corresponding to the given flow.
     pub async fn refresh_connection(&self, id: &str) -> Result<Option<Connection>> {
         let mut req = self.request(Method::POST, &["api", "connections", id, "refresh"]);
-
         req.header(header::CONTENT_TYPE, "application/json");
-
         let token = req.execute().await?.json::<Data<Connection>>()?;
         Ok(token.data)
     }
@@ -215,16 +213,4 @@ pub struct Connection {
     pub description: String,
     pub hash: String,
     pub token: RemoteToken,
-}
-
-impl Connection {
-    /// Convert connection into its corresponding [`ConnectionMeta`].
-    pub fn as_meta(&self) -> ConnectionMeta {
-        ConnectionMeta {
-            id: self.id.clone(),
-            title: self.title.clone(),
-            description: self.description.clone(),
-            hash: self.hash.clone(),
-        }
-    }
 }

@@ -22,7 +22,7 @@ macro_rules! log_base {
         ::tracing::$level!($fmt $(, $($arg)*)*);
 
         for e in e.chain() {
-            ::tracing::$level!("caused by: {}", e);
+            ::tracing::$level!("Caused by: {}", e);
         }
     }};
 }

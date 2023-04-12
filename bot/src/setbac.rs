@@ -37,61 +37,54 @@ where
         ))?)
         .await;
 
-    let mut remote_builder = RemoteBuilder {
-        streamer_token,
+    let mut builder = Builder {
         injector: injector.clone(),
+        enabled,
+        streamer_token,
         global_bus,
         player,
-        enabled,
-        api_url: None,
         secret_key,
+        api_url: None,
+        rx: None,
+        setbac: None,
     };
 
-    remote_builder.api_url = api_url.and_then(|s| parse_url(&s));
-
-    let mut remote = Remote::default();
-    remote_builder.init(&mut remote).await;
+    builder.api_url = api_url.and_then(|s| parse_url(&s));
+    builder.update().await;
 
     let future = async move {
         loop {
             tokio::select! {
                 update = streamer_token_stream.recv() => {
-                    remote_builder.streamer_token = update;
-                    remote_builder.init(&mut remote).await;
+                    tracing::info!("Received new streamer token");
+                    builder.streamer_token = update;
+                    builder.update().await;
                 }
                 secret_key = secret_key_stream.recv() => {
-                    remote_builder.secret_key = secret_key;
-                    remote_builder.init(&mut remote).await;
+                    tracing::info!("Received new secret key");
+                    builder.secret_key = secret_key;
+                    builder.update().await;
                 }
                 update = player_stream.recv() => {
-                    remote_builder.player = update;
-                    remote_builder.init(&mut remote).await;
+                    builder.player = update;
+                    builder.update().await;
                 }
                 api_url = api_url_stream.recv() => {
-                    remote_builder.api_url = api_url.and_then(|s| parse_url(&s));
-                    remote_builder.init(&mut remote).await;
+                    builder.api_url = api_url.and_then(|s| parse_url(&s));
+                    builder.update().await;
                 }
                 enabled = enabled_stream.recv() => {
-                    remote_builder.enabled = enabled;
-                    remote_builder.init(&mut remote).await;
+                    builder.enabled = enabled;
+                    builder.update().await;
                 }
-                event = async { remote.rx.as_mut().unwrap().recv().await }, if remote.rx.is_some() => {
+                // TODO: Change to use async-fuse.
+                event = async { builder.rx.as_mut().unwrap().recv().await }, if builder.rx.is_some() => {
                     let event = event?;
 
-                    // Only update on switches to current song.
-                    match event {
-                        bus::Global::SongModified => (),
-                        _ => continue,
-                    };
-
-                    let setbac = match remote.setbac.as_ref() {
-                        Some(setbac) => setbac,
-                        None => continue,
-                    };
-
-                    let player = match remote.player.as_ref() {
-                        Some(player) => player,
-                        None => continue,
+                    // Only update on switches to current song and all necessary
+                    // components are available.
+                    let (bus::Global::SongModified, Some(setbac), Some(player)) = (event, &builder.setbac, &builder.player) else {
+                        continue;
                     };
 
                     tracing::trace!("Pushing remote player update");
@@ -103,8 +96,8 @@ where
                         update.items.push(i.as_ref().into());
                     }
 
-                    if let Err(e) = setbac.player_update(update).await {
-                        common::log_error!(e, "Failed to perform remote player update");
+                    if let Err(error) = setbac.player_update(update).await {
+                        common::log_error!(error, "Failed to perform remote player update");
                     }
                 }
             }
@@ -114,28 +107,27 @@ where
     Ok(future.in_current_span())
 }
 
-struct RemoteBuilder {
-    streamer_token: Option<api::Token>,
+struct Builder {
     injector: Injector,
+    enabled: bool,
+    streamer_token: Option<api::Token>,
     global_bus: bus::Bus<bus::Global>,
     player: Option<player::Player>,
-    enabled: bool,
     api_url: Option<Url>,
     secret_key: Option<String>,
+    rx: Option<bus::Reader<bus::Global>>,
+    setbac: Option<Setbac>,
 }
 
-impl RemoteBuilder {
-    async fn init(&self, remote: &mut Remote) {
+impl Builder {
+    async fn update(&mut self) {
         if self.enabled {
-            remote.rx = Some(self.global_bus.subscribe());
-
-            remote.player = self.player.as_ref().cloned();
+            self.rx = Some(self.global_bus.subscribe());
         } else {
-            remote.rx = None;
-            remote.player = None;
+            self.rx = None;
         }
 
-        remote.setbac = match self.api_url.as_ref() {
+        self.setbac = match self.api_url.as_ref() {
             Some(api_url) => {
                 let setbac = Setbac::new(
                     crate::USER_AGENT,
@@ -155,18 +147,11 @@ impl RemoteBuilder {
     }
 }
 
-#[derive(Default)]
-struct Remote {
-    rx: Option<bus::Reader<bus::Global>>,
-    player: Option<player::Player>,
-    setbac: Option<Setbac>,
-}
-
 fn parse_url(url: &str) -> Option<Url> {
     match str::parse(url) {
         Ok(api_url) => Some(api_url),
         Err(e) => {
-            common::log_warn!(e, "bad api url: {}", url);
+            common::log_warn!(e, "Bad api url: {}", url);
             None
         }
     }

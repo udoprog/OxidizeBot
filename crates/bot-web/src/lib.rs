@@ -772,10 +772,18 @@ impl Auth {
     }
 
     async fn set_key(&self, key: AuthKeyQuery) -> Result<impl warp::Reply> {
-        let settings = self.settings.read().await;
-
-        if let (Some(settings), Some(key)) = (settings.as_ref(), key.key) {
-            settings.set("remote/secret-key", key.as_str()).await?;
+        match self.settings.read().await {
+            Some(settings) => {
+                if let Some(key) = key.key {
+                    tracing::info!("Setting remote secret key");
+                    settings.set("remote/secret-key", key.as_str()).await?;
+                } else {
+                    tracing::warn!("Received fragment doesn't contain key");
+                }
+            }
+            None => {
+                tracing::warn!("No settings available");
+            }
         }
 
         let mut parts = URL.parse::<warp::http::Uri>()?.into_parts();
@@ -783,8 +791,7 @@ impl Auth {
             "?received-key=true",
         ));
         let uri = warp::http::Uri::from_parts(parts)?;
-
-        Ok(warp::redirect::redirect(uri))
+        Ok(warp::redirect::temporary(uri))
     }
 }
 

@@ -281,13 +281,15 @@ pub async fn setup(
 async fn load_token(injector: &Injector, tag: tags::Token) -> Result<api::Token> {
     let (mut stream, token) = injector.stream_key(Key::<api::Token>::tagged(tag)?).await;
 
-    let token = if let Some(token) = token {
-        token
-    } else {
-        stream.recv().await.context("token stream ended")?
-    };
+    if let Some(token) = token {
+        return Ok(token);
+    }
 
-    Ok(token)
+    loop {
+        if let Some(token) = stream.recv().await {
+            return Ok(token);
+        }
+    }
 }
 
 /// Events emitted by the player.

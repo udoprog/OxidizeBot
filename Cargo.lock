@@ -545,6 +545,7 @@ name = "bot-oauth2"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "async-fuse",
  "async-injector",
  "bot-api",
  "bot-auth",

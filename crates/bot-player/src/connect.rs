@@ -273,6 +273,6 @@ where
     Error: From<E>,
 {
     if let Err(e) = result {
-        common::log_warn!(e, "failed to issue connect command");
+        common::log_warn!(e, "Failed to issue connect command");
     }
 }
