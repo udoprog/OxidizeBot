@@ -5,14 +5,14 @@ edition = "2021"
 publish = false
 
 [dependencies]
-db = { package = "bot-db", path = "../bot-db" }
-api = { package = "bot-api", path = "../bot-api" }
-common = { package = "bot-common", path = "../bot-common" }
-thiserror = "1.0.40"
-anyhow = "1.0.70"
-async-injector = "0.18.5"
-diesel = "2.0.3"
-mysql_async = "0.31.3"
-serde = { version = "1.0.159", features = ["derive"] }
-tokio = { version = "1.27.0", default-features = false, features = ["rt"] }
-tracing = "0.1.37"
+db = { workspace = true }
+api = { workspace = true }
+common = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+async-injector = { workspace = true }
+diesel = { workspace = true }
+mysql_async = "0.32.0"
+serde = { workspace = true }
+tokio = { workspace = true, features = ["rt"] }
+tracing = { workspace = true }

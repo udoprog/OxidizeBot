@@ -5,12 +5,12 @@ edition = "2021"
 publish = false
 
 [dependencies]
-chrono = { version = "0.4.24", features = ["serde"] }
-diesel = "2.0.3"
+chrono = { workspace = true }
+diesel = { workspace = true }
 futures-util = { version = "0.3.28", default-features = false, features = ["sink", "alloc"] }
-serde = { version = "1.0.159", features = ["derive"] }
-serde_json = "1.0.95"
-thiserror = "1.0.40"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 tokio-stream = { version = "0.1.12", default-features = false, features = [] }
-tracing = "0.1.37"
-url = { version = "2.3.1", features = ["serde"] }
+tracing = { workspace = true }
+url = { workspace = true }

@@ -6,18 +6,20 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 use async_fuse::Fuse;
+use async_injector::{Injector, Key};
 use backoff::backoff::Backoff;
 use chrono::{DateTime, Utc};
 use common::sink::SinkExt;
 use common::stream::Stream;
+use common::{tags, BoxStream};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tokio::time::{self, Interval, Sleep};
+use tokio_tungstenite::tungstenite;
+use tokio_tungstenite::tungstenite::handshake::client::Request;
+use tokio_tungstenite::tungstenite::http::Uri;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::Instrument;
-
-use async_injector::{Injector, Key};
-use common::{tags, BoxStream};
 
 use crate::twitch::Data;
 
@@ -189,9 +191,6 @@ impl State {
         };
 
         async fn try_build_client(streamer: &crate::TwitchAndUser) -> Result<Client> {
-            use tungstenite::handshake::client::Request;
-            use tungstenite::http::Uri;
-
             tracing::trace!("Connecting to Twitch Pub/Sub");
 
             let auth_token = streamer.client.token.read().map(|(t, _)| t);

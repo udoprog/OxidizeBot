@@ -5,21 +5,21 @@ edition = "2021"
 publish = false
 
 [dependencies]
-common = { package = "bot-common", path = "../bot-common" }
-api = { package = "bot-api", path = "../bot-api" }
-bus = { package = "bot-bus", path = "../bot-bus" }
-db = { package = "bot-db", path = "../bot-db" }
-settings = { package = "bot-settings", path = "../bot-settings" }
-storage = { package = "bot-storage", path = "../bot-storage" }
-auth = { package = "bot-auth", path = "../bot-auth" }
-async-fuse = "0.11.4"
+common = { workspace = true }
+api = { workspace = true }
+bus = { workspace = true }
+db = { workspace = true }
+settings = { workspace = true }
+storage = { workspace = true }
+auth = { workspace = true }
+async-fuse = { workspace = true }
 rand = "0.8.5"
-tokio = { version = "1.27.0", default-features = false, features = ["time", "sync", "macros"] }
-thiserror = "1.0.40"
-async-injector = "0.18.5"
-anyhow = "1.0.70"
-parking_lot = "0.12.1"
-serde = { version = "1.0.159", features = ["derive"] }
-tracing = "0.1.37"
+tokio = { workspace = true, features = ["time", "macros"] }
+thiserror = { workspace = true }
+async-injector = { workspace = true }
+anyhow = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
 async-stream = "0.3.5"
-chrono = { version = "0.4.24", default-features = false }
+chrono = { workspace = true }

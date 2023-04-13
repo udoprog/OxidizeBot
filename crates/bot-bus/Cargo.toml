@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-common = { package = "bot-common", path = "../bot-common" }
-anyhow = "1.0.70"
-serde = { version = "1.0.159", features = ["derive"] }
-tokio = { version = "1.27.0", features = ["sync"] }
+common = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }

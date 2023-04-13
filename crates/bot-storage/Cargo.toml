@@ -5,5 +5,5 @@ edition = "2021"
 publish = false
 
 [dependencies]
-anyhow = "1.0.70"
+anyhow = { workspace = true }
 futures-cache = "0.10.3"

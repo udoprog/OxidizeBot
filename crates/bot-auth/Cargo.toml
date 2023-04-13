@@ -5,12 +5,12 @@ edition = "2021"
 publish = false
 
 [dependencies]
-common = { package = "bot-common", path = "../bot-common" }
-db = { package = "bot-db", path = "../bot-db" }
-settings = { package = "bot-settings", path = "../bot-settings" }
-diesel = "2.0.3"
-serde_yaml = "0.9.21"
-anyhow = "1.0.70"
-serde = { version = "1.0.159", features = ["derive"] }
-tokio = { version = "1.27.0", default-features = false, features = ["sync"] }
-chrono = { version = "0.4.24", default-features = false, features = ["serde"] }
+common = { workspace = true }
+db = { workspace = true }
+settings = { workspace = true }
+diesel = { workspace = true }
+serde_yaml = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+chrono = { workspace = true }

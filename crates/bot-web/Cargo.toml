@@ -5,25 +5,25 @@ edition = "2021"
 publish = false
 
 [dependencies]
-db = { package = "bot-db", path = "../bot-db" }
-settings = { package = "bot-settings", path = "../bot-settings" }
-api = { package = "bot-api", path = "../bot-api" }
-common = { package = "bot-common", path = "../bot-common" }
-auth = { package = "bot-auth", path = "../bot-auth" }
-template = { package = "bot-template", path = "../bot-template" }
-bus = { package = "bot-bus", path = "../bot-bus" }
-storage = { package = "bot-storage", path = "../bot-storage" }
-messagelog = { package = "bot-messagelog", path = "../bot-messagelog" }
-player = { package = "bot-player", path = "../bot-player" }
-currency = { package = "bot-currency", path = "../bot-currency" }
+db = { workspace = true }
+settings = { workspace = true }
+api = { workspace = true }
+common = { workspace = true }
+auth = { workspace = true }
+template = { workspace = true }
+bus = { workspace = true }
+storage = { workspace = true }
+messagelog = { workspace = true }
+player = { workspace = true }
+currency = { workspace = true }
 warp = "0.3.4"
-serde_json = "1.0.95"
+serde_json = { workspace = true }
 percent-encoding = "2.2.0"
 mime = "0.3.17"
 mime_guess = { version = "2.0.4", default-features = false }
-async-injector = "0.18.5"
-anyhow = "1.0.70"
-serde = { version = "1.0.159", features = ["derive"] }
-tracing = "0.1.37"
-tokio = { version = "1.27.0", default-features = false, features = ["sync"] }
+async-injector = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
 rust-embed = { version = "6.6.1", features = ["interpolate-folder-path"] }

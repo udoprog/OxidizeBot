@@ -14,47 +14,47 @@ keywords = ["twitch"]
 categories = ["games"]
 
 [dependencies]
-web = { package = "bot-web", path = "../crates/bot-web" }
-settings = { package = "bot-settings", path = "../crates/bot-settings" }
-db = { package = "bot-db", path = "../crates/bot-db" }
-api = { package = "bot-api", path = "../crates/bot-api" }
-auth = { package = "bot-auth", path = "../crates/bot-auth" }
-bus = { package = "bot-bus", path = "../crates/bot-bus" }
-common = { package = "bot-common", path = "../crates/bot-common" }
-currency = { package = "bot-currency", path = "../crates/bot-currency" }
-emotes = { package = "bot-emotes", path = "../crates/bot-emotes" }
-player = { package = "bot-player", path = "../crates/bot-player" }
-oauth2 = { package = "bot-oauth2", path = "../crates/bot-oauth2" }
-messagelog = { package = "bot-messagelog", path = "../crates/bot-messagelog" }
-template = { package = "bot-template", path = "../crates/bot-template" }
-storage = { package = "bot-storage", path = "../crates/bot-storage" }
-chat = { package = "bot-chat", path = "../crates/bot-chat" }
-async-injector = "0.18.5"
+web = { workspace = true }
+settings = { workspace = true }
+db = { workspace = true }
+api = { workspace = true }
+auth = { workspace = true }
+bus = { workspace = true }
+common = { workspace = true }
+currency = { workspace = true }
+emotes = { workspace = true }
+player = { workspace = true }
+oauth2 = { workspace = true }
+messagelog = { workspace = true }
+template = { workspace = true }
+storage = { workspace = true }
+chat = { workspace = true }
+async-injector =  { workspace = true }
 rand = "0.8.5"
-serde_json = "1.0.95"
-webbrowser = "0.8.8"
+serde_json = { workspace = true }
+webbrowser = "0.8.9"
 tracing-appender = "0.2.2"
-tracing = "0.1.37"
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-tokio = { version = "1.27.0", features = ["full", "tracing"] }
+tokio = { workspace = true, features = ["full", "tracing"] }
 dirs = "5.0.0"
 async-trait = "0.1.68"
-chrono = { version = "0.4.24", default-features = false }
+chrono = { workspace = true }
 async-fuse = { version = "0.11.4", features = ["stream"] }
-anyhow = "1.0.70"
+anyhow = { workspace = true }
 argwerk = "0.20.4"
-url = { version = "2.3.1", features = ["serde"] }
+url = { workspace = true }
 regex = "1.7.3"
-parking_lot = "0.12.1"
-thiserror = "1.0.40"
-serde = { version = "1.0.159", features = ["derive"] }
+parking_lot = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
 async-stream = "0.3.5"
 chrono-tz = { version = "0.8.2", features = ["serde"] }
-smallvec = "1.10.0"
+smallvec = { version = "1.10.0", features = ["serde"] }
 
 [build-dependencies]
 winres = "0.1.12"
-anyhow = "1.0.70"
+anyhow = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 futures-executor = "0.3.28"

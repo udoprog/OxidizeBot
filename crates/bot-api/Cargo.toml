@@ -5,24 +5,23 @@ edition = "2021"
 publish = false
 
 [dependencies]
-settings = { package = "bot-settings", path = "../bot-settings" }
-common = { package = "bot-common", path = "../bot-common" }
-bus = { package = "bot-bus", path = "../bot-bus" }
-serde = "1.0.159"
-serde_json = "1.0.95"
-tokio-tungstenite = "0.18.0"
-async-injector = "0.18.5"
-tracing = "0.1.37"
-tungstenite = { version = "0.18.0", default-features = false }
-chrono = { version = "0.4.24", default-features = false }
+settings = { workspace = true }
+common = { workspace = true }
+bus = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio-tungstenite = { version = "0.18.0", features = ["handshake"] }
+async-injector = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
 reqwest = "0.11.16"
-url = { version = "2.3.1", features = ["serde"] }
+url = { workspace = true }
 graphql_client = "0.12.0"
-thiserror = "1.0.40"
-tokio = { version = "1.27.0", features = ["sync"] }
-anyhow = "1.0.70"
+thiserror = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
 backoff = "0.4.0"
-async-fuse = "0.11.4"
+async-fuse = { workspace = true }
 async-stream = "0.3.5"
-parking_lot = "0.12.1"
+parking_lot = { workspace = true }
 bytes = "1.4.0"

@@ -14,34 +14,33 @@ keywords = ["twitch"]
 categories = ["bots"]
 
 [dependencies]
-anyhow = "1.0.70"
+anyhow = { workspace = true }
 async-oauth2 = "0.4.2"
 base64 = "0.21.0"
 bytes = "1.4.0"
-chrono = { version = "0.4.24", features = ["serde"] }
+chrono = { workspace = true }
 clap = { version = "4.2.1", features = ["derive"] }
 cookie = { version = "0.17.0", features = ["percent-encode"] }
 hyper = { version = "0.14.25", features = ["server", "http1", "stream"] }
 mime = "0.3.17"
 mime_guess = "2.0.4"
-parking_lot = "0.12.1"
-pin-utils = "0.1.0"
+parking_lot = { workspace = true }
 relative-path = { version = "1.8.0", features = ["serde"] }
 reqwest = "0.11.16"
 ring = "0.16.20"
 rust-embed = { version = "6.6.1", features = ["interpolate-folder-path"] }
-serde = { version = "1.0.159", features = ["rc", "derive"] }
+serde = { workspace = true }
 serde_cbor = "0.11.2"
-serde_json = "1.0.95"
+serde_json = { workspace = true }
 serde_urlencoded = "0.7.1"
 sled28 = { package = "sled", version = "0.28.0" }
 sled31 = { package = "sled", version = "0.31.0" }
-smallvec = "1.10.0"
-thiserror = "1.0.40"
+smallvec = { workspace = true }
+thiserror = { workspace = true }
 time = "0.3.20"
-tokio = { version = "1.27.0", features = ["full"] }
+tokio = { workspace = true, features = ["full", "tracing"] }
 tokio-stream = "0.1.12"
 toml = "0.7.3"
-tracing = "0.1.37"
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
-url = { version = "2.3.1", features = ["serde"] }
+url = { workspace = true }
