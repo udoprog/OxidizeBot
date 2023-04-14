@@ -36,7 +36,7 @@ impl NightBot {
     pub async fn run(user_agent: &'static str, injector: Injector) -> Result<()> {
         #[derive(Provider)]
         struct Deps {
-            #[dependency(tag = "tags::Token::NightBot")]
+            #[dependency(tag = tags::Token::NightBot)]
             token: Token,
         }
 

@@ -125,9 +125,9 @@ impl Configuration {
 struct Setup {
     #[dependency]
     db: db::Database,
-    #[dependency(tag = "tags::Twitch::Bot")]
+    #[dependency(tag = tags::Twitch::Bot)]
     bot: api::TwitchAndUser,
-    #[dependency(tag = "tags::Twitch::Streamer")]
+    #[dependency(tag = tags::Twitch::Streamer)]
     streamer: api::TwitchAndUser,
     #[dependency]
     auth: Auth,
