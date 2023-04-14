@@ -12,7 +12,7 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 async-injector = { workspace = true }
 diesel = { workspace = true }
-mysql_async = "0.32.0"
+mysql_async = "0.31.3"
 serde = { workspace = true }
 tokio = { workspace = true, features = ["rt"] }
 tracing = { workspace = true }

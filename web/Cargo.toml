@@ -19,9 +19,9 @@ async-oauth2 = "0.4.2"
 base64 = "0.21.0"
 bytes = "1.4.0"
 chrono = { workspace = true }
-clap = { version = "4.2.1", features = ["derive"] }
+clap = { version = "4.2.2", features = ["derive"] }
 cookie = { version = "0.17.0", features = ["percent-encode"] }
-hyper = { version = "0.14.25", features = ["server", "http1", "stream"] }
+hyper = { version = "0.14.26", features = ["server", "http1", "stream"] }
 mime = "0.3.17"
 mime_guess = "2.0.4"
 parking_lot = { workspace = true }
