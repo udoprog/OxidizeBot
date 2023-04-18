@@ -10,7 +10,7 @@ common = { workspace = true }
 bus = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio-tungstenite = { version = "0.18.0", features = ["handshake"] }
+tokio-tungstenite = { version = "0.18.0", features = ["handshake", "native-tls"] }
 async-injector = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
