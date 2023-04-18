@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tokio::time::{self, Interval, Sleep};
 use tokio_tungstenite::tungstenite;
-use tokio_tungstenite::tungstenite::handshake::client::Request;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::Uri;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use tracing::Instrument;
@@ -196,7 +196,7 @@ impl State {
             let auth_token = streamer.client.token.read().map(|(t, _)| t);
 
             let uri = str::parse::<Uri>(URL)?;
-            let req = Request::get(uri).body(())?;
+            let req = uri.into_client_request()?;
             let (stream, _) = tokio_tungstenite::connect_async(req).await?;
 
             let mut client = Client { stream };

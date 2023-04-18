@@ -106,25 +106,7 @@ static SETTINGS_SCHEMA: &[u8] = include_bytes!("settings.yaml");
 static AUTH_SCHEMA: &[u8] = include_bytes!("auth.yaml");
 
 // Crates to enable logging for, by default.
-static CRATES: &[&str] = &[
-    "bot_api",
-    "bot_auth",
-    "bot_bus",
-    "bot_chat",
-    "bot_common",
-    "bot_currency",
-    "bot_db",
-    "bot_emotes",
-    "bot_messagelog",
-    "bot_oauth2",
-    "bot_player",
-    "bot_settings",
-    "bot_storage",
-    "bot_template",
-    "bot_web",
-    "oxidize",
-    "panic",
-];
+static CRATES: &[&str] = &["bot_", "oxidize", "panic"];
 
 pub mod cli;
 mod module;
