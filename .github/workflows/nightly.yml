@@ -55,3 +55,4 @@ jobs:
         files: "dist/*"
         name: ${{steps.release.outputs.channel}}
         token: ${{secrets.GITHUB_TOKEN}}
+        prerelease: true
