@@ -1,18 +1,11 @@
 use std::cell::RefCell;
-use std::future::Future;
 use std::io;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::ptr;
 use std::thread;
 
-use anyhow::{anyhow, Context as _, Error};
 use async_fuse::Fuse;
 use tokio::sync::{mpsc, oneshot};
-use winapi::shared::basetsd::ULONG_PTR;
-use winapi::shared::minwindef::{
-    DWORD, FALSE, HINSTANCE, LPARAM, LRESULT, PBYTE, TRUE, UINT, WPARAM,
-};
-use winapi::shared::ntdef::LPCWSTR;
+use winapi::shared::minwindef::{DWORD, FALSE, LPARAM, LRESULT, PBYTE, TRUE, UINT, WPARAM};
 use winapi::shared::windef::{HBRUSH, HICON, HMENU, HWND, POINT};
 use winapi::um::shellapi;
 use winapi::um::winuser;
@@ -43,15 +36,34 @@ struct WindowInfo {
 }
 
 impl WindowInfo {
-    fn remove_icon(&self) -> Result<(), io::Error> {
+    fn new_nid(&self) -> shellapi::NOTIFYICONDATAW {
+        let mut nid = shellapi::NOTIFYICONDATAW::default();
+        nid.cbSize = std::mem::size_of::<shellapi::NOTIFYICONDATAW>() as DWORD;
+        nid.hWnd = self.hwnd;
+        nid.uID = 0x1 as UINT;
+        nid
+    }
+
+    fn add_icon(&self) -> io::Result<()> {
+        let mut nid = self.new_nid();
+        nid.uFlags = shellapi::NIF_MESSAGE;
+        nid.uCallbackMessage = ICON_MSG_ID;
+
+        let result = unsafe { shellapi::Shell_NotifyIconW(shellapi::NIM_ADD, &mut nid) };
+
+        if result == FALSE {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(())
+    }
+
+    fn delete_icon(&self) -> io::Result<()> {
         let result = unsafe {
-            let mut nid = new_nid(self.hwnd);
+            let mut nid = self.new_nid();
             nid.uFlags = shellapi::NIF_ICON;
 
-            shellapi::Shell_NotifyIconW(
-                shellapi::NIM_DELETE,
-                &mut nid as *mut shellapi::NOTIFYICONDATAW,
-            )
+            shellapi::Shell_NotifyIconW(shellapi::NIM_DELETE, &mut nid)
         };
 
         if result == FALSE {
@@ -84,7 +96,7 @@ struct WindowsLoopData {
 }
 
 unsafe extern "system" fn window_proc(
-    h_wnd: HWND,
+    hwnd: HWND,
     msg: UINT,
     w_param: WPARAM,
     l_param: LPARAM,
@@ -123,7 +135,7 @@ unsafe extern "system" fn window_proc(
                         return 1;
                     }
 
-                    winuser::SetForegroundWindow(h_wnd);
+                    winuser::SetForegroundWindow(hwnd);
 
                     WININFO_STASH.with(|stash| {
                         let stash = stash.borrow();
@@ -135,8 +147,8 @@ unsafe extern "system" fn window_proc(
                             p.x,
                             p.y,
                             (winuser::TPM_BOTTOMALIGN | winuser::TPM_LEFTALIGN) as i32,
-                            h_wnd,
-                            std::ptr::null_mut(),
+                            hwnd,
+                            ptr::null_mut(),
                         );
                     });
                 }
@@ -144,9 +156,11 @@ unsafe extern "system" fn window_proc(
             }
         }
         winuser::WM_DESTROY => {
+            tracing::trace!("Got destroy message");
             winuser::PostQuitMessage(0);
         }
         winuser::WM_MENUCOMMAND => {
+            tracing::trace!("Got menu command");
             WININFO_STASH.with(|stash| {
                 let stash = stash.borrow();
                 let stash = stash.as_ref().expect("stash");
@@ -162,15 +176,7 @@ unsafe extern "system" fn window_proc(
         _ => (),
     }
 
-    winuser::DefWindowProcW(h_wnd, msg, w_param, l_param)
-}
-
-fn new_nid(hwnd: HWND) -> shellapi::NOTIFYICONDATAW {
-    let mut nid = shellapi::NOTIFYICONDATAW::default();
-    nid.cbSize = std::mem::size_of::<shellapi::NOTIFYICONDATAW>() as DWORD;
-    nid.hWnd = hwnd;
-    nid.uID = 0x1 as UINT;
-    nid
+    winuser::DefWindowProcW(hwnd, msg, w_param, l_param)
 }
 
 fn new_menuitem() -> MENUITEMINFOW {
@@ -179,7 +185,7 @@ fn new_menuitem() -> MENUITEMINFOW {
     info
 }
 
-unsafe fn init_window(name: &str) -> Result<WindowInfo, io::Error> {
+unsafe fn init_window(name: &str) -> io::Result<WindowInfo> {
     let class_name = name.to_wide_null();
 
     let wnd = WNDCLASSW {
@@ -187,11 +193,11 @@ unsafe fn init_window(name: &str) -> Result<WindowInfo, io::Error> {
         lpfnWndProc: Some(window_proc),
         cbClsExtra: 0,
         cbWndExtra: 0,
-        hInstance: 0 as HINSTANCE,
-        hIcon: winuser::LoadIconW(0 as HINSTANCE, winuser::IDI_APPLICATION),
-        hCursor: winuser::LoadCursorW(0 as HINSTANCE, winuser::IDI_APPLICATION),
+        hInstance: ptr::null_mut(),
+        hIcon: winuser::LoadIconW(ptr::null_mut(), winuser::IDI_APPLICATION),
+        hCursor: winuser::LoadCursorW(ptr::null_mut(), winuser::IDI_APPLICATION),
         hbrBackground: 16 as HBRUSH,
-        lpszMenuName: 0 as LPCWSTR,
+        lpszMenuName: ptr::null(),
         lpszClassName: class_name.as_ptr(),
     };
 
@@ -210,30 +216,14 @@ unsafe fn init_window(name: &str) -> Result<WindowInfo, io::Error> {
         0,
         winuser::CW_USEDEFAULT,
         0,
-        0 as HWND,
-        0 as HMENU,
-        0 as HINSTANCE,
-        std::ptr::null_mut(),
+        ptr::null_mut(),
+        ptr::null_mut(),
+        ptr::null_mut(),
+        ptr::null_mut(),
     );
 
     if hwnd.is_null() {
         return Err(io::Error::last_os_error());
-    }
-
-    let mut nid = new_nid(hwnd);
-    nid.uFlags = shellapi::NIF_MESSAGE;
-    nid.uCallbackMessage = ICON_MSG_ID;
-
-    let result = shellapi::Shell_NotifyIconW(
-        shellapi::NIM_ADD,
-        &mut nid as *mut shellapi::NOTIFYICONDATAW,
-    );
-
-    if result == FALSE {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Shell_NotifyIconW: failed",
-        ));
     }
 
     // Setup menu
@@ -243,32 +233,19 @@ unsafe fn init_window(name: &str) -> Result<WindowInfo, io::Error> {
         cbSize: std::mem::size_of::<MENUINFO>() as DWORD,
         fMask: MIM_APPLYTOSUBMENUS | MIM_STYLE,
         dwStyle: MNS_NOTIFYBYPOS,
-        cyMax: 0 as UINT,
-        hbrBack: 0 as HBRUSH,
-        dwContextHelpID: 0 as DWORD,
-        dwMenuData: 0 as ULONG_PTR,
+        cyMax: 0,
+        hbrBack: ptr::null_mut(),
+        dwContextHelpID: 0,
+        dwMenuData: 0,
     };
 
-    if winuser::SetMenuInfo(hmenu, &m as *const MENUINFO) == FALSE {
+    if winuser::SetMenuInfo(hmenu, &m) == FALSE {
         return Err(io::Error::last_os_error());
     }
 
-    Ok(WindowInfo { hwnd, hmenu })
-}
-
-unsafe fn run_loop() {
-    let mut msg = winuser::MSG::default();
-
-    loop {
-        winuser::GetMessageW(&mut msg, 0 as HWND, 0, 0);
-
-        if msg.message == winuser::WM_QUIT {
-            break;
-        }
-
-        winuser::TranslateMessage(&msg);
-        winuser::DispatchMessageW(&msg);
-    }
+    let info = WindowInfo { hwnd, hmenu };
+    info.add_icon()?;
+    Ok(info)
 }
 
 /// A windows application window.
@@ -281,7 +258,7 @@ pub(crate) struct Window {
 
 impl Window {
     /// Construct a new window.
-    pub(crate) async fn new(name: String) -> Result<Window, io::Error> {
+    pub(crate) async fn new(name: String) -> io::Result<Window> {
         let (tx, rx) = oneshot::channel();
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let (events_tx, events_rx) = mpsc::unbounded_channel();
@@ -310,14 +287,25 @@ impl Window {
                 (*stash.borrow_mut()) = Some(data);
             });
 
-            run_loop();
+            let mut msg = winuser::MSG::default();
+
+            loop {
+                winuser::GetMessageW(&mut msg, ptr::null_mut(), 0, 0);
+
+                if msg.message == winuser::WM_QUIT {
+                    break;
+                }
+
+                winuser::TranslateMessage(&msg);
+                winuser::DispatchMessageW(&msg);
+            }
+
+            if let Err(error) = info.delete_icon() {
+                tracing::error!("Failed to remove icon: {error}");
+            }
 
             if shutdown_tx.send(()).is_err() {
                 tracing::error!("Shutdown receiver closed");
-            }
-
-            if let Err(error) = info.remove_icon() {
-                tracing::error!("Failed to remove icon: {error}");
             }
         });
 
@@ -336,43 +324,44 @@ impl Window {
     }
 
     /// Tick the window a single event cycle.
-    pub(crate) fn tick(&mut self) -> TickFuture<'_> {
-        TickFuture { window: self }
+    pub(crate) async fn tick(&mut self) -> Event {
+        tokio::select! {
+            _ = &mut self.shutdown_rx => {
+                Event::Shutdown
+            }
+            event = self.events_rx.recv() => {
+                event.unwrap_or(Event::Shutdown)
+            }
+        }
     }
 
-    pub(crate) fn quit(&mut self) {
-        unsafe {
-            winuser::PostMessageW(self.info.hwnd, WM_DESTROY, 0 as WPARAM, 0 as LPARAM);
+    /// Join the current window.
+    pub(crate) fn join(&mut self) {
+        let result = unsafe { winuser::PostMessageW(self.info.hwnd, WM_DESTROY, 0, 0) };
+
+        if result == FALSE {
+            tracing::warn!(
+                "Failed to post destroy message: {}",
+                io::Error::last_os_error()
+            );
         }
 
         if let Some(t) = self.thread.take() {
-            t.join().expect("bye thread panicked");
+            if t.join().is_err() {
+                tracing::warn!("Window thread panicked");
+            }
         }
     }
 
-    /// Set the tooltip we get when hovering over the systray icon.
-    pub(crate) fn set_tooltip(&self, tooltip: &str) -> Result<(), Error> {
-        self.raw_set_tooltip(tooltip)
-            .with_context(|| anyhow!("failed to set tooltip `{}`", tooltip))
-            .map_err(Error::from)
-    }
-
-    fn raw_set_tooltip(&self, tooltip: &str) -> Result<(), io::Error> {
-        let mut nid = new_nid(self.info.hwnd);
+    /// Set tooltip.
+    pub(crate) fn set_tooltip(&self, tooltip: &str) -> io::Result<()> {
+        let mut nid = self.info.new_nid();
         copy_wstring(&mut nid.szTip, tooltip);
 
-        let result = unsafe {
-            shellapi::Shell_NotifyIconW(
-                shellapi::NIM_MODIFY,
-                &mut nid as *mut shellapi::NOTIFYICONDATAW,
-            )
-        };
+        let result = unsafe { shellapi::Shell_NotifyIconW(shellapi::NIM_MODIFY, &mut nid) };
 
         if result == FALSE {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Shell_NotifyIconW: failed",
-            ));
+            return Err(io::Error::last_os_error());
         }
 
         Ok(())
@@ -384,18 +373,7 @@ impl Window {
         item_idx: u32,
         item_name: &str,
         default: bool,
-    ) -> Result<(), Error> {
-        self.raw_add_menu_entry(item_idx, item_name, default)
-            .with_context(|| anyhow!("failed to add meny entry {} `{}`", item_idx, item_name))
-            .map_err(Error::from)
-    }
-
-    fn raw_add_menu_entry(
-        &self,
-        item_idx: u32,
-        item_name: &str,
-        default: bool,
-    ) -> Result<(), io::Error> {
+    ) -> io::Result<()> {
         let mut st = item_name.to_wide_null();
         let mut item = new_menuitem();
         item.fMask = MIIM_FTYPE | MIIM_STRING | MIIM_ID | MIIM_STATE;
@@ -408,9 +386,7 @@ impl Window {
             item.fState = MFS_DEFAULT;
         }
 
-        let result = unsafe {
-            winuser::InsertMenuItemW(self.info.hmenu, item_idx, 1, &item as *const MENUITEMINFOW)
-        };
+        let result = unsafe { winuser::InsertMenuItemW(self.info.hmenu, item_idx, 1, &item) };
 
         if result == FALSE {
             return Err(io::Error::last_os_error());
@@ -419,22 +395,14 @@ impl Window {
         Ok(())
     }
 
-    /// Add a menu separator with the associated index.
-    pub(crate) fn add_menu_separator(&self, item_idx: u32) -> Result<(), Error> {
-        self.raw_add_menu_separator(item_idx)
-            .with_context(|| anyhow!("failed to add menu separator"))
-            .map_err(Error::from)
-    }
-
-    fn raw_add_menu_separator(&self, item_idx: u32) -> Result<(), io::Error> {
+    /// Add a menu separator at the given index.
+    pub(crate) fn add_menu_separator(&self, item_idx: u32) -> io::Result<()> {
         let mut item = new_menuitem();
         item.fMask = MIIM_FTYPE;
         item.fType = MFT_SEPARATOR;
         item.wID = item_idx;
 
-        let result = unsafe {
-            winuser::InsertMenuItemW(self.info.hmenu, item_idx, 1, &item as *const MENUITEMINFOW)
-        };
+        let result = unsafe { winuser::InsertMenuItemW(self.info.hmenu, item_idx, 1, &item) };
 
         if result == FALSE {
             return Err(io::Error::last_os_error());
@@ -444,8 +412,8 @@ impl Window {
     }
 
     /// Send a notification.
-    pub(crate) fn send_notification(&self, n: Notification) -> Result<(), io::Error> {
-        let mut nid = new_nid(self.info.hwnd);
+    pub(crate) fn send_notification(&self, n: Notification) -> io::Result<()> {
+        let mut nid = self.info.new_nid();
         nid.uFlags = shellapi::NIF_INFO;
 
         if let Some(title) = n.title {
@@ -462,18 +430,10 @@ impl Window {
 
         nid.dwInfoFlags = n.icon.into_flags();
 
-        let result = unsafe {
-            shellapi::Shell_NotifyIconW(
-                shellapi::NIM_MODIFY,
-                &mut nid as *mut shellapi::NOTIFYICONDATAW,
-            )
-        };
+        let result = unsafe { shellapi::Shell_NotifyIconW(shellapi::NIM_MODIFY, &mut nid) };
 
         if result == FALSE {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Shell_NotifyIconW: failed",
-            ));
+            return Err(io::Error::last_os_error());
         }
 
         Ok(())
@@ -485,19 +445,7 @@ impl Window {
         buffer: &[u8],
         width: u32,
         height: u32,
-    ) -> Result<(), Error> {
-        self.raw_set_icon_from_buffer(buffer, width, height)
-            .with_context(|| anyhow!("error setting icon from buffer"))
-            .map_err(Error::from)
-    }
-
-    /// Set an icon from a buffer.
-    fn raw_set_icon_from_buffer(
-        &self,
-        buffer: &[u8],
-        width: u32,
-        height: u32,
-    ) -> Result<(), io::Error> {
+    ) -> io::Result<()> {
         let offset = unsafe {
             winuser::LookupIconIdFromDirectoryEx(
                 buffer.as_ptr() as PBYTE,
@@ -534,46 +482,19 @@ impl Window {
     }
 
     /// Internal call to set icon.
-    fn set_icon(&self, icon: HICON) -> Result<(), io::Error> {
+    fn set_icon(&self, icon: HICON) -> io::Result<()> {
         let result = unsafe {
-            let mut nid = new_nid(self.info.hwnd);
+            let mut nid = self.info.new_nid();
             nid.uFlags = shellapi::NIF_ICON;
             nid.hIcon = icon;
 
-            shellapi::Shell_NotifyIconW(
-                shellapi::NIM_MODIFY,
-                &mut nid as *mut shellapi::NOTIFYICONDATAW,
-            )
+            shellapi::Shell_NotifyIconW(shellapi::NIM_MODIFY, &mut nid)
         };
 
         if result == FALSE {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Shell_NotifyIconW: failed",
-            ));
+            return Err(io::Error::last_os_error());
         }
 
         Ok(())
-    }
-}
-
-pub(crate) struct TickFuture<'a> {
-    window: &'a mut Window,
-}
-
-impl<'a> Future for TickFuture<'a> {
-    type Output = Event;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
-        if let Poll::Ready(result) = Pin::new(&mut self.window.shutdown_rx).poll(ctx) {
-            result.expect("shutdown receiver ended");
-            return Poll::Ready(Event::Shutdown);
-        }
-
-        if let Poll::Ready(Some(event)) = self.window.events_rx.poll_recv(ctx) {
-            return Poll::Ready(event);
-        }
-
-        Poll::Pending
     }
 }

@@ -1,8 +1,10 @@
+use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::pin::pin;
+use std::pin::{pin, Pin};
 use std::time;
 
 use anyhow::{anyhow, Context, Result};
+use async_fuse::Fuse;
 use async_injector::{Injector, Key};
 use common::backoff;
 use common::display;
@@ -120,18 +122,29 @@ pub fn main() -> Result<()> {
         return Ok(());
     }
 
+    let runtime = {
+        let mut runtime = tokio::runtime::Builder::new_multi_thread();
+        runtime.enable_all();
+
+        if let Some(size) = args.stack_size {
+            runtime.thread_stack_size(size);
+        }
+
+        runtime.build()?
+    };
+
     if let Some(size) = args.stack_size {
         let thread = std::thread::Builder::new()
             .name(format!("main-with-stack-{}", size))
-            .spawn(move || inner_main(args))?;
+            .spawn(move || runtime.block_on(inner_main(args)))?;
 
         thread.join().expect("thread shouldn't panic")
     } else {
-        inner_main(args)
+        runtime.block_on(inner_main(args))
     }
 }
 
-fn inner_main(args: Args) -> Result<()> {
+async fn inner_main(args: Args) -> Result<()> {
     let (old_root, root) = match args.root {
         Some(root) => (None, root),
         None => {
@@ -153,7 +166,8 @@ fn inner_main(args: Args) -> Result<()> {
         std::fs::create_dir_all(&root)?;
     }
 
-    let system = sys::setup(&root, &log_file)?;
+    let (system, system_future) = sys::setup(&root, &log_file)?;
+    let mut system_future = pin!(Fuse::new(system_future));
 
     let mut error_backoff = backoff::Exponential::new(time::Duration::from_secs(5));
 
@@ -190,22 +204,19 @@ fn inner_main(args: Args) -> Result<()> {
     let script_dirs = vec![root.join("scripts"), PathBuf::from("scripts")];
 
     loop {
-        let runtime = {
-            let mut runtime = tokio::runtime::Builder::new_multi_thread();
-            runtime.enable_all();
-
-            if let Some(size) = args.stack_size {
-                runtime.thread_stack_size(size);
-            }
-
-            runtime.build()?
-        };
-
-        let future = try_main(&system, &root, &script_dirs, &db, &storage);
-
         system.clear();
 
-        let backoff = match runtime.block_on(future) {
+        let result = try_main(
+            &system,
+            &root,
+            &script_dirs,
+            &db,
+            &storage,
+            system_future.as_mut(),
+        )
+        .await;
+
+        let backoff = match result {
             Err(e) => {
                 let backoff = error_backoff.failed();
                 system.error(String::from("Bot crashed, see log for more details."));
@@ -237,14 +248,15 @@ fn inner_main(args: Args) -> Result<()> {
 
             tracing::info!("Restarting in {}...", display::compact_duration(backoff));
 
-            let intent = runtime.block_on(async {
-                tokio::select! {
-                    _ = system.wait_for_shutdown() => Intent::Shutdown,
-                    _ = system.wait_for_restart() => Intent::Restart,
-                    _ = tokio::signal::ctrl_c() => Intent::Shutdown,
-                    _ = tokio::time::sleep(backoff) => Intent::Restart,
+            let intent = tokio::select! {
+                () = system.wait_for_shutdown() => {
+                    Intent::Shutdown
                 }
-            });
+                () = system.wait_for_restart() => Intent::Restart,
+                () = system_future.as_mut() => Intent::Shutdown,
+                _ = tokio::signal::ctrl_c() => Intent::Shutdown,
+                _ = tokio::time::sleep(backoff) => Intent::Restart,
+            };
 
             if let Intent::Shutdown = intent {
                 break;
@@ -264,7 +276,12 @@ fn inner_main(args: Args) -> Result<()> {
     }
 
     tracing::info!("Exiting...");
-    system.join()?;
+    system.shutdown();
+
+    if !system_future.is_empty() {
+        system_future.await;
+    }
+
     Ok(())
 }
 
@@ -275,6 +292,7 @@ async fn try_main(
     script_dirs: &[PathBuf],
     db: &db::Database,
     storage: &storage::Storage,
+    system_future: Pin<&mut Fuse<impl Future<Output = ()>>>,
 ) -> Result<Intent> {
     tracing::info!("Starting Oxidize Bot Version {}", crate::VERSION);
 
@@ -330,7 +348,7 @@ async fn try_main(
     let command_bus = bus::Bus::new();
     injector.update(command_bus.clone()).await;
 
-    let system_future = system_loop(settings.scoped("system"), system.clone());
+    let system_loop_future = system_loop(settings.scoped("system"), system.clone());
 
     injector.update(storage.cache()?).await;
 
@@ -475,7 +493,7 @@ async fn try_main(
     common::local_join!(
         tasks =>
         server_future,
-        system_future,
+        system_loop_future,
         settings_future,
         updater_future,
         spotify_token_future,
@@ -511,6 +529,9 @@ async fn try_main(
             tracing::info!("Shutdown triggered by signal");
             Ok(Intent::Shutdown)
         },
+        () = system_future => {
+            Ok(Intent::Shutdown)
+        }
     }
 }
 

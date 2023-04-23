@@ -57,7 +57,6 @@ winres = "0.1.12"
 anyhow = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-futures-executor = "0.3.28"
 winapi = { version = "0.3.9", features = ["shellapi", "impl-default"] }
 
 [features]

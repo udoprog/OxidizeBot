@@ -1,7 +1,8 @@
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::Error;
+use anyhow::Result;
 use tokio::sync::Notify;
 
 use crate::sys::Notification;
@@ -30,25 +31,26 @@ impl System {
 
     pub(crate) fn notification(&self, _: Notification) {}
 
-    pub(crate) fn join(&self) -> Result<(), Error> {
-        Ok(())
-    }
+    pub(crate) fn shutdown(&self) {}
 
-    pub(crate) fn is_installed(&self) -> Result<bool, Error> {
+    pub(crate) fn is_installed(&self) -> Result<bool> {
         Ok(true)
     }
 
-    pub(crate) fn install(&self) -> Result<(), Error> {
+    pub(crate) fn install(&self) -> Result<()> {
         Ok(())
     }
 
-    pub(crate) fn uninstall(&self) -> Result<(), Error> {
+    pub(crate) fn uninstall(&self) -> Result<()> {
         Ok(())
     }
 }
 
-pub(crate) fn setup(_root: &Path, _log_file: &Path) -> Result<System, Error> {
-    Ok(System {
+pub(crate) fn setup(_root: &Path, _log_file: &Path) -> Result<(System, impl Future<Output = ()>)> {
+    let system = System {
         restart: Arc::new(Notify::default()),
-    })
+    };
+
+    let system_future = std::future::pending();
+    Ok((system, system_future))
 }

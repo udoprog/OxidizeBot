@@ -30,7 +30,7 @@ fn file_version() -> Option<(String, u64)> {
 
 fn main() -> Result<()> {
     if cfg!(target_os = "windows") {
-        use winres::VersionInfo::*;
+        use winres::VersionInfo::{FILEVERSION, PRODUCTVERSION};
 
         let mut res = winres::WindowsResource::new();
         res.set_icon("res/icon.ico");
@@ -58,15 +58,10 @@ fn main() -> Result<()> {
 
     if let Ok(oxidize_version) = env::var("OXIDIZE_VERSION") {
         version = oxidize_version;
-        user_agent = format!(
-            "OxidizeBot/{} (git {rev}; +{url})",
-            version,
-            rev = rev,
-            url = URL
-        );
+        user_agent = format!("OxidizeBot/{version} (git {rev}; +{URL})",);
     } else {
-        version = format!("git-{}", rev);
-        user_agent = format!("OxidizeBot/0 (git {rev}; +{url})", rev = rev, url = URL);
+        version = format!("git-{rev}");
+        user_agent = format!("OxidizeBot/0 (git {rev}; +{URL})");
     }
 
     fs::write(out_dir.join("version.txt"), &version).context("writing version.txt")?;
