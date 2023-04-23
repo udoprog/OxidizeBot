@@ -8,6 +8,8 @@ pub(super) async fn setup(
     bus: bus::Bus<bus::YouTube>,
     settings: settings::Settings<::auth::Scope>,
 ) -> Result<(YouTubePlayer, impl Future<Output = Result<()>>)> {
+    tracing::trace!("Setting up YouTube connection");
+
     let (mut volume_scale_stream, mut volume_scale) =
         settings.stream("volume-scale").or_with(100).await?;
     let (mut volume_stream, volume) = settings.stream("volume").or_with(50).await?;

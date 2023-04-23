@@ -42,6 +42,26 @@ struct WindowInfo {
     pub(crate) hmenu: HMENU,
 }
 
+impl WindowInfo {
+    fn remove_icon(&self) -> Result<(), io::Error> {
+        let result = unsafe {
+            let mut nid = new_nid(self.hwnd);
+            nid.uFlags = shellapi::NIF_ICON;
+
+            shellapi::Shell_NotifyIconW(
+                shellapi::NIM_DELETE,
+                &mut nid as *mut shellapi::NOTIFYICONDATAW,
+            )
+        };
+
+        if result == FALSE {
+            return Err(io::Error::last_os_error());
+        }
+
+        Ok(())
+    }
+}
+
 unsafe impl Send for WindowInfo {}
 unsafe impl Sync for WindowInfo {}
 
@@ -295,6 +315,10 @@ impl Window {
             if shutdown_tx.send(()).is_err() {
                 tracing::error!("Shutdown receiver closed");
             }
+
+            if let Err(error) = info.remove_icon() {
+                tracing::error!("Failed to remove icon: {error}");
+            }
         });
 
         let info = rx
@@ -509,28 +533,6 @@ impl Window {
         self.set_icon(hicon)
     }
 
-    /// Shutdown the given window.
-    fn shutdown(&self) -> Result<(), io::Error> {
-        let result = unsafe {
-            let mut nid = new_nid(self.info.hwnd);
-            nid.uFlags = shellapi::NIF_ICON;
-
-            shellapi::Shell_NotifyIconW(
-                shellapi::NIM_DELETE,
-                &mut nid as *mut shellapi::NOTIFYICONDATAW,
-            )
-        };
-
-        if result == FALSE {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Shell_NotifyIconW: failed",
-            ));
-        }
-
-        Ok(())
-    }
-
     /// Internal call to set icon.
     fn set_icon(&self, icon: HICON) -> Result<(), io::Error> {
         let result = unsafe {
@@ -573,11 +575,5 @@ impl<'a> Future for TickFuture<'a> {
         }
 
         Poll::Pending
-    }
-}
-
-impl Drop for Window {
-    fn drop(&mut self) {
-        self.shutdown().expect("shutdown failed");
     }
 }

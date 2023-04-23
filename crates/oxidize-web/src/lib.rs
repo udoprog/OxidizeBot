@@ -841,6 +841,7 @@ impl Api {
         let player = match player.as_deref() {
             Some(player) => player,
             None => {
+                tracing::warn!("No player available");
                 let data = Devices::default();
                 return Ok(warp::reply::json(&data));
             }

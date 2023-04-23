@@ -87,16 +87,16 @@ where
     async fn init(&mut self) {
         if let Some(c) = &self.connection {
             self.token.set(&c.token.access_token, &c.token.client_id);
-            self.injector
-                .update_key(&self.key, self.token.clone())
-                .await;
             self.integration
                 .update_connection(self.id, ConnectionIntegrationMeta::from_api(c));
         } else {
             self.token.clear();
-            self.injector.clear_key(&self.key).await;
             self.integration.clear_connection(self.id);
         }
+
+        self.injector
+            .update_key(&self.key, self.token.clone())
+            .await;
     }
 
     /// Perform an update based on the existing state.
@@ -163,7 +163,9 @@ where
                 }
 
                 self.token.clear();
-                self.injector.clear_key(&self.key).await;
+                self.injector
+                    .update_key(&self.key, self.token.clone())
+                    .await;
                 self.integration.clear_connection(self.id);
                 self.connection = None;
             }
@@ -296,8 +298,6 @@ where
     };
 
     builder.init().await;
-
-    // check for expirations.
 
     tracing::trace!("Starting loop");
 

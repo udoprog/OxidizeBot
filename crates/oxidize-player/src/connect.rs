@@ -17,6 +17,8 @@ pub(super) async fn setup(
     ConnectDevice,
     impl Future<Output = Result<()>>,
 )> {
+    tracing::trace!("Setting up Spotify connection");
+
     let (mut volume_stream, volume) = settings.stream("volume").or_with(50).await?;
     let (mut volume_scale_stream, volume_scale) =
         settings.stream("volume-scale").or_with(100).await?;

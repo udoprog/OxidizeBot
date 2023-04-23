@@ -163,18 +163,16 @@ pub async fn setup(
     let settings = settings.scoped("player");
 
     tracing::trace!("Waiting for tokens to become available");
-    let spotify = load_token(&injector, tags::Token::Spotify);
-    let youtube = load_token(&injector, tags::Token::YouTube);
-    let (spotify, youtube) = tokio::try_join!(spotify, youtube)?;
+    let spotify = injector.wait_key(Key::<api::Token>::tagged(tags::Token::Spotify)?);
+    let youtube = injector.wait_key(Key::<api::Token>::tagged(tags::Token::YouTube)?);
+    let (spotify, youtube) = tokio::join!(spotify, youtube);
 
     let spotify = Arc::new(api::Spotify::new(user_agent, spotify)?);
     let youtube = Arc::new(api::YouTube::new(user_agent, youtube)?);
 
-    tracing::trace!("Setting up Spotify connection");
     let (connect_stream, connect_player, device, spotify_future) =
         self::connect::setup(spotify.clone(), settings.scoped("spotify")).await?;
 
-    tracing::trace!("Setting up YouTube connection");
     let (youtube_player, youtube_future) =
         self::youtube::setup(youtube_bus, settings.scoped("youtube")).await?;
 
@@ -276,20 +274,6 @@ pub async fn setup(
     }
 
     Ok(())
-}
-
-async fn load_token(injector: &Injector, tag: tags::Token) -> Result<api::Token> {
-    let (mut stream, token) = injector.stream_key(Key::<api::Token>::tagged(tag)?).await;
-
-    if let Some(token) = token {
-        return Ok(token);
-    }
-
-    loop {
-        if let Some(token) = stream.recv().await {
-            return Ok(token);
-        }
-    }
 }
 
 /// Events emitted by the player.
