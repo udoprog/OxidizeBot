@@ -251,7 +251,7 @@ impl ChatLoop<'_> {
             None
         };
 
-        let mut hook_futures = common::Futures::new();
+        let mut hook_futures = Vec::new();
 
         for module in modules {
             tracing::trace!("Initializing module: {}", module.ty());
@@ -318,6 +318,10 @@ impl ChatLoop<'_> {
             refresh_roles_future,
             reward_loop_future,
             messages_future
+        }
+
+        for future in &mut hook_futures {
+            futures.push(future.as_mut());
         }
 
         // We maintain separate collections of local futures which we add
@@ -400,19 +404,6 @@ impl ChatLoop<'_> {
                         }
                     }
                 }
-                Some(future) = hook_futures.next() => {
-                    match future {
-                        Ok(..) => {
-                            tracing::warn!("Chat component exited, exiting...");
-                            return Ok(());
-                        }
-                        Err(e) => {
-                            common::log_warn!(e, "Chat component errored, restarting in 5 seconds");
-                            tokio::time::sleep(time::Duration::from_secs(5)).await;
-                            return Ok(());
-                        }
-                    }
-                }
                 Some(future) = futures.next() => {
                     match future {
                         Ok(..) => {
@@ -449,7 +440,7 @@ impl ChatLoop<'_> {
                     handler.send_ping()?;
                 }
                 _ = &mut *handler.pong_timeout => {
-                    bail!("server not responding");
+                    bail!("Server not responding");
                 }
                 update = whitelisted_hosts_stream.recv() => {
                     handler.whitelisted_hosts = update;
@@ -483,7 +474,7 @@ impl ChatLoop<'_> {
                     }
                 }
                 _ = &mut outgoing => {
-                    bail!("outgoing future ended unexpectedly");
+                    bail!("Outgoing future ended unexpectedly");
                 }
                 _ = &mut leave => {
                     break;

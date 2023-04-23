@@ -7,11 +7,6 @@ use crate::BoxFuture;
 /// Collection of boxed futures to drive.
 pub type Futures<'a, O> = ::futures_util::stream::FuturesUnordered<BoxFuture<'a, O>>;
 
-/// Collection of local futures to drive.
-pub type LocalFutures<'a, O> = ::futures_util::stream::FuturesUnordered<
-    std::pin::Pin<Box<dyn std::future::Future<Output = O> + 'a>>,
->;
-
 /// Run a collection of borrowed futures.
 pub struct BorrowedFutures<'a, O> {
     inner: ::futures_util::stream::FuturesUnordered<Pin<&'a mut dyn Future<Output = O>>>,
@@ -19,10 +14,7 @@ pub struct BorrowedFutures<'a, O> {
 
 impl<'a, O> BorrowedFutures<'a, O> {
     /// Push a borrowed future into the local collection.
-    pub fn push<F>(&mut self, future: Pin<&'a mut F>)
-    where
-        F: Future<Output = O>,
-    {
+    pub fn push(&mut self, future: Pin<&'a mut dyn Future<Output = O>>) {
         self.inner.push(future);
     }
 

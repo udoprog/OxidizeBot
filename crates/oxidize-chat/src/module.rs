@@ -1,5 +1,6 @@
 use async_injector::Injector;
 use async_trait::async_trait;
+use common::BoxFuture;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -38,7 +39,7 @@ pub struct HookContext<'a, 'task> {
     pub sender: &'a sender::Sender,
     pub settings: &'a settings::Settings<::auth::Scope>,
     pub handlers: &'a mut Handlers,
-    pub tasks: &'a mut common::Futures<'task, Result<()>>,
+    pub tasks: &'a mut Vec<BoxFuture<'task, Result<()>>>,
 }
 
 /// Trait used to hook up a module.

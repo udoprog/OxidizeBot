@@ -38,7 +38,7 @@ pub use self::percentage::percentage;
 
 #[macro_use]
 mod futures;
-pub use self::futures::{BorrowedFutures, Futures, LocalFutures};
+pub use self::futures::{BorrowedFutures, Futures};
 
 /// A boxed future.
 pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
