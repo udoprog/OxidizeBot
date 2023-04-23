@@ -1,0 +1,26 @@
+[package]
+name = "oxidize-db"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[features]
+scripting = ["serde_cbor"]
+
+[dependencies]
+common = { workspace = true }
+template = { workspace = true }
+libsqlite3-sys = { version = "0.25.2", features = ["bundled", "unlock_notify"] }
+diesel = { workspace = true, features = ["sqlite", "chrono"] }
+diesel_migrations = "2.0.0"
+eudex = "0.1.1"
+anyhow = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync"] }
+chrono = { workspace = true }
+Inflector = "0.11.4"
+thiserror = { workspace = true }
+regex = "1.7.3"
+parking_lot = { workspace = true }
+serde_cbor = { version = "0.11.2", optional = true }

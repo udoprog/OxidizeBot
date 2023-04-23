@@ -1,0 +1,11 @@
+[package]
+name = "oxidize-bus"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+common = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }

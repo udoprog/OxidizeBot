@@ -1,9 +1,0 @@
-[package]
-name = "bot-storage"
-version = "0.0.0"
-edition = "2021"
-publish = false
-
-[dependencies]
-anyhow = { workspace = true }
-futures-cache = "0.10.3"

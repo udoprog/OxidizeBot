@@ -1,0 +1,13 @@
+[package]
+name = "oxidize-messagelog"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+bus = { workspace = true }
+common = { workspace = true }
+emotes = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }

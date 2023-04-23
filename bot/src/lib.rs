@@ -96,7 +96,6 @@
 //! [LICENSE-APACHE]: https://github.com/udoprog/OxidizeBot/blob/main/LICENSE-APACHE
 //! [LICENSE-MIT]: https://github.com/udoprog/OxidizeBot/blob/main/LICENSE-MIT
 
-#![cfg_attr(backtrace, feature(backtrace))]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::field_reassign_with_default)]
 
@@ -106,7 +105,7 @@ static SETTINGS_SCHEMA: &[u8] = include_bytes!("settings.yaml");
 static AUTH_SCHEMA: &[u8] = include_bytes!("auth.yaml");
 
 // Crates to enable logging for, by default.
-static CRATES: &[&str] = &["bot_", "oxidize", "panic"];
+static CRATES: &[&str] = &["oxidize", "panic"];
 
 pub mod cli;
 mod module;

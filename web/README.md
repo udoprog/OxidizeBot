@@ -6,7 +6,7 @@
 &ndash;
 <a href="https://setbac.tv/help" rel="nofollow">Command Help ❓</a>
 
-# oxidize-web
+# web
 [<img alt="github" src="https://img.shields.io/badge/github-udoprog/OxidizeBot-8da0cb?style=for-the-badge&logo=github" height="24">](https://github.com/udoprog/OxidizeBot)
 [<img alt="build status" src="https://img.shields.io/github/actions/workflow/status/udoprog/OxidizeBot/ci.yml?branch=main&style=for-the-badge" height="24">](https://github.com/udoprog/OxidizeBot/actions?query=branch%3Amain)
 [<img alt="chat on discord" src="https://img.shields.io/discord/558644981137670144.svg?logo=discord&style=flat-square" height="24">](https://discord.gg/v5AeNkT)

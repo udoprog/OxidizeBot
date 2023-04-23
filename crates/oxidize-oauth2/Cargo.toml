@@ -1,0 +1,17 @@
+[package]
+name = "oxidize-oauth2"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+api = { workspace = true }
+common = { workspace = true }
+settings = { workspace = true }
+auth = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+async-injector = { workspace = true }
+async-fuse = { workspace = true }

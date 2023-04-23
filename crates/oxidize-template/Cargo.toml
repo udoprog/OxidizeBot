@@ -1,0 +1,11 @@
+[package]
+name = "oxidize-template"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+handlebars = "4.3.6"
+lazy_static = "1.4.0"
+serde = { workspace = true }

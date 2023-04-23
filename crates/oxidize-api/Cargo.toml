@@ -1,0 +1,27 @@
+[package]
+name = "oxidize-api"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+settings = { workspace = true }
+common = { workspace = true }
+bus = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio-tungstenite = { version = "0.18.0", features = ["handshake", "native-tls"] }
+async-injector = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+reqwest = "0.11.16"
+url = { workspace = true }
+graphql_client = "0.12.0"
+thiserror = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+backoff = "0.4.0"
+async-fuse = { workspace = true }
+async-stream = "0.3.5"
+parking_lot = { workspace = true }
+bytes = "1.4.0"

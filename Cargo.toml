@@ -8,21 +8,21 @@ members = [
 ]
 
 [workspace.dependencies]
-api = { package = "bot-api", path = "crates/bot-api" }
-auth = { package = "bot-auth", path = "crates/bot-auth" }
-bus = { package = "bot-bus", path = "crates/bot-bus" }
-chat = { package = "bot-chat", path = "crates/bot-chat" }
-common = { package = "bot-common", path = "crates/bot-common" }
-currency = { package = "bot-currency", path = "crates/bot-currency" }
-db = { package = "bot-db", path = "crates/bot-db" }
-emotes = { package = "bot-emotes", path = "crates/bot-emotes" }
-messagelog = { package = "bot-messagelog", path = "crates/bot-messagelog" }
-oauth2 = { package = "bot-oauth2", path = "crates/bot-oauth2" }
-player = { package = "bot-player", path = "crates/bot-player" }
-settings = { package = "bot-settings", path = "crates/bot-settings" }
-storage = { package = "bot-storage", path = "crates/bot-storage" }
-template = { package = "bot-template", path = "crates/bot-template" }
-web = { package = "bot-web", path = "crates/bot-web" }
+api = { package = "oxidize-api", path = "crates/oxidize-api" }
+auth = { package = "oxidize-auth", path = "crates/oxidize-auth" }
+bus = { package = "oxidize-bus", path = "crates/oxidize-bus" }
+chat = { package = "oxidize-chat", path = "crates/oxidize-chat" }
+common = { package = "oxidize-common", path = "crates/oxidize-common" }
+currency = { package = "oxidize-currency", path = "crates/oxidize-currency" }
+db = { package = "oxidize-db", path = "crates/oxidize-db" }
+emotes = { package = "oxidize-emotes", path = "crates/oxidize-emotes" }
+messagelog = { package = "oxidize-messagelog", path = "crates/oxidize-messagelog" }
+oauth2 = { package = "oxidize-oauth2", path = "crates/oxidize-oauth2" }
+player = { package = "oxidize-player", path = "crates/oxidize-player" }
+settings = { package = "oxidize-settings", path = "crates/oxidize-settings" }
+storage = { package = "oxidize-storage", path = "crates/oxidize-storage" }
+template = { package = "oxidize-template", path = "crates/oxidize-template" }
+web = { package = "oxidize-web", path = "crates/oxidize-web" }
 anyhow = "1.0.70"
 async-fuse = "0.11.4"
 async-injector = "0.19.1"
