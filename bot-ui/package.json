@@ -28,7 +28,7 @@
     "react-websocket": "^2.1.0",
     "semver": "^7.3.4",
     "shared-ui": "file:../shared-ui",
-    "yaml": "^1.10.0"
+    "yaml": "^2.2.2"
   },
   "devDependencies": {
     "@babel/core": "^7.13.8",
