@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time;
 
 use ::oauth2::State;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use hyper::body::Body;
 use hyper::header;
@@ -33,7 +33,7 @@ macro_rules! log_error {
         let e = anyhow::Error::from($e);
         tracing::error!($fmt $(, $($tt)*)*);
 
-        for e in e.chain().skip(1) {
+        for e in e.chain() {
             tracing::error!("Caused by: {}", e);
         }
     }}
@@ -981,10 +981,13 @@ impl Handler {
 
     /// Test for authentication, if enabled.
     async fn auth_twitch_token(&self, token: &str) -> Result<api::twitch::ValidateToken, Error> {
-        self.id_twitch_client
+        let token = self
+            .id_twitch_client
             .validate_token(token)
             .await
-            .map_err(Error::Error)
+            .context("Failed to validate token")?;
+
+        Ok(token)
     }
 
     /// Get token meta-information.

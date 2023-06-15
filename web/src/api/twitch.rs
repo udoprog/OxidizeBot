@@ -8,7 +8,8 @@ const ID_TWITCH_URL: &str = "https://id.twitch.tv";
 pub(crate) struct ValidateToken {
     pub(crate) client_id: String,
     pub(crate) login: String,
-    pub(crate) scopes: Vec<String>,
+    #[serde(default)]
+    pub(crate) scopes: Option<Vec<String>>,
     pub(crate) user_id: String,
 }
 
