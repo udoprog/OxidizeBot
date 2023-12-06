@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        rust: ["1.68", stable]
+        rust: ["1.70", stable]
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@master
@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@1.68
+    - uses: dtolnay/rust-toolchain@1.74
       with:
         components: clippy
     - run: sudo apt install libssl-dev
