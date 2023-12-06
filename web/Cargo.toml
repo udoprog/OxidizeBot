@@ -9,7 +9,7 @@ documentation = "https://docs.rs/oxidize"
 readme = "README.md"
 homepage = "https://github.com/udoprog/OxidizeBot"
 repository = "https://github.com/udoprog/OxidizeBot"
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 keywords = ["twitch"]
 categories = ["bots"]
 
