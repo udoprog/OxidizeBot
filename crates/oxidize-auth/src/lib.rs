@@ -6,7 +6,7 @@ use std::sync::Arc;
 use anyhow::{Context, Error, Result};
 use chrono::{DateTime, Utc};
 use common::{Cooldown, Duration};
-use diesel::backend::{Backend, RawValue};
+use diesel::backend::Backend;
 use diesel::prelude::*;
 use diesel::serialize::IsNull;
 use diesel::serialize::ToSql;
@@ -470,7 +470,7 @@ macro_rules! scopes {
             DB: Backend,
             String: diesel::deserialize::FromSql<diesel::sql_types::Text, DB>,
         {
-            fn from_sql(bytes: RawValue<'_, DB>) -> diesel::deserialize::Result<Self> {
+            fn from_sql(bytes: DB::RawValue<'_>) -> diesel::deserialize::Result<Self> {
                 let s = String::from_sql(bytes)?;
                 Ok(str::parse(&s)?)
             }
@@ -548,7 +548,7 @@ macro_rules! roles {
         DB: Backend,
         String: diesel::deserialize::FromSql<diesel::sql_types::Text, DB>,
     {
-        fn from_sql(bytes: RawValue<'_, DB>) -> diesel::deserialize::Result<Self> {
+        fn from_sql(bytes: DB::RawValue<'_>) -> diesel::deserialize::Result<Self> {
             let s = String::from_sql(bytes)?;
             Ok(str::parse(&s)?)
         }

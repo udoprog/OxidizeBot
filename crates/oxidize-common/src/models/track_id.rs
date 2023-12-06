@@ -1,9 +1,9 @@
 use std::fmt;
 
-use diesel::backend::{Backend, RawValue};
+use diesel::backend::Backend;
+use diesel::query_builder;
 use diesel::serialize::{IsNull, Output, ToSql};
 use diesel::sql_types::Text;
-use diesel::{backend, query_builder};
 use diesel::{AsExpression, FromSqlRow};
 use thiserror::Error;
 
@@ -101,7 +101,7 @@ impl TrackId {
         // Parse a track id from a URL or URI.
         if let Ok(url) = str::parse::<url::Url>(s) {
             match url.host() {
-                Some(host) if host == url::Host::Domain("open.spotify.com") => {
+                Some(url::Host::Domain("open.spotify.com")) => {
                     let parts = url.path().split('/').collect::<Vec<_>>();
 
                     let id = match parts.as_slice() {
@@ -168,14 +168,12 @@ impl TrackId {
     }
 }
 
-impl<D> ToSql<Text, D> for TrackId
+impl<DB> ToSql<Text, DB> for TrackId
 where
-    D: backend::Backend,
-    String: for<'a> Into<
-        <backend::BindCollector<'a, D> as query_builder::BindCollector<'a, D>>::Buffer,
-    >,
+    DB: Backend,
+    String: for<'a> Into<<DB::BindCollector<'a> as query_builder::BindCollector<'a, DB>>::Buffer>,
 {
-    fn to_sql(&self, out: &mut Output<'_, '_, D>) -> diesel::serialize::Result {
+    fn to_sql(&self, out: &mut Output<'_, '_, DB>) -> diesel::serialize::Result {
         out.set_value(self.to_string());
         Ok(IsNull::No)
     }
@@ -186,7 +184,7 @@ where
     DB: Backend,
     String: diesel::deserialize::FromSql<Text, DB>,
 {
-    fn from_sql(bytes: RawValue<'_, DB>) -> diesel::deserialize::Result<Self> {
+    fn from_sql(bytes: DB::RawValue<'_>) -> diesel::deserialize::Result<Self> {
         let s = String::from_sql(bytes)?;
         Ok(TrackId::parse_with_prefix_fallback(&s)?)
     }

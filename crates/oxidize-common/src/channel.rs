@@ -1,4 +1,4 @@
-use diesel::backend;
+use diesel::backend::Backend;
 use diesel::deserialize::{self, FromSql};
 use diesel::serialize::{self, Output, ToSql};
 use diesel::sql_types::Text;
@@ -135,31 +135,31 @@ impl fmt::Debug for Channel {
     }
 }
 
-impl<D> FromSql<Text, D> for OwnedChannel
+impl<DB> FromSql<Text, DB> for OwnedChannel
 where
-    D: backend::Backend,
-    String: FromSql<Text, D>,
+    DB: Backend,
+    String: FromSql<Text, DB>,
 {
-    fn from_sql(value: backend::RawValue<'_, D>) -> deserialize::Result<Self> {
+    fn from_sql(value: DB::RawValue<'_>) -> deserialize::Result<Self> {
         Ok(OwnedChannel {
-            data: <_ as FromSql<Text, D>>::from_sql(value)?,
+            data: <_ as FromSql<Text, DB>>::from_sql(value)?,
         })
     }
 }
 
-impl<D> ToSql<Text, D> for Channel
+impl<DB> ToSql<Text, DB> for Channel
 where
-    D: backend::Backend,
-    str: ToSql<Text, D>,
+    DB: Backend,
+    str: ToSql<Text, DB>,
 {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, D>) -> serialize::Result {
-        <_ as ToSql<Text, D>>::to_sql(&self.data, out)
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, DB>) -> serialize::Result {
+        <_ as ToSql<Text, DB>>::to_sql(&self.data, out)
     }
 }
 
 impl<D> ToSql<Text, D> for OwnedChannel
 where
-    D: backend::Backend,
+    D: Backend,
     str: ToSql<Text, D>,
 {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, D>) -> serialize::Result {

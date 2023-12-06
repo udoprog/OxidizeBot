@@ -47,7 +47,7 @@ impl Session {
 
         let data = serde_cbor::to_vec(&value)?;
         let data = self.sealer.encrypt(&data)?;
-        let data = BASE64_STANDARD.encode(&data);
+        let data = BASE64_STANDARD.encode(data);
 
         let mut jar = CookieJar::new();
         jar.add(self.cookie(name.to_string(), data).finish());

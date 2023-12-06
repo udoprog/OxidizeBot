@@ -679,7 +679,7 @@ impl Handler {
 
         let exchange_token = flow.exchange_token();
 
-        let r = json_ok(&Login {
+        let r = json_ok(Login {
             auth_url: &exchange_token.auth_url,
         })?;
 
@@ -720,7 +720,7 @@ impl Handler {
         let key = BASE64_STANDARD.encode(buf);
         self.db.insert_key(&user.user_id, &key)?;
 
-        return json_ok(&KeyInfo { key });
+        return json_ok(KeyInfo { key });
 
         #[derive(Serialize)]
         struct KeyInfo {
@@ -739,7 +739,7 @@ impl Handler {
     async fn get_key(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
         let user = self.verify(req)?;
         let key = self.db.get_key(&user.user_id)?;
-        return json_ok(&KeyInfo { key });
+        return json_ok(KeyInfo { key });
 
         #[derive(Serialize)]
         struct KeyInfo {
@@ -872,7 +872,7 @@ impl Handler {
     async fn auth_login(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
         let exchange_token = self.login_flow.exchange_token();
 
-        let r = json_ok(&Login {
+        let r = json_ok(Login {
             auth_url: &exchange_token.auth_url,
         })?;
 

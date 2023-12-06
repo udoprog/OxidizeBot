@@ -4,7 +4,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use diesel::backend::{Backend, RawValue};
+use diesel::backend::Backend;
 use diesel::deserialize::{self, FromSql};
 use diesel::serialize::{IsNull, Output, ToSql};
 use diesel::sql_types::Text;
@@ -91,7 +91,7 @@ where
     DB: Backend,
     String: FromSql<Text, DB>,
 {
-    fn from_sql(bytes: RawValue<'_, DB>) -> deserialize::Result<Self> {
+    fn from_sql(bytes: DB::RawValue<'_>) -> deserialize::Result<Self> {
         let s = String::from_sql(bytes)?;
         Ok(Uri::from_str(&s)?)
     }
