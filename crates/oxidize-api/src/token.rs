@@ -137,7 +137,7 @@ impl fmt::Debug for Token {
 
         let payload = self.inner.payload.read();
 
-        if let Some(..) = payload.as_ref().map(|p| p.token.as_ref()) {
+        if payload.as_ref().map(|p| p.token.as_ref()).is_some() {
             f.field("token", &"*secret*");
         } else {
             f.field("token", &"none");

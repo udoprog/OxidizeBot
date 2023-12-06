@@ -459,7 +459,7 @@ macro_rules! scopes {
         }
 
         impl ToSql<diesel::sql_types::Text, Sqlite> for Scope {
-            fn to_sql<'b>(&self, out: &mut diesel::serialize::Output<'b, '_, Sqlite>) -> diesel::serialize::Result {
+            fn to_sql(&self, out: &mut diesel::serialize::Output<'_, '_, Sqlite>) -> diesel::serialize::Result {
                 out.set_value(self.to_string());
                 Ok(IsNull::No)
             }
@@ -537,7 +537,7 @@ macro_rules! roles {
     }
 
     impl ToSql<diesel::sql_types::Text, Sqlite> for Role {
-        fn to_sql<'b>(&self, out: &mut diesel::serialize::Output<'b, '_, Sqlite>) -> diesel::serialize::Result {
+        fn to_sql(&self, out: &mut diesel::serialize::Output<'_, '_, Sqlite>) -> diesel::serialize::Result {
             out.set_value(self.to_string());
             Ok(IsNull::No)
         }

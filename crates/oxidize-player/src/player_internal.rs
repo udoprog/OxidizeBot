@@ -891,7 +891,8 @@ impl PlayerInternal {
                         .await
                         .map_err(AddTrackError::Error)?
                     {
-                        let added_at = DateTime::<Utc>::from_utc(last.added_at, Utc);
+                        let added_at =
+                            DateTime::<Utc>::from_naive_utc_and_offset(last.added_at, Utc);
                         let duration_since =
                             Utc::now().signed_duration_since(added_at).to_std().ok();
 

@@ -486,14 +486,11 @@ impl ChatLoop<'_> {
             handler.sender.privmsg_immediate(m);
         }
 
-        loop {
-            tokio::select! {
-                _ = &mut outgoing => {
-                    bail!("outgoing future ended unexpectedly");
-                }
-                _ = &mut leave => {
-                    break;
-                }
+        tokio::select! {
+            _ = outgoing => {
+                bail!("outgoing future ended unexpectedly");
+            }
+            _ = leave => {
             }
         }
 
@@ -699,7 +696,7 @@ impl<'a> Handler<'a> {
         if self.bad_words_enabled.load().await {
             if let Some(word) = self.test_bad_words(message).await {
                 if let Some(why) = word.why.as_ref() {
-                    let why = why.render_to_string(&BadWordsVars {
+                    let why = why.render_to_string(BadWordsVars {
                         name: user.display_name(),
                         target: &self.streamer.user.login,
                     });

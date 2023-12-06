@@ -142,7 +142,9 @@ impl Promotions {
         let mut inner = self.inner.write().await;
 
         if let Some(promotion) = self.db.edit(&key, frequency, template.source()).await? {
-            let promoted_at = promotion.promoted_at.map(|d| DateTime::from_utc(d, Utc));
+            let promoted_at = promotion
+                .promoted_at
+                .map(|d| DateTime::from_naive_utc_and_offset(d, Utc));
 
             inner.insert(
                 key.clone(),
@@ -223,7 +225,7 @@ impl Promotion {
         let frequency = Duration::seconds(promotion.frequency as u64);
         let promoted_at = promotion
             .promoted_at
-            .map(|d| DateTime::<Utc>::from_utc(d, Utc));
+            .map(|d| DateTime::<Utc>::from_naive_utc_and_offset(d, Utc));
 
         Ok(Promotion {
             key,

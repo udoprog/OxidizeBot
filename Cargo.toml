@@ -26,7 +26,7 @@ template = { package = "oxidize-template", path = "crates/oxidize-template" }
 web = { package = "oxidize-web", path = "crates/oxidize-web" }
 anyhow = "1.0.70"
 async-fuse = "0.11.4"
-async-injector = "0.19.1"
+async-injector = "0.19.3"
 chrono = { version = "0.4.24", default-features = false, features = ["serde"] }
 diesel = "2.0.3"
 parking_lot = "0.12.1"
