@@ -1,9 +1,23 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+        default: 'nightly'
+        type: choice
+        options:
+        - nightly
+        - "%date"
   push:
     tags:
     - '*'
+
+env:
+  KICK_VERSION: "${{github.event.inputs.version}} || %{github.tag} || nightly"
+  RUST_LOG: kick=trace
 
 jobs:
   build:
@@ -16,9 +30,10 @@ jobs:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
-    - uses: udoprog/github-release@tag
+    - uses: udoprog/kick@nightly
+    - run: kick define --github-action
       id: release
-    - run: cargo run -p builder -- --version ${{steps.release.outputs.tag}}
+    - run: cargo run -p builder -- --version ${{steps.release.outputs.version}}
     - uses: actions/upload-artifact@v3
       with:
         name: dist-${{matrix.os}}
@@ -37,9 +52,7 @@ jobs:
       with: {name: dist-windows-latest, path: dist}
     - uses: actions/download-artifact@v3
       with: {name: dist-ubuntu-latest, path: dist}
-    - uses: udoprog/github-release@v1
-      with:
-        files: "dist/*"
-        name: ${{steps.release.outputs.tag}}
-        token: ${{secrets.GITHUB_TOKEN}}
-        prerelease: ${{steps.release.outputs.prerelease}}
+    - uses: udoprog/kick@nightly
+    - run: kick github-release --upload "dist/*" --github-action
+      env:
+        GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
