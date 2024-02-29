@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 chrono = { workspace = true }
-diesel = { workspace = true }
+diesel = { workspace = true, features = ["sqlite"] }
 futures-util = { version = "0.3.28", default-features = false, features = ["sink", "alloc"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
