@@ -1,6 +1,8 @@
 //! All Spotify API endpoint response object
-//!
-//! Copied under the MIT license from: <https://github.com/ramsayleung/rspotify>.
+
+// Copied under the MIT license from: <https://github.com/ramsayleung/rspotify>.
+//
+// Copyright (c) 2015 Vincent Prouillet
 
 use serde::de::{Deserialize, Deserializer, Error};
 
