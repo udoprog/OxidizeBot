@@ -25,12 +25,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
         include:
-        - {os: windows-latest, package: zip}
-        - {os: windows-latest, package: msi}
-        - {os: ubuntu-latest, package: zip}
-        - {os: ubuntu-latest, package: deb}
-        - {os: macos-latest, package: zip}
+        - {os: windows-latest, method: msi}
+        - {os: ubuntu-latest, method: deb}
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@stable
@@ -42,7 +40,9 @@ jobs:
       env:
         OXIDIZE_VERSION: ${{steps.release.outputs.version}}
         OXIDIZE_FILE_VERSION: ${{steps.release.outputs.msi_version}}
-    - run: kick ${{matrix.package}} --output dist
+    - run: kick zip --output dist
+    - run: kick ${{matrix.method}} --output dist
+      if: ${{matrix.method}}
     - uses: actions/upload-artifact@v3
       with:
         name: dist-${{matrix.os}}
