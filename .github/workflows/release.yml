@@ -53,8 +53,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: udoprog/github-release@tag
-      id: release
     - uses: actions/download-artifact@v3
       with: {name: dist-macos-latest, path: dist}
     - uses: actions/download-artifact@v3
