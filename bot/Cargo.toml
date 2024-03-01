@@ -13,6 +13,11 @@ license = "MIT OR Apache-2.0"
 keywords = ["twitch"]
 categories = ["games"]
 
+[features]
+default = []
+cli = []
+scripting = ["chat/scripting"]
+
 [dependencies]
 web = { workspace = true }
 settings = { workspace = true }
@@ -58,8 +63,3 @@ anyhow = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3.9", features = ["shellapi", "impl-default"] }
-
-[features]
-default = []
-windows = []
-scripting = ["chat/scripting"]
