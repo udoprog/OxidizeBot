@@ -32,6 +32,7 @@ pub struct FullArtist {
     pub id: String,
     pub images: Vec<Image>,
     pub name: String,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub popularity: u32,
     #[serde(rename = "type")]
     pub _type: Type,

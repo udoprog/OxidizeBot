@@ -58,6 +58,7 @@ pub struct FullAlbum {
     pub id: String,
     pub images: Vec<Image>,
     pub name: String,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub popularity: u32,
     pub release_date: String,
     pub release_date_precision: String,
