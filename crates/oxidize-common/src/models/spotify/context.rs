@@ -26,10 +26,14 @@ pub struct FullPlayingContext {
     pub device: Device,
     pub repeat_state: RepeatState,
     pub shuffle_state: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<Context>,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub timestamp: u64,
+    #[serde(default, deserialize_with = "super::deserialize_option_number")]
     pub progress_ms: Option<u32>,
     pub is_playing: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item: Option<FullTrack>,
 }
 
@@ -37,7 +41,9 @@ pub struct FullPlayingContext {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimplifiedPlayingContext {
     pub context: Option<Context>,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub timestamp: u64,
+    #[serde(default, deserialize_with = "super::deserialize_option_number")]
     pub progress_ms: Option<u32>,
     pub is_playing: bool,
     pub item: Option<FullTrack>,

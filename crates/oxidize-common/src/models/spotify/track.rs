@@ -18,12 +18,16 @@ pub struct FullTrack {
     pub artists: Vec<SimplifiedArtist>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub available_markets: Vec<String>,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub disc_number: i32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub duration_ms: u32,
     pub explicit: bool,
     pub external_ids: HashMap<String, String>,
     pub external_urls: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub href: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub is_local: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -33,8 +37,11 @@ pub struct FullTrack {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub restrictions: Option<Restrictions>,
     pub name: String,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub popularity: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preview_url: Option<String>,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub track_number: u32,
     #[serde(rename = "type")]
     pub _type: Type,
@@ -63,17 +70,23 @@ pub struct FullTracks {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimplifiedTrack {
     pub artists: Vec<SimplifiedArtist>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub available_markets: Option<Vec<String>>,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub disc_number: i32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub duration_ms: u32,
     pub explicit: bool,
     pub external_urls: HashMap<String, String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub href: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub is_local: bool,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preview_url: Option<String>,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub track_number: u32,
     #[serde(rename = "type")]
     pub _type: Type,

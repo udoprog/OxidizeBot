@@ -9,16 +9,19 @@ pub struct AudioFeatures {
     pub acousticness: f32,
     pub analysis_url: String,
     pub danceability: f32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub duration_ms: u32,
     pub energy: f32,
     pub id: String,
     pub instrumentalness: f32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub key: i32,
     pub liveness: f32,
     pub loudness: f32,
     pub mode: f32,
     pub speechiness: f32,
     pub tempo: f32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub time_signature: i32,
     pub track_href: String,
     #[serde(rename = "type")]
@@ -63,10 +66,12 @@ pub struct AudioAnalysisSection {
     pub loudness: f32,
     pub tempo: f32,
     pub tempo_confidence: f32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub key: i32,
     pub key_confidence: f32,
     pub mode: f32,
     pub mode_confidence: f32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub time_signature: i32,
     pub time_signature_confidence: f32,
 }
@@ -77,7 +82,9 @@ pub struct AudioAnalysisMeta {
     pub analyzer_version: String,
     pub platform: String,
     pub detailed_status: String,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub status_code: i32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub timestamp: u64,
     pub analysis_time: f32,
     pub input_process: String,
@@ -91,6 +98,7 @@ pub struct AudioAnalysisSegment {
     pub loudness_start: f32,
     pub loudness_max_time: f32,
     pub loudness_max: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub loudness_end: Option<f32>,
     pub pitches: Vec<f32>,
     pub timbre: Vec<f32>,
@@ -99,20 +107,27 @@ pub struct AudioAnalysisSegment {
 ///[audio analysis](https://developer.spotify.com/web-api/get-audio-analysis/)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AudioAnalysisTrack {
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub num_samples: u32,
     pub duration: f32,
     pub sample_md5: String,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub offset_seconds: u32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub window_seconds: u32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub analysis_sample_rate: i32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub analysis_channels: u32,
     pub end_of_fade_in: f32,
     pub start_of_fade_out: f32,
     pub loudness: f32,
     pub tempo: f32,
     pub tempo_confidence: f32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub time_signature: i32,
     pub time_signature_confidence: f32,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub key: u32,
     pub key_confidence: f32,
     pub mode: f32,

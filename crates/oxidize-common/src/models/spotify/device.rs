@@ -12,6 +12,7 @@ pub struct Device {
     pub name: String,
     #[serde(rename = "type")]
     pub _type: DeviceType,
+    #[serde(deserialize_with = "super::deserialize_number")]
     pub volume_percent: u32,
 }
 
