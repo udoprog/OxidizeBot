@@ -15,25 +15,29 @@ use super::track::SimplifiedTrack;
 /// Simplified Album Object
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimplifiedAlbum {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub album_group: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub album_type: Option<String>,
     pub artists: Vec<SimplifiedArtist>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub available_markets: Vec<String>,
     pub external_urls: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub href: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub images: Vec<Image>,
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release_date: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub release_date_precision: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restrictions: Option<Restrictions>,
     #[serde(rename = "type")]
     pub _type: Type,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uri: Option<String>,
 }
 

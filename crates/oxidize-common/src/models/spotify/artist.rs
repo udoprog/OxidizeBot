@@ -13,11 +13,14 @@ use super::senum::Type;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimplifiedArtist {
     pub external_urls: HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub href: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub name: String,
     #[serde(rename = "type")]
     pub _type: Type,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uri: Option<String>,
 }
 

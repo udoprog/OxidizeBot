@@ -20,6 +20,7 @@ pub struct RecommendationsSeed {
     #[serde(rename = "afterRelinkingSize")]
     #[serde(deserialize_with = "super::deserialize_number")]
     pub after_relinking_size: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub href: Option<String>,
     pub id: String,
     #[serde(rename = "initialPoolSize")]

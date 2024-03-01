@@ -98,6 +98,7 @@ pub struct AudioAnalysisSegment {
     pub loudness_start: f32,
     pub loudness_max_time: f32,
     pub loudness_max: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub loudness_end: Option<f32>,
     pub pitches: Vec<f32>,
     pub timbre: Vec<f32>,

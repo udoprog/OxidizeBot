@@ -12,12 +12,14 @@ use super::track::SimplifiedTrack;
 ///[get the users currently playing track](https://developer.spotify.com/web-api/get-the-users-currently-playing-track/)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Playing {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<Context>,
     #[serde(deserialize_with = "super::deserialize_number")]
     pub timestamp: u64,
-    #[serde(deserialize_with = "super::deserialize_option_number")]
+    #[serde(default, deserialize_with = "super::deserialize_option_number")]
     pub progress_ms: Option<u32>,
     pub is_playing: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub item: Option<FullTrack>,
 }
 
