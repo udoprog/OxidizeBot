@@ -1,18 +1,4 @@
 <?xml version='1.0' encoding='windows-1252'?>
-<!--
-  Please do not remove these pre-processor If-Else blocks. These are used with
-  the `cargo wix` subcommand to automatically determine the installation
-  destination for 32-bit versus 64-bit installers. Removal of these lines will
-  cause installation errors.
--->
-<?if $(var.Platform) = x64 ?>
-<?define Win64 = "yes" ?>
-<?define PlatformProgramFilesFolder = "ProgramFiles64Folder" ?>
-<?else ?>
-<?define Win64 = "no" ?>
-<?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
-<?endif ?>
-
 <Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
   <Product Id='*' Name='OxidizeBot' UpgradeCode='08DA9A41-F232-49DC-BA6A-A29893BAEC5C' Manufacturer='John-John Tedro' Language='1033' Codepage='1252' Version='$(var.Version)'>
     <Package Id='*' Keywords='Installer' Manufacturer='John-John Tedro' InstallerVersion='450' Languages='1033' Compressed='yes' InstallScope='perMachine' SummaryCodepage='1252' Platform='$(var.Platform)'/>
@@ -27,21 +13,21 @@
       <Directory Id="ProgramMenuFolder">
         <Directory Id="ApplicationProgramsFolder" Name="OxidizeBot">
           <Component Id='ApplicationShortcut' Guid='{9458D268-A228-415C-BA3C-03059EBE889D}' Win64='$(var.Win64)'>
-            <Shortcut Id='ApplicationStartMenuShortcut' Name='OxidizeBot' Description='Oxidize Twitch Bot' Target='[!oxidize.exe]' WorkingDirectory='APPLICATIONFOLDER' />
+            <Shortcut Id='ApplicationStartMenuShortcut' Name='OxidizeBot' Description='Oxidize Twitch Bot' Target='[!$(var.BinaryName)]' WorkingDirectory='APPLICATIONFOLDER' />
             <RemoveFolder Id='CleanUpShortCut' Directory='ApplicationProgramsFolder' On='uninstall'/>
             <RegistryValue Root='HKCU' Key='Software\OxidizeBot\OxidizeBot' Name='installed' Type='integer' Value='1' KeyPath='yes'/>
           </Component>
         </Directory>
       </Directory>
 
-      <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
+      <Directory Id='$(var.ProgramFilesFolder)' Name='PFiles'>
         <Directory Id='APPLICATIONFOLDER' Name='OxidizeBot'>
-          <Component Id='oxidize.exe' Guid='{DD1E4A01-FF62-4D96-A9CE-A5D7D7548FAD}' Win64='$(var.Win64)'>
-            <File Id='oxidize.exe' Name='oxidize.exe' DiskId='1' Source='target/release/oxidize.exe' KeyPath='yes'/>
+          <Component Id='$(var.BinaryName)' Guid='{DD1E4A01-FF62-4D96-A9CE-A5D7D7548FAD}' Win64='$(var.Win64)'>
+            <File Id='$(var.BinaryName)' Name='$(var.BinaryName)' DiskId='1' Source='$(var.BinaryPath)' KeyPath='yes'/>
           </Component>
 
           <Component Id="RegistryAutostart" Guid="{35977DFA-73B2-4418-A713-C3FA83C6076A}" Win64='$(var.Win64)'>
-            <RegistryValue Root="HKCU" Action="write" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="OxidizeBot" Value='"[APPLICATIONFOLDER]oxidize.exe" --silent' Type="string" />
+            <RegistryValue Root="HKCU" Action="write" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="OxidizeBot" Value='"[APPLICATIONFOLDER]$(var.BinaryName)" --silent' Type="string" />
             <Condition>START_VIA_REGISTRY</Condition>
           </Component>
         </Directory>
@@ -49,7 +35,7 @@
     </Directory>
 
     <Feature Id='MainProgram' Title='OxidizeBot' Description='Installs Oxidize Bot.' Level='1' ConfigurableDirectory='APPLICATIONFOLDER' AllowAdvertise='no' Display='expand' Absent='disallow'>
-      <ComponentRef Id='oxidize.exe'/>
+      <ComponentRef Id='$(var.BinaryName)'/>
       <ComponentRef Id='ApplicationShortcut'/>
     </Feature>
 
@@ -77,7 +63,7 @@
 
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch OxidizeBot" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
-    <Property Id="WixShellExecTarget" Value="[#oxidize.exe]" />
+    <Property Id="WixShellExecTarget" Value="[#$(var.BinaryName)]" />
     <CustomAction Id="LaunchApplication" BinaryKey="WixCA" DllEntry="WixShellExec" Impersonate="yes" />
   </Product>
 </Wix>

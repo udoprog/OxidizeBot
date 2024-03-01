@@ -26,14 +26,24 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]
+        include:
+          - package: zip
+          - package: msi
+            os: windows-latest
+          - package: deb
+            os: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
     - uses: udoprog/kick@nightly
-    - run: kick define --github-action
+    - run: kick define --github-action --msi-version-to msi_version
       id: release
-    - run: cargo run -p builder -- --version ${{steps.release.outputs.version}}
+    - run: cargo build --release -p oxidize
+      env:
+        OXIDIZE_VERSION: ${{steps.release.outputs.version}}
+        OXIDIZE_FILE_VERSION: ${{steps.release.outputs.msi_version}}
+    - run: kick ${{matrix.package}} --output dist
     - uses: actions/upload-artifact@v3
       with:
         name: dist-${{matrix.os}}
