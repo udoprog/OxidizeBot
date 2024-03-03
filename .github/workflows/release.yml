@@ -30,7 +30,7 @@ jobs:
         - {os: windows-latest, method: msi}
         - {os: ubuntu-latest, method: deb}
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
     - uses: udoprog/kick@nightly
@@ -43,7 +43,7 @@ jobs:
     - run: kick zip --output dist
     - run: kick ${{matrix.method}} --output dist
       if: ${{matrix.method}}
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: dist-${{matrix.os}}
         path: dist
@@ -52,12 +52,12 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions/download-artifact@v3
+    - uses: actions/checkout@v4
+    - uses: actions/download-artifact@v4
       with: {name: dist-macos-latest, path: dist}
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with: {name: dist-windows-latest, path: dist}
-    - uses: actions/download-artifact@v3
+    - uses: actions/download-artifact@v4
       with: {name: dist-ubuntu-latest, path: dist}
     - uses: udoprog/kick@nightly
     - run: kick github-release --upload "dist/*" --github-action
