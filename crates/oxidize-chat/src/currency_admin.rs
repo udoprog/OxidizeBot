@@ -154,7 +154,7 @@ impl command::Handler for Handler {
                 if !ctx.user.is_streamer() && ctx.user.is(&boosted_user) {
                     respond!(
                         ctx,
-                        "You gonna have to play by the rules (or ask another mod) :("
+                        "You're gonna have to play by the rules (or ask the streamer nicely) :("
                     );
                     return Ok(());
                 }

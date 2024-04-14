@@ -209,7 +209,7 @@ impl Mixer {
                 queue.push_front(removed);
             }
 
-            queue.get(0).cloned()
+            queue.front().cloned()
         };
 
         if let Some(item) = next {

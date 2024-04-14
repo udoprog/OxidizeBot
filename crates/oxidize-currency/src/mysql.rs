@@ -289,9 +289,8 @@ impl Backend {
 
         let balance = self.queries.select_balance(&mut tx, &user).await?;
 
-        let balance = match balance {
-            Some(b) => b.try_into()?,
-            None => return Ok(None),
+        let Some(balance) = balance.map(i64::from) else {
+            return Ok(None);
         };
 
         Ok(Some(BalanceOf {

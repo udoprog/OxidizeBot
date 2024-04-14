@@ -258,7 +258,7 @@ pub enum RenameError {
     Missing,
 }
 
-#[cfg(tests)]
+#[cfg(test)]
 mod tests {
     use super::user_id;
 

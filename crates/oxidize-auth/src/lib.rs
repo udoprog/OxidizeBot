@@ -58,14 +58,22 @@ impl std::str::FromStr for RoleOrUser {
     }
 }
 
+/// The kind of temporary grant.
+#[derive(Debug, Clone, Copy)]
+pub enum TemporaryKind {
+    Allow,
+    Deny,
+}
+
 /// A grant that has been temporarily given.
-struct TemporaryGrant {
+struct Temporary {
     pub(crate) scope: Scope,
     pub(crate) principal: RoleOrUser,
     pub(crate) expires_at: DateTime<Utc>,
+    pub(crate) kind: TemporaryKind,
 }
 
-impl TemporaryGrant {
+impl Temporary {
     /// Test if the grant is expired.
     pub(crate) fn is_expired(&self, now: &DateTime<Utc>) -> bool {
         *now >= self.expires_at
@@ -79,7 +87,7 @@ struct Inner {
     /// Assignments.
     grants: RwLock<HashSet<(Scope, Role)>>,
     /// Temporary grants.
-    temporary_grants: RwLock<Vec<TemporaryGrant>>,
+    temporary: RwLock<Vec<Temporary>>,
 }
 
 /// A container for scopes and their grants.
@@ -109,7 +117,7 @@ impl Auth {
                 db,
                 schema,
                 grants: RwLock::new(grants),
-                temporary_grants: Default::default(),
+                temporary: Default::default(),
             }),
         };
 
@@ -122,7 +130,7 @@ impl Auth {
     async fn temporary_scopes(&self, now: &DateTime<Utc>, principal: RoleOrUser) -> Vec<Scope> {
         let mut out = Vec::new();
 
-        let grants = self.inner.temporary_grants.read().await;
+        let grants = self.inner.temporary.read().await;
 
         for grant in grants.iter() {
             if grant.principal == principal && !grant.is_expired(now) {
@@ -229,16 +237,24 @@ impl Auth {
         scope: Scope,
         principal: RoleOrUser,
         expires_at: DateTime<Utc>,
+        kind: TemporaryKind,
     ) {
-        self.inner
-            .temporary_grants
-            .write()
-            .await
-            .push(TemporaryGrant {
+        let mut grants = self.inner.temporary.write().await;
+
+        if let Some(existing) = grants
+            .iter_mut()
+            .find(|g| g.scope == scope && g.principal == principal)
+        {
+            existing.expires_at = expires_at;
+            existing.kind = kind;
+        } else {
+            grants.push(Temporary {
                 scope,
                 principal,
                 expires_at,
-            })
+                kind,
+            });
+        }
     }
 
     /// Insert an assignment.
@@ -285,17 +301,17 @@ impl Auth {
         now: &DateTime<Utc>,
         scope: &Scope,
         against: impl IntoIterator<Item = RoleOrUser>,
-    ) -> (bool, bool) {
-        let temporary = self.inner.temporary_grants.read().await;
+    ) -> (Option<TemporaryKind>, bool) {
+        let temporary = self.inner.temporary.read().await;
 
         if temporary.is_empty() {
-            return (false, false);
+            return (None, false);
         }
 
-        let mut granted = false;
+        let mut granted = None;
         let mut expired = false;
 
-        'outer: for against in against.into_iter() {
+        'outer: for against in against {
             for t in temporary.iter() {
                 if t.principal != against || t.scope != *scope {
                     continue;
@@ -306,7 +322,7 @@ impl Auth {
                     continue;
                 }
 
-                granted = true;
+                granted = Some(t.kind);
                 break 'outer;
             }
         }
@@ -325,33 +341,47 @@ impl Auth {
         S: AsRef<Scope>,
     {
         let scope = scope.as_ref();
-        let roles = roles.into_iter().collect::<HashSet<_>>();
-
-        {
-            let grants = self.inner.grants.read().await;
-
-            if roles.iter().any(|r| grants.contains(&(*scope, *r))) {
-                return true;
-            }
-        }
+        let roles = roles.into_iter().collect::<Vec<_>>();
 
         let now = Utc::now();
 
         let against = iter::once(RoleOrUser::User(user.to_string()))
-            .chain(roles.into_iter().map(RoleOrUser::Role));
+            .chain(roles.iter().copied().map(RoleOrUser::Role));
 
-        let (granted, expired) = self.test_temporary(&now, scope, against).await;
+        let (grant, expired) = self.test_temporary(&now, scope, against).await;
 
         // Delete temporary grants that has expired.
         if expired {
             self.inner
-                .temporary_grants
+                .temporary
                 .write()
                 .await
                 .retain(|g| !g.is_expired(&now));
         }
 
-        granted
+        let outcome = 'outcome: {
+            if !matches!(grant, Some(TemporaryKind::Deny)) {
+                let grants = self.inner.grants.read().await;
+
+                if roles.iter().any(|r| grants.contains(&(*scope, *r))) {
+                    break 'outcome true;
+                }
+            }
+
+            matches!(grant, Some(TemporaryKind::Allow))
+        };
+
+        tracing::info!(
+            ?grant,
+            ?expired,
+            ?scope,
+            ?user,
+            ?roles,
+            ?outcome,
+            "tested scopes"
+        );
+
+        outcome
     }
 
     /// Get a list of scopes and extra information associated with them.
