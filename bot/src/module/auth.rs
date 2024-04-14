@@ -1,5 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use auth::TemporaryKind;
 use chrono::Utc;
 use common::Duration;
 
@@ -63,7 +64,7 @@ impl command::Handler for Handler {
 
                 ctx.respond_lines(result, "*no scopes*").await;
             }
-            Some("permit") => {
+            Some("permit") | Some("grant") => {
                 ctx.check_scope(auth::Scope::AuthPermit).await?;
 
                 let duration: Duration = ctx.next_parse("<duration> <principal> <scope>")?;
@@ -90,7 +91,38 @@ impl command::Handler for Handler {
                     scope = scope
                 );
 
-                auth.insert_temporary(scope, principal, expires_at).await;
+                auth.insert_temporary(scope, principal, expires_at, TemporaryKind::Allow)
+                    .await;
+            }
+            Some("deny") => {
+                ctx.check_scope(auth::Scope::AuthPermit).await?;
+
+                let duration: Duration = ctx.next_parse("<duration> <principal> <scope>")?;
+                let principal = ctx.next_parse("<duration> <principal> <scope>")?;
+                let scope = ctx.next_parse("<duration> <principal> <scope>")?;
+
+                if !ctx.user.has_scope(scope).await {
+                    chat::respond!(
+                        ctx,
+                        "Trying to deny scope `{}` that you don't have :(",
+                        scope
+                    );
+                    return Ok(());
+                }
+
+                let now = Utc::now();
+                let expires_at = now + duration.as_chrono();
+
+                chat::respond!(
+                    ctx,
+                    "Denied: {scope} to {principal} for {duration}",
+                    duration = duration,
+                    principal = principal,
+                    scope = scope
+                );
+
+                auth.insert_temporary(scope, principal, expires_at, TemporaryKind::Deny)
+                    .await;
             }
             _ => {
                 chat::respond!(ctx, "Expected: scopes, permit");

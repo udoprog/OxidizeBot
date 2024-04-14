@@ -11,6 +11,9 @@
 //! <br>
 //!
 //! The web component of OxidizeBot, a high performance Twitch Bot powered by Rust.
+
+#![allow(clippy::enum_variant_names)]
+
 mod aead;
 mod api;
 mod db;

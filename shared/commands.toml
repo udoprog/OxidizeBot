@@ -914,9 +914,18 @@ SetMod: setbac -> @moderator: song/playback-control, song/spotify, song/list-lim
 """
 
 [[groups.commands]]
-name = "!auth permit `<duration>` `<principal>` `<scope>`"
+name = "!auth allow `<duration>` `<principal>` `<scope>`"
 content = """
 Grant a `<scope>` to `<principal>` for `<duration>`.
+
+`<principal>` can either be a role (e.g. _@everyone_ or _@subscriber_) or a user (without _@_).
+`<duration>` has to be formatted as `[<days>d][<hours>h][<minutes>m][<seconds>s]`, like _5d10m30s_ or _5m_.
+"""
+
+[[groups.commands]]
+name = "!auth deny `<duration>` `<principal>` `<scope>`"
+content = """
+Deny a `<scope>` to `<principal>` for `<duration>`.
 
 `<principal>` can either be a role (e.g. _@everyone_ or _@subscriber_) or a user (without _@_).
 `<duration>` has to be formatted as `[<days>d][<hours>h][<minutes>m][<seconds>s]`, like _5d10m30s_ or _5m_.

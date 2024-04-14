@@ -628,16 +628,16 @@ async fn process_command<'a>(
             if let Some(handler) = handler {
                 let scope = handler.scope();
 
-                tracing::info! {
-                    ?scope,
-                    roles = ?ctx.user.roles(),
-                    principal = ?ctx.user.principal(),
-                    "Testing handler scope"
-                };
-
                 // Test if user has the required scope to run the given
                 // command.
                 if let Some(scope) = scope {
+                    tracing::info! {
+                        ?scope,
+                        roles = ?ctx.user.roles(),
+                        principal = ?ctx.user.principal(),
+                        "Testing handler scope"
+                    };
+
                     if !ctx.user.has_scope(scope).await {
                         if ctx.user.is_moderator() {
                             let m = ctx.messages.get(messages::AUTH_FAILED).await;

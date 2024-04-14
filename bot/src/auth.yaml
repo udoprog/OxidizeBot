@@ -232,7 +232,7 @@ scopes:
       - "@moderator"
   auth/permit:
     doc: >
-      If you are allowed to run `!auth permit` to grant temporary scopes.
+      If you are allowed to run `!auth allow` to grant temporary scopes or `!auth deny` to deny them.
       You are only able to grant scopes which you yourself have access to.
     version: 0
     allow:

@@ -20,7 +20,7 @@ use crate::sys::Notification;
 
 const ICON_MSG_ID: UINT = WM_USER + 1;
 
-thread_local!(static WININFO_STASH: RefCell<Option<WindowsLoopData>> = RefCell::new(None));
+thread_local!(static WININFO_STASH: RefCell<Option<WindowsLoopData>> = const { RefCell::new(None) });
 
 /// Copy a wide string from a source to a destination.
 pub(crate) fn copy_wstring(dest: &mut [u16], source: &str) {
