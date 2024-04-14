@@ -27,16 +27,16 @@ anyhow = "1.0.70"
 async-fuse = "0.11.4"
 async-injector = "0.19.3"
 chrono = { version = "0.4.24", default-features = false, features = ["serde"] }
-diesel = "2.0.3"
+diesel = "2.1.5"
 parking_lot = "0.12.1"
-serde = { version = "1.0.160", features = ["derive", "rc"] }
+serde = { version = "1.0.197", features = ["derive", "rc"] }
 serde_json = "1.0.96"
 serde_yaml = "0.9.21"
 smallvec = { version = "1.10.0", features = ["serde"] }
 thiserror = "1.0.40"
-tokio = { version = "1.27.0", default-features = false, features = ["sync"] }
-tracing = "0.1.37"
-url = { version = "2.3.1", features = ["serde"] }
+tokio = { version = "1.37.0", default-features = false, features = ["sync"] }
+tracing = "0.1.40"
+url = { version = "2.5.0", features = ["serde"] }
 
 [profile.release]
 opt-level = 'z'

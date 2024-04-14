@@ -26,7 +26,7 @@ ignore = { version = "0.4.20", optional = true }
 async-injector = { workspace = true }
 url = "2.3.1"
 tracing = { workspace = true }
-irc = { version = "0.15.0", default-features = false, features = ["tokio-native-tls", "native-tls", "tls-rust"] }
+irc = { version = "1.0.0", default-features = false, features = ["tls-native"] }
 anyhow = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true, features = ["time"] }
