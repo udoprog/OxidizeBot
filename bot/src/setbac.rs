@@ -87,7 +87,7 @@ where
                         continue;
                     };
 
-                    tracing::trace!("Pushing remote player update");
+                    tracing::info!("Sending remote player update");
 
                     let mut update = PlayerUpdate::default();
                     update.current = player.current().await.map(|c| c.item().as_ref().into());
