@@ -3,9 +3,9 @@ use std::{borrow::Cow, fmt};
 use thiserror::Error;
 
 /// Used to consistently format an IRC response.
-pub fn respond<'a, M: 'a>(name: &'a str, m: M) -> impl fmt::Display + 'a
+pub fn respond<'a, M>(name: &'a str, m: M) -> impl fmt::Display + 'a
 where
-    M: fmt::Display,
+    M: 'a + fmt::Display,
 {
     NameRespond { name, m }
 }

@@ -1,23 +1,3 @@
-use std::future::Future;
-
-use anyhow::Result;
-
-pub(crate) trait Driver<'a> {
-    /// Drive the given future.
-    fn drive<F>(&mut self, future: F)
-    where
-        F: 'a + Send + Future<Output = Result<()>>;
-}
-
-impl<'a> Driver<'a> for Vec<common::BoxFuture<'a, Result<()>>> {
-    fn drive<F>(&mut self, future: F)
-    where
-        F: 'a + Send + Future<Output = Result<()>>,
-    {
-        self.push(Box::pin(future));
-    }
-}
-
 pub(crate) struct Urls<'a> {
     message: &'a str,
 }

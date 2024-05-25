@@ -2,9 +2,6 @@ use std::ffi::{OsStr, OsString};
 use std::os::windows::ffi::{OsStrExt as _, OsStringExt};
 
 pub(crate) trait ToWide {
-    /// Encode into a wide string.
-    fn to_wide(&self) -> Vec<u16>;
-
     /// Encode into a null-terminated wide string.
     fn to_wide_null(&self) -> Vec<u16>;
 }
@@ -13,10 +10,6 @@ impl<T> ToWide for T
 where
     T: AsRef<OsStr>,
 {
-    fn to_wide(&self) -> Vec<u16> {
-        self.as_ref().encode_wide().collect()
-    }
-
     fn to_wide_null(&self) -> Vec<u16> {
         self.as_ref().encode_wide().chain(Some(0)).collect()
     }

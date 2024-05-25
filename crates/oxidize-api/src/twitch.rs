@@ -262,9 +262,9 @@ impl Twitch {
 }
 
 /// Perform pagination over the given request.
-fn page<'a, T: 'a>(request: RequestBuilder<'a>) -> impl Stream<Item = Result<T>> + 'a
+fn page<'a, T>(request: RequestBuilder<'a>) -> impl Stream<Item = Result<T>> + 'a
 where
-    T: de::DeserializeOwned,
+    T: 'a + de::DeserializeOwned,
 {
     async_stream::try_stream! {
         let initial = request.execute().await?.json::<model::Page<T>>()?;

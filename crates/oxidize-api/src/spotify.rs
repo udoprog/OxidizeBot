@@ -249,9 +249,9 @@ impl Spotify {
     }
 
     /// Convert a page object into a stream.
-    pub fn page_as_stream<'a, T: 'a>(&'a self, page: Page<T>) -> impl Stream<Item = Result<T>> + 'a
+    pub fn page_as_stream<'a, T>(&'a self, page: Page<T>) -> impl Stream<Item = Result<T>> + 'a
     where
-        T: Send + DeserializeOwned,
+        T: 'a + Send + DeserializeOwned,
     {
         async_stream::try_stream! {
             let mut current = page.items.into_iter();

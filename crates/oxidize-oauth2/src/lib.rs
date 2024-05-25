@@ -7,7 +7,6 @@ use api::setbac::Connection;
 use async_fuse::Fuse;
 use async_injector::{Injector, Key};
 use common::Duration;
-use thiserror::Error;
 use tokio::time::Instant;
 
 /// Connection metadata.
@@ -37,14 +36,6 @@ pub trait ConnectionIntegration {
     /// Update connection metadata.
     fn update_connection(&self, id: &str, meta: ConnectionIntegrationMeta);
 }
-
-#[derive(Debug, Error)]
-#[error("Missing OAuth 2.0 Connection: {0}")]
-pub(crate) struct MissingTokenError(&'static str);
-
-#[derive(Debug, Error)]
-#[error("Connection receive was cancelled")]
-pub(crate) struct CancelledToken(());
 
 struct ConnectionFactory<I> {
     setbac: Option<api::Setbac>,
@@ -318,7 +309,7 @@ where
             });
         }
 
-        if check_interval.as_ref().is_empty() != !needs_interval {
+        if check_interval.as_ref().is_empty() == needs_interval {
             check_interval.set(if needs_interval {
                 Fuse::new(tokio::time::interval(check_interval_duration.as_std()))
             } else {

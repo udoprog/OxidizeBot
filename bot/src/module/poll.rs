@@ -152,7 +152,7 @@ impl command::MessageHook for ActivePoll {
         }
 
         for word in common::words::trimmed(m) {
-            if self.options.get(&word.to_lowercase()).is_none() {
+            if !self.options.contains_key(&word.to_lowercase()) {
                 continue;
             }
 
