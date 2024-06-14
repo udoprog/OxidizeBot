@@ -42,7 +42,7 @@ jobs:
         OXIDIZE_FILE_VERSION: ${{steps.release.outputs.msi_version}}
     - run: kick zip --output dist
     - run: kick ${{matrix.method}} --output dist
-      if: ${{matrix.method}}
+      if: matrix.method
     - uses: actions/upload-artifact@v4
       with:
         name: dist-${{matrix.os}}
