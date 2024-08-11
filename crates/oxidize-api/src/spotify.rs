@@ -74,7 +74,7 @@ impl Spotify {
     pub async fn playlist(&self, id: SpotifyId, market: Option<&str>) -> Result<FullPlaylist> {
         let mut req = self.request(Method::GET, &["playlists", id.to_string().as_str()]);
 
-        req.query_param("limit", &DEFAULT_LIMIT.to_string());
+        req.query_param("limit", DEFAULT_LIMIT.to_string());
 
         if let Some(market) = market {
             req.query_param("market", market);
@@ -222,7 +222,7 @@ impl Spotify {
     /// Get my songs.
     pub async fn my_tracks(&self) -> Result<Page<SavedTrack>> {
         let mut req = self.request(Method::GET, &["me", "tracks"]);
-        req.query_param("limit", &DEFAULT_LIMIT.to_string());
+        req.query_param("limit", DEFAULT_LIMIT.to_string());
         req.execute().await?.json()
     }
 
