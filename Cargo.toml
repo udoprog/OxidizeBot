@@ -27,7 +27,7 @@ anyhow = "1.0.70"
 async-fuse = "0.11.4"
 async-injector = "0.19.3"
 chrono = { version = "0.4.24", default-features = false, features = ["serde"] }
-diesel = "2.1.5"
+diesel = "2.2.3"
 parking_lot = "0.12.1"
 serde = { version = "1.0.197", features = ["derive", "rc"] }
 serde_json = "1.0.96"
