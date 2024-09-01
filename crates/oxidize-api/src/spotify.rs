@@ -279,11 +279,11 @@ impl Spotify {
     }
 }
 
-/// Handle device control requests.
+/// Handle device control responses.
 fn device_control<C>(status: StatusCode, _: &C) -> Result<Option<bool>> {
     match status {
-        StatusCode::NO_CONTENT => Ok(Some(true)),
         StatusCode::NOT_FOUND => Ok(Some(false)),
+        status if status.is_success() => Ok(Some(true)),
         _ => Ok(None),
     }
 }
