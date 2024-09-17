@@ -6,7 +6,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "bootstrap": "^4.6.0",
+    "bootstrap": "^5.0.0",
     "core-js": "^3.8.3",
     "react": "^17.0.1",
     "react-markdown": "^5.0.3"
