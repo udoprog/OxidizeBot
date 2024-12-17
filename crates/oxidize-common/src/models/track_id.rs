@@ -107,6 +107,8 @@ impl TrackId {
                     let id = match parts.as_slice() {
                         ["", "track", id] => SpotifyId::from_base62(id)
                             .map_err(|_| FromStrError::BadBase62((*id).to_string()))?,
+                        ["", _intl_part, "track", id] => SpotifyId::from_base62(id)
+                            .map_err(|_| FromStrError::BadBase62((*id).to_string()))?,
                         _ => return Err(FromStrError::BadUrl(url.to_string())),
                     };
 
