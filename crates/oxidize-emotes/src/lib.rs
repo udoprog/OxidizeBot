@@ -822,7 +822,7 @@ pub(crate) struct Words<'a> {
     n: usize,
 }
 
-impl<'a> Words<'a> {
+impl Words<'_> {
     /// Split a string into words.
     pub(crate) fn new(string: &str) -> Words<'_> {
         Words { string, n: 0 }

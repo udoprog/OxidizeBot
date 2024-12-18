@@ -264,7 +264,7 @@ pub enum Captures<'a> {
     Regex { captures: regex::Captures<'a> },
 }
 
-impl<'a> Captures<'a> {
+impl Captures<'_> {
     /// Get the number of captures.
     fn len(&self) -> usize {
         match self {

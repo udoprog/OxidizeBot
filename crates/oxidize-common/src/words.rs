@@ -169,7 +169,7 @@ pub struct Trimmed<'a> {
     string: &'a str,
 }
 
-impl<'a> Trimmed<'a> {
+impl Trimmed<'_> {
     /// Split the commandline.
     fn new(string: &str) -> Trimmed<'_> {
         Trimmed {
