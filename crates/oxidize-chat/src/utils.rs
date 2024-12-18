@@ -11,7 +11,7 @@ impl<'a> Urls<'a> {
     }
 }
 
-impl<'a> Iterator for Urls<'a> {
+impl Iterator for Urls<'_> {
     type Item = url::Url;
 
     fn next(&mut self) -> Option<Self::Item> {

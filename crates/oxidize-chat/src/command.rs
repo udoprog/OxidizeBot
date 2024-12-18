@@ -282,7 +282,7 @@ impl<'a> Context<'a> {
     }
 }
 
-impl<'a> Iterator for Context<'a> {
+impl Iterator for Context<'_> {
     type Item = String;
 
     #[inline]
