@@ -1025,7 +1025,7 @@ where
     key: Key<'a>,
 }
 
-impl<'a, S, T> StreamBuilder<'a, S, T>
+impl<S, T> StreamBuilder<'_, S, T>
 where
     S: Scope,
     T: Serialize + de::DeserializeOwned,
