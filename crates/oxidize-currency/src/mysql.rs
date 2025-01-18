@@ -103,8 +103,7 @@ impl Queries {
     async fn upsert_balances<Tx, I>(&self, tx: &mut Tx, users: I, amount: i32) -> Result<()>
     where
         Tx: Queryable,
-        I: IntoIterator<Item = String> + Send,
-        I::IntoIter: Send,
+        I: IntoIterator<IntoIter: Send, Item = String>,
     {
         tracing::trace!("Upsert balances");
 
@@ -324,8 +323,7 @@ impl Backend {
         amount: i64,
     ) -> Result<()>
     where
-        I: IntoIterator<Item = String> + Send,
-        I::IntoIter: Send,
+        I: IntoIterator<IntoIter: Send, Item = String>,
     {
         let amount = amount.try_into()?;
         let opts = mysql::TxOpts::new();

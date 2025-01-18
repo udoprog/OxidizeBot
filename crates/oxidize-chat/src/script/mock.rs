@@ -12,8 +12,7 @@ use crate::command;
 
 pub(crate) async fn load_dir<I>(_channel: &Channel, _db: db::Database, _paths: I) -> Result<Scripts>
 where
-    I: IntoIterator,
-    I::Item: AsRef<Path>,
+    I: IntoIterator<Item: AsRef<Path>>,
 {
     Ok(Scripts(()))
 }

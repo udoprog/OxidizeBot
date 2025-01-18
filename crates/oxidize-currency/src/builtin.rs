@@ -160,12 +160,12 @@ impl Backend {
         watch_time: i64,
     ) -> Result<()>
     where
-        I: IntoIterator<Item = String> + Send + 'static,
-        I::IntoIter: Send,
+        I: IntoIterator<IntoIter: Send + 'static, Item = String>,
     {
         use self::schema::balances::dsl;
 
         let channel = channel.to_owned();
+        let users = users.into_iter();
 
         self.db
             .asyncify(move |c| {

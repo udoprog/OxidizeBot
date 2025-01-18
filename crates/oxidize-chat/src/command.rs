@@ -208,8 +208,7 @@ impl Context<'_> {
     /// Render an iterable of results, that implements display.
     pub async fn respond_lines<I>(&self, results: I, empty: &str)
     where
-        I: IntoIterator,
-        I::Item: fmt::Display,
+        I: IntoIterator<Item: fmt::Display>,
     {
         self.user.respond_lines(results, empty).await
     }
@@ -227,8 +226,7 @@ impl Context<'_> {
     /// Take the next parameter and parse as the given type.
     pub fn next_parse_optional<T>(&mut self) -> Result<Option<T>>
     where
-        T: std::str::FromStr,
-        T::Err: fmt::Display,
+        T: std::str::FromStr<Err: fmt::Display>,
     {
         Ok(match self.next() {
             Some(s) => match str::parse(&s) {
@@ -244,8 +242,7 @@ impl Context<'_> {
     /// Take the next parameter and parse as the given type.
     pub fn next_parse<T, M>(&mut self, m: M) -> Result<T>
     where
-        T: std::str::FromStr,
-        T::Err: fmt::Display,
+        T: std::str::FromStr<Err: fmt::Display>,
         M: fmt::Display,
     {
         Ok(self
@@ -256,8 +253,7 @@ impl Context<'_> {
     /// Take the rest and parse as the given type.
     pub fn rest_parse<T, M>(&mut self, m: M) -> Result<T>
     where
-        T: std::str::FromStr,
-        T::Err: fmt::Display,
+        T: std::str::FromStr<Err: fmt::Display>,
         M: fmt::Display,
     {
         Ok(match self.rest().trim() {

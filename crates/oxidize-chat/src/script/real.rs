@@ -19,8 +19,7 @@ use crate::script::io;
 /// Load all scripts from the given directory.
 pub(crate) async fn load_dir<I>(channel: &Channel, db: db::Database, paths: I) -> Result<Scripts>
 where
-    I: IntoIterator,
-    I::Item: AsRef<Path>,
+    I: IntoIterator<Item: AsRef<Path>>,
 {
     let mut scripts = Scripts::new(channel, db).await?;
 

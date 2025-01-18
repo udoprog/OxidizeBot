@@ -33,8 +33,7 @@ impl Speedrun {
     /// Build request against v3 URL.
     fn v1<I>(&self, method: Method, path: I) -> RequestBuilder<'_>
     where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
+        I: IntoIterator<Item: AsRef<str>>,
     {
         let mut url = self.v1_url.clone();
 

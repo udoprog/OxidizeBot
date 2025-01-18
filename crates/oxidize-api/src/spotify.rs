@@ -49,8 +49,7 @@ impl Spotify {
     /// Get request against API.
     fn request<I>(&self, method: Method, path: I) -> RequestBuilder<'_>
     where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
+        I: IntoIterator<Item: AsRef<str>>,
     {
         let mut url = self.api_url.clone();
 

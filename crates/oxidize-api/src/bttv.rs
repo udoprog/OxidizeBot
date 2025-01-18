@@ -44,8 +44,7 @@ impl BetterTTV {
     /// Build request against v2 URL.
     fn v2<I>(&self, method: Method, path: I) -> RequestBuilder<'_>
     where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
+        I: IntoIterator<Item: AsRef<str>>,
     {
         let mut url = self.v2_url.clone();
 

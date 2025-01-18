@@ -29,8 +29,7 @@ impl Tduva {
     /// Build a new request.
     fn request<I>(&self, method: Method, path: I) -> RequestBuilder<'_>
     where
-        I: IntoIterator,
-        I::Item: AsRef<str>,
+        I: IntoIterator<Item: AsRef<str>>,
     {
         let mut url = self.url.clone();
 

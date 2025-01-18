@@ -234,8 +234,7 @@ impl Backend {
         watch_time: i64,
     ) -> Result<()>
     where
-        I: IntoIterator<Item = String> + Send + 'static,
-        I::IntoIter: Send,
+        I: IntoIterator<IntoIter: Send + 'static, Item = String>,
     {
         use self::Backend::*;
 
@@ -340,8 +339,7 @@ impl Currency {
         watch_time: i64,
     ) -> Result<()>
     where
-        I: IntoIterator<Item = String> + Send + 'static,
-        I::IntoIter: Send + 'static,
+        I: IntoIterator<IntoIter: Send + 'static, Item = String>,
     {
         self.inner
             .backend
