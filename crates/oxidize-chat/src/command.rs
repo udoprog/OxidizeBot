@@ -127,7 +127,7 @@ pub struct Context<'a> {
     pub(crate) inner: &'a Arc<ContextInner>,
 }
 
-impl<'a> Context<'a> {
+impl Context<'_> {
     /// Get associated sender.
     pub fn sender(&self) -> &sender::Sender {
         &self.inner.sender

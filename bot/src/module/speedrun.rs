@@ -897,11 +897,7 @@ impl CategoryFilter {
 
 /// Match all known levels against the specified run.
 fn match_levels<'a>(level: Option<&String>, levels: &'a [Level]) -> Option<&'a Level> {
-    let level = match level {
-        Some(level) => level,
-        None => return None,
-    };
-
+    let level = level?;
     levels.iter().find(|l| l.id == *level)
 }
 
