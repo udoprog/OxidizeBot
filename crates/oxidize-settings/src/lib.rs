@@ -337,6 +337,7 @@ where
     S: Scope + de::DeserializeOwned,
 {
     /// Load schema from the given set of bytes.
+    #[allow(clippy::result_large_err)]
     pub fn load_bytes(bytes: &[u8]) -> Result<Schema<S>, Error> {
         Ok(serde_yaml::from_slice(bytes)?)
     }
@@ -1245,6 +1246,7 @@ pub enum Kind {
 
 impl Type {
     /// Parse the given string as the current type and convert into JSON.
+    #[allow(clippy::result_large_err)]
     pub fn parse_as_json(&self, s: &str) -> Result<serde_json::Value, Error> {
         use self::Kind::*;
         use serde_json::Value;
