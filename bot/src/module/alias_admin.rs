@@ -39,9 +39,7 @@ impl command::Handler for Handler {
                     pattern => match regex::Regex::new(pattern) {
                         Ok(pattern) => Some(pattern),
                         Err(e) => {
-                            ctx.user
-                                .respond(format!("Bad pattern provided: {}", e))
-                                .await;
+                            ctx.user.respond(format!("Bad pattern provided: {e}")).await;
                             return Ok(());
                         }
                     },

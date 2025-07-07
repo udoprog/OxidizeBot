@@ -151,7 +151,7 @@ impl Speedrun {
         }
 
         for (key, value) in &variables.0 {
-            request.query_param(&format!("var-{}", key), value);
+            request.query_param(&format!("var-{key}"), value);
         }
 
         let data: Option<Data<GameRecord>> = request

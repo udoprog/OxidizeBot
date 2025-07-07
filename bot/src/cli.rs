@@ -39,7 +39,7 @@ argwerk::define! {
     }
     /// Show this help.
     ["--help" | "-h"] => {
-        println!("{}", HELP);
+        println!("{HELP}");
         help = true;
     }
     /// If we should enable tracing in all logs.
@@ -135,7 +135,7 @@ pub fn main() -> Result<()> {
 
     if let Some(size) = args.stack_size {
         let thread = std::thread::Builder::new()
-            .name(format!("main-with-stack-{}", size))
+            .name(format!("main-with-stack-{size}"))
             .spawn(move || runtime.block_on(inner_main(args)))?;
 
         thread.join().expect("thread shouldn't panic")

@@ -74,7 +74,7 @@ impl fmt::Display for Uri {
         match self {
             Uri::SpotifyTrack(id) => write!(fmt, "spotify:track:{}", id.to_base62()),
             Uri::SpotifyPlaylist(id) => write!(fmt, "spotify:playlist:{}", id.to_base62()),
-            Uri::YouTubeVideo(id) => write!(fmt, "youtube:video:{}", id),
+            Uri::YouTubeVideo(id) => write!(fmt, "youtube:video:{id}"),
         }
     }
 }

@@ -93,12 +93,11 @@ impl Handler {
 
         let mut response = format!(
             "You can request a song from Spotify with \
-                <search>, like \"{search}\". You can also use an URI or an URL if you feel adventurous PogChamp",
-            search = EXAMPLE_SEARCH,
+                <search>, like \"{EXAMPLE_SEARCH}\". You can also use an URI or an URL if you feel adventurous PogChamp",
         );
 
         if let Some(reason) = reason {
-            response = format!("{}. {}", reason, response);
+            response = format!("{reason}. {response}");
         }
 
         chat::respond!(ctx, response);
@@ -425,14 +424,13 @@ impl command::Handler for Handler {
                     0 => ctx.respond("No songs in queue :(").await,
                     1 => {
                         let length = display::long_duration(duration);
-                        ctx.respond(format!("One song in queue with {} of play time.", length))
+                        ctx.respond(format!("One song in queue with {length} of play time."))
                             .await;
                     }
                     count => {
                         let length = display::long_duration(duration);
                         ctx.respond(format!(
-                            "{} songs in queue with {} of play time.",
-                            count, length
+                            "{count} songs in queue with {length} of play time."
                         ))
                         .await;
                     }

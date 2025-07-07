@@ -65,12 +65,12 @@ impl Duration {
 
         parts.extend(match p.days {
             0 => None,
-            n => Some(format!("{:02}", n)),
+            n => Some(format!("{n:02}")),
         });
 
         parts.extend(match p.hours {
             0 => None,
-            n => Some(format!("{:02}", n)),
+            n => Some(format!("{n:02}")),
         });
 
         parts.push(format!("{:02}", p.minutes));
@@ -123,7 +123,7 @@ impl fmt::Display for Duration {
         }
 
         if s != 0u64 || nothing {
-            write!(fmt, "{}s", s)?;
+            write!(fmt, "{s}s")?;
         }
 
         Ok(())

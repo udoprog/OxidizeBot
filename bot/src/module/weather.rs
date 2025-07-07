@@ -106,16 +106,16 @@ impl command::Handler for Weather {
 
                 if let Some(rain) = current.rain {
                     parts.extend(match (rain._1h, rain._3h) {
-                        (Some(m), _) => Some(format!("raining {:.0}mm/h", m)),
-                        (_, Some(m)) => Some(format!("raining {:.0}mm/3h", m)),
+                        (Some(m), _) => Some(format!("raining {m:.0}mm/h")),
+                        (_, Some(m)) => Some(format!("raining {m:.0}mm/3h")),
                         _ => None,
                     });
                 }
 
                 if let Some(snow) = current.snow {
                     parts.extend(match (snow._1h, snow._3h) {
-                        (Some(m), _) => Some(format!("snowing {:.0}mm/h", m)),
-                        (_, Some(m)) => Some(format!("snowing {:.0}mm/3h", m)),
+                        (Some(m), _) => Some(format!("snowing {m:.0}mm/h")),
+                        (_, Some(m)) => Some(format!("snowing {m:.0}mm/3h")),
                         _ => None,
                     });
                 }

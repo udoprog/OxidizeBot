@@ -64,7 +64,7 @@ impl SongRequester {
                     // show other errors.
                     e => {
                         tracing::warn!("Bad song request: {}", e);
-                        let e = format!("{} :(", e);
+                        let e = format!("{e} :(");
                         return Err(RequestError::BadRequest(Some(e)));
                     }
                 }
@@ -225,15 +225,10 @@ impl fmt::Display for RequestOutcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RequestOutcome::AddedAt { what, pos } => {
-                write!(
-                    f,
-                    "Added {what} at position #{pos}!",
-                    what = what,
-                    pos = pos,
-                )
+                write!(f, "Added {what} at position #{pos}!")
             }
             RequestOutcome::Added { what } => {
-                write!(f, "Added {what}!", what = what)
+                write!(f, "Added {what}!")
             }
             RequestOutcome::RewardedAt {
                 currency,
@@ -243,11 +238,7 @@ impl fmt::Display for RequestOutcome {
             } => {
                 write!(
                     f,
-                    "Added {what} at position #{pos}, here's your {amount} {currency}!",
-                    what = what,
-                    pos = pos,
-                    amount = amount,
-                    currency = currency,
+                    "Added {what} at position #{pos}, here's your {amount} {currency}!"
                 )
             }
             RequestOutcome::Rewarded {
@@ -255,13 +246,7 @@ impl fmt::Display for RequestOutcome {
                 amount,
                 what,
             } => {
-                write!(
-                    f,
-                    "Added {what}, here's your {amount} {currency}!",
-                    what = what,
-                    amount = amount,
-                    currency = currency,
-                )
+                write!(f, "Added {what}, here's your {amount} {currency}!")
             }
         }
     }
@@ -295,7 +280,7 @@ impl fmt::Display for RequestError {
         match self {
             RequestError::BadRequest(reason) => {
                 if let Some(reason) = reason {
-                    write!(f, "bad request, {}", reason)
+                    write!(f, "bad request, {reason}")
                 } else {
                     write!(f, "bad request")
                 }
@@ -306,16 +291,11 @@ impl fmt::Display for RequestError {
             RequestError::NotEnabled(what) => {
                 write!(
                     f,
-                    "{} song requests are currently not enabled, sorry :(",
-                    what
+                    "{what} song requests are currently not enabled, sorry :("
                 )
             }
             RequestError::NotAllowed(what) => {
-                write!(
-                    f,
-                    "You are not allowed to do {what} requests, sorry :(",
-                    what = what
-                )
+                write!(f, "You are not allowed to do {what} requests, sorry :(")
             }
             RequestError::NoCurrency => {
                 write!(f, "No currency configured for stream, but it is required.")
@@ -327,17 +307,14 @@ impl fmt::Display for RequestError {
             } => {
                 write! {
                     f,
-                    "You don't have enough {currency} to request songs. Need {required}, but you have {balance}, sorry :(",
-                    currency = currency,
-                    required = required,
-                    balance = balance,
+                    "You don't have enough {currency} to request songs. Need {required}, but you have {balance}, sorry :("
                 }
             }
             RequestError::AddTrackError(e) => {
-                write!(f, "{}", e)
+                write!(f, "{e}")
             }
             RequestError::Error(e) => {
-                write!(f, "{}", e)
+                write!(f, "{e}")
             }
         }
     }

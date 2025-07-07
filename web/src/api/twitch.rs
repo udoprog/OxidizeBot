@@ -40,7 +40,7 @@ impl IdTwitchClient {
     pub(crate) async fn validate_token(&self, token: &str) -> Result<ValidateToken, anyhow::Error> {
         let request = self
             .request(Method::GET, &["oauth2", "validate"])
-            .header(header::AUTHORIZATION, &format!("OAuth {}", token));
+            .header(header::AUTHORIZATION, &format!("OAuth {token}"));
 
         request.execute().await
     }

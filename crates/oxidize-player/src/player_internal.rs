@@ -650,7 +650,7 @@ impl PlayerInternal {
 
         let what = what
             .as_ref()
-            .map(|u| format!("\"{}\" playlist", u))
+            .map(|u| format!("\"{u}\" playlist"))
             .unwrap_or_else(|| String::from("your library"));
 
         return Ok((what, items));

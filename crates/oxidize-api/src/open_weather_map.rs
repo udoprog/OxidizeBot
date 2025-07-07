@@ -164,7 +164,7 @@ impl fmt::Display for Weather {
             _ => return Ok(()),
         };
 
-        write!(fmt, " {}", icon)
+        write!(fmt, " {icon}")
     }
 }
 

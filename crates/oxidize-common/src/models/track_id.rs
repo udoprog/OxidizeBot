@@ -70,7 +70,7 @@ impl fmt::Display for TrackId {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TrackId::Spotify(id) => write!(fmt, "spotify:track:{}", id.to_base62()),
-            TrackId::YouTube(id) => write!(fmt, "youtube:video:{}", id),
+            TrackId::YouTube(id) => write!(fmt, "youtube:video:{id}"),
         }
     }
 }
@@ -79,8 +79,8 @@ impl TrackId {
     /// Get the URL for this track.
     pub fn url(&self) -> String {
         match self {
-            TrackId::Spotify(id) => format!("{}/{}", SPOTIFY_URL, id.to_base62()),
-            TrackId::YouTube(id) => format!("{}/{}", YOUTUBE_URL, id),
+            TrackId::Spotify(id) => format!("{SPOTIFY_URL}/{}", id.to_base62()),
+            TrackId::YouTube(id) => format!("{YOUTUBE_URL}/{id}"),
         }
     }
 

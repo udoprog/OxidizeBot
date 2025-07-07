@@ -72,7 +72,7 @@ impl Sender {
     /// Delete the given message by id.
     #[tracing::instrument(skip_all)]
     pub fn delete(&self, id: &str) {
-        self.privmsg_immediate(format!("/delete {}", id));
+        self.privmsg_immediate(format!("/delete {id}"));
     }
 
     /// Only send to chat, with rate limiting.

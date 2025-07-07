@@ -431,7 +431,7 @@ impl Speedrun {
                 runs => runs.join(" - "),
             };
 
-            results.push(format!("{} -> {}", name, runs));
+            results.push(format!("{name} -> {runs}"));
         }
 
         ctx.user.respond_lines(results, "*no runs*").await;

@@ -46,13 +46,13 @@ impl Handler {
         }
 
         if results.is_empty() {
-            chat::respond!(ctx, "No settings starting with `{}`", key);
+            chat::respond!(ctx, "No settings starting with `{key}`");
         } else {
             let mut response = results.join(", ");
 
             if results.len() < settings.len() {
                 let more = settings.len() - results.len();
-                response = format!("{} .. and {} more", response, more);
+                response = format!("{response} .. and {more} more");
             }
 
             ctx.respond(response).await;

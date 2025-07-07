@@ -1224,7 +1224,7 @@ impl User {
             let count = output.count();
 
             if count > 0 {
-                self.respond(format!("{} ... {} line(s) not shown", line, count))
+                self.respond(format!("{line} ... {count} line(s) not shown"))
                     .await;
             } else {
                 self.respond(line).await;
@@ -1289,7 +1289,7 @@ where
 
         for result in self.iter.by_ref() {
             self.item_buf.clear();
-            write!(&mut self.item_buf, "{}", result)
+            write!(&mut self.item_buf, "{result}")
                 .expect("a Display implementation returned an error unexpectedly");
 
             if len + self.item_buf.len() <= self.width {

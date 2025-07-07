@@ -80,9 +80,9 @@ impl command::Handler for Time {
             let hours = offset / 3600;
 
             if neg {
-                format!("-{:02}{:02}", hours, minutes)
+                format!("-{hours:02}{minutes:02}")
             } else {
-                format!("+{:02}{:02}", hours, minutes)
+                format!("+{hours:02}{minutes:02}")
             }
         }
     }

@@ -36,11 +36,11 @@ impl<'de> serde::Deserialize<'de> for Template {
                 let back = it.next_back();
 
                 for line in it {
-                    writeln!(&mut s, "{}", line).map_err(serde::de::Error::custom)?;
+                    writeln!(&mut s, "{line}").map_err(serde::de::Error::custom)?;
                 }
 
                 if let Some(line) = back {
-                    write!(&mut s, "{}", line).map_err(serde::de::Error::custom)?;
+                    write!(&mut s, "{line}").map_err(serde::de::Error::custom)?;
                 }
 
                 s

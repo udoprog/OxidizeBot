@@ -70,7 +70,7 @@ impl Spotify {
     pub(crate) async fn v1_me(&self, token: &str) -> Result<User> {
         let request = self
             .request(Method::GET, &["v1", "me"])
-            .header(header::AUTHORIZATION, &format!("Bearer {}", token));
+            .header(header::AUTHORIZATION, &format!("Bearer {token}"));
 
         request.execute().await
     }

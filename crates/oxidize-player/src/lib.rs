@@ -237,7 +237,7 @@ pub async fn setup(
         song_update_interval_stream,
     };
 
-    let mut playback_future = pin!(playback.run(injector.clone(), settings));
+    let playback_future = pin!(playback.run(injector.clone(), settings));
 
     let youtube_future = pin!(youtube_future);
     let spotify_future = pin!(spotify_future);
@@ -638,7 +638,7 @@ impl fmt::Display for AddTrackError {
             }
             AddTrackError::PlayerClosed(reason) => match reason.as_deref() {
                 Some(reason) => {
-                    write!(f, "{}", reason)
+                    write!(f, "{reason}")
                 }
                 None => {
                     write!(f, "Player is closed from further requests, sorry :(")
@@ -666,7 +666,6 @@ impl fmt::Display for AddTrackError {
                         write!(
                             f,
                             "<3 your enthusiasm, but you already have {count} tracks in the queue.",
-                            count = count,
                         )
                     }
                 }
@@ -688,11 +687,8 @@ impl fmt::Display for AddTrackError {
 
                 write!(
                     f,
-                    "That song was requested by {who} {duration}, \
-                         you have to wait at least {limit} between duplicate requests!",
-                    who = duplicate_by,
-                    duration = duration_since,
-                    limit = duplicate_duration,
+                    "That song was requested by {duplicate_by} {duration_since}, \
+                         you have to wait at least {duplicate_duration} between duplicate requests!",
                 )
             }
             AddTrackError::MissingAuth => {
@@ -705,7 +701,7 @@ impl fmt::Display for AddTrackError {
                 write!(f, "This song is not available in the streamer's region :(")
             }
             AddTrackError::Error(e) => {
-                write!(f, "{}", e)
+                write!(f, "{e}")
             }
         }
     }
@@ -724,7 +720,7 @@ impl fmt::Display for DuplicateBy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DuplicateBy::Requester => write!(f, "you"),
-            DuplicateBy::Other(other) => write!(f, "{}", other),
+            DuplicateBy::Other(other) => write!(f, "{other}"),
             DuplicateBy::Unknown => write!(f, "an unknown user"),
         }
     }

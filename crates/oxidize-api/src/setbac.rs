@@ -71,7 +71,7 @@ impl Setbac {
             RequestBuilder::new(&self.inner.client, self.inner.user_agent, method, url);
 
         if let Some(secret_key) = self.inner.secret_key.as_ref() {
-            request.header(header::AUTHORIZATION, &format!("key:{}", secret_key));
+            request.header(header::AUTHORIZATION, &format!("key:{secret_key}"));
         } else if let Some(streamer_token) = self.inner.streamer_token.as_ref() {
             request.token(streamer_token).use_oauth2_header();
         }

@@ -53,7 +53,7 @@ impl command::Handler for Poll {
 
                 let hook_id = ctx.insert_hook(poll.clone()).await;
                 self.polls.lock().await.insert(hook_id, poll);
-                ctx.respond(format!("Started poll `{}` (id: {})", question, hook_id))
+                ctx.respond(format!("Started poll `{question}` (id: {hook_id})"))
                     .await;
             }
             Some("close") => {
@@ -88,10 +88,10 @@ impl command::Handler for Poll {
                     let votes = match votes {
                         0 => "no votes".to_string(),
                         1 => "one vote".to_string(),
-                        n => format!("{} votes", n),
+                        n => format!("{n} votes"),
                     };
 
-                    formatted.push(format!("{} = {} ({})", key, votes, p));
+                    formatted.push(format!("{key} = {votes} ({p})"));
                 }
 
                 chat::respond!(ctx, "{} -> {}.", poll.question, formatted.join(", "));

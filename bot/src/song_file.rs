@@ -183,7 +183,7 @@ impl SongFile {
         let mut f = self.create_or_truncate()?;
 
         if let Some(stopped_template) = self.stopped_template.as_ref() {
-            write!(f, "{}", stopped_template)?;
+            write!(f, "{stopped_template}")?;
         } else {
             write!(f, "Not Playing")?;
         }

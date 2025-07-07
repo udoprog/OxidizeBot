@@ -297,7 +297,7 @@ impl Emotes {
         ];
 
         for (dest, size) in options.into_iter() {
-            let url = format!("//static-cdn.jtvnw.net/emoticons/v1/{}/{}", id, size);
+            let url = format!("//static-cdn.jtvnw.net/emoticons/v1/{id}/{size}");
             *dest = Some(Url { url, size: None });
         }
 

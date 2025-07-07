@@ -19,12 +19,12 @@ fn dbg_impl(stack: &mut Stack, args: usize) -> Result<(), VmError> {
     let last = it.next_back();
 
     for value in it {
-        write!(string, "{:?}", value).map_err(VmError::panic)?;
+        write!(string, "{value:?}").map_err(VmError::panic)?;
         string.push('\n');
     }
 
     if let Some(value) = last {
-        write!(string, "{:?}", value).map_err(VmError::panic)?;
+        write!(string, "{value:?}").map_err(VmError::panic)?;
     }
 
     tracing::info!("[dbg]: {}", string);

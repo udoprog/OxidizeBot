@@ -22,7 +22,7 @@ impl fmt::Display for Percentage {
 
         match p % 100 {
             0 => (),
-            n => write!(fmt, ".{}", n)?,
+            n => write!(fmt, ".{n}")?,
         };
 
         fmt.write_str("%")

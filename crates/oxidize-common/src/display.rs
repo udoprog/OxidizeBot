@@ -10,22 +10,22 @@ pub fn compact_duration(duration: std::time::Duration) -> String {
 
     parts.extend(match p.days {
         0 => None,
-        n => Some(format!("{}d", n)),
+        n => Some(format!("{n}d")),
     });
 
     parts.extend(match p.hours {
         0 => None,
-        n => Some(format!("{}h", n)),
+        n => Some(format!("{n}h")),
     });
 
     parts.extend(match p.minutes {
         0 => None,
-        n => Some(format!("{}m", n)),
+        n => Some(format!("{n}m")),
     });
 
     parts.extend(match p.seconds {
         0 => None,
-        n => Some(format!("{}s", n)),
+        n => Some(format!("{n}s")),
     });
 
     if parts.is_empty() {
@@ -78,7 +78,7 @@ pub fn digital_duration(duration: std::time::Duration) -> String {
 
     parts.extend(match p.hours {
         0 => None,
-        n => Some(format!("{:02}", n)),
+        n => Some(format!("{n:02}")),
     });
 
     parts.push(format!("{:02}", p.minutes));

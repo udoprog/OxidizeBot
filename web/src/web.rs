@@ -71,8 +71,8 @@ pub(crate) fn setup(
 
     let handler = Arc::new(Handler::new(fallback, db, config, pending_tokens.clone())?);
 
-    let bind = format!("{}:{}", host, port);
-    tracing::info!("Listening on: http://{}", bind);
+    let bind = format!("{host}:{port}");
+    tracing::info!("Listening on: http://{bind}");
 
     let addr: SocketAddr = str::parse(&bind)?;
 
@@ -415,7 +415,7 @@ impl fmt::Display for ContentLengthFmt {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::None => "?".fmt(fmt),
-            Self::Some(len) => write!(fmt, "{} bytes", len),
+            Self::Some(len) => write!(fmt, "{len} bytes"),
         }
     }
 }
@@ -432,11 +432,11 @@ impl fmt::Display for RemoteAddressFmt<'_> {
         write!(fmt, "{}", self.remote_address)?;
 
         if let Some(x_real_ip) = self.x_real_ip {
-            write!(fmt, " (X-Real-IP: {})", x_real_ip)?;
+            write!(fmt, " (X-Real-IP: {x_real_ip})")?;
         }
 
         if let Some(x_forwarded_for) = self.x_forwarded_for {
-            write!(fmt, " (X-Forwarded-For: {})", x_forwarded_for)?;
+            write!(fmt, " (X-Forwarded-For: {x_forwarded_for})")?;
         }
 
         Ok(())
@@ -670,10 +670,7 @@ impl Handler {
         let flow = match self.flows.get(id).cloned() {
             Some(flow) => flow,
             None => {
-                return Err(Error::bad_request(format!(
-                    "unsupported connection: {}",
-                    id
-                )));
+                return Err(Error::bad_request(format!("unsupported connection: {id}")));
             }
         };
 
@@ -855,7 +852,7 @@ impl Handler {
         };
 
         if let Some(id) = connected {
-            return_to.set_query(Some(&format!("connected={}", id)));
+            return_to.set_query(Some(&format!("connected={id}")));
         }
 
         let return_to = return_to.to_string();
@@ -1084,7 +1081,7 @@ impl Item {
             artists: self.artists,
             track_url: self
                 .track_url
-                .unwrap_or_else(|| format!("{}/{}", SPOTIFY_TRACK_URL, track_id)),
+                .unwrap_or_else(|| format!("{SPOTIFY_TRACK_URL}/{track_id}")),
             user: self.user,
             duration: self.duration,
         }
@@ -1139,7 +1136,7 @@ where
 
     match serde_json::from_slice::<T>(&bytes) {
         Ok(body) => Ok(body),
-        Err(e) => Err(Error::bad_request(format!("malformed body: {}", e))),
+        Err(e) => Err(Error::bad_request(format!("malformed body: {e}"))),
     }
 }
 

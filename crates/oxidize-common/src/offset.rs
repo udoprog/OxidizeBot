@@ -87,9 +87,9 @@ impl fmt::Display for Offset {
         let minutes = rest / 60;
 
         if ms > 0 {
-            write!(fmt, "{:02}:{:02}.{:03}", minutes, seconds, ms)
+            write!(fmt, "{minutes:02}:{seconds:02}.{ms:03}")
         } else {
-            write!(fmt, "{:02}:{:02}", minutes, seconds)
+            write!(fmt, "{minutes:02}:{seconds:02}")
         }
     }
 }

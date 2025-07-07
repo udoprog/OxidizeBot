@@ -1302,7 +1302,7 @@ impl Type {
             }
             TimeZone => {
                 let tz = str::parse::<Tz>(s).map_err(Error::BadTimeZone)?;
-                Value::String(format!("{:?}", tz))
+                Value::String(format!("{tz:?}"))
             }
             Object { fields, .. } => {
                 let json = serde_json::from_str(s)?;
@@ -1382,11 +1382,11 @@ impl fmt::Display for Type {
             Percentage => write!(f, "percentage")?,
             String { .. } => write!(f, "string")?,
             Text => write!(f, "text")?,
-            Set { value } => write!(f, "Array<{}>", value)?,
+            Set { value } => write!(f, "Array<{value}>")?,
             Select { value, options, .. } => {
                 let options = options.iter().map(|o| &o.value).collect::<Vec<_>>();
                 let options = serde_json::to_string(&options).map_err(|_| fmt::Error)?;
-                write!(f, "Select<{}, one_of={}>", value, options)?;
+                write!(f, "Select<{value}, one_of={options}>")?;
             }
             TimeZone => write!(f, "TimeZone")?,
             Object { .. } => write!(f, "Object")?,
