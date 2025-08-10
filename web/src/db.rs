@@ -3,7 +3,7 @@ use crate::oauth2;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use sled31 as sled;
+use sled34 as sled;
 use std::fmt;
 use thiserror::Error;
 

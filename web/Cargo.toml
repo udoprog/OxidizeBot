@@ -35,6 +35,7 @@ serde_json = { workspace = true }
 serde_urlencoded = "0.7.1"
 sled28 = { package = "sled", version = "0.28.0" }
 sled31 = { package = "sled", version = "0.31.0" }
+sled34 = { package = "sled", version = "0.34.0" }
 smallvec = { workspace = true }
 thiserror = { workspace = true }
 time = "0.3.20"

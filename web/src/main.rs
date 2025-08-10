@@ -85,27 +85,51 @@ async fn main() -> Result<()> {
     let base = config.database.to_path(root);
     let v28 = base.clone();
     let v31 = base.with_extension("31");
-    let v31_db;
+    let v34 = base.with_extension("34");
 
-    if !v31.is_dir() {
-        tracing::warn!("Migrating database {} -> {}", v28.display(), v31.display());
-
-        // migrate 28 to 31
-        let v28 = sled28::Db::open(v28)?.open_tree("storage")?;
-        v31_db = sled31::open(v31)?.open_tree("storage")?;
-
-        let mut count = 0;
-
-        for result in v28.scan_prefix([]) {
-            let (k, v) = result?;
-            v31_db.insert(k, &*v)?;
-            count += 1;
+    let v34_db = 'out: {
+        if v34.is_dir() {
+            break 'out sled31::open(v31)?.open_tree("storage")?;
         }
 
-        tracing::warn!("Migrated {} records", count);
-    } else {
-        v31_db = sled31::open(v31)?.open_tree("storage")?;
-    }
+        let new_db = sled34::open(v34)?.open_tree("storage")?;
+
+        if v28.is_dir() {
+            tracing::warn!("Migrating database {} -> {}", v28.display(), v34.display());
+
+            // migrate 28 to 34
+            let old = sled28::Db::open(v28)?.open_tree("storage")?;
+
+            let mut count = 0;
+
+            for result in old.scan_prefix([]) {
+                let (k, v) = result?;
+                new_db.insert(k, &*v)?;
+                count += 1;
+            }
+
+            tracing::warn!("Migrated {} records", count);
+        };
+
+        if v31.is_dir() {
+            tracing::warn!("Migrating database {} -> {}", v31.display(), v34.display());
+
+            // migrate 31 to 34
+            let old = sled31::Db::open(v31)?.open_tree("storage")?;
+
+            let mut count = 0;
+
+            for result in old.scan_prefix([]) {
+                let (k, v) = result?;
+                new_db.insert(k, &*v)?;
+                count += 1;
+            }
+
+            tracing::warn!("Migrated {} records", count);
+        };
+
+        new_db
+    };
 
     let db = db::Database::load(v31_db)?;
 
