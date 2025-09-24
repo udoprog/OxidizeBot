@@ -3,7 +3,7 @@ name = "web"
 version = "0.0.0"
 authors = ["John-John Tedro <udoprog@tedro.se>"]
 edition = "2021"
-rust-version = "1.81"
+rust-version = "1.86"
 description = "The web component of OxidizeBot, a high performance Twitch Bot powered by Rust."
 documentation = "https://docs.rs/oxidize"
 readme = "README.md"
@@ -33,8 +33,7 @@ serde = { workspace = true }
 serde_cbor = "0.11.2"
 serde_json = { workspace = true }
 serde_urlencoded = "0.7.1"
-sled28 = { package = "sled", version = "0.28.0" }
-sled31 = { package = "sled", version = "0.31.0" }
+sled31 = { package = "sled", version = "0.31.0", git = "https://github.com/udoprog/sled", branch = "0.31.x" }
 sled34 = { package = "sled", version = "0.34.0" }
 smallvec = { workspace = true }
 thiserror = { workspace = true }

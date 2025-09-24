@@ -1027,13 +1027,6 @@ impl Handler {
     }
 }
 
-/// Token meta-information.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-struct TokenMeta {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    login: Option<String>,
-}
-
 /// Extract referer.
 fn referer<B>(req: &Request<B>) -> Result<Option<Url>, Error> {
     let referer = match req.headers().get(header::REFERER) {

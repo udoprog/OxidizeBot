@@ -3,7 +3,6 @@
 use anyhow::{bail, Result};
 use common::models::youtube::{SearchResults, Video, Videos};
 use reqwest::{Client, Method, Url};
-use serde::{Deserialize, Serialize};
 
 use crate::base::RequestBuilder;
 use crate::token::Token;
@@ -77,7 +76,3 @@ impl YouTube {
         }
     }
 }
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[non_exhaustive]
-struct Empty;

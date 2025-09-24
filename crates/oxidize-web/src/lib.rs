@@ -805,15 +805,6 @@ struct Api {
     latest: ::settings::Var<Option<api::github::Release>>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-pub(crate) struct Balance {
-    name: String,
-    #[serde(default)]
-    balance: i64,
-    #[serde(default)]
-    watch_time: i64,
-}
-
 impl Api {
     /// Handle request to set device.
     async fn set_device(self, id: String) -> Result<impl warp::Reply, WebError> {
