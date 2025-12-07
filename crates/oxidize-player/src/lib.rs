@@ -41,22 +41,17 @@ pub enum Source {
     Manual,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 enum PlaybackMode {
     /// The default playback mode.
     #[serde(rename = "default")]
+    #[default]
     Default,
     /// Enqueue the next song instead of playing it.
     ///
     /// Only valid for the Spotify player.
     #[serde(rename = "queue")]
     Queue,
-}
-
-impl Default for PlaybackMode {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 /// A volume modification.

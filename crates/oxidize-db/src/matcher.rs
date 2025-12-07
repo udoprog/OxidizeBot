@@ -206,10 +206,11 @@ impl fmt::Display for Key {
 }
 
 /// How to match the given value.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Default, Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 pub enum Pattern {
     #[serde(rename = "name")]
+    #[default]
     Name,
     #[serde(rename = "regex")]
     Regex {
@@ -232,12 +233,6 @@ impl Pattern {
             },
             None => Pattern::Name,
         })
-    }
-}
-
-impl Default for Pattern {
-    fn default() -> Self {
-        Self::Name
     }
 }
 
