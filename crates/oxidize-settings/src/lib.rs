@@ -46,7 +46,7 @@ pub enum Error {
     MigrationIncompatible {
         from: String,
         to: String,
-        ty: Type,
+        ty: Box<Type>,
         json: String,
     },
     #[error("{0}")]
@@ -484,7 +484,7 @@ where
                 return Err(Error::MigrationIncompatible {
                     from: from_key.to_string(),
                     to: to_key.to_string(),
-                    ty: to.schema.ty.clone(),
+                    ty: Box::new(to.schema.ty.clone()),
                     json: serde_json::to_string(&from)?,
                 });
             }

@@ -153,7 +153,7 @@ struct PromoData<'a> {
 
 /// Pick the best promo.
 fn pick(mut promotions: Vec<Arc<db::Promotion>>) -> Option<Arc<db::Promotion>> {
-    promotions.sort_by(|a, b| a.promoted_at.cmp(&b.promoted_at));
+    promotions.sort_by_key(|v| v.promoted_at);
 
     let now = Utc::now();
 

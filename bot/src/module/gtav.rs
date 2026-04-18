@@ -663,7 +663,7 @@ impl Handler {
             }
         }
 
-        remaining.sort_by(|a, b| b.1.cmp(&a.1));
+        remaining.sort_by_key(|v| v.1);
 
         match remaining.into_iter().next() {
             Some((name, remaining)) => Some((name, remaining)),

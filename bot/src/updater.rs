@@ -42,7 +42,7 @@ pub(crate) fn updater(
                         Some(cache) => cache.wrap(String::from("updater/version"), chrono::Duration::hours(1), future).await?,
                     };
 
-                    releases.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+                    releases.sort_by_key(|v| v.published_at);
 
                     let release = match releases.into_iter().find(|r| !r.prerelease) {
                         Some(release) => release,

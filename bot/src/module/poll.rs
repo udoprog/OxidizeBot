@@ -132,7 +132,7 @@ impl ActivePoll {
             ));
         }
 
-        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.sort_by_key(|v| v.1);
         results
     }
 }
