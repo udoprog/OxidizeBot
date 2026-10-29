@@ -19,8 +19,8 @@ currency = { workspace = true }
 storage = { workspace = true }
 async-trait = "0.1.68"
 notify = "8"
-rune = { version = "0.12.3", optional = true }
-rune-modules = { version = "0.12.3", features = ["full"], optional = true }
+rune = { version = "0.14.2", optional = true }
+rune-modules = { version = "0.14.2", features = ["full"], optional = true }
 ignore = { version = "0.4.20", optional = true }
 async-injector = { workspace = true }
 url = "2.3.1"

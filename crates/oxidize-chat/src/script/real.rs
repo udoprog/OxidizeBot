@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -6,15 +7,14 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use common::Channel;
 use ignore::Walk;
-use rune::runtime::{ConstValue, Protocol, RuntimeContext, SyncFunction};
+use rune::runtime::{Function, Protocol, Ref, RuntimeContext, SyncFunction, VmResult};
 use rune::termcolor;
-use rune::{
-    Any, Context, ContextError, Diagnostics, FromValue, Module, Options, Source, Sources, Vm,
-};
+use rune::{Any, Context, ContextError, Diagnostics, Module, Options, Source, Sources, Vm};
 
 use crate::chat;
 use crate::command;
 use crate::script::io;
+use crate::script::value::StoredValue;
 
 /// Load all scripts from the given directory.
 pub(crate) async fn load_dir<I>(channel: &Channel, db: db::Database, paths: I) -> Result<Scripts>
@@ -88,15 +88,31 @@ struct ScopedDb {
 
 impl ScopedDb {
     /// Set the given value in the database.
-    async fn set(&self, key: ConstValue, value: ConstValue) -> Result<(), rune::Error> {
-        self.db.set(key, value).await?;
-        Ok(())
+    fn set(
+        this: Ref<Self>,
+        key: StoredValue,
+        value: StoredValue,
+    ) -> impl Future<Output = Result<(), String>> {
+        let db = this.db.clone();
+
+        async move {
+            db.set(key, value).await.map_err(|e| e.to_string())?;
+            Ok(())
+        }
     }
 
     /// Get the stored value.
-    async fn get(&self, key: ConstValue) -> Result<Option<ConstValue>, rune::Error> {
-        let value = self.db.get::<ConstValue, ConstValue>(key).await?;
-        Ok(value)
+    fn get(
+        this: Ref<Self>,
+        key: StoredValue,
+    ) -> impl Future<Output = Result<Option<StoredValue>, String>> {
+        let db = this.db.clone();
+
+        async move {
+            db.get::<StoredValue, StoredValue>(key)
+                .await
+                .map_err(|e| e.to_string())
+        }
     }
 }
 
@@ -113,8 +129,8 @@ impl Handler {
             db: self.db.scoped(),
         };
 
-        let result: Result<(), ConstValue> =
-            match self.handler.function.async_send_call((ctx,)).await {
+        let result: Result<(), StoredValue> =
+            match self.handler.function.async_send_call((ctx,)).await.into_result() {
                 Ok(result) => result,
                 Err(error) => {
                     let mut buffer = termcolor::Buffer::no_color();
@@ -153,7 +169,7 @@ impl Scripts {
     /// Construct a new script handler.
     async fn new(channel: &Channel, db: db::Database) -> Result<Self> {
         let context = Self::context()?;
-        let runtime = Arc::new(context.runtime());
+        let runtime = Arc::new(context.runtime()?);
 
         Ok(Self {
             context,
@@ -195,7 +211,7 @@ impl Scripts {
     /// Load the given path as a script.
     pub(crate) fn load(&mut self, path: &Path) -> Result<()> {
         let mut sources = Sources::new();
-        sources.insert(Source::from_path(path)?);
+        sources.insert(Source::from_path(path)?)?;
 
         let mut diagnostics = Diagnostics::new();
 
@@ -223,7 +239,7 @@ impl Scripts {
 
         let mut reg = Registry::new();
         let mut vm = Vm::new(self.runtime.clone(), unit);
-        <()>::from_value(vm.call(["main"], (&mut reg,))?)?;
+        vm.call(["main"], (&mut reg,))?.into_unit()?;
 
         for (command, function) in reg.handlers {
             if let Some(handler) = self.handlers.get(&command) {
@@ -255,28 +271,28 @@ impl Scripts {
     /// Construct a new context.
     fn context() -> Result<Arc<Context>, ContextError> {
         let mut ctx = rune_modules::with_config(false)?;
-        ctx.install(&Self::oxi_mod()?)?;
-        ctx.install(&self::io::module()?)?;
+        ctx.install(Self::oxi_mod()?)?;
+        ctx.install(self::io::module()?)?;
         Ok(Arc::new(ctx))
     }
 
     fn oxi_mod() -> Result<Module, ContextError> {
-        let mut m = Module::with_item(&["oxi"]);
+        let mut m = Module::with_item(["oxi"])?;
 
         m.ty::<Ctx>()?;
-        m.async_inst_fn("respond", Ctx::respond)?;
-        m.async_inst_fn("privmsg", Ctx::privmsg)?;
-        m.inst_fn("user", Ctx::user)?;
-        m.field_fn(Protocol::GET, "db", Ctx::db)?;
+        m.associated_function("respond", Ctx::respond)?;
+        m.associated_function("privmsg", Ctx::privmsg)?;
+        m.associated_function("user", Ctx::user)?;
+        m.field_function(&Protocol::GET, "db", Ctx::db)?;
 
         m.ty::<Registry>()?;
-        m.inst_fn("register", Registry::register)?;
+        m.associated_function("register", Registry::register)?;
 
         m.ty::<ScopedDb>()?;
-        m.async_inst_fn(Protocol::INDEX_SET, ScopedDb::set)?;
-        m.async_inst_fn("set", ScopedDb::set)?;
-        m.async_inst_fn(Protocol::INDEX_GET, ScopedDb::get)?;
-        m.async_inst_fn("get", ScopedDb::get)?;
+        m.associated_function(&Protocol::INDEX_SET, ScopedDb::set)?;
+        m.associated_function("set", ScopedDb::set)?;
+        m.associated_function(&Protocol::INDEX_GET, ScopedDb::get)?;
+        m.associated_function("get", ScopedDb::get)?;
 
         Ok(m)
     }
@@ -296,8 +312,10 @@ impl Registry {
     }
 
     /// Register the given handler.
-    fn register(&mut self, name: &str, handler: SyncFunction) {
+    fn register(&mut self, name: &str, handler: Function) -> VmResult<()> {
+        let handler = rune::vm_try!(handler.into_sync());
         self.handlers.insert(name.to_owned(), handler);
+        VmResult::Ok(())
     }
 }
 
@@ -319,12 +337,14 @@ impl Ctx {
     }
 
     /// Respond with the given message.
-    async fn respond(&self, message: &str) {
-        self.user.respond(message).await;
+    fn respond(this: Ref<Self>, message: Ref<str>) -> impl Future<Output = ()> {
+        let user = this.user.clone();
+        async move { user.respond(&*message).await }
     }
 
     /// Send a privmsg, without prefixing it with the user we are responding to.
-    async fn privmsg(&self, message: &str) {
-        self.user.sender().privmsg(message).await;
+    fn privmsg(this: Ref<Self>, message: Ref<str>) -> impl Future<Output = ()> {
+        let user = this.user.clone();
+        async move { user.sender().privmsg(&*message).await }
     }
 }

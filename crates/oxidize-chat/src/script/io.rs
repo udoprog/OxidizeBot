@@ -1,35 +1,29 @@
-use std::fmt::Write;
-
-use rune::runtime::{Stack, VmError};
-use rune::{ContextError, Module, Value};
+use rune::runtime::{InstAddress, Memory, Output, VmResult};
+use rune::{ContextError, Module};
 
 /// Construct the necessary io shims suitable for use within the bot.
 pub(crate) fn module() -> Result<Module, ContextError> {
-    let mut m = Module::with_item(&["std", "io"]);
-    m.raw_fn(&["dbg"], dbg_impl)?;
-    m.function(&["print"], print_impl)?;
-    m.function(&["println"], println_impl)?;
+    let mut m = Module::with_item(["std", "io"])?;
+    m.raw_function("dbg", dbg_impl).build()?;
+    m.function("print", print_impl).build()?;
+    m.function("println", println_impl).build()?;
     Ok(m)
 }
 
-fn dbg_impl(stack: &mut Stack, args: usize) -> Result<(), VmError> {
+fn dbg_impl(stack: &mut dyn Memory, addr: InstAddress, args: usize, out: Output) -> VmResult<()> {
     let mut string = String::new();
 
-    let mut it = stack.drain(args)?;
-    let last = it.next_back();
+    for (n, value) in rune::vm_try!(stack.slice_at(addr, args)).iter().enumerate() {
+        if n > 0 {
+            string.push('\n');
+        }
 
-    for value in it {
-        write!(string, "{value:?}").map_err(VmError::panic)?;
-        string.push('\n');
-    }
-
-    if let Some(value) = last {
-        write!(string, "{value:?}").map_err(VmError::panic)?;
+        string.push_str(&format!("{value:?}"));
     }
 
     tracing::info!("[dbg]: {}", string);
-    stack.push(Value::Unit);
-    Ok(())
+    rune::vm_try!(out.store(stack, ()));
+    VmResult::Ok(())
 }
 
 fn print_impl(m: &str) {
