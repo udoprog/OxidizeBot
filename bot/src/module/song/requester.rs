@@ -305,10 +305,10 @@ impl fmt::Display for RequestError {
                 required,
                 balance,
             } => {
-                write! {
+                write!(
                     f,
                     "You don't have enough {currency} to request songs. Need {required}, but you have {balance}, sorry :("
-                }
+                )
             }
             RequestError::AddTrackError(e) => {
                 write!(f, "{e}")

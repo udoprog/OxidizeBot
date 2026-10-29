@@ -107,14 +107,14 @@ impl Queries {
     {
         tracing::trace!("Upsert balances");
 
-        let query = format! {
+        let query = format!(
             "INSERT INTO `{table}` (`{user_column}`, `{balance_column}`) \
             VALUES (:user, :amount) \
             ON DUPLICATE KEY UPDATE  `{balance_column}` = `{balance_column}` + :amount",
             table = self.schema.table,
             user_column = self.schema.user_column,
             balance_column = self.schema.balance_column,
-        };
+        );
 
         let params = users.into_iter().map(move |user| {
             params! {
