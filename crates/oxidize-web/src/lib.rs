@@ -15,6 +15,7 @@ use std::sync::Arc;
 use anyhow::{bail, Context, Error, Result};
 use api::setbac::ConnectionMeta;
 use async_injector::{Injector, Key};
+use bytes::Bytes;
 use common::models::spotify::senum::DeviceType;
 use common::models::TrackId;
 use common::sink::SinkExt;
@@ -1160,8 +1161,10 @@ pub async fn run(
     let routes = routes.recover(recover);
     let service = warp::serve(routes);
 
-    // TODO: fix when this review is fixed: https://github.com/seanmonstar/warp/pull/265#pullrequestreview-294644379
-    let server_future = service.try_bind_ephemeral(addr)?.1;
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .with_context(|| format!("Failed to bind to {addr}"))?;
+    let server_future = service.incoming(listener).run();
 
     let (connections_tx, mut connections_rx) = mpsc::unbounded_channel();
 
@@ -1204,9 +1207,14 @@ pub async fn run(
             }
         };
 
+        let body = match asset {
+            Cow::Borrowed(data) => Bytes::from_static(data),
+            Cow::Owned(data) => Bytes::from(data),
+        };
+
         let res = warp::http::Response::builder()
             .header("content-type", mime.to_string())
-            .body(asset);
+            .body(body);
 
         Ok(res)
     }
