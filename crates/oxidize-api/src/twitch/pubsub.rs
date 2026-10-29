@@ -73,7 +73,7 @@ impl Client {
     async fn send(&mut self, frame: self::transport::Frame) -> Result<()> {
         let text = serde_json::to_string(&frame)?;
         tracing::trace!(">> {:?}", frame);
-        let message = tungstenite::Message::Text(text);
+        let message = tungstenite::Message::Text(text.into());
         self.stream.send(message).await?;
         Ok(())
     }
@@ -99,7 +99,7 @@ impl Client {
                 }
             };
 
-            return Poll::Ready(Some(Ok(text)));
+            return Poll::Ready(Some(Ok(text.to_string())));
         }
     }
 }
