@@ -5,6 +5,6 @@ publish = false
 
 [dependencies]
 anyhow = { workspace = true }
-handlebars = "4.3.6"
+handlebars = "6"
 lazy_static = "1.4.0"
 serde = { workspace = true }
