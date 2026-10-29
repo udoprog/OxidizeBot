@@ -50,7 +50,7 @@ impl Session {
         let data = BASE64_STANDARD.encode(data);
 
         let mut jar = CookieJar::new();
-        jar.add(self.cookie(name.to_string(), data).finish());
+        jar.add(self.cookie(name.to_string(), data).build());
 
         for c in jar.delta() {
             headers.insert(header::SET_COOKIE, c.encoded().to_string().parse()?);
@@ -65,7 +65,7 @@ impl Session {
             header::SET_COOKIE,
             self.cookie(name.to_string(), "")
                 .expires(time::OffsetDateTime::UNIX_EPOCH)
-                .finish()
+                .build()
                 .encoded()
                 .to_string()
                 .parse()?,
@@ -147,7 +147,7 @@ impl Session {
         name: impl Into<Cow<'static, str>>,
         value: impl Into<Cow<'static, str>>,
     ) -> CookieBuilder<'static> {
-        Cookie::build(name, value).http_only(true).path("/")
+        Cookie::build((name, value)).http_only(true).path("/")
     }
 }
 

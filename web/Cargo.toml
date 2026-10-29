@@ -15,18 +15,18 @@ categories = ["bots"]
 
 [dependencies]
 anyhow = { workspace = true }
-async-oauth2 = "0.5.0"
+async-oauth2 = "0.6.0"
 base64 = "0.23.1"
 bytes = "1.4.0"
 chrono = { workspace = true }
 clap = { version = "4.2.2", features = ["derive"] }
-cookie = { version = "0.17.0", features = ["percent-encode"] }
+cookie = { version = "0.18.2", features = ["percent-encode"] }
 hyper = { version = "0.14.26", features = ["server", "http1", "stream", "tcp"] }
 mime = "0.3.17"
 mime_guess = "2.0.4"
 parking_lot = { workspace = true }
 relative-path = { version = "2.0.3", features = ["serde"] }
-reqwest = "0.12.3"
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls", "charset", "http2", "system-proxy"] }
 ring = "0.17.8"
 rust-embed = { version = "8.13.0", features = ["interpolate-folder-path"] }
 serde = { workspace = true }

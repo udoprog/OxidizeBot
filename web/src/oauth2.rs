@@ -2,7 +2,7 @@ use ::oauth2::{
     AccessToken, AuthorizationCode, Client, ClientSecret, ExecuteError, RefreshToken, Scope,
     StandardToken, State, Token, TokenType,
 };
-use anyhow::{anyhow, bail, Error};
+use anyhow::{bail, Error};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -263,27 +263,11 @@ impl Flow {
             .exchange_code(code)
             .param("client_id", self.config.client_id.as_str())
             .param("client_secret", &self.config.client_secret)
-            .with_client(&self.http_client)
+            .with_reqwest_client(&self.http_client)
             .execute::<T>()
             .await;
 
-        let token_response = match token_response {
-            Ok(t) => t,
-            Err(ExecuteError::BadResponse {
-                status,
-                body,
-                error,
-            }) => {
-                return Err(Error::from(error).context({
-                    anyhow!(
-                        "bad token response: {}: {}",
-                        status,
-                        String::from_utf8_lossy(body.as_ref())
-                    )
-                }));
-            }
-            Err(e) => return Err(Error::from(e)),
-        };
+        let token_response = token_response?;
 
         let refresh_token = match token_response.refresh_token() {
             Some(refresh_token) => refresh_token.clone(),
@@ -340,7 +324,7 @@ impl Flow {
             .exchange_refresh_token(refresh_token)
             .param("client_id", self.config.client_id.as_str())
             .param("client_secret", &self.config.client_secret)
-            .with_client(&self.http_client)
+            .with_reqwest_client(&self.http_client)
             .execute::<T>()
             .await?;
 
