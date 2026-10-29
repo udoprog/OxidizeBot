@@ -33,6 +33,6 @@ parking_lot = { workspace = true }
 slab = "0.4.8"
 smallvec = { workspace = true }
 leaky-bucket = "0.12.4"
-async-fuse = { version = "0.11.4", features = ["stream"] }
+async-fuse = { version = "1.0.1", features = ["stream03"] }
 thiserror = { workspace = true }
 async-stream = "0.3.5"
