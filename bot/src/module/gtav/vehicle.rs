@@ -97,10 +97,10 @@ macro_rules! vehicles {
 
             /// Get a random car.
             pub(crate) fn random_car() -> Vehicle {
-                use rand::Rng as _;
-                let mut rng = rand::thread_rng();
+                use rand::RngExt as _;
+                let mut rng = rand::rng();
                 let cars = Self::cars();
-                cars[rng.gen_range(0..cars.len())]
+                cars[rng.random_range(0..cars.len())]
             }
         }
 

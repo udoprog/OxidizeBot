@@ -38,7 +38,7 @@ impl command::Handler for EightBall {
     }
 
     async fn handle(&self, ctx: &mut command::Context<'_>) -> Result<()> {
-        use rand::Rng as _;
+        use rand::RngExt as _;
 
         if !self.enabled.load().await {
             return Ok(());
@@ -51,7 +51,7 @@ impl command::Handler for EightBall {
             return Ok(());
         }
 
-        let index = rand::thread_rng().gen_range(0..MAGIC_8BALL_ANSWER.len());
+        let index = rand::rng().random_range(0..MAGIC_8BALL_ANSWER.len());
 
         if let Some(answer) = MAGIC_8BALL_ANSWER.get(index) {
             chat::respond!(ctx, answer);

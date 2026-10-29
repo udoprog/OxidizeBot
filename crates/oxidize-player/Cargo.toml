@@ -12,7 +12,7 @@ settings = { workspace = true }
 storage = { workspace = true }
 auth = { workspace = true }
 async-fuse = { workspace = true }
-rand = "0.8.5"
+rand = "0.10.3"
 tokio = { workspace = true, features = ["time", "macros"] }
 thiserror = { workspace = true }
 async-injector = { workspace = true }

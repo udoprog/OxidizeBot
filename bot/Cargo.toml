@@ -35,7 +35,7 @@ template = { workspace = true }
 storage = { workspace = true }
 chat = { workspace = true }
 async-injector =  { workspace = true }
-rand = "0.8.5"
+rand = "0.10.3"
 serde_json = { workspace = true }
 webbrowser = "0.8.9"
 tracing-appender = "0.2.2"

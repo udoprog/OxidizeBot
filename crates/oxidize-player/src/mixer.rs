@@ -238,7 +238,7 @@ impl Mixer {
         let mut fallback = self.fallback.lock().await;
 
         while fallback.queue.len() < Self::FALLBACK_QUEUE_SIZE && !fallback.items.is_empty() {
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let mut extension = fallback.items.clone();
             extension.shuffle(&mut rng);
             fallback.queue.extend(extension);
