@@ -36,3 +36,6 @@ leaky-bucket = "1.1.2"
 async-fuse = { version = "1.0.1", features = ["stream03"] }
 thiserror = { workspace = true }
 async-stream = "0.3.5"
+
+[dev-dependencies]
+serde_cbor = "0.11.2"

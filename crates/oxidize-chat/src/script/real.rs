@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::future::Future;
 use std::ffi::OsStr;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -129,20 +129,25 @@ impl Handler {
             db: self.db.scoped(),
         };
 
-        let result: Result<(), StoredValue> =
-            match self.handler.function.async_send_call((ctx,)).await.into_result() {
-                Ok(result) => result,
-                Err(error) => {
-                    let mut buffer = termcolor::Buffer::no_color();
-                    error.emit(&mut buffer, &self.handler.sources)?;
+        let result: Result<(), StoredValue> = match self
+            .handler
+            .function
+            .async_send_call((ctx,))
+            .await
+            .into_result()
+        {
+            Ok(result) => result,
+            Err(error) => {
+                let mut buffer = termcolor::Buffer::no_color();
+                error.emit(&mut buffer, &self.handler.sources)?;
 
-                    return Err(anyhow!(
-                        "failed to call handler for: {}:\n{}",
-                        self.handler.name,
-                        String::from_utf8(buffer.into_inner())?
-                    ));
-                }
-            };
+                return Err(anyhow!(
+                    "failed to call handler for: {}:\n{}",
+                    self.handler.name,
+                    String::from_utf8(buffer.into_inner())?
+                ));
+            }
+        };
 
         match result {
             Ok(()) => Ok(()),
@@ -346,5 +351,42 @@ impl Ctx {
     fn privmsg(this: Ref<Self>, message: Ref<str>) -> impl Future<Output = ()> {
         let user = this.user.clone();
         async move { user.sender().privmsg(&*message).await }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use rune::{Diagnostics, Source, Sources, Vm};
+
+    use super::{Registry, Scripts};
+
+    #[test]
+    fn example_script_registers() -> anyhow::Result<()> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/dynamic.rn");
+
+        let context = Scripts::context()?;
+        let mut sources = Sources::new();
+        sources.insert(Source::from_path(&path)?)?;
+        let mut diagnostics = Diagnostics::new();
+
+        let unit = rune::prepare(&mut sources)
+            .with_context(&context)
+            .with_diagnostics(&mut diagnostics)
+            .build();
+
+        assert!(
+            diagnostics.is_empty(),
+            "diagnostics: {:?}",
+            diagnostics.diagnostics()
+        );
+
+        let mut reg = Registry::new();
+        let mut vm = Vm::new(Arc::new(context.runtime()?), Arc::new(unit?));
+        vm.call(["main"], (&mut reg,))?.into_unit()?;
+        assert!(reg.handlers.contains_key("dynamic"));
+        Ok(())
     }
 }

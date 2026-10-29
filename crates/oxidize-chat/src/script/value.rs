@@ -120,10 +120,16 @@ impl StoredValue {
         } else if hash == alloc::String::HASH {
             Self::String(value.borrow_string_ref()?.to_owned())
         } else if hash == Bytes::HASH {
-            Self::Bytes(StoredBytes(value.borrow_ref::<Bytes>()?.as_slice().to_vec()))
+            Self::Bytes(StoredBytes(
+                value.borrow_ref::<Bytes>()?.as_slice().to_vec(),
+            ))
         } else if hash == RuneVec::HASH {
             let vec = value.borrow_ref::<RuneVec>()?;
-            Self::Vec(vec.iter().map(Self::from_value_ref).collect::<Result<_, _>>()?)
+            Self::Vec(
+                vec.iter()
+                    .map(Self::from_value_ref)
+                    .collect::<Result<_, _>>()?,
+            )
         } else if hash == OwnedTuple::HASH {
             let tuple = value.borrow_ref::<OwnedTuple>()?;
             Self::Tuple(
@@ -216,5 +222,85 @@ impl ToValue for StoredValue {
 impl MaybeTypeOf for StoredValue {
     fn maybe_type_of() -> alloc::Result<DocType> {
         Value::maybe_type_of()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StoredValue as S;
+
+    fn decode(hex: &str) -> S {
+        let bytes = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect::<Vec<u8>>();
+        serde_cbor::from_slice(&bytes).unwrap()
+    }
+
+    fn encode(value: &S) -> String {
+        serde_cbor::to_vec(value)
+            .unwrap()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    /// Encodings written by rune 0.12's `ConstValue`.
+    #[test]
+    fn legacy_encoding() {
+        let int = "a167496e74656765721829";
+        assert_eq!(decode(int), S::Integer(41));
+        assert_eq!(encode(&S::Integer(41)), int);
+
+        let key = "a16356656382a166537472696e6765636f756e74a166537472696e676775646f70726f67";
+        let value = S::Vec(vec![S::String("count".into()), S::String("udoprog".into())]);
+        assert_eq!(decode(key), value);
+        assert_eq!(encode(&value), key);
+
+        // `["count", user]` where "count" is a literal.
+        let S::Vec(values) = decode("a16356656382a16c537461746963537472696e67a265696e6e657265636f756e7464686173681bfc800bd8621d9b35a166537472696e676775646f70726f67") else {
+            panic!("expected vec");
+        };
+        assert!(matches!(&values[0], S::StaticString(..)));
+        assert_eq!(values[1], S::String("udoprog".into()));
+
+        // `(1, 2.5, true, 'x', b'a', b"hi", Some(#{a: ()}), None, [], "s")`
+        let tuple = "a1655475706c658aa167496e746567657201a165466c6f6174f94100a164426f6f6cf5a164436861726178a164427974651861a1654279746573426869a1664f7074696f6ea1664f626a656374a1616164556e6974a1664f7074696f6ef6a16356656380a16c537461746963537472696e67a265696e6e6572617364686173681ba3c7365327b205f2";
+        let S::Tuple(values) = decode(tuple) else {
+            panic!("expected tuple");
+        };
+        assert_eq!(values[0], S::Integer(1));
+        assert_eq!(values[1], S::Float(2.5));
+        assert_eq!(values[2], S::Bool(true));
+        assert_eq!(values[3], S::Char('x'));
+        assert_eq!(values[4], S::Byte(b'a'));
+        assert_eq!(values[5], S::Bytes(super::StoredBytes(b"hi".to_vec())));
+        assert_eq!(
+            values[6],
+            S::Option(Some(Box::new(S::Object(
+                [("a".to_owned(), S::Unit)].into_iter().collect()
+            ))))
+        );
+        assert_eq!(values[7], S::Option(None));
+        assert_eq!(values[8], S::Vec(Vec::new()));
+        assert!(matches!(&values[9], S::StaticString(..)));
+    }
+
+    #[test]
+    fn rune_roundtrip() {
+        let value = S::Tuple(Box::new([
+            S::Integer(-1),
+            S::Unsigned(u64::MAX),
+            S::Float(0.5),
+            S::String("hello".into()),
+            S::Bytes(super::StoredBytes(vec![1, 2])),
+            S::Vec(vec![S::Bool(false), S::Char('c')]),
+            S::Object([("k".to_owned(), S::Unit)].into_iter().collect()),
+            S::Option(Some(Box::new(S::Integer(2)))),
+            S::Option(None),
+        ]));
+
+        let rune_value = rune::to_value(value.clone()).unwrap();
+        assert_eq!(rune::from_value::<S>(rune_value).unwrap(), value);
     }
 }

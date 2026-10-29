@@ -2596,6 +2596,7 @@ dependencies = [
  "rune",
  "rune-modules",
  "serde",
+ "serde_cbor",
  "slab",
  "smallvec",
  "thiserror 2.0.21",
