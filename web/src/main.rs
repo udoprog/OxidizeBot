@@ -29,8 +29,6 @@ use std::time;
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 
-pub(crate) use tokio_stream as stream;
-
 #[derive(Parser)]
 #[command(author, version, about, version, long_about = None)]
 struct Opts {

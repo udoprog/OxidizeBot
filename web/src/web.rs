@@ -7,13 +7,15 @@ use std::time;
 
 use ::oauth2::State;
 use anyhow::{anyhow, Context, Result};
+use bytes::Bytes;
 use chrono::{DateTime, Utc};
-use hyper::body::Body;
+use http_body_util::{BodyExt as _, Full};
+use hyper::body::Incoming;
 use hyper::header;
-use hyper::server::conn::AddrStream;
-use hyper::server::Server;
-use hyper::service;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
+use hyper_util::rt::TokioIo;
 use parking_lot::Mutex;
 use relative_path::RelativePathBuf;
 use rust_embed::EmbeddedFile;
@@ -26,7 +28,6 @@ use crate::api;
 use crate::db;
 use crate::oauth2;
 use crate::session;
-use crate::stream::StreamExt as _;
 
 macro_rules! log_error {
     ($e:expr, $fmt:expr $(, $($tt:tt)*)?) => {{
@@ -38,6 +39,8 @@ macro_rules! log_error {
         }
     }}
 }
+
+type Body = Full<Bytes>;
 
 static SPOTIFY_TRACK_URL: &str = "https://open.spotify.com/track";
 
@@ -63,7 +66,7 @@ pub(crate) fn setup(
     host: String,
     port: u32,
     config: Config,
-) -> Result<impl Future<Output = Result<(), hyper::Error>>> {
+) -> Result<impl Future<Output = Result<()>>> {
     let fallback =
         assets::Asset::get("index.html").ok_or_else(|| anyhow!("missing index.html in assets"))?;
 
@@ -76,16 +79,14 @@ pub(crate) fn setup(
 
     let addr: SocketAddr = str::parse(&bind)?;
 
-    // TODO: add graceful shutdown.
-    let mut server_future =
-        Server::bind(&addr).serve(service::make_service_fn(move |s: &AddrStream| {
-            let handler = handler.clone();
-            let address = s.remote_addr();
-            let service = service::service_fn(move |req| handler.clone().call(address, req));
-            async move { Ok::<_, hyper::Error>(service) }
-        }));
+    let listener = std::net::TcpListener::bind(addr)?;
+    listener.set_nonblocking(true)?;
 
     let future = async move {
+        // TODO: add graceful shutdown.
+        let server_future = serve(listener, handler);
+        tokio::pin!(server_future);
+
         let mut interval = tokio::time::interval(time::Duration::from_secs(30));
         let expires = chrono::Duration::minutes(5);
 
@@ -118,6 +119,36 @@ pub(crate) fn setup(
     };
 
     Ok(future)
+}
+
+async fn serve(listener: std::net::TcpListener, handler: Arc<Handler>) -> Result<()> {
+    let listener = tokio::net::TcpListener::from_std(listener)?;
+
+    loop {
+        let (stream, remote_address) = match listener.accept().await {
+            Ok(accepted) => accepted,
+            Err(e) => {
+                // Accept errors such as running out of file descriptors are
+                // usually transient, so back off instead of spinning.
+                tracing::error!("Failed to accept connection: {e}");
+                tokio::time::sleep(time::Duration::from_secs(1)).await;
+                continue;
+            }
+        };
+
+        let handler = handler.clone();
+
+        tokio::spawn(async move {
+            let service = service_fn(move |req| handler.clone().call(remote_address, req));
+
+            if let Err(e) = http1::Builder::new()
+                .serve_connection(TokioIo::new(stream), service)
+                .await
+            {
+                tracing::debug!("Connection from {remote_address} failed: {e}");
+            }
+        });
+    }
 }
 
 #[derive(Debug, Error)]
@@ -249,7 +280,7 @@ impl Handler {
 
         let now = Utc::now();
 
-        let mut r = Response::new(Body::empty());
+        let mut r = Response::new(Body::default());
 
         let (mime, asset) = match assets::Asset::get(path) {
             Some(asset) => {
@@ -280,9 +311,10 @@ impl Handler {
     async fn call(
         self: Arc<Self>,
         remote_address: SocketAddr,
-        mut req: Request<Body>,
+        mut req: Request<Incoming>,
     ) -> Result<Response<Body>> {
-        use hyper::{body::HttpBody, Method};
+        use hyper::body::Body as _;
+        use hyper::Method;
 
         let path = req
             .uri()
@@ -291,7 +323,7 @@ impl Handler {
             .skip(1)
             .collect::<SmallVec<[_; 8]>>();
 
-        let request_size = HttpBody::size_hint(req.body()).upper();
+        let request_size = req.body().size_hint().upper();
 
         let result = match (req.method(), &*path) {
             (m, ["api", rest @ ..]) => match (m, rest) {
@@ -361,7 +393,7 @@ impl Handler {
             }
         };
 
-        let response_size = HttpBody::size_hint(response.body()).upper();
+        let response_size = response.body().size_hint().upper();
 
         let request_size = request_size
             .map(ContentLengthFmt::Some)
@@ -472,7 +504,11 @@ impl Handler {
     const MAX_BYTES: usize = 10_000;
 
     /// Get the token with the given ID.
-    async fn get_connection(&self, req: &Request<Body>, id: &str) -> Result<Response<Body>, Error> {
+    async fn get_connection(
+        &self,
+        req: &Request<Incoming>,
+        id: &str,
+    ) -> Result<Response<Body>, Error> {
         let user = self.verify(req)?;
 
         let c = self.db.get_connection(&user.user_id, id)?;
@@ -526,7 +562,7 @@ impl Handler {
     /// Get the token with the given ID.
     async fn refresh_connection(
         &self,
-        req: &Request<Body>,
+        req: &Request<Incoming>,
         id: &str,
     ) -> Result<Response<Body>, Error> {
         let user = self.verify(req)?;
@@ -590,7 +626,7 @@ impl Handler {
     }
 
     /// Get a list of connection types.
-    async fn get_connection_types(&self, _: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn get_connection_types(&self, _: &Request<Incoming>) -> Result<Response<Body>, Error> {
         let mut out = Vec::new();
 
         for client_config in &self.config.oauth2.flows {
@@ -606,7 +642,7 @@ impl Handler {
     }
 
     /// List connections for the current user.
-    async fn list_connections(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn list_connections(&self, req: &Request<Incoming>) -> Result<Response<Body>, Error> {
         let user = self.verify(req)?;
         let connections = self.db.connections_by_user(&user.user_id)?;
 
@@ -650,7 +686,7 @@ impl Handler {
     /// Delete the specified connection.
     async fn delete_connection(
         &self,
-        req: &Request<Body>,
+        req: &Request<Incoming>,
         id: &str,
     ) -> Result<Response<Body>, Error> {
         let user = self.verify(req)?;
@@ -662,7 +698,7 @@ impl Handler {
     /// List connections for the current user.
     async fn create_connection(
         &self,
-        req: &Request<Body>,
+        req: &Request<Incoming>,
         id: &str,
     ) -> Result<Response<Body>, Error> {
         let user = self.verify(req)?;
@@ -703,7 +739,7 @@ impl Handler {
     }
 
     /// Generate a new key.
-    async fn create_key(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn create_key(&self, req: &Request<Incoming>) -> Result<Response<Body>, Error> {
         use base64::prelude::*;
 
         let user = self.verify(req)?;
@@ -726,14 +762,14 @@ impl Handler {
     }
 
     /// Delete the current key.
-    async fn delete_key(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn delete_key(&self, req: &Request<Incoming>) -> Result<Response<Body>, Error> {
         let user = self.verify(req)?;
         self.db.delete_key(&user.user_id)?;
         json_empty()
     }
 
     /// Get the current key.
-    async fn get_key(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn get_key(&self, req: &Request<Incoming>) -> Result<Response<Body>, Error> {
         let user = self.verify(req)?;
         let key = self.db.get_key(&user.user_id)?;
         return json_ok(KeyInfo { key });
@@ -767,7 +803,7 @@ impl Handler {
     }
 
     /// Handle auth redirect coming back.
-    async fn auth_redirect(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn auth_redirect(&self, req: &Request<Incoming>) -> Result<Response<Body>, Error> {
         let mut r = json_empty()?;
         *r.status_mut() = StatusCode::TEMPORARY_REDIRECT;
         let query = self.decode_query::<oauth2::TokenQuery>(req)?;
@@ -866,7 +902,7 @@ impl Handler {
     }
 
     /// Handle login or registration.
-    async fn auth_login(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn auth_login(&self, req: &Request<Incoming>) -> Result<Response<Body>, Error> {
         let exchange_token = self.login_flow.exchange_token();
 
         let r = json_ok(Login {
@@ -893,19 +929,19 @@ impl Handler {
     }
 
     /// Handle clearing cookies for logging out.
-    async fn auth_logout(&self, _: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn auth_logout(&self, _: &Request<Incoming>) -> Result<Response<Body>, Error> {
         let mut r = json_empty()?;
         self.session.delete_cookie(r.headers_mut(), "session")?;
         Ok(r)
     }
 
     /// Show the current session.
-    async fn get_auth_current(&self, req: &Request<Body>) -> Result<Response<Body>, Error> {
+    async fn get_auth_current(&self, req: &Request<Incoming>) -> Result<Response<Body>, Error> {
         json_ok(self.session.verify(req)?)
     }
 
     /// Handle a playlist update.
-    async fn update_player(&self, req: &mut Request<Body>) -> Result<Response<Body>, Error> {
+    async fn update_player(&self, req: &mut Request<Incoming>) -> Result<Response<Body>, Error> {
         let user = self.session.verify(req)?;
         let twitch_token = extract_twitch_token(req);
         let update = receive_json::<PlayerUpdate>(req, Self::MAX_BYTES);
@@ -1014,7 +1050,7 @@ impl Handler {
     }
 
     /// Decode query parameters using the specified model.
-    fn decode_query<'a, T>(&self, req: &'a Request<Body>) -> Result<T, Error>
+    fn decode_query<'a, T>(&self, req: &'a Request<Incoming>) -> Result<T, Error>
     where
         T: Deserialize<'a>,
     {
@@ -1108,7 +1144,7 @@ pub(crate) fn http_error(status: StatusCode, message: &str) -> Result<Response<B
 }
 
 /// Concats the body and makes sure the request is not too large.
-async fn receive_json<T>(req: &mut Request<Body>, max_bytes: usize) -> Result<T, Error>
+async fn receive_json<T>(req: &mut Request<Incoming>, max_bytes: usize) -> Result<T, Error>
 where
     T: de::DeserializeOwned,
 {
@@ -1117,7 +1153,16 @@ where
     let mut bytes = Vec::new();
     let mut received = 0;
 
-    while let Some(chunk) = body.next().await.transpose().map_err(anyhow::Error::from)? {
+    while let Some(frame) = body
+        .frame()
+        .await
+        .transpose()
+        .map_err(anyhow::Error::from)?
+    {
+        let Ok(chunk) = frame.into_data() else {
+            continue;
+        };
+
         received += chunk.len();
 
         if received > max_bytes {

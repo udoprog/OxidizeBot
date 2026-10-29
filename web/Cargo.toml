@@ -21,7 +21,9 @@ bytes = "1.4.0"
 chrono = { workspace = true }
 clap = { version = "4.2.2", features = ["derive"] }
 cookie = { version = "0.18.2", features = ["percent-encode"] }
-hyper = { version = "0.14.26", features = ["server", "http1", "stream", "tcp"] }
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", features = ["server", "http1"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
 mime = "0.3.17"
 mime_guess = "2.0.4"
 parking_lot = { workspace = true }
@@ -38,7 +40,6 @@ smallvec = { workspace = true }
 thiserror = { workspace = true }
 time = "0.3.20"
 tokio = { workspace = true, features = ["full", "tracing"] }
-tokio-stream = "0.1.12"
 toml = "1.1.8"
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
