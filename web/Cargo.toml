@@ -33,7 +33,6 @@ serde = { workspace = true }
 serde_cbor = "0.11.2"
 serde_json = { workspace = true }
 serde_urlencoded = "0.7.1"
-sled31 = { package = "sled", version = "0.31.0", git = "https://github.com/udoprog/sled", branch = "0.31.x" }
 sled34 = { package = "sled", version = "0.34.0" }
 smallvec = { workspace = true }
 thiserror = { workspace = true }
