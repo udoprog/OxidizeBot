@@ -13,5 +13,5 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tokio = { workspace = true, features = ["macros"] }
 tracing = { workspace = true }
-chrono-tz = "0.8.2"
+chrono-tz = "0.10.4"
 thiserror = { workspace = true }

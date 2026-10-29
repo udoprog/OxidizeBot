@@ -1301,7 +1301,7 @@ impl Type {
                 v
             }
             TimeZone => {
-                let tz = str::parse::<Tz>(s).map_err(Error::BadTimeZone)?;
+                let tz = str::parse::<Tz>(s).map_err(|e| Error::BadTimeZone(e.to_string()))?;
                 Value::String(format!("{tz:?}"))
             }
             Object { fields, .. } => {
