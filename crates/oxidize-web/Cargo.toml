@@ -25,4 +25,4 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
-rust-embed = { version = "6.6.1", features = ["interpolate-folder-path"] }
+rust-embed = { version = "8.13.0", features = ["interpolate-folder-path"] }

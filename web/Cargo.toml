@@ -16,7 +16,7 @@ categories = ["bots"]
 [dependencies]
 anyhow = { workspace = true }
 async-oauth2 = "0.5.0"
-base64 = "0.21.0"
+base64 = "0.23.1"
 bytes = "1.4.0"
 chrono = { workspace = true }
 clap = { version = "4.2.2", features = ["derive"] }
@@ -25,10 +25,10 @@ hyper = { version = "0.14.26", features = ["server", "http1", "stream", "tcp"] }
 mime = "0.3.17"
 mime_guess = "2.0.4"
 parking_lot = { workspace = true }
-relative-path = { version = "1.8.0", features = ["serde"] }
+relative-path = { version = "2.0.3", features = ["serde"] }
 reqwest = "0.12.3"
 ring = "0.17.8"
-rust-embed = { version = "6.6.1", features = ["interpolate-folder-path"] }
+rust-embed = { version = "8.13.0", features = ["interpolate-folder-path"] }
 serde = { workspace = true }
 serde_cbor = "0.11.2"
 serde_json = { workspace = true }
@@ -39,7 +39,7 @@ thiserror = { workspace = true }
 time = "0.3.20"
 tokio = { workspace = true, features = ["full", "tracing"] }
 tokio-stream = "0.1.12"
-toml = "0.7.3"
+toml = "1.1.8"
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 url = { workspace = true }
