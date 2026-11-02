@@ -38,4 +38,5 @@ thiserror = { workspace = true }
 async-stream = "0.3.5"
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
 serde_cbor = "0.11.2"

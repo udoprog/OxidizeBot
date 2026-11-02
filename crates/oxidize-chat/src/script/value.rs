@@ -102,6 +102,26 @@ impl<'de> Deserialize<'de> for StoredBytes {
 }
 
 impl StoredValue {
+    /// Convert the rune 0.12 string literals in a key into plain strings, so
+    /// that it matches what rune 0.14 produces. `None` if there were none.
+    pub(crate) fn upgrade_legacy_key(mut self) -> Option<Self> {
+        self.replace_static_strings().then_some(self)
+    }
+
+    fn replace_static_strings(&mut self) -> bool {
+        match self {
+            Self::StaticString(s) => {
+                *self = Self::String(std::mem::take(&mut s.inner));
+                true
+            }
+            Self::Vec(values) => replace_all(values.iter_mut()),
+            Self::Tuple(values) => replace_all(values.iter_mut()),
+            Self::Object(object) => replace_all(object.values_mut()),
+            Self::Option(Some(value)) => value.replace_static_strings(),
+            _ => false,
+        }
+    }
+
     fn from_value_ref(value: &Value) -> Result<Self, RuntimeError> {
         let hash = value.type_hash();
 
@@ -207,6 +227,10 @@ impl StoredValue {
     }
 }
 
+fn replace_all<'a>(values: impl Iterator<Item = &'a mut StoredValue>) -> bool {
+    values.fold(false, |changed, v| v.replace_static_strings() | changed)
+}
+
 impl FromValue for StoredValue {
     fn from_value(value: Value) -> Result<Self, RuntimeError> {
         Self::from_value_ref(&value)
@@ -228,6 +252,10 @@ impl MaybeTypeOf for StoredValue {
 #[cfg(test)]
 mod tests {
     use super::StoredValue as S;
+
+    /// `(1, 2.5, true, 'x', b'a', b"hi", Some(#{a: ()}), None, [], "s")` as
+    /// written by rune 0.12.
+    const TUPLE: &str = "a1655475706c658aa167496e746567657201a165466c6f6174f94100a164426f6f6cf5a164436861726178a164427974651861a1654279746573426869a1664f7074696f6ea1664f626a656374a1616164556e6974a1664f7074696f6ef6a16356656380a16c537461746963537472696e67a265696e6e6572617364686173681ba3c7365327b205f2";
 
     fn decode(hex: &str) -> S {
         let bytes = (0..hex.len())
@@ -264,9 +292,7 @@ mod tests {
         assert!(matches!(&values[0], S::StaticString(..)));
         assert_eq!(values[1], S::String("udoprog".into()));
 
-        // `(1, 2.5, true, 'x', b'a', b"hi", Some(#{a: ()}), None, [], "s")`
-        let tuple = "a1655475706c658aa167496e746567657201a165466c6f6174f94100a164426f6f6cf5a164436861726178a164427974651861a1654279746573426869a1664f7074696f6ea1664f626a656374a1616164556e6974a1664f7074696f6ef6a16356656380a16c537461746963537472696e67a265696e6e6572617364686173681ba3c7365327b205f2";
-        let S::Tuple(values) = decode(tuple) else {
+        let S::Tuple(values) = decode(TUPLE) else {
             panic!("expected tuple");
         };
         assert_eq!(values[0], S::Integer(1));
@@ -284,6 +310,26 @@ mod tests {
         assert_eq!(values[7], S::Option(None));
         assert_eq!(values[8], S::Vec(Vec::new()));
         assert!(matches!(&values[9], S::StaticString(..)));
+    }
+
+    /// A rune 0.12 key with a string literal becomes the key rune 0.14 writes.
+    #[test]
+    fn upgrade_legacy_key() {
+        let legacy = decode("a16356656382a16c537461746963537472696e67a265696e6e657265636f756e7464686173681bfc800bd8621d9b35a166537472696e676775646f70726f67");
+        let upgraded = legacy.upgrade_legacy_key().unwrap();
+        assert_eq!(
+            encode(&upgraded),
+            "a16356656382a166537472696e6765636f756e74a166537472696e676775646f70726f67"
+        );
+
+        let current =
+            decode("a16356656382a166537472696e6765636f756e74a166537472696e676775646f70726f67");
+        assert_eq!(current.upgrade_legacy_key(), None);
+
+        let S::Tuple(values) = decode(TUPLE).upgrade_legacy_key().unwrap() else {
+            panic!("expected tuple");
+        };
+        assert_eq!(values[9], S::String("s".into()));
     }
 
     #[test]

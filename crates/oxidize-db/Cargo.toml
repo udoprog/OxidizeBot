@@ -23,3 +23,6 @@ thiserror = { workspace = true }
 regex = "1.7.3"
 parking_lot = { workspace = true }
 serde_cbor = { version = "0.11.2", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

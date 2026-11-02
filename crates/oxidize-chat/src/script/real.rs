@@ -175,12 +175,19 @@ impl Scripts {
     async fn new(channel: &Channel, db: db::Database) -> Result<Self> {
         let context = Self::context()?;
         let runtime = Arc::new(context.runtime()?);
+        let db = Db::new(channel, db);
+
+        let rewritten = db.db.rewrite_keys(StoredValue::upgrade_legacy_key).await?;
+
+        if rewritten > 0 {
+            tracing::info!("Upgraded {rewritten} script keys written by an older version");
+        }
 
         Ok(Self {
             context,
             runtime,
             options: Default::default(),
-            db: Db::new(channel, db),
+            db,
             handlers: HashMap::new(),
             handlers_by_path: HashMap::new(),
         })
@@ -361,7 +368,42 @@ mod tests {
 
     use rune::{Diagnostics, Source, Sources, Vm};
 
+    use common::Channel;
+
     use super::{Registry, Scripts};
+    use crate::script::value::StoredValue;
+
+    /// A script's `["count", "udoprog"]` key stored by rune 0.12.
+    const LEGACY_KEY: &str = "a16356656382a16c537461746963537472696e67a265696e6e657265636f756e7464686173681bfc800bd8621d9b35a166537472696e676775646f70726f67";
+
+    #[tokio::test]
+    async fn legacy_keys_are_upgraded() -> anyhow::Result<()> {
+        let bytes = (0..LEGACY_KEY.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&LEGACY_KEY[i..i + 2], 16))
+            .collect::<Result<Vec<u8>, _>>()?;
+        let legacy = serde_cbor::from_slice::<StoredValue>(&bytes)?;
+
+        let channel = Channel::new("#test");
+        let db = db::Database::open(Path::new(":memory:"))?;
+        let storage = db::ScriptStorage::new(channel, db.clone());
+        storage.set(legacy, StoredValue::Integer(41)).await?;
+
+        let mut sources = Sources::new();
+        sources.insert(Source::memory(r#"pub fn main() { ["count", "udoprog"] }"#)?)?;
+        let context = Scripts::context()?;
+        let unit = rune::prepare(&mut sources).with_context(&context).build()?;
+        let mut vm = Vm::new(Arc::new(context.runtime()?), Arc::new(unit));
+        let key = rune::from_value::<StoredValue>(vm.call(["main"], ())?)?;
+
+        assert_eq!(storage.get::<_, StoredValue>(key.clone()).await?, None);
+        Scripts::new(channel, db).await?;
+        assert_eq!(
+            storage.get::<_, StoredValue>(key).await?,
+            Some(StoredValue::Integer(41))
+        );
+        Ok(())
+    }
 
     #[test]
     fn example_script_registers() -> anyhow::Result<()> {
