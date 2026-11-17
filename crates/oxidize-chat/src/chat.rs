@@ -715,14 +715,9 @@ impl<'a> Handler<'a> {
             }
         }
 
-        if !user.has_scope(Scope::ChatBypassUrlWhitelist).await
+        !user.has_scope(Scope::ChatBypassUrlWhitelist).await
             && self.url_whitelist_enabled.load().await
             && self.has_bad_link(message)
-        {
-            return true;
-        }
-
-        false
     }
 
     /// Test the message for bad words.

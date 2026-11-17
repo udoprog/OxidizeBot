@@ -9,7 +9,7 @@ scripting = ["serde_cbor"]
 [dependencies]
 common = { workspace = true }
 template = { workspace = true }
-libsqlite3-sys = { version = "0.38.2", features = ["bundled", "unlock_notify"] }
+libsqlite3-sys = { version = "0.40.0", features = ["bundled", "unlock_notify"] }
 diesel = { workspace = true, features = ["sqlite", "chrono"] }
 diesel_migrations = "2.0.0"
 eudex = "0.1.1"
