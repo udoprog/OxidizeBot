@@ -33,7 +33,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v2
-    - uses: udoprog/kick@nightly
+    - uses: udoprog/actions@kick
     - run: kick define --github-action --msi-version-to msi_version
       id: release
     - run: cargo build --release -p oxidize
@@ -52,14 +52,13 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: udoprog/actions@kick
     - uses: actions/download-artifact@v7
       with: {name: dist-macos-latest, path: dist}
     - uses: actions/download-artifact@v7
       with: {name: dist-windows-latest, path: dist}
     - uses: actions/download-artifact@v7
       with: {name: dist-ubuntu-latest, path: dist}
-    - uses: udoprog/kick@nightly
     - run: kick github-release --upload "dist/*" --github-action
       env:
         GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
